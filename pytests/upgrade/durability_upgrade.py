@@ -5,16 +5,22 @@ from threading import Thread
 from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading, CbServer
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
+from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
+from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper, \
     BucketDurability
 from membase.api.rest_client import RestConnection
+from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
-
+from storage.magma.magma_base import MagmaBaseTest
+from bucket_collections.collections_base import CollectionBase
+from bucket_collections.collections_rebalance import CollectionsRebalance
+from collections_helper.collections_spec_constants import MetaConstants
 
 class UpgradeTests(UpgradeBase):
     def setUp(self):
@@ -39,7 +45,7 @@ class UpgradeTests(UpgradeBase):
             cbstat_cmd="all", stat_name="ep_queue_size",
             timeout=60)
         self.bucket_util.validate_docs_per_collections_all_buckets(
-            self.cluster)
+            self.cluster,timeout=1200)
 
     def __trigger_cbcollect(self, log_path):
         self.log.info("Triggering cb_collect_info")
@@ -112,10 +118,11 @@ class UpgradeTests(UpgradeBase):
         if collection_task.result is False:
             self.log_failure("Collection task failed")
             return
-
-        # Perform collection/doc_count validation
-        if not self.upgrade_with_data_load:
-            self.__wait_for_persistence_and_validate()
+        
+        if(collection_task.result is True):
+            self.log.info("Collection task 1 completed")
+            if not self.upgrade_with_data_load:
+                self.__wait_for_persistence_and_validate()
 
         # Drop and recreate scope/collections
         collection_load_spec = \
@@ -134,13 +141,11 @@ class UpgradeTests(UpgradeBase):
         if collection_task.result is False:
             self.log_failure("Drop scope/collection failed")
             return
-
-        # Perform collection/doc_count validation
-        if not self.upgrade_with_data_load:
-            self.__wait_for_persistence_and_validate()
-
-        # MB-44092 - Close client_pool after collection ops
-        DocLoaderUtils.sdk_client_pool.shutdown()
+        
+        if(collection_task.result is True):
+            self.log.info("Task 2 completed")
+            if not self.upgrade_with_data_load:
+                self.__wait_for_persistence_and_validate()
 
     def test_upgrade(self):
         self.thread_keeper = dict()
@@ -190,27 +195,115 @@ class UpgradeTests(UpgradeBase):
                                            rolelist=self.role_list)
         create_batch_size = 10000
         update_task = None
-        t_durability_level = ""
-        if self.cluster_supports_sync_write:
-            t_durability_level = Bucket.DurabilityLevel.MAJORITY
 
-        if self.upgrade_with_data_load:
-            self.log.info("Starting async doc updates")
-            update_task = self.task.async_continuous_doc_ops(
-                self.cluster, self.bucket, self.gen_load,
-                op_type=DocLoading.Bucket.DocOps.UPDATE,
-                process_concurrency=1,
-                persist_to=1,
-                replicate_to=1,
-                durability=t_durability_level,
-                timeout_secs=30)
-        create_gen = doc_generator(self.key, self.num_items,
-                                   self.num_items+create_batch_size)
+        ### Fetching fragmentation value after initial load ###
+        if(self.spec_bucket[Bucket.storageBackend]==Bucket.StorageBackend.magma):
+            frag_dict = dict()
+            server_frag = dict()
+            field_to_grep = "rw_0:magma"
+
+            for server in self.cluster.nodes_in_cluster:
+                cb_shell = RemoteMachineShellConnection(server)
+                cb_obj = Cbstats(cb_shell)
+                frag_res = cb_obj.magma_stats(self.cluster.buckets[0], field_to_grep, "kvstore")
+                frag_dict[server.ip] = frag_res
+                server_frag[server.ip] = float(frag_dict[server.ip][field_to_grep]["Fragmentation"])
+                cb_shell.disconnect()
+
+            self.log.info("Fragmentation after initial load {0}".format(server_frag))
+
+        ### Upserting all data to increase fragmentation value ###
+        upsert_spec = self.bucket_util.get_crud_template_from_package(self.upsert_data_spec)
+        CollectionBase.over_ride_doc_loading_template_params(self, upsert_spec)
+        CollectionBase.set_retry_exceptions_for_initial_data_load(self, upsert_spec)
+
+        upsert_task = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.cluster.buckets,
+            upsert_spec,
+            mutation_num=0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency)
+
+        ### Fetching fragmentation value after upserting data ###
+        if(upsert_task.result is True):
+            self.log.info("Upsert task finished.")
+
+            if(self.spec_bucket[Bucket.storageBackend]==Bucket.StorageBackend.magma):
+                frag_dict = dict()
+                server_frag = dict()
+
+                for server in self.cluster.nodes_in_cluster:
+                    cb_shell = RemoteMachineShellConnection(server)
+                    cb_obj = Cbstats(cb_shell)
+                    frag_res = cb_obj.magma_stats(self.cluster.buckets[0], field_to_grep, "kvstore")
+                    frag_dict[server.ip] = frag_res
+                    server_frag[server.ip] = float(frag_dict[server.ip][field_to_grep]["Fragmentation"])
+                    cb_shell.disconnect()
+
+                self.log.info("Fragmentation after upsert {0}".format(server_frag))
+
+            self.__wait_for_persistence_and_validate()
+
+        else:
+            self.log_failure("Upsert task failed.")
+
+        large_doc_count = 0
         self.log.info("Upgrading cluster nodes to target version")
         node_to_upgrade = self.fetch_node_to_upgrade()
         while node_to_upgrade is not None:
             iter += 1
             self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
+            ### Subsequent data load with spec file ###
+            if self.upgrade_with_data_load:
+                self.log.info("Starting async doc updates")
+
+                if(self.load_large_docs):
+                    self.log.info("Loading large docs...")
+                    self.sdk_for_load = SDKClient([self.cluster.master],
+                                            self.cluster.buckets[0],
+                                            scope=CbServer.default_scope,
+                                            collection=CbServer.default_collection)
+
+                    for i in range(10):
+                        large_doc = doc_generator("large_docs", 0, 1,
+                                                    doc_size=10000000,
+                                                    doc_type=self.doc_type,
+                                                    vbuckets=self.cluster.vbuckets,
+                                                    key_size=self.key_size,
+                                                    randomize_value=True)
+                        key_obj, val_obj = large_doc.next()
+                        key_obj = key_obj[:-1]
+                        key_obj += str(large_doc_count)
+                        self.sdk_for_load.insert(key_obj, val_obj)
+                        self.log.info("Item {0} inserted".format(key_obj))
+                        time.sleep(10)
+                        read_val = self.sdk_for_load.read(key_obj, timeout=10)
+
+                        #Upserting the doc twice
+                        for j in range(2):
+                            read_val["mutated"] = j
+                            self.sdk_for_load.upsert(key_obj, read_val)
+                            time.sleep(2)
+                        large_doc_count += 1
+
+                    self.log.info("Loading of large docs complete.")
+                    self.bucket_util.print_bucket_stats(self.cluster)
+
+                sub_load_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
+                CollectionBase.over_ride_doc_loading_template_params(self, sub_load_spec)
+                CollectionBase.set_retry_exceptions_for_initial_data_load(self, sub_load_spec)
+                update_task = self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.cluster.buckets,
+                sub_load_spec,
+                mutation_num=0,
+                async_load=True,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                validate_task=True)
 
             if self.test_storage_upgrade:
                 gen_loader = doc_generator("create", 0, 100000,
@@ -240,12 +333,28 @@ class UpgradeTests(UpgradeBase):
                             threads.start()
                             thread_list.append(threads)
 
-            self.upgrade_function[self.upgrade_type](node_to_upgrade,
+            if(self.upgrade_type in ["failover_delta_recovery","failover_full_recovery"]):
+                self.upgrade_function[self.upgrade_type](node_to_upgrade)
+            else:
+                self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                      self.upgrade_version)
             self.cluster_util.print_cluster_stats(self.cluster)
             for node in self.thread_keeper.keys():
                 if node not in self.cluster.nodes_in_cluster:
                     self.thread_keeper[node] = None
+
+            if self.upgrade_with_data_load:
+                # Wait for update_task to complete
+                update_task.stop_indefinite_doc_loading_tasks()
+                self.task_manager.get_task_result(update_task)
+
+            sync_load_spec = self.bucket_util.get_crud_template_from_package(self.sync_write_spec)
+            CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
+            CollectionBase.set_retry_exceptions_for_initial_data_load(self, sync_load_spec)
+
+            if self.cluster_supports_sync_write:
+                sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
+
             # Validate sync_write results after upgrade
             if self.atomicity:
                 create_batch_size = 10
@@ -260,20 +369,25 @@ class UpgradeTests(UpgradeBase):
                     transaction_timeout=self.transaction_timeout,
                     record_fail=True)
             else:
-                sync_write_task = self.task.async_load_gen_docs(
-                    self.cluster, self.bucket, create_gen,
-                    DocLoading.Bucket.DocOps.CREATE,
-                    durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool,
-                    process_concurrency=4,
-                    skip_read_on_error=True,
-                    suppress_error_table=True)
-            self.task_manager.get_task_result(sync_write_task)
+                sync_write_task = self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.cluster.buckets,
+                    sync_load_spec,
+                    mutation_num=0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    validate_task=True)
+
             if self.test_storage_upgrade and iter >= self.nodes_init:
                 node_to_upgrade = None
             else:
                 node_to_upgrade = self.fetch_node_to_upgrade()
+
+            if(sync_write_task.result is True):
+                self.log.info("Sync Write Result : {0}".format(sync_write_task.result))
+                self.log.info("Sync write task finished")
+            
             if self.atomicity:
                 self.sleep(10)
                 current_items = self.bucket_util.get_bucket_current_item_count(
@@ -349,20 +463,74 @@ class UpgradeTests(UpgradeBase):
                 if not bucket_found:
                     break
 
+        ### Enabling CDC ###
+        if(self.spec_bucket[Bucket.storageBackend]==Bucket.StorageBackend.magma):
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            cbstat_obj = Cbstats(shell)
+
+            self.bucket_util.update_bucket_property(self.cluster.master,
+                                                    self.cluster.buckets[0],
+                                                    history_retention_seconds=86400,
+                                                    history_retention_bytes=96000000000)
+            self.log.info("CDC Enabled - History parameters set")
+
+            self.sleep(60, "Wait for History params to get reflected")
+
+            history_check = cbstat_obj.magma_stats(self.cluster.buckets[0],
+                                                field_to_grep="history_retention",
+                                                stat_name="all")
+            self.log.info(history_check)
+
+            vb_dict = self.bucket_util.get_vb_details_for_bucket(self.cluster.buckets[0],
+                                                                self.cluster.nodes_in_cluster)
+
+            shell.disconnect()
+
+        if(self.load_large_docs):
+            self.cluster.buckets[0].scopes[CbServer.default_scope].collections[
+                                    CbServer.default_collection].num_items += 20
+
         self.log.info("starting doc verification")
-        self.bucket_util.validate_docs_per_collections_all_buckets(self.cluster)
+        self.__wait_for_persistence_and_validate()
+        self.log.info("Final doc count verified")
 
         # Play with collection if upgrade was successful
         if not self.test_failure:
             self.__play_with_collection()
 
-        if self.upgrade_with_data_load:
-            # Wait for update_task to complete
-            update_task.end_task()
-            self.task_manager.get_task_result(update_task)
+        ### Verifying start sequence numbers ###
+        if(self.spec_bucket[Bucket.storageBackend]==Bucket.StorageBackend.magma):
+            self.log.info("Verifying history start sequence numbers")
+            vb_dict1 = self.bucket_util.get_vb_details_for_bucket(self.cluster.buckets[0],
+                                                                self.cluster.nodes_in_cluster)
+
+            mismatch_count = 0
+            for vb_no in range(1024):
+                mismatch = 0
+                # Verifying active vbuckets
+                vb_active_seq = vb_dict[vb_no]['active']['high_seqno']
+                vb_active_hist = vb_dict1[vb_no]['active']['history_start_seqno']
+                if(vb_active_hist<vb_active_seq):
+                    mismatch = 1
+
+                # Verifying replica vbuckets
+                replica_list1 = vb_dict[vb_no]['replica']
+                replica_list2 = vb_dict1[vb_no]['replica']
+                for j in range(len(replica_list1)):
+                    vb_replica_seq = replica_list1[j]['high_seqno']
+                    vb_replica_hist = replica_list2[j]['history_start_seqno']
+                    if(vb_replica_hist<vb_replica_seq):
+                        mismatch = 1
+
+                if mismatch==1:
+                    mismatch_count += 1
+
+            if(mismatch_count!=0):
+                self.log.info("Start sequence mismatch in {0} vbuckets".format(mismatch_count))
+            else:
+                self.log.info("History start sequence numbers verified for all 1024 vbuckets")
 
         # Perform final collection/doc_count validation
-        self.__wait_for_persistence_and_validate()
         self.validate_test_failure()
 
     def test_bucket_durability_upgrade(self):

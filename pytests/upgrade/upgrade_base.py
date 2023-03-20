@@ -1,5 +1,5 @@
 import re
-
+import time
 from Cb_constants import CbServer, DocLoading, ClusterRun
 from basetestcase import BaseTestCase
 from basetestcase import BaseTestCase
@@ -11,7 +11,14 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from scripts.old_install import InstallerJob
-from testconstants import CB_REPO, CB_VERSION_NAME, CB_RELEASE_BUILDS
+from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
+    COUCHBASE_MP_VERSION, MV_LATESTBUILD_REPO
+from bucket_collections.collections_base import CollectionBase
+from BucketLib.BucketOperations import BucketHelper
+from constants.sdk_constants.java_client import SDKConstants
+from sdk_client3 import SDKClient
+import threading
+from BucketLib.bucket import Bucket
 
 
 class UpgradeBase(BaseTestCase):
@@ -47,6 +54,16 @@ class UpgradeBase(BaseTestCase):
                                                     False)
         self.sync_write_abort_pattern = \
             self.input.param("sync_write_abort_pattern", "all_aborts")
+
+        #### Spec File Parameters ####
+
+        self.spec_name = self.input.param("bucket_spec", "single_bucket.default")
+        self.initial_data_spec = self.input.param("initial_data_spec", "initial_load")
+        self.sub_data_spec = self.input.param("sub_data_spec", "subsequent_load_magma")
+        self.upsert_data_spec = self.input.param("upsert_data_spec", "upsert_load")
+        self.sync_write_spec = self.input.param("sync_write_spec", "sync_write_magma")
+        self.load_large_docs = self.input.param("load_large_docs", False)
+        ####
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -121,15 +138,15 @@ class UpgradeBase(BaseTestCase):
                     node.memcached_port = CbServer.ssl_memcached_port
                     node.port = CbServer.ssl_port
 
-        # Create default bucket and add rbac user
-        self.bucket_util.create_default_bucket(
-            self.cluster,
-            replica=self.num_replicas,
-            compression_mode=self.compression_mode,
-            ram_quota=self.bucket_size,
-            bucket_type=self.bucket_type, storage=self.bucket_storage,
-            eviction_policy=self.bucket_eviction_policy,
-            bucket_durability=self.bucket_durability_level)
+        self.spec_bucket = self.bucket_util.get_bucket_template_from_package(self.spec_name)
+        if(self.spec_bucket[Bucket.storageBackend]==Bucket.StorageBackend.magma):
+            RestConnection(self.cluster.master).set_internalSetting(
+                "magmaMinMemoryQuota", 256)
+
+        # Creating buckets from spec file
+        CollectionBase.deploy_buckets_from_spec_file(self)
+
+        # Adding RBAC user
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket = self.cluster.buckets[0]
         if self.test_storage_upgrade:
@@ -241,8 +258,7 @@ class UpgradeBase(BaseTestCase):
             return False
 
         cluster_node = None
-        if not (self.enable_tls or self.tls_level == "strict"):
-            self.cluster.update_master_using_diag_eval()
+        self.cluster_util.find_orchestrator(self.cluster)
 
         if self.prefer_master:
             node_info = RestConnection(self.cluster.master).get_nodes_self(10)
@@ -365,6 +381,8 @@ class UpgradeBase(BaseTestCase):
             self.log_failure("Failover unsuccessful")
             return
 
+        self.cluster_util.print_cluster_stats(self.cluster)
+
         # Monitor failover rebalance
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
@@ -388,9 +406,8 @@ class UpgradeBase(BaseTestCase):
             self.log_failure("Upgrade failed")
             return
 
-        rest.add_back_node("ns_1@" + otp_node.ip)
-        self.sleep(5, "Wait after add_back_node")
-        rest.set_recovery_type(otp_node.id, recoveryType=recovery_type)
+        rest.set_recovery_type(otp_node.id,
+                               recoveryType=recovery_type)
 
         delta_recovery_buckets = list()
         if recovery_type == "delta":
@@ -603,7 +620,7 @@ class UpgradeBase(BaseTestCase):
     def failover_full_recovery(self, node_to_upgrade, graceful=True):
         self.failover_recovery(node_to_upgrade, "full", graceful)
 
-    def offline(self, node_to_upgrade, version, rebalance_required=False):
+    def offline(self, node_to_upgrade, version, rebalance_required=True):
         rest = RestConnection(node_to_upgrade)
         shell = RemoteMachineShellConnection(node_to_upgrade)
         appropriate_build = self.__get_build(version, shell)
