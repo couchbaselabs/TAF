@@ -620,7 +620,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         else:
             self.log.info("Creating '%s' buckets" % self.num_buckets)
             for _ in range(self.num_buckets):
-                self.create_database()
+                self.create_database(timeout=1800)
 
     def create_sdk_client_pool(self, buckets, req_clients_per_bucket):
         for bucket in buckets:
@@ -1244,7 +1244,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.bucket_weight = 30
         self.db_name = "tntMgmt-initial-db"
         self.dataplane_id = None
-        self.create_database(timeout=1400)
+        self.create_database(timeout=1800)
         bucket = self.cluster.buckets[0]
 
         self._assert_num_dataplane_deployed(1)
@@ -1335,7 +1335,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.log.info("Creating %sth bucket" % (b_num + 1))
             bucket = self.get_serverless_bucket_obj(
                 b_name_format % b_num, self.bucket_width, self.bucket_weight)
-            self.create_database(bucket)
+            self.create_database(bucket,timeout=1800)
             total_buckets += 1
 
             self._assert_num_dataplane_deployed(1)
@@ -1378,7 +1378,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.log.info("Creating %sth bucket" % (b_num + 1))
             bucket = self.get_serverless_bucket_obj(
                 b_name_format % b_num, self.bucket_width, self.bucket_weight)
-            self.create_database(bucket)
+            self.create_database(bucket,timeout=1800)
             self._assert_num_dataplane_deployed(1)
             self.validate_cluster_deployment(self.cluster,
                                              cluster_deployment_spec)
