@@ -1,5 +1,5 @@
 import re
-
+import time
 from Cb_constants import CbServer, DocLoading, ClusterRun
 from basetestcase import BaseTestCase
 from basetestcase import BaseTestCase
@@ -15,6 +15,10 @@ from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
     COUCHBASE_MP_VERSION, MV_LATESTBUILD_REPO
 from bucket_collections.collections_base import CollectionBase
 from BucketLib.BucketOperations import BucketHelper
+from constants.sdk_constants.java_client import SDKConstants
+from sdk_client3 import SDKClient
+import threading
+from BucketLib.bucket import Bucket
 
 
 class UpgradeBase(BaseTestCase):
@@ -53,10 +57,12 @@ class UpgradeBase(BaseTestCase):
 
         #### Spec File Parameters ####
 
-        self.spec_name = self.input.param("bucket_spec_file","single_bucket.bucket_for_magma_collections")
-        self.initial_data_spec = self.input.param("initial_data_spec","initial_load")
-        self.sub_data_spec = self.input.param("sub_data_spec","subsequent_load_magma")
-
+        self.spec_name = self.input.param("bucket_spec", "single_bucket.default")
+        self.initial_data_spec = self.input.param("initial_data_spec", "initial_load")
+        self.sub_data_spec = self.input.param("sub_data_spec", "subsequent_load_magma")
+        self.upsert_data_spec = self.input.param("upsert_data_spec", "upsert_load")
+        self.sync_write_spec = self.input.param("sync_write_spec", "sync_write_magma")
+        self.load_large_docs = self.input.param("load_large_docs", False)
         ####
 
         # Works only for versions > 1.7 release
@@ -126,8 +132,10 @@ class UpgradeBase(BaseTestCase):
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        RestConnection(self.cluster.master).set_internalSetting(
-            "magmaMinMemoryQuota", 256)
+        self.spec_bucket = self.bucket_util.get_bucket_template_from_package(self.spec_name)
+        if(self.spec_bucket[Bucket.storageBackend]==Bucket.StorageBackend.magma):
+            RestConnection(self.cluster.master).set_internalSetting(
+                "magmaMinMemoryQuota", 256)
 
         # Creating buckets from spec file
         CollectionBase.deploy_buckets_from_spec_file(self)
@@ -228,8 +236,7 @@ class UpgradeBase(BaseTestCase):
             return False
 
         cluster_node = None
-        if not (self.enable_tls or self.tls_level == "strict"):
-            self.cluster.update_master_using_diag_eval()
+        self.cluster_util.find_orchestrator(self.cluster)
 
         if self.prefer_master:
             node_info = RestConnection(self.cluster.master).get_nodes_self(10)
@@ -355,6 +362,8 @@ class UpgradeBase(BaseTestCase):
             self.log_failure("Failover unsuccessful")
             return
 
+        self.cluster_util.print_cluster_stats(self.cluster)
+
         # Monitor failover rebalance
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
@@ -378,8 +387,6 @@ class UpgradeBase(BaseTestCase):
             self.log_failure("Upgrade failed")
             return
 
-        rest.add_back_node("ns_1@{}".format(otp_node.ip))
-        self.sleep(5, "Wait after add_back_node")
         rest.set_recovery_type(otp_node.id,
                                recoveryType=recovery_type)
 
