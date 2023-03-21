@@ -1810,7 +1810,7 @@ class CBASHighAvailability(CBASBaseTest):
         self.cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
             self.cluster, service_type="cbas", get_all_nodes=True,
             servers=self.cluster.nodes_in_cluster)
-        if not self.cluster_util.kill_cbas_process(
+        if not self.cbas_util.kill_cbas_process(
                 self.cluster, cbas_nodes=self.cluster.cbas_nodes):
             self.fail("Failed to kill CBAS service")
 

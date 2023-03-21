@@ -19,6 +19,7 @@ from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from security_utils.security_utils import SecurityUtils
 from security_config import trust_all_certs
+import random
 
 
 class UpgradeTests(UpgradeBase):
@@ -495,6 +496,37 @@ class UpgradeTests(UpgradeBase):
 
             post_replica_activation_verification()
             validation_results["post_upgrade_replica_verification"] = True
+
+        if major_version >= 7.2:
+            datasets = self.cbas_util.list_all_dataset_objs(
+                dataset_source="internal")
+
+            # create CBO samples for all datasets
+            for dataset in datasets:
+                result = self.cbas_util.create_sample_for_analytics_collections(
+                    self.cluster, dataset.full_name, random.choice(["low","medium","high"]))
+                if not result:
+                    validation_results["create_cbo_samples"] = False
+            validation_results["create_cbo_samples"] = True
+
+            # Validate whether CBO estimates are being generated
+            query = "Explain select count(*) from {0} x,{1} y where x.age=y.age;".format(
+                datasets[0].full_name, datasets[1].full_name)
+            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, query)
+            if status != "success":
+                self.fail("Error while running analytics query")
+            elif 'optimizer-estimates' in results[0]:
+                validation_results["cbo_estimates"] = True
+            else:
+                validation_results["cbo_estimates"] = True
+
+            # Drop all CBO samples created above
+            for dataset in datasets:
+                result = self.cbas_util.drop_sample_for_analytics_collections(
+                    self.cluster, dataset.full_name)
+                if not result:
+                    validation_results["drop_cbo_samples"] = False
+            validation_results["drop_cbo_samples"] = True
 
         self.log.info("Delete the bucket created before upgrade")
         if self.bucket_util.delete_bucket(
