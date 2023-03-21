@@ -41,6 +41,7 @@ class SecurityTest(BaseTestCase):
         self.access_key = self.input.capella.get("access_key")
         self.project_id = self.input.capella.get("project")
         self.cluster_id = self.cluster.id
+        self.invalid_id = "00000000-0000-0000-0000-000000000000"
         if self.input.capella.get("test_users"):
             self.test_users = json.loads(self.input.capella.get("test_users"))
         else:
@@ -527,9 +528,9 @@ class SecurityTest(BaseTestCase):
                 {"hostname": "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
                  "value": "azureApi", "auth_type": "no-auth", "username": "", "password": "*****",
                  "bearer_key": "*****", "allow_cookies": False, "validate_ssl_certificate": False}],
-                       "source_bucket": "beer-sample", "source_scope": "_default",
-                       "source_collection": "_default", "metadata_bucket": "metadata",
-                       "metadata_scope": "_default", "metadata_collection": "_default"},
+                "source_bucket": "beer-sample", "source_scope": "_default",
+                "source_collection": "_default", "metadata_bucket": "metadata",
+                "metadata_scope": "_default", "metadata_collection": "_default"},
             "version": "", "enforce_schema": False, "handleruuid": 651380377,
             "function_instance_id": "R6mcj", "appname": "curl_command",
             "settings": {"dcp_stream_boundary": "from_now", "deadline_timeout": 62,
@@ -539,7 +540,7 @@ class SecurityTest(BaseTestCase):
                          "processing_status": True, "timer_context_size": 1024,
                          "user_prefix": "eventing", "worker_count": 1},
             "function_scope": {"bucket": "*", "scope": "*"}
-            }
+        }
         resp = capella_api.create_eventing_function(self.cluster_id, body["appname"], body,
                                                     body["function_scope"])
         if resp.status_code == 422:
@@ -566,3 +567,111 @@ class SecurityTest(BaseTestCase):
                 "Timeout was reached. As expected, curl in eventing cannot access metadata")
         else:
             self.fail("Curl access to metadata is allowed")
+
+    def test_export_backup(self):
+        """
+        Function to test the backup export functionality
+        Test verifies the following:
+        i.   RBAC enforced on each API
+        ii.  Pass in junk values
+        """
+        self.log.info("Verifying user can use the export backup methods in accordance with the "
+                      "RBAC")
+        expected_response_code = {"organizationOwner": 200, "projectCreator": 403,
+                                  "cloudManager": 403, "organizationMember": 403}
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        self.log.info("Importing travel-sample bucket")
+        capella_api.load_sample_bucket(self.tenant_id, self.project_id, self.cluster_id,
+                                       "travel-sample")
+        self.sleep(30, "Waiting for buckets to load")
+        bucket_id = "dHJhdmVsLXNhbXBsZQ=="
+        self.log.info("Backing up travel-sample bucket")
+        capella_api.backup_now(self.tenant_id, self.project_id, self.cluster_id,
+                               "travel-sample")
+        self.sleep(240, "Waiting for backup to complete")
+        for user in self.test_users:
+            self.log.info("Verifying status code for Role: {0}"
+                          .format(self.test_users[user]["role"]))
+            capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                     self.test_users[user]["mailid"],
+                                     self.test_users[user]["password"])
+
+            self.log.info("List all backups")
+            resp = capella_api.list_all_bucket_backups(self.tenant_id, self.project_id,
+                                                       self.cluster_id, bucket_id)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
+                                 resp.status_code // 100,
+                                 msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code,
+                                         expected_response_code[self.test_users[user]["role"]]))
+                backup_id = json.loads(resp.content)["backups"]["data"][0]["data"]["id"]
+            else:
+                self.assertEqual(expected_response_code[self.test_users[user]["role"]],
+                                 resp.status_code,
+                                 msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code,
+                                         expected_response_code[self.test_users[user]["role"]]))
+                backup_id = self.invalid_id
+            self.log.info("Backup id: {}".format(backup_id))
+
+            self.log.info("Begin an export")
+            resp = capella_api.begin_export(self.tenant_id, self.project_id, self.cluster_id,
+                                            backup_id)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
+                                 resp.status_code // 100,
+                                 msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code,
+                                         expected_response_code[self.test_users[user]["role"]]))
+            else:
+                self.assertEqual(expected_response_code[self.test_users[user]["role"]],
+                                 resp.status_code,
+                                 msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code,
+                                         expected_response_code[self.test_users[user]["role"]]))
+
+            self.log.info("List what exports are queued, executing and finished")
+            resp = capella_api.export_status(self.tenant_id, self.project_id, self.cluster_id,
+                                             bucket_id)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(expected_response_code[self.test_users[user]["role"]] // 100,
+                                 resp.status_code // 100,
+                                 msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code,
+                                         expected_response_code[self.test_users[user]["role"]]))
+                export_id = json.loads(resp.content)["data"][0]["data"]["id"]
+            else:
+                self.assertEqual(expected_response_code[self.test_users[user]["role"]],
+                                 resp.status_code,
+                                 msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code,
+                                         expected_response_code[self.test_users[user]["role"]]))
+                export_id = self.invalid_id
+            self.log.info("Export id: {}".format(export_id))
+
+            self.log.info("Generate a pre-signed link for the given export")
+            resp = capella_api.generate_export_link(self.tenant_id, self.project_id,
+                                                    self.cluster_id, export_id)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(409, resp.status_code,
+                                 msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code, 409))
+            else:
+                self.assertEqual(expected_response_code[self.test_users[user]["role"]],
+                                 resp.status_code,
+                                 msg="FAIL, Outcome: {0}, Expected: {1}"
+                                 .format(resp.status_code,
+                                         expected_response_code[self.test_users[user]["role"]]))
+
+        self.log.info("Verifying response on passing invalid/junk values")
+
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+
+        self.log.info("Generate a pre-signed link for the given export - invalid export id")
+        resp = capella_api.generate_export_link(self.tenant_id, self.project_id,
+                                                self.cluster_id, self.invalid_id)
+        self.assertEqual(404, resp.status_code,
+                         msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 404))
