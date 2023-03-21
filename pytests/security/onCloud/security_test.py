@@ -9,6 +9,7 @@ from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
+
 class ServerInfo:
     def __init__(self,
                  ip,
@@ -26,8 +27,10 @@ class ServerInfo:
         self.type = None
         self.remote_info = None
 
+
 class SecurityTest(BaseTestCase):
     SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase', 18091)
+
     def setUp(self):
         BaseTestCase.setUp(self)
         self.url = self.input.capella.get("pod")
@@ -109,12 +112,12 @@ class SecurityTest(BaseTestCase):
 
     def find_buckets(self, name):
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key, self.user,
-                                self.passwd)
-        totalBuckets = capella_api.get_buckets(self.tenant_id, self.project_id, self.cluster_id)
-        if totalBuckets.status_code == 422:
+                                 self.passwd)
+        total_buckets = capella_api.get_buckets(self.tenant_id, self.project_id, self.cluster_id)
+        if total_buckets.status_code == 422:
             self.fail("Not able to fetch the buckets in the cluster")
-        totalBuckets = json.loads(totalBuckets.content)
-        for bucket in totalBuckets["buckets"]["data"]:
+        total_buckets = json.loads(total_buckets.content)
+        for bucket in total_buckets["buckets"]["data"]:
             if bucket["data"]["name"] == name:
                 self.log.info("Got the bucket - ", name)
                 return True
@@ -439,57 +442,59 @@ class SecurityTest(BaseTestCase):
         invalid_compute = ["Standard_D2s_v4", "Standard_D3s_v4"]
         for compute in invalid_compute:
             capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-                                        self.user, self.passwd)
+                                     self.user, self.passwd)
             capella_cluster_config = {"region": "eastus", "name": "_Cluster",
-                                        "cidr": "10.64.118.0/23", "singleAZ": False,
-                                        "specs": [{"services": ["kv"], "count": 3,
-                                                    "compute": compute,
-                                                    "disk": {"type": "P6", "sizeInGb": 64,
-                                                            "iops": 240}}],
-                                        "plan": "Developer Pro",
-                                        "projectId": self.project_id, "timezone": "PT",
-                                        "description": "", "provider": "hostedAzure"}
+                                      "cidr": "10.64.118.0/23", "singleAZ": False,
+                                      "specs": [{"services": ["kv"], "count": 3,
+                                                 "compute": compute,
+                                                 "disk": {"type": "P6", "sizeInGb": 64,
+                                                          "iops": 240}}],
+                                      "plan": "Developer Pro",
+                                      "projectId": self.project_id, "timezone": "PT",
+                                      "description": "", "provider": "hostedAzure"}
             resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
-                                        capella_api, capella_cluster_config, timeout=100)
+                                       capella_api, capella_cluster_config, timeout=100)
             self.assertEqual(422, resp.status_code, msg="FAIL, Outcome: {0}, Expected: {1}"
                              .format(resp.status_code, 422))
 
     def test_deploy_cluster_with_invalid_node_configuration(self):
         self.log.info("Verifying status code for deploying various cluster configurations")
         invalid_config = [[["kv", "index"], ["index", "fts"]],
-                      [["index"], ["fts"]],
-                      [["kv", "n1ql"], ["n1ql", "index"]]]
+                          [["index"], ["fts"]],
+                          [["kv", "n1ql"], ["n1ql", "index"]]]
         for config in invalid_config:
             self.log.info("Verifying status code for cluster configuration: {0}".format(config))
             capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-                                    self.user, self.passwd)
+                                     self.user, self.passwd)
             capella_cluster_config = {"region": "eastus", "name": "Test", "cidr": "10.0.70.0/23",
-                                    "singleAZ": True, "specs": [{"services": config[0],
-                                                                "count": 3,
-                                                                "compute": "Standard_D4s_v5",
-                                                                "disk": {"type": "P6",
+                                      "singleAZ": True, "specs": [{"services": config[0],
+                                                                   "count": 3,
+                                                                   "compute": "Standard_D4s_v5",
+                                                                   "disk": {"type": "P6",
                                                                             "sizeInGb": 64,
                                                                             "iops": 240}},
-                                                                {"services": config[1],
-                                                                "count": 3,
-                                                                "compute": "Standard_D4s_v5",
-                                                                "disk": {"type": "P6",
+                                                                  {"services": config[1],
+                                                                   "count": 3,
+                                                                   "compute": "Standard_D4s_v5",
+                                                                   "disk": {"type": "P6",
                                                                             "sizeInGb": 64,
                                                                             "iops": 240}}],
-                                    "plan": "Developer Pro", "projectId": self.project_id,
-                                    "timezone": "PT", "description": "",
-                                    "provider": "hostedAzure"}
+                                      "plan": "Developer Pro", "projectId": self.project_id,
+                                      "timezone": "PT", "description": "",
+                                      "provider": "hostedAzure"}
             resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
-                                    capella_api, capella_cluster_config, timeout=100)
+                                       capella_api, capella_cluster_config, timeout=100)
             self.assertEqual(422, resp.status_code,
-                            msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 422))
+                             msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 422))
 
     def test_zone_transfer(self):
         self.log.info("Verifying if zone tranfer is possible or not")
         pod = "https://" + self.url.replace("cloud", "", 1)
-        url = "{0}/v2/organizations/{1}/projects/{2}/clusters/{3}".format(pod, self.tenant_id, self.project_id, self.cluster_id)
+        url = "{0}/v2/organizations/{1}/projects/{2}/clusters/{3}".format(pod, self.tenant_id,
+                                                                          self.project_id,
+                                                                          self.cluster_id)
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-                                    self.user, self.passwd)
+                                 self.user, self.passwd)
         resp = capella_api.do_internal_request(url, method="GET")
         shell = RemoteMachineShellConnection(SecurityTest.SLAVE_HOST)
         connection_string = json.loads(resp.content.decode('utf-8'))["data"]["connect"]["srv"]
@@ -503,31 +508,61 @@ class SecurityTest(BaseTestCase):
         shell.disconnect()
 
     def test_eventing_curl(self):
-        self.log.info("Verifying that executing curl command to access metadata in eventing is not allowed")
+        self.log.info(
+            "Verifying that executing curl command to access metadata in eventing is not allowed")
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-                                    self.user, self.passwd)
+                                 self.user, self.passwd)
         bucket_present = self.find_buckets("beer-sample")
-        if bucket_present == False:
-            capella_api.load_sample_bucket(self.tenant_id, self.project_id, self.cluster_id, "beer-sample")
-        body = {"appcode":"function curlIMDS() {\n  try {  \n    var result = curl(\"GET\", azureApi, {\n        headers: {\n            \"Metadata\":\"true\"   \n        }\n    });\n    log(result);\n} \ncatch(e) \n{\n    log(e);\n}\n}\n\nfunction OnUpdate(doc, meta) {\n    log(\"Doc created/updated\", meta.id);\n    curlIMDS();\n}\n\nfunction OnDelete(meta, options) {\n    log(\"Doc deleted/expired\", meta.id);\n}","depcfg":{"curl":[{"hostname":"http://169.254.169.254/metadata/instance?api-version=2021-02-01","value":"azureApi","auth_type":"no-auth","username":"","password":"*****","bearer_key":"*****","allow_cookies":False,"validate_ssl_certificate":False}],"source_bucket":"beer-sample","source_scope":"_default","source_collection":"_default","metadata_bucket":"metadata","metadata_scope":"_default","metadata_collection":"_default"},"version":"","enforce_schema":False,"handleruuid":651380377,"function_instance_id":"R6mcj","appname":"curl_command","settings":{"dcp_stream_boundary":"from_now","deadline_timeout":62,"deployment_status":True,"description":"Testing for curl command","execution_timeout":60,"language_compatibility":"6.6.2","log_level":"INFO","n1ql_consistency":"request","processing_status":True,"timer_context_size":1024,"user_prefix":"eventing","worker_count":1},"function_scope":{"bucket":"*","scope":"*"}
-        }
-        resp = capella_api.create_eventing_function(self.cluster_id, body["appname"], body, body["function_scope"])
+        if not bucket_present:
+            capella_api.load_sample_bucket(self.tenant_id, self.project_id, self.cluster_id,
+                                           "beer-sample")
+        body = {
+            "appcode": "function curlIMDS() {\n  try {  \n    var result = curl(\"GET\", "
+                       "azureApi, {\n        headers: {\n            \"Metadata\":\"true\"   \n   "
+                       "     }\n    });\n    log(result);\n} \ncatch(e) \n{\n    log("
+                       "e);\n}\n}\n\nfunction OnUpdate(doc, meta) {\n    log(\"Doc "
+                       "created/updated\", meta.id);\n    curlIMDS();\n}\n\nfunction OnDelete("
+                       "meta, options) {\n    log(\"Doc deleted/expired\", meta.id);\n}",
+            "depcfg": {"curl": [
+                {"hostname": "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
+                 "value": "azureApi", "auth_type": "no-auth", "username": "", "password": "*****",
+                 "bearer_key": "*****", "allow_cookies": False, "validate_ssl_certificate": False}],
+                       "source_bucket": "beer-sample", "source_scope": "_default",
+                       "source_collection": "_default", "metadata_bucket": "metadata",
+                       "metadata_scope": "_default", "metadata_collection": "_default"},
+            "version": "", "enforce_schema": False, "handleruuid": 651380377,
+            "function_instance_id": "R6mcj", "appname": "curl_command",
+            "settings": {"dcp_stream_boundary": "from_now", "deadline_timeout": 62,
+                         "deployment_status": True, "description": "Testing for curl command",
+                         "execution_timeout": 60, "language_compatibility": "6.6.2",
+                         "log_level": "INFO", "n1ql_consistency": "request",
+                         "processing_status": True, "timer_context_size": 1024,
+                         "user_prefix": "eventing", "worker_count": 1},
+            "function_scope": {"bucket": "*", "scope": "*"}
+            }
+        resp = capella_api.create_eventing_function(self.cluster_id, body["appname"], body,
+                                                    body["function_scope"])
         if resp.status_code == 422:
             self.log.info("Eventing function is already created")
         time.sleep(10)
-        query = "INSERT INTO `beer-sample`._default._default (KEY, VALUE) VALUES (\"airline_test-2222\", {\"id\":\"007\",\"type\":\"airline\",\"name\":\"couchbase-airlines\",\"iata\":\"Q5\",\"icao\":\"MLA\",\"callsign\":\"MILE-AIR\",\"country\":\"India\"});"
+        query = "INSERT INTO `beer-sample`._default._default (KEY, VALUE) VALUES (" \
+                "\"airline_test-2222\", {\"id\":\"007\",\"type\":\"airline\"," \
+                "\"name\":\"couchbase-airlines\",\"iata\":\"Q5\",\"icao\":\"MLA\"," \
+                "\"callsign\":\"MILE-AIR\",\"country\":\"India\"}); "
         pod = "https://" + self.url.replace("cloud", "", 1)
         url = "{0}/v2/databases/{1}/proxy/_p/query/query/service".format(pod, self.cluster_id)
         query_body = {"statement": "{0}".format(query)}
-        resp = capella_api.do_internal_request(url, method="POST", params=json.dumps(query_body))
-        logs_url = "{0}/v2/databases/{1}/proxy/_p/event/getAppLog?aggregate=true&name={2}".format(pod, self.cluster_id,
-        body["appname"])
+        capella_api.do_internal_request(url, method="POST", params=json.dumps(query_body))
+        logs_url = "{0}/v2/databases/{1}/proxy/_p/event/getAppLog?aggregate=true&name={2}".format(
+            pod, self.cluster_id,
+            body["appname"])
         time.sleep(80)
         resp = capella_api.do_internal_request(logs_url, method="GET")
-        compareString = "Unable to perform the request: Timeout was reached"
+        compare_string = "Unable to perform the request: Timeout was reached"
         logs = resp.content.decode('utf-8').split("\n")
         one_log = logs[0].split(" [INFO] ")
-        if json.loads(one_log[1].decode('utf-8'))["message"] == compareString:
-            self.log.info("Timeout was reached. As expected, curl in eventing cannot access metadata")
+        if json.loads(one_log[1].decode('utf-8'))["message"] == compare_string:
+            self.log.info(
+                "Timeout was reached. As expected, curl in eventing cannot access metadata")
         else:
             self.fail("Curl access to metadata is allowed")
