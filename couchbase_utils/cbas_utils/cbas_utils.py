@@ -3756,7 +3756,7 @@ class CbasUtil(CBOUtil):
             "airline": [
                 {
                     "index_name": "al_type_idx_airline",
-                    "indexed_field": ["type:string"]
+                    "indexed_field": ["`type`:string"]
                 },
                 {
                     "index_name": "al_name_idx_airline",
