@@ -4,6 +4,7 @@ from threading import Thread
 
 from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading, CbServer
+import testconstants
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
@@ -147,6 +148,48 @@ class UpgradeTests(UpgradeBase):
             self.log.info("Task 2 completed")
             if not self.upgrade_with_data_load:
                 self.__wait_for_persistence_and_validate()
+
+    def verify_custom_path_post_upgrade(self):
+        rebalance_out_node = None
+        for node in self.cluster.servers:
+            if node.ip != self.cluster.master.ip:
+                rebalance_out_node = node
+                break
+        rebalanace_out = self.task.rebalance(
+            self.cluster_util.get_nodes(self.cluster.master), to_add=[],
+            to_remove=[rebalance_out_node])
+        self.assertTrue(rebalanace_out, "re-balance out failed")
+        new_node_to_add = self.cluster.servers[self.nodes_init]
+        self.install_version_on_node(
+            [self.cluster.servers[self.nodes_init]],
+            self.upgrade_version)
+        rebalance_in = self.task.rebalance(
+            self.cluster_util.get_nodes(self.cluster.master), to_add=[
+                rebalance_out_node, new_node_to_add], to_remove=[])
+        self.assertTrue(rebalance_in, "rebalance in failed")
+        for node in self.cluster.servers:
+            shell = RemoteMachineShellConnection(node)
+            output = str(
+                shell.read_remote_file(testconstants.
+                                       COUCHBASE_SINGLE_LOCAL_INI_PATH,
+                                       'local.ini'))
+            database_dir = ''.join(output.split("database_dir = ")[1].
+                                   split("'")[0])
+            index_dir = ''.join(output.split("view_index_dir = ")[1].
+                                split("'")[0])
+            database_dir = database_dir[:-2]
+            index_dir = index_dir[:-2]
+            self.assertTrue(database_dir == self.disk_location_data)
+            self.assertTrue(index_dir == self.disk_location_index)
+            shell.restart_couchbase()
+            shell.disconnect()
+            self.sleep(30, "waiting after cb restart")
+        for node in self.cluster.nodes_in_cluster:
+            rest = RestConnection(node)
+            self.assertTrue(rest.get_data_path() == self.disk_location_data,
+                            "custom path not retained")
+            self.assertTrue(rest.get_index_path() == self.disk_location_index,
+                            "custom path not retained")
 
     def test_upgrade(self):
         self.thread_keeper = dict()
@@ -424,6 +467,9 @@ class UpgradeTests(UpgradeBase):
                 break
 
         self.cluster_util.print_cluster_stats(self.cluster)
+        if self.disk_location_data != testconstants.COUCHBASE_DATA_PATH or \
+                self.disk_location_index != testconstants.COUCHBASE_DATA_PATH:
+            self.verify_custom_path_post_upgrade()
         if self.test_storage_upgrade:
             self.sleep(30, "waiting to try cause storage upgrade failure")
             node_to_check = None

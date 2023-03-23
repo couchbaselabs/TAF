@@ -2,8 +2,9 @@ import re
 import time
 from Cb_constants import CbServer, DocLoading, ClusterRun
 from basetestcase import BaseTestCase
-from basetestcase import BaseTestCase
 import Jython_tasks.task as jython_tasks
+from couchbase_cli import CouchbaseCLI
+import testconstants
 from pytests.ns_server.enforce_tls import EnforceTls
 from builds.build_query import BuildQuery
 from cb_tools.cbstats import Cbstats
@@ -38,6 +39,10 @@ class UpgradeBase(BaseTestCase):
         self.key = "update_docs"
         self.initial_version = self.input.param("initial_version",
                                                 "6.0.1-2037")
+        self.disk_location_data = self.input.param("data_location",
+                                                   testconstants.COUCHBASE_DATA_PATH)
+        self.disk_location_index = self.input.param(
+            "index_location", testconstants.COUCHBASE_DATA_PATH)
         self.upgrade_version = self.input.param("upgrade_version",
                                                 "6.5.0-3939")
         self.test_storage_upgrade = \
@@ -100,17 +105,19 @@ class UpgradeBase(BaseTestCase):
             self.cluster.servers[0:self.nodes_init],
             self.initial_version)
 
-        # Get service list to initialize the cluster
-        if self.services_init:
-            self.services_init = self.cluster_util.get_services(
-                [self.cluster.master], self.services_init, 0)
-
-        # Initialize first node in cluster
         master_node = self.cluster.servers[0]
-        if self.services_init:
-            master_node.services = self.services_init[0]
         master_rest = RestConnection(master_node)
-        master_rest.init_node()
+        if self.disk_location_data == testconstants.COUCHBASE_DATA_PATH and \
+                self.disk_location_index == testconstants.COUCHBASE_DATA_PATH:
+            # Get service list to initialize the cluster
+            if self.services_init:
+                self.services_init = self.cluster_util.get_services(
+                    [self.cluster.master], self.services_init, 0)
+
+            # Initialize first node in cluster
+            if self.services_init:
+                master_node.services = self.services_init[0]
+            master_rest.init_node()
 
         # Initialize cluster using given nodes
         for index, server \
@@ -186,6 +193,28 @@ class UpgradeBase(BaseTestCase):
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
+
+    def _initialize_node_with_new_data_location(self, server, data_location,
+                                                index_location,
+                                                services=None):
+        init_port = server.port or '8091'
+        init_tasks = []
+        cli = CouchbaseCLI(server, server.rest_username, server.rest_password)
+        output, error, _ = cli.node_init(data_location, index_location, None)
+        self.log.info(output)
+        if error or "ERROR" in output:
+            self.log.info(error)
+            self.fail("Failed to set new data location. Check error message.")
+        init_tasks.append(self.task.async_init_node(
+            server, self.disabled_consistent_view,
+            self.rebalanceIndexWaitingDisabled,
+            self.rebalanceIndexPausingDisabled, self.maxParallelIndexers,
+            self.maxParallelReplicaIndexers, init_port, self.quota_percent,
+            services=services, gsi_type=self.gsi_type))
+        for task in init_tasks:
+            result = self.task.jython_task_manager.get_task_result(task)
+            self.assertTrue((result is None),
+                            "nodes initialisation with custom path failed")
 
     def enable_verify_tls(self, master_node, level=None):
         if not level:
@@ -274,6 +303,14 @@ class UpgradeBase(BaseTestCase):
         install_params['init_nodes'] = False
         install_params['debug_logs'] = False
         self.installer_job.parallel_install(nodes, install_params)
+        if self.disk_location_data != testconstants.COUCHBASE_DATA_PATH or \
+                self.disk_location_index != testconstants.COUCHBASE_DATA_PATH:
+            master_services = self.cluster_util.get_services(
+                self.cluster.servers[:1], self.services_init, start_node=0)
+            for node in nodes:
+                self._initialize_node_with_new_data_location(
+                    node, self.disk_location_data, self.disk_location_index,
+                    master_services)
 
     def __getTestServerObj(self, node_obj):
         for node in self.cluster.servers:
