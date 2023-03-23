@@ -2411,7 +2411,7 @@ class BucketUtils(ScopeUtils):
                 new_scope_number
 
     def create_buckets_using_json_data(self, cluster, buckets_spec,
-                                       async_create=True):
+                                       async_create=True, timeout=600):
         result = True
         self.log.info("Creating required buckets from template")
         load_data_from_existing_tar = False
@@ -2438,7 +2438,8 @@ class BucketUtils(ScopeUtils):
                     Bucket.weight: bucket_spec[Bucket.weight]})
                 if Bucket.numVBuckets in bucket_spec:
                     b_obj.numVBuckets = bucket_spec[Bucket.numVBuckets]
-                task = self.async_create_database(cluster, b_obj)
+                task = self.async_create_database(cluster, b_obj,
+                                                  timeout=timeout)
                 bucket_creation_tasks.append(task)
                 bucket_names_ref[task.thread_name] = bucket_name
         else:

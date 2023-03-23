@@ -600,7 +600,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.task_manager.get_task_result(task)
         self.assertTrue(task.result, "Database creation failed")
 
-    def create_required_buckets(self, buckets_spec=None):
+    def create_required_buckets(self, buckets_spec=None, timeout=600):
         if buckets_spec or self.spec_name:
             if buckets_spec is None:
                 self.log.info("Creating buckets from spec: %s"
@@ -614,7 +614,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             CollectionBase.over_ride_bucket_template_params(
                 self, self.bucket_storage, buckets_spec)
             result = self.bucket_util.create_buckets_using_json_data(
-                self.cluster, buckets_spec)
+                self.cluster, buckets_spec, timeout=timeout)
             self.assertTrue(result, "Bucket creation failed")
             self.sleep(5, "Wait for collections creation to complete")
         else:
@@ -829,7 +829,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         spec = self.get_bucket_spec(
             bucket_name_format=bucket_name_format,
             num_buckets=self.num_buckets)
-        self.create_required_buckets(buckets_spec=spec)
+        self.create_required_buckets(buckets_spec=spec, timeout=1800)
         if target_scenario.startswith("single_bucket_"):
             scenarios = self.__get_single_bucket_scenarios(target_scenario)
         elif target_scenario.startswith("five_buckets_"):
@@ -1700,7 +1700,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     self.bucket_info[bucket][create_start] + 10000
 
         '''
-        Case: test if storage limit honoured during/after re-balance 
+        Case: test if storage limit honoured during/after re-balance
         '''
         if self.data_load_during_rebalance:
             scenario = dict()
