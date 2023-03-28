@@ -1067,54 +1067,75 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
     def test_bucket_auto_ram_scaling(self):
         """
+        1. Create a bucket
+        2. Load data in batches uptil the band specified
+        3. Monitor if the RAM Scaling has occured and the quota allocated to buckets has increased.
         :return:
         """
+        def get_band_info(band):
+            disk = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450]
+            ram = [256, 256, 384, 512, 640, 768, 896, 1024, 1152, 1280]
+            return disk[:band], ram[:band]
+
+        self.band = self.input.param("data_size_band", 3)
         start_index = 0
-        batch_size = 50000
+        batch_size = 5000000
         self.create_required_buckets()
+        self.get_servers_for_databases()
         bucket = self.cluster.buckets[0]
 
         work_load_settings = DocLoaderUtils.get_workload_settings(
             key=self.key, key_size=self.key_size, doc_size=self.doc_size,
             create_perc=100, create_start=start_index, create_end=start_index,
-            ops_rate=self.ops_rate)
+            ops_rate=self.ops_rate, process_concurrency=10)
         dg = DocumentGenerator(work_load_settings,
                                self.key_type, self.val_type)
 
-        loader_key = "%s:%s:%s" % (bucket.name, CbServer.default_scope,
-                                   CbServer.default_collection)
+        loader_key = "{}:{}:{}".format(bucket.name, CbServer.default_scope,
+                                       CbServer.default_collection)
         self.init_sdk_pool_object()
         self.create_sdk_client_pool([bucket], 1)
-        dgm_index = 0
-        storage_band = 1
-        target_dgms = [3, 2.3, 2.0, 1.9, 1.8, 1.5]
-        len_target_dgms = len(target_dgms)
 
-        self.log.critical("Loading bucket till %s%% DGM"
-                          % target_dgms[dgm_index])
-        while dgm_index < len_target_dgms:
+        self.disk, self.ram = get_band_info(self.band)
+        self.log.critical("Loading bucket till {} GB of Active Logical Data Size".format(self.disk[-1]))
+        db_info = {
+                "cluster": self.cluster,
+                "bucket": bucket,
+                "desired_ram_quota": 256,
+                "desired_width": None,
+                "desired_weight": None
+            }
+
+        logical_data = 0
+        while logical_data <= self.disk[-1]:
+            monitor_task = self.bucket_util.async_monitor_database_scaling(
+                [db_info], timeout=300, ignore_undesired_updates=False)
+            self.task_manager.get_task_result(monitor_task)
+
             work_load_settings.dr.create_s = work_load_settings.dr.create_e
             work_load_settings.dr.create_e += batch_size
             DocLoaderUtils.perform_doc_loading(
                 self.doc_loading_tm, {loader_key: dg}, self.cluster,
                 buckets=[bucket], async_load=False, validate_results=False,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                process_concurrency=10)
 
-            for server in bucket.servers:
-                stat = Cbstats(server)
-                resident_mem = stat.get_stats_memc(bucket.name)[
-                    "vb_active_perc_mem_resident"]
-                if int(resident_mem) <= target_dgms[dgm_index]:
-                    dgm_index += 1
-                    storage_band += 1
-                    if dgm_index < len_target_dgms:
-                        self.log.critical("Loading bucket till %s%% DGM"
-                                          % target_dgms[dgm_index])
+            self.sleep(10)
+            logical_data, _ , _ = self.bucket_util.get_logical_data(bucket)
+            logical_data = logical_data / (1024 * 1024 * 1024)
+            self.log.info("Bucket {} Active Logical Data = {} GB".format(bucket.name, logical_data))
 
-                    monitor_task = \
-                        self.bucket_util.async_monitor_database_scaling(
-                            self.cluster, bucket)
-                    self.task_manager.get_task_result(monitor_task)
+            desired_ram_quota = self.ram[0]
+            count = 0
+            while count < len(self.disk) and logical_data >= self.disk[count]:
+                desired_ram_quota = self.ram[count]
+                count+=1
+            db_info["desired_ram_quota"] = desired_ram_quota
+            
+        monitor_task = self.bucket_util.async_monitor_database_scaling(
+                [db_info], timeout=300, ignore_undesired_updates=False)
+        self.task_manager.get_task_result(monitor_task)
+
 
     def test_scope_collection_limit(self):
         """

@@ -4292,27 +4292,34 @@ class MonitorServerlessDatabaseScaling(Task):
             buckets_to_track[bucket.name] = dict()
             buckets_to_track[bucket.name]["bucket"] = bucket
             buckets_to_track[bucket.name]["scaled"] = False
+            buckets_to_track[bucket.name]["desired_ram_quota"] = sub_task["desired_ram_quota"]
 
-        result = False
-        timeout = self.timeout
-        while not result and timeout > 0:
-            result = True
-            for b_name, b_info in buckets_to_track.items():
-                if b_info["scaled"]:
-                    continue
-
-                db_info = self.get_db_debug_json(b_name)
-                sizing_info = db_info["database"]["config"]["sizing"]
-                self.test_log.debug("Bucket %s: memoryQuota=%s"
-                                    % (b_name, sizing_info["memoryQuota"]))
-                if sizing_info["memoryQuota"] == b_info["bucket"].ramQuotaMB:
+        result = True
+        for b_name, b_info in buckets_to_track.items():
+            if b_info["scaled"]:
+                continue
+            start = time.time()
+            bucket = b_info["bucket"]
+            while time.time() < start + self.timeout and bucket.ramQuotaMB != b_info["desired_ram_quota"]:
+                rest = BucketHelper(bucket.servers[0])
+                data = rest.get_bucket_json(bucket.name)
+                bucket.ramQuotaMB = data["quota"]["rawRAM"] / (1024 * 1024)
+                self.test_log.info("Wait for bucket: {}, Expected: {}, Actual: {}".format(bucket.name,
+                                                                                          b_info["desired_ram_quota"],
+                                                                                          bucket.ramQuotaMB))
+                time.sleep(5)
+                data = rest.get_bucket_json(bucket.name)
+                bucket.ramQuotaMB = data["quota"]["rawRAM"] / (1024 * 1024)
+            if bucket.ramQuotaMB == b_info["desired_ram_quota"]:
                     b_info["scaled"] = True
-                    self.test_log.info("%s - RAM scaled to %s"
-                                       % (b_name, b_info["bucket"].ramQuotaMB))
-                else:
-                    result = False
-            self.sleep(1)
-            timeout -= 1
+                    self.test_log.info("{} - RAM scaled to {}".format(bucket.name,
+                                                                      bucket.ramQuotaMB))
+            else:
+                self.test_log.warning("Bucket: {}, Expected: {}, Actual: {}".format(bucket.name,
+                                                                                    b_info["desired_ram_quota"],
+                                                                                    bucket.ramQuotaMB))
+                result = False
+
         return result
 
     def update_bucket_nebula_and_kv_nodes(self, cluster, bucket):

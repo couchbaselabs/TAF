@@ -6367,3 +6367,20 @@ class BucketUtils(ScopeUtils):
                         .format(node.ip, vb_num, stat["history_disk_size"],
                                 configured_size_per_vb))
         return result
+
+    def get_logical_data(self, bucket):
+        active_logical_data = 0
+        pending_logical_data = 0
+        replica_logical_data = 0
+        for server in bucket.servers:
+            _, stats = RestConnection(server).query_prometheus("kv_logical_data_size_bytes")
+            if stats["status"] == "success":
+                stats = [stat for stat in stats["data"]["result"] if stat["metric"]["bucket"] == bucket.name]
+                for stat in stats:
+                    if stat["metric"]["state"] == "active":
+                        active_logical_data += int(stat["value"][1])
+                    elif stat["metric"]["state"] == "pending":
+                        pending_logical_data += int(stat["value"][1])
+                    elif stat["metric"]["state"] == "replica":
+                        replica_logical_data += int(stat["value"][1])
+        return active_logical_data, pending_logical_data, replica_logical_data
