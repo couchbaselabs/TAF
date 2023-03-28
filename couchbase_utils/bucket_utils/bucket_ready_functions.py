@@ -142,7 +142,8 @@ class DocLoaderUtils(object):
     def get_doc_generator(op_type, collection_obj, num_items,
                           generic_key, mutation_num=0,
                           target_vbuckets="all", type="default",
-                          doc_size=256, randomize_value=False):
+                          doc_size=256, randomize_value=False,
+                          randomize_doc_size=False):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -198,7 +199,8 @@ class DocLoaderUtils(object):
                                      target_vbucket=target_vbuckets,
                                      mutation_type=op_type,
                                      mutate=mutation_num,
-                                     randomize_value=randomize_value)
+                                     randomize_value=randomize_value,
+                                     randomize_doc_size=randomize_doc_size)
         else:
             json_generator = JsonGenerator()
             if type == "employee":
@@ -402,7 +404,8 @@ class DocLoaderUtils(object):
                                         target_vbuckets=target_vbs,
                                         mutation_num=mutation_num,
                                         type=c_crud_data[op_type]["doc_gen_type"],
-                                        randomize_value=randomize_value)
+                                        randomize_value=randomize_value,
+                                        randomize_doc_size=randomize_doc_size)
                             else:
                                 c_crud_data[op_type]["xattr_test"] = \
                                     is_xattr_test
@@ -440,6 +443,8 @@ class DocLoaderUtils(object):
         # Fetch randomize_value to use for doc_loading
         randomize_value = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.RANDOMIZE_VALUE, False)
+        randomize_doc_size = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.RANDOMIZE_DOC_SIZE, False)
 
         ignore_exceptions = input_spec.get(
             MetaCrudParams.IGNORE_EXCEPTIONS, [])
