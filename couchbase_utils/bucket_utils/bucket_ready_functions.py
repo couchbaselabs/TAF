@@ -35,6 +35,7 @@ from Jython_tasks.task import \
     BucketCreateFromSpecTask, \
     ViewCreateTask, \
     ViewDeleteTask, \
+    HibernationTask, \
     ViewQueryTask, DatabaseCreateTask, MonitorServerlessDatabaseScaling
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
@@ -1873,7 +1874,7 @@ class BucketUtils(ScopeUtils):
         rest = RestConnection(cluster.master)
         api = '%s%s' % (rest.baseUrl, "sampleBuckets/install")
         data = '["%s"]' % sample_bucket.name
-        status, _, _ = rest._http_request(api, "POST", data)
+        status, x, y = rest._http_request(api, "POST", data)
         sleep(5, "Wait before fetching buckets from cluster")
         buckets = self.get_all_buckets(cluster)
         for bucket in buckets:
@@ -1958,6 +1959,66 @@ class BucketUtils(ScopeUtils):
             raise_exception = "Create bucket %s failed: %s" \
                               % (bucket.name, raise_exception)
             raise Exception(raise_exception)
+
+    def pause_bucket(self, cluster, bucket, s3_path, region, rate_limit,
+                     timeout, wait_for_bucket_deletion=True):
+
+        self.log.debug('Pausing existing bucket {0} '.format(bucket.name))
+        hibernation_task = HibernationTask(cluster.master, bucket.name, s3_path,
+                                           region, rate_limit, 'pause', timeout)
+        self.task_manager.add_new_task(hibernation_task)
+        if wait_for_bucket_deletion:
+            self.task_manager.get_task_result(hibernation_task)
+            return hibernation_task
+        return hibernation_task
+
+    def stop_pause(self, cluster, bucket):
+        self.log.debug('Stoping pause for bucket {0}'.format(bucket.name))
+        bucket_conn = BucketHelper(cluster.master)
+        rest = RestConnection(cluster.master)
+        status, content = bucket_conn.stop_pause(bucket.name)
+        result = True
+        if not status:
+            result = False
+            return result, content
+        pause_task = rest.ns_server_tasks(task_type="hibernation")
+        if not pause_task:
+            result = False
+        else:
+            status = pause_task['status']
+            if not (status == 'stopped'):
+                result = False
+        return result, content
+
+    def resume_bucket(self, cluster, bucket, s3_path, region, rate_limit,
+                      timeout, wait_for_bucket_creation=True):
+
+        self.log.debug('Resuming bucket {0} '.format(bucket.name))
+        hibernation_task = HibernationTask(cluster.master, bucket.name, s3_path,
+                                           region, rate_limit, 'resume', timeout)
+        self.task_manager.add_new_task(hibernation_task)
+        if wait_for_bucket_creation:
+            self.task_manager.get_task_result(hibernation_task)
+            return hibernation_task
+        return hibernation_task
+
+    def stop_resume(self, cluster, bucket):
+        self.log.debug('Stoping pause for bucket {0}'.format(bucket.name))
+        bucket_conn = BucketHelper(cluster.master)
+        rest = RestConnection(cluster.master)
+        status, content = bucket_conn.stop_resume(bucket.name)
+        result = True
+        if not status:
+            result = False
+            return result, content
+        pause_task = rest.ns_server_tasks(task_type="hibernation")
+        if not pause_task:
+            result = False
+        else:
+            status = pause_task['status']
+            if not (status == 'stopped'):
+                result = False
+        return result, content
 
     def delete_bucket(self, cluster, bucket, wait_for_bucket_deletion=True):
         self.log.debug('Deleting existing bucket {0} on {1}'
@@ -2996,7 +3057,7 @@ class BucketUtils(ScopeUtils):
             """
             replica number will be either replica number or one less than the zone number
             or min number of nodes in the zone
-            zone =2: 
+            zone =2:
                 1 node each, replica set =1, actual =1
                 1 node each, replica set >1, actual = 1
                 2 nodes each, replica set =2, actual =2
@@ -3005,7 +3066,7 @@ class BucketUtils(ScopeUtils):
                 group1: 2 nodes, group 1: 1 node, replica_set >1, actual = 1
                 group1: 3 nodes, group 1: 2 node, replica_set >=2, actual = 2
                 group1: 4 nodes, group 1: 5 node, replica_set =3, actual = 3
-                
+
             zone =3:
                 1 node each, replica_set=2, actual =2
                 2 nodes each, relica_set =3, actual =3

@@ -269,9 +269,67 @@ class BucketHelper(RestConnection):
             raise GetBucketInfoFailed(bucket_name, content)
         return json.loads(content)
 
-    def delete_bucket(self, bucket='default'):
-        api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/',
-                          urllib.quote_plus("%s" % bucket))
+    def pause_bucket(self, bucket, s3_path=None, blob_storage_region=None, rate_limit=1024):
+        api = '{0}{1}'.format(self.baseUrl, 'controller/pause')
+        param_dict = {}
+        param_dict["bucket"] = bucket
+        param_dict["remote_path"] = s3_path
+        param_dict["blob_storage_region"] = blob_storage_region
+        param_dict["rate_limit"] = rate_limit
+        params = json.dumps(param_dict)
+        self.log.critical("Params: {0}".format(params))
+        header = self.get_headers_for_content_type_json()
+        status, content, _ = self._http_request(api, 'POST', params, headers=header)
+        if not status:
+            self.log.error("Failed to pause: {0}".format(content))
+        json_parsed = json.loads(content)
+        return status, json_parsed
+
+    def stop_pause(self, bucket):
+        api = '{0}{1}'.format(self.baseUrl, 'controller/stopPause')
+        param_dict = {}
+        param_dict["bucket"] = bucket
+        params = json.dumps(param_dict)
+        self.log.critical("Params: {0}".format(params))
+        header = self.get_headers_for_content_type_json()
+        status, content, _= self._http_request(api, 'POST', params, headers=header)
+        if not status:
+            self.log.error("Failed to stop pause: {0}".format(content))
+        json_parsed = json.loads(content)
+        return status, json_parsed
+
+    def resume_bucket(self, bucket, s3_path=None, blob_storage_region=None, rate_limit=1024):
+        api = '{0}{1}'.format(self.baseUrl, 'controller/resume')
+        param_dict = {}
+        param_dict["bucket"] = bucket
+        param_dict["remote_path"] = s3_path
+        param_dict["blob_storage_region"] = blob_storage_region
+        param_dict["rate_limit"] = rate_limit
+        params = json.dumps(param_dict)
+        self.log.critical("Params: {0}".format(params))
+        header = self.get_headers_for_content_type_json()
+        status, content, _ = self._http_request(api, 'POST', params, headers=header)
+        if not status:
+            self.log.error("Failed to resume: {0}".format(content))
+        json_parsed = json.loads(content)
+        return status, json_parsed
+
+    def stop_resume(self, bucket):
+        api = '{0}{1}'.format(self.baseUrl, 'controller/stopResume')
+        param_dict = {}
+        param_dict["bucket"] = bucket
+        params = json.dumps(param_dict)
+        self.log.critical("Params: {0}".format(params))
+        header = self.get_headers_for_content_type_json()
+        status, content, _= self._http_request(api, 'POST', params, headers=header)
+        if not status:
+            self.log.error("Failed to stop resume: {0}".format(content))
+        json_parsed = json.loads(content)
+        return status, json_parsed
+
+    def delete_bucket(self, bucket):
+        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
+                          urllib.quote_plus("{0}".format(bucket)))
         status, _, header = self._http_request(api, 'DELETE')
         if "status" in header:
             status_code = header['status']

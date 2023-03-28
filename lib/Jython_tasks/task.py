@@ -4260,8 +4260,8 @@ class MonitorServerlessDatabaseScaling(Task):
                         and sizing_info["weight"] >= b_info["desired_weight"]:
                     b_info["scaled"] = True
                     self.test_log.info("%s - weight scaled to %s override weight %s"
-                                       % (b_name, 
-                                          sizing_info["weight"], 
+                                       % (b_name,
+                                          sizing_info["weight"],
                                           sizing_info["weightOverRide"] ))
                 else:
                     weight_scaled = False
@@ -4348,7 +4348,7 @@ class MonitorServerlessDatabaseScaling(Task):
             if (validate_width_update and
                 sizing_info["width"] != bucket.serverless.width) \
                     or (validate_weight_update and
-                        ((sizing_info["weight"] != bucket.serverless.weight) and 
+                        ((sizing_info["weight"] != bucket.serverless.weight) and
                         (sizing_info["weightOverRide"] != bucket.serverless.weight))) \
                     or (validate_ram_update and
                         sizing_info["memoryQuota"] != bucket.ramQuotaMB):
@@ -5206,6 +5206,72 @@ class MonitorDBFragmentationTask(Task):
             sleep(2)
         self.complete_task()
 
+class HibernationTask(Task):
+    def __init__(self, master_server, bucket_name, s3_path, region, rate_limit,
+                 type='pause', timeout=300):
+        super(HibernationTask, self).__init__("HibernationTask-{0}".format(
+                                                                    bucket_name))
+        self.master_server = master_server
+        self.s3_path = s3_path
+        self.bucket_name = bucket_name
+        self.rate_limit = rate_limit
+        self.region = region
+        self.timeout = timeout
+        self.type = type
+        self.bucket_conn = BucketHelper(self.master_server)
+        self.rest_conn = RestConnection(self.master_server)
+        self.result = True
+        self.failure_reason = None
+
+    def call(self):
+        self.start_task()
+        status = None
+        content = None
+        if self.type == "pause":
+            status, content = self.bucket_conn.pause_bucket(self.bucket_name,
+                                                            self.s3_path,
+                                                            self.region,
+                                                            self.rate_limit)
+        elif self.type == "resume":
+            status, content = self.bucket_conn.resume_bucket(self.bucket_name,
+                                                             self.s3_path,
+                                                             self.region,
+                                                             self.rate_limit)
+        else:
+            self.complete_task()
+            self.result = False
+            self.failure_reason = "No hibernation task named {0}".format(
+                                                                   self.type)
+        if not status:
+            self.complete_task()
+            self.result = False
+            if content:
+                self.failure_reason = content["error"]
+            return self.result
+
+        self.log.info("Wait till hibernation task is completed")
+        start = time.time()
+        while (time.time() - start) <= self.timeout:
+            pause_task = self.rest_conn.ns_server_tasks(task_type="hibernation")
+            if not pause_task:
+                result = False
+                break
+            status = pause_task['status']
+            self.log.info("Hibernation status: {0}".format(status))
+            if status == "running":
+                sleep(2)
+            elif status == "completed":
+                self.complete_task()
+                return self.result
+            else:
+                self.complete_task()
+                self.result = False
+                self.failure_reason = "Unknown reason, check error logs"
+                return self.result
+        self.complete_task()
+        self.result = False
+        self.failure_reason = "Timed out waiting for hibernation to complete"
+        return self.result
 
 class AutoFailoverNodesFailureTask(Task):
     def __init__(self, task_manager, master, servers_to_fail, failure_type,

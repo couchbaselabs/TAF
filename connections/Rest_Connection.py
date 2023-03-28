@@ -125,21 +125,21 @@ class RestConnection(object):
                 new_services=fts-kv-index-n1ql """
             self.services_node_init = self.input.param("new_services", None)
 
-        http_url = "http://%s:%s/"
-        https_url = "https://%s:%s/"
+        http_url = "http://{0}:{1}/"
+        https_url = "https://{0}:{1}/"
         generic_url = http_url
         if CbServer.use_https:
             generic_url = https_url
-        url_host = "%s" % self.ip
+        url_host = "{0}".format(self.ip)
         if self.hostname:
-            url_host = "%s" % self.hostname
+            url_host = "{0}".format(self.hostname)
 
-        self.baseUrl = generic_url % (url_host, self.port)
-        self.indexUrl = generic_url % (url_host, index_port)
-        self.queryUrl = generic_url % (url_host, query_port)
-        self.ftsUrl = generic_url % (url_host, fts_port)
-        self.eventing_baseUrl = generic_url % (url_host, eventing_port)
-        self.backup_url = generic_url % (url_host, backup_port)
+        self.baseUrl = generic_url.format(url_host, self.port)
+        self.indexUrl = generic_url.format(url_host, index_port)
+        self.queryUrl = generic_url.format(url_host, query_port)
+        self.ftsUrl = generic_url.format(url_host, fts_port)
+        self.eventing_baseUrl = generic_url.format(url_host, eventing_port)
+        self.backup_url = generic_url.format(url_host, backup_port)
         try:
             self.type = serverInfo.type
         except:
