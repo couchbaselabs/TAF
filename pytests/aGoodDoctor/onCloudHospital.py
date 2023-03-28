@@ -286,12 +286,6 @@ class Murphy(BaseTestCase, OPD):
                            create_end=self.num_items)
         self.perform_load(validate_data=False)
 
-        self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
-        self.generate_docs(doc_ops=["create"],
-                           create_start=self.num_items,
-                           create_end=self.num_items*2)
-        self.perform_load(validate_data=False)
-
         if self.cluster.fts_nodes:
             self.drFTS.create_fts_indexes()
             status = self.drFTS.wait_for_fts_index_online(self.num_items*2,
@@ -311,10 +305,11 @@ class Murphy(BaseTestCase, OPD):
             self.drIndex.wait_for_indexes_online(self.log, self.drIndex.indexes)
             self.drIndex.start_query_load()
 
-        if self.xdcr_remote_nodes > 0:
-            self.drXDCR.create_remote_ref("magma_xdcr")
-            for bucket in self.cluster.buckets:
-                self.drXDCR.create_replication("magma_xdcr", bucket.name, bucket.name)
+        self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
+        self.generate_docs(doc_ops=["create"],
+                           create_start=self.num_items,
+                           create_end=self.num_items*2)
+        self.perform_load(validate_data=False)
 
         self.rebl_nodes = self.nodes_init
         self.max_rebl_nodes = self.input.param("max_rebl_nodes",

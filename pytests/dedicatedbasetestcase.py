@@ -46,6 +46,40 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
+
+        provider = self.input.param("provider", "aws").lower()
+        self.compute = {
+            "data": self.input.param("kv_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
+            "query": self.input.param("n1ql_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
+            "index": self.input.param("gsi_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
+            "search": self.input.param("fts_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
+            "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
+            "eventing": self.input.param("envt_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard")
+            }
+        self.iops = {
+            "data": self.input.param("kv_iops", 3000),
+            "query": self.input.param("n1ql_iops", 3000),
+            "index": self.input.param("gsi_iops", 3000),
+            "search": self.input.param("fts_iops", 3000),
+            "analytics": self.input.param("cbas_iops", 3000),
+            "eventing": self.input.param("envt_iops", 3000)
+            }
+        self.disk = {
+            "data": self.input.param("kv_disk", 200),
+            "query": self.input.param("n1ql_disk", 200),
+            "index": self.input.param("gsi_disk", 200),
+            "search": self.input.param("fts_disk", 200),
+            "analytics": self.input.param("cbas_disk", 200),
+            "eventing": self.input.param("envt_disk", 200)
+            }
+        self.num_nodes = {
+            "data": self.input.param("kv_nodes", 3),
+            "query": self.input.param("n1ql_nodes", 2),
+            "index": self.input.param("gsi_nodes", 2),
+            "search": self.input.param("fts_nodes", 2),
+            "analytics": self.input.param("cbas_nodes", 2),
+            "eventing": self.input.param("envt_nodes", 2)
+            }
         CbServer.use_https = True
         trust_all_certs()
 
@@ -262,15 +296,14 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         services = self.input.param("services", "data")
         for service_group in services.split("-"):
             service_group = service_group.split(":")
-            min_nodes = 3 if "data" in service_group else 2
+            service = service_group[0]
             service_config = CapellaUtils.get_cluster_config_spec(
                 services=service_group,
-                count=max(min_nodes, self.nodes_init),
-                compute=self.input.param("compute",
-                                         AWS.ComputeNode.VCPU4_RAM16),
+                count=self.num_nodes[service],
+                compute=self.compute[service],
                 storage_type=self.input.param("type", AWS.StorageType.GP3),
-                storage_size_gb=self.input.param("size", AWS.StorageSize.MIN),
-                storage_iops=self.input.param("iops", AWS.StorageIOPS.MIN))
+                storage_size_gb=self.disk[service],
+                storage_iops=self.iops[service])
             if self.capella_cluster_config["place"]["hosted"]["provider"] \
                     != AWS.__str__:
                 service_config["storage"].pop("iops")
