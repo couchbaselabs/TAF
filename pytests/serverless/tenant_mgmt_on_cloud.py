@@ -472,7 +472,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             # Add scenario to set max weight for buckets
             scenario_dict = dict()
             for i in range(20):
-                scenario_dict[buckets[i].name] = 503
+                scenario_dict[buckets[i].name] = {
+                        Bucket.weight: 503}
             scenarios.append(scenario_dict)
         if target_scenario == "twenty_buckets_width_weight_update":
             scenarios.append({
