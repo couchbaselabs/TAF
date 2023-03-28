@@ -1716,7 +1716,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     self.bucket_info[bucket][create_start] + 500000
             start_data_load(self.cluster.buckets)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=600)
+                to_track, timeout=600, ignore_undesired_updates=True)
             self.task_manager.get_task_result(monitor_task)
             limit_exceed_tolerance = 0.3
             self.sleep(70, "Wait after rebalanace")
