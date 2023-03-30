@@ -688,6 +688,10 @@ class CBASBaseTest(BaseTestCase):
                 bucket_spec[Bucket.storageBackend] = self.bucket_storage
             elif key == "compression_mode":
                 bucket_spec[Bucket.compressionMode] = self.compression_mode
+            elif key == "bucket_history_retention_seconds":
+                bucket_spec[Bucket.historyRetentionSeconds] = int(self.bucket_dedup_retention_seconds)
+            elif key == "bucket_history_retention_bytes":
+                bucket_spec[Bucket.historyRetentionBytes] = int(self.bucket_dedup_retention_bytes)
         if "bucket_size" in self.input.test_params:
             if self.bucket_size == "auto":
                 cluster_info = cluster.rest.get_nodes_self()
