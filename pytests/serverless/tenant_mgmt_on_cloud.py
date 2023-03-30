@@ -990,7 +990,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         spec = self.get_bucket_spec(num_buckets=self.num_buckets,
                                     bucket_name_format=bucket_name_format)
-        self.create_required_buckets(buckets_spec=spec)
+        self.create_required_buckets(buckets_spec=spec,
+                                     timeout=1800)
 
         if target_scenario.startswith("single_bucket_"):
             scenarios = self.__get_single_bucket_scenarios(target_scenario)
