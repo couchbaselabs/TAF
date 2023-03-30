@@ -58,6 +58,7 @@ class MetaCrudParams(object):
         DOC_KEY_SIZE = "doc_key_size"
         DOC_SIZE = "doc_size"
         RANDOMIZE_VALUE = "randomize_value"
+        RANDOMIZE_DOC_SIZE = "randomize_doc_size"
 
     class SubDocCrud(object):
         XATTR_TEST = "xattr_test"
