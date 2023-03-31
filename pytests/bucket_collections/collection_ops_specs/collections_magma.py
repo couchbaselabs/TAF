@@ -3,7 +3,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 spec = {
     # Scope/Collection ops params
     MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
-    MetaCrudParams.COLLECTIONS_TO_DROP: 0,
+    MetaCrudParams.COLLECTIONS_TO_DROP: 5,
 
     MetaCrudParams.SCOPES_TO_DROP: 0,
     MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
@@ -32,14 +32,15 @@ spec = {
         # SCOPES_TO_RECREATE,
         # COLLECTIONS_TO_RECREATE
         MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 0,
+        MetaCrudParams.DocCrud.DOC_SIZE :1024,
 
         # Applies to all active collections selected as per the
         # COLLECTIONS_CONSIDERED_FOR_CRUD value
         MetaCrudParams.DocCrud.COMMON_DOC_KEY: "test_collections",
 
         MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION: 0,
-        MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 20,
-        MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 30,
+        MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 0,
+        MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 0,
         MetaCrudParams.DocCrud.REPLACE_PERCENTAGE_PER_COLLECTION: 0,
         MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 0,
         MetaCrudParams.DocCrud.TOUCH_PERCENTAGE_PER_COLLECTION: 0,

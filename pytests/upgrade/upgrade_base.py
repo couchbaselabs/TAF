@@ -4,6 +4,9 @@ from Cb_constants import CbServer, DocLoading, ClusterRun
 from basetestcase import BaseTestCase
 from basetestcase import BaseTestCase
 import Jython_tasks.task as jython_tasks
+from collections_helper.collections_spec_constants import MetaCrudParams
+from couchbase_cli import CouchbaseCLI
+import testconstants
 from pytests.ns_server.enforce_tls import EnforceTls
 from builds.build_query import BuildQuery
 from cb_tools.cbstats import Cbstats
@@ -14,6 +17,7 @@ from scripts.old_install import InstallerJob
 from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
     COUCHBASE_MP_VERSION, MV_LATESTBUILD_REPO
 from bucket_collections.collections_base import CollectionBase
+from couchbase_helper.durability_helper import BucketDurability
 from BucketLib.BucketOperations import BucketHelper
 from constants.sdk_constants.java_client import SDKConstants
 from sdk_client3 import SDKClient
@@ -62,8 +66,13 @@ class UpgradeBase(BaseTestCase):
         self.sub_data_spec = self.input.param("sub_data_spec", "subsequent_load_magma")
         self.upsert_data_spec = self.input.param("upsert_data_spec", "upsert_load")
         self.sync_write_spec = self.input.param("sync_write_spec", "sync_write_magma")
-        self.load_large_docs = self.input.param("load_large_docs", False)
+        self.collection_spec = self.input.param("collection_spec","collections_magma")
+        self.load_large_docs = self.input.param("load_large_docs", True)
+        self.collection_operations = self.input.param("collection_operations", True)
         ####
+        self.rebalance_op = self.input.param("rebalance_op", "all")
+        self.dur_level = self.input.param("dur_level", "default")
+        self.alternate_load = self.input.param("alternate_load", False)
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -90,6 +99,7 @@ class UpgradeBase(BaseTestCase):
         self.upgrade_function["failover_full_recovery"] = \
             self.failover_full_recovery
         self.upgrade_function["offline"] = self.offline
+        self.upgrade_function["full_offline"] = self.full_offline
 
         self.__validate_upgrade_type()
 
@@ -168,12 +178,19 @@ class UpgradeBase(BaseTestCase):
         if self.sdk_client_pool is not None:
             CollectionBase.create_clients_for_sdk_pool(self)
 
+        if(self.dur_level == "majority"):
+            for bucket in self.cluster.buckets:
+                if(bucket.name == "bucket-1"):
+                    self.bucket_util.update_bucket_property(self.cluster.master,
+                                    bucket,
+                                    bucket_durability=BucketDurability[Bucket.DurabilityLevel.MAJORITY])
+
         # Load initial async_write docs into the cluster
         self.log.info("Initial doc generation process starting...")
 
         CollectionBase.load_data_from_spec_file(self,self.initial_data_spec,validate_docs=True)
 
-        self.log.info("Intial doc generation completed")
+        self.log.info("Initial doc generation completed")
 
         # Verify initial doc load count
         self.bucket_util.validate_docs_per_collections_all_buckets(self.cluster)
@@ -410,15 +427,50 @@ class UpgradeBase(BaseTestCase):
             self.install_version_on_node([self.spare_node], version)
 
         # Perform swap rebalance for node_to_upgrade <-> spare_node
-        rebalance_passed = self.task.rebalance(
-            self.cluster,
+        self.log.info("Swap Rebalance starting...")
+        rebalance_passed = self.task.async_rebalance(
+            self.cluster_util.get_nodes(self.cluster.master),
             to_add=[self.spare_node],
             to_remove=[node_to_upgrade],
             check_vbucket_shuffling=False,
-            services=[",".join(services_on_target_node)])
-        if not rebalance_passed:
-            self.log_failure("Swap rebalance failed during upgrade of {0}"
-                             .format(node_to_upgrade))
+            services=[",".join(services_on_target_node)],
+        )
+        
+        sub_load_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
+        CollectionBase.over_ride_doc_loading_template_params(self, sub_load_spec)
+        CollectionBase.set_retry_exceptions_for_initial_data_load(self, sub_load_spec)
+
+        sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 0
+        sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 10
+        
+        large_bucket = None
+
+        for bucket in self.cluster.buckets:
+            if(bucket.name == "bucket-0"):
+                large_bucket = bucket
+
+        if(large_bucket == None):
+            large_bucket = self.cluster.buckets[0]
+
+        update_task_swap = self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    [large_bucket],
+                    sub_load_spec,
+                    mutation_num=0,
+                    async_load=True,
+                    batch_size=500,
+                    process_concurrency=1)
+
+        self.task_manager.get_task_result(rebalance_passed)
+        if(rebalance_passed.result is True):
+            self.log.info("Swap Rebalance passed")
+        else:
+            self.log.info("Swap Rebalance failed")
+
+        update_task_swap.stop_indefinite_doc_loading_tasks()
+        self.task_manager.get_task_result(update_task_swap)
+
 
         # VBuckets shuffling verification
         if CbServer.Services.KV in services_on_target_node:
@@ -624,3 +676,45 @@ class UpgradeBase(BaseTestCase):
             else:
                 self.log_failure("Cluster reported (/pools/default) balanced=false")
                 return
+            
+    def full_offline(self, nodes_to_upgrade, version):
+        for node in nodes_to_upgrade:
+            rest = RestConnection(node)
+            shell = RemoteMachineShellConnection(node)
+
+            appropriate_build = self.__get_build(version, shell)
+            self.assertTrue(appropriate_build.url,
+                            msg="Unable to find build %s" % version)
+            self.assertTrue(shell.download_build(appropriate_build),
+                            "Failed while downloading the build!")
+            
+            self.log.info("Starting node upgrade")
+            upgrade_success = shell.couchbase_upgrade(
+                appropriate_build, save_upgrade_config=False,
+                forcefully=self.is_downgrade)
+            shell.disconnect()
+
+            if(upgrade_success):
+                self.log.info("Upgrade of {0} completed".format(node))
+
+            self.log.info("Wait for ns_server to accept connections")
+            if not rest.is_ns_server_running(timeout_in_seconds=120):
+                self.log_failure("Server not started post upgrade")
+                return
+
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        rest = RestConnection(self.cluster.master)
+        balanced = rest.cluster_status()["balanced"]
+
+        if not balanced:
+            self.log.info("Cluster not balanced. Rebalance starting...")
+            otp_nodes = [node.id for node in rest.node_statuses()]
+            rebalance_task = rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
+            if(rebalance_task):
+                self.log.info("Rebalance successful")
+            else:
+                self.log.info("Rebalance failed")
+
+            self.cluster_util.print_cluster_stats(self.cluster)
