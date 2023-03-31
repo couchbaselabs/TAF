@@ -262,7 +262,7 @@ class OPD:
         self.default_pattern = [100, 0, 0, 0, 0]
         buckets = buckets or self.cluster.buckets
         for bucket in buckets:
-            process_concurrency = min(bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections"), 5)
+            # process_concurrency = min(bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections"), 5)
             pattern = overRidePattern or bucket.loadDefn.get("pattern", self.default_pattern)
             for scope in bucket.scopes.keys():
                 for collection in bucket.scopes[scope].collections.keys():
@@ -278,7 +278,7 @@ class OPD:
                                           cmd.get("up", pattern[2]),
                                           cmd.get("dl", pattern[3]),
                                           cmd.get("ex", pattern[4]),
-                                          cmd.get("workers", process_concurrency),
+                                          cmd.get("workers", self.process_concurrency),
                                           cmd.get("ops", bucket.loadDefn.get("ops")),
                                           cmd.get("loadType", None),
                                           cmd.get("keyType", self.key_type),

@@ -140,12 +140,9 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     cluster_name = self.cluster_name_format % cluster_index
                     name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
                     self.capella_cluster_config[name] = \
-                        "%s_%s_%s_%sGB_%s" % (
+                        "%s_%s_%s" % (
                             self.tenant.user.split("@")[0].replace(".", "").replace("+", ""),
                             self.input.param("provider", "aws"),
-                            self.input.param("compute", "m5.xlarge")
-                                .replace(".", ""),
-                            self.input.param("size", 50),
                             cluster_name)
                     self.log.info(self.capella_cluster_config)
                     deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
@@ -321,42 +318,31 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                         "search": "fts",
                         "fts": "fts",
                         "eventing": "eventing"}
-
         provider = self.input.param("provider", "aws").lower()
 
-        compute = AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"
-        compute = self.input.param("compute", compute)
-
-        type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
-        storage_type = self.input.param("type", type).lower()
-
-        storage_iops = AWS.StorageIOPS.MIN if provider == "aws" else None
-        disk_iops = self.input.param("iops", storage_iops)
-        if disk_iops:
-            disk_iops = int(disk_iops)
-
-        storage_size_gb = self.input.param("size", AWS.StorageSize.MIN)
+        _type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
+        storage_type = self.input.param("type", _type).lower()
 
         specs = []
         services = self.input.param("services", "data")
         for service_group in services.split("-"):
             services = service_group.split(":")
-            min_nodes = 3 if "data" in services else 2
+            service = services[0]
             spec = {
-                "count": max(min_nodes, self.nodes_init),
+                "count": self.num_nodes[service],
                 "compute": {
-                    "type": compute,
+                    "type": self.compute[service],
                     "cpu": 0,
                     "memoryInGb": 0
                 },
                 "services": [{"type": services_map[service.lower()]} for service in services],
                 "disk": {
                     "type": storage_type,
-                    "sizeInGb": storage_size_gb
+                    "sizeInGb": self.disk[service]
                 }
             }
             if provider == "aws":
-                spec["disk"]["iops"] = disk_iops
+                spec["disk"]["iops"] = self.iops[service]
             specs.append(spec)
         return specs
 
@@ -364,12 +350,15 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         specs = self.create_specs()
         provider = self.input.param("provider", AWS.__str__).lower()
         region = self.input.param("region", AWS.Region.US_WEST_2)
-
+        self.log.info("Specs are {} . Provider is {}. Region is {}".format(specs, provider, region))
         if provider == "aws":
             provider = "hostedAWS"
+            package = "developerPro"
         elif provider == "gcp":
             provider = "hostedGCP"
-
+            package = "enterprise"
+        else:
+            raise Exception("Provider has to be one of aws or gcp")
         self.capella_cluster_config = {
             "region": self.input.param("region", region),
             "provider": provider,
@@ -377,7 +366,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "cidr": None,
             "singleAZ": False,
             "specs": specs,
-            "package": "developerPro",
+            "package": package,
             "projectId": None,
             "description": "",
             "server": self.input.capella["server_version"]
@@ -387,9 +376,12 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             image = self.input.capella["image"]
             token = self.input.capella["override_token"]
             server_version = self.input.capella["server_version"]
+            release_id = self.input.capella.get("release_id", None)
             self.capella_cluster_config["overRide"] = {"token": token,
                                                        "image": image,
                                                        "server": server_version}
+            if release_id:
+                self.capella_cluster_config["overRide"]["releaseId"] = release_id
 
 
 class ClusterSetup(OnCloudBaseTest):

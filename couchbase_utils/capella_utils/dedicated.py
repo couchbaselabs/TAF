@@ -147,7 +147,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        check_healthy_state = 5
+        check_healthy_state = 0
         while time.time() < end_time and check_healthy_state >= 0:
             content = CapellaUtils.jobs(capella_api, pod, tenant, cluster_id)
             state = CapellaUtils.get_cluster_state(pod, tenant, cluster_id)
