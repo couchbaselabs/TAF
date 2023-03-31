@@ -191,26 +191,6 @@ class DoctorN1QL():
                             q += 1
         return True
 
-    def wait_for_indexes_online(self, logger, dataplane_objs, buckets, timeout=86400):
-        # current_dp = None
-        for bucket in buckets:
-            # if current_dp != bucket.serverless.dataplane_id:
-            #     current_dp = bucket.serverless.dataplane_id
-            self.rest = GsiHelper(dataplane_objs[bucket.serverless.dataplane_id].master, logger)
-            status = False
-            for index_name, _ in bucket.indexes.items():
-                stop_time = time.time() + timeout
-                while time.time() < stop_time:
-                    status = self.rest.polling_create_index_status(bucket, index_name)
-                    print("index: {}, status: {}".format(index_name, status))
-                    if status is True:
-                        self.log.info("2i index is ready: {}".format(index_name))
-                        break
-                    time.sleep(5)
-                if status is False:
-                    return status
-        return status
-
     def build_indexes(self, buckets, dataplane_objs=None,
                       wait=False, timeout=86400):
         build = True

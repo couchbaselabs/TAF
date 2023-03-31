@@ -235,9 +235,6 @@ class Murphy(BaseTestCase, OPD):
     def build_gsi_index(self, buckets):
         self.drIndex.build_indexes(buckets, self.dataplane_objs, wait=True)
         for bucket in buckets:
-            # self.drIndex.build_indexes([bucket])
-            # self.drIndex.wait_for_indexes_online(self.log, self.dataplane_objs,
-            #                                      [bucket])
             if bucket.loadDefn.get("2i")[1] > 0:
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
