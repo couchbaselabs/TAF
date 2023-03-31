@@ -122,21 +122,15 @@ class UpgradeBase(BaseTestCase):
                 user=server.rest_username, password=server.rest_password,
                 remoteIp=server.ip, port=server.port, services=node_service)
 
-        self.task.rebalance(self.cluster, [], [])
+        self.task.rebalance(self.cluster.servers[0:self.nodes_init], [], [])
         self.cluster.nodes_in_cluster.extend(
             self.cluster.servers[0:self.nodes_init])
         self.cluster_util.print_cluster_stats(self.cluster)
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120)
+            .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
-        if self.enable_tls:
-            self.enable_verify_tls(self.cluster.master)
-            if self.tls_level == "strict":
-                for node in self.cluster.servers:
-                    node.memcached_port = CbServer.ssl_memcached_port
-                    node.port = CbServer.ssl_port
 
         self.spec_bucket = self.bucket_util.get_bucket_template_from_package(self.spec_name)
         if(self.spec_bucket[Bucket.storageBackend]==Bucket.StorageBackend.magma):
@@ -162,57 +156,30 @@ class UpgradeBase(BaseTestCase):
                     eviction_policy=self.bucket_eviction_policy,
                     bucket_durability=self.bucket_durability_level,
                     bucket_name=bucket_name)
+
+        if self.enable_tls:
+            self.enable_verify_tls(self.cluster.master)
+            if self.tls_level == "strict":
+                for node in self.cluster.servers:
+                    #node.memcached_port = CbServer.ssl_memcached_port (MB-47567)
+                    node.port = CbServer.ssl_port
+
         # Create clients in SDK client pool
         if self.sdk_client_pool is not None:
-            clients_per_bucket = \
-                int(self.thread_to_use / len(self.cluster.buckets))
-            self.log.info("Creating %s SDK clients / bucket for client_pool")
-            for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
-                    bucket, [self.cluster.master], clients_per_bucket,
-                    compression_settings=self.sdk_compression)
+            CollectionBase.create_clients_for_sdk_pool(self)
 
         # Load initial async_write docs into the cluster
-        self.gen_load = doc_generator(self.key, 0, self.num_items,
-                                      randomize_doc_size=True,
-                                      randomize_value=True,
-                                      randomize=True)
+        self.log.info("Initial doc generation process starting...")
 
-        async_load_task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, self.gen_load,
-            DocLoading.Bucket.DocOps.CREATE,
-            active_resident_threshold=self.active_resident_threshold,
-            timeout_secs=self.sdk_timeout,
-            process_concurrency=8,
-            batch_size=500,
-            sdk_client_pool=self.sdk_client_pool)
-        self.task_manager.get_task_result(async_load_task)
+        CollectionBase.load_data_from_spec_file(self,self.initial_data_spec,validate_docs=True)
 
-        # Update num_items in case of DGM run
-        if self.active_resident_threshold != 100:
-            self.num_items = async_load_task.doc_index
-
-        self.bucket.scopes[CbServer.default_scope].collections[
-            CbServer.default_collection].doc_index = (0, self.num_items)
-
-        self.bucket.scopes[CbServer.default_scope].collections[
-            CbServer.default_collection].num_items = self.num_items
+        self.log.info("Intial doc generation completed")
 
         # Verify initial doc load count
-        node_info = RestConnection(self.cluster.master).get_nodes_self(10)
-        stat_name = "num_items_for_persistence"
-        if node_info.version[:5] >= '7.5.0':
-            stat_name = "persistence:num_items_for_cursor"
-        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                     self.cluster.buckets,
-                                                     stat_name=stat_name)
+        self.bucket_util.validate_docs_per_collections_all_buckets(self.cluster)
+        self.log.info("Initial doc count verified")
 
         self.sleep(30, "Wait for num_items to get reflected")
-        current_items = self.bucket_util.get_bucket_current_item_count(
-            self.cluster, self.bucket)
-        self.assertTrue(current_items == self.num_items,
-                        "Mismatch in doc_count. Actual: %s, Expected: %s"
-                        % (current_items, self.num_items))
 
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]

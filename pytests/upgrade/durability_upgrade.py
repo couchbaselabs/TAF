@@ -5,6 +5,7 @@ from threading import Thread
 from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading, CbServer
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
+from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
 from constants.sdk_constants.java_client import SDKConstants
@@ -12,7 +13,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper, \
     BucketDurability
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
@@ -38,7 +39,7 @@ class UpgradeTests(UpgradeBase):
     def __wait_for_persistence_and_validate(self):
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets,
-            cbstat_cmd="checkpoint", stat_name="persistence:num_items_for_cursor",
+            cbstat_cmd="checkpoint", stat_name="num_items_for_persistence",
             timeout=300)
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets,
@@ -179,6 +180,7 @@ class UpgradeTests(UpgradeBase):
                         rest.get_bucket_details(bucket.name, False)
                 except Exception:
                     continue
+
         self.test_user = None
         iter = 0
         if self.test_storage_upgrade:
@@ -187,7 +189,7 @@ class UpgradeTests(UpgradeBase):
             permissions = 'data_writer[*],data_reader[*]'
             self.role_list = [{"id": user_name,
                          "name": user_name,
-                         "roles": "%s" % permissions}]
+                         "roles": "{0}".format(permissions)}]
             self.test_user = [{'id': user_name, 'name': user_name,
                          'password': user_pass}]
             self.bucket_util.add_rbac_user(self.cluster.master,
@@ -312,6 +314,7 @@ class UpgradeTests(UpgradeBase):
                                            randomize=True)
                 for bucket in self.cluster.buckets:
                     if "testBucket" in bucket.name:
+                        self.log.info("Starting async doc updates inside!!!")
                         self.task.async_continuous_doc_ops(
                             self.cluster, bucket, gen_loader,
                             op_type=DocLoading.Bucket.DocOps.CREATE,
@@ -356,6 +359,7 @@ class UpgradeTests(UpgradeBase):
                 sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
 
             # Validate sync_write results after upgrade
+            self.log.info("Sync Write task starting...")
             if self.atomicity:
                 create_batch_size = 10
                 create_gen = doc_generator(
@@ -402,43 +406,24 @@ class UpgradeTests(UpgradeBase):
                     self.log_failure(
                         "SyncWrite succeeded with mixed mode cluster")
             else:
-                if node_to_upgrade is None:
-                    if sync_write_task.fail.keys():
-                        self.log_failure("Failures after cluster upgrade")
-                    else:
-                        self.num_items += create_batch_size
-                        self.bucket.scopes[
-                            CbServer.default_scope].collections[
-                            CbServer.default_collection] \
-                            .num_items += create_batch_size
-                elif self.cluster_supports_sync_write:
-                    if sync_write_task.fail:
-                        self.log.error("SyncWrite failed: %s"
-                                       % sync_write_task.fail)
+                if self.cluster_supports_sync_write:
+                    if(sync_write_task.result is False):
                         self.log_failure("SyncWrite failed during upgrade")
-                    else:
-                        self.num_items += create_batch_size
-                        self.bucket.scopes[
-                            CbServer.default_scope].collections[
-                            CbServer.default_collection] \
-                            .num_items += create_batch_size
-                        create_gen = doc_generator(
-                            self.key,
-                            self.num_items,
-                            self.num_items + create_batch_size)
-                elif len(sync_write_task.fail.keys()) != create_batch_size:
-                    self.log_failure(
-                        "SyncWrite succeeded with mixed mode cluster")
+
                 else:
-                    for doc_id, doc_result in sync_write_task.fail.items():
-                        if SDKException.FeatureNotAvailableException \
-                                not in str(doc_result["error"]):
-                            self.log_failure("Invalid exception for %s: %s"
-                                             % (doc_id, doc_result))
+                    for task_bucket in sync_write_task.loader_spec:
+                        for scope in task_bucket["scopes"]:
+                            for collections in scope["collections"]:
+                                for op_type in collections:
+                                    for doc_id, doc_result in op_type["fail"].items():
+                                        if SDKException.FeatureNotAvailableException not in str(doc_result["error"]):
+                                            self.log_failure("Invalid exception for {0}:{1}".format(doc_id, doc_result))
 
             # Halt further upgrade if test has failed during current upgrade
             if self.test_failure is not None:
                 break
+
+        self.cluster_util.print_cluster_stats(self.cluster)
         if self.test_storage_upgrade:
             self.sleep(30, "waiting to try cause storage upgrade failure")
             node_to_check = None
