@@ -101,6 +101,7 @@ class CbServer(object):
     mobile_collection = "_mobile"
     query_collection = "_query"
     regulator_collection = "_regulator"
+    transaction_collection = "_transactions"
 
     total_vbuckets = 1024
 
