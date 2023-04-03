@@ -773,17 +773,36 @@ class Murphy(BaseTestCase, OPD):
                 "2i": (2, 2),
                 "FTS": (2, 2)
                 }
-        self.create_databases(self.num_buckets, load_defn=self.workload)
-        self.create_required_collections(self.cluster, self.cluster.buckets)
-        self.create_gsi_indexes(self.cluster.buckets)
-        self.build_gsi_index(self.cluster.buckets)
+        #######################################################################
+        self.PrintStep("Step: Create Serverless Databases")
 
-        self.create_fts_indexes(self.cluster.buckets, wait=True)
+        self.drFTS.index_stats(self.dataplane_objs)
+        self.drIndex.index_stats(self.dataplane_objs)
+        self.drIndex.query_stats(self.dataplane_objs)
+        self.check_ebs_scaling()
+        self.check_memory_management()
+        self.check_cluster_state()
+        self.check_fts_scaling()
+        self.check_n1ql_scaling()
+        self.check_index_auto_scaling_rebl()
+        self.monitor_query_status()
+
+        self.create_databases(2, load_defn=self.workload)
+        buckets = self.cluster.buckets
+        self.refresh_dp_obj(self.dataplane_id)
+        self.create_required_collections(self.cluster, self.cluster.buckets)
+        self.start_initial_load(self.cluster.buckets)
+
+        status = self.create_gsi_indexes(buckets)
+        print "GSI Status: {}".format(status)
+        self.assertTrue(status, "GSI index creation failed")
+        self.build_gsi_index(buckets)
+        self.create_fts_indexes(buckets, wait=True)
+        self.sleep(30)
 
         self.loop = 1
         self.create_perc = 100
 
-        self.start_initial_load(self.cluster.buckets)
         while self.loop <= self.iterations:
             #######################################################################
             '''
@@ -795,6 +814,20 @@ class Murphy(BaseTestCase, OPD):
                 self.generate_docs(bucket=bucket)
             self.perform_load(validate_data=True, buckets=self.cluster.buckets)
             self.loop += 1
+
+        for bucket in self.cluster.buckets:
+            self.log.info("Deleting bucket: {}".format(bucket.name))
+            if self.ql:
+                ql = [load for load in self.ql if load.bucket == bucket][0]
+                ql.stop_query_load()
+                self.ql.remove(ql)
+            if self.ftsQL:
+                ql = [load for load in self.ftsQL if load.bucket == bucket][0]
+                ql.stop_query_load()
+                self.ftsQL.remove(ql)
+            self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
+            self.serverless_util.delete_database(self.pod, self.tenant,
+                                                 bucket.name)
 
     def SmallScaleVolume(self):
         #######################################################################

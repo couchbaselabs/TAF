@@ -389,7 +389,7 @@ class OPD:
                         continue
                     ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
                                           cmd.get("keySize", self.key_size),
-                                          cmd.get("docSize", self.doc_size),
+                                          cmd.get("docSize", bucket.loadDefn.get("doc_size")),
                                           cmd.get("cr", pattern[0]),
                                           cmd.get("rd", pattern[1]),
                                           cmd.get("up", pattern[2]),
@@ -500,7 +500,7 @@ class OPD:
                             dr = DocRange(hm)
                             ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
                                                   cmd.get("keySize", self.key_size),
-                                                  cmd.get("docSize", bucket.doc_size),
+                                                  cmd.get("docSize", bucket.loadDefn.get("doc_size")),
                                                   cmd.get("cr", 0),
                                                   cmd.get("rd", 100),
                                                   cmd.get("up", 0),
