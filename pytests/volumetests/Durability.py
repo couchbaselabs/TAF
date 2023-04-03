@@ -380,26 +380,21 @@ class volume(BaseTestCase):
             self.sleep(10)
         '''
     def create_sdk_connections(self):
+        def create_connections(number_of_connections):
+            for _ in range(number_of_connections):
+                mem_client = MemcachedClientHelper.direct_client(
+                    self.cluster.master, self.cluster.buckets[0])
+                self.initial_clients.append(mem_client)
+
         if self.connection_limit_mode == 'disconnect':
             try:
-                for _ in range(self.max_sdk_connection):
-                    mem_client = MemcachedClientHelper.direct_client(
-                        self.cluster.master, self.cluster.buckets[0])
-                    self.initial_clients.append(mem_client)
+                create_connections(self.max_sdk_connection)
             except Exception as e:
                 self.log.info("resetting connections to re create till init "
                               "connections")
                 for client in self.initial_clients:
                     client.close()
-                for _ in range(self.num_initial_connections):
-                    mem_client = MemcachedClientHelper.direct_client(
-                        self.cluster.master, self.cluster.buckets[0])
-                    self.initial_clients.append(mem_client)
-        else:
-            for _ in range(self.num_initial_connections):
-                mem_client = MemcachedClientHelper.direct_client(
-                    self.cluster.master, self.cluster.buckets[0])
-                self.initial_clients.append(mem_client)
+        create_connections(self.num_initial_connections)
 
     def update_setting_and_create_threshold_connection(self):
         bucket_helper = BucketHelper(self.cluster.master)
