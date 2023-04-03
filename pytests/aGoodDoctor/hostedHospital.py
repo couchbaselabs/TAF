@@ -202,7 +202,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "update"],
-            "2i": [10, 20],
+            "2i": [5, 20],
             "FTS": [0, 0]
             }
         self.sanity = {
