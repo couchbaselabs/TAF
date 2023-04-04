@@ -658,9 +658,9 @@ class LMT(ServerlessOnPremBaseTest):
             stat = mc_stat.bucket_details(node, bucket.name)
             ru += stat["ru"]
             wu += stat["wu"]
-            throttle_limit.append(stat["throttle_limit"])
+            throttle_limit.append(stat["throttle_hard_limit"])
             num_throttled += stat["num_throttled"]
-        self.log.info("throttle_limit: %s, num_throttled: %s, RU: %s, WU: %s"
+        self.log.info("throttle_hard_limit: %s, num_throttled: %s, RU: %s, WU: %s"
                       % (throttle_limit, num_throttled, ru, wu))
         # ru_from_prometheus, wu_from_prometheus = self.get_stat_from_prometheus(bucket)
         # ru_from_metering, wu_from_metering = self.get_stat_from_metering(bucket)
@@ -741,9 +741,9 @@ class LMT(ServerlessOnPremBaseTest):
         mc_stat = McStat(shell)
         shell.disconnect()
         stat = mc_stat.bucket_details(node, bucket.name)
-        if stat["throttle_limit"] < 1000:
+        if stat["throttle_hard_limit"] < 1000:
             return throttle_limit
-        throttle_limit = stat["throttle_limit"]
+        throttle_limit = stat["throttle_hard_limit"]
         return throttle_limit
 
     def generate_data_for_vbuckets(self, target_vbucket):
