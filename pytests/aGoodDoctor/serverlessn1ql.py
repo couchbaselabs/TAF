@@ -580,11 +580,14 @@ class QueryLoad:
             else:
                 self.failed_count.next()
         except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+            print(e)
             self.timeout_count.next()
         except RequestCanceledException as e:
-                self.cancel_count.next()
+            print(e)
+            self.cancel_count.next()
         except CouchbaseException as e:
-                self.rejected_count.next()
+            print(e)
+            self.rejected_count.next()
         except Exception as e:
             print(e)
             self.error_count.next()

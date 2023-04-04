@@ -57,7 +57,7 @@ HotelQueries = ["select meta().id from {} where country is not null and `type` i
                 "select avg(price) as AvgPrice, min(price) as MinPrice, max(price) as MaxPrice from {} where free_breakfast=True and free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' group by country limit 100",
                 "select city,country,count(*) from {} where free_breakfast=True and free_parking=True group by country,city order by country,city limit 100",
                 "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE price IS NOT NULL GROUP BY city) SELECT h.name, h.price FROM {0} h JOIN city_avg ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.price IS NOT NULL limit 100",
-                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms < 2 AND h.avg_rating >= 3 ORDER BY r.author DESC limit 100",
+                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms < 2 AND h.avg_rating >= 3 limit 100",
                 "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC  limit 100",
                 "SELECT h.name,h.country,h.city,h.price,DENSE_RANK() OVER (window1) AS `rank` FROM {} AS h WHERE h.price IS NOT NULL WINDOW window1 AS ( PARTITION BY h.country ORDER BY h.price NULLS LAST) limit 100",
                 "SELECT * from {} where `type` is not null limit 100",
@@ -345,10 +345,13 @@ class QueryLoad:
                 self.failed_count.next()
         except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
             self.timeout_count.next()
+            print(e)
         except RequestCanceledException as e:
-                self.cancel_count.next()
+            self.cancel_count.next()
+            print(e)
         except CouchbaseException as e:
-                self.rejected_count.next()
+            self.rejected_count.next()
+            print(e)
         except Exception as e:
             print(e)
             self.error_count.next()

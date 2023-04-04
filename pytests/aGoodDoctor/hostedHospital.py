@@ -16,6 +16,8 @@ from aGoodDoctor.hostedN1QL import QueryLoad, DoctorN1QL
 from aGoodDoctor.hostedCbas import DoctorCBAS
 from aGoodDoctor.hostedOPD import OPD
 from constants.cloud_constants.capella_constants import AWS
+from table_view import TableView
+import time
 
 class Murphy(BaseTestCase, OPD):
 
@@ -98,17 +100,19 @@ class Murphy(BaseTestCase, OPD):
 
         self.ql = list()
         self.ftsQL = list()
+        self.stop_run = False
 
     def tearDown(self):
         self.check_dump_thread = False
         self.stop_crash = True
-        for ql in self.ql:
-            ql.stop_run = True
-        for ql in self.ftsQL:
-            ql.stop_run = True
-
-        self.drFTS.stop_run = True
-        self.drIndex.stop_run = True
+        if self.cluster.query_nodes:
+            for ql in self.ql:
+                ql.stop_run = True
+            self.drIndex.stop_run = True
+        if self.cluster.fts_nodes:
+            for ql in self.ftsQL:
+                ql.stop_run = True
+            self.drFTS.stop_run = True
         BaseTestCase.tearDown(self)
 
     def rebalance_config(self, num):
@@ -190,7 +194,64 @@ class Murphy(BaseTestCase, OPD):
                 ql.start_query_load()
                 self.ql.append(ql)
 
+    def monitor_query_status(self, print_duration=600):
+
+        def check_query_stats():
+            st_time = time.time()
+            while not self.stop_run:
+                if st_time + print_duration < time.time():
+                    self.table = TableView(self.log.info)
+                    self.table.set_headers(["Bucket",
+                                            "Total Queries",
+                                            "Failed Queries",
+                                            "Success Queries",
+                                            "Rejected Queries",
+                                            "Cancelled Queries",
+                                            "Timeout Queries",
+                                            "Errored Queries"])
+                    for ql in self.ql:
+                        self.table.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                    self.table.display("N1QL Query Statistics")
+
+                    self.FTStable = TableView(self.log.info)
+                    self.FTStable.set_headers(["Bucket",
+                                               "Total Queries",
+                                               "Failed Queries",
+                                               "Success Queries",
+                                               "Rejected Queries",
+                                               "Cancelled Queries",
+                                               "Timeout Queries",
+                                               "Errored Queries"])
+                    for ql in self.ftsQL:
+                        self.FTStable.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                    self.FTStable.display("FTS Query Statistics")
+                    st_time = time.time()
+                    time.sleep(10)
+
+        query_monitor = threading.Thread(target=check_query_stats)
+        query_monitor.start()
+
     def test_rebalance(self):
+        self.monitor_query_status()
+
         self.loadDefn1 = {
             "valType": "Hotel",
             "scopes": 1,
@@ -198,7 +259,7 @@ class Murphy(BaseTestCase, OPD):
             "num_items": 1500000000,
             "start": 0,
             "end": 1500000000,
-            "ops": 100000,
+            "ops": 80000,
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "update"],
@@ -299,7 +360,10 @@ class Murphy(BaseTestCase, OPD):
                         "iops": self.iops[service]
                     }
                 }
-                if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                if self.capella_cluster_config.get("place"):
+                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                        config["storage"].pop("iops")
+                elif self.capella_cluster_config["provider"] != "hostedAWS":
                     config["storage"].pop("iops")
                 server_group_list.append(config)
             rebalance_task = self.task.async_rebalance_capella(self.cluster,
