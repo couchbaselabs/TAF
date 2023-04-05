@@ -180,9 +180,9 @@ class DoctorN1QL():
                             i += 1
                         if q < b.loadDefn.get("2i")[1]:
                             if b.loadDefn.get("valType") == "Hotel":
-                                b.queries.append((HotelQueries[q % len(indexType)].format(c), self.sdkClients[b.name+s]))
+                                b.queries.append((HotelQueries[q % len(b.indexes)].format(c), self.sdkClients[b.name+s]))
                             else:
-                                b.queries.append((queries[q % len(indexType)].format(c), self.sdkClients[b.name+s]))
+                                b.queries.append((queries[q % len(b.indexes)].format(c), self.sdkClients[b.name+s]))
                             q += 1
         return True
 
