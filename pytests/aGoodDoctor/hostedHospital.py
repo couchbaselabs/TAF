@@ -19,6 +19,7 @@ from constants.cloud_constants.capella_constants import AWS
 from table_view import TableView
 import time
 
+
 class Murphy(BaseTestCase, OPD):
 
     def init_doc_params(self):
@@ -256,9 +257,9 @@ class Murphy(BaseTestCase, OPD):
             "valType": "Hotel",
             "scopes": 1,
             "collections": 2,
-            "num_items": 1500000000,
+            "num_items": 1000000000,
             "start": 0,
-            "end": 1500000000,
+            "end": 1000000000,
             "ops": 80000,
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
@@ -311,10 +312,6 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
             self.drCBAS.start_query_load()
 
-        if self.cluster.index_nodes:
-            self.drIndex.create_indexes(self.cluster.buckets)
-            self.build_gsi_index(self.cluster.buckets)
-
         self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
         for bucket in self.cluster.buckets:
             self.generate_docs(doc_ops=["create"],
@@ -322,12 +319,6 @@ class Murphy(BaseTestCase, OPD):
                                create_end=bucket.loadDefn.get("num_items")/2,
                                bucket=bucket)
         self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
-
-        for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("2i")[1] > 0:
-                ql = QueryLoad(bucket)
-                ql.start_query_load()
-                self.ql.append(ql)
 
         self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
         for bucket in self.cluster.buckets:
@@ -337,10 +328,21 @@ class Murphy(BaseTestCase, OPD):
                                bucket=bucket)
         self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
 
+        if self.cluster.index_nodes:
+            self.drIndex.create_indexes(self.cluster.buckets)
+            self.build_gsi_index(self.cluster.buckets)
+
+        for bucket in self.cluster.buckets:
+            if bucket.loadDefn.get("2i")[1] > 0:
+                ql = QueryLoad(bucket)
+                ql.start_query_load()
+                self.ql.append(ql)
+
         if not sanity:
             self.mutation_perc = self.input.param("mutation_perc", 100)
-            self.restart_query_load()
+            # self.restart_query_load()
             for bucket in self.cluster.buckets:
+                bucket.loadDefn["ops"] = 10000
                 self.generate_docs(bucket=bucket)
             tasks = self.perform_load(wait_for_load=False)
             # Rebalance 1 - Disk Upgrade
@@ -373,7 +375,7 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
             # Rebalance 2 - Compute Upgrade
-            self.restart_query_load()
+            # self.restart_query_load()
             server_group_list = list()
             initial_services = self.input.param("services", "data")
             for service_group in initial_services.split("-"):
@@ -393,7 +395,10 @@ class Murphy(BaseTestCase, OPD):
                         "iops": self.iops[service]
                     }
                 }
-                if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                if self.capella_cluster_config.get("place"):
+                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                        config["storage"].pop("iops")
+                elif self.capella_cluster_config["provider"] != "hostedAWS":
                     config["storage"].pop("iops")
                 server_group_list.append(config)
             rebalance_task = self.task.async_rebalance_capella(self.cluster,
