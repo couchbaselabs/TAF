@@ -1184,8 +1184,8 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "upsert"],
-            "2i": (5, 5),
-            "FTS": (5, 5)
+            "2i": (10, 10),
+            "FTS": (10, 10)
             }
         self.load_defn.append(self.loadDefn1)
         self.loadDefn2 = {
@@ -1199,8 +1199,8 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [10, 80, 0, 10, 0], # CRUDE
             "load_type": ["create", "read", "delete"],
-            "2i": (5, 5),
-            "FTS": (5, 5)
+            "2i": (10, 10),
+            "FTS": (10, 10)
             }
         self.load_defn.append(self.loadDefn2)
         self.loadDefn3 = {
@@ -1214,8 +1214,8 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
-            "2i": (5, 20),
-            "FTS": (5, 10)
+            "2i": (10, 10),
+            "FTS": (10, 10)
             }
 
         self.input.test_params.update({"clients_per_db": 2})
@@ -1233,8 +1233,8 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [0, 80, 20, 0, 0], # CRUDE
                 "load_type": ["read", "upsert"],
-                "2i": (5, 5),
-                "FTS": (5, 5)
+                "2i": (10, 10),
+                "FTS": (10, 10)
                 }
             self.load_defn.append(loadDefn1)
             loadDefn2 = {
@@ -1248,8 +1248,8 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (5, 5),
-                "FTS": (5, 5)
+                "2i": (10, 10),
+                "FTS": (10, 10)
                 }
             self.load_defn.append(loadDefn2)
             loadDefn3 = {
@@ -1263,8 +1263,8 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [0, 0, 100, 0, 0], # CRUDE
                 "load_type": ["update"],
-                "2i": (5, 5),
-                "FTS": (5, 5)
+                "2i": (10, 10),
+                "FTS": (10, 10)
                 }
             self.load_defn.append(loadDefn3)
             for i in range(1, 6):

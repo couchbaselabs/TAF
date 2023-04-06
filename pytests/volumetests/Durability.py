@@ -4,7 +4,9 @@ from com.couchbase.client.java.query import *
 
 from Cb_constants import CbServer
 from membase.api.rest_client import RestConnection
+from Cb_constants import constants, CbServer, DocLoading
 from TestInput import TestInputSingleton
+from memcached.helper.data_helper import MemcachedClientHelper
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
 import random
@@ -39,6 +41,18 @@ class volume(BaseTestCase):
             "new_num_writer_threads", 6)
         self.new_num_reader_threads = self.input.param(
             "new_num_reader_threads", 8)
+        self.test_sdk_connection_limit_mode = self.input.param(
+            "test_sdk_connection_limit_mode", False)
+        self.check_replica = self.input.param(
+            "check_replica", True)
+        self.free_connection_pool_size = self.input.param(
+            "free_connection_pool_size", 0)
+        self.connection_limit_mode =  self.input.param(
+            "connection_limit_mode", 'recycle')
+        self.max_sdk_connection = self.input.param(
+            "max_sdk_connection", 60000)
+        self.num_initial_connections = self.input.param(
+            "num_initial_connections", 0)
 
     def create_required_buckets(self):
         self.log.info("Get the available memory quota")
@@ -289,8 +303,6 @@ class volume(BaseTestCase):
         self.log.info("Validating Active/Replica Docs")
         if self.atomicity:
             self.check_replica = False
-        else:
-            self.check_replica = True
 
         for bucket in self.cluster.buckets:
             tasks = list()
@@ -360,6 +372,36 @@ class volume(BaseTestCase):
                 self.task.jython_task_manager.get_task_result(task)
             self.sleep(10)
         '''
+    def create_sdk_connections(self):
+        if self.connection_limit_mode == 'disconnect':
+            try:
+                for _ in range(self.max_sdk_connection):
+                    mem_client = MemcachedClientHelper.direct_client(
+                        self.cluster.master, self.cluster.buckets[0])
+                    self.initial_clients.append(mem_client)
+            except Exception as e:
+                self.log.info("resetting connections to re create till init "
+                              "connections")
+                for client in self.initial_clients:
+                    client.close()
+                for _ in range(self.num_initial_connections):
+                    mem_client = MemcachedClientHelper.direct_client(
+                        self.cluster.master, self.cluster.buckets[0])
+                    self.initial_clients.append(mem_client)
+        else:
+            for _ in range(self.num_initial_connections):
+                mem_client = MemcachedClientHelper.direct_client(
+                    self.cluster.master, self.cluster.buckets[0])
+                self.initial_clients.append(mem_client)
+
+    def update_setting_and_create_threshold_connection(self):
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_helper.update_memcached_settings(
+            connection_limit_mode=self.connection_limit_mode,
+            max_connections=self.max_sdk_connection,
+            free_connection_pool_size=self.free_connection_pool_size)
+        self.create_sdk_connections()
+
     def get_bucket_dgm(self, bucket):
         self.rest_client = BucketHelper(self.cluster.master)
         dgm = self.rest_client.fetch_bucket_stats(
@@ -389,13 +431,18 @@ class volume(BaseTestCase):
         self.log.info("Step 2 & 3: Create required buckets.")
         bucket = self.create_required_buckets()
         self.loop = 0
+        ########################################################################################################################
+        if self.test_sdk_connection_limit_mode:
+            self.initial_clients = []
+            self.update_setting_and_create_threshold_connection()
         #######################################################################################################################
         while self.loop < self.iterations:
             self.log.info("Step 4: Pre-Requisites for Loading of docs")
             self.start = 0
             self.bucket_util.add_rbac_user(self.cluster.master)
             self.end = self.initial_load_count = self.input.param("initial_load", 1000)
-            initial_load = doc_generator("Users", self.start, self.start + self.initial_load_count, doc_size=self.doc_size)
+            initial_load = doc_generator("Users", self.start,
+                                         self.initial_load_count, doc_size=self.doc_size)
             self.initial_data_load(initial_load)
             self.tasks = []
             self.bucket_util.print_bucket_stats(self.cluster)
