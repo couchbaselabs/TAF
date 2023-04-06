@@ -3,6 +3,7 @@ Created on Feb 16, 2022
 
 @author: ritesh.agarwal
 """
+import copy
 import json
 
 from BucketLib.bucket import Bucket
@@ -46,6 +47,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
+        self.xdcr_remote_clusters = self.input.param("xdcr_remote_clusters", 0)
 
         provider = self.input.param("provider", "aws").lower()
         self.compute = {
@@ -86,7 +88,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         # initialise pod object
         url = self.input.capella.get("pod")
         self.pod = Pod("https://%s" % url)
-
+        self.xdcr_cluster = None
         self.tenant = Tenant(self.input.capella.get("tenant_id"),
                              self.input.capella.get("capella_user"),
                              self.input.capella.get("capella_pwd"),
@@ -115,6 +117,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         self.log_setup_status(self.__class__.__name__, "started")
         self.cluster_name_format = "C%s"
+        self.xdcr_cluster_name_format = "XDCR%s"
         default_cluster_index = cluster_index = 1
 
         if self.input.capella.get("image") or self.input.capella.get("server_version"):
@@ -151,6 +154,23 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     self.task_manager.add_new_task(deploy_task)
                     tasks.append(deploy_task)
                     cluster_index += 1
+                default_xdcr_cluster_index, xdcr_cluster_index = 1, 1
+                for _ in range(self.xdcr_remote_clusters):
+                    self.log.info("Will create the clusters required for XDCR replication.")
+                    cluster_name = self.xdcr_cluster_name_format % xdcr_cluster_index
+                    capella_config = copy.deepcopy(self.capella_cluster_config)
+                    capella_config['name'] = \
+                        "%s_%s_%s" % (
+                            self.tenant.user.split("@")[0].replace(".", "").replace("+", ""),
+                            self.input.param("provider", "aws"),
+                            cluster_name)
+                    self.log.info(capella_config)
+                    deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
+                                              capella_config,
+                                              timeout=self.wait_timeout)
+                    self.task_manager.add_new_task(deploy_task)
+                    tasks.append(deploy_task)
+                    xdcr_cluster_index += 1
                 self.generate_cluster_config()
                 for task in tasks:
                     self.task_manager.get_task_result(task)
@@ -165,6 +185,9 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             # Initialize self.cluster with first available cluster as default
             self.cluster = self.cb_clusters[self.cluster_name_format
                                             % default_cluster_index]
+            if self.xdcr_remote_clusters > 0:
+                self.xdcr_cluster = self.cb_clusters[self.xdcr_cluster_name_format
+                                                     % default_xdcr_cluster_index]
             self.servers = self.cluster.servers
             self.cluster_util = ClusterUtils(self.task_manager)
             self.bucket_util = BucketUtils(self.cluster_util, self.task)

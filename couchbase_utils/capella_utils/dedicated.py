@@ -459,3 +459,51 @@ class CapellaUtils(object):
                                  tenant.pwd)
         resp = capella_api.load_sample_bucket(tenant.id, tenant.project_id,
                                               cluster_id, bucket_name)
+
+    @staticmethod
+    def create_xdcr_replication(pod, tenant, cluster_id, payload):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.create_xdcr_replication(tenant.id, tenant.project_id,
+                                              cluster_id, payload)
+        CapellaUtils.log.info("Response from create xdcr replication API: {}".format(resp))
+
+    @staticmethod
+    def backup_now(pod, tenant, cluster_id, bucket_name):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.backup_now(tenant_id=tenant.id, project_id=tenant.project_id,
+                                      cluster_id=cluster_id, bucket_name=bucket_name)
+        CapellaUtils.log.info("Response from backup_now method: {}".format(resp))
+
+    @staticmethod
+    def restore_from_backup(pod, tenant, cluster_id, bucket_name):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.restore_from_backup(tenant_id=tenant.id, project_id=tenant.project_id,
+                                               cluster_id=cluster_id, bucket_name=bucket_name)
+        CapellaUtils.log.info("Response from restore_from_backup method: {}".format(resp))
+
+    @staticmethod
+    def list_all_backups(pod, tenant, cluster, bucket_name):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        bucket_id = capella_api.get_backups_bucket_id(tenant_id=tenant.id, project_id=tenant.project_id,
+                                                      cluster_id=cluster.id, bucket_name=bucket_name)
+        resp = capella_api.list_all_bucket_backups(tenant_id=tenant.id,
+                                                   project_id=tenant.project_id,
+                                                   cluster_id=cluster.id, bucket_id=bucket_id)
+        CapellaUtils.log.info("Response from list_all_backups method: {}".format(resp))
+        return resp

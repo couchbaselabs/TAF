@@ -258,13 +258,14 @@ class DeployCloud(Task):
 
 
 class RebalanceTaskCapella(Task):
-    def __init__(self, cluster, scale_params=list(), timeout=1200):
+    def __init__(self, cluster, scale_params=list(), timeout=1200, poll_interval=60):
         Task.__init__(self, "Scaling_task_{}".format(str(time.time())))
         self.cluster = cluster
         self.scale_params = {"servers": scale_params}
         self.timeout = timeout
         self.servers = None
         self.test_log.critical("Scale_params: %s" % scale_params)
+        self.poll_interval = poll_interval
 
     def call(self):
         DedicatedUtils.scale(self.cluster, self.scale_params)
@@ -297,7 +298,7 @@ class RebalanceTaskCapella(Task):
                             step, progress = data.get("currentStep"), \
                                              data.get("completionPercentage")
                             self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
-                    time.sleep(2)
+                    time.sleep(self.poll_interval)
                 else:
                     self.log.info("Scaling the cluster completed. State == {}".
                                   format(state))
