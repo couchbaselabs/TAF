@@ -16,6 +16,7 @@ import zlib
 from httplib import IncompleteRead
 
 import com.couchbase.test.transactions.SimpleTransaction as Transaction
+import requests
 from _threading import Lock
 from com.couchbase.client.java.json import JsonObject
 from java.lang import Thread
@@ -84,12 +85,12 @@ class Task(Callable):
                              str(time.strftime("%H:%M:%S",
                                                time.gmtime(self.end_time)))))
             return "%s task completed in %.2fs" % \
-                   (self.thread_name, self.completed - self.started,)
+                (self.thread_name, self.completed - self.started,)
         elif self.started:
             return "Thread %s at %s" % \
-                   (self.thread_name,
-                    str(time.strftime("%H:%M:%S",
-                                      time.gmtime(self.start_time))))
+                (self.thread_name,
+                 str(time.strftime("%H:%M:%S",
+                                   time.gmtime(self.start_time))))
         else:
             return "[%s] not yet scheduled" % self.thread_name
 
@@ -190,7 +191,8 @@ class TimerTask(Task):
             kwds (dict): A dictionary of keyword arguments for the function `f`.
             interval (int): The time to wait in between function calls.
         """
-        super(TimerTask, self).__init__("TimerTask: function:{} Args:{} Kwds:{} Interval:{}".format(f, args, kwds, interval))
+        super(TimerTask, self).__init__(
+            "TimerTask: function:{} Args:{} Kwds:{} Interval:{}".format(f, args, kwds, interval))
         self.f, self.args, self.kwds, self.interval = f, args, kwds, interval
 
     def call(self):
@@ -295,8 +297,9 @@ class RebalanceTaskCapella(Task):
                         data = data.get("data")
                         if data.get("clusterId") == self.cluster.id:
                             step, progress = data.get("currentStep"), \
-                                             data.get("completionPercentage")
-                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
+                                data.get("completionPercentage")
+                            self.log.info(
+                                "{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
                     time.sleep(2)
                 else:
                     self.log.info("Scaling the cluster completed. State == {}".
@@ -404,8 +407,8 @@ class RebalanceTask(Task):
         """
         if defrag_options:
             self.defrag_options = dict()
-            self.defrag_options["defragmentZones"] = ",".\
-                    join(defrag_options["defragmentZones"])
+            self.defrag_options["defragmentZones"] = ",". \
+                join(defrag_options["defragmentZones"])
             self.defrag_options["knownNodesIP"] = defrag_options["knownNodes"]
 
         cluster_stats = self.rest.get_cluster_stats()
@@ -489,21 +492,21 @@ class RebalanceTask(Task):
     def __str__(self):
         if self.exception:
             return "[%s] %s download error %s in %.2fs" % \
-                   (self.thread_name, self.num_items, self.exception,
-                    self.completed - self.started,)  # , self.result)
+                (self.thread_name, self.num_items, self.exception,
+                 self.completed - self.started,)  # , self.result)
         elif self.completed:
             self.test_log.debug("Time: %s"
                                 % str(time.strftime("%H:%M:%S",
                                                     time.gmtime(time.time()))))
             return "[%s] %s items loaded in %.2fs" % \
-                   (self.thread_name, self.loaded,
-                    self.completed - self.started,)  # , self.result)
+                (self.thread_name, self.loaded,
+                 self.completed - self.started,)  # , self.result)
         elif self.started:
             return "[%s] %s started at %s" % \
-                   (self.thread_name, self.num_items, self.started)
+                (self.thread_name, self.num_items, self.started)
         else:
             return "[%s] %s not yet scheduled" % \
-                   (self.thread_name, self.num_items)
+                (self.thread_name, self.num_items)
 
     def call(self):
         def print_nodes(msg, node_list):
@@ -2062,8 +2065,8 @@ class LoadDocumentsGeneratorsTask(Task):
                 try:
                     self.task_manager.get_task_result(task)
                     self.log.debug("%s - Items loaded %s. Itr count: %s"
-                                    % (task.thread_name, task.docs_loaded,
-                                       task.itr_count))
+                                   % (task.thread_name, task.docs_loaded,
+                                      task.itr_count))
                     i = 0
                     while task.docs_loaded < (task.generator._doc_gen.end -
                                               task.generator._doc_gen.start) \
@@ -2782,7 +2785,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                                               wrong_values))
                 self.wrong_values.extend(wrong_values)
         if self.exception:
-            raise(self.exception)
+            raise (self.exception)
 
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
@@ -3185,19 +3188,19 @@ class ViewCreateTask(Task):
                             self.set_exception(
                                 Exception(
                                     "design doc {0} doesn't contain spatial view {1}"
-                                        .format(self.design_doc_name,
-                                                self.view.name)))
+                                    .format(self.design_doc_name,
+                                            self.view.name)))
                             return 0
                     else:
                         if self.view.name not in json_parsed["views"].keys():
                             self.set_exception(Exception(
                                 "design doc {0} doesn't contain view {1}"
-                                    .format(self.design_doc_name,
-                                            self.view.name)))
+                                .format(self.design_doc_name,
+                                        self.view.name)))
                             return 0
                 self.test_log.debug(
                     "View: {0} was created successfully in ddoc: {1}"
-                        .format(self.view.name, self.design_doc_name))
+                    .format(self.view.name, self.design_doc_name))
             else:
                 # If we are here, it means design doc was successfully updated
                 self.test_log.debug("Design Doc: {0} was updated successfully"
@@ -3269,21 +3272,21 @@ class ViewCreateTask(Task):
                     else:
                         self.test_log.debug(
                             "Design Doc {0} version is not updated on node {1}:{2}. Retrying."
-                                .format(self.design_doc_name,
-                                        node.ip, node.port))
+                            .format(self.design_doc_name,
+                                    node.ip, node.port))
                         sleep(2)
                 except ReadDocumentException as e:
                     if count < retry_count:
                         self.test_log.debug(
                             "Design Doc {0} not yet available on node {1}:{2}. Retrying."
-                                .format(self.design_doc_name,
-                                        node.ip, node.port))
+                            .format(self.design_doc_name,
+                                    node.ip, node.port))
                         sleep(2)
                     else:
                         self.test_log.error(
                             "Design Doc {0} failed to replicate on node {1}:{2}"
-                                .format(self.design_doc_name, node.ip,
-                                        node.port))
+                            .format(self.design_doc_name, node.ip,
+                                    node.port))
                         self.set_exception(e)
                         break
                 except Exception as e:
@@ -3297,7 +3300,7 @@ class ViewCreateTask(Task):
             else:
                 self.set_exception(Exception(
                     "Design Doc {0} version mismatch on node {1}:{2}"
-                        .format(self.design_doc_name, node.ip, node.port)))
+                    .format(self.design_doc_name, node.ip, node.port)))
 
 
 class ViewDeleteTask(Task):
@@ -3369,7 +3372,7 @@ class ViewDeleteTask(Task):
         except QueryViewException as e:
             self.test_log.debug(
                 "View: {0} was successfully deleted in ddoc: {1}"
-                    .format(self.view.name, self.design_doc_name))
+                .format(self.view.name, self.design_doc_name))
             return True
 
         # catch and set all unexpected exceptions
@@ -3450,7 +3453,7 @@ class ViewQueryTask(Task):
             if len(content['rows']) == self.expected_rows:
                 self.test_log.debug(
                     "Expected rows: '{0}' was found for view query"
-                        .format(self.expected_rows))
+                    .format(self.expected_rows))
                 return True
             else:
                 if len(content['rows']) > self.expected_rows:
@@ -3875,7 +3878,7 @@ class DropIndexTask(Task):
             if not check:
                 raise DropIndexException(
                     "index {0} does not exist will not drop"
-                        .format(self.index_name))
+                    .format(self.index_name))
             self.n1ql_helper.run_cbq_query(query=self.query, server=self.server)
             return_value = self.check()
         except N1QLQueryException as e:
@@ -4172,8 +4175,8 @@ class MonitorServerlessDatabaseScaling(Task):
 
             dataplane_id = json.loads(
                 self.serverless_util.capella_api
-                    .get_database_debug_info(sub_task["bucket"].name)
-                    .content)["dataplane"]["id"]
+                .get_database_debug_info(sub_task["bucket"].name)
+                .content)["dataplane"]["id"]
             bucket_info[sub_task["bucket"].name] = dict()
             bucket_info[sub_task["bucket"].name]["scaled"] = False
             bucket_info[sub_task["bucket"].name]["cluster"] \
@@ -4364,7 +4367,7 @@ class BucketCreateTask(Task):
             self.bucket.threadsNumber = self.bucket_priority
 
         try:
-            self.result = BucketHelper(self.server)\
+            self.result = BucketHelper(self.server) \
                 .create_bucket(self.bucket.__dict__)
             if self.result is False:
                 self.test_log.critical("Bucket %s creation failed"
@@ -4457,7 +4460,7 @@ class BucketCreateFromSpecTask(Task):
                 .pop(CbServer.default_collection, None)
 
         if self.bucket_spec[
-                MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT]:
+            MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT]:
             self.create_collections_using_manifest_import()
             for scope_name, scope_spec in self.bucket_spec["scopes"].items():
                 scope_spec["name"] = scope_name
@@ -5899,7 +5902,7 @@ class NodeDownTimerTask(Task):
                     if response != 0:
                         self.test_log.debug(
                             "Injected failure in {}. Caught due to ping"
-                                .format(self.node))
+                            .format(self.node))
                         self.complete_task()
                         self.set_result(True)
                         break
@@ -6571,9 +6574,9 @@ class ViewCompactionTask(Task):
                 self._get_compaction_details()
             self.test_log.debug(
                 "{0}: stats compaction before triggering it: ({1},{2})"
-                    .format(self.design_doc_name,
-                            self.compaction_revision,
-                            self.precompacted_fragmentation))
+                .format(self.design_doc_name,
+                        self.compaction_revision,
+                        self.precompacted_fragmentation))
             if self.precompacted_fragmentation == 0:
                 self.test_log.warning(
                     "%s: There is nothing to compact, fragmentation is 0"
@@ -6598,9 +6601,9 @@ class ViewCompactionTask(Task):
             new_compaction_revision, fragmentation = self._get_compaction_details()
             self.test_log.debug(
                 "{0}: stats compaction:revision and fragmentation: ({1},{2})"
-                    .format(self.design_doc_name,
-                            new_compaction_revision,
-                            fragmentation))
+                .format(self.design_doc_name,
+                        new_compaction_revision,
+                        fragmentation))
 
             if new_compaction_revision == self.compaction_revision and _compaction_running:
                 # compaction ran successfully but compaction was not changed
@@ -6612,8 +6615,8 @@ class ViewCompactionTask(Task):
                     self.precompacted_fragmentation > fragmentation:
                 self.test_log.info(
                     "{1}: compactor was run, compaction revision was changed on {0}"
-                        .format(new_compaction_revision,
-                                self.design_doc_name))
+                    .format(new_compaction_revision,
+                            self.design_doc_name))
                 frag_val_diff = fragmentation - self.precompacted_fragmentation
                 self.test_log.info("%s: fragmentation went from %d to %d"
                                    % (self.design_doc_name,
@@ -6628,8 +6631,8 @@ class ViewCompactionTask(Task):
                     self.test_log.warning(
                         "Compaction completed, but fragmentation value {0} "
                         "is more than before compaction {1}"
-                            .format(fragmentation,
-                                    self.precompacted_fragmentation))
+                        .format(fragmentation,
+                                self.precompacted_fragmentation))
                     # Probably we already compacted, so nothing to do here
                     self.set_result(self.with_rebalance)
                 else:
@@ -7067,7 +7070,7 @@ class FailoverTask(Task):
                         otp_nodes.append(node.id)
             self.test_log.debug(
                 "Failing over {0} with graceful={1}"
-                    .format(otp_nodes, self.graceful))
+                .format(otp_nodes, self.graceful))
             result = rest.fail_over(otp_nodes, self.graceful,
                                     self.allow_unsafe, self.all_at_once)
             if not result:
@@ -7081,7 +7084,7 @@ class FailoverTask(Task):
                         server.port) == int(node.port):
                         self.test_log.debug(
                             "Failing over {0}:{1} with graceful={2}"
-                                .format(node.ip, node.port, self.graceful))
+                            .format(node.ip, node.port, self.graceful))
                         result = rest.fail_over(node.id, self.graceful,
                                                 self.allow_unsafe)
                         if not result:
@@ -7110,7 +7113,7 @@ class BucketFlushTask(Task):
                 else:
                     self.test_log.error(
                         "Unable to reach bucket {0} on server {1} after flush"
-                            .format(self.bucket, self.server))
+                        .format(self.bucket, self.server))
                     self.set_result(False)
             else:
                 self.set_result(False)
@@ -7533,21 +7536,21 @@ class DropDatasetsTask(Task):
                     if dataset.enabled_from_KV:
                         if self.kv_name_cardinality > 1:
                             if not self.cbas_util.disable_analytics_from_KV(
-                                self.cluster, dataset.full_kv_entity_name):
+                                    self.cluster, dataset.full_kv_entity_name):
                                 raise Exception(
                                     "Unable to disable analytics on " + \
                                     dataset.full_kv_entity_name)
                         else:
                             if not self.cbas_util.disable_analytics_from_KV(
-                                self.cluster,
-                                dataset.get_fully_qualified_kv_entity_name(1)):
+                                    self.cluster,
+                                    dataset.get_fully_qualified_kv_entity_name(1)):
                                 raise Exception(
                                     "Unable to disable analytics on " + \
                                     dataset.get_fully_qualified_kv_entity_name(
                                         1))
                     else:
                         if not self.cbas_util.drop_dataset(
-                            self.cluster, dataset.full_name):
+                                self.cluster, dataset.full_name):
                             raise Exception(
                                 "Unable to drop dataset " + dataset.full_name)
                     dataverse.datasets.pop(dataset.full_name)
@@ -7570,7 +7573,7 @@ class DropDataversesTask(Task):
             for dataverse in self.cbas_util.dataverses.values():
                 if dataverse.name != "Default":
                     if not self.cbas_util.drop_dataverse(
-                        self.cluster, dataverse.name):
+                            self.cluster, dataverse.name):
                         raise Exception(
                             "Unable to drop dataverse " + dataverse.name)
         except Exception as e:
@@ -7609,9 +7612,9 @@ class ExecuteQueryTask(Task):
                                                                      connection=connection,
                                                                      isIndexerQuery=self.isIndexerQuery)
                 self.log.debug("Status of the query {}".format(status))
-                #self.log.debug("Content of the query is {}".format(content))
+                # self.log.debug("Content of the query is {}".format(content))
                 self.set_result(status)
-                self.log.debug("check isIndexQuery status"+str(self.isIndexerQuery))
+                self.log.debug("check isIndexQuery status" + str(self.isIndexerQuery))
                 json_parsed = json.loads(content)
                 if json_parsed["status"] == 'errors':
                     self.log.debug("parsed error body {}".format(json_parsed))
@@ -7628,9 +7631,175 @@ class ExecuteQueryTask(Task):
             result = indexer_rest.polling_create_index_status(self.bucket,
                                                               index=self.index_name,
                                                               timeout=self.timeout)
-            self.log.debug("Sending polling status for index:{0} as:{1}".format(self.index_name,result))
+            self.log.debug("Sending polling status for index:{0} as:{1}".format(self.index_name, result))
             self.set_result(result)
         if isException:
             self.log.info("Got exception, marking task status as fail")
             self.set_result(False)
         self.complete_task()
+
+
+INSERT = "insert"
+UPSERT = "upsert"
+DELETE = "delete"
+VALIDATE = "validate"
+FLUSH = "flush"
+
+
+class RestBasedDocLoader(Task):
+    def __init__(self, operation, connectionString, username, password, bucket, scope="_default", collection="_default",
+                 count=1, docSize=1024, docType="json",
+                 keySize=32, keyPrefix="", keySuffix="", randomDocSize=False, randomKeySize=False, expiry=0,
+                 persistTo=0, replicateTo=0, durability="None",
+                 readYourOwnWrite=False, start=1, end=1, fieldsToChange=[""], template="Person",
+                 loaderAddress="0.0.0.0", loaderPort="80",
+                 retry=100, retryInterval=0.2, deleteRecord=True):
+        super(RestBasedDocLoader, self).__init__("RestBasedDocLoader")
+        self.operation = operation
+        self.connectionString = connectionString
+        self.username = username
+        self.password = password
+        self.bucket = bucket
+        self.scope = scope
+        self.collection = collection
+        self.count = count
+        self.docSize = docSize
+        self.docType = docType
+        self.keySize = keySize
+        self.keyPrefix = keyPrefix
+        self.keySuffix = keySuffix
+        self.randomDocSize = randomDocSize
+        self.randomKeySize = randomKeySize
+        self.expiry = expiry
+        self.persistTo = persistTo
+        self.replicateTo = replicateTo
+        self.durability = durability
+        self.readYourOwnWrite = readYourOwnWrite
+        self.start = start
+        self.end = end
+        self.fieldsToChange = fieldsToChange
+        self.template = template
+        self.loaderAddress = loaderAddress
+        self.loaderPort = loaderPort
+        self.retry = retry
+        self.retryInterval = retryInterval
+        self.deleteRecord = deleteRecord
+
+    def call(self):
+        try:
+            json_data_request = {}
+            json_result_request = {}
+            response_data = {}
+            route = ""
+            headers = {
+                'Content-Type': 'application/json',
+            }
+            if self.operation == INSERT:
+                route = "/insert"
+                json_data_request = {
+                    'username': self.username,
+                    'password': self.password,
+                    'connectionString': self.connectionString,
+                    'bucket': self.bucket,
+                    'scope': self.scope,
+                    'collection': self.collection,
+                    'count': self.count,
+                    'docSize': self.docSize,
+                    'docType': self.docType,
+                    'keySize': self.keySize,
+                    'keyPrefix': self.keyPrefix,
+                    'keySuffix': self.keySuffix,
+                    'randomDocSize': self.randomDocSize,
+                    'randomKeySize': self.randomKeySize,
+                    'expiry': self.expiry,
+                    'persistTo': self.persistTo,
+                    'replicateTo': self.replicateTo,
+                    'durability': self.durability,
+                    'readYourOwnWrite': self.readYourOwnWrite,
+                    'template': self.template,
+                }
+            elif self.operation == UPSERT:
+                route = "/upsert"
+                json_data_request = {
+                    'username': self.username,
+                    'password': self.password,
+                    'connectionString': self.connectionString,
+                    'bucket': self.bucket,
+                    'scope': self.scope,
+                    'collection': self.collection,
+                    'start': self.start,
+                    'end': self.end,
+                    'fieldsToChange': self.fieldsToChange
+                }
+            elif self.operation == DELETE:
+                route = "/upsert"
+                json_data_request = {
+                    'username': self.username,
+                    'password': self.password,
+                    'connectionString': self.connectionString,
+                    'bucket': self.bucket,
+                    'scope': self.scope,
+                    'collection': self.collection,
+                    'start': self.start,
+                    'end': self.end
+                }
+            elif self.operation == VALIDATE:
+                route = "/validate"
+                json_data_request = {
+                    'username': self.username,
+                    'password': self.password,
+                    'connectionString': self.connectionString,
+                    'bucket': self.bucket,
+                    'scope': self.scope,
+                    'collection': self.collection,
+                }
+            elif self.operation == FLUSH:
+                route = "/flush"
+                json_data_request = {
+                    'username': self.username,
+                    'password': self.password,
+                    'connectionString': self.connectionString,
+                    'bucket': self.bucket,
+                    'scope': self.scope,
+                    'collection': self.collection,
+                }
+            else:
+                print("Unknown Operation")
+                return
+
+            response = requests.post('http://' + self.loaderAddress + ":" +
+                                     self.loaderPort + route, headers=headers, json=json_data_request)
+
+            response_data = json.loads(response.content)
+            print(response_data)
+            if not response_data["error"]:
+                json_result_request = {
+                    "seed": response_data["data"]["seed"],
+                    "deleteRecord": self.deleteRecord,
+                }
+            else:
+                self.log.error("Error in initiating the task " + response_data["data"])
+                return
+
+            for i in range(0, self.retry):
+                response = requests.post('http://' + self.loaderAddress + ":" + self.loaderPort + '/result',
+                                         headers=headers,
+                                         json=json_result_request)
+                response_data = json.loads(response.content)
+                if not response_data["error"]:
+                    break
+                time.sleep(self.retryInterval * 60)
+
+            if not response_data["error"]:
+                json_object = json.dumps(response_data["data"], indent=4)
+                self.log.debug(json_object)
+                self.set_result(True)
+                self.complete_task()
+            else:
+                self.log.error("Error in retrieving  the task " + response_data["data"])
+                self.set_result(False)
+                self.complete_task()
+
+        except Exception as e:
+            self.set_result(False)
+            self.complete_task()
