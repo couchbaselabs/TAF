@@ -535,3 +535,31 @@ class AnalyticsEvents(object):
             Event.Fields.NODE_NAME: node,
             Event.Fields.EXTRA_ATTRS: {"num_replicas": num_replicas}
         }
+
+    @staticmethod
+    def collection_analyzed(node, scope_name, collection_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.CollectionAnalyzed,
+            Event.Fields.DESCRIPTION: "Analytics Collection Analyzed",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "collection_name": collection_name
+            }
+        }
+
+    @staticmethod
+    def collection_stats_dropped(node, scope_name, collection_name):
+        return {
+            Event.Fields.COMPONENT: Event.Component.ANALYTICS,
+            Event.Fields.SEVERITY: Event.Severity.INFO,
+            Event.Fields.EVENT_ID: Analytics.CollectionStatsDropped,
+            Event.Fields.DESCRIPTION: "Analytics Collection Statistics Dropped",
+            Event.Fields.NODE_NAME: node,
+            Event.Fields.EXTRA_ATTRS: {
+                "scope_name": scope_name,
+                "collection_name": collection_name
+            }
+        }

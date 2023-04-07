@@ -112,6 +112,8 @@ class Analytics(object):
     BucketConnectFailed = 5282
     BucketDisconnected = 5283
     PartitionTopologyUpdated = 5284
+    CollectionAnalyzed = 5287
+    CollectionStatsDropped = 5288
 
 
 class Xdcr(object):
