@@ -39,7 +39,7 @@ class SecurityTest(BaseTestCase):
         self.tenant_id = self.input.capella.get("tenant_id")
         self.secret_key = self.input.capella.get("secret_key")
         self.access_key = self.input.capella.get("access_key")
-        self.project_id = self.input.capella.get("project")
+        self.project_id = self.tenant.project_id
         self.cluster_id = self.cluster.id
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         if self.input.capella.get("test_users"):
