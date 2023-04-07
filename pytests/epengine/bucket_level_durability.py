@@ -907,6 +907,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
                 self.summary.add_step(crud_desc)
                 old_cas = result["cas"]
+                if d_level == Bucket.DurabilityLevel.MAJORITY:
+                    self.sleep(1, "wait for vb stats to get updated")
             client.close()
 
         doc_gen = doc_generator("test_key", 0, 1, mutate=0)
