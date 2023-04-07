@@ -10,11 +10,13 @@ from Queue import Queue
 
 from cbas.cbas_base import CBASBaseTest
 from security.rbac_base import RbacBase
-from Jython_tasks.task import RunQueriesTask, CreateDatasetsTask, DropDatasetsTask
+from Jython_tasks.task import RunQueriesTask
 from cbas_utils.cbas_utils import CBASRebalanceUtil
-from BucketLib.bucket import TravelSample, BeerSample
+from BucketLib.bucket import TravelSample
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
+from SystemEventLogLib.analytics_events import AnalyticsEvents
+from CbasLib.CBASOperations import CBASHelper
 
 class CBASCBO(CBASBaseTest):
 
@@ -170,9 +172,9 @@ class CBASCBO(CBASBaseTest):
                     self.fail("Rebalance failed")
 
     def test_set_compiler_queryplanshape_option(self):
-        self.setup_for_cbo(check_CBO_enabled=True, load_sample_bucket=False, create_samples_on_tpch=True,
-        create_tpch_datasets=True, create_samples_on_travel_sample=False, setup_for_rebalance=False,
-        create_index_on_datasets=self.create_index)
+        self.setup_for_cbo(check_CBO_enabled=True, load_sample_bucket=False, create_tpch_datasets=True,
+                           wait_for_ingestion=True, create_index_on_datasets=self.create_index,
+                           create_samples_on_travel_sample=False, create_samples_on_tpch=True, setup_for_rebalance=False)
         tpch_queries = self.tpch_util.get_tpch_queries()
         queryplanshape = self.input.param('queryplanshape', "zigzag")
         query = "SET `compiler.queryplanshape` \"{0}\"; Explain ".format(queryplanshape) + tpch_queries["query_2"]
@@ -719,3 +721,29 @@ class CBASCBO(CBASBaseTest):
             self.fail("Actual cardinality : {0} has more than 20% variance from estimated cardinality {1}".format(
                 actual_cardinality, estimated_cardinality
             ))
+
+    def test_system_events_for_collection_stats_creation_deletion(self):
+        self.setup_for_cbo(check_CBO_enabled=True, load_sample_bucket=True, create_tpch_datasets=False,
+                           wait_for_ingestion=True, create_index_on_datasets=False, create_samples_on_travel_sample=False,
+                           create_samples_on_tpch=False, setup_for_rebalance=False)
+        query = "ANALYZE ANALYTICS COLLECTION `travel-sample`.inventory.airline"
+        status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, query)
+        if status != "success":
+            self.fail("Failed to execute analytics analyze query")
+
+        self.system_events.add_event(AnalyticsEvents.collection_analyzed(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format("`travel-sample`.inventory"),
+            CBASHelper.metadata_format("airline")
+        ))
+
+        query += " drop statistics"
+        status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, query)
+        if status != "success":
+            self.fail("Failed to drop statistics on collection")
+
+        self.system_events.add_event(AnalyticsEvents.collection_stats_dropped(
+            self.cluster.cbas_cc_node.ip,
+            CBASHelper.metadata_format("`travel-sample`.inventory"),
+            CBASHelper.metadata_format("airline")
+        ))
