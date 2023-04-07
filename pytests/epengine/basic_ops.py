@@ -2099,6 +2099,150 @@ class basic_ops(ClusterSetup):
         result = str(result[0][key]['value'])
         self.assertEqual('[[]]', result, "Value mismatch: %s" % result)
 
+    def test_defragmenter_sleep_time(self):
+        """
+        Ref: MB-55943
+        """
+        result = True
+        bucket = self.cluster.buckets[0]
+        iterations = self.input.param("iterations", 2000)
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+
+        doc_gen = doc_generator(self.key, 0, self.num_items,
+                                key_size=self.key_size, doc_size=self.doc_size)
+        self.log.info("Loading initial data load")
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+            exp=self.maxttl, timeout_secs=60, durability=self.durability_level,
+            process_concurrency=8, batch_size=500, print_ops_rate=False)
+        self.task_manager.get_task_result(load_task)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
+        for node in kv_nodes:
+            shell = RemoteMachineShellConnection(node)
+            cb_stat= Cbstats(shell)
+            all_stats = cb_stat.all_stats(bucket.name)
+            num_moved = int(all_stats["ep_defragmenter_num_moved"])
+            num_visited = int(all_stats["ep_defragmenter_num_visited"])
+            self.log.info("{0} - ep_defragmenter_num_moved={1}, "
+                          "ep_defragmenter_num_visited={2}"
+                          .format(node.ip, num_moved, num_visited))
+            if num_visited == 0:
+                result = False
+                self.log.critical("{0} - ep_defragmenter_num_visited={1}"
+                                  .format(node.ip, num_visited))
+            shell.disconnect()
+        self.assertTrue(result, "Stat validation failed")
+
+        self.log.info("Loading data for fragmentation")
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+            exp=self.maxttl, timeout_secs=60, durability=self.durability_level,
+            iterations=iterations, process_concurrency=8,
+            batch_size=500, print_ops_rate=False)
+        self.task_manager.get_task_result(load_task)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+        for node in kv_nodes:
+            shell = RemoteMachineShellConnection(node)
+            cb_stat= Cbstats(shell)
+            all_stats = cb_stat.all_stats(bucket.name)
+            num_moved = int(all_stats["ep_defragmenter_num_moved"])
+            num_visited = int(all_stats["ep_defragmenter_num_visited"])
+            self.log.info("{0} - ep_defragmenter_num_moved={1}, "
+                          "ep_defragmenter_num_visited={2}"
+                          .format(node.ip, num_moved, num_visited))
+            if num_moved == 0:
+                result = False
+                self.log.critical("{0} - ep_defragmenter_num_moved={1}"
+                                  .format(node.ip, num_moved))
+            elif num_visited == 0:
+                result = False
+                self.log.critical("{0} - ep_defragmenter_num_visited={1}"
+                                  .format(node.ip, num_visited))
+            shell.disconnect()
+        self.assertTrue(result, "Stat validation failed")
+
+    def test_compaction_on_expiry_load(self):
+        """
+        Ref: MB-53898
+        """
+        def bg_fetch_op(op_type, gen):
+            client = self.sdk_client_pool.get_client_for_bucket(bucket)
+            while compaction_running and gen.has_next():
+                k, _ = gen.next()
+                result = client.crud(op_type, k, {}, timeout=2)
+                if result["status"] is False and \
+                        SDKException.AmbiguousTimeoutException in result["error"] and \
+                        SDKException.RetryReason.KV_TEMPORARY_FAILURE in result["error"]:
+                    self.crud_failure = True
+                    self.log.critical(result)
+                    break
+            self.sdk_client_pool.release_client(client)
+
+        exp = 300
+        self.crud_failure = False
+        bucket = self.cluster.buckets[0]
+        non_ttl_docs = int(self.num_items * 1.8)
+        init_gen = doc_generator(self.key, 0, non_ttl_docs,
+                                 doc_size=100, key_size=self.key_size)
+        exp_gen = doc_generator("exp_docs", 0, self.num_items,
+                                key_size=self.key_size)
+        self.log.info("Loading non-ttl documents")
+        init_load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, init_gen, DocLoading.Bucket.DocOps.CREATE,
+            timeout_secs=300, durability=self.durability_level,
+            process_concurrency=10, batch_size=2000, print_ops_rate=False,
+            sdk_client_pool=self.sdk_client_pool)
+        self.log.info("Loading ttl documents")
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, exp_gen, DocLoading.Bucket.DocOps.CREATE,
+            exp=exp, timeout_secs=300, durability=self.durability_level,
+            process_concurrency=10, batch_size=2000, print_ops_rate=False,
+            sdk_client_pool=self.sdk_client_pool)
+        self.log.info("Waiting for doc_loading to complete")
+        self.task_manager.get_task_result(init_load_task)
+        self.task_manager.get_task_result(load_task)
+
+        self.sleep(exp, "Wait for docs to expire")
+        compaction_running = True
+        self.log.info("Starting create threads")
+
+        gen_num = int(non_ttl_docs / 4)
+        gen_1 = doc_generator(self.key, 0, gen_num, key_size=self.key_size,
+                              doc_size=100)
+        gen_2 = doc_generator(self.key, gen_num, gen_num * 2,
+                              key_size=self.key_size, doc_size=100)
+        gen_3 = doc_generator(self.key, gen_num * 2, gen_num * 3,
+                              key_size=self.key_size, doc_size=100)
+        gen_4 = doc_generator(self.key, gen_num * 3, gen_num * 4,
+                              key_size=self.key_size, doc_size=100)
+        op_threads = [
+            Thread(target=bg_fetch_op,
+                   args=(DocLoading.Bucket.DocOps.REPLACE, gen_1)),
+            Thread(target=bg_fetch_op,
+                   args=(DocLoading.Bucket.DocOps.READ, gen_2)),
+            Thread(target=bg_fetch_op,
+                   args=(DocLoading.Bucket.DocOps.REPLACE, gen_3)),
+            Thread(target=bg_fetch_op,
+                   args=(DocLoading.Bucket.DocOps.READ, gen_4))]
+
+        for thread in op_threads:
+            thread.start()
+
+        self.sleep(5, "Wait for load threads to start")
+        self.log.info("Running compaction on the bucket")
+        c_task = self.task.async_compact_bucket(self.cluster.master, bucket)
+        self.task_manager.get_task_result(c_task)
+        compaction_running = False
+
+        for thread in op_threads:
+            thread.join(10)
+
+        self.assertFalse(self.crud_failure, "Crud failure observed")
+
+
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
         mc = MemcachedClient(self.cluster.master.ip,
