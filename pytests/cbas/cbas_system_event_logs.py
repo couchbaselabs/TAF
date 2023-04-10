@@ -10,6 +10,7 @@ import copy
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from CbasLib.CBASOperations import CBASHelper
+from BucketLib.bucket import Bucket
 
 
 class CBASSystemEventLogs(CBASBaseTest):
@@ -312,10 +313,13 @@ class CBASSystemEventLogs(CBASBaseTest):
 
         self.log.info("Creating collection {0}".format(
             dataset_obj.full_kv_entity_name))
+        collection_spec = dataset_obj.kv_collection.get_dict_object()
+        if dataset_obj.kv_bucket.storageBackend != Bucket.StorageBackend.magma:
+            collection_spec.pop("history", None)
         self.bucket_util.create_collection(
             self.cluster.master, dataset_obj.kv_bucket,
             scope_name=dataset_obj.kv_scope.name,
-            collection_spec=dataset_obj.kv_collection.get_dict_object(),
+            collection_spec=collection_spec,
             session=None)
         if not self.cbas_util.wait_for_ingestion_complete(
                 self.cluster, dataset_obj.full_name, 0, timeout=300):
