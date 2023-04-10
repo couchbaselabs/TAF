@@ -332,7 +332,7 @@ class CBASCBO(CBASBaseTest):
         self.log.debug("Killing Cbas on {0}".format(cluster_cbas_nodes[0]))
         self.cbas_util.kill_cbas_process(self.cluster, cbas_nodes=cluster_cbas_nodes[:1])
 
-        if not self.cbas_util.is_analytics_running(self.cluster):
+        if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 600):
             self.fail("Analytics service did not come up even after 10\
                          mins of wait after initialisation")
 
@@ -592,21 +592,33 @@ class CBASCBO(CBASBaseTest):
             servers=self.cluster.nodes_in_cluster)
 
         rest = RestConnection(cluster_cbas_nodes[0])
-        response = rest.get_jre_path()
-        if not response:
-            self.fail("No response returned from nodes/self endpoint")
-        free_storage_in_MB = response["storageTotals"]["hdd"]["free"] / 1000000
 
         shell = RemoteMachineShellConnection(cluster_cbas_nodes[0])
         shell.extract_remote_info()
 
-        if free_storage_in_MB > 1000:
-            if shell.info.type.lower() == 'windows':
-                self.fail("This test case will not work for windows")
-            elif shell.info.type.lower() == "linux":
-                command = "fallocate -l {0}M /x".format(free_storage_in_MB - 1000)
-                o, r = shell.execute_command(command)
-                shell.log_command_output(o, r)
+        diskfill = False
+        dummy_file_paths = list()
+        counter = 0
+
+        while not diskfill:
+            response = rest.get_nodes_self_unparsed()
+            if not response:
+                self.fail("No response returned from nodes/self endpoint")
+            free_storage_in_MB = response["storageTotals"]["hdd"]["free"] / 1000000
+
+
+            if free_storage_in_MB > 500:
+                if shell.info.type.lower() == 'windows':
+                    self.fail("This test case will not work for windows")
+                elif shell.info.type.lower() == "linux":
+                    command = "fallocate -l {0}M /x{1}".format(0.75*free_storage_in_MB, counter)
+                    dummy_file_paths.append("/x{0}".format(counter))
+                    o, r = shell.execute_command(command)
+                    if "No space left on device" in r:
+                        diskfill = True
+                    else:
+                        counter += 1
+                    shell.log_command_output(o, r)
 
         all_result = True
         for dataset in datasets:
@@ -614,9 +626,10 @@ class CBASCBO(CBASBaseTest):
             all_result = all_result and result
 
         if shell.info.type.lower() == "linux":
-            command = "rm -f /x"
-            o, r = shell.execute_command(command)
-            shell.log_command_output(o, r)
+            for f_name in dummy_file_paths:
+                command = "rm -f {0}".format(f_name)
+                o, r = shell.execute_command(command)
+                shell.log_command_output(o, r)
 
         if all_result:
             self.fail("unable to simulate disk fill scenario for analytics")

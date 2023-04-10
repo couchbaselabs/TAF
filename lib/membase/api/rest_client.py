@@ -1645,7 +1645,7 @@ class RestConnection(object):
         return node
 
     # returns node data for this host
-    def get_jre_path(self, timeout=120):
+    def get_nodes_self_unparsed(self, timeout=120):
         api = self.baseUrl + 'nodes/self'
         status, content, header = self._http_request(api, timeout=timeout)
         if status:
