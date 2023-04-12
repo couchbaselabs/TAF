@@ -340,6 +340,7 @@ class DocHistoryRetention(ClusterSetup):
 
                 validate_hist_retention_settings()
                 self.log.info("Running doc_ops to validate the retention")
+                self.sleep(60, "Wait for changes to be persisted")
                 self.run_data_ops_on_individual_collection(bucket)
 
                 self.log.info("Disabling history retention")
@@ -732,13 +733,21 @@ class DocHistoryRetention(ClusterSetup):
         self.run_data_ops_on_individual_collection(bucket)
         curr_stat = self.bucket_util.get_vb_details_for_bucket(
             bucket, self.cluster.nodes_in_cluster)
+        no_hist_preserved = True
+        if self.bucket_dedup_retention_bytes != 0 \
+                or self.bucket_dedup_retention_seconds != 0:
+            no_hist_preserved = False
         result = self.bucket_util.validate_history_start_seqno_stat(
-            prev_stat, curr_stat, no_history_preserved=True)
+            prev_stat, curr_stat, no_history_preserved=no_hist_preserved)
         self.assertTrue(result, "Validation failed")
 
         result = self.bucket_util.update_bucket_property(
             self.cluster.master, bucket,
-            history_retention_seconds=86400, history_retention_bytes=100000000)
+            history_retention_seconds=86400,
+            history_retention_bytes=18446744073709551615)
+        # Enabling history for all collections
+        for _, scope in bucket.scopes.items():
+            self.__set_history_retention_for_scope(bucket, scope, "true")
         self.assertFalse(result, "Bucket update succeeded")
 
         self.sleep(10, "Wait for vb-details to get updated")
