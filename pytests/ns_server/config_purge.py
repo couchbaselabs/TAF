@@ -681,7 +681,7 @@ class ConfigPurging(CollectionBase):
         fts_key = "fts_index_%s" % int(self.time_stamp)
         rest = RestConnection(self.cluster.master)
 
-        random_node = choice(self.cluster.servers[1:])
+        random_node = choice(self.cluster.servers[1:self.nodes_init])
         if random_node.ip == self.cluster.fts_nodes[0].ip:
             self.fts_helper = FtsHelper(self.cluster.fts_nodes[1])
 
@@ -742,18 +742,30 @@ class ConfigPurging(CollectionBase):
                     % (node_ip, del_key_count, curr_count))
 
         rest.run_tombstone_purger(10)
-
+        retry_count = 10
         # Validate the key has been deleted from meta_kv
-        purged_keys_dict = self.__get_purged_tombstone_from_last_run()
-        for node_ip, purged_data in purged_keys_dict.items():
-            if purged_data['count'] == 0:
-                self.fail("%s - No keys purged: %s" % (node_ip, purged_data))
-            if purged_data['count'] != del_key_count:
-                self.fail("%s - Purged key count mismatch. Expected %s, got %s"
-                          % (node_ip, del_key_count, purged_data['count']))
-            if custom_meta_kv_key not in purged_data['keys']:
-                self.fail("%s - Key %s missing in purger: %s"
-                          % (node_ip, custom_meta_kv_key, purged_data['keys']))
+        for i in range(retry_count):
+            try:
+                purged_keys_dict = self.__get_purged_tombstone_from_last_run()
+                for node_ip, purged_data in purged_keys_dict.items():
+                    if purged_data['count'] == 0:
+                        self.fail(
+                            "%s - No keys purged: %s" % (node_ip, purged_data))
+                    if purged_data['count'] != del_key_count:
+                        self.fail(
+                            "%s - Purged key count mismatch. Expected %s, got %s"
+                            % (node_ip, del_key_count, purged_data['count']))
+                    if custom_meta_kv_key not in purged_data['keys']:
+                        self.fail("%s - Key %s missing in purger: %s"
+                                  % (node_ip, custom_meta_kv_key,
+                                     purged_data['keys']))
+                break
+            except Exception as e:
+                if i == retry_count-1:
+                    raise e
+                else:
+                    self.sleep(1, "waiting 1 sec before retry")
+
 
     def test_node_add_back(self):
         """
