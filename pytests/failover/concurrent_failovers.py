@@ -461,10 +461,21 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.log.error("Exception occurred: %s" % str(e))
         finally:
             # Disable auto-fo after the expected time limit
-            self.rest.update_autofailover_settings(
-                enabled=False, timeout=self.timeout, maxCount=self.max_count,
-                canAbortRebalance=self.can_abort_rebalance)
-
+            retry = 5
+            for i in range(retry):
+                try:
+                    status = self.rest.update_autofailover_settings(
+                        enabled=False, timeout=self.timeout,
+                        maxCount=self.max_count,
+                        canAbortRebalance=self.can_abort_rebalance)
+                    self.assertTrue(status)
+                    break
+                except Exception as e:
+                    if i >= retry - 1:
+                        raise e
+                    else:
+                        self.sleep(1, "waiting 1 sec before afo setting "
+                                      "update retry")
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 failover_task = ConcurrentFailoverTask(
                     task_manager=self.task_manager, master=self.orchestrator,
