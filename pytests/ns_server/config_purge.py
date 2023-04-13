@@ -373,14 +373,19 @@ class ConfigPurging(CollectionBase):
 
         # Validating purged keys with default settings
         total_keys_purged = dict()
-        for _ in range(2):
-            self.sleep(self.default_run_interval + 15,
-                       "Wait for next purger run")
+        for iter in range(3):
+            if iter == 0:
+                #ignoring the first internal purge
+                self.sleep(self.default_run_interval + 15,
+                           "Wait for next purger run")
+                continue
             ts_data = self.__get_purged_tombstone_from_last_run()
             for node_ip, purge_data in ts_data.items():
                 if node_ip not in total_keys_purged:
                     total_keys_purged[node_ip] = 0
                 total_keys_purged[node_ip] += purge_data["count"]
+            self.sleep(self.default_run_interval + 15,
+                       "Wait for next purger run")
 
         for node_ip, purged_count in total_keys_purged.items():
             if purged_count != i_count:
