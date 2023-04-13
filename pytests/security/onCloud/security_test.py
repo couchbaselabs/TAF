@@ -428,8 +428,8 @@ class SecurityTest(BaseTestCase):
                          msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 404))
 
     def test_n1ql_service(self):
-        self.log.info("Verifying status code for running query to access metadata")
-        queries = ["SELECT CURL(\"\", \"header=Metadata-true\");"]
+        self.log.info("Verifying status code for running cURL via query")
+        queries = ["SELECT CURL(\"\", \"\");"]
         for user in self.test_users:
             for query_statement in queries:
                 self.log.info(
