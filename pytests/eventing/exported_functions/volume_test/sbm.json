@@ -1,0 +1,43 @@
+{
+    "appcode": "function OnUpdate(doc, meta) {\n    log(\"Doc created/updated\", meta.id);\n    try{\n        var result= couchbase.get(src_bucket,meta,doc);\n        log(result);\n    }catch(e){\n        log(e);\n    }\n}",
+    "depcfg": {
+        "buckets": [
+            {
+                "alias": "src_bucket",
+                "bucket_name": "default0",
+                "scope_name": "_default",
+                "collection_name": "VolumeCollection0",
+                "access": "rw"
+            }
+        ],
+        "source_bucket": "default0",
+        "source_scope": "_default",
+        "source_collection": "VolumeCollection0",
+        "metadata_bucket": "default0",
+        "metadata_scope": "_default",
+        "metadata_collection": "_default"
+    },
+    "version": "",
+    "enforce_schema": false,
+    "handleruuid": 3621033370,
+    "function_instance_id": "mKkO&1",
+    "appname": "sbm",
+    "settings": {
+        "dcp_stream_boundary": "everything",
+        "deadline_timeout": 62,
+        "deployment_status": false,
+        "description": "",
+        "execution_timeout": 60,
+        "language_compatibility": "6.6.2",
+        "log_level": "INFO",
+        "n1ql_consistency": "none",
+        "processing_status": false,
+        "timer_context_size": 1024,
+        "user_prefix": "eventing",
+        "worker_count": 1
+    },
+    "function_scope": {
+        "bucket": "*",
+        "scope": "*"
+    }
+}

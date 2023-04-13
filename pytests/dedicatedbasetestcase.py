@@ -56,7 +56,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "index": self.input.param("gsi_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
             "search": self.input.param("fts_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
             "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
-            "eventing": self.input.param("envt_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard")
+            "eventing": self.input.param("eventing_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard")
             }
         self.iops = {
             "data": self.input.param("kv_iops", 3000),
@@ -64,7 +64,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "index": self.input.param("gsi_iops", 3000),
             "search": self.input.param("fts_iops", 3000),
             "analytics": self.input.param("cbas_iops", 3000),
-            "eventing": self.input.param("envt_iops", 3000)
+            "eventing": self.input.param("eventing_iops", 3000)
             }
         self.disk = {
             "data": self.input.param("kv_disk", 200),
@@ -72,7 +72,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "index": self.input.param("gsi_disk", 200),
             "search": self.input.param("fts_disk", 200),
             "analytics": self.input.param("cbas_disk", 200),
-            "eventing": self.input.param("envt_disk", 200)
+            "eventing": self.input.param("eventing_disk", 200)
             }
         self.num_nodes = {
             "data": self.input.param("kv_nodes", 3),
@@ -80,7 +80,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "index": self.input.param("gsi_nodes", 2),
             "search": self.input.param("fts_nodes", 2),
             "analytics": self.input.param("cbas_nodes", 2),
-            "eventing": self.input.param("envt_nodes", 2)
+            "eventing": self.input.param("eventing_nodes", 2)
             }
         CbServer.use_https = True
         trust_all_certs()

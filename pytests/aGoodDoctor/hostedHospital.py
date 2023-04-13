@@ -17,6 +17,7 @@ from aGoodDoctor.hostedN1QL import QueryLoad, DoctorN1QL
 from aGoodDoctor.hostedCbas import DoctorCBAS
 from aGoodDoctor.hostedXDCR import DoctorXDCR
 from aGoodDoctor.hostedBackupRestore import DoctorHostedBackupRestore
+from aGoodDoctor.hostedEventing import DoctorEventing
 from aGoodDoctor.hostedOPD import OPD
 from constants.cloud_constants.capella_constants import AWS
 from table_view import TableView
@@ -60,6 +61,7 @@ class Murphy(BaseTestCase, OPD):
         self.cbas_nodes = self.input.param("cbas_nodes", 0)
         self.fts_nodes = self.input.param("fts_nodes", 0)
         self.index_nodes = self.input.param("index_nodes", 0)
+        self.eventing_nodes = self.input.param("eventing_nodes", 0)
         self.backup_nodes = self.input.param("backup_nodes", 0)
         self.xdcr_remote_clusters = self.input.param("xdcr_remote_clusters", 0)
         self.num_indexes = self.input.param("num_indexes", 0)
@@ -101,6 +103,9 @@ class Murphy(BaseTestCase, OPD):
 
         if self.cluster.backup_nodes:
             self.drBackup = DoctorBKRS(self.cluster)
+
+        if self.cluster.eventing_nodes:
+            self.drEventing = DoctorEventing(self.cluster, self.bucket_util)
 
         self.drIndex = DoctorN1QL(self.cluster, self.bucket_util)
         # self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
@@ -355,6 +360,10 @@ class Murphy(BaseTestCase, OPD):
             self.drIndex.create_indexes(self.cluster.buckets, self.skip_init)
             self.build_gsi_index(self.cluster.buckets)
 
+        if self.cluster.eventing_nodes:
+            self.drEventing.create_eventing_functions()
+            self.drEventing.lifecycle_operation_for_all_functions("deploy", "deployed")
+
         for bucket in self.cluster.buckets:
             if bucket.loadDefn.get("2i")[1] > 0:
                 ql = QueryLoad(bucket)
@@ -518,6 +527,8 @@ class Murphy(BaseTestCase, OPD):
                 self.wait_for_doc_load_completion(tasks)
                 if self.track_failures:
                     self.data_validation()
+        if self.cluster.eventing_nodes:
+            self.drEventing.print_eventing_stats()
         if self.cluster.fts_nodes:
             self.drFTS.discharge_FTS()
         if self.cluster.cbas_nodes:

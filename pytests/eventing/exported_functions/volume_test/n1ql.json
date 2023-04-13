@@ -1,0 +1,34 @@
+{
+    "appcode": "function OnUpdate(doc,meta) {\n    try {\n        N1QL(\"select city,country,count(*) from default0._default.VolumeCollection1 where free_breakfast=True and free_parking=True group by country,city order by country,city limit 10\");\n    } catch (e) {\n        log(e);\n    }\n}",
+    "depcfg": {
+        "source_bucket": "default0",
+        "source_scope": "_default",
+        "source_collection": "VolumeCollection0",
+        "metadata_bucket": "default0",
+        "metadata_scope": "_default",
+        "metadata_collection": "_default"
+    },
+    "version": "",
+    "enforce_schema": false,
+    "handleruuid": 3716970432,
+    "function_instance_id": "8vl5u2",
+    "appname": "n1ql",
+    "settings": {
+        "dcp_stream_boundary": "everything",
+        "deadline_timeout": 62,
+        "deployment_status": false,
+        "description": "",
+        "execution_timeout": 60,
+        "language_compatibility": "6.6.2",
+        "log_level": "INFO",
+        "n1ql_consistency": "none",
+        "processing_status": false,
+        "timer_context_size": 1024,
+        "user_prefix": "eventing",
+        "worker_count": 1
+    },
+    "function_scope": {
+        "bucket": "*",
+        "scope": "*"
+    }
+}

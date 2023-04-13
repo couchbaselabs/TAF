@@ -66,7 +66,7 @@ class EventingHelper(RestConnection):
         return content
 
     '''
-        undeploy the Function 
+        undeploy the Function
     '''
 
     def undeploy_function(self, name):
@@ -82,18 +82,14 @@ class EventingHelper(RestConnection):
         return content
 
     '''
-        Delete all the functions 
+        Delete all the functions
     '''
 
     def delete_all_function(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "api/v1/functions"
         api = self.eventing_baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'DELETE', headers=headers)
-        if not status:
-            raise Exception(content)
-        return content
+        status, content, _ = self._http_request(api, 'DELETE')
+        return status, content
 
     '''
             Delete single function
@@ -193,14 +189,10 @@ class EventingHelper(RestConnection):
     '''
 
     def get_composite_eventing_status(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "api/v1/status"
         api = self.eventing_baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'GET', headers=headers)
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
+        status, content, _ = self._http_request(api, 'GET')
+        return status, json.loads(content)
 
     '''
              Get Eventing processing stats
@@ -297,20 +289,15 @@ class EventingHelper(RestConnection):
     def get_all_eventing_stats(self, seqs_processed=False, eventing_map=None):
         if eventing_map is None:
             eventing_map = {}
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
+        url = "api/v1/stats"
         if seqs_processed:
-            url = "api/v1/stats?type=full"
-        else:
-            url = "api/v1/stats"
+            url += "?type=full"
         api = self.eventing_baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'GET', headers=headers)
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
+        status, content, _ = self._http_request(api, 'GET')
+        return status, json.loads(content)
 
     '''
-            Cleanup eventing 
+            Cleanup eventing
     '''
 
     def cleanup_eventing(self):
@@ -412,6 +399,12 @@ class EventingHelper(RestConnection):
         if status:
             return content
 
+    def import_function(self, body):
+        url = "api/v1/import"
+        api = self.eventing_baseUrl + url
+        status, content, _ = self._http_request(api, 'POST', params=body)
+        return status, content
+
     def create_function(self, name, body):
         authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "api/v1/functions/" + name
@@ -436,14 +429,10 @@ class EventingHelper(RestConnection):
         return content
 
     def get_function_details(self, name):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "api/v1/functions/" + name
         api = self.eventing_baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'GET', headers=headers)
-        if not status:
-            raise Exception(content)
-        return content
+        status, content, _ = self._http_request(api, 'GET')
+        return status, json.loads(content)
 
     def get_eventing_go_routine_dumps(self):
         authorization = base64.encodestring('%s:%s' % (self.username, self.password))
@@ -478,3 +467,15 @@ class EventingHelper(RestConnection):
         if not status:
             raise Exception(content)
         return content
+
+    def get_list_of_eventing_functions(self):
+         url = "api/v1/list/functions"
+         api = self.eventing_baseUrl + url
+         status, content, _ = self._http_request(api, 'GET')
+         return status, json.loads(content)
+
+    def lifecycle_operation(self, name, operation):
+         url = "api/v1/functions/" + name +"/"+ operation
+         api = self.eventing_baseUrl + url
+         status, content, _ = self._http_request(api, 'POST')
+         return status, content
