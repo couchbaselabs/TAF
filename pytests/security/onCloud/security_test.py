@@ -86,11 +86,11 @@ class SecurityTest(BaseTestCase):
                     self.fail(
                         msg="Connection to the node should have passed. Failed with error: {0} on "
                             "port: {1}".format(e, port))
-                else:
-                    if not expect_to_connect:
-                        self.fail(
-                            msg="Connection to the node should have failed on port: {0}".format(
-                                port))
+            else:
+                if not expect_to_connect:
+                    self.fail(
+                        msg="Connection to the node should have failed on port: {0}".format(
+                            port))
 
     def run_query(self, user, password, role, query_statement):
         pod = "https://" + self.url.replace("cloud", "", 1)
