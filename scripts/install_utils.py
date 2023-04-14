@@ -770,32 +770,67 @@ def __get_build_binary_name(node):
     # couchbase-server-enterprise-6.5.0-4557-rhel8.x86_64.rpm
     # couchbase-server-enterprise-6.5.0-4557-oel7.x86_64.rpm
     # couchbase-server-enterprise-6.5.0-4557-amzn2.x86_64.rpm
+    #All the above ones replaced by couchbase-server-enterprise-6.5.0-4557-linux.x86_64.rpm for 7.2 and above
+    cb_version = params["version"]
+    if params["bkrs_client"]:
+        if node.ip != params["bkrs_client"].ip:
+            cb_version = params["cluster_version"]
     if node.get_os() in install_constants.X86:
-        return "{0}-{1}-{2}.{3}.{4}".format(params["cb_edition"],
-                                            params["version"],
+        if float(cb_version[:3]) < 7.1 :
+            return "{0}-{1}-{2}{3}.{4}.{5}".format(params["cb_edition"],
+                                            cb_version,
                                             node.get_os(),
+                                            "-" + params["variant"] if "variant" in params else "",
+                                            node.info.architecture_type,
+                                            node.info.deliverable_type)
+        return "{0}-{1}-{2}{3}.{4}.{5}".format(params["cb_edition"],
+                                            cb_version,
+                                            "linux",
+                                            "-" + params["variant"] if "variant" in params else "",
                                             node.info.architecture_type,
                                             node.info.deliverable_type)
 
     # couchbase-server-enterprise_6.5.0-4557-ubuntu16.04_amd64.deb
     # couchbase-server-enterprise_6.5.0-4557-debian8_amd64.deb
+    #All the above ones replaced by couchbase-server-enterprise-6.5.0-4557-linux_amd64.deb for 7.2 and above
+    elif node.get_os() in install_constants.LINUX_AMD64:
+        if node.get_os() in install_constants.LINUX_DISTROS and node.info.architecture_type == "aarch64":
+            return "{0}_{1}-{2}_{3}.{4}".format(params["cb_edition"],
+                                                cb_version,
+                                                "linux",
+                                                "arm64",
+                                                node.info.deliverable_type)
+        if float(cb_version[:3]) < 7.1 :
+            return "{0}_{1}-{2}_{3}.{4}".format(params["cb_edition"],
+                                            cb_version,
+                                            node.get_os(),
+                                            "amd64",
+                                            node.info.deliverable_type)
+        return "{0}_{1}-{2}_{3}.{4}".format(params["cb_edition"],
+                                            cb_version,
+                                            "linux",
+                                            "amd64",
+                                            node.info.deliverable_type)
+
     # couchbase-server-enterprise_6.5.0-4557-windows_amd64.msi
-    elif node.get_os() in install_constants.AMD64:
+    elif node.get_os() in install_constants.WINDOWS_SERVER:
         if "windows" in node.get_os():
             node.info.deliverable_type = "msi"
         return "{0}_{1}-{2}_{3}.{4}".format(params["cb_edition"],
-                                            params["version"],
+                                            cb_version,
                                             node.get_os(),
                                             "amd64",
                                             node.info.deliverable_type)
 
     # couchbase-server-enterprise_6.5.0-4557-macos_x86_64.dmg
     elif node.get_os() in install_constants.MACOS_VERSIONS:
-        return "{0}_{1}-{2}_{3}.{4}".format(params["cb_edition"],
-                                            params["version"],
+        return "{0}_{1}-{2}_{3}-{4}.{5}".format(params["cb_edition"],
+                                            cb_version,
                                             "macos",
                                             node.info.architecture_type,
+                                            "unnotarized",
                                             node.info.deliverable_type)
+
 
 def __get_debug_binary_name(node):
     # couchbase-server-enterprise-debuginfo-6.5.0-4557-centos7.x86_64.rpm
@@ -803,21 +838,49 @@ def __get_debug_binary_name(node):
     # couchbase-server-enterprise-debuginfo-6.5.0-4557-rhel8.x86_64.rpm
     # couchbase-server-enterprise-debuginfo-6.5.0-4557-oel7.x86_64.rpm
     # couchbase-server-enterprise-debuginfo-6.5.0-4557-amzn2.x86_64.rpm
+    #All the above ones replaced by couchbase-server-enterprise-debuginfo-6.5.0-4557-linux.x86_64.rpm in 7.2 and above
+
     if node.get_os() in install_constants.X86:
-        return "{0}-{1}-{2}.{3}.{4}".format(params["cb_edition"]+"-debuginfo",
-                                            params["version"],
-                                            node.get_os(),
-                                            node.info.architecture_type,
-                                            node.info.deliverable_type)
+        if float(params["cb_edition"][:3]) < 7.1 :
+            return "{0}-{1}-{2}.{3}.{4}".format(
+                params["cb_edition"] + "-debuginfo",
+                params["version"],
+                node.get_os(),
+                node.info.architecture_type,
+                node.info.deliverable_type)
+        return "{0}-{1}-{2}.{3}.{4}".format(
+            params["cb_edition"] + "-debuginfo",
+            params["version"],
+            "linux",
+            node.info.architecture_type,
+            node.info.deliverable_type)
 
     # couchbase-server-enterprise-dbg_6.5.0-4557-ubuntu16.04_amd64.deb
     # couchbase-server-enterprise-dbg_6.5.0-4557-debian8_amd64.deb
+    #All the above ones replaced by couchbase-server-enterprise-dbg_6.5.0-4557-linux_amd64.deb in 7.2 and above
+    elif node.get_os() in install_constants.LINUX_AMD64:
+        if float(params["cb_edition"][:3]) < 7.1 :
+            return "{0}_{1}-{2}_{3}.{4}".format(
+                params["cb_edition"] + "-dbg",
+                params["version"],
+                node.get_os(),
+                node.info.architecture_type,
+                node.info.deliverable_type)
+        return "{0}_{1}-{2}_{3}.{4}".format(
+            params["cb_edition"] + "-dbg",
+            params["version"],
+            "linux",
+            node.info.architecture_type,
+            node.info.deliverable_type)
+
     # couchbase-server-enterprise-dbg_6.5.0-4557-windows_amd64.msi
-    elif node.get_os() in install_constants.AMD64:
-        if "windows" in node.get_os():
-            node.info.deliverable_type = "msi"
-        return "{0}_{1}-{2}_{3}.{4}".format(params["cb_edition"]+"-dbg",
-                                            params["version"],
-                                            node.get_os(),
-                                            "amd64",
-                                            node.info.deliverable_type)
+    elif node.get_os() in install_constants.WINDOWS_SERVER:
+        node.info.deliverable_type = "msi"
+        return "{0}_{1}-{2}_{3}.{4}".format(
+            params["cb_edition"] + "-dbg",
+            params["version"],
+            node.get_os(),
+            "amd64",
+            node.info.deliverable_type)
+    return ""
+
