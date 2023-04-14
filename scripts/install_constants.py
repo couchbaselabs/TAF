@@ -1,20 +1,20 @@
 USAGE = """\
             Syntax: new_install.py [options]
-            
+
             Options:
              -p <param=val,...> Comma-separated key=value info
              -i <file>          Path to .ini file containing cluster information
-            
+
             Available params:
              debug_logs=False                               Print debug logs
-             install_tasks=uninstall-install-init-cleanup   Pick 1 or more tasks  
+             install_tasks=uninstall-install-init-cleanup   Pick 1 or more tasks
              v, version=<numeric version>                   Example: "6.5.0-1234".
              url=<build url>                                Example: "http://172.23.126.166/builds/latestbuilds/couchbase-server/mad-hatter/1234/couchbase-server-enterprise-6.5.0-1234-centos7.x86_64.rpm
              edition, type=enterprise                       CB edition, community or enterprise
              timeout=600                                    End install after timeout seconds
              storage_mode=plasma                            Sets indexer storage mode
              enable_ipv6=False                              Enable ipv6 mode in ns_server
-        
+
             Examples:
              new_install.py -i /tmp/test.ini -p install_tasks=uninstall,debug_logs=true
              new_install.py -i /tmp/test.ini -p url=http://...,timeout=100
@@ -24,16 +24,17 @@ DEFAULT_INSTALL_TASKS = ["uninstall", "install", "init", "cleanup"]
 SUPPORTED_PRODUCTS = ["couchbase", "couchbase-server", "cb"]
 AMAZON = ["amzn2"]
 CENTOS = ["centos6", "centos7", "centos8"]
-DEBIAN = ["debian8", "debian9", "debian10"]
-OEL = ["oel7", "oel8"]
-RHEL = ["rhel8"]
+DEBIAN = ["debian8", "debian9", "debian10", "debian11"]
+OEL = ["oel7", "oel8","oel9"]
+RHEL = ["rhel7", "rhel8", "rhel9"]
 SUSE = ["suse12", "suse15"]
-UBUNTU = ["ubuntu16.04", "ubuntu18.04"]
+UBUNTU = ["ubuntu16.04", "ubuntu18.04", "ubuntu20.04","ubuntu22.04"]
 LINUX_DISTROS = AMAZON + CENTOS + DEBIAN + OEL + RHEL + SUSE + UBUNTU
-MACOS_VERSIONS = ["10.13", "10.14", "10.15", "macos"]
-WINDOWS_SERVER = ["2016", "2019", "windows"]
+MACOS_VERSIONS = ["10.13", "10.14", "10.15", "11.1", "11.2", "11.3", "12.3", "macos"]
+WINDOWS_SERVER = ["2016", "2019", "2022", "windows"]
 SUPPORTED_OS = LINUX_DISTROS + MACOS_VERSIONS + WINDOWS_SERVER
 X86 = CENTOS + SUSE + RHEL + OEL + AMAZON
+LINUX_AMD64 = DEBIAN + UBUNTU
 AMD64 = DEBIAN + UBUNTU + WINDOWS_SERVER
 DEBUG_INFO_SUPPORTED = CENTOS + SUSE + RHEL + OEL + AMAZON + DEBIAN + UBUNTU
 
@@ -220,13 +221,13 @@ NON_ROOT_CMDS = {
             "rm -rf " + DEFAULT_INSTALL_DIR["LINUX_DISTROS"] + " > /dev/null && echo 1 || echo 0; " +
             "rm -rf " + DEFAULT_NONROOT_INSTALL_DIR["LINUX_DISTROS"] + " > /dev/null && echo 1 || echo 0; ",
         "install":
-            "cd " + NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "; " 
-            "rpm2cpio buildpath | cpio --extract --make-directories --no-absolute-filenames  > /dev/null && echo 1 || echo 0; " 
-            "cd " + NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "/opt/couchbase/; " 
+            "cd " + NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "; "
+            "rpm2cpio buildpath | cpio --extract --make-directories --no-absolute-filenames  > /dev/null && echo 1 || echo 0; "
+            "cd " + NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "/opt/couchbase/; "
             "./bin/install/reloc.sh `pwd`  > /dev/null && echo 1 || echo 0; ",
-        "suse_install": "cd " + NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "; " 
-            "rpm2cpio buildpath | cpio --extract --make-directories --no-absolute-filenames  > /dev/null && echo 1 || echo 0; " 
-            "cd " + NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "/opt/couchbase/; " 
+        "suse_install": "cd " + NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "; "
+            "rpm2cpio buildpath | cpio --extract --make-directories --no-absolute-filenames  > /dev/null && echo 1 || echo 0; "
+            "cd " + NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "/opt/couchbase/; "
             "./bin/install/reloc.sh `pwd`  > /dev/null && echo 1 || echo 0; ",
         "post_install": NON_ROOT_DOWNLOAD_DIR["LINUX_DISTROS"] + "opt/couchbase/bin/couchbase-server \-- -noinput -detached",
         "post_install_retry":
