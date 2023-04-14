@@ -768,8 +768,7 @@ class RemoteMachineShellConnection:
         retry_time = 600
         sleep_time = 30
         status = None
-        self.log.info("Polling for URL state. Max poll time: %s secs"
-                      % retry_time)
+        self.log.info("Trying to check is this url alive: {0}".format(url))
         while retry_time > 0:
             try:
                 status = urllib.urlopen(url).getcode()
