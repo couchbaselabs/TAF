@@ -17,7 +17,7 @@ Basic test cases with commit,rollback scenarios
 class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
-
+        self.bucket_size = self.input.param("bucket_size", 256)
         if self.num_buckets:
             self.bucket_util.create_multiple_buckets(
                 self.cluster,

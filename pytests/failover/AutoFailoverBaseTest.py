@@ -880,7 +880,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         RestConnection(self.cluster.master).set_internalSetting("magmaMinMemoryQuota", 256)
         if self.spec_name is None:
             if self.read_loadgen:
-                self.bucket_size = 100
+                self.bucket_size = self.input.param("bucket_size", 256)
             self.bucket_util.create_default_bucket(self.cluster,
                                                    ram_quota=self.bucket_size,
                                                    replica=self.num_replicas)

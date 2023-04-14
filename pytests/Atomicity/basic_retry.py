@@ -18,8 +18,7 @@ class basic_ops(ClusterSetup):
     def setUp(self):
         super(basic_ops, self).setUp()
         if self.default_bucket:
-            # Over-ride bucket ram quota=100MB
-            self.bucket_size = 100
+            self.bucket_size = self.input.param("bucket_size", 256)
             self.create_bucket(self.cluster)
 
         self.sleep(10, "Wait for bucket to become ready for ops")

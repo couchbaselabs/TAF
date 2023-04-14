@@ -16,7 +16,7 @@ class IsolationDocTest(ClusterSetup):
         super(IsolationDocTest, self).setUp()
 
         # Create default bucket
-        self.bucket_size = 100
+        self.bucket_size = self.input.param("bucket_size", 256)
         self.create_bucket(self.cluster)
 
         self.doc_op = self.input.param("doc_op", "create")
