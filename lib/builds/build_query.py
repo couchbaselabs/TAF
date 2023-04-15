@@ -404,7 +404,8 @@ class BuildQuery(object):
                             os_name = "ubuntu14.04"
                         elif "ubuntu 16.04" in os_version:
                             os_name = "ubuntu16.04"
-
+                        elif "debian 10" in os_version:
+                            os_name = "debian10"
                         build.url = "{6}{0}/{1}_{4}-{5}_{2}.{3}"\
                             .format(build_version, product, os_architecture,
                             deliverable_type, build_details[:5], os_name,
