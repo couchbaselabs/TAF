@@ -160,7 +160,7 @@ class IndexUtils:
                                                              indexName=gsi_index_name, timeout=timeout, retry=retry)
                         self.task_manager.get_task_result(task)
 
-    def async_drop_indexes(self, cluster, indexList, buckets=None):
+    def async_drop_indexes(self, cluster, indexList, buckets=None, drop_only_given_indexes=False):
         """
         Drop gsi indexes
         Returns dropped indexes dict and task list
@@ -179,6 +179,9 @@ class IndexUtils:
             for scope_name, scope in bucket.scopes.items():
                 if scope_name == '_default' or scope_name == '_system':
                     continue
+                if drop_only_given_indexes:
+                    if scope.name not in indexList[bucket.name].keys():
+                        continue
                 indexes_dropped[bucket.name][scope.name] = dict()
                 for _, collection in scope.collections.items():
                     gsi_index_names = indexList[bucket.name][scope.name][collection.name]
@@ -261,13 +264,16 @@ class IndexUtils:
         stop_time = start_time + timeout
         self.indexer_rest = GsiHelper(cluster.master, self.log)
         for bucket in buckets:
-            if gsi_index_name.find(bucket.name.replace(".", "")) > -1:
-                while True:
-                    if self.indexer_rest.polling_create_index_status(bucket=bucket, index=gsi_index_name, timeout=timeout, sleep_time=sleep_time) is True:
-                        return True
-                    else:
-                        if time.time() > stop_time:
-                            return False
+            bucket_name = bucket.name.replace(".", "")
+            start = gsi_index_name.find(bucket_name)
+            if start > -1:
+                if gsi_index_name[start + len(bucket_name)] == '_':
+                    while True:
+                        if self.indexer_rest.polling_create_index_status(bucket=bucket, index=gsi_index_name, timeout=timeout, sleep_time=sleep_time) is True:
+                            return True
+                        else:
+                            if time.time() > stop_time:
+                                return False
 
     def randStr(self, Num=10):
         return ''.join(random.choice(string.ascii_uppercase + string.digits) for _ in range(Num))
@@ -279,7 +285,7 @@ class IndexUtils:
         return newIndexMap
 
 
-    def run_full_scan(self, cluster, indexesDict, key, totalCount, bucket_list=None, limit=1000000, is_sync=True, offSetBound=0):
+    def run_full_scan(self, cluster, indexesDict, key, totalCount, bucket_list=None, limit=1000000, is_sync=True, offSetBound=0, lightLoad=False, numThreadsPerNode=1):
         reference_dict = dict()
         if bucket_list is None:
             self.log.info("bucket list is None")
@@ -299,8 +305,12 @@ class IndexUtils:
                         offset = offSetBound
                         while True:
                             query_node_index = x % query_len
-                            query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing order by meta().id limit %s offset %s" % (
-                                bucket, scope, collection, gsi_index_name, key, limit, offset)
+                            if not lightLoad:
+                                query = "select * from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing order by meta().id limit %s offset %s" % (
+                                    bucket, scope, collection, gsi_index_name, key, limit, offset)
+                            else:
+                                query = "select meta().id from `%s`.`%s`.`%s` data USE INDEX (%s USING GSI) where %s is not missing order by meta().id limit %s offset %s" % (
+                                    bucket, scope, collection, gsi_index_name, key, limit, offset)
                             self.log.debug("Query is {}".format(query))
                             self.log.debug("Offset is {} ".format(offset))
                             task = self.task.async_execute_query(cluster.query_nodes[query_node_index], query)
@@ -308,7 +318,7 @@ class IndexUtils:
                             x += 1
                             if is_sync:
                                 self.log.debug("Is sync is true")
-                                if x == query_len:
+                                if x == numThreadsPerNode * query_len:
                                     self.log.debug("Getting status for each query")
                                     for task in query_tasks_info:
                                         self.task_manager.get_task_result(task)

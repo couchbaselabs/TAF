@@ -37,7 +37,7 @@ class PlasmaBaseTest(StorageBase):
         self.initial_load()
         self.indexUtil = IndexUtils(server_task=self.task)
         self.index_port = CbServer.index_port
-        self.in_mem_comp = self.input.param("in_mem_comp", None)
+        self.in_mem_comp = self.input.param("in_mem_comp", True)
         self.sweep_interval = self.input.param("sweep_interval", 120)
         self.index_count = self.input.param("index_count", 1)
         self.counter = self.input.param("counter", 30)
@@ -65,10 +65,72 @@ class PlasmaBaseTest(StorageBase):
                 return True
         return False
 
-    def compareRR(self, initial_RR_map, final_RR_map):
-        for key in initial_RR_map:
-            if ((abs(initial_RR_map[key] - final_RR_map[key]) / initial_RR_map[key]) * 100.0) > 5:
-                return False
+    def load_to_bucket_list(self, bucket_list, load_gen):
+        tasks = []
+        for bucket in bucket_list:
+            tasks.append(self.load_to_specific_bucket(bucket, load_gen))
+        for task in tasks:
+            self.task.jython_task_manager.get_task_result(task)
+            if task.fail:
+                self.fail("items append failed")
+
+    def load_to_specific_bucket(self, bucket, load_gen):
+        for scope_name, scope in bucket.scopes.items():
+            if scope_name == '_default' or scope_name == '_system':
+                continue
+            for collection in scope.collections.keys():
+                return self.task.async_load_gen_docs(
+                    self.cluster, bucket, load_gen, "create",
+                    batch_size=1000, process_concurrency=1,
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    durability=self.durability_level,
+                    compression=self.sdk_compression,
+                    timeout_secs=self.sdk_timeout,
+                    scope=scope_name,
+                    collection=collection)
+
+    def compare_RR_for_nodes(self, final_stat_map_list, initial_stat_map_list, field='resident_ratio', comparisonType='percent', ops='greater', threshold=10):
+        flag = True
+        for node_ip in final_stat_map_list:
+            if self.compare_RR(final_stat_map_list[node_ip], initial_stat_map_list[node_ip], field, comparisonType, ops, threshold) != True:
+                   flag = False
+                   self.log.debug("Marking flag as false")
+        return flag
+
+    def compare_RR(self, final_stat_map, inital_stat_map, field='resident_ratio', comparisonType='percent',  ops='greater', threshold=10):
+        self.log.debug("Ops is {}".format(ops))
+        for bucket_name in final_stat_map:
+            self.log.debug("Bucket is {}".format(bucket_name))
+            if bucket_name not in inital_stat_map:
+                self.log.debug("Bucket is not present")
+                continue
+            self.log.debug("initial stat value is {}".format(inital_stat_map[bucket_name][field]))
+            self.log.debug("final stat value is {}".format(final_stat_map[bucket_name][field]))
+            self.log.debug("Bucket idle stat is {}".format(str(final_stat_map[bucket_name]["idle"])))
+            self.log.debug("difference is {} ".format((abs(inital_stat_map[bucket_name][field] - final_stat_map[bucket_name][field]))))
+            if comparisonType == 'normal':
+                if ops == 'greater':
+                    if inital_stat_map[bucket_name][field] - final_stat_map[bucket_name][field] >= 0:
+                        self.log.debug("FAIL greater")
+                        return False
+                elif ops == 'lesser':
+                    if inital_stat_map[bucket_name][field] - final_stat_map[bucket_name][field] <= 0:
+                        self.log.debug("FAIL lesser")
+                        return False
+                elif ops == 'equalsOrGreaterThan':
+                    if inital_stat_map[bucket_name][field] - final_stat_map[bucket_name][field] > 0:
+                        self.log.debug("FAIL equalsOrGreaterThan")
+                        return False
+                elif ops == 'equalsOrLesserThan':
+                    if inital_stat_map[bucket_name][field] - final_stat_map[bucket_name][field] < 0:
+                        self.log.debug("FAIL equalsOrLesserThan")
+                        return False
+            else:
+                diff = abs(inital_stat_map[bucket_name][field] - final_stat_map[bucket_name][field]) * 100 / inital_stat_map[bucket_name][field]
+                self.log.debug("diff is {}%".format(diff))
+                if diff > threshold:
+                    self.log.debug("FAIL RR: diff is {}%, threshold is {}%".format(diff, threshold))
+                    return False
         return True
 
     def kill_indexer(self, server, timeout=10, kill_sleep_time=20):
@@ -135,13 +197,36 @@ class PlasmaBaseTest(StorageBase):
                 return False
         return True
 
+    def filter_buckets(self, bucket_list, filter='odd'):
+        odd_bucket_list = list()
+        even_bucket_list = list()
+        i = 0
+        for item in range(len(bucket_list)):
+            if item % 2 == 0:
+                even_bucket_list.append(bucket_list[item])
+            else:
+                odd_bucket_list.append(bucket_list[item])
+        if filter == 'odd':
+            return odd_bucket_list
+        else:
+            return even_bucket_list
+
+    def get_index_stat(self, field, index_node=None):
+        if index_node is None:
+            index_node = self.cluster.index_nodes[0]
+        plasma_obj = PlasmaStatsUtil(index_node, server_task=self.task)
+        status, content, header = plasma_obj.get_index_stats(index_node)
+        if status:
+            json_parsed = json.loads(content)
+            return json_parsed[field]
+
     def get_plasma_index_stat_value(self, plasma_stat_field, plasma_obj_dict):
         field_value_map = dict()
         for plasma_obj in plasma_obj_dict.values():
             index_stat = plasma_obj.get_index_storage_stats()
             for bucket in index_stat.keys():
                 for index in index_stat[bucket].keys():
-                    if index is not '#primary':
+                    if index != '#primary':
                         index_stat_map = index_stat[bucket][index]
                         if plasma_stat_field in index_stat_map["MainStore"]:
                             field_value_map[index] = index_stat_map["MainStore"][plasma_stat_field]
@@ -165,13 +250,16 @@ class PlasmaBaseTest(StorageBase):
                                 index_stat_map['MainStore'].get(key)) == float) and index_stat_map['MainStore'].get(
                             key) < 0:
                             self.log.info("MainStore key is {0} and value is {1}".format(key,
-                                          str(index_stat_map['BackStore'].get(key))))
+                                                                                         str(index_stat_map[
+                                                                                                 'BackStore'].get(
+                                                                                             key))))
                             self.fail("Negative field value for key {} in MainStore".format(key))
                     for key in index_stat_map["BackStore"].keys():
                         if (type(index_stat_map['BackStore'].get(key)) == int or type(
                                 index_stat_map['BackStore'].get(key)) == float) and index_stat_map['BackStore'].get(
                             key) < 0:
-                            self.log.info("BackStore key is {0} and value is {1}".format(key, str(index_stat_map['BackStore'].get(key))))
+                            self.log.info("BackStore key is {0} and value is {1}".format(key, str(
+                                index_stat_map['BackStore'].get(key))))
                             self.fail("Negative field value for key {} in BackStore".format(key))
 
     def find_mem_used_percent(self, index_stats_map):
@@ -430,15 +518,18 @@ class PlasmaBaseTest(StorageBase):
                                                     "Avg_latency for bucket {} scope {} collection {} is {}".format(
                                                         bucket, scope, collection, gsi_index_map['avg_scan_latency']))
                                                 if avg_Scan_latency > 0:
-                                                    self.log.debug("Existing avg_scan_latency is {}".format(avg_Scan_latency))
+                                                    self.log.debug(
+                                                        "Existing avg_scan_latency is {}".format(avg_Scan_latency))
                                                     if gsi_index_map['avg_scan_latency'] > 0:
                                                         avg_Scan_latency += gsi_index_map['avg_scan_latency']
-                                                        avg_Scan_latency = avg_Scan_latency/2
-                                                    self.log.debug("Updated avg_scan_latency is {}".format(avg_Scan_latency))
+                                                        avg_Scan_latency = avg_Scan_latency / 2
+                                                    self.log.debug(
+                                                        "Updated avg_scan_latency is {}".format(avg_Scan_latency))
                                                 else:
                                                     self.log.debug("Avg scan latency is zero")
                                                     avg_Scan_latency = gsi_index_map['avg_scan_latency']
-                                                    self.log.debug("Avg scan latency initiated to {}".format(avg_Scan_latency))
+                                                    self.log.debug(
+                                                        "Avg scan latency initiated to {}".format(avg_Scan_latency))
                             if is_sync:
                                 self.log.debug("Is sync is true")
                                 if x == query_len:
@@ -504,20 +595,48 @@ class PlasmaBaseTest(StorageBase):
                             offset += limit
                             if offset > totalCount:
                                 offset = totalCount
-            return query_task_list
+        return query_task_list
 
     def perform_plasma_mem_ops(self, ops='compactAll'):
         for index_node in self.cluster.index_nodes:
             self.cluster_util.indexer_id_ops(node=index_node, ops=ops)
 
-    def verify_bucket_count_with_index_count(self, indexMap, totalCount, field):
+    def create_nodes_tenant_stat_map(self, nodes, buckets=None):
+        node_bucket_map = dict()
+        if buckets is None:
+            buckets = self.cluster.buckets
+        for node in nodes:
+            node_bucket_map[node.ip] = self.get_bucket_stat_map(buckets, node)
+        return node_bucket_map
+
+    def get_bucket_stat_map(self, buckets=None, node=None):
+        if buckets is None:
+            buckets = self.cluster.buckets
+        if node is None:
+            node = self.cluster.index_nodes[0]
+        rest = RestConnection(node)
+        api = rest.indexUrl + 'plasmaDiag'
+        self.log.info("api is:"+str(api))
+        command = {'Cmd': 'tenants'}
+        bucket_stat_map = dict()
+        status, content, header = rest._http_request(api, 'POST', json.dumps(command))
+        if not status:
+            raise Exception(content)
+        for bucket in buckets:
+            self.log.debug("bucket filtered {}".format(bucket.name))
+            bucket_stat_map[bucket.name] = json.loads(content)[bucket.name+'_'+bucket.uuid]
+        return bucket_stat_map
+
+    def verify_bucket_count_with_index_count(self, indexMap, totalCount, field, retry=1):
         """
         :param query_definitions: Query definition
         :param buckets: List of bucket objects to verify
         :return:
         """
         count = 0
+        query_rest = GsiHelper(self.cluster.query_nodes[0], self.log)
         indexer_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+        content = None
         for bucket, bucket_data in indexMap.items():
             indexer_rest.wait_for_indexing_to_complete(bucket)
             for scope, collection_data in bucket_data.items():
@@ -527,9 +646,15 @@ class PlasmaBaseTest(StorageBase):
                                       % (bucket,
                                          scope, collection, gsi_index_name, field)
                         self.log.debug("Count query is {}".format(count_query))
-                        status, content, header = indexer_rest.execute_query(server=self.cluster.query_nodes[0],
-                                                                             query=count_query)
+                        for counter in range(retry):
+                            status, content, header = query_rest.execute_query(query=count_query, is_scan_consistency=False)
+                            json_parsed = json.loads(content)
+                            if json_parsed["status"] == 'errors':
+                                self.sleep(10, "wait for next retry")
+                            else:
+                                break
                         index_count = int(json.loads(content)['results'][0]['$1'])
+                        self.log.debug("Expected count is {} and actual count is {}".format(index_count, totalCount))
                         if (int(index_count) != int(totalCount)):
                             self.log.info("Expected count is {} and actual count is {}".format(index_count, totalCount))
                             return False
@@ -620,3 +745,28 @@ class PlasmaBaseTest(StorageBase):
             self.wait_for_doc_load_completion(data_load_task)
             self.log.debug("Added items from {} to {}".format(self.create_start, self.create_end))
         return self.create_end - start_item
+
+    def odd_even_bucket_list(self):
+        self.log.debug("Filter odd buckets")
+        odd_bucket_list = self.filter_buckets(self.cluster.buckets, filter='odd')
+        self.log.debug("Filter even buckets")
+        even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
+        return odd_bucket_list, even_bucket_list
+
+    def load_specific_data_to_bucket(self, bucket, start, end):
+        self.log.debug("Creating doc generator")
+        load_gen = self.generate_sub_docs_basic(start, end, bucket.name)
+        self.log.debug("loading docs from {} to {}".format(start, end))
+        task = self.load_to_specific_bucket(bucket, load_gen)
+        return task
+
+    def load_specific_data(self, start, end, bucket_list=None):
+        if bucket_list is None:
+            bucket_list = self.cluster.buckets
+        task_list = list()
+        for bucket in bucket_list:
+            taskInstance = self.load_specific_data_to_bucket(bucket, start, end)
+            task_list.append(taskInstance)
+
+        for taskInstance in task_list:
+            self.task.jython_task_manager.get_task_result(taskInstance)
