@@ -330,6 +330,7 @@ class QueryLoad:
         name = threading.currentThread().getName()
         client_context_id = name
         start = time.time()
+        e = ""
         try:
             status, _, _, results, _ = execute_statement_on_n1ql(
                 client, query, client_context_id=client_context_id)
