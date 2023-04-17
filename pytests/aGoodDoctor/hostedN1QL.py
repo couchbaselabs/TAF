@@ -345,16 +345,15 @@ class QueryLoad:
                 self.failed_count.next()
         except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
             self.timeout_count.next()
-            print(e)
         except RequestCanceledException as e:
             self.cancel_count.next()
-            print(e)
         except CouchbaseException as e:
             self.rejected_count.next()
-            print(e)
         except Exception as e:
             print(e)
             self.error_count.next()
+        if e.find("no more information available") != -1:
+            print(e)
         end = time.time()
         if end - start < 1:
             time.sleep(end - start)
