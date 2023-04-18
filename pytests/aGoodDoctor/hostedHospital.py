@@ -149,7 +149,7 @@ class Murphy(BaseTestCase, OPD):
         self.info = rest.get_nodes_self()
 
         # threshold_memory_vagrant = 100
-        kv_memory = self.info.memoryQuota - 100
+        kv_memory = self.info.memoryQuota*0.8
         ramQuota = self.input.param("ramQuota", kv_memory)
         buckets = ["default"]*self.num_buckets
         bucket_type = self.bucket_type.split(';')*self.num_buckets
@@ -351,7 +351,8 @@ class Murphy(BaseTestCase, OPD):
             for service_group in initial_services.split("-"):
                 service_group = service_group.split(":")
                 service = service_group[0]
-                self.disk[service] = self.disk[service] + 600
+                if not(len(service_group) == 1 and service in ["query"]):
+                    self.disk[service] = self.disk[service] + 500
                 config = {
                     "size": self.num_nodes[service],
                     "services": service_group,
@@ -414,10 +415,13 @@ class Murphy(BaseTestCase, OPD):
             for service_group in initial_services.split("-"):
                 service_group = service_group.split(":")
                 service = service_group[0]
-                self.disk[service] = self.disk[service] + 1000
+                if not(len(service_group) == 1 and service in ["query"]):
+                    self.disk[service] = self.disk[service] + 500
                 if service == "kv" or service == "data":
                     self.compute[service] = "n2-custom-72-147456"
                 if "index" in service_group or "gsi" in service_group:
+                    self.compute[service] = "n2-standard-80"
+                if "query" in service_group or "n1ql" in service_group:
                     self.compute[service] = "n2-standard-80"
                 config = {
                     "size": self.num_nodes[service],
