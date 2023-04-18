@@ -46,7 +46,7 @@ HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`
                 'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                 'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                 'CREATE INDEX {}{} ON {}(`price`,`city`,`name`)  PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
-                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                 'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                 'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                 'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
