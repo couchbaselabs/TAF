@@ -460,7 +460,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         finally:
             # Disable auto-fo after the expected time limit
             self.rest.update_autofailover_settings(
-                enabled=False, timeout=self.timeout, maxCount=self.max_count)
+                enabled=False, timeout=self.timeout, maxCount=self.max_count,
+                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
             if self.current_fo_strategy == CbServer.Failover.Type.AUTO:
                 failover_task = ConcurrentFailoverTask(
@@ -475,7 +476,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Enable back prev auto_fo settings
             self.sleep(15, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
-                enabled=True, timeout=self.timeout, maxCount=self.max_count)
+                enabled=True, timeout=self.timeout, maxCount=self.max_count,
+                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
         # After failure - failed nodes' information
         self.__display_failure_node_status("Nodes status failure")
@@ -913,8 +915,20 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 self.assertTrue(failover_task.result, failure_msg)
         finally:
             # Disable auto-fo after the expected time limit
-            self.rest.update_autofailover_settings(
-                enabled=False, timeout=self.timeout, maxCount=self.max_count)
+            retry = 5
+            for i in range(retry):
+                try:
+                    status = self.rest.update_autofailover_settings(
+                        enabled=False, timeout=self.timeout, maxCount=self.max_count,
+                        preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
+                    self.assertTrue(status)
+                    break
+                except Exception as e:
+                    if i >= retry - 1:
+                        raise e
+                    else:
+                        self.sleep(1, "waiting 1 sec before afo setting "
+                                      "update retry")
 
             # Recover all nodes from induced failures
             recovery_task = ConcurrentFailoverTask(
@@ -929,7 +943,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Enable back prev auto_fo settings
             self.sleep(5, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
-                enabled=True, timeout=self.timeout, maxCount=self.max_count)
+                enabled=True, timeout=self.timeout, maxCount=self.max_count,
+                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo,)
 
         # Validate auto_failover_settings after failover
         self.validate_failover_settings(True, self.timeout,
