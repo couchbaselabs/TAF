@@ -42,7 +42,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                                      check_ep_items_remaining=True, timeout=1200)
         self.cluster_util.print_cluster_stats(self.cluster)
         for bucket in self.cluster.buckets:
-            result = self.bucket_util.validate_active_replica_item_count(self.cluster, bucket)
+            result = self.bucket_util.validate_active_replica_item_count(self.cluster, bucket, timeout=900)
             self.assertTrue(result, "Active/Replica items count match failed: %s" % bucket.name)
         super(MagmaCrashTests, self).tearDown()
 
