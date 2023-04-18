@@ -467,6 +467,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     status = self.rest.update_autofailover_settings(
                         enabled=False, timeout=self.timeout,
                         maxCount=self.max_count,
+                        preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo,
                         canAbortRebalance=self.can_abort_rebalance)
                     self.assertTrue(status)
                     break
@@ -490,7 +491,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.sleep(15, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
                 enabled=True, timeout=self.timeout, maxCount=self.max_count,
-                canAbortRebalance=self.can_abort_rebalance)
+                canAbortRebalance=self.can_abort_rebalance,
+                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
         # After failure - failed nodes' information
         self.__display_failure_node_status("Nodes status failure")
@@ -931,7 +933,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Disable auto-fo after the expected time limit
             self.rest.update_autofailover_settings(
                 enabled=False, timeout=self.timeout, maxCount=self.max_count,
-                canAbortRebalance=self.can_abort_rebalance)
+                canAbortRebalance=self.can_abort_rebalance,
+                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
             # Recover all nodes from induced failures
             recovery_task = ConcurrentFailoverTask(
@@ -947,7 +950,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.sleep(5, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
                 enabled=True, timeout=self.timeout, maxCount=self.max_count,
-                canAbortRebalance=self.can_abort_rebalance)
+                canAbortRebalance=self.can_abort_rebalance,
+                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
         # Validate auto_failover_settings after failover
         self.validate_failover_settings(True, self.timeout,
