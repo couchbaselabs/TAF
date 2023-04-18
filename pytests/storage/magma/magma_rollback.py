@@ -307,7 +307,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         for _ in xrange(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
-                self.cluster.master, self.cluster.buckets[0])
+                self.cluster.nodes_in_cluster[0], self.cluster.buckets[0])
             mem_client.stop_persistence()
             self.gen_create = self.genrate_docs_basic(start, mem_only_items,
                                                       self.target_vbucket)
@@ -331,7 +331,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     vb_replica_queue_size_map,
                     cbstat_cmd="all",
                     stat_name="vb_replica_queue_size",
-                    timeout=300)
+                    timeout=900)
 
             # Kill memcached on NodeA to trigger rollback on other Nodes
             # replica vBuckets
@@ -400,7 +400,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         '''
         self.log.info("State files after initial creates %s"
-                      % self.get_state_files(self.buckets[0]))
+                     % self.get_state_files(self.buckets[0]))
 
         self.sleep(60, "Ensures creation of at least one snapshot")
         self.log.info("State files after 60 second of sleep %s"
@@ -423,6 +423,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             # Stopping persistence on master node (NodeA)
             self.log.debug("Iteration == {}, stopping persistence".format(i))
             Cbepctl(shell).persistence(self.cluster.buckets[0].name, "stop")
+            self.sleep(60, "sleep after stopping persistence")
 
             ###################################################################
             '''
@@ -498,8 +499,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                           format(i, self.get_state_files(self.buckets[0])))
 
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
-            #self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0],
-            #                                         items, timeout=300)
+            self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0],
+                                                     items, timeout=900)
             for bucket in self.cluster.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
 

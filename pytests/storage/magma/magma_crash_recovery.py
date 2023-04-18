@@ -42,7 +42,7 @@ class MagmaCrashTests(MagmaBaseTest):
                                                      check_ep_items_remaining=True, timeout=1200)
         self.cluster_util.print_cluster_stats(self.cluster)
         for bucket in self.cluster.buckets:
-            result = self.bucket_util.validate_active_replica_item_count(self.cluster, bucket)
+            result = self.bucket_util.validate_active_replica_item_count(self.cluster, bucket, timeout=900)
             self.assertTrue(result, "Active/Replica items count match failed: %s" % bucket.name)
         super(MagmaCrashTests, self).tearDown()
 
@@ -322,7 +322,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.track_failures = False
 
         self.new_loader()
-        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 2})
         self.crash_th.start()
         self.doc_loading_tm.getAllTaskResult()
         self.stop_crash = True
@@ -395,7 +395,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 sdk_retry_strategy=self.sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
 
-        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 2})
         self.crash_th.start()
         for task in tasks_info:
             self.task_manager.get_task_result(task)

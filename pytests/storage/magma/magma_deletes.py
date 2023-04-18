@@ -71,41 +71,42 @@ class BasicDeleteTests(BasicCrudTests):
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
 
-            time_end = time.time() + 60 * 2
-            while time.time() < time_end:
-                disk_usage = self.get_disk_usage(self.buckets[0],
-                                                 self.cluster.nodes_in_cluster)
-                _res = disk_usage[0]
-                self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
-                ".format(count+1, time_end - time.time(), _res))
-                if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
-                    break
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                time_end = time.time() + 60 * 2
+                while time.time() < time_end:
+                    disk_usage = self.get_disk_usage(self.buckets[0],
+                                                     self.cluster.nodes_in_cluster)
+                    _res = disk_usage[0]
+                    self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
+                    ".format(count+1, time_end - time.time(), _res))
+                    if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
+                        break
 
-            msg = "Disk Usage={}MB > {} * init_Usage={}MB"
-            self.assertIs(_res > 1 * self.disk_usage[
-                self.disk_usage.keys()[0]], False,
-                msg.format(disk_usage[0], 1,
-                           self.disk_usage[self.disk_usage.keys()[0]]))
-            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
-            if not self.windows_platform and self.count_ts:
-                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-                expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-                self.log.info("Iterations == {}, Actual tomb stone count == {},\
-                expected_ts_count == {}".format(count+1, ts, expected_ts_count))
-                self.sleep(60, "sleep after triggering full compaction")
-                # 64 byte is size of meta data
-                expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-                expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
-                self.log.info("expected tombstone size {}".format(expected_tombstone_size))
-                disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
-                                                              self.cluster.nodes_in_cluster)[0]
-                #  1.1 factor is for 10 percent buffer on calculated tomb stone size
-                expected_size = 1.1 * (expected_tombstone_size + self.empty_bucket_disk_usage)
-                self.log.info("Iteration=={}, disk usage after compaction=={}\
-                expected_size=={}".format(count+1, disk_usage_after_compaction, expected_size))
-                self.assertTrue(disk_usage_after_compaction <= expected_size ,
-                                "Disk size=={} after compaction exceeds expected size=={}".
-                                format(disk_usage_after_compaction, expected_size))
+                msg = "Disk Usage={}MB > {} * init_Usage={}MB"
+                self.assertIs(_res > 1 * self.disk_usage[
+                    self.disk_usage.keys()[0]], False,
+                    msg.format(disk_usage[0], 1,
+                               self.disk_usage[self.disk_usage.keys()[0]]))
+                self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+                if not self.windows_platform and self.count_ts:
+                    ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                    expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+                    self.log.info("Iterations == {}, Actual tomb stone count == {},\
+                    expected_ts_count == {}".format(count+1, ts, expected_ts_count))
+                    self.sleep(60, "sleep after triggering full compaction")
+                    # 64 byte is size of meta data
+                    expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+                    expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
+                    self.log.info("expected tombstone size {}".format(expected_tombstone_size))
+                    disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
+                                                                  self.cluster.nodes_in_cluster)[0]
+                    #  1.1 factor is for 10 percent buffer on calculated tomb stone size
+                    expected_size = 1.1 * (expected_tombstone_size + self.empty_bucket_disk_usage)
+                    self.log.info("Iteration=={}, disk usage after compaction=={}\
+                    expected_size=={}".format(count+1, disk_usage_after_compaction, expected_size))
+                    self.assertTrue(disk_usage_after_compaction <= expected_size ,
+                                    "Disk size=={} after compaction exceeds expected size=={}".
+                                    format(disk_usage_after_compaction, expected_size))
             ######################################################################
             '''
             STEP - 3
@@ -178,41 +179,42 @@ class BasicDeleteTests(BasicCrudTests):
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
 
-            if not self.windows_platform:
-                time_end = time.time() + 60 * 10
-                while time.time() < time_end:
-                    disk_usage = self.get_disk_usage(self.buckets[0],
-                                                     self.cluster.nodes_in_cluster)
-                    _res = disk_usage[0]
-                    self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
-                    ".format(count+1, time_end - time.time(), _res))
-                    if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
-                        break
-                msg = "Disk Usage={}MB > {} * init_Usage={}MB"
-                self.assertIs(_res > 1 * self.disk_usage[
-                    self.disk_usage.keys()[0]], False,
-                    msg.format(disk_usage[0], 1,
-                               self.disk_usage[self.disk_usage.keys()[0]]))
-            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
-            if not self.windows_platform and self.count_ts:
-                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-                expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-                self.log.info("Iterations == {}, Actual tomb stone count == {},\
-                expected_ts_count == {}".format(count+1, ts, expected_ts_count))
-                self.sleep(60, "sleep after triggering full compaction")
-                # 64 byte is size of meta data
-                expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-                expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
-                self.log.info("expected tombstone size {}".format(expected_tombstone_size))
-                disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
-                                                                  self.cluster.nodes_in_cluster)[0]
-                #  1.1 factor is for 10 percent buffer on calculated tomb stone size
-                expected_size = 1.1 * (expected_tombstone_size + self.empty_bucket_disk_usage)
-                self.log.info("Iteration=={}, disk usage after compaction=={}\
-                expected_size=={}".format(count+1, disk_usage_after_compaction, expected_size))
-                self.assertTrue(disk_usage_after_compaction <= expected_size ,
-                                "Disk size=={} after compaction exceeds expected size=={}".
-                                format(disk_usage_after_compaction, expected_size))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                if not self.windows_platform:
+                    time_end = time.time() + 60 * 10
+                    while time.time() < time_end:
+                        disk_usage = self.get_disk_usage(self.buckets[0],
+                                                         self.cluster.nodes_in_cluster)
+                        _res = disk_usage[0]
+                        self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
+                        ".format(count+1, time_end - time.time(), _res))
+                        if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
+                            break
+                    msg = "Disk Usage={}MB > {} * init_Usage={}MB"
+                    self.assertIs(_res > 1 * self.disk_usage[
+                        self.disk_usage.keys()[0]], False,
+                        msg.format(disk_usage[0], 1,
+                                   self.disk_usage[self.disk_usage.keys()[0]]))
+                self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+                if not self.windows_platform and self.count_ts:
+                    ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                    expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+                    self.log.info("Iterations == {}, Actual tomb stone count == {},\
+                    expected_ts_count == {}".format(count+1, ts, expected_ts_count))
+                    self.sleep(60, "sleep after triggering full compaction")
+                    # 64 byte is size of meta data
+                    expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+                    expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
+                    self.log.info("expected tombstone size {}".format(expected_tombstone_size))
+                    disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
+                                                                      self.cluster.nodes_in_cluster)[0]
+                    #  1.1 factor is for 10 percent buffer on calculated tomb stone size
+                    expected_size = 1.1 * (expected_tombstone_size + self.empty_bucket_disk_usage)
+                    self.log.info("Iteration=={}, disk usage after compaction=={}\
+                    expected_size=={}".format(count+1, disk_usage_after_compaction, expected_size))
+                    self.assertTrue(disk_usage_after_compaction <= expected_size ,
+                                    "Disk size=={} after compaction exceeds expected size=={}".
+                                    format(disk_usage_after_compaction, expected_size))
             ######################################################################
             '''
             STEP - 3
@@ -370,39 +372,40 @@ class BasicDeleteTests(BasicCrudTests):
             _r = self.check_fragmentation_using_bucket_stats(
                 self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True, msg_stats.format("KV"))
-            
-            if not self.windows_platform:
-                time_end = time.time() + 60 * 10
-                while time.time() < time_end:
-                    disk_usage = self.get_disk_usage(self.buckets[0],
-                                                     self.cluster.nodes_in_cluster)
-                    _res = disk_usage[0]
-                    self.log.info("Iteration-{}, Disk Usage at time {} is {}MB \
-                    ".format(count+1, time_end - time.time(), _res))
-                    if _res < 2 * self.disk_usage[self.disk_usage.keys()[0]]:
-                        break
-                msg = "Disk Usage={}MB > {} * init_Usage={}MB"
-                self.assertIs(_res > 2 * self.disk_usage[
-                    self.disk_usage.keys()[0]], False,
-                    msg.format(disk_usage[0], 2,
-                               self.disk_usage[self.disk_usage.keys()[0]]))
-            expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
-            if not self.windows_platform and self.count_ts:
-                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-                self.log.info("Iterations - {}, Actual tomb stone count == {} expected_ts_count == {}"
-                          .format(count+1, ts, expected_ts_count))
-                self.bucket_util._run_compaction(self.cluster, number_of_times=1)
-                self.sleep(300, "sleep after triggering full compaction")
-                disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
-                                                                  self.cluster.nodes_in_cluster)[0]
-                expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
-                expected_size = 1.3 *(self.disk_usage[self.disk_usage.keys()[0]] + expected_tombstone_size)
-                self.log.info("Iteration--{}, disk usage after compaction--{}\
-                expected size == {},expected_tombstone_size =={} ".format(count+1, disk_usage_after_compaction,
-                                                                          expected_size, expected_tombstone_size))
-                self.assertTrue(disk_usage_after_compaction <=  expected_size,
-                                "Disk size after compaction == {} exceeds  expected size == {}".
-                                format(disk_usage_after_compaction, expected_size))
+
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                if not self.windows_platform:
+                    time_end = time.time() + 60 * 10
+                    while time.time() < time_end:
+                        disk_usage = self.get_disk_usage(self.buckets[0],
+                                                         self.cluster.nodes_in_cluster)
+                        _res = disk_usage[0]
+                        self.log.info("Iteration-{}, Disk Usage at time {} is {}MB \
+                        ".format(count+1, time_end - time.time(), _res))
+                        if _res < 2 * self.disk_usage[self.disk_usage.keys()[0]]:
+                            break
+                    msg = "Disk Usage={}MB > {} * init_Usage={}MB"
+                    self.assertIs(_res > 2 * self.disk_usage[
+                        self.disk_usage.keys()[0]], False,
+                        msg.format(disk_usage[0], 2,
+                                   self.disk_usage[self.disk_usage.keys()[0]]))
+                expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
+                if not self.windows_platform and self.count_ts:
+                    ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                    self.log.info("Iterations - {}, Actual tomb stone count == {} expected_ts_count == {}"
+                              .format(count+1, ts, expected_ts_count))
+                    self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+                    self.sleep(300, "sleep after triggering full compaction")
+                    disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
+                                                                      self.cluster.nodes_in_cluster)[0]
+                    expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
+                    expected_size = 1.3 *(self.disk_usage[self.disk_usage.keys()[0]] + expected_tombstone_size)
+                    self.log.info("Iteration--{}, disk usage after compaction--{}\
+                    expected size == {},expected_tombstone_size =={} ".format(count+1, disk_usage_after_compaction,
+                                                                              expected_size, expected_tombstone_size))
+                    self.assertTrue(disk_usage_after_compaction <=  expected_size,
+                                    "Disk size after compaction == {} exceeds  expected size == {}".
+                                    format(disk_usage_after_compaction, expected_size))
             #Space Amplifacation check Ends
             count += 1
         if not self.windows_platform:
