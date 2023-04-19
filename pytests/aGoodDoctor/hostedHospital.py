@@ -149,7 +149,7 @@ class Murphy(BaseTestCase, OPD):
         self.info = rest.get_nodes_self()
 
         # threshold_memory_vagrant = 100
-        kv_memory = self.info.memoryQuota*0.8
+        kv_memory = int(self.info.memoryQuota*0.8)
         ramQuota = self.input.param("ramQuota", kv_memory)
         buckets = ["default"]*self.num_buckets
         bucket_type = self.bucket_type.split(';')*self.num_buckets
