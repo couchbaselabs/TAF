@@ -458,11 +458,11 @@ class DoctorN1QL():
                     if gsi_stat["num_tenants"] == 0:
                         num_tenant_0 += 1
                     elif gsi_stat["num_tenants"] <= 15\
-                        and gsi_stat["memory_used_actual"]/mem_q < 40\
-                            and gsi_stat["units_used_actual"]/units_q < 32:
+                        and gsi_stat["memory_used_actual"]/mem_q * 100 < 40\
+                            and gsi_stat["units_used_actual"]/units_q * 100 < 32:
                         nodes_below_15_tenants += 1
-                    if gsi_stat["memory_used_actual"]/mem_q < 40\
-                            and gsi_stat["units_used_actual"]/units_q < 32:
+                    if gsi_stat["memory_used_actual"]/mem_q * 100 < 40\
+                            and gsi_stat["units_used_actual"]/units_q * 100 < 32:
                         nodes_below_LWM_defrag += 1
                     if gsi_stat["num_index_repaired"] > 0:
                         self.log.info("{} have indexes to be repaired".format(node))
