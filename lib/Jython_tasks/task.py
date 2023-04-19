@@ -347,6 +347,7 @@ class RebalanceTask(Task):
         self.monitor_vbuckets_shuffling = False
         self.check_vbucket_shuffling = check_vbucket_shuffling
         self.result = False
+        self.rebalance_api_response = None
         self.retry_get_process_num = retry_get_process_num
         self.server_groups_to_add = dict()
         self.defrag_options = None
@@ -399,7 +400,7 @@ class RebalanceTask(Task):
         """
         defrag_options :
         { "defragmentZones" : [AZ1, AZ2]}
-        this will target only AZ1 and AZ2 while performing re-balance 
+        this will target only AZ1 and AZ2 while performing re-balance
         de-fragment
         """
         if defrag_options:
@@ -544,6 +545,10 @@ class RebalanceTask(Task):
             self.add_nodes()
             self.state = "triggering"
             self.start_rebalance()
+            if self.state == "trigger_failed":
+                self.complete_task()
+                self.result = False
+                return self.result
             self.state = "triggered"
             self.table.display("Rebalance Overview")
 
@@ -677,8 +682,12 @@ class RebalanceTask(Task):
                         self.test_log.debug(remove_node_msg.format(node.ip,
                                                                    node.port))
 
-        self.rest.rebalance(otpNodes=[node.id for node in nodes],
-                            ejectedNodes=ejected_nodes, defrag_options=self.defrag_options)
+        rebalance_result, content = self.rest.rebalance(otpNodes=[node.id for node in nodes],
+                                                        ejectedNodes=ejected_nodes,
+                                                        defrag_options=self.defrag_options)
+        self.rebalance_api_response = content
+        if not rebalance_result:
+            self.state = "trigger_failed"
         self.start_time = time.time()
 
     def check(self):

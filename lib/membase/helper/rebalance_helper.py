@@ -456,7 +456,7 @@ class RebalanceHelper(object):
             otpNode = rest.add_node(master.rest_username, master.rest_password,
                                     server.ip, server.port)
         otpNodes = [node.id for node in rest.node_statuses()]
-        started = rest.rebalance(otpNodes, [])
+        started, _ = rest.rebalance(otpNodes, [])
         msg = "rebalance operation started ? {0}"
         log.info(msg.format(started))
         if monitor is not True:

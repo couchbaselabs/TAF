@@ -960,8 +960,8 @@ class ClusterUtils:
     def rebalance(cluster, wait_for_completion=True, ejected_nodes=[]):
         rest = RestConnection(cluster.master)
         nodes = rest.node_statuses()
-        result = rest.rebalance(otpNodes=[node.id for node in nodes],
-                                ejectedNodes=ejected_nodes)
+        result, _ = rest.rebalance(otpNodes=[node.id for node in nodes],
+                                   ejectedNodes=ejected_nodes)
         if result and wait_for_completion:
             result = rest.monitorRebalance()
         return result

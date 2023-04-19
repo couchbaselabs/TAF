@@ -109,8 +109,8 @@ class EnforceTls(CollectionBase):
         CbServer.use_https = False
         rest = RestConnection(non_strict_node)
         nodes = rest.node_statuses()
-        _ = rest.rebalance(otpNodes=[node.id for node in nodes],
-                           ejectedNodes=[])
+        rest.rebalance(otpNodes=[node.id for node in nodes],
+                       ejectedNodes=[])
         result = rest.monitorRebalance()
         self.assertTrue(result, "Rebalance failed")
 

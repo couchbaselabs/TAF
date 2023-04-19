@@ -295,7 +295,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         nodes_to_remove = [node.id for node in nodes if
                            node.ip in [t.ip for t in self.servers_to_remove]]
         nodes = [node.id for node in nodes]
-        started = self.rest.rebalance(nodes, nodes_to_remove)
+        started, _ = self.rest.rebalance(nodes, nodes_to_remove)
         rebalance_success = False
         if started:
             rebalance_success = self.rest.monitorRebalance()

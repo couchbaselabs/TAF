@@ -1025,7 +1025,7 @@ class RestConnection(newRC):
             # extract the error
             raise InvalidArgumentException('controller/rebalance with error message {0}'.format(content),
                                            parameters=params)
-        return status
+        return status, content
 
     def get_terse_cluster_info(self):
         api = "%s%s" % (self.baseUrl, "pools/default/terseClusterInfo")

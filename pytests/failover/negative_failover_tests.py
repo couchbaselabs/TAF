@@ -19,7 +19,7 @@ class NegativeFailoverTests(FailoverBaseTest):
             nodes = self.rest.node_statuses()
             chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                   howmany=1)
-            status = self.rest.rebalance(
+            status, _ = self.rest.rebalance(
                 otpNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in nodes[1:]])
             self.assertTrue(status, "Rebalance did not run ")

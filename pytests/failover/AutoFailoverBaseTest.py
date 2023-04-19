@@ -283,7 +283,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         nodes_to_remove = [node.id for node in rest.node_statuses()
                            if node.ip in [t.ip for t in to_remove]]
         # Start rebalance and monitor it.
-        started = rest.rebalance(otpNodes=otpnodes, ejectedNodes=nodes_to_remove)
+        started, _ = rest.rebalance(otpNodes=otpnodes, ejectedNodes=nodes_to_remove)
         if started:
             result = rest.monitorRebalance()
             msg = "successfully rebalanced cluster {0}"

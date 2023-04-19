@@ -13,7 +13,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
     def pass_no_arguments(self):
         try:
             self.rest = RestConnection(self.cluster.master)
-            status = self.rest.rebalance(otpNodes=[], ejectedNodes=[])
+            status, _ = self.rest.rebalance(otpNodes=[], ejectedNodes=[])
             self.assertFalse(status, "Rebalance did not fail as expected")
         except Exception, ex:
             self.assertTrue(("empty_known_nodes" in str(ex)),
@@ -23,14 +23,14 @@ class NegativeRebalanceTests(RebalanceBaseTest):
     def add_no_nodes(self):
         self.rest = RestConnection(self.cluster.master)
         nodes = self.get_nodes()
-        status = self.rest.rebalance(otpNodes=nodes, ejectedNodes=[])
+        status, _ = self.rest.rebalance(otpNodes=nodes, ejectedNodes=[])
         self.assertTrue(status, "Rebalance did not fail as expected")
 
     def remove_all_nodes(self):
         try:
             self.rest = RestConnection(self.cluster.master)
             nodes = self.get_nodes()
-            status = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes)
+            status, _ = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes)
             self.assertTrue(status, "Rebalance did not fail as expected")
         except Exception, ex:
             self.assertTrue(("No active nodes" in str(ex)),
@@ -40,7 +40,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
     def pass_non_existant_nodes(self):
         try:
             self.rest = RestConnection(self.cluster.master)
-            status = self.rest.rebalance(otpNodes=['non-existant'],
+            status, _ = self.rest.rebalance(otpNodes=['non-existant'],
                                          ejectedNodes=['non-existant'])
             self.assertFalse(status, "Rebalance did not fail as expected")
         except Exception, ex:
@@ -61,7 +61,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
             if success_failed_over:
                 self.rest.set_recovery_type(otpNode=chosen[0].id,
                                             recoveryType="delta")
-            status = self.rest.rebalance(otpNodes=nodes,
+            status, _ = self.rest.rebalance(otpNodes=nodes,
                                          ejectedNodes=nodes[1:],
                                          deltaRecoveryBuckets=['non-existant'])
             self.assertFalse(status, "Rebalance did not fail as expected")
@@ -84,7 +84,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
             if success_failed_over:
                 self.rest.set_recovery_type(otpNode=chosen[0].id,
                                             recoveryType="delta")
-            status = self.rest.rebalance(otpNodes=nodes,
+            status, _ = self.rest.rebalance(otpNodes=nodes,
                                          ejectedNodes=nodes[1:])
             self.assertFalse(status, "Rebalance did not fail as expected ")
         finally:
@@ -95,7 +95,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
             self.rest = RestConnection(self.cluster.master)
             nodes = self.get_nodes()
             self.stop_server(self.servers[1])
-            status = self.rest.rebalance(otpNodes=nodes,
+            status, _ = self.rest.rebalance(otpNodes=nodes,
                                          ejectedNodes=nodes[1:])
             self.assertFalse(status, "Rebalance did not fail as expected")
         finally:
@@ -104,9 +104,9 @@ class NegativeRebalanceTests(RebalanceBaseTest):
     def rebalance_running_cannot_rebalance(self):
         self.rest = RestConnection(self.cluster.master)
         nodes = self.get_nodes()
-        status = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes[1:])
+        status, _ = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes[1:])
         self.assertTrue(status, "Rebalance did not start as expected")
-        status = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes[1:])
+        status, _ = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes[1:])
         self.assertFalse(status, "Rebalance did not fail as expected")
 
     def rebalance_graceful_failover_running_cannot_rebalance(self):
@@ -114,7 +114,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
         nodes = self.get_nodes()
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         _ = self.rest.fail_over(chosen[0].id, graceful=True)
-        status = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes[1:])
+        status, _ = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes[1:])
         self.assertFalse(status, "Rebalance did not fail as expected")
 
     def get_nodes(self):
