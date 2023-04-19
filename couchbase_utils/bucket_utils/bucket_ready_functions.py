@@ -2636,6 +2636,9 @@ class BucketUtils(ScopeUtils):
 
     def validate_history_retention_settings(self, kv_node, buckets):
         result = True
+        # Handle for 7.1.X builds
+        if float(RestConnection(kv_node).get_nodes_self().version[:3]) < 7.2:
+            return result
         shell = RemoteMachineShellConnection(kv_node)
         cb_stat = Cbstats(shell)
         if not isinstance(buckets, list):
