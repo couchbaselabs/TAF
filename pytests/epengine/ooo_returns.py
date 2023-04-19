@@ -258,12 +258,12 @@ class OutOfOrderReturns(ClusterSetup):
             exception = trans_obj.RunTransaction(
                 self.client.cluster, self.transaction,
                 [self.client.collection], [],
-                [doc.getT1() for doc in docs], [], True, True, 1)
+                [doc for doc in docs], [], True, True, 1)
         elif op_type == DocLoading.Bucket.DocOps.DELETE:
             exception = trans_obj.RunTransaction(
                 self.client.cluster, self.transaction,
                 [self.client.collection], [], [],
-                [doc.getT1() for doc in docs], True, True, 1)
+                [doc for doc in docs], True, True, 1)
         if exception:
             self.log_failure("'%s' transx failed: %s" % (op_type, exception))
 
