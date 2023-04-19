@@ -68,18 +68,19 @@ class PlasmaBaseTest(StorageBase):
     def load_to_bucket_list(self, bucket_list, load_gen):
         tasks = []
         for bucket in bucket_list:
-            tasks.append(self.load_to_specific_bucket(bucket, load_gen))
+            tasks.extend(self.load_to_specific_bucket(bucket, load_gen))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
             if task.fail:
                 self.fail("items append failed")
 
     def load_to_specific_bucket(self, bucket, load_gen):
+        tasks = []
         for scope_name, scope in bucket.scopes.items():
             if scope_name == '_default' or scope_name == '_system':
                 continue
             for collection in scope.collections.keys():
-                return self.task.async_load_gen_docs(
+                tasks.append(self.task.async_load_gen_docs(
                     self.cluster, bucket, load_gen, "create",
                     batch_size=1000, process_concurrency=1,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
@@ -87,7 +88,8 @@ class PlasmaBaseTest(StorageBase):
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
                     scope=scope_name,
-                    collection=collection)
+                    collection=collection))
+        return tasks
 
     def compare_RR_for_nodes(self, final_stat_map_list, initial_stat_map_list, field='resident_ratio', comparisonType='percent', ops='greater', threshold=10):
         flag = True
@@ -757,8 +759,8 @@ class PlasmaBaseTest(StorageBase):
         self.log.debug("Creating doc generator")
         load_gen = self.generate_sub_docs_basic(start, end, bucket.name)
         self.log.debug("loading docs from {} to {}".format(start, end))
-        task = self.load_to_specific_bucket(bucket, load_gen)
-        return task
+        tasks = self.load_to_specific_bucket(bucket, load_gen)
+        return tasks
 
     def load_specific_data(self, start, end, bucket_list=None):
         if bucket_list is None:
@@ -766,7 +768,7 @@ class PlasmaBaseTest(StorageBase):
         task_list = list()
         for bucket in bucket_list:
             taskInstance = self.load_specific_data_to_bucket(bucket, start, end)
-            task_list.append(taskInstance)
+            task_list.extend(taskInstance)
 
         for taskInstance in task_list:
             self.task.jython_task_manager.get_task_result(taskInstance)
