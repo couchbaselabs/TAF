@@ -246,7 +246,8 @@ class CollectionBase(ClusterSetup):
         load_spec = CollectionBase.get_history_retention_load_spec(
             test_obj, doc_key=doc_key, update_percent=update_percent,
             update_itrs=update_itrs, doc_ttl=doc_ttl)
-        test_obj.over_ride_doc_loading_template_params(test_obj, load_spec)
+        CollectionBase.over_ride_doc_loading_template_params(test_obj,
+                                                             load_spec)
 
         cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
             test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
