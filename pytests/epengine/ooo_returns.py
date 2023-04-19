@@ -103,8 +103,22 @@ class OutOfOrderReturns(ClusterSetup):
         evicted_doc_keys = list()
         non_evicted_doc_keys = list()
         req_docs_to_test = 10
+        initial_load = 50000
+        dgm_gen_init = doc_generator(self.key, 0, initial_load,
+                                     doc_size=self.doc_size)
+        dgm_task_init = self.task.async_load_gen_docs(
+            self.cluster, self.bucket, dgm_gen_init, "create", exp=0,
+            persist_to=self.persist_to,
+            replicate_to=self.replicate_to,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            sdk_client_pool=self.sdk_client_pool,
+            batch_size=10,
+            process_concurrency=1)
+        self.task_manager.get_task_result(dgm_task_init)
 
-        dgm_gen = doc_generator(self.key, 0, 1, doc_size=self.doc_size)
+        dgm_gen = doc_generator(self.key, initial_load , initial_load + 1,
+                                doc_size=self.doc_size)
         dgm_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, dgm_gen, "create", exp=0,
             persist_to=self.persist_to,
@@ -124,6 +138,11 @@ class OutOfOrderReturns(ClusterSetup):
         # Fetch evicted doc keys
         dgm_gen = doc_generator(self.key, 0, self.num_items, doc_size=1)
         while len(evicted_doc_keys) != req_docs_to_test:
+            if not dgm_gen.has_next():
+                end_i = self.num_items + 10000
+                dgm_gen = doc_generator(self.key, self.num_items, end_i,
+                                        doc_size=1)
+                self.num_items = end_i
             doc_key, _ = dgm_gen.next()
             vb_for_key = self.bucket_util.get_vbucket_num_for_key(doc_key)
             for node in self.kv_nodes:
