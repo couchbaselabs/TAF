@@ -589,7 +589,7 @@ class QueryLoad:
         except Exception as e:
             print(e)
             self.error_count.next()
-        if e.find("no more information available") != -1:
+        if str(e).find("no more information available") != -1:
             print(e)
         end = time.time()
         if end - start < 1:
