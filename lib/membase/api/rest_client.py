@@ -1021,10 +1021,8 @@ class RestConnection(newRC):
         if status:
             self.test_log.debug('Rebalance operation started')
         else:
-            self.test_log.error('Rebalance operation failed: {0}'.format(content))
-            # extract the error
-            raise InvalidArgumentException('controller/rebalance with error message {0}'.format(content),
-                                           parameters=params)
+            self.test_log.critical('Rebalance operation failed: {0}'.format(content))
+
         return status, content
 
     def get_terse_cluster_info(self):
