@@ -77,15 +77,18 @@ HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`
 
 
 HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
-                "select price, country from {} where free_breakfast=True or free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' limit 100",
+                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' limit 100",
                 "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
                 "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE country = 'Bulgaria' GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {0} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country='Bulgaria' limit 100",
-                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms < 2 AND h.avg_rating >= 3 limit 100",
-                "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' limit 100",
+                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 1 AND h.avg_rating >= 3 limit 100",
+                # "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' limit 100",
+                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'"
                 "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
-                "SELECT * from {} where `type` is not null limit 100",
+                # "SELECT * from {} where `type` is not null limit 100",
+                "SELECT * from {} where `name` is not null limit 100",
                 "SELECT * from {} where phone like \"San%\" limit 100",
                 "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country IS NOT NULL limit 100"]
+
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None):
     """

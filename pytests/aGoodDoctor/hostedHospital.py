@@ -292,8 +292,6 @@ class Murphy(BaseTestCase, OPD):
         else:
             self.load_defn.append(self.loadDefn1)
 
-        if self.xdcr_remote_nodes > 0:
-            pass
         #######################################################################
         self.create_buckets()
 
@@ -354,10 +352,12 @@ class Murphy(BaseTestCase, OPD):
             initial_services = self.input.param("services", "data")
             server_group_list = list()
             for service_group in initial_services.split("-"):
-                service_group = service_group.split(":")
+                service_group = sorted(service_group.split(":"))
                 service = service_group[0]
                 if not(len(service_group) == 1 and service in ["query"]):
                     self.disk[service] = self.disk[service] + 500
+                    if service == "query":
+                        self.disk[service_group[1]] = self.disk[service_group[1]] + 500
                 config = {
                     "size": self.num_nodes[service],
                     "services": service_group,
@@ -374,22 +374,24 @@ class Murphy(BaseTestCase, OPD):
                 elif self.capella_cluster_config["provider"] != "hostedAWS":
                     config["storage"].pop("iops")
                 server_group_list.append(config)
+            self.log.info(server_group_list)
             rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                server_group_list,
                                                                timeout=96*60*60)
             self.task_manager.get_task_result(rebalance_task)
+            self.cluster_util.print_cluster_stats(self.cluster)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
             # Rebalance 2 - Compute Upgrade
-            # self.restart_query_load()
+            self.restart_query_load()
             server_group_list = list()
             initial_services = self.input.param("services", "data")
             for service_group in initial_services.split("-"):
                 service_group = service_group.split(":")
-                service = service_group[0]
+                service = sorted(service_group[0])
                 if service == "kv" or service == "data":
                     self.compute[service] = "n2-custom-48-98304"
-                if "index" in service_group or "gsi" in service_group:
+                if "index" in service_group or "query" in service_group:
                     self.compute[service] = "n2-standard-64"
                 config = {
                     "size": self.num_nodes[service],
@@ -407,10 +409,12 @@ class Murphy(BaseTestCase, OPD):
                 elif self.capella_cluster_config["provider"] != "hostedAWS":
                     config["storage"].pop("iops")
                 server_group_list.append(config)
+            self.log.info(server_group_list)
             rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                server_group_list,
                                                                timeout=96*60*60)
             self.task_manager.get_task_result(rebalance_task)
+            self.cluster_util.print_cluster_stats(self.cluster)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
             # Rebalance 3 - Both Disk/Compute Upgrade
@@ -445,6 +449,7 @@ class Murphy(BaseTestCase, OPD):
                                                                server_group_list,
                                                                timeout=96*60*60)
             self.task_manager.get_task_result(rebalance_task)
+            self.cluster_util.print_cluster_stats(self.cluster)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
         else:
             self.rebl_nodes = self.nodes_init
@@ -484,6 +489,7 @@ class Murphy(BaseTestCase, OPD):
                                                                    timeout=5*60*60)
 
                 self.task_manager.get_task_result(rebalance_task)
+                self.cluster_util.print_cluster_stats(self.cluster)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
                 self.sleep(60, "Sleep for 60s after rebalance")
