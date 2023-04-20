@@ -6205,7 +6205,7 @@ class CBASQueryExecuteTask(Task):
                 self.test_log.error("Error during CBAS query: %s" % errors)
                 self.set_result(False)
         except Exception as e:
-            self.log.error("CBASQueryExecuteTask EXCEPTION: " + e)
+            self.log.error("CBASQueryExecuteTask EXCEPTION: " + str(e))
             self.set_result(False)
             self.set_exception(e)
 
