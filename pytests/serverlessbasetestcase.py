@@ -22,6 +22,7 @@ from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from membase.api.rest_client import RestConnection
 from table_view import TableView
 import urllib
+import re
 
 
 class OnCloudBaseTest(CouchbaseBaseTest):
@@ -269,7 +270,13 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         provider = self.input.param("provider", AWS.__str__).lower()
         region = self.input.param("region", AWS.Region.US_EAST_1)
 
-        cb_version = cb_image.split("-")[3] if cb_image else ""
+        cb_version = ""
+        if cb_image:
+            version_split = cb_image.split("-")
+            for _split in version_split:
+                if re.search("^\d\.\d\.\d", _split):
+                    cb_version = _split
+                    break
         services_type = self.input.param("services", "kv:n1ql:fts:index")
         services_type = services_type.split(":")
         disk_type = self.input.param("disk_type", "gp3")
