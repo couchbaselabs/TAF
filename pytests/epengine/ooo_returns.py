@@ -297,8 +297,6 @@ class OutOfOrderReturns(ClusterSetup):
 
         half_of_num_items = self.num_items / 2
         doc_gen = doc_generator(self.key, 0, half_of_num_items)
-        t_doc_gen = self.trans_doc_gen(half_of_num_items, self.num_items,
-                                       transx_op)
 
         # Create trans config and object
         transaction_config = trans_obj.createTransactionConfig(
@@ -328,6 +326,8 @@ class OutOfOrderReturns(ClusterSetup):
         self.log.info("%s replicate_to=%s, persist_to=%s, durability=%s"
                       % (doc_op, replicate_to, persist_to, durability))
 
+        t_doc_gen = self.trans_doc_gen(half_of_num_items, self.num_items,
+                                       transx_op)
         trans_thread = Thread(target=self.__transaction_runner,
                               args=[trans_obj, t_doc_gen, transx_op])
         crud_task = self.task.async_load_gen_docs(
