@@ -267,7 +267,7 @@ class CapellaUtils(object):
                                             cluster.tenant.project_id,
                                             cluster.id,
                                             bucket_id)
-            if resp.status >= 200 and resp.status < 300:
+            if resp.status_code >= 200 and resp.status_code < 300:
                 CapellaUtils.log.info("Bucket deleted successfully!")
             else:
                 CapellaUtils.log.info(resp.content)
