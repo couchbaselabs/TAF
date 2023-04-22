@@ -85,7 +85,7 @@ public class Hotel {
         this.random.setSeed(key.hashCode());
         int index = this.random.nextInt(4096);
         jsonObject.put("address", this.addresses.get(index));
-        jsonObject.put("city", this.addresses.get(index));
+        jsonObject.put("city", this.city.get(index));
         jsonObject.put("country", this.country.get(index));
         jsonObject.put("email", this.emails.get(index));
         jsonObject.put("free_breakfast", this.random.nextBoolean());
