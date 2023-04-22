@@ -44,6 +44,7 @@ from com.couchbase.client.java.manager.collection import CollectionSpec
 from com.couchbase.client.java.kv import GetAllReplicasOptions
 from java.time import Duration
 from java.nio.charset import StandardCharsets
+from java.lang import RuntimeException
 from java.lang import System, String
 from java.util import \
     Collections, \
@@ -323,7 +324,13 @@ class SDKClient(object):
     def close(self):
         self.log.debug("Closing SDK for bucket '%s'" % self.bucket)
         if self.cluster:
-            self.cluster.disconnect()
+            try:
+                self.cluster.disconnect()
+            except RuntimeException as e:
+                if "Did not observe any item" in str(e):
+                    pass
+                else:
+                    raise
 #             self.cluster.environment().shutdown()
             self.log.debug("Cluster disconnected and env shutdown")
             SDKClient.sdk_disconnections += 1
