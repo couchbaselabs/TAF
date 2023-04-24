@@ -12,6 +12,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         super(MultiNodeAutoFailoverTests, self).setUp()
         self.data_load_spec = self.input.param("data_load_spec",
                                                "volume_test_load")
+        self.skip_validations = self.input.param("skip_validations", True)
         self.master = self.servers[0]
 
     def tearDown(self):
