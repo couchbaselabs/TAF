@@ -138,7 +138,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             text += "\nIndex nodes: {}".format(dataplane.index_nodes)
             text += "\nQuery nodes: {}".format(dataplane.query_nodes)
             text += "\nFTS nodes: {}\n\n".format(dataplane.fts_nodes)
-            print text
             self.table.add_row([
                 str(dataplane_id),
                 str(srv),

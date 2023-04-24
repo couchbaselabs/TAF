@@ -601,7 +601,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.task_manager.get_task_result(task)
         self.assertTrue(task.result, "Database creation failed")
 
-    def create_required_buckets(self, buckets_spec=None, timeout=600):
+    def create_required_buckets(self, buckets_spec=None, timeout=600,
+                                dataplane_id=None):
         if buckets_spec or self.spec_name:
             if buckets_spec is None:
                 self.log.info("Creating buckets from spec: %s"
@@ -612,10 +613,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = True
 
             # Process params to over_ride values if required
+            if not dataplane_id:
+                dataplane_id = self.dataplane_id
             CollectionBase.over_ride_bucket_template_params(
                 self, self.bucket_storage, buckets_spec)
             result = self.bucket_util.create_buckets_using_json_data(
-                self.cluster, buckets_spec, timeout=timeout)
+                self.cluster, buckets_spec, timeout=timeout, dataplane_id=dataplane_id)
             self.assertTrue(result, "Bucket creation failed")
             self.sleep(5, "Wait for collections creation to complete")
         else:
