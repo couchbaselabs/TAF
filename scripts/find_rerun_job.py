@@ -180,7 +180,13 @@ def find_rerun_job(args):
         component = OS.getenv('component')
         sub_component = OS.getenv('subcomponent')
         version_build = OS.getenv('version_number')
+        parameters = OS.getenv('parameters')
+        bucket_type, gsi_type = get_bucket_gsi_types(parameters)
         name = "{}_{}_{}".format(os, component, sub_component)
+        if bucket_type:
+            name = "{}_{}".format(name, bucket_type)
+        if gsi_type:
+            name = "{}_{}".format(name, gsi_type)
     elif args['jenkins_job']:
         name = OS.getenv('JOB_NAME')
         version_build = args['build_version']
@@ -188,8 +194,14 @@ def find_rerun_job(args):
         os = args['os']
         component = args['component']
         sub_component = args['sub_component']
+        parameters = args['parameters']
+        bucket_type, gsi_type = get_bucket_gsi_types(parameters)
         if os and component and sub_component:
             name = "{}_{}_{}".format(os, component, sub_component)
+            if bucket_type:
+                name = "{}_{}".format(name, bucket_type)
+            if gsi_type:
+                name = "{}_{}".format(name, gsi_type)
         elif args['name']:
             name = args['name']
         version_build = args['build_version']
@@ -230,6 +242,24 @@ def find_rerun_job(args):
     except Exception as e:
         print(e)
         return False, {}
+
+def get_bucket_gsi_types(parameters):
+    """
+    Parse the test params and determince the bucket type and gsi type
+    if any.
+    :param parameters: Get the test parameters from job
+    :type parameters: str
+    :return: bucket_type and gsi_type
+    :rtype: (string, string)
+    """
+    bucket_type = ""
+    gsi_type = ""
+    for parameter in parameters.split(","):
+        if "bucket_storage" in parameter:
+            bucket_type = parameter.split("=")[1]
+        elif "gsi_type" in parameter:
+            gsi_type = parameter.split("=")[1]
+    return (bucket_type, gsi_type)
 
 
 if __name__ == "__main__":
