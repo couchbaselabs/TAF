@@ -17,7 +17,7 @@ class SecurityTest(BaseTestCase):
         self.project_id = self.input.capella.get("project")
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
+            self.test_users = json.loads(json.loads(self.input.capella.get("test_users")))
         else:
             self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
                                          "role": "organizationOwner"}}
@@ -1005,6 +1005,16 @@ class SecurityTest(BaseTestCase):
         project_roles = ["projectOwner", "projectDataWriter", "projectClusterManager",
                          "projectDataViewer", "projectClusterViewer"]
 
+        self.log.info("Same Tenant Unauthorized project id - {}".format(
+            project_ids["same_tenant_unauthorized_project_id"]))
+        self.log.info("Different Tenant Unauthorized project id - {}".format(
+            project_ids["different_tenant_unauthorized_project_id"]))
+
+        self.log.info("Same Tenant unauthorized database id - {}".format(
+            database_ids["same_tenant_unauthorized_database_id"]))
+        self.log.info("Different Tenant unauthorized database id - {}".format(
+            database_ids["different_tenant_unauthorized_database_id"]))
+
         capella_api = CapellaAPI("https://" + self.url, self.user, self.passwd)
         deploy_cluster_body = {"tenantID": self.tenant_id, "projectID": self.project_id,
                                "name": "n1ql-Database", "provider": "aws", "region": "us-east-1",
@@ -1042,75 +1052,41 @@ class SecurityTest(BaseTestCase):
                                                                     json.dumps(n1ql_body))
 
                         if tenant_id == "valid_tenant_id":
-                            if project_id == "valid_project_id" and \
+                            if project_id == "valid_project_id" or \
                                     project_id == "same_tenant_unauthorized_project_id":
                                 if database_id == "valid_database_id" or \
                                         database_id == "same_tenant_unauthorized_database_id":
 
                                     if self.test_users[user]["role"] == "organizationOwner":
-                                        self.log.info(
-                                            "Outcome:{}, Expected:{} for running a query with"
-                                            " {} | {} | {} | {}"
-                                            .format(run_query_resp.status_code, 200, tenant_id,
-                                                    project_id, database_id,
-                                                    self.test_users[user]["role"]))
-                                        # self.assertEqual(200, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for accessing project"
-                                        #                  .format(run_query_resp.status_code, 200))
+                                        self.assertEqual(200, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1}"
+                                                         " for accessing project"
+                                                         .format(run_query_resp.status_code, 200))
                                     else:
-                                        self.log.info(
-                                            "Outcome:{}, Expected:{} for running a query with "
-                                            "{} | {} | {} | {}"
-                                            .format(run_query_resp.status_code, 412, tenant_id,
-                                                    project_id, database_id,
-                                                    self.test_users[user]["role"]))
-                                        # self.assertEqual(412, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for accessing project"
-                                        #                  .format(run_query_resp.status_code, 412))
+                                        self.assertEqual(412, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for accessing project"
+                                                         .format(run_query_resp.status_code, 412))
 
                                 else:
-                                    # This test is when the tenant-id, project-id is from authorized
-                                    # tenant and
-                                    # database id is either invalid or from another tenant
-                                    self.log.info("Outcome:{}, Expected:{} for running a query with"
-                                                  " {} | {} | {} | {}"
-                                                  .format(run_query_resp.status_code, 404,
-                                                          tenant_id, project_id,
-                                                          database_id,
-                                                          self.test_users[user]["role"]))
-                                    # self.assertEqual(404, run_query_resp.status_code,
-                                    #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                    #                  accessing project"
-                                    #                  .format(run_query_resp.status_code, 404))
+                                    self.assertEqual(404, run_query_resp.status_code,
+                                                     msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                     "accessing project"
+                                                     .format(run_query_resp.status_code, 404))
                             else:
-                                # This test is when the tenant-id is authorized and project-id is
-                                # from another tenant
-                                self.log.info("Outcome:{}, Expected:{} for running a query with "
-                                              "{} | {} | {} | {}"
-                                              .format(run_query_resp.status_code, 404, tenant_id,
-                                                      project_id,
-                                                      database_id, self.test_users[user]["role"]))
-                                # self.assertEqual(404, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  accessing project"
-                                #                  .format(run_query_resp.status_code, 404))
+                                self.assertEqual(404, run_query_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "accessing project"
+                                                 .format(run_query_resp.status_code, 404))
 
                         else:
-                            # This test run when unauthorized, invalid tenant-id is passed
-                            self.log.info("Outcome:{}, Expected:{} for running a query with "
-                                          "{} | {} | {} | {}"
-                                          .format(run_query_resp.status_code, 404, tenant_id,
-                                                  project_id, database_id,
-                                                  self.test_users[user]["role"]))
-                            # self.assertEqual(400, run_query_resp.status_code,
-                            #                  msg='FAIL, Outcome:{0}, Expected:{1} for deploying
-                            #                  a cluster'
-                            #                  .format(run_query_resp.status_code, 400))
+                            self.assertEqual(400, run_query_resp.status_code,
+                                             msg='FAIL, Outcome:{0}, Expected:{1} for deploying '
+                                             'a cluster'
+                                             .format(run_query_resp.status_code, 400))
 
                 self.log.info(
-                    "Verifying status code for running a n1ql query after adding user to the "
+                    "Verifying status code for running a read n1ql query after adding user to the "
                     "project"
                 )
                 user = self.test_users["User4"]
@@ -1128,22 +1104,15 @@ class SecurityTest(BaseTestCase):
 
                         if tenant_id == "valid_tenant_id":
                             if project_id == "valid_project_id":
-                                # This test runs when adding a user to project in a valid tenant-id
-                                self.log.info("Outcome: {}, Expected: {}"
-                                              .format(resp.status_code, 200))
-                                # self.assertEqual(200, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(resp.status_code, 200))
+                                self.assertEqual(200, run_query_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(resp.status_code, 200))
                             else:
-                                # This test runs when adding a user to project in unauthorized,
-                                # invalid tenant-id
-                                self.log.info("Outcome: {}, Expected: {}"
-                                              .format(resp.status_code, 404))
-                                # self.assertEqual(404, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(resp.status_code, 404))
+                                self.assertEqual(404, run_query_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(resp.status_code, 404))
 
                     for database_id in database_ids:
                         self.log.info(" ")
@@ -1170,53 +1139,33 @@ class SecurityTest(BaseTestCase):
                                 if database_id == "valid_database_id":
                                     if role == "projectOwner" or role == "projectDataWriter" \
                                             or role == "projectDataViewer":
-                                        self.log.info("Outcome: {}, Expected: {} with "
-                                                      "{} | {} | {} | {}"
-                                                      .format(run_query_resp.status_code, 200,
-                                                              tenant_id, project_id,
-                                                              database_id, role))
-                                        # self.assertEqual(200, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for adding user to project"
-                                        #                  .format(run_query_resp.status_code, 200))
+                                        self.assertEqual(200, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for adding user to project"
+                                                         .format(run_query_resp.status_code, 200))
 
                                     else:
-                                        self.log.info("Outcome: {}, Expected: {} with "
-                                                      "{} | {} | {} | {}"
-                                                      .format(run_query_resp.status_code, 412,
-                                                              tenant_id, project_id,
-                                                              database_id, role))
-                                        # self.assertEqual(412, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for adding user to project"
-                                        #                  .format(run_query_resp.status_code, 412))
+                                        self.assertEqual(412, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for adding user to project"
+                                                         .format(run_query_resp.status_code, 412))
                                 else:
-                                    self.log.info("Outcome: {}, Expected: {} with {} | {} | {} | {}"
-                                                  .format(run_query_resp.status_code, 404,
-                                                          tenant_id, project_id,
-                                                          database_id, role))
-                                    # self.assertEqual(412, resp.status_code,
-                                    #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                    #                  for adding user to project"
-                                    #                  .format(run_query_resp.status_code, 412))
+                                    self.assertEqual(412, resp.status_code,
+                                                     msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                     "for adding user to project"
+                                                     .format(run_query_resp.status_code, 412))
 
                             else:
-                                self.log.info("Outcome: {}, Expected: {} with {} | {} | {} | {}"
-                                              .format(run_query_resp.status_code, 404, tenant_id,
-                                                      project_id, database_id, role))
-                                # self.assertEqual(412, resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(run_query_resp.status_code, 412))
+                                self.assertEqual(412, resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(run_query_resp.status_code, 412))
 
                         else:
-                            self.log.info("Outcome: {}, Expected: {} with {} | {} | {} | {}"
-                                          .format(run_query_resp.status_code, 404, tenant_id,
-                                                  project_id, database_id, role))
-                            # self.assertEqual(412, resp.status_code,
-                            #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                            #                  user to project"
-                            #                  .format(run_query_resp.status_code, 412))
+                            self.assertEqual(412, resp.status_code,
+                                             msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                             "user to project"
+                                             .format(run_query_resp.status_code, 412))
 
                         self.log.info("Verifying status code for write query statement for {}"
                                       .format(role))
@@ -1240,55 +1189,33 @@ class SecurityTest(BaseTestCase):
                                     # For now it is considered as 200 and file a bug for the same.
                                     if role == "projectOwner" or role == "projectDataWriter" \
                                             or role == "projectDataViewer":
-                                        self.log.info("Outcome: {}, Expected: {} with "
-                                                      "{} | {} | {} | {}"
-                                                      .format(run_query_resp.status_code, 200,
-                                                              tenant_id, project_id,
-                                                              database_id, role))
-                                        # self.assertEqual(200, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for adding user to project"
-                                        #                  .format(run_query_resp.status_code, 200))
+                                        self.assertEqual(200, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for adding user to project"
+                                                         .format(run_query_resp.status_code, 200))
 
                                     else:
-                                        self.log.info("Outcome: {}, Expected: {} with "
-                                                      "{} | {} | {} | {}"
-                                                      .format(run_query_resp.status_code, 412,
-                                                              tenant_id, project_id,
-                                                              database_id, role))
-                                        # self.assertEqual(412, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for adding user to project"
-                                        #                  .format(run_query_resp.status_code, 412))
+                                        self.assertEqual(412, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for adding user to project"
+                                                         .format(run_query_resp.status_code, 412))
                                 else:
-                                    self.log.info("Outcome: {}, Expected: {} with {} | {} | {} | {}"
-                                                  .format(run_query_resp.status_code, 404,
-                                                          tenant_id, project_id,
-                                                          database_id, role))
-                                    # self.assertEqual(412, resp.status_code,
-                                    #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                    #                  adding user to project"
-                                    #                  .format(run_query_resp.status_code, 412))
+                                    self.assertEqual(412, resp.status_code,
+                                                     msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                     "adding user to project"
+                                                     .format(run_query_resp.status_code, 412))
 
                             else:
-                                self.log.info("Outcome: {}, Expected: {} with {} | {} | {} | {}"
-                                              .format(run_query_resp.status_code, 404, tenant_id,
-                                                      project_id,
-                                                      database_id, role))
-                                # self.assertEqual(412, resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(run_query_resp.status_code, 412))
+                                self.assertEqual(412, resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(run_query_resp.status_code, 412))
 
                         else:
-                            self.log.info("Outcome: {}, Expected: {} with {} | {} | {} | {}"
-                                          .format(run_query_resp.status_code, 404, tenant_id,
-                                                  project_id, database_id,
-                                                  role))
-                            # self.assertEqual(412, resp.status_code,
-                            #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                            #                  adding user to project"
-                            #                  .format(run_query_resp.status_code, 412))
+                            self.assertEqual(412, resp.status_code,
+                                             msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                             "adding user to project"
+                                             .format(run_query_resp.status_code, 412))
 
                         # Commented because for the projectDataViewer role it gives a response of
                         # 200
@@ -1329,12 +1256,10 @@ class SecurityTest(BaseTestCase):
                                       .format(user["name"], role))
                         remove_user_resp = capella_api.remove_user_from_project(
                             tenant_ids[tenant_id], user["userid"], project_ids[project_id])
-                        self.log.info("Outcome: {}, Expected: {}"
-                                      .format(remove_user_resp.status_code, 204))
-                        # self.assertEqual(204, remove_user_resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                        #                  user to project"
-                        #                  .format(remove_user_resp.status_code, 204))
+                        self.assertEqual(204, remove_user_resp.status_code,
+                                         msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                         "user to project"
+                                         .format(remove_user_resp.status_code, 204))
 
         self.log.info("Destroying the database")
         destroy_database_resp = capella_api.destroy_database(self.tenant_id, self.project_id,
@@ -1350,13 +1275,18 @@ class SecurityTest(BaseTestCase):
         project_ids = {
             "valid_project_id": "",
             "same_tenant_unauthorized_project_id": self.input.param(
-                "same_tenant_unauthorized_project_id", self.project_id),
+                "same_tenant_unauthorized_project_id", self.invalid_id),
             "different_tenant_unauthorized_project_id": self.input.param(
                 "different_tenant_unauthorized_project_id", self.invalid_id),
             "invalid_project_id": self.invalid_id
         }
         project_roles = ["projectOwner", "projectDataWriter", "projectClusterManager",
                          "projectDataViewer", "projectClusterViewer"]
+
+        self.log.info("Same Tenant Unauthorized project id - {}".format(
+            project_ids["same_tenant_unauthorized_project_id"]))
+        self.log.info("Different Tenant Unauthorized project id - {}".format(
+            project_ids["different_tenant_unauthorized_project_id"]))
 
         capella_api = CapellaAPI("https://" + self.url, self.user, self.passwd)
         body = {"name": "Koushal_API_Testing"}
@@ -1386,41 +1316,27 @@ class SecurityTest(BaseTestCase):
                         if project_id == "valid_project_id" or \
                                 project_id == "same_tenant_unauthorized_project_id":
                             if self.test_users[user]["role"] == "organizationOwner":
-                                self.log.info("Outcome: {}, Expected: {} with {} | {} | {}"
-                                              .format(access_project_resp.status_code, 200,
-                                                      tenant_id, project_id,
-                                                      self.test_users[user]["role"]))
-                                # self.assertEqual(200, access_project_resp.status_code,
-                                #                  msg='Outcome: {0}, Expected:{1} for accessing
-                                #                  project'
-                                #                  .format(access_project_resp.status_code, 200))
+                                self.assertEqual(200, access_project_resp.status_code,
+                                                 msg='Outcome: {0}, Expected:{1} for accessing '
+                                                 'project'
+                                                 .format(access_project_resp.status_code, 200))
 
                             else:
-                                self.log.info("Outcome: {}, Expected: {} with {} | {} | {}"
-                                              .format(access_project_resp.status_code, 403,
-                                                      tenant_id, project_id,
-                                                      self.test_users[user]["role"]))
-                                # self.assertEqual(403, access_project_resp.status_code,
-                                #                  msg='Outcome: {0}, Expected:{1} for accessing
-                                #                  project'
-                                #                  .format(access_project_resp.status_code, 403))
+                                self.assertEqual(403, access_project_resp.status_code,
+                                                 msg='Outcome: {0}, Expected:{1} for accessing'
+                                                 ' project'
+                                                 .format(access_project_resp.status_code, 403))
 
                         else:
-                            self.log.info("Outcome: {}, Expected: {} with {} | {} | {}".
-                                          format(access_project_resp.status_code, 404, tenant_id,
-                                                 project_id, self.test_users[user]["role"]))
-                            # self.assertEqual(404, access_project_resp.status_code,
-                            #                  msg='Outcome: {0}, Expected:{1} for accessing
-                            #                  project'
-                            #                  .format(access_project_resp.status_code, 404))
+                            self.assertEqual(404, access_project_resp.status_code,
+                                             msg='Outcome: {0}, Expected:{1} for accessing '
+                                             'project'
+                                             .format(access_project_resp.status_code, 404))
 
                     else:
-                        self.log.info("Outcome: {}, Expected: {} with {} | {} | {}"
-                                      .format(access_project_resp.status_code, 404, tenant_id,
-                                              project_id, self.test_users[user]["role"]))
-                        # self.assertEqual(404, access_project_resp.status_code,
-                        #                  msg='Outcome: {0}, Expected:{1} for accessing project'
-                        #                  .format(access_project_resp.status_code, 404))
+                        self.assertEqual(404, access_project_resp.status_code,
+                                         msg='Outcome: {0}, Expected:{1} for accessing project'
+                                         .format(access_project_resp.status_code, 404))
 
                 self.log.info(
                     "Verifying status code for accessing a project after adding user to the project"
@@ -1445,35 +1361,20 @@ class SecurityTest(BaseTestCase):
 
                         if tenant_id == "valid_tenant_id":
                             if project_id == "valid_project_id":
-                                # This test runs when adding a user to project in a valid tenant-id
-                                self.log.info("Outcome: {}, Expected: {} for adding user o project "
-                                              "with {} | {} | {}"
-                                              .format(add_user_resp.status_code, 200, tenant_id,
-                                                      project_id, role))
-                                # self.assertEqual(200, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(resp.status_code, 200))
+                                self.assertEqual(200, add_user_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(add_user_resp.status_code, 200))
                             else:
-                                # This test runs when adding a user to project in unauthorized,
-                                # invalid tenant-id
-                                self.log.info("Outcome: {}, Expected: {} for adding user o project "
-                                              "with {} | {} | {}"
-                                              .format(add_user_resp.status_code, 404, tenant_id,
-                                                      project_id, role))
-                                # self.assertEqual(404, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(resp.status_code, 404))
+                                self.assertEqual(404, add_user_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for"
+                                                 " adding user to project"
+                                                 .format(add_user_resp.status_code, 404))
                         else:
-                            self.log.info("Outcome: {}, Expected: {} for adding user o project "
-                                          "with {} | {} | {}"
-                                          .format(add_user_resp.status_code, 404, tenant_id,
-                                                  project_id, role))
-                            # self.assertEqual(404, run_query_resp.status_code,
-                            #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                            #                  adding user to project"
-                            #                  .format(resp.status_code, 404))
+                            self.assertEqual(404, add_user_resp.status_code,
+                                             msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                             "adding user to project"
+                                             .format(add_user_resp.status_code, 404))
 
                     self.log.info("Accessing project {} with role as {}"
                                   .format(project_id, role))
@@ -1482,46 +1383,31 @@ class SecurityTest(BaseTestCase):
 
                     if tenant_id == "valid_tenant_id":
                         if project_id == "valid_project_id":
-                            self.log.info("Outcome: {}, Expected: {} for accessing project with "
-                                          "{} | {} | {}"
-                                          .format(access_project_resp.status_code, 200, tenant_id,
-                                                  project_id, role))
-                            # self.assertEqual(200, resp.status_code,
-                            #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                            #                  user to project"
-                            #                  .format(resp.status_code, 200))
+                            self.assertEqual(200, access_project_resp.status_code,
+                                             msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                             "user to project"
+                                             .format(access_project_resp.status_code, 200))
                         else:
-                            self.log.info("Outcome: {}, Expected: {} for accessing project with "
-                                          "{} | {} | {}"
-                                          .format(access_project_resp.status_code, 404, tenant_id,
-                                                  project_id, role))
-                            # self.assertEqual(404, resp.status_code,
-                            #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                            #                  user to project"
-                            #                  .format(resp.status_code, 404))
+                            self.assertEqual(404, access_project_resp.status_code,
+                                             msg="FAIL, Outcome: {0}, Expected: {1} for adding"
+                                             " user to project"
+                                             .format(access_project_resp.status_code, 404))
 
                     else:
-                        self.log.info("Outcome: {}, Expected: {} for accessing project with "
-                                      "{} | {} | {}"
-                                      .format(access_project_resp.status_code, 500, tenant_id,
-                                              project_id, role))
-                        # self.assertEqual(404, resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                        #                  user to project"
-                        #                  .format(resp.status_code, 404))
+                        self.assertEqual(404, access_project_resp.status_code,
+                                         msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                         "user to project"
+                                         .format(access_project_resp.status_code, 404))
 
                     if project_id != "same_tenant_unauthorized_project_id":
                         self.log.info("Removing user {} with role as {} from the project"
                                       .format(user["name"], user["role"]))
                         remove_user_resp = capella_api.remove_user_from_project(
                             tenant_ids[tenant_id], user["userid"],project_ids[project_id])
-                        self.log.info("Outcome: {}, Expected: {} with {} | {} | {}"
-                                      .format(remove_user_resp.status_code, 204, tenant_id,
-                                              project_id, role))
-                        # self.assertEqual(204, remove_user_resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                        #                  user to project"
-                        #                  .format(remove_user_resp.status_code, 204))
+                        self.assertEqual(204, remove_user_resp.status_code,
+                                         msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                         "user to project"
+                                         .format(remove_user_resp.status_code, 204))
 
             if project_id != "same_tenant_unauthorized_project_id":
                 delete_project_resp = capella_api.delete_project(tenant_ids[tenant_id],
@@ -1529,37 +1415,28 @@ class SecurityTest(BaseTestCase):
 
                 if tenant_id == "valid_tenant_id":
                     if project_id == "valid_project_id":
-                        self.log.info("Outcome: {}, Expected: {} with {} | {} | {}"
-                                      .format(delete_project_resp.status_code, 204, tenant_id,
-                                              project_id, role))
-                        # self.assertEqual(204, resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                        #                  user to project"
-                        #                  .format(resp.status_code, 204))
+                        self.assertEqual(204, delete_project_resp.status_code,
+                                         msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                         "user to project"
+                                         .format(delete_project_resp.status_code, 204))
 
                     else:
-                        self.log.info("Outcome: {}, Expected: {} with {} | {} | {}"
-                                      .format(delete_project_resp.status_code, 404, tenant_id,
-                                              project_id, role))
-                        # self.assertEqual(404, resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                        #                  user to project"
-                        #                  .format(resp.status_code, 404))
+                        self.assertEqual(404, delete_project_resp.status_code,
+                                         msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                         "user to project"
+                                         .format(delete_project_resp.status_code, 404))
 
                 else:
-                    self.log.info("Outcome: {}, Expected: {} with {} | {} | {}"
-                                  .format(delete_project_resp.status_code, 404, tenant_id,
-                                          project_id, role))
-                    # self.assertEqual(404, resp.status_code,
-                    #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding user
-                    #                  to project"
-                    #                  .format(resp.status_code, 404))
+                    self.assertEqual(404, delete_project_resp.status_code,
+                                     msg="FAIL, Outcome: {0}, Expected: {1} for adding user "
+                                     "to project"
+                                     .format(delete_project_resp.status_code, 404))
 
-    def test_index_for_serverless(self):
+    def test_indexing(self):
         self.log.info("Verifying status code for creating and managing indexes")
         tenant_ids = {
             "valid_tenant_id": self.tenant_id,
-            "invalid_tenant_id": self.invalid_id
+            # "invalid_tenant_id": self.invalid_id
         }
         project_ids = {
             "valid_project_id": self.project_id,
@@ -1580,9 +1457,19 @@ class SecurityTest(BaseTestCase):
         project_roles = ["projectOwner", "projectDataWriter", "projectClusterManager",
                          "projectDataViewer", "projectClusterViewer"]
 
+        self.log.info("Same Tenant Unauthorized project id - {}".format(
+            project_ids["same_tenant_unauthorized_project_id"]))
+        self.log.info("Different Tenant Unauthorized project id - {}".format(
+            project_ids["different_tenant_unauthorized_project_id"]))
+
+        self.log.info("Same Tenant unauthorized database id - {}".format(
+            database_ids["same_tenant_unauthorized_database_id"]))
+        self.log.info("Different Tenant unauthorized database id - {}".format(
+            database_ids["different_tenant_unauthorized_database_id"]))
+
         capella_api = CapellaAPI("https://" + self.url, self.user, self.passwd)
         deploy_cluster_body = {"tenantID": self.tenant_id, "projectID": self.project_id,
-                               "name": "index-Database", "provider": "aws", "region": "eu-west-1",
+                               "name": "index-Database", "provider": "aws", "region": "us-east-1",
                                "importSampleData": True}
         deploy_resp = capella_api.deploy_database(self.tenant_id, json.dumps(deploy_cluster_body))
         self.assertEqual(202, deploy_resp.status_code,
@@ -1630,66 +1517,32 @@ class SecurityTest(BaseTestCase):
                                         database_id == "same_tenant_unauthorized_database_id":
 
                                     if self.test_users[user]["role"] == "organizationOwner":
-                                        self.log.info(
-                                            "Outcome:{}, Expected:{} for creating an index with"
-                                            " {} | {} | {} | {}"
-                                            .format(run_query_resp.status_code, 200, tenant_id,
-                                                    project_id, database_id,
-                                                    self.test_users[user]["role"]))
-                                        # self.assertEqual(200, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for accessing project"
-                                        #                  .format(run_query_resp.status_code, 200))
+                                        self.assertEqual(200, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for accessing project"
+                                                         .format(run_query_resp.status_code, 200))
                                     else:
-                                        self.log.info(
-                                            "Outcome:{}, Expected:{} for creating an index with "
-                                            "{} | {} | {} | {}"
-                                            .format(run_query_resp.status_code, 412, tenant_id,
-                                                    project_id, database_id,
-                                                    self.test_users[user]["role"]))
-                                        # self.assertEqual(412, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for accessing project"
-                                        #                  .format(run_query_resp.status_code, 412))
+                                        self.assertEqual(412, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for accessing project"
+                                                         .format(run_query_resp.status_code, 412))
 
                                 else:
-                                    # This test is when the tenant-id, project-id is from
-                                    # authorized tenant and
-                                    # database id is either invalid or from another tenant
-                                    self.log.info("Outcome:{}, Expected:{} for creating an index "
-                                                  "with {} | {} | {} | {}"
-                                                  .format(run_query_resp.status_code, 404,
-                                                          tenant_id, project_id,
-                                                          database_id,
-                                                          self.test_users[user]["role"]))
-                                    # self.assertEqual(404, run_query_resp.status_code,
-                                    #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                    #                  accessing project"
-                                    #                  .format(run_query_resp.status_code, 404))
+                                    self.assertEqual(404, run_query_resp.status_code,
+                                                     msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                     "accessing project"
+                                                     .format(run_query_resp.status_code, 404))
                             else:
-                                # This test is when the tenant-id is authorized and project-id is
-                                # from another tenant
-                                self.log.info("Outcome:{}, Expected:{} for creating an index with "
-                                              "{} | {} | {} | {}"
-                                              .format(run_query_resp.status_code, 404, tenant_id,
-                                                      project_id, database_id,
-                                                      self.test_users[user]["role"]))
-                                # self.assertEqual(404, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  accessing project"
-                                #                  .format(run_query_resp.status_code, 404))
+                                self.assertEqual(404, run_query_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "accessing project"
+                                                 .format(run_query_resp.status_code, 404))
 
                         else:
-                            # This test run when unauthorized, invalid tenant-id is passed
-                            self.log.info("Outcome:{}, Expected:{} for creating an index with "
-                                          "{} | {} | {} | {}"
-                                          .format(run_query_resp.status_code, 404, tenant_id,
-                                                  project_id, database_id,
-                                                  self.test_users[user]["role"]))
-                            # self.assertEqual(400, run_query_resp.status_code,
-                            #                  msg='FAIL, Outcome:{0}, Expected:{1} for deploying
-                            #                  a cluster'
-                            #                  .format(run_query_resp.status_code, 400))
+                            self.assertEqual(400, run_query_resp.status_code,
+                                             msg='FAIL, Outcome:{0}, Expected:{1} for deploying'
+                                             ' a cluster'
+                                             .format(run_query_resp.status_code, 400))
 
                 self.log.info(
                     "Verifying status code for creating an index after adding user to the project"
@@ -1704,37 +1557,20 @@ class SecurityTest(BaseTestCase):
                     if project_id != "same_tenant_unauthorized_project_id":
                         body = {"resourceId": project_ids[project_id], "resourceType": "project",
                                 "roles": [role], "users": [user["userid"]]}
-
-                        resp = capella_api.add_user_to_project(tenant_ids[tenant_id],
-                                                               json.dumps(body))
-                        # self.log.info("Outcome : {}, Expected: {}".format(resp.status_code, 200))
-                        # self.assertEqual(200, resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                        #                  user to project"
-                        #                  .format(resp.status_code, 200))
+                        add_user_resp = capella_api.add_user_to_project(tenant_ids[tenant_id],
+                                                                        json.dumps(body))
 
                         if tenant_id == "valid_tenant_id":
                             if project_id == "valid_project_id":
-                                # This test runs when adding a user to project in a valid tenant-id
-                                self.log.info("Outcome: {}, Expected: {} for adding user to project"
-                                              " with {} | {} | {}"
-                                              .format(resp.status_code, 200, tenant_id, project_id,
-                                                      role))
-                                # self.assertEqual(200, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(resp.status_code, 200))
+                                self.assertEqual(200, add_user_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(add_user_resp.status_code, 200))
                             else:
-                                # This test runs when adding a user to project in unauthorized,
-                                # invalid tenant-id
-                                self.log.info("Outcome: {}, Expected: {} for adding user to project"
-                                              " with {} | {} | {}"
-                                              .format(resp.status_code, 404, tenant_id, project_id,
-                                                      role))
-                                # self.assertEqual(404, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(resp.status_code, 404))
+                                self.assertEqual(404, add_user_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for"
+                                                 " adding user to project"
+                                                 .format(add_user_resp.status_code, 404))
 
                     for database_id in database_ids:
                         self.log.info(" ")
@@ -1764,60 +1600,33 @@ class SecurityTest(BaseTestCase):
                                 if database_id == "valid_database_id":
                                     if role == "projectOwner" or role == "projectDataWriter" \
                                             or role == "projectDataViewer":
-                                        self.log.info(
-                                            "Outcome: {}, Expected: {} for creating index with "
-                                            "{} | {} | {} | {}"
-                                            .format(run_query_resp.status_code, 200, tenant_id,
-                                                    project_id, database_id,
-                                                    role))
-                                        # self.assertEqual(200, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for adding user to project"
-                                        #                  .format(run_query_resp.status_code, 200))
+                                        self.assertEqual(200, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for adding user to project"
+                                                         .format(run_query_resp.status_code, 200))
 
                                     else:
-                                        self.log.info(
-                                            "Outcome: {}, Expected: {} for creating index with "
-                                            "{} | {} | {} | {}"
-                                            .format(run_query_resp.status_code, 412, tenant_id,
-                                                    project_id, database_id,
-                                                    role))
-                                        # self.assertEqual(412, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected:
-                                        #                  {1} for adding user to project"
-                                        #                  .format(run_query_resp.status_code, 412))
+                                        self.assertEqual(412, run_query_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: "
+                                                         "{1} for adding user to project"
+                                                         .format(run_query_resp.status_code, 412))
                                 else:
-                                    self.log.info("Outcome: {}, Expected: {} for creating index "
-                                                  "with {} | {} | {} | {}"
-                                                  .format(run_query_resp.status_code, 404,
-                                                          tenant_id, project_id,
-                                                          database_id, role))
-                                    # self.assertEqual(412, resp.status_code,
-                                    #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                    #                  adding user to project"
-                                    #                  .format(run_query_resp.status_code, 412))
+                                    self.assertEqual(412, run_query_resp.status_code,
+                                                     msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                     "adding user to project"
+                                                     .format(run_query_resp.status_code, 412))
 
                             else:
-                                self.log.info("Outcome: {}, Expected: {} for creating index with "
-                                              "{} | {} | {} | {}"
-                                              .format(run_query_resp.status_code, 404, tenant_id,
-                                                      project_id,
-                                                      database_id, role))
-                                # self.assertEqual(412, resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(run_query_resp.status_code, 412))
+                                self.assertEqual(412, run_query_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(run_query_resp.status_code, 412))
 
                         else:
-                            self.log.info("Outcome: {}, Expected: {} for creating index with "
-                                          "{} | {} | {} | {}"
-                                          .format(run_query_resp.status_code, 404, tenant_id,
-                                                  project_id, database_id,
-                                                  role))
-                            # self.assertEqual(412, resp.status_code,
-                            #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                            #                  user to project"
-                            #                  .format(run_query_resp.status_code, 412))
+                            self.assertEqual(412, run_query_resp.status_code,
+                                             msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                             "user to project"
+                                             .format(run_query_resp.status_code, 412))
 
                         # Commented because for the projectDataViewer role it gives a response of
                         # 200
@@ -1858,25 +1667,21 @@ class SecurityTest(BaseTestCase):
                                       .format(user["name"], user["role"]))
                         remove_user_resp = capella_api.remove_user_from_project(
                             tenant_ids[tenant_id], user["userid"],  project_ids[project_id])
-                        self.log.info("Outcome: {}, Expected: {} for removing user from project "
-                                      "with {} | {} | {}"
-                                      .format(remove_user_resp.status_code, 204, tenant_id,
-                                              project_id, role))
-                        # self.assertEqual(204, remove_user_resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding user
-                        #                  to project"
-                        #                  .format(remove_user_resp.status_code, 204))
+                        self.assertEqual(204, remove_user_resp.status_code,
+                                         msg="FAIL, Outcome: {0}, Expected: {1} for adding user "
+                                         "to project"
+                                         .format(remove_user_resp.status_code, 204))
 
         self.log.info("Destroying the database")
         destroy_database_resp = capella_api.destroy_database(self.tenant_id, self.project_id,
                                                              database_ids["valid_database_id"])
         self.log.info("Outcome: {}, Expected: {}".format(destroy_database_resp.status_code, 204))
 
-    def test_fts_for_serverless(self):
+    def test_fts(self):
         self.log.info("Verifying status code for creating and managing indexes")
         tenant_ids = {
             "valid_tenant_id": self.tenant_id,
-            "invalid_tenant_id": self.invalid_id
+            # "invalid_tenant_id": self.invalid_id
         }
         project_ids = {
             "valid_project_id": self.project_id,
@@ -1897,9 +1702,19 @@ class SecurityTest(BaseTestCase):
         project_roles = ["projectOwner", "projectDataWriter", "projectClusterManager",
                          "projectDataViewer", "projectClusterViewer"]
 
+        self.log.info("Same Tenant Unauthorized project id - {}".format(
+            project_ids["same_tenant_unauthorized_project_id"]))
+        self.log.info("Different Tenant Unauthorized project id - {}".format(
+            project_ids["different_tenant_unauthorized_project_id"]))
+
+        self.log.info("Same Tenant unauthorized database id - {}".format(
+            database_ids["same_tenant_unauthorized_database_id"]))
+        self.log.info("Different Tenant unauthorized database id - {}".format(
+            database_ids["different_tenant_unauthorized_database_id"]))
+
         capella_api = CapellaAPI("https://" + self.url, self.user, self.passwd)
         deploy_cluster_body = {"tenantID": self.tenant_id, "projectID": self.project_id,
-                               "name": "index-Database", "provider": "aws", "region": "eu-west-1",
+                               "name": "index-Database", "provider": "aws", "region": "us-east-1",
                                "importSampleData": True}
         deploy_resp = capella_api.deploy_database(self.tenant_id, json.dumps(deploy_cluster_body))
         self.assertEqual(202, deploy_resp.status_code,
@@ -1970,66 +1785,32 @@ class SecurityTest(BaseTestCase):
                                         database_id == "same_tenant_unauthorized_database_id":
 
                                     if self.test_users[user]["role"] == "organizationOwner":
-                                        self.log.info(
-                                            "Outcome:{}, Expected:{} for creating an index "
-                                            "with {} | {} | {} | {}"
-                                            .format(create_fts_resp.status_code, 200, tenant_id,
-                                                    project_id,
-                                                    database_id, self.test_users[user]["role"]))
-                                        # self.assertEqual(200, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for accessing project"
-                                        #                  .format(run_query_resp.status_code, 200))
+                                        self.assertEqual(200, create_fts_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1}"
+                                                         " for accessing project"
+                                                         .format(create_fts_resp.status_code, 200))
                                     else:
-                                        self.log.info(
-                                            "Outcome:{}, Expected:{} for creating an index with "
-                                            "{} | {} | {} | {}"
-                                            .format(create_fts_resp.status_code, 412, tenant_id,
-                                                    project_id,
-                                                    database_id, self.test_users[user]["role"]))
-                                        # self.assertEqual(412, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for accessing project"
-                                        #                  .format(run_query_resp.status_code, 412))
+                                        self.assertEqual(412, create_fts_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1}"
+                                                         " for accessing project"
+                                                         .format(create_fts_resp.status_code, 412))
 
                                 else:
-                                    # This test is when the tenant-id, project-id is from
-                                    # authorized tenant and
-                                    # database id is either invalid or from another tenant
-                                    self.log.info("Outcome:{}, Expected:{} for creating an index "
-                                                  "with {} | {} | {} | {}"
-                                                  .format(create_fts_resp.status_code, 404,
-                                                          tenant_id, project_id,
-                                                          database_id,
-                                                          self.test_users[user]["role"]))
-                                    # self.assertEqual(404, run_query_resp.status_code,
-                                    #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                    #                  accessing project"
-                                    #                  .format(run_query_resp.status_code, 404))
+                                    self.assertEqual(404, create_fts_resp.status_code,
+                                                     msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                     "accessing project"
+                                                     .format(create_fts_resp.status_code, 404))
                             else:
-                                # This test is when the tenant-id is authorized and project-id is
-                                # from another tenant
-                                self.log.info("Outcome:{}, Expected:{} for creating an index with "
-                                              "{} | {} | {} | {}"
-                                              .format(create_fts_resp.status_code, 404, tenant_id,
-                                                      project_id,
-                                                      database_id, self.test_users[user]["role"]))
-                                # self.assertEqual(404, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  accessing project"
-                                #                  .format(run_query_resp.status_code, 404))
+                                self.assertEqual(404, create_fts_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for"
+                                                 " accessing project"
+                                                 .format(create_fts_resp.status_code, 404))
 
                         else:
-                            # This test run when unauthorized, invalid tenant-id is passed
-                            self.log.info("Outcome:{}, Expected:{} for creating an index with "
-                                          "{} | {} | {} | {}"
-                                          .format(create_fts_resp.status_code, 404, tenant_id,
-                                                  project_id, database_id,
-                                                  self.test_users[user]["role"]))
-                            # self.assertEqual(400, run_query_resp.status_code,
-                            #                  msg='FAIL, Outcome:{0}, Expected:{1} for deploying
-                            #                  a cluster'
-                            #                  .format(run_query_resp.status_code, 400))
+                            self.assertEqual(400, create_fts_resp.status_code,
+                                             msg='FAIL, Outcome:{0}, Expected:{1} for deploying'
+                                             ' a cluster'
+                                             .format(create_fts_resp.status_code, 400))
 
                 self.log.info(
                     "Verifying status code for creating an index after adding user to the project"
@@ -2045,36 +1826,20 @@ class SecurityTest(BaseTestCase):
                         body = {"resourceId": project_ids[project_id], "resourceType": "project",
                                 "roles": [role], "users": [user["userid"]]}
 
-                        resp = capella_api.add_user_to_project(tenant_ids[tenant_id],
+                        add_user_resp = capella_api.add_user_to_project(tenant_ids[tenant_id],
                                                                json.dumps(body))
-                        # self.log.info("Outcome : {}, Expected: {}".format(resp.status_code, 200))
-                        # self.assertEqual(200, resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                        #                  user to project"
-                        #                  .format(resp.status_code, 200))
 
                         if tenant_id == "valid_tenant_id":
                             if project_id == "valid_project_id":
-                                # This test runs when adding a user to project in a valid tenant-id
-                                self.log.info("Outcome: {}, Expected: {} for adding user to project"
-                                              " with {} | {} | {}"
-                                              .format(resp.status_code, 200, tenant_id, project_id,
-                                                      role))
-                                # self.assertEqual(200, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(resp.status_code, 200))
+                                self.assertEqual(200, add_user_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for"
+                                                 " adding user to project"
+                                                 .format(add_user_resp.status_code, 200))
                             else:
-                                # This test runs when adding a user to project in unauthorized,
-                                # invalid tenant-id
-                                self.log.info("Outcome: {}, Expected: {} for adding user to "
-                                              "project with {} | {} | {}"
-                                              .format(resp.status_code, 404, tenant_id, project_id,
-                                                      role))
-                                # self.assertEqual(404, run_query_resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(resp.status_code, 404))
+                                self.assertEqual(404, add_user_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(add_user_resp.status_code, 404))
 
                     for database_id in database_ids:
                         self.log.info(" ")
@@ -2124,58 +1889,33 @@ class SecurityTest(BaseTestCase):
                                 if database_id == "valid_database_id":
                                     if role == "projectOwner" or role == "projectDataWriter" \
                                             or role == "projectDataViewer":
-                                        self.log.info(
-                                            "Outcome: {}, Expected: {} for creating index with "
-                                            "{} | {} | {} | {}"
-                                            .format(create_fts_resp.status_code, 200, tenant_id,
-                                                    project_id,
-                                                    database_id, role))
-                                        # self.assertEqual(200, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for adding user to project"
-                                        #                  .format(run_query_resp.status_code, 200))
+                                        self.assertEqual(200, create_fts_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for adding user to project"
+                                                         .format(create_fts_resp.status_code, 200))
 
                                     else:
-                                        self.log.info(
-                                            "Outcome: {}, Expected: {} for creating index with "
-                                            "{} | {} | {} | {}"
-                                            .format(create_fts_resp.status_code, 412, tenant_id,
-                                                    project_id,
-                                                    database_id, role))
-                                        # self.assertEqual(412, run_query_resp.status_code,
-                                        #                  msg="FAIL, Outcome: {0}, Expected: {1}
-                                        #                  for adding user to project"
-                                        #                  .format(run_query_resp.status_code, 412))
+                                        self.assertEqual(412, create_fts_resp.status_code,
+                                                         msg="FAIL, Outcome: {0}, Expected: {1} "
+                                                         "for adding user to project"
+                                                         .format(create_fts_resp.status_code, 412))
                                 else:
-                                    self.log.info("Outcome: {}, Expected: {} for creating index "
-                                                  "with {} | {} | {} | {}"
-                                                  .format(create_fts_resp.status_code, 404,
-                                                          tenant_id, project_id, database_id, role))
-                                    # self.assertEqual(412, resp.status_code,
-                                    #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                    #                  adding user to project"
-                                    #                  .format(run_query_resp.status_code, 412))
+                                    self.assertEqual(412, create_fts_resp.status_code,
+                                                     msg="FAIL, Outcome: {0}, Expected: {1} for"
+                                                     " adding user to project"
+                                                     .format(create_fts_resp.status_code, 412))
 
                             else:
-                                self.log.info("Outcome: {}, Expected: {} for creating index with "
-                                              "{} | {} | {} | {}"
-                                              .format(create_fts_resp.status_code, 404, tenant_id,
-                                                      project_id, database_id, role))
-                                # self.assertEqual(412, resp.status_code,
-                                #                  msg="FAIL, Outcome: {0}, Expected: {1} for
-                                #                  adding user to project"
-                                #                  .format(run_query_resp.status_code, 412))
+                                self.assertEqual(412, create_fts_resp.status_code,
+                                                 msg="FAIL, Outcome: {0}, Expected: {1} for "
+                                                 "adding user to project"
+                                                 .format(create_fts_resp.status_code, 412))
 
                         else:
-                            self.log.info("Outcome: {}, Expected: {} for creating index with "
-                                          "{} | {} | {} | {}"
-                                          .format(create_fts_resp.status_code, 404, tenant_id,
-                                                  project_id, database_id,
-                                                  role))
-                            # self.assertEqual(412, resp.status_code,
-                            #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                            #                  user to project"
-                            #                  .format(run_query_resp.status_code, 412))
+                            self.assertEqual(412, create_fts_resp.status_code,
+                                             msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                             "user to project"
+                                             .format(create_fts_resp.status_code, 412))
 
                         # Commented because for the projectDataViewer role it gives a response of
                         # 200
@@ -2216,14 +1956,10 @@ class SecurityTest(BaseTestCase):
                                       .format(user["name"], user["role"]))
                         remove_user_resp = capella_api.remove_user_from_project(
                             tenant_ids[tenant_id], user["userid"], project_ids[project_id])
-                        self.log.info("Outcome: {}, Expected: {} for removing user from project "
-                                      "with {} | {} | {}"
-                                      .format(remove_user_resp.status_code, 204, tenant_id,
-                                              project_id, role))
-                        # self.assertEqual(204, remove_user_resp.status_code,
-                        #                  msg="FAIL, Outcome: {0}, Expected: {1} for adding
-                        #                  user to project"
-                        #                  .format(remove_user_resp.status_code, 204))
+                        self.assertEqual(204, remove_user_resp.status_code,
+                                         msg="FAIL, Outcome: {0}, Expected: {1} for adding "
+                                         "user to project"
+                                         .format(remove_user_resp.status_code, 204))
 
         self.log.info("Destroying the database")
         destroy_database_resp = capella_api.destroy_database(self.tenant_id, self.project_id,
