@@ -168,19 +168,19 @@ class BasicCrudTests(MagmaBaseTest):
         self.assertIs(_r, True,
                       "Fragmentation value exceeds from '\n' \
                       the configured fragementaion value")
-
-        disk_usage = self.get_disk_usage(
-                self.buckets[0], self.cluster.nodes_in_cluster)
-        _res = disk_usage[0]
-        self.assertIs(
-            _res > 2.5 * self.disk_usage[
-                self.disk_usage.keys()[0]],
-            False, "Disk Usage {}MB '\n' \
-            exceeds Actual'\n' \
-            disk usage {}MB by 2.5'\n' \
-            times".format(
-                    _res,
-                    self.disk_usage[self.disk_usage.keys()[0]]))
+        if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+            disk_usage = self.get_disk_usage(
+                    self.buckets[0], self.cluster.nodes_in_cluster)
+            _res = disk_usage[0]
+            self.assertIs(
+                _res > 2.5 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                False, "Disk Usage {}MB '\n' \
+                exceeds Actual'\n' \
+                disk usage {}MB by 2.5'\n' \
+                times".format(
+                        _res,
+                        self.disk_usage[self.disk_usage.keys()[0]]))
         # # # # Space Amplification check ends # # # #
 
         self.log.info("====test_drop_collections_after_upserts====")
@@ -258,14 +258,15 @@ class BasicCrudTests(MagmaBaseTest):
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # # # # Initial Disk Usage # # # #
-        disk_usage = self.get_disk_usage(
-            self.buckets[0], self.cluster.nodes_in_cluster)
-        self.disk_usage[self.buckets[0].name] = disk_usage[0]
-        self.log.info(
-            "For bucket {} disk usage after initial '\n' \
-            creation is {}MB".format(
-                self.buckets[0].name,
-                self.disk_usage[self.buckets[0].name]))
+        if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+            disk_usage = self.get_disk_usage(
+                self.buckets[0], self.cluster.nodes_in_cluster)
+            self.disk_usage[self.buckets[0].name] = disk_usage[0]
+            self.log.info(
+                "For bucket {} disk usage after initial '\n' \
+                creation is {}MB".format(
+                    self.buckets[0].name,
+                    self.disk_usage[self.buckets[0].name]))
 
         # Space amplification check before deletes
         # This check is to make sure, compaction doesn't get triggerd

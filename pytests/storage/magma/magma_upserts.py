@@ -80,22 +80,22 @@ class BasicUpsertTests(BasicCrudTests):
                 self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                          msg.format("KV"))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                time_end = time.time() + 60 * 10
+                while time.time() < time_end:
+                    disk_usage = self.get_disk_usage(self.buckets[0],
+                                                self.cluster.nodes_in_cluster)
+                    _res = disk_usage[0]
+                    self.log.debug("usage at time {} is {}".format((time_end - time.time()), _res))
+                    if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                        break
 
-            time_end = time.time() + 60 * 10
-            while time.time() < time_end:
-                disk_usage = self.get_disk_usage(self.buckets[0],
-                                            self.cluster.nodes_in_cluster)
-                _res = disk_usage[0]
-                self.log.debug("usage at time {} is {}".format((time_end - time.time()), _res))
-                if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
-                    break
-
-            msg = "Iteration= {}, Disk Usage = {}MB\
-            exceeds {} times from Actual disk usage = {}MB"
-            self.assertIs(_res > 2.5 * self.disk_usage[
-                self.disk_usage.keys()[0]],
-                False, msg.format(count+1, _res, 2.5,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
+                msg = "Iteration= {}, Disk Usage = {}MB\
+                exceeds {} times from Actual disk usage = {}MB"
+                self.assertIs(_res > 2.5 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                    False, msg.format(count+1, _res, 2.5,
+                                      self.disk_usage[self.disk_usage.keys()[0]]))
 
             count += 1
         #######################################################################
@@ -169,21 +169,22 @@ class BasicUpsertTests(BasicCrudTests):
                     self.num_items + sum(upsert_doc_list)
                     ) / self.num_items) + 0.5)
             self.log.debug("Disk usage factor = {}".format(usage_factor))
-            if not self.windows_platform:
-                time_end = time.time() + 60 * 10
-                while time.time() < time_end:
-                    disk_usage = self.get_disk_usage(self.buckets[0],
-                                                     self.cluster.nodes_in_cluster)
-                    _res = disk_usage[0]
-                    self.log.debug("usage at time {} is {}".format((time_end - time.time()), _res))
-                    if _res < usage_factor * self.disk_usage[self.disk_usage.keys()[0]]:
-                        break
-                msg = "Iteration= {}, Disk Usage = {}MB\
-                exceeds {} times from Actual disk usage = {}MB"
-                self.assertIs(_res > usage_factor * self.disk_usage[
-                    self.disk_usage.keys()[0]],
-                    False, msg.format(count+1, _res, usage_factor,
-                                      self.disk_usage[self.disk_usage.keys()[0]]))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                if not self.windows_platform:
+                    time_end = time.time() + 60 * 10
+                    while time.time() < time_end:
+                        disk_usage = self.get_disk_usage(self.buckets[0],
+                                                         self.cluster.nodes_in_cluster)
+                        _res = disk_usage[0]
+                        self.log.debug("usage at time {} is {}".format((time_end - time.time()), _res))
+                        if _res < usage_factor * self.disk_usage[self.disk_usage.keys()[0]]:
+                            break
+                    msg = "Iteration= {}, Disk Usage = {}MB\
+                    exceeds {} times from Actual disk usage = {}MB"
+                    self.assertIs(_res > usage_factor * self.disk_usage[
+                        self.disk_usage.keys()[0]],
+                        False, msg.format(count+1, _res, usage_factor,
+                                          self.disk_usage[self.disk_usage.keys()[0]]))
 
             count += 1
         #######################################################################
@@ -319,20 +320,21 @@ class BasicUpsertTests(BasicCrudTests):
                     self.buckets[0], self.cluster.nodes_in_cluster)
                 self.assertIs(_r, True,
                               msg_stats.format("KV"))
-                time_end = time.time() + 60 * 10
-                while time.time() < time_end:
-                    disk_usage = self.get_disk_usage(self.buckets[0],
-                                                     self.cluster.nodes_in_cluster)
-                    _res = disk_usage[0]
-                    self.log.info("Update Iteration-{}, Disk Usage at time {} is {}MB \
-                    ".format(count+1, time_end - time.time(), _res))
-                    if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
-                        break
-
-                self.assertIs(
-                    _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
-                    False, msg.format("update", count+1, _res,
-                                      self.disk_usage[self.disk_usage.keys()[0]]))
+                if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                    time_end = time.time() + 60 * 10
+                    while time.time() < time_end:
+                        disk_usage = self.get_disk_usage(self.buckets[0],
+                                                         self.cluster.nodes_in_cluster)
+                        _res = disk_usage[0]
+                        self.log.info("Update Iteration-{}, Disk Usage at time {} is {}MB \
+                        ".format(count+1, time_end - time.time(), _res))
+                        if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                            break
+    
+                    self.assertIs(
+                        _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
+                        False, msg.format("update", count+1, _res,
+                                          self.disk_usage[self.disk_usage.keys()[0]]))
 
                 count += 1
             self.update_itr += self.update_itr
@@ -382,35 +384,36 @@ class BasicUpsertTests(BasicCrudTests):
                  self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
-            time_end = time.time() + 60 * 10
-            while time.time() < time_end:
-                disk_usage = self.get_disk_usage(self.buckets[0],
-                                                     self.cluster.nodes_in_cluster)
-                _res = disk_usage[0]
-                self.log.info("Delete Iteration-{}, Disk Usage at time {} is {}MB \
-                ".format(i+1, time_end - time.time(), _res))
-                if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
-                    break
-            self.assertIs(
-                _res > 2.5 * self.disk_usage[
-                    self.disk_usage.keys()[0]],
-                False, msg.format(
-                    "delete", i+1, _res,
-                    self.disk_usage[self.disk_usage.keys()[0]]))
-            self.bucket_util._run_compaction(self.cluster, number_of_times=1)
-            ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
-            expected_ts_count = (self.items // 2)*(self.num_replicas+1)*(count+1)
-            self.log.info("Iterations - {}, Actual tombstones == {} expected_ts_count == {}".format(i+1,  ts, expected_ts_count))
-            self.sleep(60, "sleep after triggering full compaction")
-            expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
-            disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
-                                             self.cluster.nodes_in_cluster)[0]
-            expected_size = 1 * self.disk_usage[self.disk_usage.keys()[0]] + expected_tombstone_size
-            self.log.info("Iteration--{}, disk usage after compaction == {}, expected_disk_size == {} ".
-                           format(i+1, disk_usage_after_compaction, expected_size))
-            self.assertTrue(disk_usage_after_compaction <= expected_size ,
-                            "Disk size after compaction == {},  exceeds expected size == {}".
-                            format(disk_usage_after_compaction, expected_size))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                time_end = time.time() + 60 * 10
+                while time.time() < time_end:
+                    disk_usage = self.get_disk_usage(self.buckets[0],
+                                                         self.cluster.nodes_in_cluster)
+                    _res = disk_usage[0]
+                    self.log.info("Delete Iteration-{}, Disk Usage at time {} is {}MB \
+                    ".format(i+1, time_end - time.time(), _res))
+                    if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                        break
+                self.assertIs(
+                    _res > 2.5 * self.disk_usage[
+                        self.disk_usage.keys()[0]],
+                    False, msg.format(
+                        "delete", i+1, _res,
+                        self.disk_usage[self.disk_usage.keys()[0]]))
+                self.bucket_util._run_compaction(self.cluster, number_of_times=1)
+                ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
+                expected_ts_count = (self.items // 2)*(self.num_replicas+1)*(count+1)
+                self.log.info("Iterations - {}, Actual tombstones == {} expected_ts_count == {}".format(i+1,  ts, expected_ts_count))
+                self.sleep(60, "sleep after triggering full compaction")
+                expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
+                disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
+                                                 self.cluster.nodes_in_cluster)[0]
+                expected_size = 1 * self.disk_usage[self.disk_usage.keys()[0]] + expected_tombstone_size
+                self.log.info("Iteration--{}, disk usage after compaction == {}, expected_disk_size == {} ".
+                               format(i+1, disk_usage_after_compaction, expected_size))
+                self.assertTrue(disk_usage_after_compaction <= expected_size ,
+                                "Disk size after compaction == {},  exceeds expected size == {}".
+                                format(disk_usage_after_compaction, expected_size))
 
             ###################################################################
             '''
@@ -447,16 +450,16 @@ class BasicUpsertTests(BasicCrudTests):
                 self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
-
-            disk_usage = self.get_disk_usage(self.buckets[0],
-                                             self.cluster.nodes_in_cluster)
-            _res = disk_usage[0]
-            self.log.info("Create Iteration{}, Disk Usage= {}MB \
-            ".format(i+1, _res))
-            self.assertIs(_res > 2.5 * self.disk_usage[
-                self.disk_usage.keys()[0]],
-                False, msg.format("Create", _res, i+1,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                disk_usage = self.get_disk_usage(self.buckets[0],
+                                                 self.cluster.nodes_in_cluster)
+                _res = disk_usage[0]
+                self.log.info("Create Iteration{}, Disk Usage= {}MB \
+                ".format(i+1, _res))
+                self.assertIs(_res > 2.5 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                    False, msg.format("Create", _res, i+1,
+                                      self.disk_usage[self.disk_usage.keys()[0]]))
 
         ###################################################################
         '''
@@ -558,23 +561,23 @@ class BasicUpsertTests(BasicCrudTests):
                     self.buckets[0], self.cluster.nodes_in_cluster)
                 self.assertIs(_r, True,
                               msg_stats.format("KV"))
-
-                disk_usage = self.get_disk_usage(
-                    self.buckets[0], self.cluster.nodes_in_cluster)
-                _res = disk_usage[0]
-                self.log.info("Update Iteration- {}, Disk Usage- {}MB\
-                ".format(count+1, _res))
-                time_end = time.time() + 60 * 10
-                while time.time() < time_end:
-                    disk_usage = self.get_disk_usage(self.buckets[0],
-                                                     self.cluster.nodes_in_cluster)
+                if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                    disk_usage = self.get_disk_usage(
+                        self.buckets[0], self.cluster.nodes_in_cluster)
                     _res = disk_usage[0]
-                    if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
-                        break
-                self.assertIs(
-                    _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
-                    False, msg.format("update", count+1, _res, 2.5,
-                                      self.disk_usage[self.disk_usage.keys()[0]]))
+                    self.log.info("Update Iteration- {}, Disk Usage- {}MB\
+                    ".format(count+1, _res))
+                    time_end = time.time() + 60 * 10
+                    while time.time() < time_end:
+                        disk_usage = self.get_disk_usage(self.buckets[0],
+                                                         self.cluster.nodes_in_cluster)
+                        _res = disk_usage[0]
+                        if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                            break
+                    self.assertIs(
+                        _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
+                        False, msg.format("update", count+1, _res, 2.5,
+                                          self.disk_usage[self.disk_usage.keys()[0]]))
                 count += 1
             self.update_itr += self.update_itr
 
@@ -618,21 +621,22 @@ class BasicUpsertTests(BasicCrudTests):
                  self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
-            time_end = time.time() + 60 * 10
-            while time.time() < time_end:
-                disk_usage = self.get_disk_usage(self.buckets[0],
-                                             self.cluster.nodes_in_cluster)
-                _res = disk_usage[0]
-                if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
-                    break
-            self.log.info("Delete Iteration {}, Disk Usage- {}MB\
-            ".format(i+1, _res))
-            self.assertIs(
-                _res > 1 * self.disk_usage[
-                    self.disk_usage.keys()[0]],
-                False, msg.format(
-                    "delete", i+1, _res, 1,
-                    self.disk_usage[self.disk_usage.keys()[0]]))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                time_end = time.time() + 60 * 10
+                while time.time() < time_end:
+                    disk_usage = self.get_disk_usage(self.buckets[0],
+                                                 self.cluster.nodes_in_cluster)
+                    _res = disk_usage[0]
+                    if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
+                        break
+                self.log.info("Delete Iteration {}, Disk Usage- {}MB\
+                ".format(i+1, _res))
+                self.assertIs(
+                    _res > 1 * self.disk_usage[
+                        self.disk_usage.keys()[0]],
+                    False, msg.format(
+                        "delete", i+1, _res, 1,
+                        self.disk_usage[self.disk_usage.keys()[0]]))
             ###################################################################
             '''
             STEP - 5
@@ -667,16 +671,16 @@ class BasicUpsertTests(BasicCrudTests):
                 self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
-
-            disk_usage = self.get_disk_usage(self.buckets[0],
-                                             self.cluster.nodes_in_cluster)
-            _res = disk_usage[0]
-            self.log.info("Create Iteration{}, Disk Usage= {}MB \
-            ".format(i+1, _res))
-            self.assertIs(_res > 2 * self.disk_usage[
-                self.disk_usage.keys()[0]],
-                False, msg.format("Create", _res, i+1, 1.5,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                disk_usage = self.get_disk_usage(self.buckets[0],
+                                                 self.cluster.nodes_in_cluster)
+                _res = disk_usage[0]
+                self.log.info("Create Iteration{}, Disk Usage= {}MB \
+                ".format(i+1, _res))
+                self.assertIs(_res > 2 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                    False, msg.format("Create", _res, i+1, 1.5,
+                                      self.disk_usage[self.disk_usage.keys()[0]]))
 
         ###################################################################
         '''
@@ -756,20 +760,20 @@ class BasicUpsertTests(BasicCrudTests):
             self.buckets[0], self.cluster.nodes_in_cluster)
         self.assertIs(_r, True,
                       msg_stats.format("KV"))
-
-        disk_usage = self.get_disk_usage(
-            self.buckets[0],
-            self.cluster.nodes_in_cluster)
-        self.log.debug("Disk usage after updates {}".format(
-            disk_usage))
-        _res = disk_usage[0]
-        msg = "Disk Usage = {}MB exceeds 2.2 times \
-        from Actual disk usage = {}MB"
-        self.assertIs(
-            _res > 2.2 * self.disk_usage[
-                self.disk_usage.keys()[0]],
-            False,
-            msg.format(_res, self.disk_usage[self.disk_usage.keys()[0]]))
+        if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+            disk_usage = self.get_disk_usage(
+                self.buckets[0],
+                self.cluster.nodes_in_cluster)
+            self.log.debug("Disk usage after updates {}".format(
+                disk_usage))
+            _res = disk_usage[0]
+            msg = "Disk Usage = {}MB exceeds 2.2 times \
+            from Actual disk usage = {}MB"
+            self.assertIs(
+                _res > 2.2 * self.disk_usage[
+                    self.disk_usage.keys()[0]],
+                False,
+                msg.format(_res, self.disk_usage[self.disk_usage.keys()[0]]))
         # Space amplification check ends
 
         success, fail = self.client.get_multi([key],
@@ -892,26 +896,26 @@ class BasicUpsertTests(BasicCrudTests):
                  self.buckets[0], self.cluster.nodes_in_cluster)
             self.assertIs(_r, True,
                           msg_stats.format("KV"))
-
-            disk_usage = self.get_disk_usage(
-                self.buckets[0], self.cluster.nodes_in_cluster)
-            _res = disk_usage[0]
-            self.log.info("disk usage after upsert count {} is {}MB \
-                ".format(count+1, _res))
-            if self.doc_size > 32:
-                self.assertIs(
-                    _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
-                    False, "Disk Usage {} After \
-                    update count {} exceeds \
-                    Actual disk usage {} by 2.5 \
-                    times".format(_res, count+1,
-                                  self.disk_usage[self.disk_usage.keys()[0]]))
-            else:
-                self.assertIs(disk_usage[3] > 0.5 * seqTree_update,
-                              False, " Current seqTree usage-{} exceeds by'\n'\
-                               0.5 times from the earlier '\n' \
-                               seqTree usage (after update) -{} \
-                              ".format(disk_usage[3], seqTree_update))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                disk_usage = self.get_disk_usage(
+                    self.buckets[0], self.cluster.nodes_in_cluster)
+                _res = disk_usage[0]
+                self.log.info("disk usage after upsert count {} is {}MB \
+                    ".format(count+1, _res))
+                if self.doc_size > 32:
+                    self.assertIs(
+                        _res > 2.5 * self.disk_usage[self.disk_usage.keys()[0]],
+                        False, "Disk Usage {} After \
+                        update count {} exceeds \
+                        Actual disk usage {} by 2.5 \
+                        times".format(_res, count+1,
+                                      self.disk_usage[self.disk_usage.keys()[0]]))
+                else:
+                    self.assertIs(disk_usage[3] > 0.5 * seqTree_update,
+                                  False, " Current seqTree usage-{} exceeds by'\n'\
+                                   0.5 times from the earlier '\n' \
+                                   seqTree usage (after update) -{} \
+                                  ".format(disk_usage[3], seqTree_update))
 
             count += 1
 
@@ -966,29 +970,29 @@ class BasicUpsertTests(BasicCrudTests):
                 self.validate_data("update", self.gen_update)
             self.update_start = copy.deepcopy(self.create_start)
             self.update_end = copy.deepcopy(self.create_end)
-
-            disk_usage = self.get_disk_usage(
-                self.buckets[0],
-                self.cluster.nodes_in_cluster)
-            if self.doc_size <= 32:
-                self.assertIs(
-                    disk_usage[2] >= disk_usage[3], True,
-                    "seqIndex usage = {}MB'\n' \
-                    after Iteration {}'\n' \
-                    exceeds keyIndex usage={}MB'\n' \
-                    ".format(disk_usage[3],
-                             count,
-                             disk_usage[2]))
-            if not self.windows_platform:
-                self.assertIs(
-                    disk_usage[0] > 2.2 * ((count+1) * self.disk_usage[
-                        self.disk_usage.keys()[0]]),
-                    False, "Disk Usage {}MB After '\n\'\
-                    Updates exceeds '\n\'\
-                    Actual disk usage {}MB by '\n'\
-                    2.2 times".format(disk_usage[0],
-                                      ((count+1) * self.disk_usage[
-                                          self.disk_usage.keys()[0]])))
+            if self.bucket_dedup_retention_bytes == None and self.bucket_dedup_retention_seconds == None:
+                disk_usage = self.get_disk_usage(
+                    self.buckets[0],
+                    self.cluster.nodes_in_cluster)
+                if self.doc_size <= 32:
+                    self.assertIs(
+                        disk_usage[2] >= disk_usage[3], True,
+                        "seqIndex usage = {}MB'\n' \
+                        after Iteration {}'\n' \
+                        exceeds keyIndex usage={}MB'\n' \
+                        ".format(disk_usage[3],
+                                 count,
+                                 disk_usage[2]))
+                if not self.windows_platform:
+                    self.assertIs(
+                        disk_usage[0] > 2.2 * ((count+1) * self.disk_usage[
+                            self.disk_usage.keys()[0]]),
+                        False, "Disk Usage {}MB After '\n\'\
+                        Updates exceeds '\n\'\
+                        Actual disk usage {}MB by '\n'\
+                        2.2 times".format(disk_usage[0],
+                                          ((count+1) * self.disk_usage[
+                                              self.disk_usage.keys()[0]])))
             count += 1
         if not self.windows_platform:
             self.change_swap_space(self.cluster.nodes_in_cluster, disable=False)

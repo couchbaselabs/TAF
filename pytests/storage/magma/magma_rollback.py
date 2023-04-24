@@ -401,7 +401,7 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         '''
         self.log.info("State files after initial creates %s"
-                      % self.get_state_files(self.buckets[0]))
+                     % self.get_state_files(self.buckets[0]))
 
         self.sleep(60, "Ensures creation of at least one snapshot")
         self.log.info("State files after 60 second of sleep %s"
@@ -424,6 +424,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             # Stopping persistence on master node (NodeA)
             self.log.debug("Iteration == {}, stopping persistence".format(i))
             Cbepctl(shell).persistence(self.cluster.buckets[0].name, "stop")
+            self.sleep(60, "sleep after stopping persistence")
 
             ###################################################################
             '''
@@ -437,7 +438,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.gen_delete = None
             self.gen_expiry = None
             time_end = time.time() + 60 * self.duration
-            while time.time() < time_end:
+            while time.time() < time_end::
                 master_itr += 1
                 time_start = time.time()
                 mem_item_count += mem_only_items * ops_len
@@ -499,8 +500,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                           format(i, self.get_state_files(self.buckets[0])))
 
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
-            #self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0],
-            #                                         items, timeout=300)
+            self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0],
+                                                     items, timeout=900)
             for bucket in self.cluster.buckets:
                 self.log.debug(cbstats.failover_stats(bucket.name))
 
