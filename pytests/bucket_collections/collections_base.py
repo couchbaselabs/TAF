@@ -479,19 +479,6 @@ class CollectionBase(ClusterSetup):
                     MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
                     = test_obj.randomize_value
 
-    @staticmethod
-    def set_retry_exceptions(test_obj, doc_loading_spec):
-        retry_exceptions = list()
-        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        retry_exceptions.append(SDKException.TimeoutException)
-        retry_exceptions.append(SDKException.RequestCanceledException)
-        retry_exceptions.append(SDKException.DocumentNotFoundException)
-        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
-        if test_obj.durability_level:
-            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            retry_exceptions.append(SDKException.DurabilityImpossibleException)
-        doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
-
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \
             self.bucket_util.get_crud_template_from_package("initial_load")

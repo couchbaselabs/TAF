@@ -20,6 +20,8 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.extra_servs_in = [self.servers[i + self.nodes_init + self.nodes_in] for i in range(extra_nodes_in)]
         self.extra_servs_out = [self.servers[self.nodes_init - i - 1 - self.nodes_out] for i in range(extra_nodes_out)]
         self.withMutationOps = self.input.param("withMutationOps", True)
+        self.sleep_before_rebalance = self.input.param("sleep_before_rebalance", 0)
+        self.skip_validations = self.input.param("skip_validations", True)
         if self.spec_name is not None:
             self.num_items = 20000
             self.items = 20000

@@ -691,6 +691,7 @@ class StorageBase(BaseTestCase):
 
         doc_ops = doc_ops or self.doc_ops
 
+        self.log.critical("Doc_ops :: %s, target_vbs: %s" % (doc_ops, target_vbucket))
         if "update" in doc_ops:
             if update_start is not None:
                 self.update_start = update_start
@@ -703,6 +704,7 @@ class StorageBase(BaseTestCase):
                 self.update_end = self.end*self.update_perc/100
 
             self.mutate += 1
+            self.log.critical("Update:: %s:%s" % (self.update_start, self.update_end))
             self.gen_update = self.genrate_docs_basic(self.update_start,
                                                       self.update_end,
                                                       target_vbucket=target_vbucket,
@@ -718,6 +720,7 @@ class StorageBase(BaseTestCase):
             if self.delete_end is None:
                 self.delete_end = self.end*self.delete_perc/100
 
+            self.log.critical("Delete :: %s:%s" % (self.delete_start, self.delete_end))
             self.gen_delete = self.genrate_docs_basic(self.delete_start,
                                                       self.delete_end,
                                                       target_vbucket=target_vbucket,
@@ -734,6 +737,7 @@ class StorageBase(BaseTestCase):
             if self.create_end is None:
                 self.create_end = self.start+self.num_items*self.create_perc/100
             self.end = self.create_end
+            self.log.critical("Create :: %s:%s" % (self.create_start, self.create_end))
 
             self.gen_create = self.genrate_docs_basic(self.create_start,
                                                       self.create_end,
@@ -750,6 +754,7 @@ class StorageBase(BaseTestCase):
             if self.read_end is None:
                 self.read_end = self.create_end
 
+            self.log.critical("Read:: %s:%s" % (self.read_start, self.read_end))
             self.gen_read = self.genrate_docs_basic(self.read_start,
                                                     self.read_end,
                                                     target_vbucket=target_vbucket,
@@ -767,6 +772,7 @@ class StorageBase(BaseTestCase):
                 self.expiry_end = self.start+self.num_items *\
                                   (self.delete_perc + self.expiry_perc)/100
 
+            self.log.critical("Exp:: %s:%s" % (self.expiry_start, self.expiry_end))
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
                                                       self.expiry_end,
                                                       target_vbucket=target_vbucket,

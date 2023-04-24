@@ -1953,6 +1953,8 @@ class BucketUtils(ScopeUtils):
 
         if task.result:
             cluster.buckets.append(bucket)
+            if cluster.type != "serverless":
+                self.get_all_buckets(cluster)
 
         self.task_manager.stop_task(task)
         if raise_exception:
@@ -2541,6 +2543,9 @@ class BucketUtils(ScopeUtils):
                     buckets_spec.pop(bucket_names_ref[task.thread_name])
                 else:
                     cluster.buckets.append(task.bucket_obj)
+
+        if cluster.type != "serverless":
+            self.get_all_buckets(cluster)
 
         for bucket in cluster.buckets:
             if cluster.type != "serverless":
@@ -3278,7 +3283,12 @@ class BucketUtils(ScopeUtils):
 
             stat = cb_stat.get_collections(bucket)
             for s_name, scope in bucket.scopes.items():
+                if scope.is_dropped:
+                    continue
                 for c_name, col in scope.collections.items():
+                    if col.is_dropped:
+                        continue
+                    col = bucket.scopes[s_name].collections[c_name]
                     val_as_per_test = col.history
                     val_as_per_stat = stat[s_name][c_name]["history"]
                     log_msg = "%s - %s:%s:%s - Expected %s. Actual: %s" \
@@ -5817,7 +5827,7 @@ class BucketUtils(ScopeUtils):
                             with requests.Session() as session:
                                 for _, collection in scope_obj.collections.items():
                                     c_dict = collection.get_dict_object()
-                                    if bucket.storageBackend != Bucket.StorageBackend.magma:
+                                    if "nonDedupedHistory" not in bucket.bucketCapabilities:
                                         c_dict.pop("history", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
                                                                    bucket, scope_name, c_dict,
@@ -5898,7 +5908,7 @@ class BucketUtils(ScopeUtils):
                                     collection = bucket.scopes[scope_name] \
                                         .collections[col_name]
                                     c_dict = collection.get_dict_object()
-                                    if bucket.storageBackend != Bucket.StorageBackend.magma:
+                                    if "nonDedupedHistory" not in bucket.bucketCapabilities:
                                         c_dict.pop("history", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
                                                                    bucket, scope_name, c_dict,

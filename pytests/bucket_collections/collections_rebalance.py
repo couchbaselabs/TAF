@@ -1,7 +1,7 @@
 import time
 
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import CbServer, DocLoading
+from Cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
@@ -892,6 +892,8 @@ class CollectionsRebalance(CollectionBase):
             self.task_manager.get_task_result(task)
             self.assertTrue(task.result, "Compaction failed for bucket: %s" %
                             task.bucket.name)
+        # Reset compaction_task list to avoid rewaiting for the same task
+        self.compaction_tasks = list()
 
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
