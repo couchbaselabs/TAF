@@ -38,6 +38,7 @@ class EnforceTls(CollectionBase):
 
     def tearDown(self):
         self.disable_n2n_encryption_cli_on_nodes(nodes=self.cluster.servers)
+        self.sleep(120, "waiting sometime for disable encryption")
         super(CollectionBase, self).tearDown()
 
     def validate_tls_min_version(self, node=None, version="1.2", expect="fail"):
