@@ -582,7 +582,6 @@ class Murphy(BaseTestCase, OPD):
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)
-
         self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
         for bucket in self.cluster.buckets:
             self.generate_docs(doc_ops=["create"],
@@ -598,12 +597,8 @@ class Murphy(BaseTestCase, OPD):
                                                                  bucket_name=self.cluster.buckets[0].name,
                                                                  pod=self.pod,
                                                                  tenant=self.tenant)
-                self.drBackupRestore.backup_now()
-                backup_run = True
-                backup_phase = random.randint(1, 3)
-                self.log.info("Random rebalance phase chosen for backup: {}. "
-                              "Compute rebalance - 1; Disk rebalance - 2; Disk+compute rebalance - 3".format(
-                    backup_phase))
+                self.drBackupRestore.backup_now(wait_for_backup=True)
+
             if self.xdcr_remote_clusters > 0:
                 self.drXDCR = DoctorXDCR(source_cluster=self.cluster, destination_cluster=self.xdcr_cluster,
                                          source_bucket=self.cluster.buckets[0].name,
@@ -611,10 +606,7 @@ class Murphy(BaseTestCase, OPD):
                                          pod=self.pod, tenant=self.tenant)
 
                 xdcr_run = True
-                # Compute rebalance - 1; Disk rebalance - 2; Disk+compute rebalance - 3
-                xdcr_phase = random.randint(1, 3)
-                self.log.info("Random rebalance phase chosen for xdcr replication: {}. "
-                              "Compute rebalance - 1; Disk rebalance - 2; Disk+compute rebalance - 3".format(xdcr_phase))
+                self.drXDCR.set_up_replication()
             self.mutation_perc = self.input.param("mutation_perc", 100)
             for bucket in self.cluster.buckets:
                 self.generate_docs(bucket=bucket)
@@ -650,10 +642,6 @@ class Murphy(BaseTestCase, OPD):
                                                                server_group_list,
                                                                timeout=96*60*60,
                                                                poll_interval=600)
-            if xdcr_run and xdcr_phase == 1:
-                self.drXDCR.set_up_replication()
-            if backup_run and backup_phase == 1:
-                self.drBackupRestore.backup_now(wait_for_backup=False)
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
@@ -683,10 +671,6 @@ class Murphy(BaseTestCase, OPD):
                                                                timeout=96*60*60,
                                                                poll_interval=600)
             self.task_manager.get_task_result(rebalance_task)
-            if xdcr_run and xdcr_phase == 2:
-                self.drXDCR.set_up_replication()
-            if backup_run and backup_phase == 2:
-                self.drBackupRestore.backup_now(wait_for_backup=False)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
             # Rebalance 3 - Both Disk/Compute Upgrade
@@ -718,10 +702,6 @@ class Murphy(BaseTestCase, OPD):
                                                                server_group_list,
                                                                timeout=96*60*60,
                                                                poll_interval=600)
-            if xdcr_run and xdcr_phase == 2:
-                self.drXDCR.set_up_replication()
-            if backup_run and backup_phase == 3:
-                self.drBackupRestore.backup_now(wait_for_backup=False)
             self.task_manager.get_task_result(rebalance_task)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.PrintStep("Step 4: XDCR replication being set up")
