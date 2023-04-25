@@ -626,7 +626,7 @@ class QueryLoad:
         name = threading.currentThread().getName()
         counter = 0
         while not self.stop_run:
-            client_context_id = name + str(counter)
+            client_context_id = name + "__" + str(counter)
             counter += 1
             start = time.time()
             e = ""
@@ -672,6 +672,8 @@ class QueryLoad:
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
                 self.timeout_failures += self.timeout_count.next()
+                self.log.critical(client_context_id + ":" + query)
+                self.log.critical(e)
                 if self.timeout_failures % 50 == 0 or str(e).find("UnambiguousTimeoutException") != -1:
                     self.log.critical(client_context_id + ":" + query)
                     self.log.critical(e)

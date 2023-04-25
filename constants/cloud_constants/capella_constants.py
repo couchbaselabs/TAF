@@ -32,7 +32,7 @@ class AWS(object):
         "m5.16xlarge",
         "r5.xlarge",
         "r5.2xlarge",
-        "r5.4xlarge"
+        "r5.4xlarge",
         "r5.8xlarge",
         "r5.12xlarge",
         ]

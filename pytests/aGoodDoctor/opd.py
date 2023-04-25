@@ -416,7 +416,7 @@ class OPD:
                 for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
                     workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
                     valType = workloads[i % len(workloads)]["valType"]
-                    dim = workloads[i % len(workloads)]["dim"] or self.dim
+                    dim = workloads[i % len(workloads)].get("dim", self.dim)
                     if scope == CbServer.system_scope:
                         continue
                     if collection == "_default" and scope == "_default" and skip_default:
