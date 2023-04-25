@@ -167,7 +167,7 @@ class DoctorN1QL():
         self.stop_run = False
         self.query_failure = False
 
-    def create_indexes(self, buckets):
+    def create_indexes(self, buckets, skip_index=False):
         for b in buckets:
             b.indexes = dict()
             b.queries = list()
@@ -189,19 +189,20 @@ class DoctorN1QL():
                             self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
                             retry = 5
-                            while retry > 0:
-                                try:
-                                    execute_statement_on_n1ql(self.sdkClients[b.name+s], self.idx_q)
-                                    break
-                                except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
-                                    print(e)
-                                    retry -= 1
-                                    time.sleep(10)
-                                    continue
-                                except IndexNotFoundException as e:
-                                    print "Returning from here as we get IndexNotFoundException"
-                                    print(e)
-                                    return False
+                            if not skip_index:
+                                while retry > 0:
+                                    try:
+                                        execute_statement_on_n1ql(self.sdkClients[b.name+s], self.idx_q)
+                                        break
+                                    except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
+                                        print(e)
+                                        retry -= 1
+                                        time.sleep(10)
+                                        continue
+                                    except IndexNotFoundException as e:
+                                        print "Returning from here as we get IndexNotFoundException"
+                                        print(e)
+                                        return False
                             i += 1
                         if q < b.loadDefn.get("2i")[1]:
                             if b.loadDefn.get("valType") == "Hotel":

@@ -21,6 +21,8 @@ from aGoodDoctor.hostedOPD import OPD
 from constants.cloud_constants.capella_constants import AWS
 from table_view import TableView
 import time
+from Cb_constants.CBServer import CbServer
+from bucket_utils.bucket_ready_functions import CollectionUtils
 
 
 class Murphy(BaseTestCase, OPD):
@@ -106,6 +108,7 @@ class Murphy(BaseTestCase, OPD):
         self.ql = list()
         self.ftsQL = list()
         self.stop_run = False
+        self.skip_init = self.input.param("skip_init", False)
 
     def tearDown(self):
         self.check_dump_thread = False
@@ -293,7 +296,22 @@ class Murphy(BaseTestCase, OPD):
             self.load_defn.append(self.loadDefn1)
 
         #######################################################################
-        self.create_buckets()
+        if not self.skip_init:
+            self.create_buckets()
+        else:
+            for i, bucket in enumerate(self.cluster.buckets):
+                bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
+                for scope in bucket.scopes.keys():
+                    if scope == CbServer.system_scope:
+                        continue
+                    if bucket.loadDefn.get("collections") > 0:
+                        self.collection_prefix = self.input.param("collection_prefix",
+                                                                  "VolumeCollection")
+
+                        for i in range(bucket.loadDefn.get("collections")):
+                            collection_name = self.collection_prefix + str(i)
+                            collection_spec = {"name": collection_name}
+                            CollectionUtils.create_collection_object(bucket, scope, collection_spec)
 
         self.loop = 1
         self.skip_read_on_error = True
@@ -302,13 +320,13 @@ class Murphy(BaseTestCase, OPD):
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)
         '''
-        if self.cluster.fts_nodes:
+        if self.cluster.fts_nodes and not self.skip_init:
             self.drFTS.create_fts_indexes()
             status = self.drFTS.wait_for_fts_index_online(self.num_items*2,
                                                           self.index_timeout)
             self.assertTrue(status, "FTS index build failed.")
 
-        if self.cluster.cbas_nodes:
+        if self.cluster.cbas_nodes and not self.skip_init:
             self.drCBAS.create_datasets()
             result = self.drCBAS.wait_for_ingestion(self.num_items*2,
                                                     self.index_timeout)
@@ -321,7 +339,8 @@ class Murphy(BaseTestCase, OPD):
                                create_start=0,
                                create_end=bucket.loadDefn.get("num_items")/2,
                                bucket=bucket)
-        self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
+        if not self.skip_init:
+            self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
 
         self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
         for bucket in self.cluster.buckets:
@@ -329,10 +348,11 @@ class Murphy(BaseTestCase, OPD):
                                create_start=bucket.loadDefn.get("num_items")/2,
                                create_end=bucket.loadDefn.get("num_items"),
                                bucket=bucket)
-        self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
+        if not self.skip_init:
+            self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
 
         if self.cluster.index_nodes:
-            self.drIndex.create_indexes(self.cluster.buckets)
+            self.drIndex.create_indexes(self.cluster.buckets, self.skip_init)
             self.build_gsi_index(self.cluster.buckets)
 
         for bucket in self.cluster.buckets:
@@ -387,8 +407,8 @@ class Murphy(BaseTestCase, OPD):
             server_group_list = list()
             initial_services = self.input.param("services", "data")
             for service_group in initial_services.split("-"):
-                service_group = service_group.split(":")
-                service = sorted(service_group[0])
+                service_group = sorted(service_group.split(":"))
+                service = service_group[0]
                 if service == "kv" or service == "data":
                     self.compute[service] = "n2-custom-48-98304"
                 if "index" in service_group or "query" in service_group:
