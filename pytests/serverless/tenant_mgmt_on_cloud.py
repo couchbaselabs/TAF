@@ -713,7 +713,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         :return:
         """
         max_itr = 5
-        spl_chars = " -"
+        spl_chars = "-_%"
         char_set = string.ascii_letters + string.digits + spl_chars
         db_name = "tnt mgmt-max-name-size-"
         while len(db_name) != 48:
