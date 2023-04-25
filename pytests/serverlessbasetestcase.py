@@ -146,13 +146,13 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 str(user),
                 str(pwd),
                 ])
-            throttling_off = self.input.param("throttling_off", False)
-            if throttling_off:
+            throttling_limit = self.input.param("throttling_limit", False)
+            if throttling_limit is not False:
                 api = rest.baseUrl + "internalSettings"
-                params = urllib.urlencode({'dataThrottleLimit': 1000000000,
-                                           'indexThrottleLimit': 1000000000,
-                                           'searchThrottleLimit': 1000000000,
-                                           'queryThrottleLimit': 1000000000})
+                params = urllib.urlencode({'dataThrottleLimit': throttling_limit,
+                                           'indexThrottleLimit': throttling_limit,
+                                           'searchThrottleLimit': throttling_limit,
+                                           'queryThrottleLimit': throttling_limit})
                 status, content, _ = rest._http_request(
                     api, "POST", params=params,
                     headers=rest.get_headers_for_content_type_json())
