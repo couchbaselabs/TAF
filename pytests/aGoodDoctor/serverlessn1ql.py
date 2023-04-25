@@ -557,7 +557,7 @@ class QueryLoad:
         for i in range(0, self.concurrent_queries_to_run):
             threads.append(Thread(
                 target=self._run_query,
-                name="query_thread_{0}".format(bucket.name + str(i)),
+                name="query_thread_{0}_".format(bucket.name + str(i)),
                 args=(False, 0)))
 
         for thread in threads:

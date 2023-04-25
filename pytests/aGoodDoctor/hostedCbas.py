@@ -59,7 +59,7 @@ class DoctorCBAS():
                         if c == CbServer.default_collection:
                             continue
                         self.idx_q = datasets[0].format(i, b.name, s, c)
-                        self.datasets.update({"ds"+str(i): (self.idx_q, b.name, s, c)})
+                        self.datasets.update({"ds"+str(i): (self.idx_q, b.name, s, c, b.loadDefn.get("num_items"))})
                         self.queries.append(queries[i % len(queries)].format("ds"+str(i)))
                         i += 1
                         if i >= self.num_datasets:
@@ -88,7 +88,7 @@ class DoctorCBAS():
                 self.log.debug("dataset: {}, status: {}, count: {}"
                                .format(dataset, _status,
                                        json.loads(str(results))[0]["count"]))
-                if json.loads(str(results))[0]["count"] == item_count:
+                if json.loads(str(results))[0]["count"] == self.datasets[dataset][4]:
                     self.log.info("CBAS dataset is ready: {}".format(dataset))
                     status = True
                     break

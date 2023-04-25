@@ -25,6 +25,8 @@ from global_vars import logger
 from _collections import defaultdict
 from table_view import TableView
 import itertools
+from com.couchbase.client.core.deps.io.netty.handler.codec import string
+from com.couchbase.client.java.json import JsonObject
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
@@ -79,7 +81,7 @@ HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`
 HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
                 "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`='Hotel' limit 100",
                 "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
-                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE country = 'Bulgaria' GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {0} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country='Bulgaria' limit 100",
+                "WITH city_price AS (SELECT city, price FROM {} WHERE country = 'Bulgaria' and price > 500 limit 1000) SELECT h.city, h.price FROM city_price as h;",
                 "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
                 "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
                 "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
@@ -87,12 +89,31 @@ HotelQueries = ["select meta().id from {} where country is not null and `type` i
                 "SELECT * from {} where phone like \"San%\" limit 100",
                 "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = 'Bulgaria' limit 100"]
 
+NimbusPIndexes = ['CREATE INDEX {}{} ON {}(`uid`, `lastMessageDate` DESC,`unreadCount`, `lastReadDate`, `conversationId`) PARTITION BY hash(`uid`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                  'CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
 
-def execute_statement_on_n1ql(client, statement, client_context_id=None):
+NimbusPQueries = ['SELECT meta().id, conversationId, lastMessageDate, lastReadDate, unreadCount FROM {} WHERE uid = $uid ORDER BY lastMessageDate DESC LIMIT $N;',
+                  'SELECT uid, conversationId FROM {} WHERE conversationId IN [$conversationId1, $conversationId2]',
+                  'SELECT COUNT(*) AS nb FROM {}  WHERE uid=$uid AND unreadCount>0']
+NimbusPQueriesParams = [{"uid":"str(random.randint(0,1000000)).zfill(32)", "N":"random.randint(100, 1000)"},
+                        {"conversationId1":"str(random.randint(0,1000000)).zfill(36)", "conversationId2":"str(random.randint(0,1000000)).zfill(36)"},
+                        {"uid":"str(random.randint(0,1000000)).zfill(36)"}]
+
+NimbusMIndexes = ['CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                  'CREATE INDEX {}{} ON {}(`conversationId`, (distinct (array `u` for `u` in `showTo` end)), `timestamp` DESC) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
+
+NimbusMQueries = ['SELECT meta().id AS _id, uid, type, content, url, timestamp, width, height, clickable, roomId, roomTitle, roomStreamers, actions, pixel FROM {} WHERE conversationId = $conversationId ORDER BY timestamp DESC LIMIT $N',
+                  'SELECT COUNT(*) AS nb FROM {} WHERE conversationId = $conversationId']
+NimbusMQueriesParams = [{"conversationId":"str(random.randint(0,1000000)).zfill(36)", "N":"random.randint(100, 1000)"},
+                        {"conversationId":"str(random.randint(0,1000000)).zfill(36)"}]
+
+
+def execute_statement_on_n1ql(client, statement, client_context_id=None,
+                              query_params=None):
     """
     Executes a statement on CBAS using the REST API using REST Client
     """
-    response = execute_via_sdk(client, statement, False, client_context_id)
+    response = execute_via_sdk(client, statement, False, client_context_id, query_params)
     if type(response) == str:
         response = json.loads(response)
     if "errors" in response:
@@ -122,18 +143,24 @@ def execute_statement_on_n1ql(client, statement, client_context_id=None):
 
 
 def execute_via_sdk(client, statement, readonly=False,
-                    client_context_id=None):
+                    client_context_id=None,
+                    query_params=None):
     options = QueryOptions.queryOptions()
     options.scanConsistency(QueryScanConsistency.NOT_BOUNDED)
     options.readonly(readonly)
+    options.metrics(True)
     if client_context_id:
         options.clientContextId(client_context_id)
+    if query_params:
+        json = JsonObject.create()
+        for k, v in query_params.items():
+            json.put(k, eval(v))
+        options.parameters(json)
 
     output = {}
-    result = client.query(statement)
-
+    result = client.query(statement, options)
     output["status"] = result.metaData().status()
-    output["metrics"] = result.metaData().metrics()
+    output["metrics"] = result.metaData().metrics().get()
 
     try:
         output["results"] = result.rowsAsObject()
@@ -169,31 +196,40 @@ class DoctorN1QL():
         for b in buckets:
             b.indexes = dict()
             b.queries = list()
-            i = 0
-            q = 0
+            b.query_map = dict()
             self.log.info("Creating GSI indexes on {}".format(b.name))
-            while i < b.loadDefn.get("2i")[0]:
-                for s in self.bucket_util.get_active_scopes(b, only_names=True):
-                    if b.name+s not in self.sdkClients.keys():
-                        self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
-                        time.sleep(5)
-                    for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
-                        if c == "_default":
-                            continue
-                        if i < b.loadDefn.get("2i")[0]:
-                            indexType = indexes
-                            queryType = queries
-                            if b.loadDefn.get("valType") == "Hotel":
-                                indexType = HotelIndexes
-                                queryType = HotelQueries
+            query_count = 0
+            for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                if b.name+s not in self.sdkClients.keys():
+                    self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
+                    time.sleep(5)
+                for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
+                    if c == "_default":
+                        continue
+                    workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
+                    workload = workloads[collection_num % len(workloads)]
+                    valType = workload["valType"]
+                    indexType = indexes
+                    queryType = queries
+                    queryParams = []
+                    if valType == "Hotel":
+                        indexType = HotelIndexes
+                        queryType = HotelQueries
+                    if valType == "NimbusP":
+                        indexType = NimbusPIndexes
+                        queryType = NimbusPQueries
+                        queryParams = NimbusPQueriesParams
+                    if valType == "NimbusM":
+                        indexType = NimbusMIndexes
+                        queryType = NimbusMQueries
+                        queryParams = NimbusMQueriesParams
+                    i = 0
+                    q = 0
+                    while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
+                        if i < workload.get("2i")[0]:
                             self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
-                            query = queryType[i % len(indexType)].format(c)
                             print self.idx_q
-                            print query
                             b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
-                            if q < b.loadDefn.get("2i")[1]:
-                                b.queries.append((query, self.sdkClients[b.name+s]))
-                                q += 1
                             retry = 5
                             if not skip_index:
                                 while retry > 0:
@@ -210,6 +246,22 @@ class DoctorN1QL():
                                         print(e)
                                         return False
                             i += 1
+                        if q < workload.get("2i")[1]:
+                            if queryType[q % len(queryType)] in b.query_map.keys():
+                                q += 1
+                                continue
+                            query = queryType[q % len(queryType)].format(c)
+                            print query
+                            if queryType[q % len(queryType)] not in b.query_map:
+                                b.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
+                                query_count += 1
+                                if queryParams:
+                                    b.query_map[queryType[q % len(queryType)]].append(queryParams[q % len(queryParams)])
+                                else:
+                                    b.query_map[queryType[q % len(queryType)]].append("")
+                            b.queries.append((query, self.sdkClients[b.name+s], queryType[q % len(queryType)]))
+                            q += 1
+            print [v[0] + " == " + k for k, v in b.query_map.items()]
         return True
 
     def discharge_N1QL(self):
@@ -290,11 +342,12 @@ class QueryLoad:
         self.error_count = itertools.count()
         self.cancel_count = itertools.count()
         self.timeout_count = itertools.count()
-        self.total_query_count = 0
+        self.total_query_count = itertools.count()
         self.stop_run = False
         self.log = logger.get("infra")
         self.cluster_conn = self.queries[0][1]
-        self.concurrent_queries_to_run = self.bucket.loadDefn.get("2i")[1]
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
+        self.query_stats = {key[2]: [0, 0] for key in self.queries}
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -333,11 +386,18 @@ class QueryLoad:
             start = time.time()
             e = ""
             try:
-                self.total_query_count += 1
+                self.total_query_count.next()
                 query_tuple = random.choice(self.queries)
                 query = query_tuple[0]
-                status, _, _, results, _ = execute_statement_on_n1ql(
-                    self.cluster_conn, query, client_context_id=client_context_id)
+                original_query = query_tuple[2]
+                # print query
+                # print original_query
+                q_param = self.bucket.query_map[original_query][1]
+                status, metrics, _, results, _ = execute_statement_on_n1ql(
+                    self.cluster_conn, query, client_context_id,
+                    q_param)
+                self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
+                self.query_stats[original_query][1] += 1
                 if status == QueryStatus.SUCCESS:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
@@ -354,8 +414,9 @@ class QueryLoad:
                 pass
             except CouchbaseException as e:
                 pass
-            except Exception as e:
-                pass
+            except (Exception, PlanningFailureException) as e:
+                print e
+                self.error_count.next()
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:

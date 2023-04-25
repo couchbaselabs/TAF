@@ -9,10 +9,14 @@ import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+
 import com.couchbase.client.core.error.AmbiguousTimeoutException;
 import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
@@ -55,6 +59,7 @@ public class WorkLoadGenerate extends Task{
     public String collection = "_default";
     public boolean stop_loading = false;
     public HashMap<String, List<Result>> failedMutations;
+    static Logger logger = LogManager.getLogger(WorkLoadGenerate.class);
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
         super(taskName);
@@ -144,7 +149,7 @@ public class WorkLoadGenerate extends Task{
 
     @Override
     public void run() {
-        System.out.println("Starting " + this.taskName);
+        logger.info("Starting " + this.taskName);
         // Set timeout in WorkLoadSettings
         this.dg.ws.setTimeoutDuration(60, "seconds");
         // Set Durability in WorkLoadSettings
@@ -182,7 +187,7 @@ public class WorkLoadGenerate extends Task{
             Duration timeElapsed = Duration.between(trackFailureTime_start, trackFailureTime_end);
             if(timeElapsed.toMinutes() > 5) {
                 for (Entry<String, List<Result>> optype: this.failedMutations.entrySet())
-                    System.out.println("Failed mutations count so far: " + optype.getKey() + " == " + optype.getValue().size());
+                    logger.info("Failed mutations count so far: " + optype.getKey() + " == " + optype.getValue().size());
                 trackFailureTime_start = Instant.now();
             }
             Instant start = Instant.now();
@@ -258,21 +263,21 @@ public class WorkLoadGenerate extends Task{
                                 String b = om.writeValueAsString(trnx_docs.get(name));
                                 if(this.dg.ws.expectDeleted) {
                                     if(!a.contains(DocumentNotFoundException.class.getSimpleName())) {
-                                        System.out.println("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
-                                        System.out.println("Actual Value - " + a);
-                                        System.out.println("Expected Value - " + b);
+                                        logger.info("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
+                                        logger.info("Actual Value - " + a);
+                                        logger.info("Expected Value - " + b);
                                         if(this.sdkClientPool != null)
                                             this.sdkClientPool.release_client(this.sdk);
-                                        System.out.println(this.taskName + " is completed!");
+                                        logger.info(this.taskName + " is completed!");
                                         return;
                                     }
                                 } else if(!a.equals(b) && !a.contains("TimeoutException")){
-                                    System.out.println("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
-                                    System.out.println("Actual Value - " + a);
-                                    System.out.println("Expected Value - " + b);
+                                    logger.info("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
+                                    logger.info("Actual Value - " + a);
+                                    logger.info("Expected Value - " + b);
                                     if(this.sdkClientPool != null)
                                         this.sdkClientPool.release_client(this.sdk);
-                                    System.out.println(this.taskName + " is completed!");
+                                    logger.info(this.taskName + " is completed!");
                                     return;
                                 }
                             } catch (JsonProcessingException e) {
@@ -302,47 +307,47 @@ public class WorkLoadGenerate extends Task{
             if(this.sdkClientPool != null)
                 this.sdkClientPool.release_client(this.sdk);
         }
-        System.out.println(this.taskName + " is completed!");
+        logger.info(this.taskName + " is completed!");
         this.result = true;
         if (this.retryTimes > 0 && this.failedMutations.size() > 0) {
-            System.out.println(this.retryTimes);
-            System.out.println(this.failedMutations.size());
+            logger.info(this.retryTimes);
+            logger.info(this.failedMutations.size());
             this.retryTimes -= 1;
             if (this.sdkClientPool != null)
                 this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
             for (Entry<String, List<Result>> optype: this.failedMutations.entrySet()) {
                 for (Result r: optype.getValue()) {
-                    System.out.println("Loader Retrying: " + r.id() + " -> " + r.err().getClass().getSimpleName());
+                    logger.info("Loader Retrying: " + r.id() + " -> " + r.err().getClass().getSimpleName());
                     switch(optype.getKey()) {
                     case "create":
                         try {
                             docops.insert(r.id(), r.document(), this.sdk.connection, setOptions);
                             this.failedMutations.get(optype.getKey()).remove(r);
                         } catch (TimeoutException|ServerOutOfMemoryException e) {
-                            System.out.println("Retry Create failed for key: " + r.id());
+                            logger.fatal("Retry Create failed for key: " + r.id());
                             this.result = false;
                         } catch (DocumentExistsException e) {
-                            System.out.println("Retry Create failed for key: " + r.id());
+                            logger.fatal("Retry Create failed for key: " + r.id());
                         }
                     case "update":
                         try {
                             docops.upsert(r.id(), r.document(), this.sdk.connection, upsertOptions);
                             this.failedMutations.get(optype.getKey()).remove(r);
                         } catch (TimeoutException|ServerOutOfMemoryException e) {
-                            System.out.println("Retry update failed for key: " + r.id());
+                            logger.fatal("Retry update failed for key: " + r.id());
                             this.result = false;
                         }  catch (DocumentExistsException e) {
-                            System.out.println("Retry update failed for key: " + r.id());
+                            logger.fatal("Retry update failed for key: " + r.id());
                         }
                     case "delete":
                         try {
                             docops.delete(r.id(), this.sdk.connection, removeOptions);
                             this.failedMutations.get(optype.getKey()).remove(r);
                         } catch (TimeoutException|ServerOutOfMemoryException e) {
-                            System.out.println("Retry delete failed for key: " + r.id());
+                            logger.fatal("Retry delete failed for key: " + r.id());
                             this.result = false;
                         } catch (DocumentNotFoundException e) {
-                            System.out.println("Retry delete failed for key: " + r.id());
+                            logger.fatal("Retry delete failed for key: " + r.id());
                         }
                     }
                 }

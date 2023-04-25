@@ -28,6 +28,8 @@ import time
 from custom_exceptions.exception import RebalanceFailedException
 from Cb_constants.CBServer import CbServer
 from threading import Thread
+import string
+from common_lib import humanbytes
 
 
 class OPD:
@@ -265,7 +267,9 @@ class OPD:
             # process_concurrency = min(bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections"), 5)
             pattern = overRidePattern or bucket.loadDefn.get("pattern", self.default_pattern)
             for scope in bucket.scopes.keys():
-                for collection in bucket.scopes[scope].collections.keys():
+                for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
+                    workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                    valType = workloads[i % len(workloads)]["valType"]
                     if scope == CbServer.system_scope:
                         continue
                     if collection == "_default" and scope == "_default" and skip_default:
@@ -282,7 +286,7 @@ class OPD:
                                           cmd.get("ops", bucket.loadDefn.get("ops")),
                                           cmd.get("loadType", None),
                                           cmd.get("keyType", self.key_type),
-                                          cmd.get("valueType", bucket.loadDefn.get("valType")),
+                                          cmd.get("valueType", valType),
                                           cmd.get("validate", False),
                                           cmd.get("gtm", False),
                                           cmd.get("deleted", False),
@@ -301,7 +305,7 @@ class OPD:
                                DRConstants.read_e: bucket.read_end})
                     dr = DocRange(hm)
                     ws.dr = dr
-                    dg = DocumentGenerator(ws, self.key_type, bucket.loadDefn.get("valType"))
+                    dg = DocumentGenerator(ws, self.key_type, valType)
                     self.loader_map.update({bucket.name+scope+collection: dg})
 
     def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
@@ -357,7 +361,9 @@ class OPD:
                 for scope in bucket.scopes.keys():
                     if scope == CbServer.system_scope:
                             continue
-                    for collection in bucket.scopes[scope].collections.keys():
+                    for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
+                        workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                        valType = workloads[i % len(workloads)]["valType"]
                         if collection == "_default" and scope == "_default" and skip_default:
                             continue
                         for op_type in bucket.loadDefn.get("load_type"):
@@ -388,13 +394,13 @@ class OPD:
                                                   cmd.get("ops", bucket.loadDefn.get("ops")),
                                                   cmd.get("loadType", None),
                                                   cmd.get("keyType", None),
-                                                  cmd.get("valueType", bucket.loadDefn.get("valType")),
+                                                  cmd.get("valueType", valType),
                                                   cmd.get("validate", True),
                                                   cmd.get("gtm", False),
                                                   cmd.get("deleted", False),
                                                   cmd.get("mutated", 0))
                             ws.dr = dr
-                            dg = DocumentGenerator(ws, self.key_type, bucket.loadDefn.get("valType"))
+                            dg = DocumentGenerator(ws, self.key_type, valType)
                             self.loader_map.update({bucket.name+scope+collection+op_type: dg})
 
             tasks = list()
@@ -507,3 +513,30 @@ class OPD:
         print "\t", "#"
         print "\t", "#"*60
         print "\n"
+
+    def print_cluster_cpu_ram(self, cluster, step=60):
+        if cluster.type in ["serverless"]:
+            return
+        while not self.stop_run:
+            try:
+                table = TableView(self.log.info)
+                table.set_headers(["Nodes", "Services", "CPU",
+                                   "Mem_total", "Mem_free", "Mem_Used%",
+                                   "Swap_mem_used"])
+                rest = RestConnection(cluster.master)
+                cluster_stat = rest.get_cluster_stats()
+                for cluster_node, node_stats in cluster_stat.items():
+                    row = list()
+                    row.append(cluster_node.split(':')[0])
+                    row.append(", ".join(node_stats["services"]))
+                    row.append(str(node_stats["cpu_utilization"])[0:6])
+                    row.append(humanbytes(str(node_stats["mem_total"])))
+                    row.append(humanbytes(str(node_stats["mem_free"])))
+                    row.append(100 - 1.0*node_stats["mem_free"]/node_stats["mem_total"]*100)
+                    row.append(humanbytes(str(node_stats["swap_mem_used"])) + " / "
+                               + humanbytes(str(node_stats["swap_mem_total"])))
+                    table.add_row(row)
+                table.display("Cluster statistics")
+            except:
+                pass
+            time.sleep(step)

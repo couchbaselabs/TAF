@@ -34,6 +34,18 @@ HotelQueries = [
             SearchQuery.prefix("Serbi"),
     ]
 
+NimbusPQueries = [
+            SearchQuery.queryString("000000000000000000000000000000406101"),
+            SearchQuery.match("Bhutan"),
+            SearchQuery.prefix("Zim"),
+    ]
+
+NimbusMQueries = [
+            SearchQuery.queryString("uWKyrYzYhD"),
+            SearchQuery.match("000000000000000000000000000000833238"),
+            SearchQuery.prefix("0000"),
+    ]
+
 
 class DoctorFTS:
 
@@ -51,12 +63,26 @@ class DoctorFTS:
         status = False
         for b in buckets:
             b.FTSindexes = dict()
+            b.FTSqueries = ftsQueries
             i = 0
-            while i < b.loadDefn.get("FTS")[0]:
-                for s in self.bucket_util.get_active_scopes(b, only_names=True):
-                    for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
-                        if c == CbServer.default_collection:
-                            continue
+            for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
+                    if c == CbServer.default_collection:
+                        continue
+                    workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
+                    workload = workloads[collection_num % len(workloads)]
+                    valType = workload["valType"]
+                    queryTypes = ftsQueries
+                    if valType == "Hotel":
+                        queryTypes = HotelQueries
+                    if valType == "NimbusP":
+                        queryTypes = NimbusPQueries
+                    if valType == "NimbusM":
+                        queryTypes = NimbusMQueries
+                    i = 0
+                    while i < workload.get("FTS")[0]:
+                        workload = b.loadDefn.get("collections_defn",
+                                                  [b.loadDefn])[collection_num % b.loadDefn.get("collections")]
                         fts_param_template = self.get_fts_idx_template()
                         fts_param_template.update({
                             "name": "fts_idx_{}".format(i), "sourceName": b.name})
@@ -71,15 +97,15 @@ class DoctorFTS:
                         fts_param_template = str(fts_param_template).replace("False", "false")
                         fts_param_template = str(fts_param_template).replace("'", "\"")
                         name = "fts_idx_"+str(i)
-                        index_tuple = (fts_param_template, b.name, s, c)
-                        b.FTSindexes.update({name: index_tuple})
+                        # index_tuple = (fts_param_template, b.name, s, c)
+                        b.FTSindexes.update({name: queryTypes})
                         retry = 5
                         status = False
                         while not status and retry > 0:
                             self.log.debug("Creating fts index: {} on {}.{}".format(name, b.name, c))
                             try:
                                 status, _ = self.fts_helper.create_fts_index_from_json(
-                                    name, str(index_tuple[0]))
+                                    name, str(fts_param_template))
                             except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
                                 print(e)
                                 time.sleep(10)
@@ -192,7 +218,7 @@ class FTSQueryLoad:
     def _run_concurrent_queries(self):
         threads = []
         self.total_query_count = 0
-        self.concurrent_queries_to_run = self.bucket.loadDefn.get("FTS")[1]
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("ftsQPS")[1]
         self.currently_running = 0
         query_count = 0
         for i in range(0, self.concurrent_queries_to_run):
@@ -214,10 +240,8 @@ class FTSQueryLoad:
 
     def _run_query(self, validate_item_count=False, expected_count=0):
         while not self.stop_run:
-            query = random.choice(ftsQueries)
-            if self.bucket.loadDefn.get("valType") == "Hotel":
-                    query = random.choice(HotelQueries)
-            index, _ = random.choice(self.bucket.FTSindexes.items())
+            index, queries = random.choice(self.bucket.FTSindexes.items())
+            query = random.choice(queries)
             start = time.time()
             e = ""
             try:

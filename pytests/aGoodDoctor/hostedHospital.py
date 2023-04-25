@@ -117,6 +117,7 @@ class Murphy(BaseTestCase, OPD):
     def tearDown(self):
         self.check_dump_thread = False
         self.stop_crash = True
+        self.stop_run = True
         if self.cluster.query_nodes:
             for ql in self.ql:
                 ql.stop_run = True
@@ -204,18 +205,19 @@ class Murphy(BaseTestCase, OPD):
         self.sleep(10)
         self.ql = list()
         for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("2i")[1] > 0:
-                bucket.loadDefn.get("2i")[1] = bucket.loadDefn.get("2i")[1] + 10
+            if bucket.loadDefn.get("2iQPS", 0) > 0:
+                # bucket.loadDefn.get("2i")[1] = bucket.loadDefn.get("2i")[1] + 10
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)
 
-    def monitor_query_status(self, print_duration=600):
+    def monitor_query_status(self, print_duration=120):
 
         def check_query_stats():
             st_time = time.time()
             while not self.stop_run:
                 if st_time + print_duration < time.time():
+                    self.query_table = TableView(self.log.info)
                     self.table = TableView(self.log.info)
                     self.table.set_headers(["Bucket",
                                             "Total Queries",
@@ -226,6 +228,20 @@ class Murphy(BaseTestCase, OPD):
                                             "Timeout Queries",
                                             "Errored Queries"])
                     for ql in self.ql:
+                        self.query_table.set_headers(["Bucket",
+                                                      "Query",
+                                                      "Count",
+                                                      "Avg Execution Time(ms)"])
+                        try:
+                            for query in sorted(ql.query_stats.keys()):
+                                if ql.query_stats[query][1] > 0:
+                                    self.query_table.add_row([str(ql.bucket.name),
+                                                              ql.bucket.query_map[query][0],
+                                                              ql.query_stats[query][1],
+                                                              ql.query_stats[query][0]/ql.query_stats[query][1]])
+                        except Exception as e:
+                            print e
+                        self.query_table.display("N1QL Query Execution Stats")
                         self.table.add_row([
                             str(ql.bucket.name),
                             str(ql.total_query_count),
@@ -267,6 +283,9 @@ class Murphy(BaseTestCase, OPD):
 
     def test_rebalance(self):
         self.monitor_query_status()
+        cpu_monitor = threading.Thread(target=self.print_cluster_cpu_ram,
+                                       kwargs={"cluster": self.cluster})
+        cpu_monitor.start()
 
         self.loadDefn1 = {
             "valType": "Hotel",
@@ -282,19 +301,58 @@ class Murphy(BaseTestCase, OPD):
             "2i": [5, 20],
             "FTS": [0, 0]
             }
+
+        self.loadDefn1 = {
+            "valType": "Hotel",
+            "scopes": 1,
+            "collections": 2,
+            "num_items": 1500000000,
+            "start": 0,
+            "end": 1500000000,
+            "ops": 80000,
+            "doc_size": 1024,
+            "pattern": [0, 50, 50, 0, 0], # CRUDE
+            "load_type": ["read", "update"],
+            "2iQPS": 200,
+            "ftsQPS": 0,
+            "collections_defn": [
+                {
+                    "valType": "NimbusM",
+                    "2i": [2, 2],
+                    "FTS": [0, 0],
+                },
+                {
+                    "valType": "NimbusP",
+                    "2i": [2, 3],
+                    "FTS": [0, 0],
+                }
+                ]
+            }
         self.sanity = {
             "valType": "SimpleValue",
             "scopes": 1,
-            "collections": 10,
-            "num_items": 10000000,
+            "collections": 2,
+            "num_items": 50000000,
             "start": 0,
-            "end": 10000000,
+            "end": 50000000,
             "ops": 40000,
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "update"],
-            "2i": [10, 10],
-            "FTS": [10, 10]
+            "2iQPS": 10,
+            "ftsQPS": 10,
+            "collections_defn": [
+                {
+                    "valType": "SimpleValue",
+                    "2i": [5, 5],
+                    "FTS": [5, 5],
+                },
+                {
+                    "valType": "SimpleValue",
+                    "2i": [5, 5],
+                    "FTS": [5, 5],
+                }
+                ]
             }
         sanity = self.input.param("sanity", False)
         if sanity:
@@ -348,7 +406,7 @@ class Murphy(BaseTestCase, OPD):
         if not self.skip_init:
             self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
 
-        if self.cluster.cbas_nodes and not self.skip_init:
+        if self.cluster.cbas_nodes and self.skip_init:
             self.drCBAS.create_datasets()
             result = self.drCBAS.wait_for_ingestion(self.num_items,
                                                     self.index_timeout)
@@ -364,7 +422,7 @@ class Murphy(BaseTestCase, OPD):
             self.drEventing.lifecycle_operation_for_all_functions("deploy", "deployed")
 
         for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("2i")[1] > 0:
+            if bucket.loadDefn.get("2iQPS", 0) > 0:
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)
@@ -376,28 +434,22 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(status, "FTS index build failed.")
 
         for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("FTS")[1] > 0:
+            if bucket.loadDefn.get("ftsQPS", 0) > 0:
                 ql = FTSQueryLoad(self.cluster, bucket)
                 ql.start_query_load()
                 self.ftsQL.append(ql)
 
-        if self.cluster.cbas_nodes and not self.skip_init:
-            self.drCBAS.create_datasets()
-            result = self.drCBAS.wait_for_ingestion(self.num_items*2,
-                                                    self.index_timeout)
-            self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
-            self.drCBAS.start_query_load()
-
         if not sanity:
             self.mutation_perc = self.input.param("mutation_perc", 100)
-            # self.restart_query_load()
             for bucket in self.cluster.buckets:
                 bucket.loadDefn["ops"] = 10000
                 self.generate_docs(bucket=bucket)
             tasks = self.perform_load(wait_for_load=False)
+            time.sleep(1*60*60)
             # Rebalance 1 - Disk Upgrade
             initial_services = self.input.param("services", "data")
             server_group_list = list()
+            self.restart_query_load()
             for service_group in initial_services.split("-"):
                 service_group = sorted(service_group.split(":"))
                 service = service_group[0]
@@ -425,6 +477,8 @@ class Murphy(BaseTestCase, OPD):
             rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                server_group_list,
                                                                timeout=96*60*60)
+            self.sleep(1*60*60)
+            self.restart_query_load()
             self.task_manager.get_task_result(rebalance_task)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -465,6 +519,7 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
             # Rebalance 3 - Both Disk/Compute Upgrade
+            self.sleep(1*60*60)
             self.restart_query_load()
             server_group_list = list()
             initial_services = self.input.param("services", "data")
@@ -630,7 +685,7 @@ class Murphy(BaseTestCase, OPD):
                                bucket=bucket)
         self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
         for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("2i")[1] > 0:
+            if bucket.loadDefn.get("2iQPS", 0) > 0:
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)

@@ -17,6 +17,10 @@ import reactor.util.function.Tuples;
 import com.couchbase.test.val.Hotel;
 import com.couchbase.test.val.SimpleValue;
 import com.couchbase.test.val.anySizeValue;
+
+import com.couchbase.test.val.NimbusM;
+import com.couchbase.test.val.NimbusP;
+
 import com.couchbase.test.docgen.DocRange;
 import com.couchbase.test.docgen.KVGenerator;
 import com.couchbase.test.docgen.WorkLoadSettings;
@@ -50,6 +54,10 @@ abstract class KVGenerator{
 
         if(valClass.equals(anySizeValue.class.getSimpleName()))
             this.valInstance = anySizeValue.class;
+        else if (valClass.equals(NimbusP.class.getSimpleName()))
+        	this.valInstance = NimbusP.class;
+        else if (valClass.equals(NimbusM.class.getSimpleName()))
+        	this.valInstance = NimbusM.class;
         else if (valClass.equals(Hotel.class.getSimpleName()))
             this.valInstance = Hotel.class;
         else
