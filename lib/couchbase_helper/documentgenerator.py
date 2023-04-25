@@ -516,6 +516,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         self.create_key_for_vbucket()
 
     def create_key_for_vbucket(self):
+        print("Start key gen")
         while self.doc_keys_len < self.end:
             doc_key = super(DocumentGeneratorForTargetVbucket,
                             self).next_key(self.key_counter)
@@ -525,6 +526,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                 self.doc_keys.update({self.start+self.doc_keys_len: doc_key})
                 self.doc_keys_len += 1
             self.key_counter += 1
+        print("keys generated")
         self.end = self.start + self.doc_keys_len
 
     """
