@@ -438,7 +438,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.gen_delete = None
             self.gen_expiry = None
             time_end = time.time() + 60 * self.duration
-            while time.time() < time_end::
+            while time.time() < time_end:
                 master_itr += 1
                 time_start = time.time()
                 mem_item_count += mem_only_items * ops_len
