@@ -2675,7 +2675,12 @@ class BucketUtils(ScopeUtils):
 
             stat = cb_stat.get_collections(bucket)
             for s_name, scope in bucket.scopes.items():
+                if scope.is_dropped:
+                    continue
                 for c_name, col in scope.collections.items():
+                    if col.is_dropped:
+                        continue
+                    col = bucket.scopes[s_name].collections[c_name]
                     val_as_per_test = col.history
                     val_as_per_stat = stat[s_name][c_name]["history"]
                     log_msg = "%s - %s:%s:%s - Expected %s. Actual: %s" \

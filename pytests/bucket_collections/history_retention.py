@@ -394,11 +394,12 @@ class DocHistoryRetention(ClusterSetup):
 
         self.run_data_ops_on_individual_collection(bucket)
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
-        # Validate if hist_start_seqno == 0
-        stats["before_ops"] = \
-            self.bucket_util.get_vb_details_for_bucket(bucket, kv_nodes)
-        self.bucket_util.validate_history_start_seqno_stat(
-            {},  stats["before_ops"], no_history_preserved=True)
+        if is_history_valid:
+            # Validate if hist_start_seqno == 0
+            stats["before_ops"] = \
+                self.bucket_util.get_vb_details_for_bucket(bucket, kv_nodes)
+            self.bucket_util.validate_history_start_seqno_stat(
+                {},  stats["before_ops"], no_history_preserved=True)
 
         self.log.critical("Using node '%s' for testing" % target_node.ip)
         self.log.info("Trying to enable CDC using '%s'" % enable_by)
@@ -498,41 +499,39 @@ class DocHistoryRetention(ClusterSetup):
         self.sdk_client_pool.release_client(client)
 
         if not is_history_valid:
-            self.bucket_util.validate_history_start_seqno_stat(
-                {}, stats["after_ops"], no_history_preserved=True)
             return
-        else:
-            # MB-55336 Validation
-            seq_no_incr = 1
-            fields = ["high_seqno", "history_start_seqno", "purge_seqno"]
-            for vb_num, t_stats in stats["after_ops"].items():
-                before_stats = stats["before_ops"][vb_num]
-                a_stat = t_stats["active"]
-                exp_hist_start_seq = \
-                    before_stats["active"]["high_seqno"] + seq_no_incr
-                self.assertEqual(
-                    a_stat["history_start_seqno"], exp_hist_start_seq,
-                    "vb_{0}::Active hist_start_seqno is {1}. Expected: {2}"
-                    .format(vb_num, a_stat["history_start_seqno"],
-                            exp_hist_start_seq))
-                self.assertEqual(
-                    a_stat["high_seqno"], a_stat["history_start_seqno"],
-                    "vb_{0}::Active high_seqno {1} != {2} hist_start_seqno"
-                    .format(vb_num, a_stat["high_seqno"],
-                            a_stat["history_start_seqno"]))
-                for r_stat in t_stats["replica"]:
-                    for field in fields:
-                        self.assertEqual(
-                            r_stat[field], a_stat[field],
-                            "vb_{0}::Replica stat '{1}' mismatch. "
-                            "Actual {2} != {3} expected"
-                            .format(vb_num, field, r_stat[field],
-                                    a_stat[field]))
-                        self.assertEqual(
-                            r_stat["high_seqno"], r_stat["history_start_seqno"],
-                            "vb_{0}::Replica high_seqno {1} != {2} hist_start_seqno"
-                            .format(vb_num, r_stat["high_seqno"],
-                                    r_stat["history_start_seqno"]))
+
+        # MB-55336 Validation
+        seq_no_incr = 1
+        fields = ["high_seqno", "history_start_seqno", "purge_seqno"]
+        for vb_num, t_stats in stats["after_ops"].items():
+            before_stats = stats["before_ops"][vb_num]
+            a_stat = t_stats["active"]
+            exp_hist_start_seq = \
+                before_stats["active"]["high_seqno"] + seq_no_incr
+            self.assertEqual(
+                a_stat["history_start_seqno"], exp_hist_start_seq,
+                "vb_{0}::Active hist_start_seqno is {1}. Expected: {2}"
+                .format(vb_num, a_stat["history_start_seqno"],
+                        exp_hist_start_seq))
+            self.assertEqual(
+                a_stat["high_seqno"], a_stat["history_start_seqno"],
+                "vb_{0}::Active high_seqno {1} != {2} hist_start_seqno"
+                .format(vb_num, a_stat["high_seqno"],
+                        a_stat["history_start_seqno"]))
+            for r_stat in t_stats["replica"]:
+                for field in fields:
+                    self.assertEqual(
+                        r_stat[field], a_stat[field],
+                        "vb_{0}::Replica stat '{1}' mismatch. "
+                        "Actual {2} != {3} expected"
+                        .format(vb_num, field, r_stat[field],
+                                a_stat[field]))
+                    self.assertEqual(
+                        r_stat["high_seqno"], r_stat["history_start_seqno"],
+                        "vb_{0}::Replica high_seqno {1} != {2} hist_start_seqno"
+                        .format(vb_num, r_stat["high_seqno"],
+                                r_stat["history_start_seqno"]))
 
         self.bucket_util.validate_history_start_seqno_stat(
             stats["before_ops"], stats["after_ops"], comparison=">")
@@ -958,7 +957,7 @@ class DocHistoryRetention(ClusterSetup):
             while not load_task.completed:
                 self.log.info("Killing memcached")
                 cb_err.create(CouchbaseError.KILL_MEMCACHED)
-                self.sleep(choice(range(10, 20)), "Wait for memcached to boot")
+                self.sleep(choice(range(15, 20)), "Wait for memcached to boot")
                 stop_persistence_using_cbepctl()
         self.task_manager.get_task_result(load_task)
 
