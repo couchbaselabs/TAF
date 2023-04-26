@@ -257,7 +257,7 @@ class OPD:
         print "Final End: %s" % bucket.end
         print "================{}=================".format(bucket.name)
 
-    def _loader_dict(self, buckets, overRidePattern=None, cmd={}):
+    def _loader_dict(self, buckets, overRidePattern=None, cmd={}, skip_default=True):
         self.loader_map = dict()
         self.default_pattern = [100, 0, 0, 0, 0]
         buckets = buckets or self.cluster.buckets
@@ -268,7 +268,7 @@ class OPD:
                 for collection in bucket.scopes[scope].collections.keys():
                     if scope == CbServer.system_scope:
                         continue
-                    if collection == "_default" and scope == "_default":
+                    if collection == "_default" and scope == "_default" and skip_default:
                         continue
                     ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
                                           cmd.get("keySize", self.key_size),
@@ -342,7 +342,7 @@ class OPD:
                     self.get_gdb()
                 raise e
 
-    def data_validation(self):
+    def data_validation(self, skip_default=True):
         doc_ops = self.mutations_to_validate
         pc = min(self.process_concurrency, 20)
         if self._data_validation:
@@ -358,7 +358,7 @@ class OPD:
                     if scope == CbServer.system_scope:
                             continue
                     for collection in bucket.scopes[scope].collections.keys():
-                        if collection == "_default" and scope == "_default":
+                        if collection == "_default" and scope == "_default" and skip_default:
                             continue
                         for op_type in bucket.loadDefn.get("load_type"):
                             cmd.update({"deleted": False})
@@ -405,7 +405,7 @@ class OPD:
                         if scope == CbServer.system_scope:
                             continue
                         for collection in bucket.scopes[scope].collections.keys():
-                            if collection == "_default" and scope == "_default":
+                            if collection == "_default" and scope == "_default" and skip_default:
                                 continue
                             for op_type in doc_ops:
                                 if op_type not in ["create", "update", "delete"]:
@@ -450,10 +450,10 @@ class OPD:
         self.table.display("Docs statistics")
 
     def perform_load(self, wait_for_load=True,
-                     validate_data=True, buckets=None, overRidePattern=None):
+                     validate_data=True, buckets=None, overRidePattern=None, skip_default=True):
         self.get_memory_footprint()
         buckets = buckets or self.cluster.buckets
-        self._loader_dict(buckets, overRidePattern)
+        self._loader_dict(buckets, overRidePattern, skip_default=skip_default)
         master = Server(self.cluster.master.ip, self.cluster.master.port,
                         self.cluster.master.rest_username, self.cluster.master.rest_password,
                         str(self.cluster.master.memcached_port))
@@ -467,7 +467,7 @@ class OPD:
                     for collection in bucket.scopes[scope].collections.keys():
                         if scope == CbServer.system_scope:
                             continue
-                        if collection == "_default" and scope == "_default":
+                        if collection == "_default" and scope == "_default" and skip_default:
                             continue
                         client = NewSDKClient(master, bucket.name, scope, collection)
                         client.initialiseSDK()
@@ -488,7 +488,7 @@ class OPD:
             return tasks
 
         if validate_data:
-            self.data_validation()
+            self.data_validation(skip_default=skip_default)
 
         self.print_stats()
 
