@@ -380,7 +380,8 @@ class QueryLoad:
             print(e)
             self.error_count.next()
         if str(e).find("no more information available") != -1:
-            print(e)
+            self.log.critical(query)
+            self.log.critical(e)
         end = time.time()
         if end - start < 1:
             time.sleep(end - start)
