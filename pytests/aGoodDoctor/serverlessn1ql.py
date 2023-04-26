@@ -178,7 +178,7 @@ class DoctorN1QL():
             self.log.info("Creating GSI indexes on {}".format(b.name))
             if b.serverless and b.serverless.nebula_endpoint:
                 self.cluster_conn = SDKClient([b.serverless.nebula_endpoint], None).cluster
-            while i < b.loadDefn.get("2i")[0] or q < b.loadDefn.get("2i")[1]:
+            while i < b.loadDefn.get("2i")[0]:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
                     if b.name+s not in self.sdkClients.keys():
                         self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
