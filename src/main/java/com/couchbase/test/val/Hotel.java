@@ -96,7 +96,7 @@ public class Hotel {
         jsonObject.put("avg_rating", this.random.nextFloat()*5);
         jsonObject.put("public_likes", this.likes.get(index));
         jsonObject.put("reviews", this.reviews.get(index));
-        jsonObject.put("type", this.htypes.get(0));
+        jsonObject.put("type", this.htypes.get(index % htypes.size()));
         jsonObject.put("url", this.url.get(index));
         return jsonObject;
     }
