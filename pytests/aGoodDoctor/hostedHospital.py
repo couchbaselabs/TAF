@@ -471,7 +471,10 @@ class Murphy(BaseTestCase, OPD):
                         "iops": self.iops[service]
                     }
                 }
-                if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                if self.capella_cluster_config.get("place"):
+                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                        config["storage"].pop("iops")
+                elif self.capella_cluster_config["provider"] != "hostedAWS":
                     config["storage"].pop("iops")
                 server_group_list.append(config)
             rebalance_task = self.task.async_rebalance_capella(self.cluster,
