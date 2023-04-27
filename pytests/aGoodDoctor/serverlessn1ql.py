@@ -188,6 +188,7 @@ class DoctorN1QL():
                             continue
                         if i < b.loadDefn.get("2i")[0]:
                             indexType = indexes
+                            queryType = queries
                             if b.loadDefn.get("valType") == "Hotel":
                                 indexType = HotelIndexes
                                 queryType = HotelQueries
