@@ -1,5 +1,5 @@
 {
-    "appcode": "function OnUpdate(doc,meta) {\n    try {\n        N1QL(\"select city,country,count(*) from default0._default.VolumeCollection1 where free_breakfast=True and free_parking=True group by country,city order by country,city limit 10\");\n    } catch (e) {\n        log(e);\n    }\n}",
+    "appcode": "function OnUpdate(doc,meta) {\n    try {\n        N1QL(\"select count(*) from default0._default.VolumeCollection1\");\n    } catch (e) {\n        log(e);\n    }\n}",
     "depcfg": {
         "source_bucket": "default0",
         "source_scope": "_default",
@@ -25,7 +25,7 @@
         "processing_status": false,
         "timer_context_size": 1024,
         "user_prefix": "eventing",
-        "worker_count": 1
+        "worker_count": 3
     },
     "function_scope": {
         "bucket": "*",

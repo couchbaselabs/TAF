@@ -1,5 +1,5 @@
 {
-    "appcode": "function OnUpdate(doc, meta) {\n    log(\"Doc created/updated\", meta.id);\n    var expiry = new Date();\n    expiry.setSeconds(expiry.getSeconds() + 3);\n\n    var context = {docID : meta.id};\n    createTimer(timerCallback, expiry, meta.id, context);\n}\n\nfunction timerCallback(context) {\n    var meta={\"id\": context.docID};\n    var result= couchbase.upsert(dst_bucket, meta);\n    log(result);\n}",
+    "appcode": "function OnUpdate(doc, meta) {\n    log(\"Doc created/updated\", meta.id);\n    var expiry = new Date();\n    expiry.setSeconds(expiry.getSeconds() + 3);\n\n    var context = {docID : meta.id};\n    createTimer(timerCallback, expiry, meta.id, context);\n}\n\nfunction timerCallback(context) {\n    var meta={\"id\": context.docID};\n    var result= couchbase.get(dst_bucket, meta);\n    log(result);\n}",
     "depcfg": {
         "buckets": [
             {
@@ -34,7 +34,7 @@
         "processing_status": false,
         "timer_context_size": 1024,
         "user_prefix": "eventing",
-        "worker_count": 1
+        "worker_count": 3
     },
     "function_scope": {
         "bucket": "*",
