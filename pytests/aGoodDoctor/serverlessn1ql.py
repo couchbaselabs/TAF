@@ -78,7 +78,7 @@ HotelQueries = ["select meta().id from {} where country is not null and `type` i
                 "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
                 "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE country = 'Bulgaria' GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {0} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country='Bulgaria' limit 100",
                 "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
-                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'"
+                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
                 "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
                 "SELECT * from {} where `name` is not null limit 100",
                 "SELECT * from {} where phone like \"San%\" limit 100",
