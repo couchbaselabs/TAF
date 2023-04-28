@@ -459,6 +459,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         fail in the tests
         :return: Nothing
         """
+        self.fail("Failing due to CBQE-7877")
 
         node_down_timer_tasks = []
         for node in self.server_to_fail:
