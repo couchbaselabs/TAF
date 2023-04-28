@@ -653,7 +653,6 @@ class StorageBase(BaseTestCase):
         super(StorageBase, self).tearDown()
 
     def genrate_docs_basic(self, start, end, target_vbucket=None, mutate=0):
-        self.log.critical("In genrate_docs_basic %s,%s" % (start, end))
         return doc_generator(self.key, start, end,
                              doc_size=self.doc_size,
                              doc_type=self.doc_type,
