@@ -29,9 +29,13 @@ CB_VERSION_NAME = {"0.0": "master",
                    "7.0": "cheshire-cat", "7.1": "neo", "7.2": "neo",
                    "7.5": "elixir", "8.0": "morpheus"}
 
-SYSTEMD_SERVER = ["centos 8", "centos 7", "suse 12", "suse 15", "ubuntu 16.04",
-                  "ubuntu 18.04", "ubuntu 20.04", "ubuntu 22.04", "debian 8", "debian 9",
-                  "debian 10", "debian 11", "rhel 8", "rhel 9", "oel 7", "oel 8", "oel 9"]
+SYSTEMD_SERVER = ["centos 8", "centos 7", 
+                  "suse 12", "suse 15", 
+                  "ubuntu 16.04", "ubuntu 18.04", "ubuntu 20.04", "ubuntu 22.04", 
+                  "debian 8", "debian 9", "debian 10", "debian 11", 
+                  "rhel 8", "rhel 9", 
+                  "oel 7", "oel 8", "oel 9",
+                  "amazon linux release 2 (karoo)","amazon linux release 2023 (amazon linux)"]
 VERSION_FILE = "VERSION.txt"
 MIN_COMPACTION_THRESHOLD = 2
 MAX_COMPACTION_THRESHOLD = 100
