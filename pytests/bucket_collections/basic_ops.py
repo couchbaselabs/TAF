@@ -703,10 +703,11 @@ class BasicOps(CollectionBase):
                         continue
                     col_obj = \
                         bucket.scopes[scope_name].collections[c_name]
+                    col_dict = col_obj.get_dict_object()
+                    col_dict.pop("history", None)
                     BucketUtils.create_collection(self.cluster.master,
-                                                  bucket,
-                                                  scope_name,
-                                                  col_obj.get_dict_object())
+                                                  bucket, scope_name,
+                                                  col_dict)
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
