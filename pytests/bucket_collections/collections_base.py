@@ -331,8 +331,10 @@ class CollectionBase(ClusterSetup):
             test_obj, test_obj.bucket_storage, buckets_spec)
         test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)
-        test_obj.bucket_util.wait_for_collection_creation_to_complete(
-            test_obj.cluster)
+        if not (hasattr(test_obj, "initial_version")
+                and int(test_obj.initial_version[0]) < 7):
+            test_obj.bucket_util.wait_for_collection_creation_to_complete(
+                test_obj.cluster)
 
         # Prints bucket stats before doc_ops
         test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
@@ -374,13 +376,24 @@ class CollectionBase(ClusterSetup):
         if doc_loading_task.result is False:
             test_obj.fail("Initial doc_loading failed")
 
+        test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
+
+        # Code to handle collection specific validation during upgrade test
+        collection_supported = True
+        if hasattr(test_obj, "initial_version") \
+                and int(test_obj.initial_version[0]) < 7:
+            collection_supported = False
+
         # Verify initial doc load count
         test_obj.log.info("Wait for ep_queue_size to drain")
         test_obj.bucket_util._wait_for_stats_all_buckets(
             test_obj.cluster, test_obj.cluster.buckets, timeout=1200)
         if validate_docs:
-            test_obj.bucket_util.validate_docs_per_collections_all_buckets(
-                test_obj.cluster, timeout=2400)
+            if collection_supported:
+                test_obj.bucket_util.validate_docs_per_collections_all_buckets(
+                    test_obj.cluster, timeout=2400)
+            else:
+                test_obj.bucket_util.verify_stats_all_buckets(test_obj.cluster, test_obj.num_items)
 
         # Prints bucket stats after doc_ops
         test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
