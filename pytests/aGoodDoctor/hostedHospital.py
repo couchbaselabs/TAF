@@ -451,7 +451,7 @@ class Murphy(BaseTestCase, OPD):
             server_group_list = list()
             initial_services = self.input.param("services", "data")
             for service_group in initial_services.split("-"):
-                service_group = service_group.split(":")
+                service_group = sorted(service_group.split(":"))
                 service = service_group[0]
                 if not(len(service_group) == 1 and service in ["query"]):
                     self.disk[service] = self.disk[service] + 500
