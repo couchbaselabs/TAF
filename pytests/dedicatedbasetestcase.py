@@ -29,11 +29,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.capella = self.input.capella
         self.num_clusters = self.input.param("num_clusters", 1)
 
-        # Bucket specific params
-        # Note: Over riding bucket_eviction_policy from CouchbaseBaseTest
-        self.bucket_eviction_policy = \
-            self.input.param("bucket_eviction_policy",
-                             Bucket.EvictionPolicy.FULL_EVICTION)
         # End of bucket parameters
 
         # Doc Loader Params (Extension from cb_basetest)

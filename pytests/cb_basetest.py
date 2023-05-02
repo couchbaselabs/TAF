@@ -64,7 +64,16 @@ class CouchbaseBaseTest(unittest.TestCase):
                              Bucket.CompressionMode.PASSIVE)
         self.bucket_storage = \
             self.input.param("bucket_storage",
-                             Bucket.StorageBackend.couchstore)
+                             Bucket.StorageBackend.magma)
+        self.bucket_eviction_policy = \
+            self.input.param("bucket_eviction_policy", None)
+        
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
+
+        if self.bucket_eviction_policy is None and \
+                    self.bucket_storage == Bucket.StorageBackend.couchstore:
+            self.bucket_eviction_policy = Bucket.EvictionPolicy.VALUE_ONLY
 
         self.scope_name = self.input.param("scope", CbServer.default_scope)
         self.collection_name = self.input.param("collection",

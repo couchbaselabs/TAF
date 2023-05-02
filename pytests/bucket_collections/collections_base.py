@@ -170,26 +170,27 @@ class CollectionBase(ClusterSetup):
         # If True, creates bucket/scope/collections with simpler names
         use_simple_names = test_obj.input.param("use_simple_names", True)
         # Create bucket(s) and add rbac user
-        if CbServer.cluster_profile == "default" \
-                and test_obj.bucket_storage == Bucket.StorageBackend.magma:
-            # get the TTL value
-            buckets_spec_from_conf = \
-                test_obj.bucket_util.get_bucket_template_from_package(
-                    test_obj.spec_name)
-            bucket_ttl = buckets_spec_from_conf.get(Bucket.maxTTL, 0)
-            # Blindly override the bucket spec if the backend storage is magma.
-            # So, Bucket spec in conf file will not take any effect.
-            test_obj.spec_name = "single_bucket.bucket_for_magma_collections"
-            magma_bucket_spec = \
-                test_obj.bucket_util.get_bucket_template_from_package(
-                    test_obj.spec_name)
-            magma_bucket_spec[Bucket.maxTTL] = bucket_ttl
-            buckets_spec = magma_bucket_spec
-        else:
-            buckets_spec = \
-                test_obj.bucket_util.get_bucket_template_from_package(
-                    test_obj.spec_name)
+        buckets_spec = \
+            test_obj.bucket_util.get_bucket_template_from_package(
+                test_obj.spec_name)
         buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = use_simple_names
+
+        if test_obj.bucket_storage == Bucket.StorageBackend.magma:
+            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.magma
+            buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.FULL_EVICTION
+
+            if Bucket.ramQuotaMB not in buckets_spec or \
+                (Bucket.ramQuotaMB in buckets_spec and buckets_spec[Bucket.ramQuotaMB] < 256):
+                buckets_spec[Bucket.ramQuotaMB] = 256
+
+        else:
+            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.couchstore
+
+            if Bucket.evictionPolicy not in buckets_spec:
+                buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.VALUE_ONLY
+
+            if Bucket.ramQuotaMB not in buckets_spec:
+                buckets_spec[Bucket.ramQuotaMB] = 100
 
         test_obj.log.info("Creating bucket from spec: %s" % test_obj.spec_name)
         # Process params to over_ride values if required

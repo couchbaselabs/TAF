@@ -219,6 +219,7 @@ class RebalanceBaseTest(BaseTestCase):
             self.cluster,
             self.num_replicas,
             bucket_count=self.standard_buckets,
+            ram_quota=self.bucket_size,
             bucket_type=self.bucket_type,
             storage=self.bucket_storage,
             eviction_policy=self.bucket_eviction_policy,

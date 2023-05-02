@@ -229,10 +229,10 @@ class Bucket(object):
                                          Bucket.Type.MEMBASE)
         self.replicaNumber = new_params.get(Bucket.replicaNumber,
                                             Bucket.ReplicaNum.ONE)
-        self.ramQuotaMB = new_params.get(Bucket.ramQuotaMB, 100)
+        self.ramQuotaMB = new_params.get(Bucket.ramQuotaMB, 256)
         self.replicaIndex = new_params.get(Bucket.replicaIndex, 1)
         self.storageBackend = new_params.get(Bucket.storageBackend,
-                                             Bucket.StorageBackend.couchstore)
+                                             Bucket.StorageBackend.magma)
         self.priority = new_params.get(Bucket.priority, Bucket.Priority.LOW)
         self.uuid = None
         self.conflictResolutionType = \
@@ -273,7 +273,7 @@ class Bucket(object):
         else:
             self.evictionPolicy = new_params.get(
                 Bucket.evictionPolicy,
-                Bucket.EvictionPolicy.VALUE_ONLY)
+                Bucket.EvictionPolicy.FULL_EVICTION)
 
         num_vbs = new_params.get(Bucket.numVBuckets, None)
 

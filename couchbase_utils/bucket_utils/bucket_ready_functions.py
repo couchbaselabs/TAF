@@ -2110,8 +2110,8 @@ class BucketUtils(ScopeUtils):
             compression_mode="off", wait_for_warmup=True,
             conflict_resolution=Bucket.ConflictResolution.SEQ_NO,
             replica_index=1,
-            storage=Bucket.StorageBackend.couchstore,
-            eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
+            storage=Bucket.StorageBackend.magma,
+            eviction_policy=None,
             flush_enabled=Bucket.FlushBucket.DISABLED,
             bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
             purge_interval=1,
@@ -2130,11 +2130,14 @@ class BucketUtils(ScopeUtils):
         elif node_info.memoryQuota and int(node_info.memoryQuota) > 0:
             ram_available = node_info.memoryQuota
             ram_quota_mb = ram_available - 1
-        else:
-            # By default set 100Mb if unable to fetch proper value
-            ram_quota_mb = 100
         if autoCompactionDefined == "true":
             compression_mode = "passive"
+
+        if eviction_policy is None:
+            if storage == Bucket.StorageBackend.magma:
+                eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
+            else:
+                eviction_policy = Bucket.EvictionPolicy.VALUE_ONLY
 
         bucket_obj = Bucket(
             {Bucket.name: bucket_name,
@@ -2806,11 +2809,11 @@ class BucketUtils(ScopeUtils):
             bucket_ram_ratio=(2.0 / 3.0),
             bucket_count=3,
             bucket_type=Bucket.Type.MEMBASE,
-            eviction_policy=Bucket.EvictionPolicy.VALUE_ONLY,
+            eviction_policy=None,
             flush_enabled=Bucket.FlushBucket.DISABLED,
             maxttl=0,
-            storage={Bucket.StorageBackend.couchstore: 3,
-                     Bucket.StorageBackend.magma: 0},
+            storage={Bucket.StorageBackend.magma: 3,
+                     Bucket.StorageBackend.couchstore: 0},
             compression_mode=Bucket.CompressionMode.ACTIVE,
             bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
             ram_quota=None,
@@ -2827,22 +2830,19 @@ class BucketUtils(ScopeUtils):
         rest = RestConnection(cluster.master)
         info = rest.get_nodes_self()
         tasks = dict()
-        if info.memoryQuota < 450.0:
-            self.log.error("At least need 450MB memoryQuota")
+        if info.memoryQuota < 868.0:
+            self.log.error("At least need 868MB memoryQuota")
             success = False
         else:
-            if ram_quota is not None:
-                bucket_ram = ram_quota
-            else:
-                available_ram = info.memoryQuota * bucket_ram_ratio
-                if available_ram / bucket_count > 100:
-                    bucket_ram = int(available_ram / bucket_count)
-                else:
-                    bucket_ram = 100
-                # choose a port that is not taken by this ns server
             if type(storage) is not dict:
                 storage = {storage: bucket_count}
             for key in storage.keys():
+                if ram_quota is not None:
+                    bucket_ram = ram_quota
+                else:
+                    available_ram = info.memoryQuota * bucket_ram_ratio
+                    bucket_ram = int(available_ram / bucket_count)
+
                 count = 0
                 while count < storage[key]:
                     name = "{0}.{1}".format(key, count)

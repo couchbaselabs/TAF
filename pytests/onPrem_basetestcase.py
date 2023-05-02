@@ -68,15 +68,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.enable_dp = self.input.param("enable_dp", False)
         # End of cluster info parameters
 
-        # Bucket specific params
-        # Note: Over riding bucket_eviction_policy from CouchbaseBaseTest
-        self.bucket_eviction_policy = \
-            self.input.param("bucket_eviction_policy",
-                             Bucket.EvictionPolicy.VALUE_ONLY)
         self.bucket_replica_index = self.input.param("bucket_replica_index",
                                                      1)
-        if self.bucket_storage == Bucket.StorageBackend.magma:
-            self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
         # End of bucket parameters
 
         self.services_in = self.input.param("services_in", None)
