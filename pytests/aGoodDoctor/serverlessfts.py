@@ -389,6 +389,7 @@ class FTSQueryLoad:
 
     def _run_query(self, index, query, b, s, validate_item_count=False, expected_count=0):
         start = time.time()
+        e = ""
         try:
             result = self.execute_fts_query("{}".format(index), query)
             if validate_item_count:
@@ -408,6 +409,9 @@ class FTSQueryLoad:
         except Exception as e:
             print(e)
             self.error_count.next()
+        if str(e).find("no more information available") != -1:
+            self.log.critical(query)
+            self.log.critical(e)
         end = time.time()
         if end - start < 1:
             time.sleep(end - start)
