@@ -1184,7 +1184,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "upsert"],
-            "2i": (10, 10),
+            "2i": (10, 20),
             "FTS": (10, 10)
             }
         self.load_defn.append(self.loadDefn1)
@@ -1199,7 +1199,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [10, 80, 0, 10, 0], # CRUDE
             "load_type": ["create", "read", "delete"],
-            "2i": (10, 10),
+            "2i": (10, 20),
             "FTS": (10, 10)
             }
         self.load_defn.append(self.loadDefn2)
@@ -1214,7 +1214,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
-            "2i": (10, 10),
+            "2i": (10, 20),
             "FTS": (10, 10)
             }
 
@@ -1233,7 +1233,7 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [0, 80, 20, 0, 0], # CRUDE
                 "load_type": ["read", "upsert"],
-                "2i": (10, 10),
+                "2i": (10, 20),
                 "FTS": (10, 10)
                 }
             self.load_defn.append(loadDefn1)
@@ -1248,7 +1248,7 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (10, 10),
+                "2i": (10, 20),
                 "FTS": (10, 10)
                 }
             self.load_defn.append(loadDefn2)
@@ -1263,7 +1263,7 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [0, 0, 100, 0, 0], # CRUDE
                 "load_type": ["update"],
-                "2i": (10, 10),
+                "2i": (10, 20),
                 "FTS": (10, 10)
                 }
             self.load_defn.append(loadDefn3)
@@ -1419,7 +1419,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "upsert"],
-            "2i": (5, 50),
+            "2i": (5, 100),
             "FTS": (5, 5)
             }
         self.load_defn.append(self.loadDefn1)
@@ -1434,7 +1434,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [10, 80, 0, 10, 0], # CRUDE
             "load_type": ["create", "read", "delete"],
-            "2i": (5, 50),
+            "2i": (5, 100),
             "FTS": (5, 5)
             }
         self.load_defn.append(self.loadDefn2)
@@ -1449,7 +1449,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
-            "2i": (5, 50),
+            "2i": (5, 100),
             "FTS": (5, 5)
             }
         self.load_defn.append(self.loadDefn3)

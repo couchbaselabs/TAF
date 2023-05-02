@@ -326,8 +326,7 @@ class FTSQueryLoad:
         self.log = logger.get("infra")
 
     def start_query_load(self):
-        th = threading.Thread(target=self._run_concurrent_queries,
-                              kwargs=dict(bucket=self.bucket))
+        th = threading.Thread(target=self._run_concurrent_queries)
         th.start()
 
     def stop_query_load(self):
@@ -338,84 +337,66 @@ class FTSQueryLoad:
         except:
             pass
 
-    def _run_concurrent_queries(self, bucket):
+    def _run_concurrent_queries(self):
         threads = []
-        self.total_query_count = 0
-        self.concurrent_queries_to_run = bucket.loadDefn.get("FTS")[1]
-        self.currently_running = 0
-        query_count = 0
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("FTS")[1]
         for i in range(0, self.concurrent_queries_to_run):
-            self.total_query_count += 1
-            self.currently_running += 1
-            query = random.choice(ftsQueries)
-            index, details = random.choice(bucket.ftsIndexes.items())
-            _, b, s, _ = details
             threads.append(Thread(
                 target=self._run_query,
-                name="query_thread_{0}".format(self.total_query_count),
-                args=(index, query, b, s)))
+                name="query_thread_{0}".format(self.bucket.name + str(i)),
+                args=()))
 
-        i = 0
         for thread in threads:
-            i += 1
             thread.start()
-            query_count += 1
 
-        i = 0
-        while not self.stop_run:
-            threads = []
-            new_queries_to_run = self.concurrent_queries_to_run - self.currently_running
-            for i in range(0, new_queries_to_run):
-                query = random.choice(ftsQueries)
-                if bucket.loadDefn.get("valType") == "Hotel":
-                    query = random.choice(HotelQueries)
-                index, details = random.choice(bucket.ftsIndexes.items())
-                _, b, s, _ = details
-                self.total_query_count += 1
-                threads.append(Thread(
-                    target=self._run_query,
-                    name="query_thread_{0}".format(self.total_query_count),
-                    args=(index, query, b, s)))
-            i = 0
-            self.currently_running += new_queries_to_run
-            for thread in threads:
-                i += 1
-                thread.start()
+        for thread in threads:
+            thread.join()
 
-            time.sleep(2)
-        if self.failed_count.next()-1>0 or self.error_count.next()-1 > 0:
+        if self.failed_count.next()-1 > 0 or self.error_count.next()-1 > 0:
             raise Exception("Queries Failed:%s , Queries Error Out:%s" %
                             (self.failed_count, self.error_count))
 
-    def _run_query(self, index, query, b, s, validate_item_count=False, expected_count=0):
-        start = time.time()
-        e = ""
-        try:
-            result = self.execute_fts_query("{}".format(index), query)
-            if validate_item_count:
-                if result.metaData().metrics().totalRows() != expected_count:
-                    self.failed_count.next()
+    def _run_query(self, validate_item_count=False, expected_count=0):
+        while not self.stop_run:
+            query = random.choice(ftsQueries)
+            if self.bucket.loadDefn.get("valType") == "Hotel":
+                    query = random.choice(HotelQueries)
+            index, _ = random.choice(self.bucket.ftsIndexes.items())
+            start = time.time()
+            e = ""
+            try:
+                self.total_query_count += 1
+                result = self.execute_fts_query("{}".format(index), query)
+                if validate_item_count:
+                    if result.metaData().metrics().totalRows() != expected_count:
+                        self.failed_count.next()
+                    else:
+                        self.success_count.next()
                 else:
                     self.success_count.next()
-            else:
-                self.success_count.next()
-        except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
-            self.timeout_count.next()
-        except RequestCanceledException as e:
-            self.cancel_count.next()
-        except CouchbaseException as e:
-            print(e)
-            self.rejected_count.next()
-        except Exception as e:
-            print(e)
-            self.error_count.next()
-        if str(e).find("no more information available") != -1:
-            self.log.critical(query)
-            self.log.critical(e)
-        end = time.time()
-        if end - start < 1:
-            time.sleep(end - start)
-        self.currently_running -= 1
+            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+                pass
+            except RequestCanceledException as e:
+                pass
+            except CouchbaseException as e:
+                pass
+            except Exception as e:
+                pass
+            if str(e).find("TimeoutException") != -1\
+                or str(e).find("AmbiguousTimeoutException") != -1\
+                    or str(e).find("UnambiguousTimeoutException") != -1:
+                self.timeout_count.next()
+            elif str(e).find("RequestCanceledException") != -1:
+                self.cancel_count.next()
+            elif str(e).find("CouchbaseException") != -1:
+                self.rejected_count.next()
+
+            if str(e).find("no more information available") != -1:
+                self.log.critical(query)
+                self.log.critical(e)
+            end = time.time()
+            if end - start < 1:
+                time.sleep(end - start)
 
     def execute_fts_query(self, index, query):
         """

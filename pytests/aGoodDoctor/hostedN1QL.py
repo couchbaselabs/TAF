@@ -293,7 +293,8 @@ class QueryLoad:
         self.total_query_count = 0
         self.stop_run = False
         self.log = logger.get("infra")
-        self.cluster_conn = None
+        self.cluster_conn = self.queries[0][1]
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("2i")[1]
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries,
@@ -308,84 +309,70 @@ class QueryLoad:
         except:
             pass
 
-    def _run_concurrent_queries(self, bucket):
+    def _run_concurrent_queries(self):
         threads = []
-        self.total_query_count = 0
-        self.concurrent_queries_to_run = bucket.loadDefn.get("2i")[1]
-        self.currently_running = 0
-        query_count = 0
         for i in range(0, self.concurrent_queries_to_run):
-            self.total_query_count += 1
-            self.currently_running += 1
-            query = random.choice(self.queries)
-            self.cluster_conn = query[1]
             threads.append(Thread(
                 target=self._run_query,
-                name="query_thread_{0}".format(self.total_query_count),
-                args=(query[1], query[0], False, 0)))
+                name="query_thread_{0}".format(self.bucket.name + str(i)),
+                args=(False, 0)))
 
-        i = 0
         for thread in threads:
-            i += 1
             thread.start()
-            query_count += 1
 
-        i = 0
-        while not self.stop_run:
-            threads = []
-            new_queries_to_run = self.concurrent_queries_to_run - self.currently_running
-            for i in range(0, new_queries_to_run):
-                query = random.choice(self.queries)
-                self.total_query_count += 1
-                threads.append(Thread(
-                    target=self._run_query,
-                    name="query_thread_{0}".format(self.total_query_count),
-                    args=(query[1], query[0], False, 0)))
-            i = 0
-            self.currently_running += new_queries_to_run
-            for thread in threads:
-                i += 1
-                thread.start()
+        for thread in threads:
+            thread.join()
 
-            time.sleep(2)
-        if self.failed_count.next()-1>0 or self.error_count.next()-1 > 0:
+        if self.failed_count.next()-1 > 0 or self.error_count.next()-1 > 0:
             raise Exception("Queries Failed:%s , Queries Error Out:%s" %
                             (self.failed_count, self.error_count))
 
-    def _run_query(self, client, query, validate_item_count=False, expected_count=0):
+    def _run_query(self, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
         client_context_id = name
-        start = time.time()
-        e = ""
-        try:
-            status, _, _, results, _ = execute_statement_on_n1ql(
-                client, query, client_context_id=client_context_id)
-            if status == QueryStatus.SUCCESS:
-                if validate_item_count:
-                    if results[0]['$1'] != expected_count:
-                        self.failed_count.next()
+        while not self.stop_run:
+            start = time.time()
+            e = ""
+            try:
+                self.total_query_count += 1
+                query_tuple = random.choice(self.queries)
+                query = query_tuple[0]
+                status, _, _, results, _ = execute_statement_on_n1ql(
+                    self.cluster_conn, query, client_context_id=client_context_id)
+                if status == QueryStatus.SUCCESS:
+                    if validate_item_count:
+                        if results[0]['$1'] != expected_count:
+                            self.failed_count.next()
+                        else:
+                            self.success_count.next()
                     else:
                         self.success_count.next()
                 else:
-                    self.success_count.next()
-            else:
-                self.failed_count.next()
-        except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
-            self.timeout_count.next()
-        except RequestCanceledException as e:
-            self.cancel_count.next()
-        except CouchbaseException as e:
-            self.rejected_count.next()
-        except Exception as e:
-            print(e)
-            self.error_count.next()
-        if str(e).find("no more information available") != -1:
-            self.log.critical(query)
-            self.log.critical(e)
-        end = time.time()
-        if end - start < 1:
-            time.sleep(end - start)
-        self.currently_running -= 1
+                    self.failed_count.next()
+            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+                pass
+            except RequestCanceledException as e:
+                pass
+            except CouchbaseException as e:
+                pass
+            except Exception as e:
+                pass
+            if str(e).find("TimeoutException") != -1\
+                or str(e).find("AmbiguousTimeoutException") != -1\
+                    or str(e).find("UnambiguousTimeoutException") != -1:
+                self.timeout_count.next()
+            elif str(e).find("RequestCanceledException") != -1:
+                self.cancel_count.next()
+            elif str(e).find("CouchbaseException") != -1:
+                self.rejected_count.next()
+
+            if str(e).find("no more information available") != -1:
+                self.log.critical(query)
+                self.log.critical(e)
+                self.log.critical(client_context_id)
+            end = time.time()
+            if end - start < 1:
+                time.sleep(end - start)
 
     def monitor_query_status(self, print_duration=600):
         st_time = time.time()
