@@ -321,6 +321,7 @@ class RebalanceTaskCapella(Task):
             temp_server.rest_password = self.cluster.password
             temp_server.hosted_on_cloud = True
             temp_server.memcached_port = "11207"
+            temp_server.type = "dedicated"
             nodes.append(temp_server)
 
         self.cluster.refresh_object(nodes)
