@@ -72,12 +72,12 @@ class CreateBucketTests(BucketDurabilityBase):
 
             # Perform CRUDs to validate bucket_creation with durability
             if not create_failed:
+                self.sleep(10, "Wait to avoid cbstat returning null")
                 verification_dict = self.get_cb_stat_verification_dict()
                 self.validate_durability_with_crud(bucket_obj, d_level,
                                                    verification_dict)
                 self.summary.add_step("Validate_CRUD_operation")
 
-                self.sleep(2, "Wait to avoid cbstat returning null")
                 # Cbstats vbucket-details validation
                 self.cb_stat_verify(verification_dict)
 
@@ -120,6 +120,7 @@ class CreateBucketTests(BucketDurabilityBase):
 
             # Perform CRUDs to validate bucket_creation with durability
             if not create_failed:
+                self.sleep(10, "Wait to avoid cbstat returning null")
                 verification_dict = self.get_cb_stat_verification_dict()
 
                 self.validate_durability_with_crud(bucket_obj, d_level,
