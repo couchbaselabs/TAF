@@ -321,8 +321,10 @@ class CollectionBase(ClusterSetup):
             test_obj, buckets_spec)
         test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)
-        test_obj.bucket_util.wait_for_collection_creation_to_complete(
-            test_obj.cluster)
+        version = int(test_obj.initial_version[0])
+        if version >= 7:
+            test_obj.bucket_util.wait_for_collection_creation_to_complete(
+                test_obj.cluster)
 
         # Prints bucket stats before doc_ops
         test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
@@ -368,12 +370,16 @@ class CollectionBase(ClusterSetup):
 
         test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
 
+        version = int(test_obj.initial_version[0])
         # Verify initial doc load count
         test_obj.bucket_util._wait_for_stats_all_buckets(
             test_obj.cluster, test_obj.cluster.buckets, timeout=1200)
         if validate_docs:
-            test_obj.bucket_util.validate_docs_per_collections_all_buckets(
-                test_obj.cluster, timeout=2400)
+            if version >= 7:
+                test_obj.bucket_util.validate_docs_per_collections_all_buckets(
+                    test_obj.cluster, timeout=2400)
+            else:
+                test_obj.bucket_util.verify_stats_all_buckets(test_obj.cluster, test_obj.num_items)
 
         # Prints cluster / bucket stats after doc_ops
         test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
