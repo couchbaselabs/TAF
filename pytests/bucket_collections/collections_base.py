@@ -321,8 +321,8 @@ class CollectionBase(ClusterSetup):
             test_obj, buckets_spec)
         test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)
-        version = int(test_obj.initial_version[0])
-        if version >= 7:
+        if not (hasattr(test_obj, "initial_version")
+                and int(test_obj.initial_version[0]) < 7):
             test_obj.bucket_util.wait_for_collection_creation_to_complete(
                 test_obj.cluster)
 
@@ -370,12 +370,17 @@ class CollectionBase(ClusterSetup):
 
         test_obj.cluster_util.print_cluster_stats(test_obj.cluster)
 
-        version = int(test_obj.initial_version[0])
+        # Code to handle collection specific validation during upgrade test
+        collection_supported = True
+        if hasattr(test_obj, "initial_version") \
+                and int(test_obj.initial_version[0]) < 7:
+            collection_supported = False
+
         # Verify initial doc load count
         test_obj.bucket_util._wait_for_stats_all_buckets(
             test_obj.cluster, test_obj.cluster.buckets, timeout=1200)
         if validate_docs:
-            if version >= 7:
+            if collection_supported:
                 test_obj.bucket_util.validate_docs_per_collections_all_buckets(
                     test_obj.cluster, timeout=2400)
             else:
