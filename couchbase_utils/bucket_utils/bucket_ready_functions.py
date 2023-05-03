@@ -6240,8 +6240,7 @@ class BucketUtils(ScopeUtils):
         for node in kv_nodes:
             self.log.debug("Fetching vb-details for {0} from {1}"
                            .format(bucket.name, node.ip))
-            shell = RemoteMachineShellConnection(node)
-            cb_stat = Cbstats(shell)
+            cb_stat = Cbstats(node)
             vb_details = cb_stat.vbucket_details(bucket_name=bucket.name)
             if bucket.storageBackend == Bucket.StorageBackend.magma:
                 max_retries = 5
@@ -6284,7 +6283,6 @@ class BucketUtils(ScopeUtils):
                 for field in vb_details_fields:
                     replica_stat[field] = vb_details[str(vb)][field]
                 stat_dict[vb][replica].append(replica_stat)
-            shell.disconnect()
         return stat_dict
 
     def validate_history_start_seqno_stat(
