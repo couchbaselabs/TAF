@@ -4,7 +4,7 @@ from Cb_constants import CbServer, DocLoading, ClusterRun
 from basetestcase import BaseTestCase
 from basetestcase import BaseTestCase
 import Jython_tasks.task as jython_tasks
-from collections_helper.collections_spec_constants import MetaCrudParams
+from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from couchbase_cli import CouchbaseCLI
 import testconstants
 from pytests.ns_server.enforce_tls import EnforceTls
@@ -14,7 +14,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from scripts.old_install import InstallerJob
-from testconstants import CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
+from testconstants import CB_RELEASE_BUILDS, CB_REPO, COUCHBASE_VERSIONS, CB_VERSION_NAME, \
     COUCHBASE_MP_VERSION, MV_LATESTBUILD_REPO
 from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.durability_helper import BucketDurability
@@ -73,6 +73,7 @@ class UpgradeBase(BaseTestCase):
         self.rebalance_op = self.input.param("rebalance_op", "all")
         self.dur_level = self.input.param("dur_level", "default")
         self.alternate_load = self.input.param("alternate_load", False)
+        self.complete_cluster_swap = self.input.param("complete_cluster_swap", False)
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -83,6 +84,7 @@ class UpgradeBase(BaseTestCase):
         t_version = float(self.initial_version[:3])
         self.cluster_supports_sync_write = (t_version >= 6.5)
         self.cluster_supports_system_event_logs = (t_version >= 7.1)
+        self.cluster_supports_collections = (t_version >= 7.0)
 
         self.installer_job = InstallerJob()
 
@@ -150,6 +152,12 @@ class UpgradeBase(BaseTestCase):
         # Creating buckets from spec file
         CollectionBase.deploy_buckets_from_spec_file(self)
 
+        if "buckets" not in self.spec_bucket:
+            self.items_per_col = self.spec_bucket[MetaConstants.NUM_ITEMS_PER_COLLECTION]
+        else:
+            self.items_per_col = self.spec_bucket["buckets"]["bucket-0"][
+                                                MetaConstants.NUM_ITEMS_PER_COLLECTION]
+
         # Adding RBAC user
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket = self.cluster.buckets[0]
@@ -200,6 +208,8 @@ class UpgradeBase(BaseTestCase):
 
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]
+        if self.complete_cluster_swap:
+            self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
@@ -399,6 +409,37 @@ class UpgradeBase(BaseTestCase):
 
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
+        if self.cluster_supports_collections:
+                spec_collection = self.bucket_util.get_crud_template_from_package(
+                    self.collection_spec)
+                CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
+                CollectionBase.set_retry_exceptions_for_initial_data_load(self, spec_collection)
+
+                spec_collection["doc_crud"][
+                    MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+
+                if self.alternate_load is True:
+                    spec_collection[MetaCrudParams.SCOPES_TO_DROP] = 0
+                    spec_collection[MetaCrudParams.SCOPES_TO_RECREATE] = 0
+                    spec_collection[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 0
+
+                self.log.info("Performing collection ops during failover rebalance...")
+                for iterations in range(5):
+                    collection_task = self.bucket_util.run_scenario_from_spec(
+                        self.task,
+                        self.cluster,
+                        self.buckets_to_load,
+                        spec_collection,
+                        mutation_num=0,
+                        batch_size=500,
+                        process_concurrency=4)
+
+                    if collection_task.result is True:
+                        self.log.info("Iteration {0} of collection ops done".format(iterations+1))
+                        spec_collection[MetaCrudParams.SCOPES_TO_DROP] = 0
+                        spec_collection[MetaCrudParams.SCOPES_TO_RECREATE] = 0
+                        spec_collection[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 0
+                        self.sleep(5, "Wait for 5 seconds before starting with the next iteration")
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
             self.log_failure("Graceful failover rebalance failed")
@@ -442,35 +483,53 @@ class UpgradeBase(BaseTestCase):
 
         sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 0
         sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 10
-        
-        large_bucket = None
-
-        for bucket in self.cluster.buckets:
-            if(bucket.name == "bucket-0"):
-                large_bucket = bucket
-
-        if(large_bucket == None):
-            large_bucket = self.cluster.buckets[0]
 
         update_task_swap = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.buckets_to_load,
+            sub_load_spec,
+            mutation_num=0,
+            batch_size=500,
+            process_concurrency=4)
+
+        if self.cluster_supports_collections:
+            spec_collection = self.bucket_util.get_crud_template_from_package(
+                self.collection_spec)
+            CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
+            CollectionBase.set_retry_exceptions_for_initial_data_load(self, spec_collection)
+
+            spec_collection["doc_crud"][
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+            
+            if self.alternate_load is True:
+                spec_collection[MetaCrudParams.SCOPES_TO_DROP] = 0
+                spec_collection[MetaCrudParams.SCOPES_TO_RECREATE] = 0
+                spec_collection[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 0
+
+            self.log.info("Performing collection ops during swap rebalance...")
+            for iterations in range(5):
+                collection_task = self.bucket_util.run_scenario_from_spec(
                     self.task,
                     self.cluster,
-                    [large_bucket],
-                    sub_load_spec,
+                    self.buckets_to_load,
+                    spec_collection,
                     mutation_num=0,
-                    async_load=True,
                     batch_size=500,
-                    process_concurrency=1)
+                    process_concurrency=4)
+
+                if collection_task.result is True:
+                    self.log.info("Iteration {0} of collection ops done".format(iterations+1))
+                    spec_collection[MetaCrudParams.SCOPES_TO_DROP] = 0
+                    spec_collection[MetaCrudParams.SCOPES_TO_RECREATE] = 0
+                    spec_collection[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 0
+                    self.sleep(5, "Wait for 5 seconds before starting with the next iteration")
 
         self.task_manager.get_task_result(rebalance_passed)
         if(rebalance_passed.result is True):
             self.log.info("Swap Rebalance passed")
         else:
             self.log.info("Swap Rebalance failed")
-
-        update_task_swap.stop_indefinite_doc_loading_tasks()
-        self.task_manager.get_task_result(update_task_swap)
-
 
         # VBuckets shuffling verification
         if CbServer.Services.KV in services_on_target_node:
@@ -572,6 +631,40 @@ class UpgradeBase(BaseTestCase):
                       services=services_on_target_node)
         otp_nodes = [node.id for node in rest.node_statuses()]
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
+
+        if self.upgrade_with_data_load and \
+                self.cluster_supports_collections:
+            spec_collection = self.bucket_util.get_crud_template_from_package(
+                self.collection_spec)
+            CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
+            CollectionBase.set_retry_exceptions_for_initial_data_load(self, spec_collection)
+
+            spec_collection["doc_crud"][
+                    MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+
+            if self.alternate_load is True:
+                spec_collection[MetaCrudParams.SCOPES_TO_DROP] = 0
+                spec_collection[MetaCrudParams.SCOPES_TO_RECREATE] = 0
+                spec_collection[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 0
+
+            self.log.info("Performing collection ops during rebalance in...")
+            for iterations in range(5):
+                    collection_task = self.bucket_util.run_scenario_from_spec(
+                        self.task,
+                        self.cluster,
+                        self.buckets_to_load,
+                        spec_collection,
+                        mutation_num=0,
+                        batch_size=500,
+                        process_concurrency=4)
+
+                    if collection_task.result is True:
+                        self.log.info("Iteration {0} of collection ops done".format(iterations+1))
+                        spec_collection[MetaCrudParams.SCOPES_TO_DROP] = 0
+                        spec_collection[MetaCrudParams.SCOPES_TO_RECREATE] = 0
+                        spec_collection[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 0
+                        self.sleep(5, "Wait for 5 seconds before starting with the next iteration")
+
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-in failed during upgrade of {0}"
@@ -585,6 +678,22 @@ class UpgradeBase(BaseTestCase):
         eject_otp_node = self.__get_otp_node(rest, node_to_upgrade)
         otp_nodes = [node.id for node in rest.node_statuses()]
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[eject_otp_node.id])
+        if self.upgrade_with_data_load and \
+                self.cluster_supports_collections:
+            self.log.info("Performing collection ops during rebalance out...")
+            for iterations in range(2):
+                    collection_task = self.bucket_util.run_scenario_from_spec(
+                        self.task,
+                        self.cluster,
+                        self.buckets_to_load,
+                        spec_collection,
+                        mutation_num=0,
+                        batch_size=500,
+                        process_concurrency=4)
+
+                    if collection_task.result is True:
+                        self.log.info("Iteration {0} of collection ops done".format(iterations+1))
+                        self.sleep(5, "Wait for 5 seconds before starting with the next iteration")
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-out failed during upgrade of {0}"

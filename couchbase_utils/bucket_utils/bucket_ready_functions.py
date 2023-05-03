@@ -1953,6 +1953,7 @@ class BucketUtils(ScopeUtils):
 
         if task.result:
             cluster.buckets.append(bucket)
+            self.get_all_buckets(cluster)
 
         self.task_manager.stop_task(task)
         if raise_exception:
@@ -2541,7 +2542,7 @@ class BucketUtils(ScopeUtils):
                     buckets_spec.pop(bucket_names_ref[task.thread_name])
                 else:
                     cluster.buckets.append(task.bucket_obj)
-
+        self.get_all_buckets(cluster)
         for bucket in cluster.buckets:
             if cluster.type != "serverless":
                 self.get_updated_bucket_server_list(cluster, bucket)
@@ -5818,6 +5819,9 @@ class BucketUtils(ScopeUtils):
                             futures = []
                             with requests.Session() as session:
                                 for _, collection in scope_obj.collections.items():
+                                    c_dict = collection.get_dict_object()
+                                    if "nonDedupedHistory" not in bucket.bucketCapabilities:
+                                        c_dict.pop("history", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
                                                                    bucket, scope_name, collection.get_dict_object(),
                                                                    session))
@@ -5896,6 +5900,9 @@ class BucketUtils(ScopeUtils):
                                 for col_name in scope_data["collections"].keys():
                                     collection = bucket.scopes[scope_name] \
                                         .collections[col_name]
+                                    c_dict = collection.get_dict_object()
+                                    if "nonDedupedHistory" not in bucket.bucketCapabilities:
+                                        c_dict.pop("history", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
                                                                    bucket, scope_name, collection.get_dict_object(),
                                                                    session=session))
