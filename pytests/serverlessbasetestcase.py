@@ -191,14 +191,26 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "https://{}".format(url), None, None,
             self.input.capella.get("capella_user"), None)
 
+        self.log.info("Singup token: {0}".format(self.signup_token))
+
         for _ in range(num_tenants):
             full_name, seed_mail = seed_email(email)
-            seed_pwd = self.input.capella.get("capella_pwd", "Couch@123")
+            #seed_pwd = self.input.capella.get("capella_pwd", "Couch@123")
+            # resp = self.commonAPI.signup_user(full_name, seed_mail, seed_pwd,
+            #                                   full_name, self.signup_token)
+            # verify_token = resp.headers["Vnd-project-Avengers-com-e2e-token"]
+            # tenant_id = resp.json()["tenantId"]
+            # resp = self.commonAPI.verify_email(verify_token)
+            seed_pwd = str(uuid4()) + "!1Aa"
             resp = self.commonAPI.signup_user(full_name, seed_mail, seed_pwd,
                                               full_name, self.signup_token)
+            resp.raise_for_status()
             verify_token = resp.headers["Vnd-project-Avengers-com-e2e-token"]
+            user_id = resp.json()["userId"]
             tenant_id = resp.json()["tenantId"]
+
             resp = self.commonAPI.verify_email(verify_token)
+            resp.raise_for_status()
             tenant = Tenant(tenant_id,
                             seed_mail,
                             seed_pwd)

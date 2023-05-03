@@ -4054,10 +4054,10 @@ class DatabaseCreateTask(Task):
             while count > 0:
                 try:
                     access, secret = self.serverless_util.generate_keys(
-                        self.cluster.pod, self.cluster.tenant,
+                        self.cluster.pod, self.tenant,
                         self.bucket_obj.name)
                     self.serverless_util.allow_my_ip(self.cluster.pod,
-                                                     self.cluster.tenant,
+                                                     self.tenant,
                                                      self.bucket_obj.name)
                     break
                 except Exception as exp:
@@ -5226,6 +5226,60 @@ class MonitorDBFragmentationTask(Task):
             self.test_log.debug("Wait for expected fragmentation level")
             sleep(2)
         self.complete_task()
+
+class CloudHibernationTask(Task):
+    def __init__(self, cluster, database_id, type='pause', tenant=None,
+                 timeout_to_complete=1800, timeout_to_start=10):
+        super(CloudHibernationTask, self).__init__("CloudHibernationTask-{0}".format(
+                                                                    database_id))
+        self.database_id = database_id
+        self.serverless_util = ServerlessUtils(cluster, tenant)
+        self.timeout_to_complete = timeout_to_complete
+        self.timeout_to_start = timeout_to_start
+        self.type = type
+        self.result = True
+
+    def call(self):
+        self.start_task()
+        if self.type == "pause":
+            result_pause_api = self.serverless_util.pause_database(self.database_id)
+            if result_pause_api.status_code != 202:
+                self.complete_task()
+                self.result = False
+                return self.result
+
+
+            self.sleep(self.timeout_to_start, "Wait for pause task to start")
+            result_pause_completion = self.serverless_util.wait_for_hibernation_completion(
+                                                        self.tenant,
+                                                        self.database_id,
+                                                        "pause",
+                                                        self.timeout_to_complete)
+            if result_pause_completion == False:
+                self.complete_task()
+                self.result = False
+                return self.result
+        elif self.type == "resume":
+            result_resume_api = self.serverless_util.resume_database(self.database_id)
+            if result_resume_api.status_code != 202:
+                self.complete_task()
+                self.result = False
+                return self.result
+
+            self.sleep(self.timeout_to_start, "Wait for resume task to start")
+            result_resume_completion = self.serverless_util.wait_for_hibernation_completion(
+                                                        self.tenant,
+                                                        self.database_id,
+                                                        "resume",
+                                                        self.timeout_to_complete)
+            if result_resume_completion == False:
+                self.complete_task()
+                self.result = False
+                return self.result
+
+        self.complete_task()
+        return self.result
+
 
 class HibernationTask(Task):
     def __init__(self, master_server, bucket_name, s3_path, region, rate_limit,

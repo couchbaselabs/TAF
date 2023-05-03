@@ -36,7 +36,8 @@ from Jython_tasks.task import \
     ViewCreateTask, \
     ViewDeleteTask, \
     HibernationTask, \
-    ViewQueryTask, DatabaseCreateTask, MonitorServerlessDatabaseScaling
+    ViewQueryTask, DatabaseCreateTask, MonitorServerlessDatabaseScaling, \
+    CloudHibernationTask
 from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
@@ -1961,6 +1962,22 @@ class BucketUtils(ScopeUtils):
             raise_exception = "Create bucket %s failed: %s" \
                               % (bucket.name, raise_exception)
             raise Exception(raise_exception)
+
+    def pause_database(self, cluster, database_id, tenant=None, timeout_to_complete=1800,
+                       timeout_to_start=10):
+        cloud_hibernation_task = CloudHibernationTask(cluster, database_id, "pause",
+                                                      tenant, timeout_to_complete,
+                                                      timeout_to_start)
+        self.task_manager.add_new_task(cloud_hibernation_task)
+        return cloud_hibernation_task
+
+    def resume_database(self, cluster, database_id, tenant=None, timeout_to_complete=1800,
+                        timeout_to_start=10):
+        cloud_hibernation_task = CloudHibernationTask(cluster, database_id, "resume",
+                                                      tenant, timeout_to_complete,
+                                                      timeout_to_start)
+        self.task_manager.add_new_task(cloud_hibernation_task)
+        return cloud_hibernation_task
 
     def pause_bucket(self, cluster, bucket, s3_path, region, rate_limit,
                      timeout, wait_for_bucket_deletion=True):

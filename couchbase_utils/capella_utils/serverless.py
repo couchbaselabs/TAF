@@ -196,8 +196,8 @@ class CapellaUtils:
         return self.get_database_details(pod, tenant,
                                                  database_id)['connect']['dataApi']
 
-    def get_database_deployment_status(self, database_id, tenant_id, project_id):
-        all_databases = self.list_all_databases(tenant_id, project_id)
+    def get_database_deployment_status(self, database_id, tenant):
+        all_databases = self.list_all_databases(None, tenant)
         for database in all_databases:
             if database['data']['id'] == database_id:
                 return database['data']['status']['state']
@@ -229,6 +229,81 @@ class CapellaUtils:
     def delete_database(self, pod, tenant, database_id):
         resp = self.capella_api.delete_database(tenant.id, tenant.project_id,
                                                 database_id)
+        return resp
+
+    def wait_for_hibernation_to_start(self, tenant, database_id, task="pause",
+                                      timeout=900):
+        start = time.time()
+        timeout_in_seconds = timeout
+        result = False
+        while (time.time() - start) <= timeout_in_seconds:
+            resp = self.capella_api.get_serverless_db_info(tenant.id,
+                                                           tenant.project_id,
+                                                           database_id)
+            if resp.status_code != 200:
+                raise Exception("Fetch database details failed: {}".
+                                format(resp.content))
+            db_state = json.loads(resp.content).get("data").get("status").get("state")
+
+            if task == "pause" and db_state == "healthy":
+                time.sleep(2)
+            elif task == "pause" and db_state == "pausing":
+                result = True
+                break
+            elif task == "resume" and db_state == "paused":
+                time.sleep(2)
+            elif task == "resume" and db_state == "resuming":
+                result = True
+                break
+            else:
+                return result
+        return result
+
+    def wait_for_hibernation_completion(self, tenant, database_id, task="pause",
+                                        timeout=1800):
+
+        start = time.time()
+        timeout_in_seconds = timeout
+        result = False
+        while (time.time() - start) <= timeout_in_seconds:
+
+            resp = self.capella_api.get_serverless_db_info(tenant.id,
+                                                           tenant.project_id,
+                                                           database_id)
+            if resp.status_code != 200:
+                raise Exception("Fetch database details failed: {}".
+                                format(resp.content))
+            db_state = json.loads(resp.content).get("data").get("status").get("state")
+
+            self.log.info("Hibernation status: {0}".format(db_state))
+            if task == "pause" and db_state == "pausing":
+                time.sleep(2)
+            elif task == "pause" and db_state == "paused":
+                result = True
+                break
+            elif task == "resume" and db_state == "resuming":
+                time.sleep(2)
+            elif task == "resume" and db_state == "healthy":
+                result = True
+                break
+            else:
+                return result
+        return result
+
+    def pause_database(self, database_id):
+        resp = self.capella_api.pause_db(database_id)
+        if resp.status_code != 202:
+            CapellaUtils.log.error("Pause of database failed")
+            CapellaUtils.log.error("Status code: {0}".format(resp.status_code))
+            CapellaUtils.log.error("Response: {0}".format(resp.content))
+        return resp
+
+    def resume_database(self, database_id):
+        resp = self.capella_api.resume_db(database_id)
+        if resp.status_code != 202:
+            CapellaUtils.log.error("Resume of database failed")
+            CapellaUtils.log.error("Status code: {0}".format(resp.status_code))
+            CapellaUtils.log.error("Response: {0}".format(resp.content))
         return resp
 
     def delete_dataplane(self, dataplane_id):
