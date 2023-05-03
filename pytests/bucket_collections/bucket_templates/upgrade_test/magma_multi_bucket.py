@@ -23,8 +23,8 @@ spec = {
     "buckets": {
         "bucket-0": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
-            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 20,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 500000,
+            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 10,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 20000,
             Bucket.ramQuotaMB: 1024
         },
         "bucket-1": {
@@ -32,7 +32,6 @@ spec = {
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 1,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 1000000,
             Bucket.ramQuotaMB: 1024,
-            Bucket.maxTTL : 27000
         }
     }
 }

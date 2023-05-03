@@ -3,11 +3,11 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 spec = {
     # Scope/Collection ops params
     MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
-    MetaCrudParams.COLLECTIONS_TO_DROP: 5,
+    MetaCrudParams.COLLECTIONS_TO_DROP: 2,
 
-    MetaCrudParams.SCOPES_TO_DROP: 0,
+    MetaCrudParams.SCOPES_TO_DROP: 1,
     MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
-    MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 0,
+    MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 1,
 
     MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 0,
 
@@ -15,8 +15,8 @@ spec = {
     # While scope recreated all prev collection will also be created
     # In both the collection creation case, previous maxTTL value of
     # individual collection is considered
-    MetaCrudParams.SCOPES_TO_RECREATE: 0,
-    MetaCrudParams.COLLECTIONS_TO_RECREATE: 0,
+    MetaCrudParams.SCOPES_TO_RECREATE: 1,
+    MetaCrudParams.COLLECTIONS_TO_RECREATE: 1,
 
     # Applies only for the above listed scope/collection operations
     MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS: "all",
@@ -31,7 +31,7 @@ spec = {
         # COLLECTIONS_TO_ADD_PER_BUCKET,
         # SCOPES_TO_RECREATE,
         # COLLECTIONS_TO_RECREATE
-        MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 0,
+        MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS: 10000,
         MetaCrudParams.DocCrud.DOC_SIZE :1024,
 
         # Applies to all active collections selected as per the

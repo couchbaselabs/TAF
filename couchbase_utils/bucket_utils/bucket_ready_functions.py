@@ -1628,6 +1628,7 @@ class BucketUtils(ScopeUtils):
 
         if task.result:
             cluster.buckets.append(bucket)
+            self.get_all_buckets(cluster)
 
         self.task_manager.stop_task(task)
         if raise_exception:
@@ -1975,7 +1976,7 @@ class BucketUtils(ScopeUtils):
                                % task.thread_name)
             else:
                 cluster.buckets.append(task.bucket_obj)
-
+        self.get_all_buckets(cluster)
         for bucket in cluster.buckets:
             if not buckets_spec.get(bucket.name):
                 continue
@@ -5074,7 +5075,7 @@ class BucketUtils(ScopeUtils):
                             with requests.Session() as session:
                                 for _, collection in scope_obj.collections.items():
                                     c_dict = collection.get_dict_object()
-                                    if bucket.storageBackend != Bucket.StorageBackend.magma:
+                                    if "nonDedupedHistory" not in bucket.bucketCapabilities:
                                         c_dict.pop("history", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
                                                                    bucket, scope_name, c_dict,
@@ -5155,7 +5156,7 @@ class BucketUtils(ScopeUtils):
                                     collection = bucket.scopes[scope_name] \
                                         .collections[col_name]
                                     c_dict = collection.get_dict_object()
-                                    if bucket.storageBackend != Bucket.StorageBackend.magma:
+                                    if "nonDedupedHistory" not in bucket.bucketCapabilities:
                                         c_dict.pop("history", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
                                                                    bucket, scope_name, c_dict,
