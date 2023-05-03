@@ -293,7 +293,7 @@ class RemoteMachineShellConnection:
         os_type = self.info.type.lower()
         if os_type == "unix" or os_type == Linux.NAME:
             if self.info.distribution_type.lower() == "ubuntu":
-                command = "ifdown -a && sleep {} && ifup -a"
+                command = "ifdown -a && sleep {} && ifup -a eth0"
             else:
                 command = "service network stop && sleep {} && " \
                           "service network start"
