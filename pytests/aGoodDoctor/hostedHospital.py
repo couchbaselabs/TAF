@@ -12,7 +12,7 @@ from aGoodDoctor.bkrs import DoctorBKRS
 import os
 from BucketLib.bucket import Bucket
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
-from aGoodDoctor.fts import DoctorFTS
+from aGoodDoctor.hostedFTS import DoctorFTS, FTSQueryLoad
 from aGoodDoctor.hostedN1QL import QueryLoad, DoctorN1QL
 from aGoodDoctor.hostedCbas import DoctorCBAS
 from aGoodDoctor.hostedXDCR import DoctorXDCR
@@ -100,15 +100,17 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.cbas_nodes:
             self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util)
 
-
         if self.cluster.backup_nodes:
             self.drBackup = DoctorBKRS(self.cluster)
 
         if self.cluster.eventing_nodes:
             self.drEventing = DoctorEventing(self.cluster, self.bucket_util)
 
-        self.drIndex = DoctorN1QL(self.cluster, self.bucket_util)
-        # self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
+        if self.cluster.index_nodes:
+            self.drIndex = DoctorN1QL(self.cluster, self.bucket_util)
+
+        if self.cluster.fts_nodes:
+            self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
 
         self.ql = list()
         self.ftsQL = list()
@@ -325,11 +327,6 @@ class Murphy(BaseTestCase, OPD):
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)
         '''
-        if self.cluster.fts_nodes and not self.skip_init:
-            self.drFTS.create_fts_indexes()
-            status = self.drFTS.wait_for_fts_index_online(self.num_items*2,
-                                                          self.index_timeout)
-            self.assertTrue(status, "FTS index build failed.")
 
         if self.cluster.cbas_nodes and not self.skip_init:
             self.drCBAS.create_datasets()
@@ -369,6 +366,18 @@ class Murphy(BaseTestCase, OPD):
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)
+
+        if self.cluster.fts_nodes and not self.skip_init:
+            self.drFTS.create_fts_indexes(self.cluster.buckets)
+            status = self.drFTS.wait_for_fts_index_online(self.cluster.buckets,
+                                                          self.index_timeout)
+            self.assertTrue(status, "FTS index build failed.")
+
+        for bucket in self.cluster.buckets:
+            if bucket.loadDefn.get("FTS")[1] > 0:
+                ql = FTSQueryLoad(bucket)
+                ql.start_query_load()
+                self.ftsQL.append(ql)
 
         if not sanity:
             self.mutation_perc = self.input.param("mutation_perc", 100)

@@ -20,7 +20,7 @@ import threading
 from threading import Thread
 from com.couchbase.client.core.error import TimeoutException,\
     AmbiguousTimeoutException, UnambiguousTimeoutException,\
-    RequestCanceledException, CouchbaseException
+    RequestCanceledException, CouchbaseException, PlanningFailureException
 
 ftsQueries = [
             SearchQuery.queryString("pJohn"),
@@ -37,7 +37,7 @@ HotelQueries = [
 
 class DoctorFTS:
 
-    def __init__(self, cluster, bucket_util, num_indexes):
+    def __init__(self, cluster, bucket_util):
         self.cluster = cluster
         self.bucket_util = bucket_util
         self.input = TestInputSingleton.input
@@ -46,9 +46,13 @@ class DoctorFTS:
         self.fts_helper = FtsHelper(self.cluster.fts_nodes[0])
         self.indexes = dict()
         self.stop_run = False
-        i = 0
-        while i < num_indexes:
-            for b in self.cluster.buckets:
+
+    def create_fts_indexes(self, buckets):
+        status = False
+        for b in buckets:
+            b.FTSindexes = dict()
+            i = 0
+            while i < b.loadDefn.get("FTS")[0]:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
                     for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
                         if c == CbServer.default_collection:
@@ -66,14 +70,21 @@ class DoctorFTS:
                         fts_param_template = str(fts_param_template).replace("True", "true")
                         fts_param_template = str(fts_param_template).replace("False", "false")
                         fts_param_template = str(fts_param_template).replace("'", "\"")
-                        self.indexes.update({"fts_idx_"+str(i): (fts_param_template, b.name, s, c)})
+                        name = "fts_idx_"+str(i)
+                        index_tuple = (fts_param_template, b.name, s, c)
+                        b.FTSindexes.update({name: index_tuple})
+                        retry = 5
+                        status = False
+                        while not status and retry > 0:
+                            self.log.debug("Creating fts index: {} on {}.{}".format(name, b.name, c))
+                            try:
+                                status, _ = self.fts_helper.create_fts_index_from_json(
+                                    name, str(index_tuple[0]))
+                            except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
+                                print(e)
+                                time.sleep(10)
+                            retry -= 1
                         i += 1
-                        if i >= num_indexes:
-                            break
-                    if i >= num_indexes:
-                        break
-                if i >= num_indexes:
-                    break
 
     def discharge_FTS(self):
         self.stop_run = True
@@ -121,33 +132,25 @@ class DoctorFTS:
            }
         return fts_idx_template
 
-    def create_fts_indexes(self):
+    def wait_for_fts_index_online(self, buckets, timeout=86400):
         status = False
-        for name, index in self.indexes.items():
-            self.log.debug("Creating fts index: {}".format(name))
-            status, _ = self.fts_helper.create_fts_index_from_json(
-                name, str(index[0]))
-        return status
-
-    def wait_for_fts_index_online(self, item_count, timeout=86400):
-        status = False
-        for index_name, details in self.indexes.items():
-            b, s = details[1], details[2]
-            status = False
-            stop_time = time.time() + timeout
-            while time.time() < stop_time:
-                _status, content = self.fts_helper.fts_index_item_count(
-                    "%s.%s.%s" % (b, s, index_name))
-                self.log.debug("index: {}, status: {}, count: {}"
-                               .format(index_name, _status,
-                                       json.loads(content)["count"]))
-                if json.loads(content)["count"] == item_count:
-                    self.log.info("FTS index is ready: {}".format(index_name))
-                    status = True
-                    break
-                time.sleep(5)
-            if status is False:
-                return status
+        for bucket in buckets:
+            for index_name, details in bucket.FTSindexes.items():
+                status = False
+                stop_time = time.time() + timeout
+                while time.time() < stop_time:
+                    _status, content = self.fts_helper.fts_index_item_count(
+                        "%s" % (index_name))
+                    self.log.debug("index: {}, status: {}, count: {}, expected: {}"
+                                   .format(index_name, _status,
+                                           json.loads(content)["count"], bucket.loadDefn.get("num_items")))
+                    if json.loads(content)["count"] == bucket.loadDefn.get("num_items"):
+                        self.log.info("FTS index is ready: {}".format(index_name))
+                        status = True
+                        break
+                    time.sleep(5)
+                if status is False:
+                    return status
         return status
 
     def drop_fts_indexes(self, idx_name):
@@ -158,6 +161,7 @@ class DoctorFTS:
         self.log.debug("Dropping fts index: {}".format(idx_name))
         status, _ = self.fts_helper.delete_fts_index(idx_name)
         return status
+
 
 class FTSQueryLoad:
     def __init__(self, bucket):
