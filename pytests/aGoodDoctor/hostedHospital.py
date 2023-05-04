@@ -328,13 +328,6 @@ class Murphy(BaseTestCase, OPD):
         Final Docs = 10M (0-10M, 10M seq items)
         '''
 
-        if self.cluster.cbas_nodes and not self.skip_init:
-            self.drCBAS.create_datasets()
-            result = self.drCBAS.wait_for_ingestion(self.num_items*2,
-                                                    self.index_timeout)
-            self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
-            self.drCBAS.start_query_load()
-
         self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
         for bucket in self.cluster.buckets:
             self.generate_docs(doc_ops=["create"],
@@ -375,9 +368,16 @@ class Murphy(BaseTestCase, OPD):
 
         for bucket in self.cluster.buckets:
             if bucket.loadDefn.get("FTS")[1] > 0:
-                ql = FTSQueryLoad(bucket)
+                ql = FTSQueryLoad(self.cluster, bucket)
                 ql.start_query_load()
                 self.ftsQL.append(ql)
+
+        if self.cluster.cbas_nodes and not self.skip_init:
+            self.drCBAS.create_datasets()
+            result = self.drCBAS.wait_for_ingestion(self.num_items*2,
+                                                    self.index_timeout)
+            self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
+            self.drCBAS.start_query_load()
 
         if not sanity:
             self.mutation_perc = self.input.param("mutation_perc", 100)

@@ -135,7 +135,7 @@ class DoctorFTS:
     def wait_for_fts_index_online(self, buckets, timeout=86400):
         status = False
         for bucket in buckets:
-            for index_name, details in bucket.FTSindexes.items():
+            for index_name, _ in bucket.FTSindexes.items():
                 status = False
                 stop_time = time.time() + timeout
                 while time.time() < stop_time:
@@ -164,7 +164,7 @@ class DoctorFTS:
 
 
 class FTSQueryLoad:
-    def __init__(self, bucket):
+    def __init__(self, cluster, bucket):
         self.bucket = bucket
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
@@ -174,7 +174,7 @@ class FTSQueryLoad:
         self.timeout_count = itertools.count()
         self.total_query_count = 0
         self.stop_run = False
-        self.cluster_conn = SDKClient([bucket.serverless.nebula_endpoint], None).cluster
+        self.cluster_conn = SDKClient(cluster.nodes_in_cluster, None).cluster
         self.log = logger.get("infra")
 
     def start_query_load(self):

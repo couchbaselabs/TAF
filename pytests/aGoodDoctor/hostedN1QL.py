@@ -297,8 +297,7 @@ class QueryLoad:
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2i")[1]
 
     def start_query_load(self):
-        th = threading.Thread(target=self._run_concurrent_queries,
-                              kwargs=dict(bucket=self.bucket))
+        th = threading.Thread(target=self._run_concurrent_queries)
         th.start()
 
     def stop_query_load(self):
