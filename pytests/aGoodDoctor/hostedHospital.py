@@ -143,7 +143,10 @@ class Murphy(BaseTestCase, OPD):
                     "iops": self.input.param("iops", 3000)
                 }
             }
-            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+            if self.capella_cluster_config.get("place"):
+                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                        config["storage"].pop("iops")
+            elif self.capella_cluster_config["provider"] != "hostedAWS":
                 config["storage"].pop("iops")
             server_group_list.append(config)
         return server_group_list
