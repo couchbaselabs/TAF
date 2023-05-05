@@ -1097,12 +1097,15 @@ class StorageBase(BaseTestCase):
             for node, shell in connections.items():
                 if "kv" in node.services:
                     if graceful:
+                        self.log.info("Restarting couchbase server on node {}".format(node.ip))
                         shell.restart_couchbase()
                     else:
+                        self.log.info("Memcached sigKill on node {}".format(node.ip))
                         while count > 0:
                             shell.kill_memcached()
-                            self.sleep(3, "Sleep before killing memcached on same node again.")
                             count -= 1
+                            if count > 0:
+                                self.sleep(3, "Sleep before killing memcached on node {} again".format(node.ip))
                         count = kill_itr
 
             result = self.check_coredump_exist(self.cluster.nodes_in_cluster,

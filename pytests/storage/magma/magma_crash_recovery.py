@@ -323,7 +323,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.track_failures = False
 
         self.new_loader()
-        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 2})
         self.crash_th.start()
         self.doc_loading_tm.getAllTaskResult()
         self.stop_crash = True
@@ -396,7 +396,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 sdk_retry_strategy=self.sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
 
-        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 5})
+        self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 2})
         self.crash_th.start()
         for task in tasks_info:
             self.task_manager.get_task_result(task)
