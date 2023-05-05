@@ -568,7 +568,6 @@ class QueryLoad:
 
     def _run_query(self, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
-        client_context_id = name
         while not self.stop_run:
             e = ""
             try:
@@ -576,6 +575,7 @@ class QueryLoad:
                 query_tuple = random.choice(self.queries)
                 query = query_tuple[0]
                 start = time.time()
+                client_context_id = name + str(self.total_query_count)
                 status, _, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id=client_context_id)
                 if status == QueryStatus.SUCCESS:
