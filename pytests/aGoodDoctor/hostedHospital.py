@@ -97,9 +97,6 @@ class Murphy(BaseTestCase, OPD):
                                                        True)
         self.load_defn = list()
 
-        if self.cluster.cbas_nodes:
-            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util)
-
         if self.cluster.backup_nodes:
             self.drBackup = DoctorBKRS(self.cluster)
 
@@ -320,6 +317,8 @@ class Murphy(BaseTestCase, OPD):
                             collection_spec = {"name": collection_name}
                             CollectionUtils.create_collection_object(bucket, scope, collection_spec)
 
+        if self.cluster.cbas_nodes:
+            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util)
         self.loop = 1
         self.skip_read_on_error = True
         self.suppress_error_table = True
@@ -345,6 +344,13 @@ class Murphy(BaseTestCase, OPD):
                                bucket=bucket)
         if not self.skip_init:
             self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
+
+        if self.cluster.cbas_nodes and not self.skip_init:
+            self.drCBAS.create_datasets()
+            result = self.drCBAS.wait_for_ingestion(self.num_items*2,
+                                                    self.index_timeout)
+            self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
+            self.drCBAS.start_query_load()
 
         if self.cluster.index_nodes:
             self.drIndex.create_indexes(self.cluster.buckets, self.skip_init)
