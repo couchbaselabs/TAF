@@ -217,7 +217,7 @@ class FTSQueryLoad:
             query = random.choice(ftsQueries)
             if self.bucket.loadDefn.get("valType") == "Hotel":
                     query = random.choice(HotelQueries)
-            index, _ = random.choice(self.bucket.ftsIndexes.items())
+            index, _ = random.choice(self.bucket.FTSindexes.items())
             start = time.time()
             e = ""
             try:
