@@ -392,6 +392,7 @@ class Murphy(BaseTestCase, OPD):
                             self.drIndex.n1ql_cooling = True
                             self.n1ql_cooling_start = time.time()
                             break
+                        self.log.critical("N1QL scalingService not found in /jobs")
                         time.sleep(10)
                     self.drIndex.scale_up_n1ql, self.drIndex.scale_down_n1ql = False, False
                     self.n1ql_nodes_below30 = 0

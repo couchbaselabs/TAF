@@ -347,7 +347,7 @@ class Murphy(BaseTestCase, OPD):
 
         if self.cluster.cbas_nodes and not self.skip_init:
             self.drCBAS.create_datasets()
-            result = self.drCBAS.wait_for_ingestion(self.num_items*2,
+            result = self.drCBAS.wait_for_ingestion(self.num_items,
                                                     self.index_timeout)
             self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
             self.drCBAS.start_query_load()
