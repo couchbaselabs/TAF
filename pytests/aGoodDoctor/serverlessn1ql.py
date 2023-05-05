@@ -131,7 +131,7 @@ def execute_via_sdk(client, statement, readonly=False,
     result = client.query(statement, options)
 
     output["status"] = result.metaData().status()
-    output["metrics"] = result.metaData().metrics()
+    output["metrics"] = result.metaData().metrics().get()
     output["requestID"] = result.metaData().requestId()
 
     try:
@@ -180,12 +180,20 @@ class DoctorN1QL():
         for b in buckets:
             b.indexes = dict()
             b.queries = list()
+            b.query_map = dict()
             i = 0
             q = 0
+            queryType = queries
+            if b.loadDefn.get("valType") == "Hotel":
+                queryType = HotelQueries
+            indexType = indexes
+            if b.loadDefn.get("valType") == "Hotel":
+                indexType = HotelIndexes
+
             self.log.info("Creating GSI indexes on {}".format(b.name))
             if b.serverless and b.serverless.nebula_endpoint:
                 self.cluster_conn = SDKClient([b.serverless.nebula_endpoint], None).cluster
-            while i < b.loadDefn.get("2i")[0]:
+            while i < b.loadDefn.get("2i")[0] or q < b.loadDefn.get("2i")[1]:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
                     if b.name+s not in self.sdkClients.keys():
                         self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
@@ -194,19 +202,8 @@ class DoctorN1QL():
                         if c == "_default":
                             continue
                         if i < b.loadDefn.get("2i")[0]:
-                            indexType = indexes
-                            queryType = queries
-                            if b.loadDefn.get("valType") == "Hotel":
-                                indexType = HotelIndexes
-                                queryType = HotelQueries
                             self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
-                            query = queryType[i % len(indexType)].format(c)
-                            print self.idx_q
-                            print query
                             b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
-                            if q < b.loadDefn.get("2i")[1]:
-                                b.queries.append((query, self.sdkClients[b.name+s]))
-                                q += 1
                             retry = 5
                             while retry > 0:
                                 try:
@@ -222,6 +219,13 @@ class DoctorN1QL():
                                     print(e)
                                     return False
                             i += 1
+
+                        if q < b.loadDefn.get("2i")[1]:
+                            query = queryType[q % len(indexType)].format(c)
+                            if query not in b.query_map.keys():
+                                b.query_map[queryType[q % len(indexType)]] = "Q%s" % q
+                                b.queries.append((query, self.sdkClients[b.name+s], queryType[q % len(indexType)]))
+                            q += 1
         return True
 
     def build_indexes(self, buckets, dataplane_objs=None,
@@ -537,6 +541,7 @@ class QueryLoad:
         self.stop_run = False
         self.log = logger.get("infra")
         self.cluster_conn = self.queries[0][1]
+        self.query_stats = {key[2]: [0, 0] for key in self.queries}
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries,
@@ -553,7 +558,7 @@ class QueryLoad:
 
     def _run_concurrent_queries(self, bucket):
         threads = []
-        self.concurrent_queries_to_run = bucket.loadDefn.get("2i")[1]
+        self.concurrent_queries_to_run = bucket.loadDefn.get("2iQPS")
         for i in range(0, self.concurrent_queries_to_run):
             threads.append(Thread(
                 target=self._run_query,
@@ -578,11 +583,14 @@ class QueryLoad:
                 self.total_query_count += 1
                 query_tuple = random.choice(self.queries)
                 query = query_tuple[0]
+                orig_query = query_tuple[-1]
                 start = time.time()
-                client_context_id = name + "-" + str(self.total_query_count)
-                status, _, _, results, _ = execute_statement_on_n1ql(
+                client_context_id = name + str(self.total_query_count)
+                status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id=client_context_id)
                 if status == QueryStatus.SUCCESS:
+                    self.query_stats[orig_query][0] += metrics.executionTime().toNanos()/1000000.0
+                    self.query_stats[orig_query][1] += 1
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
                             self.failed_count.next()

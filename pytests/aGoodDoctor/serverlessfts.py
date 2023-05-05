@@ -339,7 +339,7 @@ class FTSQueryLoad:
 
     def _run_concurrent_queries(self):
         threads = []
-        self.concurrent_queries_to_run = self.bucket.loadDefn.get("FTS")[1]
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("ftsQPS")
         for i in range(0, self.concurrent_queries_to_run):
             threads.append(Thread(
                 target=self._run_query,
