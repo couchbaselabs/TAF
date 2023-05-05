@@ -4,6 +4,7 @@ from basetestcase import BaseTestCase
 import Jython_tasks.task as jython_tasks
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_cli import CouchbaseCLI
+from couchbase_helper.documentgenerator import doc_generator
 import testconstants
 from pytests.ns_server.enforce_tls import EnforceTls
 from builds.build_query import BuildQuery
@@ -32,7 +33,7 @@ class UpgradeBase(BaseTestCase):
                                   "4.6.0", "4.6.0-3573", '4.6.2', "4.6.2-3905"]
 
         self.creds = self.input.membase_settings
-        self.key = "update_docs"
+        self.key = "test_collections"
         self.initial_version = self.input.param("initial_version",
                                                 "6.0.1-2037")
         self.disk_location_data = self.input.param("data_location",
@@ -195,10 +196,8 @@ class UpgradeBase(BaseTestCase):
 
         # Load initial async_write docs into the cluster
         self.log.info("Initial doc generation process starting...")
-
         CollectionBase.load_data_from_spec_file(self, self.initial_data_spec,
                                                 validate_docs=True)
-
         self.log.info("Initial doc generation completed")
 
         # Verify initial doc load count
@@ -208,9 +207,13 @@ class UpgradeBase(BaseTestCase):
             self.log.info("Initial doc count verified")
 
         self.sleep(30, "Wait for num_items to get reflected")
-
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]
+
+        self.gen_load = doc_generator(self.key, 0, self.num_items,
+                                      randomize_doc_size=True,
+                                      randomize_value=True,
+                                      randomize=True)
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
