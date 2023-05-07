@@ -85,6 +85,7 @@ class UpgradeBase(BaseTestCase):
 
         t_version = float(self.initial_version[:3])
         self.cluster_supports_sync_write = (t_version >= 6.5)
+        self.cluster_supports_collections = (t_version >= 7.0)
         self.cluster_supports_system_event_logs = (t_version >= 7.1)
 
         self.installer_job = InstallerJob()
@@ -148,8 +149,8 @@ class UpgradeBase(BaseTestCase):
 
         self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
-        if (self.spec_bucket[
-            Bucket.storageBackend] == Bucket.StorageBackend.magma):
+        if (self.spec_bucket[Bucket.storageBackend]
+                == Bucket.StorageBackend.magma):
             RestConnection(self.cluster.master).set_internalSetting(
                 "magmaMinMemoryQuota", 256)
 
@@ -199,11 +200,14 @@ class UpgradeBase(BaseTestCase):
         self.log.info("Initial doc generation completed")
 
         # Verify initial doc load count
-        if int(self.initial_version[0]) >= 7:
+        if self.cluster_supports_collections:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
-            self.log.info("Initial doc count verified")
-
+        else:
+            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                         self.cluster.buckets)
+            self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                      self.num_items)
         self.sleep(30, "Wait for num_items to get reflected")
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]

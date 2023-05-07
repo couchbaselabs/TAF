@@ -137,7 +137,7 @@ class KVUpgradeTests(UpgradeBase):
                 client.crud(DocLoading.Bucket.DocOps.CREATE, d_key, val)
 
             output, _ = shell.execute_command(hash_dump_cmd)
-            if " X.. .D..Cm " in output[0]:
+            if not output:
                 is_resident = False
             start_index = doc_gen.key_counter
             num_items += batch_size
