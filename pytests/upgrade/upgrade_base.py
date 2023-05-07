@@ -58,7 +58,6 @@ class UpgradeBase(BaseTestCase):
             self.input.param("sync_write_abort_pattern", "all_aborts")
 
         #### Spec File Parameters ####
-
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
         self.initial_data_spec = self.input.param("initial_data_spec",
@@ -74,7 +73,6 @@ class UpgradeBase(BaseTestCase):
         self.load_large_docs = self.input.param("load_large_docs", True)
         self.collection_operations = self.input.param("collection_operations",
                                                       True)
-        ####
         self.rebalance_op = self.input.param("rebalance_op", "None")
         self.dur_level = self.input.param("dur_level", "default")
         self.alternate_load = self.input.param("alternate_load", False)

@@ -2122,14 +2122,14 @@ class BucketUtils(ScopeUtils):
         else:
             for bucket in buckets:
                 storage_backend = "-"
-                ARR = "-"
+                arr = "-"
                 if bucket.bucketType == Bucket.Type.MEMBASE:
                     storage_backend = bucket.storageBackend
                     try:
-                        ARR = BucketHelper(cluster.master).fetch_bucket_stats(
+                        arr = BucketHelper(cluster.master).fetch_bucket_stats(
                             bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
                     except KeyError:
-                        ARR = 100
+                        arr = 100
                 table.add_row(
                     [bucket.name, bucket.bucketType,
                      storage_backend,
@@ -2140,7 +2140,7 @@ class BucketUtils(ScopeUtils):
                      humanbytes(str(bucket.stats.ram)),
                      humanbytes(str(bucket.stats.memUsed)),
                      humanbytes(str(bucket.stats.diskUsed)),
-                     ARR])
+                     arr])
         table.display("Bucket statistics")
 
     @staticmethod
