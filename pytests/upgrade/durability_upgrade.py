@@ -110,6 +110,7 @@ class UpgradeTests(UpgradeBase):
             MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 10
         collection_load_spec[
             MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 50
+        CollectionBase.set_retry_exceptions(self, collection_load_spec)
         collection_task = \
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
@@ -496,7 +497,6 @@ class UpgradeTests(UpgradeBase):
                                                     history_retention_seconds=86400,
                                                     history_retention_bytes=96000000000)
             self.log.info("CDC Enabled - History parameters set")
-
             self.sleep(60, "Wait for History params to get reflected")
 
             history_check = cbstat_obj.magma_stats(large_bucket,
