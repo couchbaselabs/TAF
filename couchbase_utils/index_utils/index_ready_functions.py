@@ -285,7 +285,8 @@ class IndexUtils:
         return newIndexMap
 
 
-    def run_full_scan(self, cluster, indexesDict, key, totalCount, bucket_list=None, limit=1000000, is_sync=True, offSetBound=0, lightLoad=False, numThreadsPerNode=1):
+    def run_full_scan(self, cluster, indexesDict, key, totalCount, bucket_list=None, limit=1000000, is_sync=True, 
+                      offSetBound=0, lightLoad=False, numThreadsPerNode=1):
         reference_dict = dict()
         if bucket_list is None:
             self.log.info("bucket list is None")

@@ -1,18 +1,12 @@
-import copy
-import threading
-import urllib
 import time
 
-from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
-from Jython_tasks.task_manager import TaskManager
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
-from sdk_exceptions import SDKException
+from gsiLib.GsiHelper_Rest import GsiHelper
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
 from storage.plasma.plasma_base import PlasmaBaseTest
-
 
 class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
     def setUp(self):
@@ -95,14 +89,17 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
                 total_tenants_quota += stats_map[node][buck]['quota']
                 self.log.info("QUOTA {}".format(stats_map[node][buck]['quota']))
                 self.log.info("MANDATORY QUOTA {}".format(stats_map[node][buck]['mandatory_quota']))
+                self.log.info("RESIDENT QUOTA {}".format(stats_map[node][buck]['resident_quota']))
+                self.log.info("DISCRETIONARY QUOTA {}".format(stats_map[node][buck]['discretionary_quota']))
                 self.log.info("PRESSURE {}".format(stats_map[node][buck]['quota'] - stats_map[node][buck]['mandatory_quota'] < 0))
                 self.log.info("RR {}".format(stats_map[node][buck]['resident_ratio']))
+
         self.log.info("TOTAL TENANT ACTIVE QUOTA: {}".format(total_tenants_quota)) 
 
 
     def create_workload(self, start, bucket_list):
         end = start + self.append_items
-        load_gen = doc_generator(self.key, start, end)
+        load_gen = doc_generator(self.key, start, end, key_size=self.key_size)
         start = end
         self.load_to_bucket_list(bucket_list, load_gen)
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -147,7 +144,6 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
         totalCount = self.scan_item_count
         counter = 0
-        self.append_items = self.input.param("append_items", 40000)
         offset = 0
         total_tenants_quota = 0
         start = self.init_items_per_collection
@@ -225,7 +221,7 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
             counter += 1
             del rr_map[:]
 
-           # loads for all buckets
+            # loads for all buckets
             start = self.create_workload(start, self.cluster.buckets)
 
             # check rr
@@ -236,19 +232,18 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
 
             self.bucket_util.print_bucket_stats(self.cluster)
 
-
-        # START FULL SCANS FOR HALF AN HOUR
+        # Start scans
+        init_bucket_quota_map = {}        
         totalCount = self.scan_item_count
         offset=0
-        init_bucket_quota_map = {}
         end_time = time.time() + self.wait_timeout
         half_time = time.time() + (self.wait_timeout // 2)
         self.log.debug("current time is {} end time is {}".format(time.time(), end_time))
         counter = 1
         flag = True
-        while time.time() < end_time:            
+        while time.time() < end_time:
             self.full_scan(self.cluster.buckets, totalCount, offset)
-            self.log.debug("Perform full scan {} times ".format(counter))
+            self.log.debug("Perform scan {} times ".format(counter))
             if time.time() >= half_time and flag:
                 init_bucket_quota_map = self.create_nodes_tenant_stat_map(self.cluster.index_nodes)
                 flag = False
@@ -276,7 +271,6 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         plasma_quota = 0.89 * self.index_mem_quota * len(self.cluster.index_nodes) * 1024 * 1024
         totalCount = self.scan_item_count
         offset = 0
-        self.append_items = self.input.param("append_items", 40000)
         start = self.init_items_per_collection
         heavy_tenant = self.cluster.buckets[0].name
         self.log.info("Heavy tenant:", heavy_tenant)
@@ -335,7 +329,6 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
         totalCount = self.scan_item_count
         counter = 0
-        self.append_items = self.input.param("append_items", 40000)
         offset = 0
         total_tenants_quota = 0
         start = self.init_items_per_collection
@@ -432,7 +425,6 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
         totalCount = self.scan_item_count
         counter = 0
-        self.append_items = self.input.param("append_items", 40000)
         offset = 0
         total_tenants_quota = 0
         start = self.init_items_per_collection
@@ -510,6 +502,98 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         self.assertTrue(res, "Raise failed")
 
 
+    def test_quota_increase_on_item_delete(self):
+        odd_bucket_list = self.filter_buckets(self.cluster.buckets, filter='odd')
+        even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
+        totalCount = self.scan_item_count
+        counter = 0
+        offset = 0
+        _, total_tenants_quota = self.total_tenants_quota()
+        start = self.init_items_per_collection
+
+        # till unused quota is used up and all odd tenants go under pressure, keep pushing data into odd tenants while keeping the even tenants active
+        inter_bucket_quota_map = {}
+        pressure = [1]
+        plasma_quota = 0.89 * self.index_mem_quota * len(self.cluster.index_nodes) * 1024 * 1024
+
+        scan_bucket_list = load_bucket_list = self.cluster.buckets
+
+        while (total_tenants_quota < plasma_quota or max(pressure)>=0) and counter < 100:
+            self.log.info("LOOP NUMBER: {}".format(counter))
+            del pressure[:]
+            counter += 1
+
+            # full scans for even buckets
+            self.full_scan(scan_bucket_list, totalCount, offset)
+            self.log.debug("Perform full scan {} times ".format(counter))
+            
+            # loads for odd buckets
+            start = self.create_workload(start, load_bucket_list)
+
+            # calculate total active quota
+            inter_bucket_quota_map, total_tenants_quota = self.total_tenants_quota()
+            for node in inter_bucket_quota_map:
+                for buck in load_bucket_list:
+                    pressure.append(inter_bucket_quota_map[node][buck.name]['quota'] - inter_bucket_quota_map[node][buck.name]['mandatory_quota'])
+
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.print_stats(inter_bucket_quota_map)
+
+        if counter == 100:
+            self.log.error("Loopbreaker activated. Rerun the test.")
+        self.log.info("No unused quota left and odd tenants under pressure.")
+        self.log.info("Total quota before deletion {}".format(total_tenants_quota))
+        self.print_stats(inter_bucket_quota_map)
+
+        self.delete_start = int(start * 0.5)
+        self.delete_end = start - 1
+        self.log.debug("self.delete_start is {} self.delete_end is {} ".format(
+                self.delete_start, self.delete_end))
+        # self.process_concurrency = 1
+        self.generate_docs(doc_ops="delete")
+        self.gen_create = None
+        self.gen_read = None
+        task = self.data_load(even_bucket_list, skip_default=True)
+        self.wait_for_doc_load_completion(task)
+        self.sleep(60, "Check docs")
+
+        # trigger compaction
+        try:
+            self.perform_plasma_mem_ops("compactAll")
+        except Exception as e:
+            self.log.info("Manual compaction failed")
+
+        stats, total_tenants_quota = self.total_tenants_quota()
+        self.log.info("Total quota after deletion {}".format(total_tenants_quota))
+        self.print_stats(stats)
+
+        scan_bucket_list = even_bucket_list
+        load_bucket_list = odd_bucket_list
+        # for the next 15 mins, scan even tenants and keep odd tenants occupied
+        counter = 1
+        end_time = time.time() + self.wait_timeout
+        self.log.debug("current time is {} end time is {}".format(time.time(), end_time))
+        while time.time() < end_time:
+            self.log.info("LOOP NUMBER: {}".format(counter))
+
+            # full scans for even buckets
+            self.full_scan(scan_bucket_list, totalCount, offset)
+            self.log.debug("Perform full scan {} times ".format(counter))
+
+            # loads for odd buckets
+            start = self.create_workload(start, load_bucket_list)
+            self.log.debug("Perform load {} times ".format(counter))
+            counter+=1
+            self.bucket_util.print_bucket_stats(self.cluster)
+            self.print_stats(self.create_nodes_tenant_stat_map(self.cluster.index_nodes))
+           
+        final_odd_bucket_quota_map = self.create_nodes_tenant_stat_map(self.cluster.index_nodes, odd_bucket_list)
+
+        self.log.debug("Expecting increase in quota")
+        res = self.compare_RR_for_nodes(final_odd_bucket_quota_map, inter_bucket_quota_map, comparisonType='normal', field='quota', ops='greater')
+        self.assertTrue(res, "Raise failed")
+
+
     def test_tenant_quota_on_heavy_bucket_drop(self):
         """
         1. Create multiple buckets and validate the bucket distribution
@@ -526,7 +610,6 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
         totalCount = self.scan_item_count
         counter = 0
-        self.append_items = self.input.param("append_items", 40000)
         offset = 0
         total_tenants_quota = 0
         start = self.init_items_per_collection
@@ -677,7 +760,6 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
         totalCount = self.scan_item_count
         counter = 0
-        self.append_items = self.input.param("append_items", 40000)
         offset = 0
         total_tenants_quota = 0
         start = self.init_items_per_collection
@@ -780,7 +862,6 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
         totalCount = self.scan_item_count
         counter = 0
-        self.append_items = self.input.param("append_items", 40000)
         offset = 0
         total_tenants_quota = 0
         start = self.init_items_per_collection
@@ -852,4 +933,68 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
         self.assertTrue(res, "Quota not increasing for heavy tenants on light tenant drop")
 
 
-    
+    def test_burst_eviction(self):
+        indexer_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+        odd_bucket_list = self.filter_buckets(self.cluster.buckets, filter='odd')
+        even_bucket_list = self.filter_buckets(self.cluster.buckets, filter='even')
+        totalCount = self.scan_item_count
+        counter = 0
+        offset = 0
+        total_tenants_quota = 0
+        start = self.init_items_per_collection
+
+        # till unused quota is used up and all odd tenants go under pressure
+        # keep pushing data into odd tenants while keeping the even tenants active
+        inter_bucket_quota_map = {}
+        pressure = [1]
+        plasma_quota = 0.89 * self.index_mem_quota * len(self.cluster.index_nodes) * 1024 * 1024
+        while (total_tenants_quota < plasma_quota or max(pressure)>=0) and counter < 100:
+            self.log.info("LOOP NUMBER: {}".format(counter))
+            del pressure[:]
+            counter += 1
+
+            # full scans for even buckets
+            self.full_scan(even_bucket_list, totalCount, offset)
+            self.log.debug("Perform full scan {} times ".format(counter))
+            
+           # loads for odd buckets
+            start = self.create_workload(start, odd_bucket_list)
+
+            # calculate total active quota and pressure
+            inter_bucket_quota_map, total_tenants_quota = self.total_tenants_quota()
+            for node in inter_bucket_quota_map:
+                for buck in odd_bucket_list:
+                    pressure.append(inter_bucket_quota_map[node][buck.name]['quota'] - inter_bucket_quota_map[node][buck.name]['mandatory_quota'])
+
+            self.bucket_util.print_bucket_stats(self.cluster)
+
+        if counter == 100:
+            self.log.error("Loopbreaker activated. Rerun the test with higher workload.")
+        self.log.info("No unused quota left and odd tenants under pressure.")
+
+        init_storage_stats = indexer_rest.get_plasma_stats(nodes_list=self.cluster.index_nodes)
+
+        counter = 1
+        end_time = time.time() + self.wait_timeout
+        self.log.debug("current time is {} end time is {}".format(time.time(), end_time))
+        while time.time() < end_time:
+            self.log.info("LOOP NUMBER: {}".format(counter))
+            self.full_scan(even_bucket_list, totalCount, offset)            
+            start = self.create_workload(start, odd_bucket_list)
+            counter+=1
+            self.bucket_util.print_bucket_stats(self.cluster)
+           
+        final_storage_stats = indexer_rest.get_plasma_stats(nodes_list=self.cluster.index_nodes)
+
+        for bucket in self.cluster.buckets:
+            for scope_name, scope in bucket.scopes.items():
+                if scope_name == '_default' or scope_name == '_system':
+                    continue
+                for _, collection in scope.collections.items():
+                    gsi_index_names = self.index_map[bucket.name][scope.name][collection.name]
+                    for gsi_index_name in list(gsi_index_names):
+                        buck_ind = bucket.name + ':' + scope_name + ':' + collection.name + ':' + gsi_index_name
+                        self.assertTrue(
+                            final_storage_stats[buck_ind + '_num_burst_visits'] > init_storage_stats[buck_ind + '_num_burst_visits'],
+                            "Burst eviction has not occured")
+                        

@@ -284,7 +284,7 @@ class StorageBase(BaseTestCase):
 
         return filter_list
 
-    def _loader_dict(self):
+    def _loader_dict(self, buckets=None, skip_default=False):
         loader_dict = dict()
         common_params = {"retry_exceptions": self.retry_exceptions,
                          "suppress_error_table": self.suppress_error_table,
@@ -299,12 +299,17 @@ class StorageBase(BaseTestCase):
                          "doc_ttl": 0,
                          "doc_gen_type": "default",
                          "xattr_test":False}
-        for bucket in self.cluster.buckets:
+        if buckets == None:
+            buckets = self.cluster.buckets
+        for bucket in buckets:
             loader_dict.update({bucket: dict()})
             loader_dict[bucket].update({"scopes": dict()})
             for scope in bucket.scopes.keys():
                 if scope == CbServer.system_scope:
                     continue
+                if skip_default:
+                    if scope == "_default":
+                        continue
                 loader_dict[bucket]["scopes"].update({scope: dict()})
                 loader_dict[bucket]["scopes"][scope].update({"collections":dict()})
                 for collection in bucket.scopes[scope].collections.keys():
@@ -352,8 +357,8 @@ class StorageBase(BaseTestCase):
 
         return task
 
-    def data_load(self):
-        self._loader_dict()
+    def data_load(self, buckets=None, skip_default=False):
+        self._loader_dict(buckets, skip_default)
         return self.doc_loader(self.loader_dict)
 
     def wait_for_doc_load_completion(self, task, wait_for_stats=True):

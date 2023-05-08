@@ -3,6 +3,7 @@ import json
 from Rest_Connection import RestConnection
 from common_lib import sleep
 import urllib
+from Cb_constants import CbServer
 
 class GsiHelper(RestConnection):
     def __init__(self, server, logger):
@@ -399,6 +400,9 @@ class GsiHelper(RestConnection):
             generic_url = "http://%s:%s/"
             ip = node.ip
             port = "9102"
+            if CbServer.use_https:
+                generic_url = "https://%s:%s/"
+                port = "19102"
             baseURL = generic_url % (ip, port)
             api = "{0}stats/storage".format(baseURL)
             status, content, _ = self._http_request(api)

@@ -1103,7 +1103,8 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(task)
         return task
 
-    def async_execute_query(self, server, query, isIndexerQuery=False, bucket=None, indexName=None, timeout=600, retry=3):
+    def async_execute_query(self, server, query, isIndexerQuery=False, bucket=None, indexName=None,
+                            timeout=600, retry=3):
         """
                 Synchronously runs query
                 Parameters:

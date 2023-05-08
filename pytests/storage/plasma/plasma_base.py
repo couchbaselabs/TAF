@@ -6,6 +6,7 @@ from index_utils.index_ready_functions import IndexUtils
 from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException
 import math
+from security_config import trust_all_certs
 
 from index_utils.plasma_stats_util import PlasmaStatsUtil
 from storage.storage_base import StorageBase
@@ -167,10 +168,14 @@ class PlasmaBaseTest(StorageBase):
     def wait_for_indexer_service_to_Active(self, indexer_rest, indexer_nodes_list, time_out):
         for node in indexer_nodes_list:
             indexCounter = 0
+            generic_url = "http://%s:%s/"
+            port = constants.index_port
+            if CbServer.use_https == True:
+                trust_all_certs()
+                generic_url = "https://%s:%s/"
+                port = constants.ssl_index_port
             while indexCounter < time_out:
-                generic_url = "http://%s:%s/"
                 ip = node.ip
-                port = constants.index_port
                 baseURL = generic_url % (ip, port)
                 self.log.info("Try to get index from URL as {}".format(baseURL))
                 indexCounter += 1

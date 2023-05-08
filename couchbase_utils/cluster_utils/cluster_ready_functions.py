@@ -1592,6 +1592,9 @@ class ClusterUtils:
         generic_url = "http://%s:%s/"
         ip = node.ip
         port = constants.index_port
+        if CbServer.use_https:
+            generic_url = "https://%s:%s/"
+            port = constants.ssl_index_port
         indexUrl = generic_url % (ip, port)
         api = "{0}plasmaDiag".format(indexUrl)
         self.log.debug("Api used {}".format(api))
