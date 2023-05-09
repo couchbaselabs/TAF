@@ -221,8 +221,8 @@ class BucketParamTest(ClusterSetup):
             d_impossible_exception = \
                 SDKException.DurabilityImpossibleException
             ignore_exceptions = list()
-            retry_exceptions = [SDKException.DurabilityAmbiguousException,
-                                SDKException.AmbiguousTimeoutException]
+            retry_exceptions = SDKException.DurabilityAmbiguousException + \
+                                SDKException.AmbiguousTimeoutException
 
             suppress_error_table = False
             if self.def_bucket.replicaNumber == 3 or replica_num == 3:

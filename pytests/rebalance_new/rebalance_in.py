@@ -10,8 +10,8 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from rebalance_new import rebalance_base
 
-retry_exceptions = rebalance_base.retry_exceptions +\
-                    [SDKException.RequestCanceledException]
+retry_exceptions = rebalance_base.retry_exceptions + \
+                   SDKException.RequestCanceledException
 
 
 class RebalanceInTests(RebalanceBaseTest):

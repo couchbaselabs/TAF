@@ -5,6 +5,7 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+from Jython_tasks.task import RestBasedDocLoaderCleaner
 from SecurityLib.rbac import RbacUtil
 from Cb_constants import constants, CbServer, DocLoading
 from basetestcase import ClusterSetup
@@ -20,7 +21,7 @@ from mc_bin_client import MemcachedClient, MemcachedError
 from platform_constants.os_constants import Linux
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_exceptions import SDKException
+from sdk_exceptions import SDKException, check_if_exception_exists
 from sdk_utils.java_sdk import SDKOptions
 from table_view import TableView
 
@@ -252,7 +253,8 @@ class basic_ops(ClusterSetup):
             check_persistence=self.check_persistence,
             scope=self.scope_name,
             collection=self.collection_name,
-            sdk_client_pool=self.sdk_client_pool)
+            sdk_client_pool=self.sdk_client_pool, retry_exception=retry_exceptions,
+            ignore_exceptions=ignore_exceptions)
         self.task.jython_task_manager.get_task_result(task)
 
         if self.ryow:
@@ -465,7 +467,7 @@ class basic_ops(ClusterSetup):
                 if len(task.fail.keys()) == 0:
                     self.log_failure("No failures during large doc insert")
                 for doc_id, doc_result in task.fail.items():
-                    if val_error not in str(doc_result["error"]):
+                    if not check_if_exception_exists(str(doc_result["error"]), val_error):
                         self.log_failure("Invalid exception for key %s: %s"
                                          % (doc_id, doc_result))
             else:
@@ -498,14 +500,15 @@ class basic_ops(ClusterSetup):
                 if len(task.fail.keys()) == 0:
                     self.log_failure("No failures during large doc insert")
                 for key, crud_result in task.fail.items():
-                    if SDKException.ValueTooLargeException \
-                            not in str(crud_result["error"]):
+                    if not check_if_exception_exists(str(crud_result["error"]), SDKException.ValueTooLargeException):
                         self.log_failure("Unexpected error for key %s: %s"
                                          % (key, crud_result["error"]))
+
                 for doc_id, doc_result in task.fail.items():
-                    if val_error not in str(doc_result["error"]):
+                    if not check_if_exception_exists(str(doc_result["error"]), val_error):
                         self.log_failure("Invalid exception for key %s: %s"
                                          % (doc_id, doc_result))
+
                 self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
         self.validate_test_failure()
 
@@ -699,8 +702,9 @@ class basic_ops(ClusterSetup):
             self.log.info("Performing read op")
             result = client.crud(DocLoading.Bucket.DocOps.READ, key)
             self.assertFalse(result["status"], "Read op succeeded")
-            self.assertTrue(SDKException.CouchbaseException in result["error"],
-                            "Invalid exception type")
+            self.assertFalse(check_if_exception_exists(result["error"], SDKException.CouchbaseException),
+                             "Invalid exception type")
+
             self.assertTrue("NO_ACCESS" in result["error"],
                             "Expected error string not found")
         finally:
@@ -1285,7 +1289,7 @@ class basic_ops(ClusterSetup):
 
         # Get doc to make sure we see not_found exception
         result = client_1.crud(DocLoading.Bucket.DocOps.READ, self.key)
-        if SDKException.DocumentNotFoundException not in str(result["error"]):
+        if not check_if_exception_exists(str(result["error"]), SDKException.DocumentNotFoundException):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with deleted_doc: %s"
                              % result["error"])
@@ -1301,7 +1305,7 @@ class basic_ops(ClusterSetup):
 
         # Doc read should return not_found
         result = client_2.crud(DocLoading.Bucket.DocOps.READ, self.key)
-        if SDKException.DocumentNotFoundException not in str(result["error"]):
+        if not check_if_exception_exists(str(result["error"]), SDKException.DocumentNotFoundException):
             self.log.info("Result: %s" % result)
             self.log_failure("Invalid exception with prepared doc: %s"
                              % result["error"])
@@ -1986,7 +1990,7 @@ class basic_ops(ClusterSetup):
                              timeout=3, time_unit="seconds")
         if result["status"]:
             self.log_failure("Sync write succeeded")
-        if SDKException.DurabilityAmbiguousException not in result["error"]:
+        if check_if_exception_exists(result["error"], SDKException.DurabilityAmbiguousException):
             self.log_failure("Invalid exception for sync_write: %s" % result)
 
         self.log.info("Resuming memcached on: %s" % node_to_stop)
@@ -2116,8 +2120,8 @@ class basic_ops(ClusterSetup):
                 k, _ = gen.next()
                 result = client.crud(op_type, k, {}, timeout=2)
                 if result["status"] is False and \
-                        SDKException.AmbiguousTimeoutException in result["error"] and \
-                        SDKException.RetryReason.KV_TEMPORARY_FAILURE in result["error"]:
+                        check_if_exception_exists(result["error"], SDKException.AmbiguousTimeoutException) and \
+                        check_if_exception_exists(result["error"], SDKException.RetryReason.KV_TEMPORARY_FAILURE):
                     self.crud_failure = True
                     self.log.critical(result)
                     break

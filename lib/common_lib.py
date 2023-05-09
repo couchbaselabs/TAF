@@ -6,6 +6,15 @@ from threading import Lock
 from global_vars import logger
 
 
+def generate_unique_string():
+    timestamp = str(int(time.time()))
+    unique_string = 'unique_' + timestamp
+    return unique_string
+
+
+IDENTIFIER_TOKEN = generate_unique_string()
+
+
 def sleep(seconds, message=None, log_type="test"):
     """
     :param seconds: Time to sleep in seconds

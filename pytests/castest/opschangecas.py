@@ -5,7 +5,8 @@ from castest.cas_base import CasBaseTest
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_exceptions import SDKException
+from sdk_exceptions import SDKException, check_if_exception_exists
+from sirius_client import RESTClient
 
 
 class OpsChangeCasTests(CasBaseTest):
@@ -146,8 +147,7 @@ class OpsChangeCasTests(CasBaseTest):
                                          cas=old_cas)
                     if result["status"] is True:
                         self.log_failure("The item should already be deleted")
-                    if SDKException.DocumentNotFoundException \
-                            not in result["error"]:
+                    if not check_if_exception_exists(result["error"], SDKException.DocumentNotFoundException):
                         self.log_failure("Invalid Exception: %s" % result)
                     if result["cas"] != 0:
                         self.log_failure("Delete returned invalid cas: %s, "
@@ -172,8 +172,7 @@ class OpsChangeCasTests(CasBaseTest):
                     if result["status"] is True:
                         self.log_failure("Able to mutate %s with old cas: %s"
                                          % (key, old_cas))
-                    if SDKException.DocumentNotFoundException \
-                            not in result["error"]:
+                    if not check_if_exception_exists(result["error"], SDKException.DocumentNotFoundException):
                         self.log_failure("Invalid error after expiry: %s"
                                          % result)
 
@@ -258,7 +257,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         self.log.info("3. Touch intial self.num_items docs which are "
                       "residing on disk due to DGM")
-        client = SDKClient([self.cluster.master],
+        client = RESTClient([self.cluster.master],
                            self.cluster.buckets[0])
         while load_gen.has_next():
             key, _ = load_gen.next()
@@ -374,7 +373,7 @@ class OpsChangeCasTests(CasBaseTest):
     key not exists error, this test only requires one node
     """
     def key_not_exists_test(self):
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = RESTClient([self.cluster.master], self.bucket)
         load_gen = doc_generator(self.key, 0, 1,
                                  doc_size=256)
         key, val = load_gen.next()
@@ -400,8 +399,7 @@ class OpsChangeCasTests(CasBaseTest):
                                  timeout=self.sdk_timeout)
             if result["status"] is True:
                 self.log_failure("Read succeeded after delete: %s" % result)
-            elif SDKException.DocumentNotFoundException \
-                    not in str(result["error"]):
+            elif not check_if_exception_exists(result["error"], SDKException.DocumentNotFoundException):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)
 
@@ -412,8 +410,7 @@ class OpsChangeCasTests(CasBaseTest):
                                  cas=create_cas)
             if result["status"] is True:
                 self.log_failure("Replace succeeded after delete: %s" % result)
-            if SDKException.DocumentNotFoundException \
-                    not in str(result["error"]):
+            if not check_if_exception_exists(result["error"], SDKException.DocumentNotFoundException):
                 self.log_failure("Invalid exception during read "
                                  "for non-exists key: %s" % result)
 

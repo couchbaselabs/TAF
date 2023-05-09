@@ -8,7 +8,7 @@ from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
-
+from sdk_exceptions import check_if_exception_exists
 
 # Required since the str(values) are different for bucket-create
 BucketDurability = dict()
@@ -130,7 +130,7 @@ class DurabilityHelper:
         """
         validation_passed = True
         for key, failed_doc in failed_docs.items():
-            if expected_exception not in str(failed_doc["error"]):
+            if not check_if_exception_exists(str(failed_doc["error"]), expected_exception):
                 validation_passed = False
                 self.log.error("Unexpected exception '{0}' for key '{1}'"
                                .format(failed_doc["error"], key))

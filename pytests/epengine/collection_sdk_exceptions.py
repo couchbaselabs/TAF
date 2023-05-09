@@ -15,7 +15,7 @@ from couchbase_helper.documentgenerator import doc_generator, \
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import SDKException
+from sdk_exceptions import SDKException, check_if_exception_exists
 from table_view import TableView
 
 from com.couchbase.client.core.error import \
@@ -142,13 +142,11 @@ class SDKExceptionTests(CollectionBase):
             elif result["status"] is True:
                 self.log_failure("Create didn't fail as expected for key: %s"
                                  % key)
-            elif (SDKException.AmbiguousTimeoutException
-                    not in str(result["error"])
+            elif (not check_if_exception_exists(str(result["error"]), SDKException.AmbiguousTimeoutException)
                     or retry_reason.COLLECTION_NOT_FOUND
                     not in str(result["error"])) \
                     and (
-                    SDKException.RequestCanceledException
-                    not in str(result["error"])
+                    check_if_exception_exists(str(result["error"]), SDKException.RequestCanceledException)
                     or retry_reason.COLLECTION_MAP_REFRESH_IN_PROGRESS
                     not in str(result["error"])):
                 self.log_failure("Invalid exception for key %s: %s"
@@ -298,8 +296,7 @@ class SDKExceptionTests(CollectionBase):
         result = client.crud("create", "key", "value")
         if result["status"] is True:
             self.log_failure("Collection create successful")
-        elif SDKException.AmbiguousTimeoutException \
-                not in str(result["error"]):
+        elif not check_if_exception_exists(str(result["error"]),  SDKException.AmbiguousTimeoutException):
             self.log_failure("Invalid exception during doc create")
 
         # Drop scope
@@ -699,8 +696,7 @@ class SDKExceptionTests(CollectionBase):
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
                         doc_id, self.cluster.vbuckets)
-                    if SDKException.DurabilityAmbiguousException \
-                            not in str(crud_result["error"]):
+                    if not check_if_exception_exists(str(crud_result["error"]), SDKException.DurabilityAmbiguousException):
                         self.log_failure(
                             "Invalid exception for doc %s, vb %s: %s"
                             % (doc_id, vb_num, crud_result))
@@ -772,8 +768,7 @@ class SDKExceptionTests(CollectionBase):
             for doc_key, doc_info in task.fail.items():
                 vb_for_key = self.bucket_util.get_vbucket_num_for_key(doc_key)
 
-                if SDKException.DurabilityAmbiguousException \
-                        not in str(doc_info["error"]):
+                if not check_if_exception_exists(str(doc_info["error"]), SDKException.DurabilityAmbiguousException):
                     table_view.add_row([doc_key, vb_for_key,
                                         doc_info["error"]])
 

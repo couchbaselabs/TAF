@@ -46,7 +46,7 @@ from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
-from common_lib import sleep, humanbytes
+from common_lib import sleep, humanbytes, IDENTIFIER_TOKEN
 from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
     DataAnalysisResultAnalyzer
@@ -84,6 +84,9 @@ from com.couchbase.test.sdk import SDKClientPool
 from couchbase.test.docgen import DRConstants
 
 from java.util import HashMap
+
+from sirius_client import RESTClient
+from sdk_exceptions import check_if_exception_exists
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods
@@ -3501,79 +3504,117 @@ class BucketUtils(ScopeUtils):
         :return: tasks_info dictionary updated with retried/unwanted docs
         """
         for task, task_info in tasks_info.items():
-            client = None
             bucket = task_info["bucket"]
             scope = task_info["scope"]
             collection = task_info["collection"]
 
-            if sdk_client_pool:
-                client = sdk_client_pool.get_client_for_bucket(bucket,
-                                                               scope,
-                                                               collection)
+            try:
+                client = RESTClient([cluster.master],
+                                    bucket,
+                                    scope=scope,
+                                    collection=collection)
 
-            if client is None:
-                client = SDKClient([cluster.master],
-                                   bucket,
-                                   scope=scope,
-                                   collection=collection)
+                exception_payload = client.create_payload_exception_handling(resultSeed=task.resultSeed,
+                                                                             identifierToken=IDENTIFIER_TOKEN,
+                                                                             ignoreExceptions=[], retryExceptions=[],
+                                                                             retryAttempts=1)
 
-            for key, failed_doc in task.fail.items():
-                found = False
-                exception = failed_doc["error"]
-                key_value = {key: failed_doc}
-                for ex in task_info["ignore_exceptions"]:
-                    if str(exception).find(ex) != -1:
-                        bucket \
-                            .scopes[scope] \
-                            .collections[collection].num_items -= 1
-                        tasks_info[task]["ignored"].update(key_value)
-                        found = True
-                        break
-                if found:
-                    continue
+                failed_docs, _, _, _ = client.retry_exceptions(exception_payload=exception_payload, delete_record=False)
 
-                ambiguous_state = False
-                if SDKException.DurabilityAmbiguousException \
-                        in str(exception) \
-                        or SDKException.AmbiguousTimeoutException \
-                        in str(exception) \
-                        or SDKException.TimeoutException \
-                        in str(exception) \
-                        or SDKException.RequestCanceledException \
-                        in str(exception):
-                    ambiguous_state = True
+                for key, failed_doc in failed_docs.items():
+                    found = False
+                    exception = failed_doc["error"]
+                    key_value = {key: failed_doc}
 
-                result = client.crud(
-                    task_info["op_type"], key, failed_doc["value"],
-                    exp=task_info["exp"],
-                    replicate_to=task_info["replicate_to"],
-                    persist_to=task_info["persist_to"],
-                    durability=task_info["durability"],
-                    timeout=task_info["timeout"],
-                    time_unit=task_info["time_unit"])
+                    for ex in task_info["ignore_exceptions"]:
+                        if str(exception).find(ex) != -1:
+                            bucket \
+                                .scopes[scope] \
+                                .collections[collection].num_items -= 1
+                            tasks_info[task]["ignored"].update(key_value)
+                            found = True
+                            break
+                    if found:
+                        continue
 
-                dict_key = "unwanted"
-                for ex in task_info["retry_exceptions"]:
-                    if str(exception).find(ex) != -1:
-                        dict_key = "retried"
-                        break
-                if result["status"] \
-                        or (ambiguous_state
-                            and SDKException.DocumentExistsException
-                            in result["error"]
-                            and task_info["op_type"] in ["create", "update"]) \
-                        or (ambiguous_state
-                            and SDKException.DocumentNotFoundException
-                            in result["error"]
-                            and task_info["op_type"] == "delete"):
-                    tasks_info[task][dict_key]["success"].update(key_value)
+                    ambiguous_state = False
+                    if check_if_exception_exists(str(exception), SDKException.DurabilityAmbiguousException,
+                                                 SDKException.AmbiguousTimeoutException, SDKException.TimeoutException,
+                                                 SDKException.RequestCanceledException):
+                        ambiguous_state = True
+
+                    dict_key = "unwanted"
+                    for ex in task_info["retry_exceptions"]:
+                        if check_if_exception_exists(str(exception), ex):
+                            dict_key = "retried"
+                            break
+
+                    if failed_doc["status"]:
+                        tasks_info[task][dict_key]["success"].update(key_value)
+                    else:
+                        tasks_info[task][dict_key]["fail"].update(key_value)
+            except Exception as e:
+                print(str(e))
+                if sdk_client_pool:
+                    client = sdk_client_pool.get_client_for_bucket(bucket,
+                                                                   scope,
+                                                                   collection)
+                if client is None:
+                    client = SDKClient([cluster.master],
+                                       bucket,
+                                       scope=scope,
+                                       collection=collection)
+
+                for key, failed_doc in task.fail.items():
+                    found = False
+                    exception = failed_doc["error"]
+                    key_value = {key: failed_doc}
+                    for ex in task_info["ignore_exceptions"]:
+                        if check_if_exception_exists(str(exception), ex):
+                            bucket \
+                                .scopes[scope] \
+                                .collections[collection].num_items -= 1
+                            tasks_info[task]["ignored"].update(key_value)
+                            found = True
+                            break
+                    if found:
+                        continue
+
+                    ambiguous_state = False
+                    if check_if_exception_exists(str(exception), SDKException.DurabilityAmbiguousException,
+                                                 SDKException.AmbiguousTimeoutException, SDKException.TimeoutException,
+                                                 SDKException.RequestCanceledException):
+                        ambiguous_state = True
+
+                    result = client.crud(
+                        task_info["op_type"], key, failed_doc["value"],
+                        exp=task_info["exp"],
+                        replicate_to=task_info["replicate_to"],
+                        persist_to=task_info["persist_to"],
+                        durability=task_info["durability"],
+                        timeout=task_info["timeout"],
+                        time_unit=task_info["time_unit"])
+
+                    dict_key = "unwanted"
+                    for ex in task_info["retry_exceptions"]:
+                        if str(exception).find(ex) != -1:
+                            dict_key = "retried"
+                            break
+                    if result["status"] \
+                            or (ambiguous_state
+                                and check_if_exception_exists(result["error"],SDKException.DocumentExistsException)
+                                and task_info["op_type"] in ["create", "update"]) \
+                            or (ambiguous_state
+                                and check_if_exception_exists(result["error"],SDKException.DocumentNotFoundException)
+                                and task_info["op_type"] == "delete"):
+                        tasks_info[task][dict_key]["success"].update(key_value)
+                    else:
+                        tasks_info[task][dict_key]["fail"].update(key_value)
+                if sdk_client_pool:
+                    sdk_client_pool.release_client(client)
                 else:
-                    tasks_info[task][dict_key]["fail"].update(key_value)
-            if sdk_client_pool:
-                sdk_client_pool.release_client(client)
-            else:
-                # Close client for this task
-                client.close()
+                    # Close client for this task
+                    client.close()
 
         return tasks_info
 
@@ -3593,7 +3634,10 @@ class BucketUtils(ScopeUtils):
                           track_failures=True,
                           sdk_client_pool=None,
                           sdk_retry_strategy=None,
-                          iterations=1):
+                          iterations=1,
+                          ignore_exceptions=[],
+                          retry_exceptions=[]):
+
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type,
             exp=exp, random_exp=random_exp,
@@ -3612,7 +3656,8 @@ class BucketUtils(ScopeUtils):
             track_failures=track_failures,
             sdk_client_pool=sdk_client_pool,
             sdk_retry_strategy=sdk_retry_strategy,
-            iterations=iterations)
+            iterations=iterations, retry_exception=retry_exceptions,
+            ignore_exceptions=ignore_exceptions)
 
     def load_docs_to_all_collections(self, start, end, cluster,
                                      key="test_docs",
@@ -3702,7 +3747,10 @@ class BucketUtils(ScopeUtils):
                 track_failures=track_failures,
                 sdk_client_pool=sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy,
-                iterations=iterations)
+                iterations=iterations,
+                ignore_exceptions=ignore_exceptions,
+                retry_exceptions=retry_exceptions)
+
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,
@@ -3736,7 +3784,8 @@ class BucketUtils(ScopeUtils):
                 scope, collection,
                 suppress_error_table=suppress_error_table,
                 sdk_client_pool=sdk_client_pool,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,ignore_exceptions=ignore_exceptions,
+                retry_exception=retry_exceptions)
             task_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,

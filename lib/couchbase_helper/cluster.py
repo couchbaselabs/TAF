@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 from Jython_tasks.task import MutateDocsFromSpecTask
 from Jython_tasks.task import CompareIndexKVData
 from capella_utils.dedicated import CapellaUtils
@@ -143,7 +143,9 @@ class ServerTasks(object):
                             track_failures=True,
                             preserve_expiry=None,
                             sdk_retry_strategy=None,
-                            iterations=1):
+                            iterations=1,
+                            ignore_exceptions=[],
+                            retry_exception=[]):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
@@ -163,7 +165,7 @@ class ServerTasks(object):
                                        scope, collection)
                 clients.append(client)
             if not ryow:
-                _task = jython_tasks.LoadDocumentsGeneratorsTask(
+                _task = jython_tasks.RestBasedDocLoaderAbstract(
                     cluster, self.jython_task_manager, bucket, clients,
                     [generator], op_type,
                     exp, random_exp=random_exp, exp_unit="seconds", flag=flag,
@@ -182,7 +184,8 @@ class ServerTasks(object):
                     track_failures=track_failures,
                     preserve_expiry=preserve_expiry,
                     sdk_retry_strategy=sdk_retry_strategy,
-                    iterations=iterations)
+                    iterations=iterations, ignore_exceptions=ignore_exceptions,
+                    retry_exception=retry_exception, retry_attempts=0)
             else:
                 majority_value = (bucket.replicaNumber + 1) / 2 + 1
 
@@ -265,34 +268,17 @@ class ServerTasks(object):
                 client = SDKClient([cluster.master], bucket,
                                    scope, collection)
             clients.append(client)
-        _task = jython_tasks.LoadSubDocumentsGeneratorsTask(
-            cluster,
-            self.jython_task_manager,
-            bucket,
-            clients,
-            [generator],
-            op_type,
-            exp,
-            create_paths=path_create,
-            xattr=xattr,
-            exp_unit="seconds",
-            flag=flag,
-            persist_to=persist_to,
-            replicate_to=replicate_to,
-            sdk_client_pool=sdk_client_pool,
-            scope=scope, collection=collection,
-            batch_size=batch_size,
-            timeout_secs=timeout_secs,
-            compression=compression,
-            process_concurrency=process_concurrency,
-            print_ops_rate=print_ops_rate,
-            durability=durability,
-            task_identifier=task_identifier,
-            preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy,
-            store_semantics=store_semantics,
-            access_deleted=access_deleted,
-            create_as_deleted=create_as_deleted)
+
+        _task = jython_tasks.RestBasedSubDocLoaderAbstract(
+            cluster=cluster, task_manager=self.jython_task_manager, bucket=bucket, clients=clients,
+            generators=[generator], op_type=op_type, exp=exp, create_paths=path_create, xattr=xattr,
+            exp_unit="seconds", flag=flag, persist_to=persist_to, replicate_to=replicate_to,
+            sdk_client_pool=sdk_client_pool, scope=scope, collection=collection,batch_size=batch_size,
+            timeout_secs=timeout_secs, compression=compression, process_concurrency=process_concurrency,
+            print_ops_rate=print_ops_rate, durability=durability, task_identifier=task_identifier,
+            preserve_expiry=preserve_expiry, sdk_retry_strategy=sdk_retry_strategy, store_semantics=store_semantics,
+            access_deleted=access_deleted, create_as_deleted=create_as_deleted)
+
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task
@@ -435,31 +421,16 @@ class ServerTasks(object):
                             collection=CbServer.default_collection,
                             sdk_client_pool=None, is_sub_doc=False,
                             suppress_error_table=True,
-                            sdk_retry_strategy=None):
+                            sdk_retry_strategy=None, ignore_exceptions=[], retry_exception=[]):
         clients = list()
-        gen_start = int(generator.start)
-        gen_end = int(generator.end)
-        gen_range = max(int((generator.end - generator.start)
-                            / process_concurrency), 1)
-        for _ in range(gen_start, gen_end, gen_range):
-            client = None
-            if sdk_client_pool is None:
-                client = SDKClient([cluster.master], bucket,
-                                   scope, collection)
-            clients.append(client)
-        _task = jython_tasks.DocumentsValidatorTask(
-            cluster, self.jython_task_manager, bucket, clients, [generator],
-            opt_type, exp, flag=flag,
-            batch_size=batch_size,
-            timeout_secs=timeout_secs, time_unit=time_unit,
-            compression=compression,
-            process_concurrency=process_concurrency,
-            check_replica=check_replica,
-            scope=scope, collection=collection,
-            sdk_client_pool=sdk_client_pool,
-            sdk_retry_strategy=sdk_retry_strategy,
-            is_sub_doc=is_sub_doc,
-            suppress_error_table=suppress_error_table)
+        _task = jython_tasks.RestBasedDocLoaderAbstract(
+            cluster=cluster, task_manager=self.jython_task_manager, bucket=bucket,
+            op_type=DocLoading.Bucket.DocOps.VALIDATE,
+            generator=[generator], exp=exp, clients=clients, sdk_client_pool=False,
+            suppress_error_table=suppress_error_table, sdk_retry_strategy=sdk_retry_strategy,
+            compression=compression, timeout_secs=timeout_secs, time_unit=time_unit,
+            flag=flag, batch_size=batch_size, ignore_exceptions=ignore_exceptions, retry_exception=retry_exception)
+
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -1143,6 +1114,7 @@ class ServerTasks(object):
                                 index_name, offset, field='body'):
         _task = jython_tasks.CompareIndexKVData(cluster=cluster, server=server, task_manager=task_manager, query=query,
                                                 sdk_client_pool=sdk_client_pool, bucket=bucket, scope=scope,
-                                                collection=collection, index_name=index_name, offset=offset, field=field)
+                                                collection=collection, index_name=index_name, offset=offset,
+                                                field=field)
         self.jython_task_manager.add_new_task(_task)
         return _task

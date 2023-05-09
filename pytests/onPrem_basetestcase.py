@@ -11,6 +11,7 @@ import global_vars
 from BucketLib.bucket import Bucket
 from Cb_constants import ClusterRun, CbServer
 import Cb_constants
+from Jython_tasks.task import RestBasedDocLoaderCleaner
 from SystemEventLogLib.Events import Event
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
@@ -380,6 +381,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.system_events.set_test_start_time()
             self.log_setup_status("OnPremBaseTest", "finished")
             self.__log("started")
+            _clean_sirius_data = RestBasedDocLoaderCleaner(cluster=self.cluster, task_manager=self.task_manager,
+                                                           scope=self.scope_name,
+                                                           collection=self.collection_name)
+            self.task_manager.add_new_task(_clean_sirius_data)
+            self.task_manager.get_task_result(_clean_sirius_data)
+
         except Exception as e:
             traceback.print_exc()
             self.task.shutdown(force=True)
@@ -638,6 +645,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
             finally:
                 if reset_cluster_env_vars:
                     self.cluster_util.reset_env_variables(cluster)
+        _clean_sirius_data = RestBasedDocLoaderCleaner(cluster=self.cluster, task_manager=self.task_manager,
+                                                       scope=self.scope_name,
+                                                       collection=self.collection_name)
+        self.task_manager.add_new_task(_clean_sirius_data)
+        self.task_manager.get_task_result(_clean_sirius_data)
         self.infra_log.info("========== tasks in thread pool ==========")
         self.task_manager.print_tasks_in_pool()
         self.infra_log.info("==========================================")

@@ -11,7 +11,7 @@ from couchbase_helper.durability_helper import \
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import SDKException
+from sdk_exceptions import SDKException, check_if_exception_exists
 
 
 class DurabilityTestsBase(ClusterSetup):
@@ -93,12 +93,12 @@ class DurabilityTestsBase(ClusterSetup):
         super(DurabilityTestsBase, self).tearDown()
 
     def get_random_node(self):
-        rand_node_index = randint(1, self.nodes_init-1)
+        rand_node_index = randint(1, self.nodes_init - 1)
         return self.cluster.nodes_in_cluster[rand_node_index]
 
     def getTargetNodes(self):
         def select_randam_node(nodes):
-            rand_node_index = randint(1, self.nodes_init-1)
+            rand_node_index = randint(1, self.nodes_init - 1)
             if self.cluster.nodes_in_cluster[rand_node_index] not in node_list:
                 nodes.append(self.cluster.nodes_in_cluster[rand_node_index])
 
@@ -300,8 +300,7 @@ class BucketDurabilityBase(ClusterSetup):
                 self.log_failure("Docs inserted without honoring the "
                                  "bucket durability level")
             for key, result in doc_load_task.fail.items():
-                if SDKException.DurabilityAmbiguousException \
-                        not in str(result["error"]):
+                if not check_if_exception_exists(str(result["error"]), SDKException.DurabilityAmbiguousException):
                     self.log_failure("Invalid exception for key %s "
                                      "during %s operation: %s"
                                      % (key, op_type, result["error"]))
@@ -332,7 +331,7 @@ class BucketDurabilityBase(ClusterSetup):
 
     def getTargetNodes(self):
         def select_randam_node(nodes):
-            rand_node_index = randint(1, self.nodes_init-1)
+            rand_node_index = randint(1, self.nodes_init - 1)
             if self.cluster.nodes_in_cluster[rand_node_index] not in node_list:
                 nodes.append(self.cluster.nodes_in_cluster[rand_node_index])
 

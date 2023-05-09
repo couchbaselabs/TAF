@@ -11,8 +11,9 @@ from BucketLib.BucketOperations import BucketHelper
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_exceptions import SDKException
+from sdk_exceptions import SDKException, check_if_exception_exists
 from table_view import TableView
+from sirius_client import RESTClient
 
 
 class ExpiryMaxTTL(ClusterSetup):
@@ -95,7 +96,8 @@ class ExpiryMaxTTL(ClusterSetup):
             durability=non_ttl_task_property["durability"],
             timeout_secs=self.sdk_timeout,
             compression=self.sdk_compression,
-            sdk_client_pool=self.sdk_client_pool)
+            sdk_client_pool=self.sdk_client_pool, retry_exception=[],
+            ignore_exceptions=[])
         ttl_task = self.task.async_load_gen_docs(
             self.cluster, bucket, ttl_gen,
             ttl_task_property["op_type"], self.maxttl,
@@ -105,7 +107,8 @@ class ExpiryMaxTTL(ClusterSetup):
             durability=ttl_task_property["durability"],
             timeout_secs=self.sdk_timeout,
             compression=self.sdk_compression, print_ops_rate=False,
-            sdk_client_pool=self.sdk_client_pool)
+            sdk_client_pool=self.sdk_client_pool, retry_exception=[],
+            ignore_exceptions=[])
         tasks_info[non_ttl_task] = self.bucket_util.get_doc_op_info_dict(
             bucket, non_ttl_task_property["op_type"], 0,
             replicate_to=non_ttl_task_property["replicate_to"],
@@ -633,7 +636,7 @@ class ExpiryMaxTTL(ClusterSetup):
         cb_ep_ctl.set(bucket.name, "flush_param", "exp_pager_stime", 0)
 
         # Create SDK client
-        client = SDKClient([self.cluster.master], bucket)
+        client = RESTClient([self.cluster.master], bucket)
 
         self.log.info("Non-sync write with TTL=%s" % doc_ttl)
         client.crud(DocLoading.Bucket.DocOps.CREATE, key, {}, exp=doc_ttl)
@@ -653,7 +656,7 @@ class ExpiryMaxTTL(ClusterSetup):
         self.log.info("Read key from another thread to trigger expiry")
         failure = None
         result = client.crud(DocLoading.Bucket.DocOps.READ, key)
-        if SDKException.DocumentNotFoundException not in str(result["error"]):
+        if not check_if_exception_exists(str(result["error"]), SDKException.DocumentNotFoundException):
             failure = "Invalid exception: %s" % result["error"]
 
         self.log.info("Resuming persistence on target node")

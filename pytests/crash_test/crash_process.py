@@ -10,8 +10,7 @@ from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_client3 import SDKClient
-
+from sirius_client import RESTClient
 from sdk_exceptions import SDKException
 
 
@@ -210,21 +209,21 @@ class CrashTest(ClusterSetup):
                 self.log_failure("Unwanted exception seen during validation")
 
             # Create SDK connection for CRUD retries
-            sdk_client = SDKClient([self.cluster.master],
+            client = RESTClient([self.cluster.master],
                                    def_bucket)
             for doc_key, crud_result in task.fail.items():
-                result = sdk_client.crud("create",
-                                         doc_key,
-                                         crud_result["value"],
-                                         replicate_to=self.replicate_to,
-                                         persist_to=self.persist_to,
-                                         durability=self.durability_level,
-                                         timeout=self.sdk_timeout)
+                result = client.crud("create",
+                                     doc_key,
+                                     crud_result["value"],
+                                     replicate_to=self.replicate_to,
+                                     persist_to=self.persist_to,
+                                     durability=self.durability_level,
+                                     timeout=self.sdk_timeout)
                 if result["status"] is False:
                     self.log_failure("Retry of doc_key %s failed: %s"
                                      % (doc_key, result["error"]))
             # Close the SDK connection
-            sdk_client.close()
+            client.close()
 
         # Update self.num_items
         self.num_items += self.new_docs_to_add
@@ -258,7 +257,7 @@ class CrashTest(ClusterSetup):
             target_vbuckets = Cbstats(target_node).vbucket_list(
                 def_bucket.name, self.target_node)
             if self.target_node == "active":
-                retry_exceptions = [SDKException.TimeoutException]
+                retry_exceptions = SDKException.TimeoutException
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
             return

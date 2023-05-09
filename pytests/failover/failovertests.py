@@ -19,7 +19,7 @@ class FailoverTests(FailoverBaseTest):
         self.run_time_create_load_gen = self.gen_create = doc_generator(
             self.key,
             self.num_items,
-            self.num_items*2,
+            self.num_items * 2,
             key_size=self.key_size,
             doc_size=self.doc_size,
             doc_type=self.doc_type)
@@ -267,17 +267,15 @@ class FailoverTests(FailoverBaseTest):
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[node.id for node in chosen])
 
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            SDKException.DurabilityImpossibleException,
-            SDKException.TemporaryFailureException
-        ]
+        retry_exceptions = SDKException.TimeoutException + \
+                           SDKException.RequestCanceledException + \
+                           SDKException.DurabilityAmbiguousException + \
+                           SDKException.DurabilityImpossibleException + \
+                           SDKException.TemporaryFailureException
 
         # Rebalance Monitoring
         msg = "rebalance failed while removing failover nodes {0}" \
-              .format([node.id for node in chosen])
+            .format([node.id for node in chosen])
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
 
         self.sleep(30)
@@ -334,7 +332,7 @@ class FailoverTests(FailoverBaseTest):
                 self.cluster_util.get_kv_nodes(self.cluster),
                 self.cluster.buckets)
             self.bucket_util.compare_vbucketseq_failoverlogs(
-                    new_vbucket_stats, new_failover_stats)
+                new_vbucket_stats, new_failover_stats)
         # Verify Active and Replica Bucket Count
         if self.num_replicas > 0:
             nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
@@ -411,17 +409,15 @@ class FailoverTests(FailoverBaseTest):
                                 ejectedNodes=[],
                                 deltaRecoveryBuckets=self.deltaRecoveryBuckets)
 
-        retry_exceptions = [
-            SDKException.TimeoutException,
-            SDKException.RequestCanceledException,
-            SDKException.DurabilityAmbiguousException,
-            SDKException.DurabilityImpossibleException,
-            SDKException.TemporaryFailureException
-        ]
+        retry_exceptions = SDKException.TimeoutException + \
+                           SDKException.RequestCanceledException + \
+                           SDKException.DurabilityAmbiguousException + \
+                           SDKException.DurabilityImpossibleException + \
+                           SDKException.TemporaryFailureException
 
         if not self.atomicity:
             # CRUDs while rebalance is running in parallel
-            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions)
+            tasks_info = self.loadgen_docs(retry_exceptions=retry_exceptions, task_verification=True)
 
         if rebalance_type == "in":
             rebalance = self.task.rebalance(self.cluster,
@@ -452,7 +448,7 @@ class FailoverTests(FailoverBaseTest):
         # Check if node has to be killed or restarted during rebalance
         # Monitor Rebalance
         msg = "rebalance failed while removing failover nodes {0}" \
-              .format(chosen)
+            .format(chosen)
         self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg=msg)
 
         self.sleep(30)
@@ -515,7 +511,7 @@ class FailoverTests(FailoverBaseTest):
                 self.cluster_util.get_kv_nodes(self.cluster),
                 self.cluster.buckets)
             self.bucket_util.compare_vbucketseq_failoverlogs(
-                    new_vbucket_stats, new_failover_stats)
+                new_vbucket_stats, new_failover_stats)
 
         # Verify Active and Replica Bucket Count
         if self.num_replicas > 0:
@@ -603,13 +599,13 @@ class FailoverTests(FailoverBaseTest):
                         node.id,
                         graceful=(self.graceful and graceful_failover))
                     msg = "graceful failover failed for nodes {0}" \
-                          .format(node.id)
+                        .format(node.id)
                     self.assertTrue(
                         self.rest.monitorRebalance(stop_if_loop=True),
                         msg=msg)
                 else:
-                    msg = "rebalance failed while removing failover nodes {0}"\
-                          .format(node.id)
+                    msg = "rebalance failed while removing failover nodes {0}" \
+                        .format(node.id)
                     self.assertTrue(
                         self.rest.monitorRebalance(stop_if_loop=True),
                         msg=msg)
@@ -715,7 +711,7 @@ class FailoverTests(FailoverBaseTest):
                 self.run_mutation_operations()
             # failed_over.result()
             msg = "rebalance failed while removing failover nodes {0}" \
-                  .format(node.id)
+                .format(node.id)
             self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True),
                             msg=msg)
             for task in compact_tasks:
@@ -829,17 +825,21 @@ class FailoverTests(FailoverBaseTest):
                 if deltaRecoveryBuckets is not None:
                     if recoveryTypeMap[server.ip] == "delta" and (bucket.name in deltaRecoveryBuckets) and not exists:
                         logic = False
-                        summary += "\n Failed Condition :: node {0}, bucket {1} :: Expected Delta, Actual Full".format(server.ip, bucket.name)
+                        summary += "\n Failed Condition :: node {0}, bucket {1} :: Expected Delta, Actual Full".format(
+                            server.ip, bucket.name)
                     elif recoveryTypeMap[server.ip] == "delta" and (bucket.name not in deltaRecoveryBuckets) and exists:
-                        summary += "\n Failed Condition :: node {0}, bucket {1} :: Expected Full, Actual Delta".format(server.ip, bucket.name)
+                        summary += "\n Failed Condition :: node {0}, bucket {1} :: Expected Full, Actual Delta".format(
+                            server.ip, bucket.name)
                         logic = False
                 else:
                     if recoveryTypeMap[server.ip] == "delta" and not exists:
                         logic = False
-                        summary += "\n Failed Condition :: node {0}, bucket {1} :: Expected Delta, Actual Full".format(server.ip, bucket.name)
+                        summary += "\n Failed Condition :: node {0}, bucket {1} :: Expected Delta, Actual Full".format(
+                            server.ip, bucket.name)
                     elif recoveryTypeMap[server.ip] == "full" and exists:
                         logic = False
-                        summary += "\n Failed Condition :: node {0}, bucket {1} :: Expected Full, Actual Delta".format(server.ip, bucket.name)
+                        summary += "\n Failed Condition :: node {0}, bucket {1} :: Expected Full, Actual Delta".format(
+                            server.ip, bucket.name)
             shell.disconnect()
         self.assertTrue(logic, summary)
 
@@ -867,7 +867,7 @@ class FailoverTests(FailoverBaseTest):
             tasks += temp_tasks
 
         timeout = max(self.wait_timeout * 4,
-                      len(self.buckets) * self.wait_timeout * self.num_items/50000)
+                      len(self.buckets) * self.wait_timeout * self.num_items / 50000)
 
         for task in tasks:
             task.result(timeout=self.wait_timeout * 20)
@@ -948,13 +948,15 @@ class FailoverTests(FailoverBaseTest):
                     graceful_failover = node.gracefulFailoverPossible
                     if node.gracefulFailoverPossible:
                         logic = False
-                        summary += "\n failover type for unreachable node {0} Expected :: Hard, Actual :: Graceful".format(node.ip)
+                        summary += "\n failover type for unreachable node {0} Expected :: Hard, Actual :: Graceful".format(
+                            node.ip)
                 elif node.ip == chosen.ip:
                     graceful_failover = node.gracefulFailoverPossible
                     if replica_count > graceful_count and (node_count - 1) + graceful_count >= replica_count:
                         if not node.gracefulFailoverPossible:
                             logic = False
-                            summary += "\n failover type for node {0} Expected :: Graceful, Actual :: Hard".format(node.ip)
+                            summary += "\n failover type for node {0} Expected :: Graceful, Actual :: Hard".format(
+                                node.ip)
                     else:
                         if node.gracefulFailoverPossible:
                             logic = False
@@ -972,7 +974,7 @@ class FailoverTests(FailoverBaseTest):
     def victim_node_operations(self, node=None):
         if self.stopGracefulFailover:
             self.log.info(" Stopping Graceful Failover ")
-            stopped = self.rest.stop_rebalance(wait_timeout=self.wait_timeout/3)
+            stopped = self.rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
             self.assertTrue(stopped, msg="unable to stop rebalance")
         if self.killNodes:
             self.log.info(" Killing Memcached ")

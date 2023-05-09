@@ -6,11 +6,10 @@ from remote.remote_util import RemoteUtilHelper
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
 
-retry_exceptions = [
-    SDKException.TimeoutException,
-    SDKException.RequestCanceledException,
-    SDKException.DurabilityAmbiguousException,
-    SDKException.DurabilityImpossibleException]
+retry_exceptions = SDKException.TimeoutException + \
+                   SDKException.RequestCanceledException + \
+                   SDKException.DurabilityAmbiguousException + \
+                   SDKException.DurabilityImpossibleException
 
 
 class FailoverBaseTest(BaseTestCase):
@@ -171,6 +170,7 @@ class FailoverBaseTest(BaseTestCase):
 
     def start_parallel_cruds(self, retry_exceptions=[], ignore_exceptions=[],
                              task_verification=False):
+
         tasks_info = dict()
         if "update" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -217,12 +217,12 @@ class FailoverBaseTest(BaseTestCase):
                      task_verification=False):
         retry_exceptions = \
             list(set(retry_exceptions +
-                     [SDKException.TimeoutException,
-                      SDKException.RequestCanceledException,
-                      SDKException.DurabilityImpossibleException,
-                      SDKException.DurabilityAmbiguousException]))
+                     SDKException.TimeoutException +
+                     SDKException.RequestCanceledException +
+                     SDKException.DurabilityImpossibleException +
+                     SDKException.DurabilityAmbiguousException))
 
-        loaders = self.start_parallel_cruds(retry_exceptions,
-                                            ignore_exceptions,
-                                            task_verification)
+        loaders = self.start_parallel_cruds(retry_exceptions=retry_exceptions,
+                                            ignore_exceptions=ignore_exceptions,
+                                            task_verification=task_verification)
         return loaders

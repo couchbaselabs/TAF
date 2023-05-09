@@ -6,7 +6,7 @@ from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from sdk_exceptions import SDKException
+from sdk_exceptions import SDKException, check_if_exception_exists
 
 
 class OpsChangeCasTests(CasBaseTest):
@@ -969,7 +969,6 @@ class OpsChangeCasTests(CasBaseTest):
             if replace_result["status"] is True:
                 self.log_failure("Replace on %s succeeded using old CAS %s"
                                  % (key, cas))
-            if SDKException.DocumentNotFoundException \
-                    not in str(replace_result["error"]):
+            if check_if_exception_exists(str(replace_result["error"]), SDKException.DocumentNotFoundException):
                 self.log_failure("Invalid exception for %s: %s"
                                  % (key, replace_result))

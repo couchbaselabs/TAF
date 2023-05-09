@@ -58,14 +58,14 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
     def set_retry_exceptions(self, doc_loading_spec):
         retry_exceptions = list()
-        retry_exceptions.append(SDKException.AmbiguousTimeoutException)
-        retry_exceptions.append(SDKException.TimeoutException)
-        retry_exceptions.append(SDKException.RequestCanceledException)
-        retry_exceptions.append(SDKException.DocumentNotFoundException)
-        retry_exceptions.append(SDKException.ServerOutOfMemoryException)
+        retry_exceptions.extend(SDKException.AmbiguousTimeoutException)
+        retry_exceptions.extend(SDKException.TimeoutException)
+        retry_exceptions.extend(SDKException.RequestCanceledException)
+        retry_exceptions.extend(SDKException.DocumentNotFoundException)
+        retry_exceptions.extend(SDKException.ServerOutOfMemoryException)
         if self.durability_level:
-            retry_exceptions.append(SDKException.DurabilityAmbiguousException)
-            retry_exceptions.append(SDKException.DurabilityImpossibleException)
+            retry_exceptions.extend(SDKException.DurabilityAmbiguousException)
+            retry_exceptions.extend(SDKException.DurabilityImpossibleException)
         doc_loading_spec[MetaCrudParams.RETRY_EXCEPTIONS] = retry_exceptions
 
     def async_data_load(self):

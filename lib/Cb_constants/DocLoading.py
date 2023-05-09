@@ -6,13 +6,17 @@ class Bucket(object):
         REPLACE = "replace"
         READ = "read"
         TOUCH = "touch"
+        VALIDATE = "validate"
+        SINGLE_VALIDATE = "single_validate"
 
     class SubDocOps(object):
         INSERT = "insert"
         UPSERT = "upsert"
         REMOVE = "remove"
         LOOKUP = "lookup"
+        REPLACE = "replace"
         COUNTER = "counter"
+        VALIDATE = "validate"
 
     DOC_OPS = [DocOps.DELETE,
                DocOps.READ,

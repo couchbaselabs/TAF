@@ -781,7 +781,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         .format(toBeEjectedNodes))
 
         # CRUDs while durability is broken
-        ignore_exceptions = [SDKException.DurabilityImpossibleException]
+        ignore_exceptions = SDKException.DurabilityImpossibleException
         self.check_temporary_failure_exception = False
         self.gen_create = self.get_doc_generator(create_from,
                                                  create_from + 1000)

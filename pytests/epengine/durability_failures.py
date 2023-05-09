@@ -9,9 +9,9 @@ from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
-from sdk_client3 import SDKClient
+from sirius_client import RESTClient
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import SDKException
+from sdk_exceptions import SDKException, check_if_exception_exists
 from table_view import TableView
 
 
@@ -251,7 +251,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             start_task=False)
 
         # SDK client for performing individual ops
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = RESTClient([self.cluster.master], self.bucket)
 
         # Perform specified action
         for node in target_nodes:
@@ -294,7 +294,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     retry_reason = None
 
                 # Validate the returned error from the SDK
-                if expected_exception not in str(fail["error"]):
+                if check_if_exception_exists(str(fail["error"]), expected_exception):
                     self.log_failure("Invalid exception for {0}: {1}"
                                      .format(key, fail["error"]))
                 if retry_reason and retry_reason not in str(fail["error"]):
@@ -419,7 +419,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.sleep(20, message="Wait for task_1 ops to reach the server")
 
         # SDK client for performing individual ops
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = RESTClient([self.cluster.master], self.bucket)
         # Perform specified CRUD operation on sync_write docs
         while gen_loader.has_next():
             key, value = gen_loader.next()
@@ -592,7 +592,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         error_sim.revert(self.simulate_error, self.bucket.name)
 
         # SDK client for performing retry operations
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = RESTClient([self.cluster.master], self.bucket)
         # Retry failed docs
         create_failed = self.durability_helper.retry_with_no_error(
             client, doc_errors["create"], "create")
@@ -885,7 +885,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
         # Create SDK Client
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = RESTClient([self.cluster.master], self.bucket)
 
         # Retry failed docs
         self.durability_helper.retry_with_no_error(client, error_docs,
@@ -1040,7 +1040,7 @@ class TimeoutTests(DurabilityTestsBase):
                                           mutate=1)
 
         # Create SDK Client
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = RESTClient([self.cluster.master], self.bucket)
 
         for op_type in ["create", "update", "read", "delete"]:
             self.log.info("Performing '%s' with timeout=%s"
@@ -1195,7 +1195,7 @@ class TimeoutTests(DurabilityTestsBase):
         shell_conn.disconnect()
 
         # Create SDK Client
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = RESTClient([self.cluster.master], self.bucket)
 
         # Wait for document_loader tasks to complete and retry failed docs
         op_type = None
@@ -1380,8 +1380,8 @@ class TimeoutTests(DurabilityTestsBase):
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
                         doc_id, self.cluster.vbuckets)
-                    if SDKException.DurabilityAmbiguousException \
-                            not in str(crud_result["error"]):
+                    if not check_if_exception_exists(str(crud_result["error"]),
+                                                     SDKException.DurabilityAmbiguousException):
                         self.log_failure(
                             "Invalid exception for doc %s, vb %s: %s"
                             % (doc_id, vb_num, crud_result))
@@ -1426,7 +1426,7 @@ class TimeoutTests(DurabilityTestsBase):
         self.validate_test_failure()
 
         # SDK client for retrying AMBIGUOUS for unexpected keys
-        sdk_client = SDKClient([self.cluster.master], self.bucket)
+        sdk_client = RESTClient([self.cluster.master], self.bucket)
 
         # Doc error validation
         for op_type in doc_gen.keys():
@@ -1459,8 +1459,7 @@ class TimeoutTests(DurabilityTestsBase):
                     self.log_failure("%s failed in retry for %s"
                                      % (op_type, doc_key))
 
-                if SDKException.DurabilityAmbiguousException \
-                        not in str(doc_info["error"]):
+                if not check_if_exception_exists(str(doc_info["error"]), SDKException.DurabilityAmbiguousException):
                     table_view.add_row([doc_key, doc_info["error"]])
 
             # Display the tables (if any errors)

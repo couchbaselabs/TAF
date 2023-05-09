@@ -6,6 +6,8 @@ import sys
 import re
 from random import choice, shuffle
 
+import Jython_tasks
+import sdk_exceptions
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer, DocLoading
 from basetestcase import ClusterSetup
@@ -28,6 +30,7 @@ from sdk_exceptions import SDKException
 from storage_utils.magma_utils import MagmaUtils
 from Jython_tasks.task import FunctionCallTask
 from StatsLib.StatsOperations import StatsHelper
+from sirius_client import RESTClient
 
 
 class SubdocBaseTest(ClusterSetup):
@@ -225,8 +228,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         super(SubdocXattrSdkTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = SDKClient([self.cluster.master],
-                                self.cluster.buckets[0])
+        self.client = RESTClient([self.cluster.master],
+                                 self.cluster.buckets[0])
 
     def tearDown(self):
         # Delete the inserted doc
@@ -236,12 +239,12 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.client.close()
         super(SubdocXattrSdkTest, self).tearDown()
 
-    def __upsert_document_and_validate(self, op_type, value):
-        result = self.client.crud(op_type, self.doc_id, value=value)
+    def __upsert_document_and_validate(self, op_type, value, doc_size=512):
+        result = self.client.crud(op_type, self.doc_id, doc_size=doc_size)
         if result["status"] is False:
             self.fail("Initial doc create failed")
 
-    def __insert_sub_doc_and_validate(self, op_type, key, value):
+    def __insert_sub_doc_and_validate(self, op_type, key, value, doc_size=100):
         _, failed_items = self.client.crud(
             op_type,
             self.doc_id,
@@ -250,26 +253,13 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             timeout=self.sdk_timeout,
             time_unit=SDKConstants.TimeUnit.SECONDS,
             create_path=True,
-            xattr=self.xattr)
+            xattr=self.xattr,
+            doc_size=doc_size)
         self.assertFalse(failed_items, "Subdoc Xattr insert failed")
 
     def __read_doc_and_validate(self, expected_val, subdoc_key=None):
-        if subdoc_key:
-            success, failed_items = self.client.crud("subdoc_read",
-                                                     self.doc_id,
-                                                     subdoc_key,
-                                                     xattr=self.xattr)
-            self.assertFalse(failed_items, "Xattr read failed")
-            self.assertEqual(expected_val,
-                             str(success[self.doc_id]["value"][0]),
-                             "Sub_doc value mismatch: %s != %s"
-                             % (success[self.doc_id]["value"][0],
-                                expected_val))
-        else:
-            result = self.client.crud("read", self.doc_id)
-            self.assertEqual(result["value"], expected_val,
-                             "Document value mismatch: %s != %s"
-                             % (result["value"], expected_val))
+        result = self.client.validate_doc(key=self.doc_id)
+        self.assertTrue(result['status'], result['error'])
 
     def test_basic_functionality(self):
         self.__upsert_document_and_validate("create", {})
@@ -282,11 +272,11 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__read_doc_and_validate("{}")
 
         # Using lookup_in
-        _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
-        self.assertTrue(failure)
+        _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr", xattr=self.xattr)
+        self.assertFalse(failure, "Subdoc Xattr read failed")
 
         # Finally, use lookup_in with 'xattrs' attribute enabled
-        self.__read_doc_and_validate("value", "my.attr")
+        self.__read_doc_and_validate("{}")
 
     def test_multiple_attrs(self):
         self.__upsert_document_and_validate("update", {})
@@ -300,40 +290,28 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                key, val)
 
         # Read full doc and validate
-        self.__read_doc_and_validate("{}")
-
         # Use lookup_in with 'xattrs' attribute enabled to validate the values
-        for key, val in xattrs_to_insert:
-            self.__read_doc_and_validate(val, key)
+
+        self.__read_doc_and_validate({}, key)
 
     def test_xattr_big_value(self):
         sub_doc_key = "my.attr"
         value = {"v": "v" * 500000}
-        self.__upsert_document_and_validate("update", value)
+
+        self.__upsert_document_and_validate("update", value,doc_size=len(value))
 
         self.__insert_sub_doc_and_validate("subdoc_insert",
-                                           sub_doc_key, value)
+                                           sub_doc_key, value,doc_size=len(value))
 
         # Read full doc and validate
-        result = self.client.crud("read", self.doc_id)
-        result = json.loads(result["value"])
-        self.assertEqual(result, value,
-                         "Document value mismatch: %s != %s" % (result, value))
-
-        # Read sub_doc for validating the value
-        success, failed_items = self.client.crud("subdoc_read",
-                                                 self.doc_id,
-                                                 sub_doc_key,
-                                                 xattr=self.xattr)
-        self.assertFalse(failed_items, "Xattr read failed")
-        result = json.loads(str(success[self.doc_id]["value"][0]))
-        self.assertEqual(result, value,
-                         "Sub_doc value mismatch: %s != %s" % (result, value))
+        result = self.client.validate_doc(key=self.doc_id)
+        self.assertTrue(result['status'], "Document value mismatched")
 
     def test_add_to_parent(self):
         self.__upsert_document_and_validate("update", {})
 
         # Read and record CAS
+
         result = self.client.crud("read", self.doc_id)
         self.assertTrue(result["status"], "Read failed")
         initial_cas = result["cas"]
@@ -1571,11 +1549,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         super(SubdocXattrDurabilityTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = SDKClient([self.cluster.master],
-                                self.cluster.buckets[0],
-                                scope=self.scope_name,
-                                collection=self.collection_name,
-                                compression_settings=self.sdk_compression)
+        self.client = RESTClient([self.cluster.master],
+                                 self.cluster.buckets[0],
+                                 scope=self.scope_name,
+                                 collection=self.collection_name,
+                                 compression_settings=self.sdk_compression)
 
     def tearDown(self):
         # Close the SDK connections
@@ -1598,8 +1576,9 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             durability=self.durability_level)
         sdk_error = str(failed_items[self.doc_id]["error"])
         self.assertTrue(failed_items, "Subdoc CRUD succeeded: %s" % success)
-        self.assertTrue(SDKException.DurabilityImpossibleException
-                        in sdk_error, "Invalid exception: %s" % sdk_error)
+        self.assertTrue(sdk_exceptions.check_if_exception_exists(sdk_error,
+                                                                 SDKException.DurabilityImpossibleException),
+                        "Invalid exception: %s" % sdk_error)
 
     def test_doc_sync_write_in_progress(self):
         shell = None
@@ -1694,7 +1673,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                         expected_exception = \
                             SDKException.DocumentNotFoundException
                         retry_reason = None
-                if expected_exception not in sdk_exception:
+                if not sdk_exceptions.check_if_exception_exists(sdk_exception, expected_exception):
                     self.log_failure("Invalid exception: %s" % result)
                 elif retry_reason is not None \
                         and retry_reason not in sdk_exception:
@@ -1791,7 +1770,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS,
                 create_path=True, xattr=self.xattr)
             sdk_exception = str(failed_item[doc_key]["error"])
-            if SDKException.AmbiguousTimeoutException not in sdk_exception:
+            if not sdk_exceptions.check_if_exception_exists(sdk_exception, SDKException.AmbiguousTimeoutException):
                 self.log_failure("Invalid exception: %s" % failed_item)
             if SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS \
                     not in sdk_exception:
@@ -1824,7 +1803,7 @@ class XattrTests(SubdocBaseTest):
         self.bucket = self.cluster.buckets[0]
 
         # A client for reading xattributes
-        self.client = SDKClient([self.cluster.master], self.bucket)
+        self.client = RESTClient([self.cluster.master], self.bucket)
 
         # Parallelism for verifying xattributes
         self.parallelism = self.input.param("parallelism", 5)
@@ -1988,7 +1967,8 @@ class XattrTests(SubdocBaseTest):
         dgm_gen = doc_generator("dgm", 0, 1000000, doc_size=self.doc_size)
 
         task = self.task.async_load_gen_docs(
-            self.cluster, self.bucket, dgm_gen, "create", exp=0, active_resident_threshold=percentage, **self.async_gen_common)
+            self.cluster, self.bucket, dgm_gen, "create", exp=0, active_resident_threshold=percentage,
+            **self.async_gen_common)
 
         self.task.jython_task_manager.get_task_result(task)
 

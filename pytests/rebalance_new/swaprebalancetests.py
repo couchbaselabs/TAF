@@ -12,8 +12,8 @@ from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
 from rebalance_new import rebalance_base
 
-retry_exceptions = rebalance_base.retry_exceptions +\
-                    [SDKException.RequestCanceledException]
+retry_exceptions = rebalance_base.retry_exceptions + \
+                   SDKException.RequestCanceledException
 
 
 class SwapRebalanceBase(RebalanceBaseTest):
@@ -257,7 +257,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
 
     def _common_test_body_failed_swap_rebalance(self):
         # Start the swap rebalance
-        retry_exceptions.append(SDKException.TemporaryFailureException)
+        retry_exceptions.extend(SDKException.TemporaryFailureException)
         self.loaders = self.loadgen_docs(retry_exceptions=retry_exceptions)
         current_nodes = RebalanceHelper.getOtpNodeIds(self.cluster.master)
         self.log.info("current nodes : {0}".format(current_nodes))
