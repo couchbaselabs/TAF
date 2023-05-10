@@ -133,12 +133,16 @@ def execute_via_sdk(client, statement, readonly=False,
     output["status"] = result.metaData().status()
     output["metrics"] = result.metaData().metrics()
     output["requestID"] = result.metaData().requestId()
-    output["servicingHost"] = result.metaData().profile().get().get("servicingHost")
 
     try:
         output["results"] = result.rowsAsObject()
     except:
         output["results"] = None
+
+    try:
+        output["servicingHost"] = result.metaData().profile().get().get("servicingHost")
+    except:
+        output["servicingHost"] = None
 
     if str(output['status']) == QueryStatus.FATAL:
         msg = output['errors'][0]['msg']
@@ -575,7 +579,7 @@ class QueryLoad:
                 query_tuple = random.choice(self.queries)
                 query = query_tuple[0]
                 start = time.time()
-                client_context_id = name + str(self.total_query_count)
+                client_context_id = name + "-" + str(self.total_query_count)
                 status, _, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id=client_context_id)
                 if status == QueryStatus.SUCCESS:
