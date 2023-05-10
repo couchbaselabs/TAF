@@ -128,7 +128,7 @@ def execute_via_sdk(client, statement, readonly=False,
         options.clientContextId(client_context_id)
 
     output = {}
-    result = client.query(statement)
+    result = client.query(statement, options)
 
     output["status"] = result.metaData().status()
     output["metrics"] = result.metaData().metrics()
