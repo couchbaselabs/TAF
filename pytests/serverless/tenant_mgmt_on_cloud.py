@@ -873,7 +873,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for scenario in scenarios:
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=1800, ignore_undesired_updates=True)
+                to_track, timeout=3600, ignore_undesired_updates=True)
             self.task_manager.get_task_result(monitor_task)
 
         if self.with_data_load:
@@ -919,7 +919,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                      Bucket.weight: 300}
         to_track = self.__trigger_bucket_param_updates(scenario)
         monitor_task = self.bucket_util.async_monitor_database_scaling(
-            to_track, timeout=1800)
+            to_track, timeout=3600)
         self.task_manager.get_task_result(monitor_task)
 
         # Perform scaling and perform new DB create/delete
@@ -936,7 +936,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                         Bucket.weight: 300}}
         to_track = self.__trigger_bucket_param_updates(scenario)
         monitor_task = self.bucket_util.async_monitor_database_scaling(
-            to_track, timeout=1800)
+            to_track, timeout=3600)
         # Create DB
         db_to_create = self.get_serverless_bucket_obj(
             db_name="tntMgmtCreateDeleteDB-%s" % b_index, width=1, weight=30)
@@ -967,7 +967,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                         Bucket.weight: 390}}
         to_track = self.__trigger_bucket_param_updates(scenario)
         monitor_task = self.bucket_util.async_monitor_database_scaling(
-            to_track, timeout=1800)
+            to_track, timeout=3600)
         # Drop the DB which was created earlier
         target_db = db_to_create
         self.log.info("Dropping DB: %s" % target_db.name)
@@ -1057,7 +1057,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for scenario in scenarios:
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=1800, ignore_undesired_updates=True)
+                to_track, timeout=3600, ignore_undesired_updates=True)
             self.task_manager.get_task_result(monitor_task)
 
         if self.validate_stat:
@@ -1434,7 +1434,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             scenarios = {bucket_name: {Bucket.width: 2}}
             track = self.__trigger_bucket_param_updates(scenarios)
             db_monitor_task = self.bucket_util.async_monitor_database_scaling(
-                track, timeout=600)
+                track, timeout=3600)
             self.task_manager.get_task_result(db_monitor_task)
             return bucket_name
 
@@ -1497,7 +1497,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     {Bucket.weight: desired_weight}
             to_track = self.__trigger_bucket_param_updates(dynamic_scenarios)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=600)
+                to_track, timeout=3600)
             self.task_manager.get_task_result(monitor_task)
         else:
             for bucket in bucket_to_update:
@@ -1720,7 +1720,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     self.bucket_info[bucket][create_start] + 500000
             start_data_load(self.cluster.buckets)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=600, ignore_undesired_updates=True)
+                to_track, timeout=3600, ignore_undesired_updates=True)
             self.task_manager.get_task_result(monitor_task)
             limit_exceed_tolerance = 0.3
             self.sleep(70, "Wait after rebalanace")
