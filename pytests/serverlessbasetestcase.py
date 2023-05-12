@@ -38,7 +38,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.capella = self.input.capella
         self.num_dataplanes = self.input.param("num_dataplanes", 1)
 
-        self.wait_timeout = self.input.param("wait_timeout", 120)
+        self.wait_timeout = self.input.param("wait_timeout", 1800)
         CbServer.use_https = True
         trust_all_certs()
 
