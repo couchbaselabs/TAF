@@ -173,7 +173,7 @@ class CBASBaseTest(BaseTestCase):
 
         self.cbas_memory_quota_percent = int(self.input.param(
             "cbas_memory_quota_percent", 100))
-        self.bucket_size = self.input.param("bucket_size", 250)
+        self.bucket_size = self.input.param("bucket_size", 256)
 
         self.cbas_util = CbasUtil(self.task)
 
@@ -586,6 +586,23 @@ class CBASBaseTest(BaseTestCase):
                 self.bucket_spec)
 
         buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = self.use_simple_names
+
+        if self.bucket_storage == Bucket.StorageBackend.magma:
+            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.magma
+            buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.FULL_EVICTION
+
+            if Bucket.ramQuotaMB not in buckets_spec or \
+                (Bucket.ramQuotaMB in buckets_spec and buckets_spec[Bucket.ramQuotaMB] < 256):
+                buckets_spec[Bucket.ramQuotaMB] = 256
+
+        else:
+            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.couchstore
+
+            if Bucket.evictionPolicy not in buckets_spec:
+                buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.VALUE_ONLY
+
+            if Bucket.ramQuotaMB not in buckets_spec:
+                buckets_spec[Bucket.ramQuotaMB] = 100
 
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(cluster, buckets_spec)

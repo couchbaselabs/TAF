@@ -30,10 +30,9 @@ class TPCHUtil(object):
         try:
             bucket_spec_name = "analytics.tpch"
             self.basetest_obj.bucket_util.add_rbac_user(cluster.master)
-            buckets_spec = self.basetest_obj.bucket_util.get_bucket_template_from_package(bucket_spec_name)
+            self.basetest_obj.spec_name = bucket_spec_name
 
-            self.basetest_obj.bucket_util.create_buckets_using_json_data(cluster, buckets_spec)
-            self.basetest_obj.bucket_util.wait_for_collection_creation_to_complete(cluster)
+            CollectionBase.deploy_buckets_from_spec_file(self.basetest_obj)
 
             # Prints bucket stats before doc_ops
             self.basetest_obj.bucket_util.print_bucket_stats(cluster)

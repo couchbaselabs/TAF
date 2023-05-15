@@ -112,7 +112,7 @@ spec = {
             }
         },
         "lineitem": {
-            Bucket.ramQuotaMB: 200,
+            Bucket.ramQuotaMB: 256,
             MetaConstants.NUM_SCOPES_PER_BUCKET: 1,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 1,
             "scopes": {
