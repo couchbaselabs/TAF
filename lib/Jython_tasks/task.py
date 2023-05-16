@@ -6921,7 +6921,7 @@ class MonitorBucketCompaction(Task):
 
 class CBASQueryExecuteTask(Task):
     def __init__(self, cluster, cbas_util, cbas_endpoint, statement):
-        super(CBASQueryExecuteTask, self).__init__("Cbas_query_task: {0} {1}".format(statement, self.nextSerial()))
+        super(CBASQueryExecuteTask, self).__init__("Cbas_query_task: {0}".format(statement))
         self.cluster = cluster
         self.cbas_util = cbas_util
         self.cbas_endpoint = cbas_endpoint

@@ -1305,7 +1305,7 @@ class Dataset_Util(Link_Util):
             if_not_exists=False, compress_dataset=False, with_clause=None,
             link_name=None, where_clause=None, validate_error_msg=False,
             username=None, password=None, expected_error=None, timeout=120,
-            analytics_timeout=120, analytics_collection=False):
+            analytics_timeout=120, analytics_collection=False, storage_format=None):
         """
         Creates a dataset/analytics collection on a KV bucket.
         :param dataset_name str, fully qualified dataset name.
@@ -1327,6 +1327,8 @@ class Dataset_Util(Link_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         :param analytics_collection bool, If True, will use create analytics collection syntax
+        :param storage_format string, whether to use row or column storage for analytics datasets. Valid values are
+        row and column
         """
         if dataverse_name and not self.create_dataverse(
                 cluster, dataverse_name=dataverse_name, if_not_exists=True,
@@ -1346,11 +1348,16 @@ class Dataset_Util(Link_Util):
         else:
             cmd += " {0}".format(dataset_name)
 
-        if compress_dataset:
-            cmd += " with {'storage-block-compression': {'scheme': 'snappy'}}"
+        if with_clause or compress_dataset or storage_format:
+            with_params = dict()
 
-        if with_clause:
-            cmd += " " + with_clause
+            if compress_dataset:
+                with_params["storage-block-compression"] = {'scheme': 'snappy'}
+
+            if storage_format:
+                with_params["storage-format"] = {"format": storage_format}
+
+            cmd += " with " + json.dumps(with_params) + " "
 
         cmd += " on {0}".format(kv_entity)
 
@@ -1379,7 +1386,7 @@ class Dataset_Util(Link_Util):
             if_not_exists=False, compress_dataset=False, with_clause=None,
             link_name=None, where_clause=None, validate_error_msg=False,
             username=None, password=None, expected_error=None,
-            timeout=120, analytics_timeout=120):
+            timeout=120, analytics_timeout=120, storage_format=None):
         """
         Creates a analytics collection which is syntactic sugar for creating datasets.
         :param dataset_name str, fully qualified dataset name.
@@ -1400,12 +1407,14 @@ class Dataset_Util(Link_Util):
         :param expected_error: str
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
+        :param storage_format string, whether to use row or column storage for analytics datasets. Valid values are
+        row and column
         """
         return self.create_dataset(
             cluster, dataset_name, kv_entity, dataverse_name, if_not_exists,
             compress_dataset, with_clause, link_name, where_clause,
             validate_error_msg, username, password, expected_error,
-            timeout, analytics_timeout, True)
+            timeout, analytics_timeout, True, storage_format)
 
     def create_dataset_on_external_resource_azure(
                 self, cluster, dataset_name, azure_container_name, link_name,
@@ -1924,6 +1933,13 @@ class Dataset_Util(Link_Util):
         """
         return cbas_spec.get("dataset", {})
 
+    @staticmethod
+    def update_dataset_spec(cbas_spec, **kwargs):
+        dataset_spec = Dataset_Util.get_dataset_spec(cbas_spec)
+        for spec_name, spec_value in kwargs.items():
+            dataset_spec[spec_name] = spec_value
+
+
     def create_dataset_from_spec(self, cluster, cbas_spec, bucket_util):
         self.log.info("Creating Datasets based on CBAS Spec")
 
@@ -1980,10 +1996,9 @@ class Dataset_Util(Link_Util):
 
             if cbas_spec.get("no_of_dataverses", 1) == 0:
                 cbas_spec["no_of_dataverses"] = 1
-            total_no_of_datasets = cbas_spec.get("no_of_dataverses",
-                                                 1) * cbas_spec.get(
-                "no_of_datasets_per_dataverse",
-                0)
+            total_no_of_datasets = cbas_spec.get(
+                "no_of_dataverses", 1) * cbas_spec.get(
+                "no_of_datasets_per_dataverse", 0)
             if cbas_spec.get("percent_of_local_datasets", 0) == cbas_spec.get(
                     "percent_of_remote_datasets", 0) == cbas_spec.get(
                 "percent_of_external_datasets",
@@ -2061,8 +2076,7 @@ class Dataset_Util(Link_Util):
                             if dataset_spec.get("bucket_cardinality", 0) == 0:
                                 bucket_cardinality = random.choice([1, 3])
                             else:
-                                bucket_cardinality = dataset_spec[
-                                    "bucket_cardinality"]
+                                bucket_cardinality = dataset_spec["bucket_cardinality"]
 
                             enabled_from_KV = False
                             if remote_dataset:
@@ -2213,20 +2227,22 @@ class Dataset_Util(Link_Util):
                                         analytics_collection = True
                                     elif isinstance(dataset_obj, Dataset):
                                         analytics_collection = False
+
+                                    if dataset_spec["storage_format"] == "mixed":
+                                        storage_format = random.choice(["row", "column"])
+                                    else:
+                                        storage_format = dataset_spec["storage_format"]
                                     results.append(
                                         self.create_dataset(
                                             cluster, dataset_obj.name,
                                             dataset_obj.full_kv_entity_name,
-                                            dataverse_name,
-                                            False, False, None,
+                                            dataverse_name, False, False, None,
                                             dataset_obj.link_name, None, False,
                                             None, None, None,
-                                            timeout=cbas_spec.get(
-                                                "api_timeout", 120),
-                                            analytics_timeout=cbas_spec.get(
-                                                "cbas_timeout", 120),
-                                            analytics_collection=
-                                            analytics_collection))
+                                            timeout=cbas_spec.get("api_timeout", 120),
+                                            analytics_timeout=cbas_spec.get("cbas_timeout", 120),
+                                            analytics_collection=analytics_collection,
+                                            storage_format=storage_format))
                             else:
                                 results.append(
                                     self.create_dataset_on_external_resource(
@@ -2265,7 +2281,8 @@ class Dataset_Util(Link_Util):
 
     def create_datasets_on_all_collections(
             self, cluster, bucket_util, cbas_name_cardinality=1,
-            kv_name_cardinality=1, remote_datasets=False, creation_methods=None):
+            kv_name_cardinality=1, remote_datasets=False, creation_methods=None,
+            storage_format=None):
         """
         Create datasets on every collection across all the buckets and scopes.
         :param bucket_util obj, bucket_util obj to perform operations on KV bucket.
@@ -2273,6 +2290,8 @@ class Dataset_Util(Link_Util):
         :param kv_name_cardinality int, no of parts in KV entity name. Valid values 1 or 3.
         :param remote_datasets bool, if True create remote datasets using remote links.
         :param creation_methods list, support values are "cbas_collection","cbas_dataset","enable_cbas_from_kv"
+        :param storage_format string, whether to use row or column storage for analytics datasets. Valid values are
+        row, column, None and mixed.
         """
         self.log.info("Creating Datasets on all KV collections")
         jobs = Queue()
@@ -2286,7 +2305,7 @@ class Dataset_Util(Link_Util):
             remote_link_objs = self.list_all_link_objs("couchbase")
             creation_methods.remove("enable_cbas_from_kv")
 
-        def dataset_creation(bucket, scope, collection):
+        def dataset_creation(bucket, scope, collection, storage_format):
             creation_method = random.choice(creation_methods)
 
             if remote_datasets:
@@ -2351,6 +2370,9 @@ class Dataset_Util(Link_Util):
                 elif isinstance(dataset_obj, Dataset):
                     analytics_collection = False
 
+                if storage_format == "mixed":
+                    storage_format = random.choice(["row", "column"])
+
                 if kv_name_cardinality > 1 and cbas_name_cardinality > 1:
                     results.append(
                         self.create_dataset(
@@ -2358,7 +2380,7 @@ class Dataset_Util(Link_Util):
                             dataset_obj.full_kv_entity_name,
                             dataverse_name, False, False, None,
                             dataset_obj.link_name, None, False, None, None,
-                            None, 120, 120, analytics_collection))
+                            None, 120, 120, analytics_collection, storage_format))
                 elif kv_name_cardinality > 1 and cbas_name_cardinality == 1:
                     results.append(
                         self.create_dataset(
@@ -2366,7 +2388,7 @@ class Dataset_Util(Link_Util):
                             dataset_obj.full_kv_entity_name,
                             None, False, False, None, dataset_obj.link_name,
                             None, False, None, None, None, 120, 120,
-                            analytics_collection))
+                            analytics_collection, storage_format))
                 elif kv_name_cardinality == 1 and cbas_name_cardinality > 1:
                     results.append(
                         self.create_dataset(
@@ -2374,7 +2396,7 @@ class Dataset_Util(Link_Util):
                             dataset_obj.get_fully_qualified_kv_entity_name(1),
                             dataverse_name, False, False, None,
                             dataset_obj.link_name, None, False, None, None,
-                            None, 120, 120, analytics_collection))
+                            None, 120, 120, analytics_collection, storage_format))
                 else:
                     results.append(
                         self.create_dataset(
@@ -2382,7 +2404,7 @@ class Dataset_Util(Link_Util):
                             dataset_obj.get_fully_qualified_kv_entity_name(1),
                             None, False, False, None, dataset_obj.link_name,
                             None, False, None, None,
-                            None, 120, 120, analytics_collection))
+                            None, 120, 120, analytics_collection, storage_format))
 
             if results[-1]:
                 dataverse.datasets[dataset_obj.name] = dataset_obj
@@ -2393,12 +2415,11 @@ class Dataset_Util(Link_Util):
                     for collection in bucket_util.get_active_collections(
                             bucket,
                             scope.name):
-                        dataset_creation(bucket, scope, collection)
+                        dataset_creation(bucket, scope, collection, storage_format)
             else:
                 scope = bucket_util.get_scope_obj(bucket, "_default")
-                dataset_creation(bucket, scope,
-                                 bucket_util.get_collection_obj(scope,
-                                                                "_default"))
+                dataset_creation(bucket, scope, bucket_util.get_collection_obj(
+                    scope, "_default"), storage_format)
 
         return all(results)
 
@@ -2408,10 +2429,16 @@ class Dataset_Util(Link_Util):
             for_all_kv_entities=False, remote_dataset=False, link=None,
             same_dv_for_link_and_dataset=False, name_length=30,
             fixed_length=False, exclude_bucket=[], exclude_scope=[],
-            exclude_collection=[], no_of_objs=1):
+            exclude_collection=[], no_of_objs=1, storage_format=None):
         """
         Generates dataset objects.
         """
+
+        def set_dataset_storage_format(ds_obj, storage_format):
+            if storage_format == "mixed":
+                ds_obj.storage_format = random.choice(["row", "column"])
+            else:
+                ds_obj.storage_format = storage_format
 
         def create_object(
                 bucket, scope, collection, enabled_from_KV=enabled_from_KV,
@@ -2502,6 +2529,7 @@ class Dataset_Util(Link_Util):
 
                 if bucket_cardinality == 1:
                     dataset_objs.append(create_object(bucket, None, None))
+                    set_dataset_storage_format(dataset_objs[-1], storage_format)
                 else:
                     active_scopes = bucket_util.get_active_scopes(bucket)
                     for scope in active_scopes:
@@ -2513,7 +2541,9 @@ class Dataset_Util(Link_Util):
                         for collection in active_collections:
                             if collection.is_dropped or collection.name in exclude_collection:
                                 continue
-                            dataset_objs.append(create_object(bucket, scope, collection))
+                            dataset_objs.append(create_object(
+                                bucket, scope, collection))
+                            set_dataset_storage_format(dataset_objs[-1], storage_format)
         else:
             for _ in range(no_of_objs):
                 bucket = random.choice(cluster.buckets)
@@ -2522,6 +2552,7 @@ class Dataset_Util(Link_Util):
 
                 if bucket_cardinality == 1:
                     dataset_objs.append(create_object(bucket, None, None))
+                    set_dataset_storage_format(dataset_objs[-1], storage_format)
                 else:
                     active_scopes = bucket_util.get_active_scopes(bucket)
                     scope = random.choice(active_scopes)
@@ -2535,8 +2566,8 @@ class Dataset_Util(Link_Util):
                         collection.name in exclude_collection):
                         collection = random.choice(active_collections)
 
-                    dataset_objs.append(create_object(
-                        bucket, scope, collection))
+                    dataset_objs.append(create_object(bucket, scope, collection))
+                    set_dataset_storage_format(dataset_objs[-1], storage_format)
         return dataset_objs
 
     def create_external_dataset_azure_obj(
@@ -5171,7 +5202,7 @@ class CBASRebalanceUtil(object):
             services += ["cbas"] * cbas_nodes_in
 
         rebalance_task = self.task.async_rebalance(
-            cluster.nodes_in_cluster, servs_in, servs_out,
+            cluster, servs_in, servs_out,
             check_vbucket_shuffling=self.vbucket_check,
             retry_get_process_num=200, services=services)
 

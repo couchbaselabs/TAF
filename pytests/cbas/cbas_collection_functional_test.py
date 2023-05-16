@@ -1199,8 +1199,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         """
         self.log.info("Test started")
         if not self.cbas_util.create_datasets_on_all_collections(
-            self.cluster, self.bucket_util, cbas_name_cardinality=3,
-            kv_name_cardinality=3, remote_datasets=False):
+                self.cluster, self.bucket_util, cbas_name_cardinality=3,
+                kv_name_cardinality=3, remote_datasets=False,
+                storage_format=self.input.param("storage_format", None)):
             self.fail("Error while creating datasets")
         dataset_objs = self.cbas_util.list_all_dataset_objs()
         # Remove this check once MB-53038 is resolved
@@ -1400,8 +1401,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if self.run_concurrent_query:
             self.start_query_task()
         if not self.cbas_util.create_datasets_on_all_collections(
-            self.cluster, self.bucket_util, cbas_name_cardinality=3,
-            kv_name_cardinality=3, creation_methods=["cbas_collection", "cbas_dataset"]):
+                self.cluster, self.bucket_util, cbas_name_cardinality=3,
+                kv_name_cardinality=3, creation_methods=["cbas_collection", "cbas_dataset"],
+                storage_format=self.input.param("storage_format", None)):
             self.fail("Dataset creation failed")
         self.stop_query_task()
         self.wait_for_data_load_task()
@@ -1481,8 +1483,9 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         if self.run_concurrent_query:
             self.start_query_task()
         if not self.cbas_util.create_datasets_on_all_collections(
-            self.cluster, self.bucket_util, cbas_name_cardinality=3,
-            kv_name_cardinality=1):
+                self.cluster, self.bucket_util, cbas_name_cardinality=3,
+                kv_name_cardinality=1,
+                storage_format=self.input.param("storage_format", None)):
             self.fail("Dataset creation failed")
         dataset_objs = self.cbas_util.list_all_dataset_objs()
         count = 0
@@ -1560,9 +1563,10 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log.info("Test started")
         jobs = Queue()
         if not self.cbas_util.create_datasets_on_all_collections(
-            self.cluster, self.bucket_util,
-            cbas_name_cardinality=self.input.param('cardinality', False),
-            kv_name_cardinality=self.input.param('bucket_cardinality', False)):
+                self.cluster, self.bucket_util,
+                cbas_name_cardinality=self.input.param('cardinality', False),
+                kv_name_cardinality=self.input.param('bucket_cardinality', False),
+                storage_format=self.input.param("storage_format", None)):
             self.fail("Dataset creation failed")
         dataset_objs = self.cbas_util.list_all_dataset_objs()
 
@@ -1640,9 +1644,10 @@ class CBASDatasetsAndCollections(CBASBaseTest):
         self.log.info("Test started")
         statement = 'SELECT VALUE v FROM {0} v WHERE age > 2'
         if not self.cbas_util.create_datasets_on_all_collections(
-            self.cluster, self.bucket_util,
-            cbas_name_cardinality=self.input.param('cardinality', None),
-            kv_name_cardinality=self.input.param('bucket_cardinality', None)):
+                self.cluster, self.bucket_util,
+                cbas_name_cardinality=self.input.param('cardinality', None),
+                kv_name_cardinality=self.input.param('bucket_cardinality', None),
+                storage_format=self.input.param("storage_format", None)):
             self.fail("Dataset creation failed")
         dataset_objs = self.cbas_util.list_all_dataset_objs()
         count = 0

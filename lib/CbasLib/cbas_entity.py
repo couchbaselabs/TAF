@@ -128,6 +128,7 @@ class Dataset(object):
                 self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
                     cardinality=1)
             self.num_of_items = num_of_items
+            self.storage_format = None
 
         elif self.dataset_source == "external":
             self.dataset_properties = dataset_properties

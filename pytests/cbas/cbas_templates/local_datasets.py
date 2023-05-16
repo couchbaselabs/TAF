@@ -89,10 +89,16 @@ spec = {
         # Accepted values are list of creation methods ["cbas_collection","cbas_dataset","enable_cbas_from_kv"].
         # [] means all methods will be considered while creating dataset.
         "creation_methods" : [],
-        # This is only applicable while creating external datasets. 
-        "external_dataset_properties" : [{}]
+        # This is only applicable while creating external datasets.
+        "external_dataset_properties" : [{}],
+        # This is only for local datasets. Accepted values are -
+        # None - Dataset storage will default to row or column based on analytics service level storage format
+        # row - Dataset storage will be row format
+        # column - Dataset storage will be column format
+        # mixed - Dataset storage will be row + column format
+        "storage_format" : "mixed"
         },
-    
+
     "synonym" : {
         # Accepted values are random or any string.
         "name_key" : "random",
