@@ -82,8 +82,8 @@ class NodeUtils(object):
         self.jython_task_manager.schedule(task)
         return task
 
-    def async_enable_tls(self, server):
-        task = jython_tasks.FunctionCallTask(self._enable_tls, [server])
+    def async_enable_tls(self, server, level="strict"):
+        task = jython_tasks.FunctionCallTask(self._enable_tls, [server, level])
         self.jython_task_manager.schedule(task)
         return task
 

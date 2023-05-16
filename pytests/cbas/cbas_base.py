@@ -275,31 +275,6 @@ class CBASBaseTest(BaseTestCase):
                     self.fail("Analytics service did not come up even after "
                               "10 mins of wait after initialisation")
 
-            if self.input.param("n2n_encryption", False):
-
-                self.security_util = SecurityUtils(self.log)
-
-                rest = RestConnection(cluster.master)
-                self.log.info("Disabling Auto-Failover")
-                if not rest.update_autofailover_settings(
-                        False, 120, False):
-                    self.fail("Disabling Auto-Failover failed")
-
-                self.log.info("Setting node to node encryption level to {0}".format(
-                    self.input.param("n2n_encryption_level", "control")))
-                self.security_util.set_n2n_encryption_level_on_nodes(
-                    cluster.nodes_in_cluster,
-                    level=self.input.param("n2n_encryption_level", "control"))
-
-                CbServer.use_https = True
-                self.log.info("Enabling Auto-Failover")
-                if not rest.update_autofailover_settings(
-                        True, 300, False):
-                    self.fail("Enabling Auto-Failover failed")
-
-                for server in self.input.servers:
-                    self.set_ports_for_server(server, "ssl")
-
                 if not self.cbas_util.wait_for_cbas_to_recover(cluster, 300):
                     self.fail("Analytics service Failed to recover")
 

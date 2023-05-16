@@ -20,6 +20,7 @@ from couchbase_helper.cluster import ServerTasks
 from TestInput import TestInputSingleton
 from global_vars import logger
 from couchbase_helper.durability_helper import BucketDurability
+from couchbase_utils.cb_tools.cb_cli import CbCli
 from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
@@ -216,6 +217,7 @@ class BaseTestCase(unittest.TestCase):
                                                     False)
         self.use_https = self.input.param("use_https", False)
         self.enforce_tls = self.input.param("enforce_tls", False)
+        self.tls_level = self.input.param("tls_level", "strict")
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
@@ -420,16 +422,28 @@ class BaseTestCase(unittest.TestCase):
                 for _, cluster in self.cb_clusters.items():
                     tasks = []
                     for node in cluster.servers:
-                        task = self.node_utils.async_enable_tls(node)
+                        task = self.node_utils.async_enable_tls(node, self.tls_level)
                         tasks.append(task)
                     for task in tasks:
                         self.task_manager.get_task_result(task)
-                    self.log.info("Validating if services obey tls only on servers {0}".
-                                  format(cluster.servers))
-                    status = self.cluster_util.check_if_services_obey_tls(
-                        cluster.servers)
-                    if not status:
-                        self.fail("Services did not honor enforce tls")
+                    self.sleep(20, "waiting after enabling TLS")
+                    if self.tls_level == "strict":
+                        self.log.info("Validating if services obey tls only on servers {0}".
+                                      format(cluster.servers))
+                        status = self.cluster_util.\
+                            check_if_services_obey_tls(cluster.servers)
+                        if not status:
+                            self.fail("Services did not honor enforce tls")
+                    for node in cluster.servers:
+                        shell_conn = RemoteMachineShellConnection(node)
+                        cb_cli = CbCli(shell_conn, no_ssl_verify=True)
+                        level = cb_cli.get_n2n_encryption_level()
+                        shell_conn.disconnect()
+                        self.assertTrue(level == self.tls_level)
+
+            if self.use_https:
+                for server in self.input.servers:
+                    self.set_ports_for_server(server, "ssl")
 
             # Enforce IPv4 or IPv6 or both
             if self.ipv4_only or self.ipv6_only:
@@ -562,7 +576,6 @@ class BaseTestCase(unittest.TestCase):
                         self.task_manager.get_task_result(task)
             for server in self.input.servers:
                 self.set_ports_for_server(server, "non_ssl")
-
         if self.multiple_ca:
             CbServer.use_https = False
             for _, cluster in self.cb_clusters.items():

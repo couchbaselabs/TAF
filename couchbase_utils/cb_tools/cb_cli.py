@@ -133,12 +133,12 @@ class CbCli(CbCmdBase):
         if len(error) != 0:
             raise Exception(str(error))
         CbServer.n2n_encryption = True
-        CbServer.use_https = False
+        CbServer.use_https = True
         return output
 
     def disable_n2n_encryption(self):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --disable" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, "localhost", self.__get_http_port(),
                  self.username, self.password)
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
@@ -150,16 +150,14 @@ class CbCli(CbCmdBase):
 
     def set_n2n_encryption_level(self, level="all"):
         cmd = "%s setting-security -c %s:%s -u %s -p %s --set --cluster-encryption-level %s" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, "localhost", self.__get_http_port(),
                  self.username, self.password, level)
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
-        if level != "strict":
-            CbServer.use_https = False
-        else:
-            CbServer.use_https = True
+        CbServer.use_https = True
+        if level == "strict":
             trust_all_certs()
         return output
 
