@@ -57,6 +57,7 @@ class Murphy(BaseTestCase, OPD):
         self.num_scopes = self.input.param("num_scopes", 1)
         self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
         self.num_buckets = self.input.param("num_buckets", 1)
+        self.rebalance_type = self.input.param("rebalance_type", "all")
         self.kv_nodes = self.nodes_init
         self.cbas_nodes = self.input.param("cbas_nodes", 0)
         self.fts_nodes = self.input.param("fts_nodes", 0)
@@ -97,9 +98,6 @@ class Murphy(BaseTestCase, OPD):
                                                        True)
         self.load_defn = list()
 
-        if self.cluster.backup_nodes:
-            self.drBackup = DoctorBKRS(self.cluster)
-
         if self.cluster.eventing_nodes:
             self.drEventing = DoctorEventing(self.cluster, self.bucket_util)
 
@@ -108,6 +106,20 @@ class Murphy(BaseTestCase, OPD):
 
         if self.cluster.fts_nodes:
             self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
+
+        if self.cluster.cbas_nodes:
+            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util)
+
+        if self.backup_nodes > 0:
+            self.drBackupRestore = DoctorHostedBackupRestore(cluster=self.cluster,
+                                                             bucket_name=self.cluster.buckets[0].name,
+                                                             pod=self.pod,
+                                                             tenant=self.tenant)
+        if self.xdcr_remote_clusters > 0:
+            self.drXDCR = DoctorXDCR(source_cluster=self.cluster, destination_cluster=self.xdcr_cluster,
+                                     source_bucket=self.cluster.buckets[0].name,
+                                     destination_bucket=self.xdcr_cluster.buckets[0].name,
+                                     pod=self.pod, tenant=self.tenant)
 
         self.ql = list()
         self.ftsQL = list()
@@ -240,7 +252,7 @@ class Murphy(BaseTestCase, OPD):
                                                               ql.query_stats[query][1],
                                                               ql.query_stats[query][0]/ql.query_stats[query][1]])
                         except Exception as e:
-                            print e
+                            print(e)
                         self.query_table.display("N1QL Query Execution Stats")
                         self.table.add_row([
                             str(ql.bucket.name),
@@ -378,8 +390,6 @@ class Murphy(BaseTestCase, OPD):
                             collection_spec = {"name": collection_name}
                             CollectionUtils.create_collection_object(bucket, scope, collection_spec)
 
-        if self.cluster.cbas_nodes:
-            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util)
         self.loop = 1
         self.skip_read_on_error = True
         self.suppress_error_table = True
@@ -396,6 +406,8 @@ class Murphy(BaseTestCase, OPD):
                                bucket=bucket)
         if not self.skip_init:
             self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
+            if self.xdcr_remote_clusters > 0:
+                self.drXDCR.set_up_replication()
 
         self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
         for bucket in self.cluster.buckets:
@@ -406,11 +418,11 @@ class Murphy(BaseTestCase, OPD):
         if not self.skip_init:
             self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
 
-        if self.cluster.cbas_nodes and self.skip_init:
+        if self.cluster.cbas_nodes and not self.skip_init:
             self.drCBAS.create_datasets()
-            result = self.drCBAS.wait_for_ingestion(self.num_items,
-                                                    self.index_timeout)
-            self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
+            self.drCBAS.create_indexes()
+            result = self.drCBAS.wait_for_ingestion(self.index_timeout)
+            self.assertTrue(result, "CBAS ingestion couldn't complete in time: %s" % self.index_timeout)
             self.drCBAS.start_query_load()
 
         if self.cluster.index_nodes:
@@ -440,122 +452,165 @@ class Murphy(BaseTestCase, OPD):
                 self.ftsQL.append(ql)
 
         if not sanity:
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-            for bucket in self.cluster.buckets:
-                bucket.loadDefn["ops"] = 10000
-                self.generate_docs(bucket=bucket)
-            tasks = self.perform_load(wait_for_load=False)
-            time.sleep(1*60*60)
-            # Rebalance 1 - Disk Upgrade
-            initial_services = self.input.param("services", "data")
-            server_group_list = list()
-            self.restart_query_load()
-            for service_group in initial_services.split("-"):
-                service_group = sorted(service_group.split(":"))
-                service = service_group[0]
-                if not(len(service_group) == 1 and service in ["query"]):
-                    self.disk[service] = self.disk[service] + 500
-                    if service == "query":
-                        self.disk[service_group[1]] = self.disk[service_group[1]] + 500
-                config = {
-                    "size": self.num_nodes[service],
-                    "services": service_group,
-                    "compute": self.compute[service],
-                    "storage": {
-                        "type": self.input.param("type", AWS.StorageType.GP3),
-                        "size": self.disk[service],
-                        "iops": self.iops[service]
-                    }
-                }
-                if self.capella_cluster_config.get("place"):
-                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                        config["storage"].pop("iops")
-                elif self.capella_cluster_config["provider"] != "hostedAWS":
-                    config["storage"].pop("iops")
-                server_group_list.append(config)
-            self.log.info(server_group_list)
-            rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                               server_group_list,
-                                                               timeout=96*60*60)
-            self.sleep(1*60*60)
-            self.restart_query_load()
-            self.task_manager.get_task_result(rebalance_task)
-            self.cluster_util.print_cluster_stats(self.cluster)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            disk_increment = self.input.param("increment", 5)
+            while self.loop <= self.iterations:
+                self.loop += 1
+                self.mutation_perc = self.input.param("mutation_perc", 100)
+                for bucket in self.cluster.buckets:
+                    bucket.loadDefn["ops"] = 10000
+                    self.generate_docs(bucket=bucket)
+                tasks = self.perform_load(wait_for_load=False)
+                time.sleep(1*60*60)
+                if self.rebalance_type == "all" or self.rebalance_type == "disk":
+                    # Rebalance 1 - Disk Upgrade
+                    initial_services = self.input.param("services", "data")
+                    server_group_list = list()
+                    self.restart_query_load()
+                    for service_group in initial_services.split("-"):
+                        service_group = sorted(service_group.split(":"))
+                        service = service_group[0]
+                        if not(len(service_group) == 1 and service in ["query"]):
+                            self.disk[service] = self.disk[service] + disk_increment
+                            if service == "query":
+                                self.disk[service_group[1]] = self.disk[service_group[1]] + disk_increment
+                        config = {
+                            "size": self.num_nodes[service],
+                            "services": service_group,
+                            "compute": self.compute[service],
+                            "storage": {
+                                "type": self.input.param("type", AWS.StorageType.GP3),
+                                "size": self.disk[service],
+                                "iops": self.iops[service]
+                            }
+                        }
+                        if self.capella_cluster_config.get("place"):
+                            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                                config["storage"].pop("iops")
+                        elif self.capella_cluster_config["provider"] != "hostedAWS":
+                            config["storage"].pop("iops")
+                        server_group_list.append(config)
+                    self.log.info(server_group_list)
+                    if self.backup_nodes > 0:
+                        self.drBackupRestore.backup_now(wait_for_backup=False)
+                    rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                       server_group_list,
+                                                                       timeout=96*60*60)
+                    disk_increment = disk_increment * -1
+                    self.sleep(1*60*60)
+                    self.restart_query_load()
+                    self.task_manager.get_task_result(rebalance_task)
+                    self.cluster_util.print_cluster_stats(self.cluster)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
-            # Rebalance 2 - Compute Upgrade
-            self.restart_query_load()
-            server_group_list = list()
-            initial_services = self.input.param("services", "data")
-            for service_group in initial_services.split("-"):
-                service_group = sorted(service_group.split(":"))
-                service = service_group[0]
-                if service == "kv" or service == "data":
-                    self.compute[service] = "n2-custom-48-98304"
-                if "index" in service_group or "query" in service_group:
-                    self.compute[service] = "n2-standard-64"
-                config = {
-                    "size": self.num_nodes[service],
-                    "services": service_group,
-                    "compute": self.compute[service],
-                    "storage": {
-                        "type": self.input.param("type", AWS.StorageType.GP3),
-                        "size": self.disk[service],
-                        "iops": self.iops[service]
-                    }
-                }
-                if self.capella_cluster_config.get("place"):
-                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                        config["storage"].pop("iops")
-                elif self.capella_cluster_config["provider"] != "hostedAWS":
-                    config["storage"].pop("iops")
-                server_group_list.append(config)
-            self.log.info(server_group_list)
-            rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                               server_group_list,
-                                                               timeout=96*60*60)
-            self.task_manager.get_task_result(rebalance_task)
-            self.cluster_util.print_cluster_stats(self.cluster)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                if self.rebalance_type == "all" or self.rebalance_type == "compute":
+                    # Rebalance 2 - Compute Upgrade
+                    self.restart_query_load()
+                    server_group_list = list()
+                    initial_services = self.input.param("services", "data")
+                    for service_group in initial_services.split("-"):
+                        service_group = sorted(service_group.split(":"))
+                        service = service_group[0]
+                        if service == "kv" or service == "data":
+                            self.compute[service] = "n2-custom-48-98304"
+                        if "index" in service_group or "query" in service_group:
+                            self.compute[service] = "n2-standard-64"
+                        config = {
+                            "size": self.num_nodes[service],
+                            "services": service_group,
+                            "compute": self.compute[service],
+                            "storage": {
+                                "type": self.input.param("type", AWS.StorageType.GP3),
+                                "size": self.disk[service],
+                                "iops": self.iops[service]
+                            }
+                        }
+                        if self.capella_cluster_config.get("place"):
+                            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                                config["storage"].pop("iops")
+                        elif self.capella_cluster_config["provider"] != "hostedAWS":
+                            config["storage"].pop("iops")
+                        server_group_list.append(config)
+                    self.log.info(server_group_list)
+                    if self.backup_nodes > 0:
+                        self.drBackupRestore.backup_now(wait_for_backup=False)
+                    rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                       server_group_list,
+                                                                       timeout=96*60*60)
+                    self.task_manager.get_task_result(rebalance_task)
+                    self.cluster_util.print_cluster_stats(self.cluster)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
-            # Rebalance 3 - Both Disk/Compute Upgrade
-            self.sleep(1*60*60)
-            self.restart_query_load()
-            server_group_list = list()
-            initial_services = self.input.param("services", "data")
-            for service_group in initial_services.split("-"):
-                service_group = sorted(service_group.split(":"))
-                service = service_group[0]
-                if not(len(service_group) == 1 and service in ["query"]):
-                    self.disk[service] = self.disk[service] + 500
-                if service == "kv" or service == "data":
-                    self.compute[service] = "n2-custom-72-147456"
-                if "index" in service_group or "gsi" in service_group:
-                    self.compute[service] = "n2-standard-80"
-                if "query" in service_group or "n1ql" in service_group:
-                    self.compute[service] = "n2-standard-80"
-                config = {
-                    "size": self.num_nodes[service],
-                    "services": service_group,
-                    "compute": self.compute[service],
-                    "storage": {
-                        "type": self.input.param("type", AWS.StorageType.GP3),
-                        "size": self.disk[service],
-                        "iops": self.iops[service]
-                    }
-                }
-                if self.capella_cluster_config.get("place"):
-                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                        config["storage"].pop("iops")
-                elif self.capella_cluster_config["provider"] != "hostedAWS":
-                    config["storage"].pop("iops")
-                server_group_list.append(config)
-            rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                               server_group_list,
-                                                               timeout=96*60*60)
-            self.task_manager.get_task_result(rebalance_task)
-            self.cluster_util.print_cluster_stats(self.cluster)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                if self.rebalance_type == "all" or self.rebalance_type == "disk_compute":
+                    # Rebalance 3 - Both Disk/Compute Upgrade
+                    self.sleep(1*60*60)
+                    self.restart_query_load()
+                    server_group_list = list()
+                    initial_services = self.input.param("services", "data")
+                    for service_group in initial_services.split("-"):
+                        service_group = sorted(service_group.split(":"))
+                        service = service_group[0]
+                        if not(len(service_group) == 1 and service in ["query"]):
+                            self.disk[service] = self.disk[service] + disk_increment
+                        if service == "kv" or service == "data":
+                            self.compute[service] = "n2-custom-72-147456"
+                        if "index" in service_group or "gsi" in service_group:
+                            self.compute[service] = "n2-standard-80"
+                        if "query" in service_group or "n1ql" in service_group:
+                            self.compute[service] = "n2-standard-80"
+                        config = {
+                            "size": self.num_nodes[service],
+                            "services": service_group,
+                            "compute": self.compute[service],
+                            "storage": {
+                                "type": self.input.param("type", AWS.StorageType.GP3),
+                                "size": self.disk[service],
+                                "iops": self.iops[service]
+                            }
+                        }
+                        if self.capella_cluster_config.get("place"):
+                            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
+                                config["storage"].pop("iops")
+                        elif self.capella_cluster_config["provider"] != "hostedAWS":
+                            config["storage"].pop("iops")
+                        server_group_list.append(config)
+                    if self.backup_nodes > 0:
+                        self.drBackupRestore.backup_now(wait_for_backup=False)
+                    rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                       server_group_list,
+                                                                       timeout=96*60*60)
+                    self.task_manager.get_task_result(rebalance_task)
+                    disk_increment = disk_increment * -1
+                    self.cluster_util.print_cluster_stats(self.cluster)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+            self.PrintStep("Step 4: XDCR replication being set up")
+            if self.xdcr_remote_clusters > 0:
+                num_items = self.cluster.buckets[0].loadDefn.get("num_items") * self.cluster.buckets[0].loadDefn.get(
+                    "collections")
+                replication_done = self.drXDCR.is_replication_complete(
+                    cluster=self.xdcr_cluster,
+                    bucket_name=self.xdcr_cluster.buckets[0].name,
+                    item_count=num_items)
+                if not replication_done:
+                    self.log.error("Replication did not complete. Check logs!")
+            if self.backup_nodes > 0:
+                list_backups = self.drBackupRestore.list_all_backups().json()
+                backups_on_bucket = list_backups['backups']['data']
+                if not backups_on_bucket:
+                    self.fail("No backups have been taken on bucket {}".format(self.cluster.buckets[0].name))
+                else:
+                    for count, item in enumerate(backups_on_bucket):
+                        self.log.debug("========= Backup number {} ==========".format(count))
+                        self.log.debug("Backup debug info:{}".format(item['data']))
+                CapellaAPI.flush_bucket(self.cluster, self.cluster.buckets[0].name)
+                time.sleep(120)
+                self.drBackupRestore.restore_from_backup(timeout=self.index_timeout)
+                time.sleep(60)
+                rest = RestConnection(self.cluster.master)
+                bucket_info = rest.get_bucket_details(bucket_name=self.cluster.buckets[0].name)
+                item_count = self.cluster.buckets[0].loadDefn.get("num_items") * self.cluster.buckets[0].loadDefn.get(
+                    "collections")
+                if bucket_info['basicStats']['itemCount'] == item_count:
+                    self.log.info("Post restore item count on the bucket is {}".format(item_count))
         else:
             self.rebl_nodes = self.nodes_init
             self.max_rebl_nodes = self.input.param("max_rebl_nodes",
@@ -612,282 +667,3 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.index_nodes:
             self.drIndex.discharge_N1QL()
 
-    def test_rebalance_new(self):
-        """
-        Compute instance scaling first, then disk, then disk+compute.
-        """
-        self.loadDefn1 = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": 2,
-            "num_items": 500000000,
-            "start": 0,
-            "end": 500000000,
-            "ops": 100000,
-            "doc_size": 1024,
-            "pattern": [0, 80, 20, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2i": [0, 0],
-            "FTS": [0, 0]
-            }
-        self.sanity = {
-            "valType": "SimpleValue",
-            "scopes": 1,
-            "collections": 10,
-            "num_items": 10000000,
-            "start": 0,
-            "end": 10000000,
-            "ops": 40000,
-            "doc_size": 1024,
-            "pattern": [0, 80, 20, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2i": [10, 10],
-            "FTS": [10, 10]
-            }
-        sanity = self.input.param("sanity", False)
-        if sanity:
-            self.load_defn.append(self.sanity)
-        else:
-            self.load_defn.append(self.loadDefn1)
-
-        #######################################################################
-        self.create_buckets()
-
-        self.loop = 1
-        self.skip_read_on_error = True
-        self.suppress_error_table = True
-        '''
-        Create sequential: 0 - 10M
-        Final Docs = 10M (0-10M, 10M seq items)
-        '''
-        if self.cluster.fts_nodes:
-            self.drFTS.create_fts_indexes()
-            status = self.drFTS.wait_for_fts_index_online(self.num_items*2,
-                                                          self.index_timeout)
-            self.assertTrue(status, "FTS index build failed.")
-
-        if self.cluster.cbas_nodes:
-            self.drCBAS.create_datasets()
-            result = self.drCBAS.wait_for_ingestion(self.num_items*2,
-                                                    self.index_timeout)
-            self.assertTrue(result, "CBAS ingestion coulcn't complete in time: %s" % self.index_timeout)
-            self.drCBAS.start_query_load()
-
-        if self.cluster.index_nodes:
-            self.drIndex.create_indexes(self.cluster.buckets)
-            self.build_gsi_index(self.cluster.buckets)
-
-        self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["create"],
-                               create_start=0,
-                               create_end=bucket.loadDefn.get("num_items")/2,
-                               bucket=bucket)
-        self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
-        for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("2iQPS", 0) > 0:
-                ql = QueryLoad(bucket)
-                ql.start_query_load()
-                self.ql.append(ql)
-        self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["create"],
-                               create_start=bucket.loadDefn.get("num_items")/2,
-                               create_end=bucket.loadDefn.get("num_items"),
-                               bucket=bucket)
-        self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
-
-        if not sanity:
-            xdcr_run, backup_run = False, False
-            if self.backup_nodes > 0:
-                self.drBackupRestore = DoctorHostedBackupRestore(cluster=self.cluster,
-                                                                 bucket_name=self.cluster.buckets[0].name,
-                                                                 pod=self.pod,
-                                                                 tenant=self.tenant)
-                self.drBackupRestore.backup_now(wait_for_backup=True)
-
-            if self.xdcr_remote_clusters > 0:
-                self.drXDCR = DoctorXDCR(source_cluster=self.cluster, destination_cluster=self.xdcr_cluster,
-                                         source_bucket=self.cluster.buckets[0].name,
-                                         destination_bucket=self.xdcr_cluster.buckets[0].name,
-                                         pod=self.pod, tenant=self.tenant)
-
-                xdcr_run = True
-                self.drXDCR.set_up_replication()
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-            for bucket in self.cluster.buckets:
-                self.generate_docs(bucket=bucket)
-            tasks = self.perform_load(wait_for_load=False)
-            # Rebalance 1 - Compute instance type upgrade
-            self.restart_query_load()
-            server_group_list = list()
-            initial_services = self.input.param("services", "data")
-            for service_group in initial_services.split("-"):
-                service_group = service_group.split(":")
-                service = service_group[0]
-                if service == "kv" or service == "data":
-                    self.compute[service] = "n2-custom-48-98304"
-                if "index" in service_group or "gsi" in service_group:
-                    self.compute[service] = "n2-standard-64"
-                config = {
-                    "size": self.num_nodes[service],
-                    "services": service_group,
-                    "compute": self.compute[service],
-                    "storage": {
-                        "type": self.input.param("type", AWS.StorageType.GP3),
-                        "size": self.disk[service],
-                        "iops": self.iops[service]
-                    }
-                }
-                if self.capella_cluster_config.get("place"):
-                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                        config["storage"].pop("iops")
-                elif self.capella_cluster_config["provider"] != "hostedAWS":
-                    config["storage"].pop("iops")
-                server_group_list.append(config)
-            rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                               server_group_list,
-                                                               timeout=96*60*60,
-                                                               poll_interval=600)
-            self.task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
-
-            # Rebalance 2 - Disk Upgrade
-            self.restart_query_load()
-            initial_services = self.input.param("services", "data")
-            server_group_list = list()
-            for service_group in initial_services.split("-"):
-                service_group = service_group.split(":")
-                service = service_group[0]
-                self.disk[service] = self.disk[service] + 600
-                config = {
-                    "size": self.num_nodes[service],
-                    "services": service_group,
-                    "compute": self.compute[service],
-                    "storage": {
-                        "type": self.input.param("type", AWS.StorageType.GP3),
-                        "size": self.disk[service],
-                        "iops": self.iops[service]
-                    }
-                }
-                if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                    config["storage"].pop("iops")
-                server_group_list.append(config)
-            rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                               server_group_list,
-                                                               timeout=96*60*60,
-                                                               poll_interval=600)
-            self.task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
-
-            # Rebalance 3 - Both Disk/Compute Upgrade
-            self.restart_query_load()
-            server_group_list = list()
-            initial_services = self.input.param("services", "data")
-            for service_group in initial_services.split("-"):
-                service_group = service_group.split(":")
-                service = service_group[0]
-                self.disk[service] = self.disk[service] + 1000
-                if service == "kv" or service == "data":
-                    self.compute[service] = "n2-custom-72-147456"
-                if "index" in service_group or "gsi" in service_group:
-                    self.compute[service] = "n2-standard-80"
-                config = {
-                    "size": self.num_nodes[service],
-                    "services": service_group,
-                    "compute": self.compute[service],
-                    "storage": {
-                        "type": self.input.param("type", AWS.StorageType.GP3),
-                        "size": self.disk[service],
-                        "iops": self.iops[service]
-                    }
-                }
-                if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                    config["storage"].pop("iops")
-                server_group_list.append(config)
-            rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                               server_group_list,
-                                                               timeout=96*60*60,
-                                                               poll_interval=600)
-            self.task_manager.get_task_result(rebalance_task)
-            self.assertTrue(rebalance_task.result, "Rebalance Failed")
-            self.PrintStep("Step 4: XDCR replication being set up")
-            if xdcr_run:
-                num_items = self.cluster.buckets[0].loadDefn.get("num_items") * self.cluster.buckets[0].loadDefn.get(
-                    "collections")
-                replication_done = self.drXDCR.is_replication_complete(cluster=self.xdcr_cluster,
-                                                                       bucket_name=self.xdcr_cluster.buckets[0].name,
-                                                                       item_count=num_items)
-                if not replication_done:
-                    self.log.error("Replication did not complete. Check logs!")
-            if backup_run:
-                list_backups = self.drBackupRestore.list_all_backups().json()
-                backups_on_bucket = list_backups['backups']['data']
-                if not backups_on_bucket:
-                    self.fail("No backups have been taken on bucket {}".format(self.cluster.buckets[0].name))
-                else:
-                    for count, item in enumerate(backups_on_bucket):
-                        self.log.debug("========= Backup number {} ==========".format(count))
-                        self.log.debug("Backup debug info:{}".format(item['data']))
-                CapellaAPI.flush_bucket(self.cluster, self.cluster.buckets[0].name)
-                time.sleep(120)
-                self.drBackupRestore.restore_from_backup(timeout=120)
-                time.sleep(60)
-                rest = RestConnection(self.cluster.master)
-                bucket_info = rest.get_bucket_details(bucket_name=self.cluster.buckets[0].name)
-                item_count = self.cluster.buckets[0].loadDefn.get("num_items") * self.cluster.buckets[0].loadDefn.get(
-                    "collections")
-                if bucket_info['basicStats']['itemCount'] == item_count:
-                    self.log.info("Post restore item count on the bucket is {}".format(item_count))
-        else:
-            self.rebl_nodes = self.nodes_init
-            self.max_rebl_nodes = self.input.param("max_rebl_nodes",
-                                                   self.nodes_init + 6)
-
-            self.rebl_services = self.input.param("rebl_services", "kv").split("-")
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-
-            while self.loop <= self.iterations:
-                for bucket in self.cluster.buckets:
-                    self.generate_docs(bucket=bucket)
-                tasks = self.perform_load(wait_for_load=False)
-
-                self.rebl_nodes += 3
-                if self.rebl_nodes > self.max_rebl_nodes:
-                    self.rebl_nodes = self.nodes_init
-                config = self.rebalance_config(self.rebl_nodes)
-
-                ###################################################################
-                self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
-                               format(self.loop))
-                rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                   config,
-                                                                   timeout=5*60*60)
-
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.sleep(60, "Sleep for 60s after rebalance")
-
-                self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
-                               format(self.loop))
-                config = self.rebalance_config(self.nodes_init)
-                rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                   config,
-                                                                   timeout=5*60*60)
-
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.sleep(60, "Sleep for 60s after rebalance")
-
-                self.loop += 1
-                self.wait_for_doc_load_completion(tasks)
-                if self.track_failures:
-                    self.data_validation()
-        if self.cluster.fts_nodes:
-            self.drFTS.discharge_FTS()
-        if self.cluster.cbas_nodes:
-            self.drCBAS.discharge_CBAS()
-        if self.cluster.index_nodes:
-            self.drIndex.discharge_N1QL()

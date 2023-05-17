@@ -77,7 +77,7 @@ class DoctorCBAS():
             time.sleep(1)
             self.execute_statement_on_cbas(index[0])
 
-    def wait_for_ingestion(self, item_count, timeout=86400):
+    def wait_for_ingestion(self, timeout=86400):
         status = False
         for dataset in self.datasets.keys():
             status = False

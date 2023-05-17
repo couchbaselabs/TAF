@@ -36,12 +36,12 @@ class DoctorHostedBackupRestore:
                         if not wait_for_backup:
                             return
 
-    def restore_from_backup(self, timeout=30):
+    def restore_from_backup(self, timeout=300):
         CapellaAPI.restore_from_backup(pod=self.pod, tenant=self.tenant, cluster_id=self.cluster.id,
                                        bucket_name=self.bucket_name)
         time.sleep(180)
         time_now = time.time()
-        while time.time() - time_now < timeout * 60:
+        while time.time() - time_now < timeout:
             jobs_response = CapellaAPI.jobs(self.capella_api, self.pod, self.tenant, self.cluster.id)
             if not jobs_response['data']:
                 break
