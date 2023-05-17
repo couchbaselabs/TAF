@@ -73,19 +73,34 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             self.tenants.append(self.tenant)
         self.create_tenants(url, num_tenants)
 
-        # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
-        self.dataplanes = self.input.capella.get("dataplane_id")
-        if not self.dataplanes:
-            self.dataplanes = list()
-        else:
-            self.dataplanes = self.dataplanes.split(",")
-        num_dataplanes = self.input.param("num_dataplanes", 0)
         self.cluster = CBCluster(username=self.rest_username,
                                  password=self.rest_password,
                                  servers=[None] * 40)
         self.cluster.pod = self.pod
         self.cluster.tenant = self.tenants[0]
         self.cluster.type = "serverless"
+
+        self.cluster_util = ClusterUtils(self.task_manager)
+        self.bucket_util = BucketUtils(self.cluster_util, self.task)
+        self.serverless_util = ServerlessUtils(self.cluster)
+
+        num_dataplanes = self.input.param("num_dataplanes", 0)
+
+        # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
+        self.dataplanes = self.input.capella.get("dataplane_id")
+        if not self.dataplanes and num_dataplanes == 0:
+            self.dataplanes = list()
+            dataplanes_details = self.serverless_util.get_all_dataplanes()
+            for dataplane in dataplanes_details:
+                if dataplane["status"]["state"] == "ready":
+                    self.dataplanes.append(dataplane["id"])
+                    break
+            else:
+                # No dataplanes in ready state.
+                self.fail("No dataplanes available in ready state for the tests to continue")
+        else:
+            self.dataplanes = self.dataplanes.split(",")
+
         self.delete_dataplanes = list()
 
         tasks = list()
@@ -106,10 +121,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         if self.dataplanes:
             self.dataplane_id = self.dataplanes[-1]
-
-        self.cluster_util = ClusterUtils(self.task_manager)
-        self.bucket_util = BucketUtils(self.cluster_util, self.task)
-        self.serverless_util = ServerlessUtils(self.cluster)
 
         self.dataplane_objs = dict()
         self.table = TableView(self.log.info)
