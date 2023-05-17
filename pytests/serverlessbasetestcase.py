@@ -36,7 +36,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         # Cluster level info settings
         self.servers = list()
         self.capella = self.input.capella
-        self.num_dataplanes = self.input.param("num_dataplanes", 1)
 
         self.wait_timeout = self.input.param("wait_timeout", 1800)
         CbServer.use_https = True
@@ -84,7 +83,10 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
         self.serverless_util = ServerlessUtils(self.cluster)
 
+        create_dataplane=self.input.param("create_dataplane", False)
         num_dataplanes = self.input.param("num_dataplanes", 0)
+        if create_dataplane:
+            num_dataplanes += 1
 
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
         self.dataplanes = self.input.capella.get("dataplane_id")
