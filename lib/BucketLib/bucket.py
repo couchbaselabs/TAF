@@ -308,7 +308,6 @@ class Bucket(object):
             for c_name in [CbServer.query_collection,
                            CbServer.eventing_collection,
                            CbServer.mobile_collection,
-                           CbServer.regulator_collection,
                            CbServer.transaction_collection]:
                 collection = Collection({"name": c_name})
                 scope.collections[c_name] = collection
