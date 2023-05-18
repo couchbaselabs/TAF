@@ -22,7 +22,7 @@ test:
 	scripts/start_cluster_and_run_tests.sh b/resources/dev-4-nodes.ini $(TESTNAME)
 
 simple-test-serverless:
-	scripts/start_cluster_and_run_tests.sh --ini b/resources/dev-6-nodes.ini --test conf/sanity/serverless.conf --jython_path $(WORKSPACE)/jython_for_taf --workspace_dir $(WORKSPACE) --serverless
+	scripts/start_cluster_and_run_tests.sh --ini b/resources/dev-6-nodes.ini --test conf/sanity/serverless.conf --jython_path $(WORKSPACE)/jython_for_taf --workspace_dir $(WORKSPACE) --aws_access_key_id $(AWS_ACCESS_KEY_ID) --aws_secret_access_key $(AWS_SECRET_ACCESS_KEY) --serverless
 
 # specify number of nodes and testcase
 any-test:

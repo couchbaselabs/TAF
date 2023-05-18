@@ -41,6 +41,14 @@ while [[ $# -gt 0 ]]; do
             workspace_dir=$2
             shift  ; shift
             ;;
+        --aws_access_key_id)
+            test_params=$test_params,aws_access_key_id=$2
+            shift  ; shift
+            ;;
+        --aws_secret_access_key)
+            test_params=$test_params,aws_secret_access_key=$2
+            shift  ; shift
+            ;;
         *)
             echo "ERROR: Invalid argument '$1'"
     esac
