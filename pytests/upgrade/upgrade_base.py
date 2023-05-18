@@ -138,9 +138,8 @@ class UpgradeBase(BaseTestCase):
 
         self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
-        if (self.spec_bucket[Bucket.storageBackend]
-                == Bucket.StorageBackend.magma):
-            RestConnection(self.cluster.master).set_internalSetting(
+
+        RestConnection(self.cluster.master).set_internalSetting(
                 "magmaMinMemoryQuota", 256)
 
         # Creating buckets from spec file
@@ -367,7 +366,7 @@ class UpgradeBase(BaseTestCase):
             raise Exception("Build %s not found" % version)
         return appropriate_build
 
-    def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True):
+    def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True, collection_ops=True):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
         self.log.info("Failing over the node %s" % otp_node.id)
@@ -406,13 +405,13 @@ class UpgradeBase(BaseTestCase):
 
         delta_recovery_buckets = list()
         if recovery_type == "delta":
-            delta_recovery_buckets.append(self.bucket.name)
+            delta_recovery_buckets=[bucket.name for bucket in self.cluster.buckets]
 
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
         if len(self.buckets_to_load) == 0:
             self.buckets_to_load = self.cluster.buckets
-        if self.cluster_supports_collections:
+        if self.cluster_supports_collections and collection_ops:
                 spec_collection = self.bucket_util.get_crud_template_from_package(
                     self.collection_spec)
                 CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
@@ -511,7 +510,7 @@ class UpgradeBase(BaseTestCase):
 
                 spec_collection["doc_crud"][
                     MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
-                
+
                 if self.alternate_load is True:
                     spec_collection[MetaCrudParams.SCOPES_TO_DROP] = 0
                     spec_collection[MetaCrudParams.SCOPES_TO_RECREATE] = 0
@@ -799,7 +798,7 @@ class UpgradeBase(BaseTestCase):
             else:
                 self.log_failure("Cluster reported (/pools/default) balanced=false")
                 return
-            
+
     def full_offline(self, nodes_to_upgrade, version):
         for node in nodes_to_upgrade:
             rest = RestConnection(node)
@@ -810,7 +809,7 @@ class UpgradeBase(BaseTestCase):
                             msg="Unable to find build %s" % version)
             self.assertTrue(shell.download_build(appropriate_build),
                             "Failed while downloading the build!")
-            
+
             self.log.info("Starting node upgrade")
             upgrade_success = shell.couchbase_upgrade(
                 appropriate_build, save_upgrade_config=False,
