@@ -108,22 +108,36 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (2, 2),
-                "FTS": (2, 2)
+                "2iQPS": 2,
+                "ftsQPS": 2,
+                "collections_defn": [
+                    {
+                        "valType": "Hotel",
+                        "2i": [2, 2],
+                        "FTS": [2, 2],
+                        }
+                    ]
                 }
-            self.gsiAutoScaleLoadDefn = {
+            self.maxLoadDefn = {
                 "valType": "Hotel",
                 "scopes": 1,
-                "collections": 2,
-                "num_items": 1000000,
+                "collections": 100,
+                "num_items": 10000,
                 "start": 0,
-                "end": 1000000,
-                "ops": 5000,
+                "end": 10000,
+                "ops": 2000,
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (20, 50),
-                "FTS": (0, 0)
+                "2iQPS": 50,
+                "ftsQPS": 0,
+                "collections_defn": [
+                    {
+                        "valType": "Hotel",
+                        "2i": (50, 10),
+                        "FTS": [0, 0],
+                        }
+                    ]
                 }
             self.loadDefn1 = {
                 "valType": "SimpleValue",
@@ -136,8 +150,20 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (20, 20),
-                "FTS": (5, 5)
+                "2iQPS": 50,
+                "ftsQPS": 5,
+                "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": (1, 1),
+                        "FTS": [1, 1],
+                        },
+                    {
+                        "valType": "SimpleValue",
+                        "2i": (1, 1),
+                        "FTS": [0, 0],
+                        }
+                    ]
                 }
             self.load_defn.append(self.loadDefn1)
             self.loadDefn2 = {
@@ -151,8 +177,15 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (10, 10),
-                "FTS": (10, 10)
+                "2iQPS": 10,
+                "ftsQPS": 10,
+                "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": (1, 1),
+                        "FTS": [1, 1],
+                        }
+                    ]
                 }
             self.load_defn.append(self.loadDefn2)
             self.loadDefn3 = {
@@ -166,8 +199,15 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (10, 20),
-                "FTS": (10, 5)
+                "2i": 20,
+                "FTS": 5,
+                "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": (2, 2),
+                        "FTS": [2, 1],
+                        }
+                    ]
                 }
             self.load_defn.append(self.loadDefn3)
             self.loadDefn4 = {
@@ -181,8 +221,15 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (0, 2),
-                "FTS": (0, 0)
+                "2i": 2,
+                "FTS": 0,
+                "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": (0, 1),
+                        "FTS": [0, 0],
+                        }
+                    ]
                 }
             self.load_defn.append(self.loadDefn4)
             self.kv_memmgmt = {
@@ -196,8 +243,15 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (0, 0),
-                "FTS": (0, 0)
+                "2i": 0,
+                "FTS": 0,
+                "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": (0, 0),
+                        "FTS": [0, 0],
+                        }
+                    ]
                 }
             self.load_defn.append(self.kv_memmgmt)
             self.workload = self.input.param("workload", self.defaultLoadDefn)
@@ -235,7 +289,7 @@ class Murphy(BaseTestCase, OPD):
     def build_gsi_index(self, buckets):
         self.drIndex.build_indexes(buckets, self.dataplane_objs, wait=True)
         for bucket in buckets:
-            if bucket.loadDefn.get("2i")[1] > 0:
+            if bucket.loadDefn.get("2iQPS") > 0:
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)
@@ -314,7 +368,7 @@ class Murphy(BaseTestCase, OPD):
             status = self.drFTS.wait_for_fts_index_online(buckets, self.index_timeout, overRideCount=0)
             self.assertTrue(status, "FTS index build failed.")
         for bucket in buckets:
-            if bucket.loadDefn.get("FTS")[1] > 0:
+            if bucket.loadDefn.get("ftsQPS") > 0:
                 ftsQL = FTSQueryLoad(bucket)
                 ftsQL.start_query_load()
                 self.ftsQL.append(ftsQL)
@@ -454,6 +508,7 @@ class Murphy(BaseTestCase, OPD):
                         self.log.info("Balanced state of the cluster: {}"
                                       .format(state))
                         self.check_healthy_state(self.dataplane_id, timeout=7200)
+                        state = self.get_cluster_balanced_state(self.dataplane_objs[dataplane_id])
                     self.lock.acquire()
                     task = self.bucket_util.async_create_database(self.cluster, bucket,
                                                                   tenant,
@@ -476,314 +531,6 @@ class Murphy(BaseTestCase, OPD):
         for _, bucket in temp:
             self.create_sdk_client_pool([bucket],
                                         num_clients)
-
-    def check_healthy_state(self, dataplane_id, service="kv", timeout=3600):
-        while timeout >= 0:
-            self.refresh_dp_obj(dataplane_id)
-            dataplane_state = None
-            try:
-                dataplane_state = self.serverless_util.get_dataplane_info(
-                    dataplane_id)["couchbase"]["state"]
-                if dataplane_state == "healthy":
-                    return True
-            except:
-                pass
-            self.log.info("Cluster state is: {}. Target: {} for {}"
-                          .format(dataplane_state, "healthy", service))
-            time.sleep(10)
-            timeout -= 10
-
-    def check_cluster_scaling(self, dataplane_id=None, service="kv", state="scaling"):
-        self.lock.acquire()
-        dataplane_id = dataplane_id or self.dataplane_id
-        try:
-            self.log.info("Dataplane Jobs:")
-            pprint.pprint(self.serverless_util.get_dataplane_jobs(dataplane_id))
-            self.log.info("Scaling Records:")
-            pprint.pprint(self.serverless_util.get_scaling_records(dataplane_id))
-        except:
-            self.log.info("Scaling records are empty")
-        dataplane_state = "healthy"
-        try:
-            dataplane_state = self.serverless_util.get_dataplane_info(
-                dataplane_id)["couchbase"]["state"]
-        except:
-            pass
-        scaling_timeout = 5*60*60
-        while dataplane_state == "healthy" and scaling_timeout >= 0:
-            dataplane_state = "healthy"
-            try:
-                dataplane_state = self.serverless_util.get_dataplane_info(
-                    dataplane_id)["couchbase"]["state"]
-            except:
-                pass
-            self.log.info("Cluster state is: {}. Target: {} for {}"
-                          .format(dataplane_state, state, service))
-            time.sleep(2)
-            scaling_timeout -= 2
-        if not service.lower() in ["gsi", "fts"]:
-            self.assertEqual(dataplane_state, state,
-                             "Cluster scaling did not trigger in {} seconds.\
-                             Actual: {} Expected: {}".format(
-                                 scaling_timeout, dataplane_state, state))
-
-        scaling_timeout = 10*60*60
-        while dataplane_state != "healthy" and scaling_timeout >= 0:
-            self.refresh_dp_obj(dataplane_id)
-            dataplane_state = state
-            try:
-                dataplane_state = self.serverless_util.get_dataplane_info(
-                    dataplane_id)["couchbase"]["state"]
-            except:
-                pass
-            self.log.info("Cluster state is: {}. Target: {} for {}"
-                          .format(dataplane_state, state, service))
-            time.sleep(2)
-            scaling_timeout -= 2
-        self.log.info("Dataplane Jobs:")
-        pprint.pprint(self.serverless_util.get_dataplane_jobs(dataplane_id))
-        self.log.info("Scaling Records:")
-        pprint.pprint(self.serverless_util.get_scaling_records(dataplane_id))
-        if not service.lower() in ["gsi", "fts"]:
-            self.assertEqual(dataplane_state, "healthy",
-                             "Cluster scaling started but did not completed in {} seconds.\
-                             Actual: {} Expected: {}".format(
-                                 scaling_timeout, dataplane_state, "healthy"))
-        self.sleep(10, "Wait before dataplane cluster nodes refresh")
-        self.refresh_dp_obj(dataplane_id)
-        self.lock.release()
-
-    def refresh_dp_obj(self, dataplane_id):
-        try:
-            dp = self.dataplane_objs[dataplane_id]
-            cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(dp.srv)
-            proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
-            out, _ = proc.communicate()
-            records = list()
-            for line in out.split("\n"):
-                if "11207" in line:
-                    records.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
-            ip = str(records[0])
-            servers = RestConnection({"ip": ip,
-                                      "username": dp.user,
-                                      "password": dp.pwd,
-                                      "port": 18091}).get_nodes()
-            dp.refresh_object(servers)
-        except:
-            pass
-
-    def get_num_nodes_in_cluster(self, dataplane_id=None, service="kv"):
-        dataplane_id = dataplane_id or self.dataplane_id
-        info = self.serverless_util.get_dataplane_info(dataplane_id)
-        nodes = [spec["count"] for spec in info["couchbase"]["specs"] if spec["services"][0]["type"] == service][0]
-        return nodes
-
-    def update_bucket_nebula_and_kv_nodes(self, cluster, bucket):
-        self.log.debug("Fetching SRV records for %s" % bucket.name)
-        srv = self.serverless_util.get_database_nebula_endpoint(
-            cluster.pod, cluster.tenant, bucket.name)
-        self.assertEqual(bucket.serverless.nebula_endpoint.srv, srv, "SRV changed")
-        bucket.serverless.nebula_obj.update_server_list()
-        self.log.debug("Updating nebula servers for %s" % bucket.name)
-        self.bucket_util.update_bucket_nebula_servers(
-            cluster, bucket)
-
-    def start_initial_load(self, buckets):
-        self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
-        for bucket in buckets:
-            self.generate_docs(doc_ops=["create"],
-                               create_start=0,
-                               create_end=bucket.loadDefn.get("num_items")/2,
-                               bucket=bucket)
-        self.perform_load(validate_data=False, buckets=buckets, overRidePattern=[100,0,0,0,0])
-
-        self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
-        for bucket in self.cluster.buckets:
-            self.generate_docs(doc_ops=["create"],
-                               create_start=bucket.loadDefn.get("num_items")/2,
-                               create_end=bucket.loadDefn.get("num_items"),
-                               bucket=bucket)
-        self.perform_load(validate_data=False, buckets=buckets, overRidePattern=[100,0,0,0,0])
-
-    def get_cluster_balanced_state(self, dataplane):
-        rest = RestConnection(dataplane.master)
-        try:
-            content = rest.get_pools_default()
-            return content["balanced"]
-        except:
-            self.log.critical("{} /pools/default has failed!!".format(dataplane.master))
-            pass
-
-    def check_cluster_state(self):
-        def start_check():
-            for dataplane in self.dataplane_objs.values():
-                state = self.get_cluster_balanced_state(dataplane)
-                if not state:
-                    self.log.critical("Dataplane State {}: {}".format(
-                        dataplane.id, state))
-                time.sleep(5)
-
-        monitor_state = threading.Thread(target=start_check)
-        monitor_state.start()
-
-    def check_ebs_scaling(self):
-        '''
-        1. check current disk used
-        2. If disk used > 50% check for EBS scale on all nodes for that service
-        '''
-
-        def check_disk():
-            while not self.stop_run:
-                for dataplane in self.dataplane_objs.values():
-                    self.refresh_dp_obj(dataplane.id)
-                    table = TableView(self.log.info)
-                    table.set_headers(["Node",
-                                       "Path",
-                                       "TotalDisk",
-                                       "UsedDisk",
-                                       "% Disk Used"])
-                    for node in dataplane.kv_nodes:
-                        data = RestConnection(node).get_nodes_self()
-                        for storage in data.availableStorage:
-                            if "cb" in storage.path:
-                                table.add_row([
-                                    node.ip,
-                                    storage.path,
-                                    data.storageTotalDisk,
-                                    data.storageUsedDisk,
-                                    storage.usagePercent])
-                                if storage.usagePercent > 90:
-                                    self.log.critical("Disk did not scale while\
-                                     it is approaching full!!!")
-                                    self.doc_loading_tm.abortAllTasks()
-                    table.display("EBS Statistics")
-                time.sleep(120)
-        disk_monitor = threading.Thread(target=check_disk)
-        disk_monitor.start()
-
-    def check_memory_management(self):
-        '''
-        1. Check the database disk used
-        2. Cal DGM based on ram/disk used and if it is < 1% wait for tunable
-        '''
-        self.disk = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450]
-        self.memory = [256, 256, 384, 512, 640, 768, 896, 1024, 1152, 1280]
-
-        def check_ram():
-            while not self.stop_run:
-                for dataplane in self.dataplane_objs.values():
-                    self.rest = BucketHelper(dataplane.master)
-                    table = TableView(self.log.info)
-                    table.set_headers(["Bucket",
-                                       "Total Ram(MB)",
-                                       "Total Data(GB)",
-                                       "Logical Data",
-                                       "Items"])
-                    logical_data = defaultdict(int)
-                    for node in dataplane.kv_nodes:
-                        _, stats = RestConnection(node).query_prometheus("kv_logical_data_size_bytes")
-                        if stats["status"] == "success":
-                            stats = [stat for stat in stats["data"]["result"] if stat["metric"]["state"] == "active"]
-                            for stat in stats:
-                                logical_data[stat["metric"]["bucket"]] += int(stat["value"][1])
-                    for bucket in self.cluster.buckets:
-                        data = self.rest.get_bucket_json(bucket.name)
-                        ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
-                        dataGB = data["basicStats"]["diskUsed"] / (1024 * 1024 * 1024)
-                        items = data["basicStats"]["itemCount"]
-                        logicalDdataGB = logical_data[bucket.name] / (1024 * 1024 * 1024)
-                        table.add_row([bucket.name, ramMB, dataGB, logicalDdataGB, items])
-                        for i, disk in enumerate(self.disk):
-                            if disk > logicalDdataGB:
-                                start = time.time()
-                                while time.time() < start + 1200 and ramMB != self.memory[i-1]:
-                                    self.log.info("Wait for bucket: {}, Expected: {}, Actual: {}".
-                                                  format(bucket.name,
-                                                         self.memory[i-1],
-                                                         ramMB))
-                                    time.sleep(5)
-                                    data = self.rest.get_bucket_json(bucket.name)
-                                    ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
-                                    continue
-                                if ramMB != self.memory[i-1]:
-                                    raise Exception("bucket: {}, Expected: {}, Actual: {}".
-                                                    format(bucket.name,
-                                                           self.memory[i-1],
-                                                           ramMB))
-                                break
-                    table.display("Bucket Memory Statistics")
-                time.sleep(120)
-        mem_monitor = threading.Thread(target=check_ram)
-        mem_monitor.start()
-
-    def monitor_query_status(self, print_duration=600):
-
-        def check_query_stats():
-            st_time = time.time()
-            while not self.stop_run:
-                if st_time + print_duration < time.time():
-                    self.query_table = TableView(self.log.info)
-                    self.table = TableView(self.log.info)
-                    self.table.set_headers(["Bucket",
-                                            "Total Queries",
-                                            "Failed Queries",
-                                            "Success Queries",
-                                            "Rejected Queries",
-                                            "Cancelled Queries",
-                                            "Timeout Queries",
-                                            "Errored Queries"])
-                    for ql in self.ql:
-                        self.query_table.set_headers(["Bucket",
-                                                      "Query",
-                                                      "Count",
-                                                      "Avg Execution Time(ms)"])
-                        try:
-                            for query in sorted(ql.query_stats.keys()):
-                                self.query_table.add_row([str(ql.bucket.name),
-                                                          ql.bucket.query_map[query],
-                                                          ql.query_stats[query][1],
-                                                          ql.query_stats[query][0]/ql.query_stats[query][1]])
-                        except Exception as e:
-                            print e
-                        self.query_table.display("N1QL Query Execution Stats")
-                        self.table.add_row([
-                            str(ql.bucket.name),
-                            str(ql.total_query_count),
-                            str(ql.failed_count),
-                            str(ql.success_count),
-                            str(ql.rejected_count),
-                            str(ql.cancel_count),
-                            str(ql.timeout_count),
-                            str(ql.error_count),
-                            ])
-                    self.table.display("N1QL Query Statistics")
-
-                    self.FTStable = TableView(self.log.info)
-                    self.FTStable.set_headers(["Bucket",
-                                               "Total Queries",
-                                               "Failed Queries",
-                                               "Success Queries",
-                                               "Rejected Queries",
-                                               "Cancelled Queries",
-                                               "Timeout Queries",
-                                               "Errored Queries"])
-                    for ql in self.ftsQL:
-                        self.FTStable.add_row([
-                            str(ql.bucket.name),
-                            str(ql.total_query_count),
-                            str(ql.failed_count),
-                            str(ql.success_count),
-                            str(ql.rejected_count),
-                            str(ql.cancel_count),
-                            str(ql.timeout_count),
-                            str(ql.error_count),
-                            ])
-                    self.FTStable.display("FTS Query Statistics")
-                    st_time = time.time()
-                    time.sleep(10)
-
-        query_monitor = threading.Thread(target=check_query_stats)
-        query_monitor.start()
 
     def SmallScaleVolume(self):
         #######################################################################
@@ -876,46 +623,46 @@ class Murphy(BaseTestCase, OPD):
         self.check_index_auto_scaling_rebl()
         self.monitor_query_status()
 
-        if self.workload != self.gsiAutoScaleLoadDefn:
-            for i in range(1, 6):
-                self.create_databases(20, load_defn=self.workload)
-                self.refresh_dp_obj(self.dataplane_id)
-                buckets = self.cluster.buckets[(i-1)*20:(i)*20]
-                kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
-                if kv_nodes < min((i+1)*3, 11):
-                    self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
+        for i in range(1, 6):
+            self.create_databases(20, load_defn=self.workload)
+            self.refresh_dp_obj(self.dataplane_id)
+            buckets = self.cluster.buckets[(i-1)*20:(i)*20]
+            kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
+            if kv_nodes < min((i+1)*3, 11):
+                self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
+                self.check_kv_scaling()
+            elif kv_nodes == min((i+1)*3, 11):
+                dataplane_state = self.serverless_util.get_dataplane_info(
+                    self.dataplane_id)["couchbase"]["state"]
+                if dataplane_state != "healthy":
                     self.check_kv_scaling()
-                elif kv_nodes == min((i+1)*3, 11):
-                    dataplane_state = self.serverless_util.get_dataplane_info(
-                        self.dataplane_id)["couchbase"]["state"]
-                    if dataplane_state != "healthy":
-                        self.check_kv_scaling()
-                    else:
-                        self.log.info("KV already scaled up during databases creation")
-                kv_nodes = self.get_num_nodes_in_cluster(service="kv")
-                self.assertTrue(int(kv_nodes) >= min((i+1)*3, 11),
-                                "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
-                self.create_required_collections(self.cluster, buckets)
-                for dataplane in self.dataplane_objs.values():
-                    prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
-                                                                   service="index")
-                    status = self.create_gsi_indexes(buckets)
-                    print "GSI Status: {}".format(status)
-                    self.assertTrue(status, "GSI index creation failed")
-                    if prev_gsi_nodes < 10:
-                        self.check_gsi_scaling(dataplane, prev_gsi_nodes)
-                self.build_gsi_index(buckets)
-                self.start_initial_load(buckets)
-                for bucket in buckets:
-                    try:
-                        self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
-                        self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
-                    except TimeoutException as e:
-                        print e
-                    except:
-                        pass
-                self.create_fts_indexes(buckets, wait=True)
-                self.sleep(30)
+                else:
+                    self.log.info("KV already scaled up during databases creation")
+            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
+            self.assertTrue(int(kv_nodes) >= min((i+1)*3, 11),
+                            "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
+            self.create_required_collections(self.cluster, buckets)
+            for dataplane in self.dataplane_objs.values():
+                prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
+                                                               service="index")
+                status = self.create_gsi_indexes(buckets)
+                print "GSI Status: {}".format(status)
+                self.assertTrue(status, "GSI index creation failed")
+                if prev_gsi_nodes < 10:
+                    self.check_gsi_scaling(dataplane, prev_gsi_nodes)
+            self.build_gsi_index(buckets)
+            self.start_initial_load(buckets)
+            for bucket in buckets:
+                try:
+                    self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                    self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
+                except TimeoutException as e:
+                    print e
+                except:
+                    pass
+            self.create_fts_indexes(buckets, wait=True)
+            self.sleep(30)
+
             count = 0
             self.PrintStep("Step: Test KV Auto-Rebalance/Defragmentation")
             buckets = self.cluster.buckets
@@ -964,8 +711,7 @@ class Murphy(BaseTestCase, OPD):
             self.serverless_util.change_dataplane_cluster_specs(self.dataplane_id, config)
             self.check_cluster_scaling()
 
-        self.create_databases(19, load_defn=self.gsiAutoScaleLoadDefn)
-        # self.create_databases(19)
+        self.create_databases(19, self.maxLoadDefn)
         self.create_required_collections(self.cluster,
                                          self.cluster.buckets[0:20])
         self.create_gsi_indexes(self.cluster.buckets[0:20])
@@ -1140,10 +886,15 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "upsert"],
-            "2i": (10, 10),
-            "FTS": (10, 10),
             "2iQPS": 20,
-            "ftsQPS": 10
+            "ftsQPS": 10,
+            "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": (5, 5),
+                        "FTS": [1, 5],
+                        }
+                    ]
             }
         self.load_defn.append(self.loadDefn1)
         self.loadDefn2 = {
@@ -1157,10 +908,15 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [10, 80, 0, 10, 0], # CRUDE
             "load_type": ["create", "read", "delete"],
-            "2i": (10, 10),
-            "FTS": (10, 10),
             "2iQPS": 20,
             "ftsQPS": 10,
+            "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": (5, 5),
+                        "FTS": [1, 5],
+                        }
+                    ]
             }
         self.load_defn.append(self.loadDefn2)
         self.loadDefn3 = {
@@ -1174,10 +930,15 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
-            "2i": (2, 2),
-            "FTS": (2, 2),
-            "2iQPS": 5,
-            "ftsQPS": 5,
+            "2iQPS": 20,
+            "ftsQPS": 10,
+            "collections_defn": [
+                    {
+                        "valType": "Hotel",
+                        "2i": (1, 1),
+                        "FTS": [1, 1],
+                        }
+                    ]
             }
 
         self.input.test_params.update({"clients_per_db": 2})
@@ -1195,10 +956,15 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [0, 80, 20, 0, 0], # CRUDE
                 "load_type": ["read", "upsert"],
-                "2i": (10, 10),
-                "FTS": (10, 10),
                 "2iQPS": 20,
-                "ftsQPS": 10
+                "ftsQPS": 10,
+                "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": [5, 5],
+                        "FTS": [1, 5],
+                        }
+                    ]
                 }
             self.load_defn.append(loadDefn1)
             loadDefn2 = {
@@ -1212,10 +978,15 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [10, 80, 0, 10, 0], # CRUDE
                 "load_type": ["create", "read", "delete"],
-                "2i": (10, 10),
-                "FTS": (10, 10),
                 "2iQPS": 20,
-                "ftsQPS": 10
+                "ftsQPS": 10,
+                "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": [5, 5],
+                        "FTS": [1, 5],
+                        }
+                    ]
                 }
             self.load_defn.append(loadDefn2)
             loadDefn3 = {
@@ -1229,10 +1000,15 @@ class Murphy(BaseTestCase, OPD):
                 "doc_size": 1024,
                 "pattern": [0, 0, 100, 0, 0], # CRUDE
                 "load_type": ["update"],
-                "2i": (10, 10),
-                "FTS": (10, 10),
                 "2iQPS": 20,
-                "ftsQPS": 10
+                "ftsQPS": 10,
+                "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": [5, 5],
+                        "FTS": [1, 5],
+                        }
+                    ]
                 }
             self.load_defn.append(loadDefn3)
             for i in range(1, 6):
@@ -1387,10 +1163,15 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "upsert"],
-            "2i": (5, 5),
-            "FTS": (5, 5),
             "2iQPS": 100,
-            "ftsQPS": 5
+            "ftsQPS": 5,
+            "collections_defn": [
+                    {
+                        "valType": "SimpleValue",
+                        "2i": [1, 1],
+                        "FTS": [1, 1],
+                        }
+                    ]
             }
         self.load_defn.append(self.loadDefn1)
         self.loadDefn2 = {
@@ -1404,10 +1185,15 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [10, 80, 0, 10, 0], # CRUDE
             "load_type": ["create", "read", "delete"],
-            "2i": (5, 5),
-            "FTS": (5, 5),
             "2iQPS": 100,
-            "ftsQPS": 5
+            "ftsQPS": 5,
+            "collections_defn": [
+                    {
+                        "valType": "Hotel",
+                        "2i": (1, 1),
+                        "FTS": [1, 1],
+                        }
+                    ]
             }
         self.load_defn.append(self.loadDefn2)
         self.loadDefn3 = {
@@ -1421,10 +1207,15 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
-            "2i": (5, 5),
-            "FTS": (5, 5),
             "2iQPS": 100,
-            "ftsQPS": 5
+            "ftsQPS": 5,
+            "collections_defn": [
+                    {
+                        "valType": "Hotel",
+                        "2i": (1, 1),
+                        "FTS": [1, 1],
+                        }
+                    ]
             }
         self.load_defn.append(self.loadDefn3)
 
@@ -1456,142 +1247,6 @@ class Murphy(BaseTestCase, OPD):
             pass
 
         self.sleep(600)
-
-        for bucket in self.cluster.buckets:
-            start = time.time()
-            state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-            while start + 3600 > time.time() and state is False:
-                self.log.info("Balanced state of the cluster: {}"
-                              .format(state))
-                self.check_healthy_state(self.dataplane_id, timeout=7200)
-                state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
-            self.log.info("Deleting bucket: {}".format(bucket.name))
-            if self.ql:
-                ql = [load for load in self.ql if load.bucket == bucket][0]
-                ql.stop_query_load()
-                self.ql.remove(ql)
-            if self.ftsQL:
-                ql = [load for load in self.ftsQL if load.bucket == bucket][0]
-                ql.stop_query_load()
-                self.ftsQL.remove(ql)
-            self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
-            self.serverless_util.delete_database(self.pod, self.tenant,
-                                                 bucket.name)
-
-    def COGS(self):
-        #######################################################################
-        self.track_failures = False
-        self.PrintStep("Step: Create Serverless Databases")
-
-        self.drFTS.index_stats(self.dataplane_objs)
-        self.drIndex.index_stats(self.dataplane_objs)
-        self.drIndex.query_stats(self.dataplane_objs)
-        self.check_ebs_scaling()
-        self.check_memory_management()
-        self.check_cluster_state()
-        self.check_fts_scaling()
-        self.check_n1ql_scaling()
-        self.check_index_auto_scaling_rebl()
-        self.monitor_query_status()
-
-        self.load_defn = []
-        self.loadDefn1 = {
-            "valType": "SimpleValue",
-            "scopes": 1,
-            "collections": 5,
-            "num_items": 1000000,
-            "start": 0,
-            "end": 1000000,
-            "ops": 5000,
-            "doc_size": 1024,
-            "pattern": [0, 80, 20, 0, 0], # CRUDE
-            "load_type": ["read", "upsert"],
-            "2i": (2, 2),
-            "FTS": (1, 1),
-            "2iQPS": 2,
-            "ftsQPS": 2
-            }
-        self.load_defn.append(self.loadDefn1)
-        self.loadDefn2 = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": 5,
-            "num_items": 1000000,
-            "start": 0,
-            "end": 1000000,
-            "ops": 2000,
-            "doc_size": 1024,
-            "pattern": [10, 80, 0, 10, 0], # CRUDE
-            "load_type": ["create", "read", "delete"],
-            "2i": (5, 5),
-            "FTS": (1, 1),
-            "2iQPS": 5,
-            "ftsQPS": 1
-            }
-        self.load_defn.append(self.loadDefn2)
-        self.loadDefn3 = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": 5,
-            "num_items": 200000,
-            "start": 0,
-            "end": 200000,
-            "ops": 1000,
-            "doc_size": 1024,
-            "pattern": [0, 0, 100, 0, 0], # CRUDE
-            "load_type": ["update"],
-            "2i": (2, 2),
-            "FTS": (2, 2),
-            "2iQPS": 2,
-            "ftsQPS": 2
-            }
-        self.load_defn.append(self.loadDefn3)
-
-        for i in range(1, 6):
-            self.create_databases(20, load_defn=self.workload)
-            self.refresh_dp_obj(self.dataplane_id)
-            buckets = self.cluster.buckets[(i-1)*20:(i)*20]
-            kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
-            if kv_nodes < min((i+1)*3, 11):
-                self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
-                self.check_cluster_scaling()
-            elif kv_nodes == min((i+1)*3, 11):
-                dataplane_state = self.serverless_util.get_dataplane_info(
-                    self.dataplane_id)["couchbase"]["state"]
-                if dataplane_state != "healthy":
-                    self.check_cluster_scaling()
-                else:
-                    self.log.info("KV already scaled up during databases creation")
-            kv_nodes = self.get_num_nodes_in_cluster(service="kv")
-            self.assertTrue(int(kv_nodes) >= min((i+1)*3, 11),
-                            "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
-            self.create_required_collections(self.cluster, buckets)
-            self.start_initial_load(buckets)
-            for bucket in buckets:
-                try:
-                    self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
-                    self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
-                except TimeoutException as e:
-                    print e
-                except:
-                    pass
-            for dataplane in self.dataplane_objs.values():
-                prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
-                                                               service="index")
-                status = self.create_gsi_indexes(buckets)
-                print "GSI Status: {}".format(status)
-                self.assertTrue(status, "GSI index creation failed")
-                if prev_gsi_nodes < 10:
-                    self.check_gsi_scaling(dataplane, prev_gsi_nodes)
-            self.build_gsi_index(buckets)
-            self.create_fts_indexes(buckets, wait=True)
-            self.sleep(30)
-
-        for i in range(10):
-            for bucket in self.cluster.buckets:
-                self.generate_docs(bucket=bucket)
-            self.perform_load(validate_data=False, buckets=buckets)
-            self.log.info("Iteration: {} - Data load pattern completed!!!".format(i))
 
         for bucket in self.cluster.buckets:
             start = time.time()

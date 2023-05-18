@@ -58,48 +58,51 @@ class DoctorFTS:
 
     def create_fts_indexes(self, buckets):
         for b in buckets:
-            i = 0
             b.ftsIndexes = dict()
             b.ftsQueries = dict()
-            if b.loadDefn.get("FTS")[0] == 0:
-                continue
             self.log.info("Creating FTS indexes on {}".format(b.name))
             self.fts_helper = FtsHelper(b.serverless.nebula_endpoint)
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
-                for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
+                for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
                     if c == CbServer.default_collection:
                         continue
-                    fts_param_template = self.get_fts_idx_template()
-                    fts_param_template.update({
-                        "name": str(b.name.replace("-", "_")) + "_fts_idx_{}".format(i), "sourceName": str(b.name)})
-                    fts_param_template["planParams"].update({
-                        "indexPartitions": self.fts_index_partitions})
-                    fts_param_template["params"]["mapping"]["types"].update({
-                        "%s.%s" % (s, c): {
-                            "dynamic": True, "enabled": True}
-                        }
-                    )
-                    fts_param_template = str(fts_param_template).replace("True", "true")
-                    fts_param_template = str(fts_param_template).replace("False", "false")
-                    fts_param_template = str(fts_param_template).replace("'", "\"")
-                    self.log.debug("Creating fts index: {}".format(b.name.replace("-", "_") + "_fts_idx_"+str(i)))
-                    retry = 10
-                    while retry > 0:
-                        status, _ = self.fts_helper.create_fts_index_from_json(
-                            b.name.replace("-", "_")+"_fts_idx_"+str(i), str(fts_param_template))
-                        if status is False:
-                            self.log.critical("FTS index creation failed")
-                            time.sleep(10)
-                            retry -= 1
-                        else:
-                            b.ftsIndexes.update({str(b.name).replace("-", "_")+"_fts_idx_"+str(i): (fts_param_template, b.name, s, c)})
-                            break
-                    i += 1
-                    time.sleep(10)
-                    if i >= b.loadDefn.get("FTS")[0]:
-                        break
-                if i >= b.loadDefn.get("FTS")[0]:
-                    break
+                    workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
+                    workload = workloads[collection_num % len(workloads)]
+                    valType = workload["valType"]
+                    queryTypes = ftsQueries
+                    if valType == "Hotel":
+                        queryTypes = HotelQueries
+                    i = 0
+                    while i < workload.get("FTS")[0]:
+                        name = str(b.name).replace("-", "_") + c + "_fts_idx_"+str(i)
+
+                        fts_param_template = self.get_fts_idx_template()
+                        fts_param_template.update({
+                            "name": name, "sourceName": str(b.name)})
+                        fts_param_template["planParams"].update({
+                            "indexPartitions": self.fts_index_partitions})
+                        fts_param_template["params"]["mapping"]["types"].update({
+                            "%s.%s" % (s, c): {
+                                "dynamic": True, "enabled": True}
+                            }
+                        )
+                        fts_param_template = str(fts_param_template).replace("True", "true")
+                        fts_param_template = str(fts_param_template).replace("False", "false")
+                        fts_param_template = str(fts_param_template).replace("'", "\"")
+                        self.log.debug("Creating fts index: {}".format(name))
+                        retry = 10
+                        while retry > 0:
+                            status, _ = self.fts_helper.create_fts_index_from_json(
+                                name, str(fts_param_template))
+                            if status is False:
+                                self.log.critical("FTS index creation failed")
+                                time.sleep(10)
+                                retry -= 1
+                            else:
+                                b.ftsIndexes.update({name: (queryTypes)})
+                                break
+                        i += 1
+                        time.sleep(10)
 
     def discharge_FTS(self):
         self.stop_run = True
@@ -152,7 +155,7 @@ class DoctorFTS:
         status = True
         for bucket in buckets:
             self.fts_helper = FtsHelper(bucket.serverless.nebula_endpoint)
-            for index_name, details in bucket.ftsIndexes.items():
+            for index_name, _ in bucket.ftsIndexes.items():
                 status = False
                 stop_time = time.time() + timeout
                 while time.time() < stop_time:
@@ -358,10 +361,8 @@ class FTSQueryLoad:
 
     def _run_query(self, validate_item_count=False, expected_count=0):
         while not self.stop_run:
-            query = random.choice(ftsQueries)
-            if self.bucket.loadDefn.get("valType") == "Hotel":
-                    query = random.choice(HotelQueries)
-            index, _ = random.choice(self.bucket.ftsIndexes.items())
+            index, queries = random.choice(self.bucket.ftsIndexes.items())
+            query = random.choice(queries)
             start = time.time()
             e = ""
             try:

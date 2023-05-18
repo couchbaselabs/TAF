@@ -177,55 +177,59 @@ class DoctorN1QL():
         self.stop_run = True
 
     def create_indexes(self, buckets):
+        counter = 0
         for b in buckets:
             b.indexes = dict()
             b.queries = list()
             b.query_map = dict()
-            i = 0
-            q = 0
             queryType = queries
-            if b.loadDefn.get("valType") == "Hotel":
-                queryType = HotelQueries
             indexType = indexes
-            if b.loadDefn.get("valType") == "Hotel":
-                indexType = HotelIndexes
-
             self.log.info("Creating GSI indexes on {}".format(b.name))
             if b.serverless and b.serverless.nebula_endpoint:
                 self.cluster_conn = SDKClient([b.serverless.nebula_endpoint], None).cluster
-            while i < b.loadDefn.get("2i")[0] or q < b.loadDefn.get("2i")[1]:
-                for s in self.bucket_util.get_active_scopes(b, only_names=True):
-                    if b.name+s not in self.sdkClients.keys():
-                        self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
-                        time.sleep(5)
-                    for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
-                        if c == "_default":
-                            continue
-                        if i < b.loadDefn.get("2i")[0]:
-                            self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
-                            b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
-                            retry = 5
-                            while retry > 0:
-                                try:
-                                    execute_statement_on_n1ql(self.sdkClients[b.name+s], self.idx_q)
-                                    break
-                                except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
-                                    print(e)
-                                    retry -= 1
-                                    time.sleep(10)
-                                    continue
-                                except IndexNotFoundException as e:
-                                    print "Returning from here as we get IndexNotFoundException"
-                                    print(e)
-                                    return False
-                            i += 1
+            for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                if b.name+s not in self.sdkClients.keys():
+                    self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
+                    time.sleep(5)
+                for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
+                    if c == "_default":
+                        continue
+                    workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
+                    workload = workloads[collection_num % len(workloads)]
+                    valType = workload["valType"]
+                    if valType == "Hotel":
+                        queryType = HotelQueries
+                        indexType = HotelIndexes
+                    i = 0
+                    q = 0
+                    while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
+                        self.idx_q = indexType[counter % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
+                        b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
+                        retry = 5
+                        while retry > 0:
+                            try:
+                                self.log.debug("Creating GSI index: {}".format(b.name.replace("-", "_") + "_idx_"+c+"_"+str(i)))
+                                execute_statement_on_n1ql(self.sdkClients[b.name+s], self.idx_q)
+                                break
+                            except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
+                                print(e)
+                                retry -= 1
+                                time.sleep(10)
+                                continue
+                            except IndexNotFoundException as e:
+                                print "Returning from here as we get IndexNotFoundException"
+                                print(e)
+                                return False
+                        i += 1
 
-                        if q < b.loadDefn.get("2i")[1]:
-                            query = queryType[q % len(indexType)].format(c)
-                            if query not in b.query_map.keys():
-                                b.query_map[queryType[q % len(indexType)]] = "Q%s" % q
-                                b.queries.append((query, self.sdkClients[b.name+s], queryType[q % len(indexType)]))
+                        if q < workload.get("2i")[1]:
+                            unformatted_q = queryType[counter % len(queryType)]
+                            query = unformatted_q.format(c)
+                            if unformatted_q not in b.query_map.keys():
+                                b.query_map[unformatted_q] = "Q%s" % q
+                                b.queries.append((query, self.sdkClients[b.name+s], unformatted_q))
                             q += 1
+                        counter += 1
         return True
 
     def build_indexes(self, buckets, dataplane_objs=None,

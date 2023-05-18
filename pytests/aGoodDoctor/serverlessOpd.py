@@ -4,15 +4,11 @@ Created on 30-Aug-2021
 @author: riteshagarwal
 '''
 import subprocess
-import json
 from BucketLib.bucket import Bucket
 import os
-from remote.remote_util import RemoteMachineShellConnection
-import random
 from BucketLib.BucketOperations import BucketHelper
 from table_view import TableView
 from membase.api.rest_client import RestConnection
-from cb_tools.cbstats import Cbstats
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import Server, SDKClient
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
@@ -26,9 +22,12 @@ from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException,\
     RequestCanceledException, CouchbaseException
 import time
-from custom_exceptions.exception import RebalanceFailedException
 from Cb_constants.CBServer import CbServer
 from threading import Thread
+import threading
+from _collections import defaultdict
+import shlex
+import pprint
 
 
 class OPD:
@@ -136,20 +135,6 @@ class OPD:
         for thread in threads:
             thread.join()
 
-    def stop_purger(self, tombstone_purge_age=60):
-        """
-        1. Disable ts purger
-        2. Create fts indexes (to create metakv, ns_config entries)
-        3. Delete fts indexes
-        4. Grep ns_config for '_deleted' to get total deleted keys count
-        5. enable ts purger and age = 1 mins
-        6. Sleep for 2 minutes
-        7. Grep for debug.log and check for latest tombstones purged count
-        8. Validate step4 count matches step 7 count for all nodes
-        """
-        self.rest.update_tombstone_purge_age_for_removal(tombstone_purge_age)
-        self.rest.disable_tombstone_purger()
-
     def get_bucket_dgm(self, bucket):
         self.rest_client = BucketHelper(self.cluster.master)
         dgm = self.rest_client.fetch_bucket_stats(
@@ -157,122 +142,6 @@ class OPD:
         self.log.info("Active Resident Threshold of {0} is {1}".format(
             bucket.name, dgm))
         return dgm
-
-    def _induce_error(self, error_condition, nodes=[]):
-        nodes = nodes or [self.cluster.master]
-        for node in nodes:
-            if error_condition == "stop_server":
-                self.cluster_util.stop_server(node)
-            elif error_condition == "enable_firewall":
-                self.cluster_util.start_firewall_on_node(node)
-            elif error_condition == "kill_memcached":
-                shell = RemoteMachineShellConnection(node)
-                shell.kill_memcached()
-                shell.disconnect()
-            elif error_condition == "reboot_server":
-                shell = RemoteMachineShellConnection(node)
-                shell.reboot_node()
-            elif error_condition == "kill_erlang":
-                shell = RemoteMachineShellConnection(node)
-                shell.kill_erlang()
-                shell.disconnect()
-            else:
-                self.fail("Invalid error induce option")
-
-    def _recover_from_error(self, error_condition):
-        for node in self.cluster.nodes_in_cluster:
-            if error_condition == "stop_server" or error_condition == "kill_erlang":
-                self.cluster_util.start_server(node)
-            elif error_condition == "enable_firewall":
-                self.cluster_util.stop_firewall_on_node(node)
-
-        for node in self.cluster.kv_nodes + [self.cluster.master]:
-            self.check_warmup_complete(node)
-            result = self.cluster_util.wait_for_ns_servers_or_assert([node],
-                                                                     wait_time=1200)
-            self.assertTrue(result, "Server warmup failed")
-
-    def rebalance(self, nodes_in=0, nodes_out=0, services=[],
-                  retry_get_process_num=3000):
-        self.servs_in = list()
-        self.nodes_cluster = self.cluster.nodes_in_cluster[:]
-        self.nodes_cluster.remove(self.cluster.master)
-        self.servs_out = list()
-        services = services or ["kv"]
-        print "KV nodes in cluster: %s" % [server.ip for server in self.cluster.kv_nodes]
-        print "CBAS nodes in cluster: %s" % [server.ip for server in self.cluster.cbas_nodes]
-        print "INDEX nodes in cluster: %s" % [server.ip for server in self.cluster.index_nodes]
-        print "FTS nodes in cluster: %s" % [server.ip for server in self.cluster.fts_nodes]
-        print "QUERY nodes in cluster: %s" % [server.ip for server in self.cluster.query_nodes]
-        print "EVENTING nodes in cluster: %s" % [server.ip for server in self.cluster.eventing_nodes]
-        print "AVAILABLE nodes for cluster: %s" % [server.ip for server in self.available_servers]
-        if nodes_out:
-            if "cbas" in services:
-                servers = random.sample(self.cluster.cbas_nodes, nodes_out)
-                self.servs_out.extend(servers)
-            if "index" in services:
-                servers = random.sample(self.cluster.index_nodes, nodes_out)
-                self.servs_out.extend(servers)
-            if "fts" in services:
-                servers = random.sample(self.cluster.fts_nodes, nodes_out)
-                self.servs_out.extend(servers)
-            if "query" in services:
-                servers = random.sample(self.cluster.query_nodes, nodes_out)
-                self.servs_out.extend(servers)
-            if "eventing" in services:
-                servers = random.sample(self.cluster.eventing_nodes, nodes_out)
-                self.servs_out.extend(servers)
-            if "kv" in services:
-                nodes = [node for node in self.cluster.kv_nodes if node.ip != self.cluster.master.ip]
-                servers = random.sample(nodes, nodes_out)
-                self.servs_out.extend(servers)
-
-        if nodes_in:
-            if "cbas" in services:
-                servers = random.sample(self.available_servers, nodes_in)
-                self.servs_in.extend(servers)
-                self.available_servers = [servs for servs in self.available_servers
-                                          if servs not in servers]
-            if "index" in services:
-                servers = random.sample(self.available_servers, nodes_in)
-                self.servs_in.extend(servers)
-                self.available_servers = [servs for servs in self.available_servers
-                                          if servs not in servers]
-            if "fts" in services:
-                servers = random.sample(self.available_servers, nodes_in)
-                self.servs_in.extend(servers)
-                self.available_servers = [servs for servs in self.available_servers
-                                          if servs not in servers]
-            if "query" in services:
-                servers = random.sample(self.available_servers, nodes_in)
-                self.servs_in.extend(servers)
-                self.available_servers = [servs for servs in self.available_servers
-                                          if servs not in servers]
-            if "eventing" in services:
-                servers = random.sample(self.available_servers, nodes_in)
-                self.servs_in.extend(servers)
-                self.available_servers = [servs for servs in self.available_servers
-                                          if servs not in servers]
-            if "kv" in services:
-                servers = random.sample(self.available_servers, nodes_in)
-                self.servs_in.extend(servers)
-                self.available_servers = [servs for servs in self.available_servers
-                                          if servs not in servers]
-
-        print "Servers coming in : %s with services: %s" % ([server.ip for server in self.servs_in], services)
-        print "Servers going out : %s" % ([server.ip for server in self.servs_out])
-        self.available_servers.extend(self.servs_out)
-        print "NEW AVAILABLE nodes for cluster: %s" % ([server.ip for server in self.available_servers])
-        if nodes_in == nodes_out:
-            self.vbucket_check = False
-
-        rebalance_task = self.task.async_rebalance(
-            self.cluster, self.servs_in, self.servs_out,
-            services=services,
-            check_vbucket_shuffling=self.vbucket_check,
-            retry_get_process_num=retry_get_process_num)
-
-        return rebalance_task
 
     def generate_docs(self, doc_ops=None,
                       create_end=None, create_start=None,
@@ -629,3 +498,311 @@ class OPD:
         print "\t", "#"
         print "\t", "#"*60
         print "\n"
+
+    def check_cluster_scaling(self, dataplane_id=None, service="kv", state="scaling"):
+        self.lock.acquire()
+        dataplane_id = dataplane_id or self.dataplane_id
+        try:
+            self.log.info("Dataplane Jobs:")
+            pprint.pprint(self.serverless_util.get_dataplane_jobs(dataplane_id))
+            self.log.info("Scaling Records:")
+            pprint.pprint(self.serverless_util.get_scaling_records(dataplane_id))
+        except:
+            self.log.info("Scaling records are empty")
+        dataplane_state = "healthy"
+        try:
+            dataplane_state = self.serverless_util.get_dataplane_info(
+                dataplane_id)["couchbase"]["state"]
+        except:
+            pass
+        scaling_timeout = 5*60*60
+        while dataplane_state == "healthy" and scaling_timeout >= 0:
+            dataplane_state = "healthy"
+            try:
+                dataplane_state = self.serverless_util.get_dataplane_info(
+                    dataplane_id)["couchbase"]["state"]
+            except:
+                pass
+            self.log.info("Cluster state is: {}. Target: {} for {}"
+                          .format(dataplane_state, state, service))
+            time.sleep(2)
+            scaling_timeout -= 2
+        if not service.lower() in ["gsi", "fts"]:
+            self.assertEqual(dataplane_state, state,
+                             "Cluster scaling did not trigger in {} seconds.\
+                             Actual: {} Expected: {}".format(
+                                 scaling_timeout, dataplane_state, state))
+
+        scaling_timeout = 10*60*60
+        while dataplane_state != "healthy" and scaling_timeout >= 0:
+            self.refresh_dp_obj(dataplane_id)
+            dataplane_state = state
+            try:
+                dataplane_state = self.serverless_util.get_dataplane_info(
+                    dataplane_id)["couchbase"]["state"]
+            except:
+                pass
+            self.log.info("Cluster state is: {}. Target: {} for {}"
+                          .format(dataplane_state, state, service))
+            time.sleep(2)
+            scaling_timeout -= 2
+        self.log.info("Dataplane Jobs:")
+        pprint.pprint(self.serverless_util.get_dataplane_jobs(dataplane_id))
+        self.log.info("Scaling Records:")
+        pprint.pprint(self.serverless_util.get_scaling_records(dataplane_id))
+        if not service.lower() in ["gsi", "fts"]:
+            self.assertEqual(dataplane_state, "healthy",
+                             "Cluster scaling started but did not completed in {} seconds.\
+                             Actual: {} Expected: {}".format(
+                                 scaling_timeout, dataplane_state, "healthy"))
+        self.sleep(10, "Wait before dataplane cluster nodes refresh")
+        self.refresh_dp_obj(dataplane_id)
+        self.lock.release()
+
+    def refresh_dp_obj(self, dataplane_id):
+        try:
+            dp = self.dataplane_objs[dataplane_id]
+            cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(dp.srv)
+            proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+            out, _ = proc.communicate()
+            records = list()
+            for line in out.split("\n"):
+                if "11207" in line:
+                    records.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
+            ip = str(records[0])
+            servers = RestConnection({"ip": ip,
+                                      "username": dp.user,
+                                      "password": dp.pwd,
+                                      "port": 18091}).get_nodes()
+            dp.refresh_object(servers)
+        except:
+            pass
+
+    def get_num_nodes_in_cluster(self, dataplane_id=None, service="kv"):
+        dataplane_id = dataplane_id or self.dataplane_id
+        info = self.serverless_util.get_dataplane_info(dataplane_id)
+        nodes = [spec["count"] for spec in info["couchbase"]["specs"] if spec["services"][0]["type"] == service][0]
+        return nodes
+
+    def update_bucket_nebula_and_kv_nodes(self, cluster, bucket):
+        self.log.debug("Fetching SRV records for %s" % bucket.name)
+        srv = self.serverless_util.get_database_nebula_endpoint(
+            cluster.pod, cluster.tenant, bucket.name)
+        self.assertEqual(bucket.serverless.nebula_endpoint.srv, srv, "SRV changed")
+        bucket.serverless.nebula_obj.update_server_list()
+        self.log.debug("Updating nebula servers for %s" % bucket.name)
+        self.bucket_util.update_bucket_nebula_servers(
+            cluster, bucket)
+
+    def start_initial_load(self, buckets):
+        self.PrintStep("Step 2: Create %s items: %s" % (self.num_items, self.key_type))
+        for bucket in buckets:
+            self.generate_docs(doc_ops=["create"],
+                               create_start=0,
+                               create_end=bucket.loadDefn.get("num_items")/2,
+                               bucket=bucket)
+        self.perform_load(validate_data=False, buckets=buckets, overRidePattern=[100,0,0,0,0])
+
+        self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
+        for bucket in self.cluster.buckets:
+            self.generate_docs(doc_ops=["create"],
+                               create_start=bucket.loadDefn.get("num_items")/2,
+                               create_end=bucket.loadDefn.get("num_items"),
+                               bucket=bucket)
+        self.perform_load(validate_data=False, buckets=buckets, overRidePattern=[100,0,0,0,0])
+
+    def get_cluster_balanced_state(self, dataplane):
+        rest = RestConnection(dataplane.master)
+        try:
+            content = rest.get_pools_default()
+            return content["balanced"]
+        except:
+            self.log.critical("{} /pools/default has failed!!".format(dataplane.master))
+            pass
+
+    def check_cluster_state(self):
+        def start_check():
+            for dataplane in self.dataplane_objs.values():
+                state = self.get_cluster_balanced_state(dataplane)
+                if not state:
+                    self.log.critical("Dataplane State {}: {}".format(
+                        dataplane.id, state))
+                time.sleep(5)
+
+        monitor_state = threading.Thread(target=start_check)
+        monitor_state.start()
+
+    def check_ebs_scaling(self):
+        '''
+        1. check current disk used
+        2. If disk used > 50% check for EBS scale on all nodes for that service
+        '''
+
+        def check_disk():
+            while not self.stop_run:
+                for dataplane in self.dataplane_objs.values():
+                    self.refresh_dp_obj(dataplane.id)
+                    table = TableView(self.log.info)
+                    table.set_headers(["Node",
+                                       "Path",
+                                       "TotalDisk",
+                                       "UsedDisk",
+                                       "% Disk Used"])
+                    for node in dataplane.kv_nodes:
+                        data = RestConnection(node).get_nodes_self()
+                        for storage in data.availableStorage:
+                            if "cb" in storage.path:
+                                table.add_row([
+                                    node.ip,
+                                    storage.path,
+                                    data.storageTotalDisk,
+                                    data.storageUsedDisk,
+                                    storage.usagePercent])
+                                if storage.usagePercent > 90:
+                                    self.log.critical("Disk did not scale while\
+                                     it is approaching full!!!")
+                                    self.doc_loading_tm.abortAllTasks()
+                    table.display("EBS Statistics")
+                time.sleep(120)
+        disk_monitor = threading.Thread(target=check_disk)
+        disk_monitor.start()
+
+    def check_memory_management(self):
+        '''
+        1. Check the database disk used
+        2. Cal DGM based on ram/disk used and if it is < 1% wait for tunable
+        '''
+        self.disk = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450]
+        self.memory = [256, 256, 384, 512, 640, 768, 896, 1024, 1152, 1280]
+
+        def check_ram():
+            while not self.stop_run:
+                for dataplane in self.dataplane_objs.values():
+                    self.rest = BucketHelper(dataplane.master)
+                    table = TableView(self.log.info)
+                    table.set_headers(["Bucket",
+                                       "Total Ram(MB)",
+                                       "Total Data(GB)",
+                                       "Logical Data",
+                                       "Items"])
+                    logical_data = defaultdict(int)
+                    for node in dataplane.kv_nodes:
+                        _, stats = RestConnection(node).query_prometheus("kv_logical_data_size_bytes")
+                        if stats["status"] == "success":
+                            stats = [stat for stat in stats["data"]["result"] if stat["metric"]["state"] == "active"]
+                            for stat in stats:
+                                logical_data[stat["metric"]["bucket"]] += int(stat["value"][1])
+                    for bucket in self.cluster.buckets:
+                        data = self.rest.get_bucket_json(bucket.name)
+                        ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
+                        dataGB = data["basicStats"]["diskUsed"] / (1024 * 1024 * 1024)
+                        items = data["basicStats"]["itemCount"]
+                        logicalDdataGB = logical_data[bucket.name] / (1024 * 1024 * 1024)
+                        table.add_row([bucket.name, ramMB, dataGB, logicalDdataGB, items])
+                        for i, disk in enumerate(self.disk):
+                            if disk > logicalDdataGB:
+                                start = time.time()
+                                while time.time() < start + 1200 and ramMB != self.memory[i-1]:
+                                    self.log.info("Wait for bucket: {}, Expected: {}, Actual: {}".
+                                                  format(bucket.name,
+                                                         self.memory[i-1],
+                                                         ramMB))
+                                    time.sleep(5)
+                                    data = self.rest.get_bucket_json(bucket.name)
+                                    ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
+                                    continue
+                                if ramMB != self.memory[i-1]:
+                                    raise Exception("bucket: {}, Expected: {}, Actual: {}".
+                                                    format(bucket.name,
+                                                           self.memory[i-1],
+                                                           ramMB))
+                                break
+                    table.display("Bucket Memory Statistics")
+                time.sleep(120)
+        mem_monitor = threading.Thread(target=check_ram)
+        mem_monitor.start()
+
+    def monitor_query_status(self, print_duration=600):
+
+        def check_query_stats():
+            st_time = time.time()
+            while not self.stop_run:
+                if st_time + print_duration < time.time():
+                    self.query_table = TableView(self.log.info)
+                    self.table = TableView(self.log.info)
+                    self.table.set_headers(["Bucket",
+                                            "Total Queries",
+                                            "Failed Queries",
+                                            "Success Queries",
+                                            "Rejected Queries",
+                                            "Cancelled Queries",
+                                            "Timeout Queries",
+                                            "Errored Queries"])
+                    for ql in self.ql:
+                        self.query_table.set_headers(["Bucket",
+                                                      "Query",
+                                                      "Count",
+                                                      "Avg Execution Time(ms)"])
+                        try:
+                            for query in sorted(ql.query_stats.keys()):
+                                self.query_table.add_row([str(ql.bucket.name),
+                                                          ql.bucket.query_map[query],
+                                                          ql.query_stats[query][1],
+                                                          ql.query_stats[query][0]/ql.query_stats[query][1]])
+                        except Exception as e:
+                            print e
+                        self.table.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                    self.query_table.display("N1QL Query Execution Stats")
+                    self.table.display("N1QL Query Statistics")
+
+                    self.FTStable = TableView(self.log.info)
+                    self.FTStable.set_headers(["Bucket",
+                                               "Total Queries",
+                                               "Failed Queries",
+                                               "Success Queries",
+                                               "Rejected Queries",
+                                               "Cancelled Queries",
+                                               "Timeout Queries",
+                                               "Errored Queries"])
+                    for ql in self.ftsQL:
+                        self.FTStable.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                    self.FTStable.display("FTS Query Statistics")
+                    st_time = time.time()
+                    time.sleep(10)
+
+        query_monitor = threading.Thread(target=check_query_stats)
+        query_monitor.start()
+
+    def check_healthy_state(self, dataplane_id, service="kv", timeout=3600):
+        while timeout >= 0:
+            self.refresh_dp_obj(dataplane_id)
+            dataplane_state = None
+            try:
+                dataplane_state = self.serverless_util.get_dataplane_info(
+                    dataplane_id)["couchbase"]["state"]
+                if dataplane_state == "healthy":
+                    return True
+            except:
+                pass
+            self.log.info("Cluster state is: {}. Target: {} for {}"
+                          .format(dataplane_state, "healthy", service))
+            time.sleep(10)
+            timeout -= 10

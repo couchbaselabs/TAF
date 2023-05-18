@@ -360,12 +360,12 @@ class Murphy(BaseTestCase, OPD):
                     "valType": "SimpleValue",
                     "2i": [5, 5],
                     "FTS": [5, 5],
-                },
+                    },
                 {
                     "valType": "SimpleValue",
                     "2i": [5, 5],
                     "FTS": [5, 5],
-                }
+                    }
                 ]
             }
         sanity = self.input.param("sanity", False)
