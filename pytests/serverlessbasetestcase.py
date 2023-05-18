@@ -90,16 +90,17 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
         self.dataplanes = self.input.capella.get("dataplane_id")
-        if not self.dataplanes and num_dataplanes == 0:
+        if not self.dataplanes:
             self.dataplanes = list()
-            dataplanes_details = self.serverless_util.get_all_dataplanes()
-            for dataplane in dataplanes_details:
-                if dataplane["status"]["state"] == "ready":
-                    self.dataplanes.append(dataplane["id"])
-                    break
-            else:
-                # No dataplanes in ready state.
-                self.fail("No dataplanes available in ready state for the tests to continue")
+            if num_dataplanes == 0:
+                dataplanes_details = self.serverless_util.get_all_dataplanes()
+                for dataplane in dataplanes_details:
+                    if dataplane["status"]["state"] == "ready":
+                        self.dataplanes.append(dataplane["id"])
+                        break
+                else:
+                    # No dataplanes in ready state.
+                    self.fail("No dataplanes available in ready state for the tests to continue")
         else:
             self.dataplanes = self.dataplanes.split(",")
 
