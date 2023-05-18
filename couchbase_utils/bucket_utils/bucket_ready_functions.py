@@ -2839,12 +2839,17 @@ class BucketUtils(ScopeUtils):
         rest = RestConnection(cluster.master)
         info = rest.get_nodes_self()
         tasks = dict()
-        if info.memoryQuota < 868.0:
-            self.log.error("At least need 868MB memoryQuota")
-            success = False
-        else:
-            if type(storage) is not dict:
-                storage = {storage: bucket_count}
+        if type(storage) is not dict:
+            storage = {storage: bucket_count}
+        if Bucket.StorageBackend.magma in storage and \
+                    storage[Bucket.StorageBackend.magma] > 0:
+            if ram_quota is not None and info.memoryQuota < ram_quota * bucket_count:
+                self.log.error("At least need {0}MB memoryQuota".format(ram_quota*bucket_count))
+                success = False
+            elif ram_quota is None and info.memoryQuota < 256 * bucket_count:
+                self.log.error("At least need {0}MB memoryQuota".format(256*bucket_count))
+                success = False
+        if success:
             for key in storage.keys():
                 if ram_quota is not None:
                     bucket_ram = ram_quota
@@ -2891,7 +2896,7 @@ class BucketUtils(ScopeUtils):
             # Check for warm_up
             for bucket in cluster.buckets:
                 self.get_updated_bucket_server_list(cluster, bucket)
-                warmed_up = self._wait_warmup_completed(bucket, wait_time=60)
+                warmed_up = self._wait_warmup_completed(bucket, wait_time=300)
                 if not warmed_up:
                     success = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name

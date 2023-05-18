@@ -63,6 +63,8 @@ class MagmaBaseTest(StorageBase):
         self.init_sdk_pool_object()
         self.log.info("Creating SDK clients for client_pool")
         max_clients = min(self.task_manager.number_of_threads, 20)
+        if self.standard_buckets > 20:
+            max_clients = self.standard_buckets
         clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
         for bucket in self.cluster.buckets:
             self.sdk_client_pool.create_clients(

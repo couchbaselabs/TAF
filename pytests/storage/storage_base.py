@@ -92,6 +92,13 @@ class StorageBase(BaseTestCase):
         self.cluster.query_nodes = self.find_nodes_with_service("n1ql", nodes_in)
         self.cluster.index_nodes = self.find_nodes_with_service("index", nodes_in)
         self.cluster.kv_nodes = self.find_nodes_with_service("kv", nodes_in).insert(0,self.cluster.master)
+
+        self.set_kv_quota = self.input.param("set_kv_quota", False)
+        if self.set_kv_quota:
+            self.kv_quota_mem = self.input.param("kv_quota_mem", None)
+            self.log.info("Setting KV Memory quota to {0} MB".format(self.kv_quota_mem))
+            self.rest.set_service_mem_quota(
+                {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem})
         # Create Buckets
         if self.standard_buckets == 1:
             self.bucket_util.create_default_bucket(
