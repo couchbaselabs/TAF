@@ -54,7 +54,8 @@ from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
 from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
-from capella_utils.serverless import CapellaUtils as ServerlessUtils
+from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
+    CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 from constants.cloud_constants.capella_constants import AWS
 
@@ -4003,6 +4004,8 @@ class DatabaseCreateTask(Task):
                  dataplane_id="",
                  timeout=1200):
         Task.__init__(self, "CreateServerlessDatabaseTask_{}_{}".format(bucket_obj.name, time.time()))
+        self.server = None
+        self.srv = None
         self.cluster = cluster
         self.bucket_obj = bucket_obj
         self.tenant = tenant or self.cluster.tenant
@@ -4028,8 +4031,11 @@ class DatabaseCreateTask(Task):
                 self.cluster.pod, self.tenant, self.bucket_obj.name,
                 timeout=self.timeout)
             self.cluster.append_bucket(self.bucket_obj)
-            dp_id = self.serverless_util.get_database_dataplane_id(
-                self.cluster.pod, self.bucket_obj.name)
+            if CapellaUtils.is_prod_env:
+                dp_id = "production_env"
+            else:
+                dp_id = self.serverless_util.get_database_dataplane_id(
+                    self.cluster.pod, self.bucket_obj.name)
             self.bucket_obj.serverless.dataplane_id = dp_id
             self.log.info("Dataplane id for bucket {} is {}".format(
                 self.bucket_obj.name, dp_id))
@@ -4039,27 +4045,7 @@ class DatabaseCreateTask(Task):
                 self.result = False
                 self.complete_task()
                 return
-            self.server = TestInputServer()
-            self.srv = self.serverless_util.get_database_nebula_endpoint(
-                self.cluster.pod, self.tenant, self.bucket_obj.name)
-            count = 20
-            while count > 0:
-                records = Lookup("_couchbases._tcp.{}".format(self.srv), Type.SRV).run()
-                if records:
-                    break
-                else:
-                    self.log.critical("SRV resolutions of {} failed. Retrying...".format(self.srv))
-                    time.sleep(10)
-                count -= 1
-                if count == 0:
-                    self.result = False
-                    self.complete_task()
-                    return
-            record = random.choice(records)
-            self.server.ip = str(record.getTarget()).rstrip(".")
-            self.server.memcached_port = int(record.getPort())
-            self.log.info("SRV {} is resolved to {}.".format(self.srv,
-                                                             self.server.ip))
+
             count = 20
             while count > 0:
                 try:
@@ -4076,10 +4062,34 @@ class DatabaseCreateTask(Task):
             else:
                 raise Exception("%s - RBAC role creation failed"
                                 % self.bucket_obj.name)
+            self.srv = self.serverless_util.get_database_nebula_endpoint(
+                self.cluster.pod, self.tenant, self.bucket_obj.name)
+
+            count = 1200
+            records = None
+            while count > 0:
+                records = Lookup("_couchbases._tcp.{}".format(self.srv),
+                                 Type.SRV).run()
+                if records:
+                    break
+                else:
+                    self.log.critical("SRV resolutions of {} failed. Retrying...".format(self.srv))
+                    time.sleep(10)
+                count -= 1
+                if count == 0:
+                    self.result = False
+                    self.complete_task()
+                    return
+            record = random.choice(records)
+            self.server = TestInputServer()
+            self.server.ip = str(record.getTarget()).rstrip(".")
+            self.server.memcached_port = int(record.getPort())
+            self.log.info("SRV {} is resolved to {}.".format(self.srv,
+                                                             self.server.ip))
             self.server.rest_username = access
             self.server.rest_password = secret
             self.server.port = "18091"
-            self.log.info("Access/Secret for bucket {} is {}:{}".format(
+            self.log.critical("Access/Secret for bucket {} is {}:{}".format(
                 self.bucket_obj.name, access, secret))
             nebula_class = common_lib.get_module(
                 "cluster_utils.cluster_ready_functions", "Nebula")

@@ -13,11 +13,11 @@ import logging
 import time
 
 from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
-from org.xbill.DNS import Lookup, Type
 
 
 class CapellaUtils:
     log = logging.getLogger(__name__)
+    is_prod_env = False
 
     def __init__(self, cluster, tenant=None):
         tenant = tenant or cluster.tenant
@@ -40,7 +40,7 @@ class CapellaUtils:
         if resp.status_code != 200:
             CapellaUtils.log.critical("Get Data plane status failed with status\
             code:{} and error message:{}".format(resp.status_code, resp.content))
-        return (json.loads(resp.content)["status"]["state"])
+        return json.loads(resp.content)["status"]["state"]
 
     def create_serverless_database(self, pod, tenant, database_name,
                                    provider, region, width=None, weight=None,
@@ -53,7 +53,7 @@ class CapellaUtils:
             "region": region,
             "dontImportSampleData": dontImportSampleData
         }
-        if width or weight or dataplane_id:
+        if (not self.is_prod_env) and (width or weight or dataplane_id):
             database_config.update({
                 "tenantId": tenant.id,
                 "overRide": {
@@ -61,6 +61,8 @@ class CapellaUtils:
                     "width": width,
                     "dataplaneId": dataplane_id
                 }})
+            if dataplane_id in [None, ""]:
+                database_config["overRide"].pop("dataplaneId")
             resp = self.capella_api.create_serverless_database_overRide(database_config)
         else:
             resp = self.capella_api.create_serverless_database(tenant.id, database_config)

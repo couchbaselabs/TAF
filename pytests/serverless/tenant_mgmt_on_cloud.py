@@ -1248,7 +1248,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         self.bucket_width = 1
         self.bucket_weight = 30
         self.db_name = "tntMgmt-initial-db"
-        self.dataplane_id = None
+        self.dataplane_id = ""
         self.create_database(timeout=1800)
         bucket = self.cluster.buckets[0]
 

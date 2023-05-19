@@ -9,7 +9,8 @@ from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from capella_utils.common_utils import Pod, Tenant
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
-from capella_utils.serverless import CapellaUtils as ServerlessUtils
+from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
+    CapellaUtils
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Dataplane
@@ -46,6 +47,11 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.pod = Pod("https://%s" % url,
                        self.input.capella.get("token",
                                               None))
+        # Set this variable to determine whether the test are running on
+        # production pipeline where '/internal' endpoints are prohibited
+        if "stage" in self.pod.url_public \
+                or "cloud.couchbase.com" in self.pod.url_public:
+            CapellaUtils.is_prod_env = True
 
         self.log_setup_status(self.__class__.__name__, "started")
         self.cluster_name_format = "C%s"
@@ -90,19 +96,11 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
         self.dataplanes = self.input.capella.get("dataplane_id")
-        if not self.dataplanes:
-            self.dataplanes = list()
-            if num_dataplanes == 0:
-                dataplanes_details = self.serverless_util.get_all_dataplanes()
-                for dataplane in dataplanes_details:
-                    if dataplane["status"]["state"] == "ready":
-                        self.dataplanes.append(dataplane["id"])
-                        break
-                else:
-                    # No dataplanes in ready state.
-                    self.fail("No dataplanes available in ready state for the tests to continue")
-        else:
+        if self.dataplanes:
             self.dataplanes = self.dataplanes.split(",")
+            self.dataplane_id = self.dataplanes[-1]
+        else:
+            self.dataplane_id = ""
 
         self.delete_dataplanes = list()
 
@@ -121,9 +119,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             self.assertTrue(deploy_task.result, "Dataplane deployment failed!")
             self.dataplanes.append(deploy_task.dataplane_id)
             self.delete_dataplanes.append(deploy_task.dataplane_id)
-
-        if self.dataplanes:
-            self.dataplane_id = self.dataplanes[-1]
+            self.dataplane_id = deploy_task.dataplane_id
 
         self.dataplane_objs = dict()
         self.table = TableView(self.log.info)
