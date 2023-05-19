@@ -4,6 +4,7 @@ import time
 import re
 from random import choice, sample
 from threading import Thread
+from table_view import TableView
 
 from BucketLib.bucket import Bucket
 from bucket_collections.collections_base import CollectionBase
@@ -58,6 +59,32 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.assertTrue(
                 isinstance(resp, list) and len(resp) == num_dataplane,
                 "Deployed more than 1 dataplane")
+
+    def __display_bucket_node_info(self):
+        self.get_servers_for_databases()
+        table = TableView(self.log.info)
+        if len(self.cluster.nodes_in_cluster) == 0:
+            table.add_row(["No Servers"])
+        else:
+            table.set_headers(["Servers"])
+            for node in self.cluster.nodes_in_cluster:
+                node_data = [node.ip]
+                table.add_row(node_data)
+        table.display("Server statistics")
+
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
+
+        table = TableView(self.log.info)
+        if len(self.cluster.buckets) == 0:
+            table.add_row(["No buckets"])
+        else:
+            table.set_headers(["Bucket", "Servers"])
+            for bucket in self.cluster.buckets:
+                bucket_data = [bucket.name,[node.ip for node in bucket.servers]]
+                table.add_row(bucket_data)
+        table.display("Bucket statistics")
 
     def get_random_weight_for_width(self, width=1):
         return self.weight_start[width] \
@@ -164,7 +191,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for bucket in buckets_to_consider:
             dataplane_id = self.serverless_util.get_database_dataplane_id(
                 self.pod, bucket.name)
-            self.log.info("dataplane_id is %s" % dataplane_id)
+            self.log.debug("dataplane_id is %s" % dataplane_id)
             if dataplane_id not in dataplanes:
                 dataplanes[dataplane_id] = dict()
                 _, dataplanes[dataplane_id]["node"], \
@@ -871,11 +898,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 sdk_client_pool=self.sdk_client_pool)
 
         for scenario in scenarios:
+            self.__display_bucket_node_info()
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=3600, ignore_undesired_updates=True)
+                to_track, timeout=7200, ignore_undesired_updates=True)
             self.task_manager.get_task_result(monitor_task)
 
+        self.__display_bucket_node_info()
         if self.with_data_load:
             DocLoaderUtils.wait_for_doc_load_completion(self.doc_loading_tm,
                                                         doc_loading_tasks)
@@ -918,9 +947,11 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             scenario[bucket.name] = {Bucket.width: 2,
                                      Bucket.weight: 300}
         to_track = self.__trigger_bucket_param_updates(scenario)
+        self.__display_bucket_node_info()
         monitor_task = self.bucket_util.async_monitor_database_scaling(
             to_track, timeout=3600)
         self.task_manager.get_task_result(monitor_task)
+        self.__display_bucket_node_info()
 
         # Perform scaling and perform new DB create/delete
         if scale_type == Bucket.width:
@@ -934,6 +965,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                        Bucket.weight: 280},
                         self.cluster.buckets[-1].name: {Bucket.width: 2,
                                                         Bucket.weight: 300}}
+        self.__display_bucket_node_info()
         to_track = self.__trigger_bucket_param_updates(scenario)
         monitor_task = self.bucket_util.async_monitor_database_scaling(
             to_track, timeout=3600)
@@ -952,6 +984,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                       db_to_drop.name)
         self.task_manager.get_task_result(task)
         self.task_manager.get_task_result(monitor_task)
+        self.__display_bucket_node_info()
 
         # Update width scaling for couple for DBs
         if scale_type == Bucket.width:
@@ -965,6 +998,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                                                        Bucket.weight: 330},
                         self.cluster.buckets[-1].name: {Bucket.width: 3,
                                                         Bucket.weight: 390}}
+        self.__display_bucket_node_info()
         to_track = self.__trigger_bucket_param_updates(scenario)
         monitor_task = self.bucket_util.async_monitor_database_scaling(
             to_track, timeout=3600)
@@ -978,6 +1012,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         task = self.bucket_util.async_create_database(self.cluster, target_db)
         self.task_manager.get_task_result(task)
         self.task_manager.get_task_result(monitor_task)
+        self.__display_bucket_node_info()
 
     def test_scaling_with_dgm_buckets(self):
         target_dgm = self.input.param("target_dgm", 90)
@@ -1055,10 +1090,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 self.cluster.buckets)
 
         for scenario in scenarios:
+            self.__display_bucket_node_info()
             to_track = self.__trigger_bucket_param_updates(scenario)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
-                to_track, timeout=3600, ignore_undesired_updates=True)
+                to_track, timeout=7200, ignore_undesired_updates=True)
             self.task_manager.get_task_result(monitor_task)
+        self.__display_bucket_node_info()
 
         if self.validate_stat:
             self.get_servers_for_databases()
@@ -1453,10 +1490,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.create_required_buckets(pre_test_bucket_specs)
             bucket_name = self.cluster.buckets[0].name
             scenarios = {bucket_name: {Bucket.width: 2}}
+            self.__display_bucket_node_info()
             track = self.__trigger_bucket_param_updates(scenarios)
             db_monitor_task = self.bucket_util.async_monitor_database_scaling(
                 track, timeout=3600)
             self.task_manager.get_task_result(db_monitor_task)
+            self.__display_bucket_node_info()
             return bucket_name
 
         # required for compare bucket movement before and after de-frag
@@ -1516,10 +1555,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             for bucket in bucket_to_update:
                 dynamic_scenarios[bucket.name] = \
                     {Bucket.weight: desired_weight}
+            self.__display_bucket_node_info()
             to_track = self.__trigger_bucket_param_updates(dynamic_scenarios)
             monitor_task = self.bucket_util.async_monitor_database_scaling(
                 to_track, timeout=3600)
             self.task_manager.get_task_result(monitor_task)
+            self.__display_bucket_node_info()
         else:
             for bucket in bucket_to_update:
                 self.serverless_util.delete_database(self.pod, self.tenant,
@@ -1740,9 +1781,11 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 self.bucket_info[bucket][create_end] = \
                     self.bucket_info[bucket][create_start] + 500000
             start_data_load(self.cluster.buckets)
+            self.__display_bucket_node_info()
             monitor_task = self.bucket_util.async_monitor_database_scaling(
                 to_track, timeout=3600, ignore_undesired_updates=True)
             self.task_manager.get_task_result(monitor_task)
+            self.__display_bucket_node_info()
             limit_exceed_tolerance = 0.3
             self.sleep(70, "Wait after rebalanace")
 
