@@ -96,6 +96,7 @@ class Murphy(BaseTestCase, OPD):
         self.index_timeout = self.input.param("index_timeout", 3600)
         self.assert_crashes_on_load = self.input.param("assert_crashes_on_load",
                                                        True)
+        self.num_of_datasets = self.input.param("num_datasets", 10)
         self.load_defn = list()
 
         if self.cluster.eventing_nodes:
@@ -107,8 +108,9 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.fts_nodes:
             self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
 
-        if self.cluster.cbas_nodes:
-            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util)
+        if self.cluster.cbas_nodes and self.cluster.buckets:
+            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util, num_idx=self.num_of_datasets,
+                                     hotelquery=True, batch_size=10)
 
         if self.backup_nodes > 0:
             self.drBackupRestore = DoctorHostedBackupRestore(cluster=self.cluster,
@@ -418,10 +420,14 @@ class Murphy(BaseTestCase, OPD):
         if not self.skip_init:
             self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
 
-        if self.cluster.cbas_nodes and not self.skip_init:
+        if hasattr(self, "drCBAS"):
+
             self.drCBAS.create_datasets()
             self.drCBAS.create_indexes()
-            result = self.drCBAS.wait_for_ingestion(self.index_timeout)
+
+            result = self.drCBAS.wait_for_ingestion_on_all_datasets(
+                self.cluster, self.index_timeout)
+
             self.assertTrue(result, "CBAS ingestion couldn't complete in time: %s" % self.index_timeout)
             self.drCBAS.start_query_load()
 
