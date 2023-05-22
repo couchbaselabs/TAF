@@ -309,16 +309,17 @@ class Murphy(BaseTestCase, OPD):
                     gsi_scaling = False
                     break
             if gsi_scaling:
-                self.PrintStep("Step: Test GSI Auto-Scaling due to num of GSI tenants per sub-cluster")
-                self.check_cluster_scaling(service="gsi")
-                curr_gsi_nodes = self.get_num_nodes_in_cluster(
-                                    dataplane.id, service="index")
-                self.log.info("GSI nodes - Actual: {}, Expected: {}".
-                              format(curr_gsi_nodes, prev_gsi_nodes+2))
-                self.assertTrue(curr_gsi_nodes == prev_gsi_nodes+2,
-                                "GSI nodes - Actual: {}, Expected: {}".
-                                format(curr_gsi_nodes, prev_gsi_nodes+2))
-                break
+                if self.check_jobs_entry("index", "scalingService"):
+                    self.PrintStep("Step: Test GSI Auto-Scaling due to num of GSI tenants per sub-cluster")
+                    self.check_cluster_scaling(service="gsi")
+                    curr_gsi_nodes = self.get_num_nodes_in_cluster(
+                                        dataplane.id, service="index")
+                    self.log.info("GSI nodes - Actual: {}, Expected: {}".
+                                  format(curr_gsi_nodes, prev_gsi_nodes+2))
+                    self.assertTrue(curr_gsi_nodes == prev_gsi_nodes+2,
+                                    "GSI nodes - Actual: {}, Expected: {}".
+                                    format(curr_gsi_nodes, prev_gsi_nodes+2))
+                    break
             count -= 1
 
     def check_index_auto_scaling_rebl(self):

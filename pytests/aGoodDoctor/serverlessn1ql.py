@@ -226,7 +226,7 @@ class DoctorN1QL():
                             unformatted_q = queryType[counter % len(queryType)]
                             query = unformatted_q.format(c)
                             if unformatted_q not in b.query_map.keys():
-                                b.query_map[unformatted_q] = "Q%s" % q
+                                b.query_map[unformatted_q] = "Q%s" % (counter % len(queryType))
                                 b.queries.append((query, self.sdkClients[b.name+s], unformatted_q))
                             q += 1
                         counter += 1
