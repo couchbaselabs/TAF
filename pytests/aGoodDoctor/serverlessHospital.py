@@ -134,7 +134,7 @@ class Murphy(BaseTestCase, OPD):
                 "collections_defn": [
                     {
                         "valType": "Hotel",
-                        "2i": (50, 10),
+                        "2i": (100, 10),
                         "FTS": [0, 0],
                         }
                     ]
@@ -253,7 +253,6 @@ class Murphy(BaseTestCase, OPD):
                         }
                     ]
                 }
-            self.load_defn.append(self.kv_memmgmt)
             self.workload = self.input.param("workload", self.defaultLoadDefn)
 
             if self.workload == "kv_memmgmt":
@@ -798,7 +797,8 @@ class Murphy(BaseTestCase, OPD):
         self.ql = []
         self.ftsQL = []
         tasks = list()
-        self.create_databases(20)
+        self.create_databases(18)
+        self.create_databases(2, self.kv_memmgmt)
         buckets = self.cluster.buckets[0:20]
         self.create_required_collections(self.cluster, buckets)
         self.create_fts_indexes(buckets, wait=False)
@@ -810,7 +810,8 @@ class Murphy(BaseTestCase, OPD):
             self.generate_docs(bucket=bucket)
         tasks.append(self.perform_load(wait_for_load=False, buckets=buckets))
 
-        self.create_databases(20)
+        self.create_databases(18)
+        self.create_databases(2, self.kv_memmgmt)
         buckets = self.cluster.buckets[20:40]
         self.create_required_collections(self.cluster, buckets)
         self.create_fts_indexes(buckets, wait=False)
@@ -822,7 +823,8 @@ class Murphy(BaseTestCase, OPD):
             self.generate_docs(bucket=bucket)
         tasks.append(self.perform_load(wait_for_load=False, buckets=buckets))
 
-        self.create_databases(20)
+        self.create_databases(18)
+        self.create_databases(2, self.kv_memmgmt)
         buckets = self.cluster.buckets[40:60]
         self.create_required_collections(self.cluster, buckets)
         self.create_gsi_indexes(buckets)
@@ -834,7 +836,8 @@ class Murphy(BaseTestCase, OPD):
             self.generate_docs(bucket=bucket)
         tasks.append(self.perform_load(wait_for_load=False, buckets=buckets))
 
-        self.create_databases(20)
+        self.create_databases(18)
+        self.create_databases(2, self.kv_memmgmt)
         buckets = self.cluster.buckets[60:80]
         self.create_required_collections(self.cluster, buckets)
         self.create_gsi_indexes(buckets)
@@ -846,7 +849,8 @@ class Murphy(BaseTestCase, OPD):
             self.generate_docs(bucket=bucket)
         tasks.append(self.perform_load(wait_for_load=False, buckets=buckets))
 
-        self.create_databases(20)
+        self.create_databases(18)
+        self.create_databases(2, self.kv_memmgmt)
         buckets = self.cluster.buckets[80:100]
         self.create_required_collections(self.cluster, buckets)
         self.start_initial_load(buckets)
@@ -893,7 +897,7 @@ class Murphy(BaseTestCase, OPD):
                     {
                         "valType": "SimpleValue",
                         "2i": (5, 5),
-                        "FTS": [1, 5],
+                        "FTS": [5, 5],
                         }
                     ]
             }
@@ -915,7 +919,7 @@ class Murphy(BaseTestCase, OPD):
                     {
                         "valType": "SimpleValue",
                         "2i": (5, 5),
-                        "FTS": [1, 5],
+                        "FTS": [5, 5],
                         }
                     ]
             }
@@ -963,7 +967,7 @@ class Murphy(BaseTestCase, OPD):
                     {
                         "valType": "SimpleValue",
                         "2i": [5, 5],
-                        "FTS": [1, 5],
+                        "FTS": [5, 5],
                         }
                     ]
                 }
@@ -985,7 +989,7 @@ class Murphy(BaseTestCase, OPD):
                     {
                         "valType": "SimpleValue",
                         "2i": [5, 5],
-                        "FTS": [1, 5],
+                        "FTS": [5, 5],
                         }
                     ]
                 }
@@ -1007,7 +1011,7 @@ class Murphy(BaseTestCase, OPD):
                     {
                         "valType": "SimpleValue",
                         "2i": [5, 5],
-                        "FTS": [1, 5],
+                        "FTS": [5, 5],
                         }
                     ]
                 }
