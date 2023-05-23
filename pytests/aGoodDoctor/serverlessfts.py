@@ -23,6 +23,7 @@ from sdk_client3 import SDKClient
 from table_view import TableView
 from membase.api.rest_client import RestConnection
 from _collections import defaultdict
+from copy import deepcopy
 
 
 ftsQueries = [
@@ -31,11 +32,152 @@ ftsQueries = [
             SearchQuery.prefix("Cari")
             ]
 
+ftsIndex = {
+    "dynamic": False,
+    "enabled": True,
+    "properties":
+    {
+            "name":
+            {
+                "enabled": True,
+                "dynamic": False,
+                "fields":
+                [
+                    {
+                        "analyzer": "en",
+                        "docvalues": True,
+                        "include_in_all": True,
+                        "include_term_vectors": True,
+                        "index": True,
+                        "name": "name",
+                        "store": True,
+                        "type": "text"
+                    }
+                ]
+            }
+        }
+    }
+
 HotelQueries = [
             SearchQuery.queryString("United Kingdom"),
             SearchQuery.match("Algeria"),
             SearchQuery.prefix("Serbi"),
     ]
+
+HotelIndex = {
+         "dynamic": False,
+         "enabled": True,
+         "properties": {
+          "country": {
+           "enabled": True,
+           "dynamic": False,
+           "fields": [
+            {
+             "analyzer": "en",
+             "index": True,
+             "name": "country",
+             "type": "text"
+            }
+           ]
+          },
+          "country": {
+           "enabled": True,
+           "dynamic": False,
+           "fields": [
+            {
+             "analyzer": "en",
+             "index": True,
+             "name": "country",
+             "type": "text"
+            }
+           ]
+          }
+         }
+        }
+
+template = {
+     "name": "volumetestbucket-00-vsuka4._default.test",
+     "type": "fulltext-index",
+     "params": {
+      "doc_config": {
+       "docid_prefix_delim": "",
+       "docid_regexp": "",
+       "mode": "scope.collection.type_field",
+       "type_field": "type"
+      },
+      "mapping": {
+       "default_analyzer": "standard",
+       "default_datetime_parser": "dateTimeOptional",
+       "default_field": "_all",
+       "default_mapping": {
+        "dynamic": False,
+        "enabled": False
+       },
+       "default_type": "_default",
+       "docvalues_dynamic": False,
+       "index_dynamic": False,
+       "store_dynamic": False,
+       "type_field": "_type",
+       "types": {
+           "dynamic": False,
+           "enabled": True
+       }
+      },
+      "store": {
+       "indexType": "scorch",
+       "segmentVersion": 15
+      }
+     },
+     "sourceType": "gocbcore",
+     "sourceName": "volumetestbucket-00-vsuka4",
+     "sourceParams": {},
+     "planParams": {
+      "maxPartitionsPerPIndex": 64,
+      "indexPartitions": 1,
+      "numReplicas": 1
+     }
+    }
+
+template = {
+    "type": "fulltext-index",
+    "name": "ftsindex",
+    "sourceType": "gocbcore",
+    "sourceName": "default",
+    "planParams": {
+        "maxPartitionsPerPIndex": 1024,
+        "indexPartitions": 1,
+        "numReplicas": 1
+     },
+    "params": {
+        "doc_config": {
+            "docid_prefix_delim": "",
+            "docid_regexp": "",
+            "mode": "scope.collection.type_field",
+            "type_field": "type"
+            },
+        "mapping": {
+            "analysis": {},
+            "default_analyzer": "standard",
+            "default_datetime_parser": "dateTimeOptional",
+            "default_field": "_all",
+            "default_mapping": {
+                "dynamic": False,
+                "enabled": False
+                },
+            "default_type": "_default",
+            "docvalues_dynamic": False,
+            "index_dynamic": True,
+            "store_dynamic": False,
+            "type_field": "_type",
+            "types": {}
+            },
+        "store": {
+            "indexType": "scorch",
+            "segmentVersion": 15
+            }
+        },
+    "sourceParams": {}
+   }
 
 
 class DoctorFTS:
@@ -70,22 +212,20 @@ class DoctorFTS:
                     workload = workloads[collection_num % len(workloads)]
                     valType = workload["valType"]
                     queryTypes = ftsQueries
+                    indexType = ftsIndex
                     if valType == "Hotel":
                         queryTypes = HotelQueries
+                        indexType = HotelIndex
                     i = 0
                     while i < workload.get("FTS")[0]:
                         name = str(b.name).replace("-", "_") + c + "_fts_idx_"+str(i)
 
-                        fts_param_template = self.get_fts_idx_template()
+                        fts_param_template = deepcopy(template)
                         fts_param_template.update({
                             "name": name, "sourceName": str(b.name)})
                         fts_param_template["planParams"].update({
                             "indexPartitions": self.fts_index_partitions})
-                        fts_param_template["params"]["mapping"]["types"].update({
-                            "%s.%s" % (s, c): {
-                                "dynamic": True, "enabled": True}
-                            }
-                        )
+                        fts_param_template["params"]["mapping"]["types"].update({"%s.%s" % (s, c): indexType})
                         fts_param_template = str(fts_param_template).replace("True", "true")
                         fts_param_template = str(fts_param_template).replace("False", "false")
                         fts_param_template = str(fts_param_template).replace("'", "\"")
@@ -106,49 +246,6 @@ class DoctorFTS:
 
     def discharge_FTS(self):
         self.stop_run = True
-
-    def get_fts_idx_template(self):
-        fts_idx_template = {
-            "type": "fulltext-index",
-            "name": "fts-index",
-            "sourceType": "gocbcore",
-            "sourceName": "default",
-            "planParams": {
-                "maxPartitionsPerPIndex": 1024,
-                "indexPartitions": 1,
-                "numReplicas": 1
-             },
-            "params": {
-                "doc_config": {
-                    "docid_prefix_delim": "",
-                    "docid_regexp": "",
-                    "mode": "scope.collection.type_field",
-                    "type_field": "type"
-                    },
-                "mapping": {
-                    "analysis": {},
-                    "default_analyzer": "standard",
-                    "default_datetime_parser": "dateTimeOptional",
-                    "default_field": "_all",
-                    "default_mapping": {
-                        "dynamic": True,
-                        "enabled": False
-                        },
-                    "default_type": "_default",
-                    "docvalues_dynamic": False,
-                    "index_dynamic": True,
-                    "store_dynamic": False,
-                    "type_field": "_type",
-                    "types": {}
-                    },
-                "store": {
-                    "indexType": "scorch",
-                    "segmentVersion": 15
-                    }
-                },
-            "sourceParams": {}
-           }
-        return fts_idx_template
 
     def wait_for_fts_index_online(self, buckets, timeout=86400,
                                   overRideCount=None):

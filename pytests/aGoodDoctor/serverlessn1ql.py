@@ -81,7 +81,7 @@ HotelQueries = ["select meta().id from {} where country is not null and `type` i
                 "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
                 "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
                 "SELECT * from {} where `name` is not null limit 100",
-                "SELECT * from {} where phone like \"San%\" limit 100",
+                "SELECT * from {} where city like \"San%\" limit 100",
                 "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = 'Bulgaria' limit 100"]
 
 
