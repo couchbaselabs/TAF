@@ -2,6 +2,7 @@ import json
 import time
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
+from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 
 
 class SecurityTest(BaseTestCase):
@@ -1288,9 +1289,9 @@ class SecurityTest(BaseTestCase):
         self.log.info("Different Tenant Unauthorized project id - {}".format(
             project_ids["different_tenant_unauthorized_project_id"]))
 
-        capella_api = CapellaAPI("https://" + self.url, self.user, self.passwd)
-        body = {"name": "Koushal_API_Testing"}
-        create_project_resp = capella_api.create_project(self.tenant_id, json.dumps(body))
+        capella_api = CommonCapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                       self.user, self.passwd)
+        create_project_resp = capella_api.create_project(self.tenant_id, "Koushal_API_Testing")
         project_ids["valid_project_id"] = \
             json.loads(create_project_resp.content.decode('utf-8'))["id"]
 
