@@ -823,7 +823,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
                 for log_file in log_files:
                     log_file = log_file.strip("\n")
-                    for grep_pattern in file_data['grep_for']:
+                    pattern_to_grep = []
+                    if 'grep_for' in file_data:
+                        for grep_pattern_of_log_file in file_data['grep_for']:
+                            pattern_to_grep.append(grep_pattern_of_log_file)
+                    for common_grep_pattern in y_data["common_patterns"]['grep_for']:
+                        pattern_to_grep.append(common_grep_pattern)
+                    for grep_pattern in pattern_to_grep:
                         grep_for_str = grep_pattern['string']
                         err_pattern = exclude_pattern = None
                         if 'error_patterns' in grep_pattern:
