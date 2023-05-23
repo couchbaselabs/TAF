@@ -71,3 +71,14 @@ file_name_patterns:
       - string: 'found missing page'
       - string: 'invalid last page'
       - string: 'Storage corrupted and unrecoverable'
+
+  - file: '*.log'
+
+common_patterns:
+  grep_for:
+    - string: 'Basic\s[a-zA-Z]\{10,\}=='
+    - string: 'Menelaus-Auth-User:\['
+    - string: 'BEGIN RSA PRIVATE KEY'
+    - string: '(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'
+    - string: ".*\\(([^\\)}]|\\n)*[.*[\\\" '\\`\\(]+tasklist[\\\" '\\`\\)]+([^\\)}]|\\n)*/v.*\\)"
+    - string: ".*\\(([^\\)}]|\\n)*[.*[\\\" '\\`\\(]+ps[\\\" '\\`]+([^\\)}]|\\n)*command([^\\)}]|\\n)*\\)"
