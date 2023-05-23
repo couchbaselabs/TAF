@@ -224,14 +224,8 @@ class CBASHighAvailability(CBASBaseTest):
                     CbServer.use_https = True
                     trust_all_certs()
                 if "cbas_down" in testcase:
-                    cluster_cbas_nodes = self.cluster_util.get_nodes_from_services_map(
-                        self.cluster, service_type="cbas", get_all_nodes=True,
-                        servers=self.cluster.nodes_in_cluster)
-                    chosen = self.cluster_util.pick_nodes(
-                        self.cluster.master, howmany=1,
-                        target_node=cluster_cbas_nodes[0],
-                        exclude_nodes=[self.cluster.master])
-                    self.cluster.rest.fail_over(chosen[0].id, graceful=False)
+                    available_servers, _, cbas_failover_nodes = self.rebalance_util.failover(
+                        self.cluster, kv_nodes=0, cbas_nodes=1, reset_cbas_cc=False)
                 set_result = self.cbas_util.set_replica_number_from_settings(
                     node, replica_num=testcase["replica_num"],
                     username=testcase.get("username", None),
@@ -255,11 +249,17 @@ class CBASHighAvailability(CBASBaseTest):
                 self.log.error(str(err))
                 failed_testcases.append(testcase["description"])
             finally:
-                if "use_https" in testcase:
+                if ("use_https" in testcase) and not self.input.param("n2n_encryption", False):
                     CbServer.use_https = False
                 if "cbas_down" in testcase:
-                    self.cluster.rest.set_recovery_type(
-                        otpNode=chosen[0].id, recoveryType="full")
+                    try:
+                        self.rebalance_util.perform_action_on_failed_over_nodes(
+                            self.cluster, action="FullRecovery", available_servers=available_servers,
+                            kv_failover_nodes=[], cbas_failover_nodes=cbas_failover_nodes,
+                            wait_for_complete=True)
+                    except Exception as err:
+                        self.log.error(str(err))
+                        failed_testcases.append(testcase["description"])
         if failed_testcases:
             self.fail("Following testcases failed - {0}".format(
                 str(failed_testcases)))
