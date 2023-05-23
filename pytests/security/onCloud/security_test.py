@@ -675,3 +675,37 @@ class SecurityTest(BaseTestCase):
                                                 self.cluster_id, self.invalid_id)
         self.assertEqual(404, resp.status_code,
                          msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 404))
+
+    def test_turn_off_on_cluster(self):
+        self.log.info("Verifying the status code for turning clusters on/off")
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        # loading a sample bucket
+        capella_api.load_sample_bucket(self.tenant_id, self.project_id, self.cluster_id,
+                                       "beer-sample")
+        self.sleep(20, "Waiting for the bucket to be loaded")
+
+        #Turning off a cluster
+        resp = capella_api.turn_off_cluster(self.tenant_id, self.project_id, self.cluster_id)
+        self.assertEqual(202, resp.status_code,
+                         msg='FAIL, Outcome: {0}, Expected: {1}'.format(resp.status_code, 202))
+
+        end_time = time.time() + 320
+        while time.time() < end_time:
+            cluster_status = capella_api.get_cluster_status(self.cluster_id)
+            status = json.loads(cluster_status.content.decode('utf-8'))["status"]
+            if status == "turnedOff":
+                break
+            self.sleep(10, "Waiting for the cluster to be in turned off state")
+
+        # Testing if running a query is allowed or not. Ideally it shouldn't
+        query = "SELECT * FROM `beer-sample`._default._default"
+        resp = capella_api.run_query(query, self.cluster_id)
+        self.assertEqual(422, resp.status_code,
+                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 422))
+
+        # Testing if adding ip to the allowlist is allowed or not. Ideally it should
+        ips = ["104.172.65.2"]  # Any random ip
+        resp = capella_api.add_allowed_ips(self.tenant_id, self.project_id, self.cluster_id, ips)
+        self.assertEqual(202, resp.status_code,
+                      msg='FAIL, Outcome: {0}, Expected: {1}'.format(resp.status_code, 202))
