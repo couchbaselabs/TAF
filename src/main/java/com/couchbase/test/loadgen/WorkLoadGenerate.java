@@ -288,6 +288,8 @@ public class WorkLoadGenerate extends Task{
                     ops += dg.ws.batchSize*dg.ws.reads/100;
                 }
             }
+            if(this.sdkClientPool != null)
+            	this.sdkClientPool.release_client(this.sdk);
             if(ops == 0)
                 this.stop_loading = true;
             else if(ops < dg.ws.ops/dg.ws.workers && flag) {
@@ -304,8 +306,6 @@ public class WorkLoadGenerate extends Task{
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
-            if(this.sdkClientPool != null)
-                this.sdkClientPool.release_client(this.sdk);
         }
         logger.info(this.taskName + " is completed!");
         this.result = true;

@@ -242,7 +242,7 @@ class DoctorFTS:
                                 b.ftsIndexes.update({name: (queryTypes)})
                                 break
                         i += 1
-                        time.sleep(10)
+                        time.sleep(1)
 
     def discharge_FTS(self):
         self.stop_run = True
@@ -422,7 +422,7 @@ class FTSQueryLoad:
         self.timeout_count = itertools.count()
         self.total_query_count = 0
         self.stop_run = False
-        self.cluster_conn = SDKClient([bucket.serverless.nebula_endpoint], None).cluster
+        self.cluster_conn = bucket.clients[0].cluster
         self.log = logger.get("infra")
 
     def start_query_load(self):
@@ -431,11 +431,6 @@ class FTSQueryLoad:
 
     def stop_query_load(self):
         self.stop_run = True
-        try:
-            if self.cluster_conn:
-                self.cluster_conn.close()
-        except:
-            pass
 
     def _run_concurrent_queries(self):
         threads = []

@@ -12,7 +12,7 @@ import com.couchbase.test.sdk.SDKClient;
 
 public class SDKClientPool {
     static Logger logger = LogManager.getLogger(SDKClientPool.class);
-    private HashMap<String, HashMap> clients;
+    public HashMap<String, HashMap> clients;
 
     public SDKClientPool() {
         super();

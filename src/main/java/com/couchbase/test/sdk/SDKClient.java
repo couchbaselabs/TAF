@@ -24,8 +24,8 @@ public class SDKClient {
     public String scope;
     public String collection;
 
-    private Bucket bucketObj;
-    private Cluster cluster;
+    public Bucket bucketObj;
+    public Cluster cluster;
 
     public Collection connection;
 

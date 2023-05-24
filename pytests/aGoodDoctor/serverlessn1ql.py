@@ -164,6 +164,16 @@ class DoctorN1QL():
         self.sdkClients = dict()
         self.log = logger.get("test")
         self.stop_run = False
+        self.scale_down = False
+        self.scale_up = False
+        self.gsi_auto_rebl = False
+        self.gsi_cooling = False
+        self.last_30_mins = defaultdict(list)
+
+        self.n1ql_nodes_below30 = 0
+        self.n1ql_nodes_above60 = 0
+        self.scale_up_n1ql = False
+        self.scale_down_n1ql = False
 
     def monitor_gsi_auto_scaling(self, dataplane_id):
         '''
@@ -185,12 +195,10 @@ class DoctorN1QL():
             queryType = queries
             indexType = indexes
             self.log.info("Creating GSI indexes on {}".format(b.name))
-            if b.serverless and b.serverless.nebula_endpoint:
-                self.cluster_conn = SDKClient([b.serverless.nebula_endpoint], None).cluster
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 if b.name+s not in self.sdkClients.keys():
-                    self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
-                    time.sleep(5)
+                    self.sdkClients.update({b.name+s: b.clients[0].bucketObj.scope(s)})
+                    time.sleep(1)
                 for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
                     if c == "_default":
                         continue
@@ -314,36 +322,6 @@ class DoctorN1QL():
                                                         print_duration=60))
             stat_monitor.start()
 
-    def log_index_stats(self, dataplane, print_duration=600):
-        st_time = time.time()
-        while not self.stop_run:
-            if st_time + print_duration < time.time():
-                self.table = TableView(self.log.info)
-                self.table.set_headers(["Dataplane",
-                                        "Node",
-                                        "num_tenants",
-                                        "num_indexes",
-                                        "memory_used_actual",
-                                        "units_used_actual/units_quota"])
-                for node in dataplane.index_nodes:
-                    try:
-                        rest = RestConnection(node)
-                        resp = rest.urllib_request(rest.indexUrl + "stats")
-                        content = json.loads(resp.content)
-                        self.table.add_row([
-                            dataplane.id,
-                            node.ip,
-                            str(content["num_tenants"]),
-                            str(content["num_indexes"]),
-                            str(content["memory_used_actual"]),
-                            "{}/{}".format(str(content["units_used_actual"]),
-                                           str(content["units_quota"])),
-                            ])
-                    except Exception as e:
-                        self.log.critical(e)
-                self.table.display("Index Statistics")
-                st_time = time.time()
-
     def log_index_ru_wu_stats(self, dataplane, print_duration=600):
         st_time = time.time()
         while not self.stop_run:
@@ -385,8 +363,8 @@ class DoctorN1QL():
                         dataplane.id,
                         node.ip,
                         str(content["load_factor.value"]),
-                        str(content["queued_requests.value"]),
-                        str(content["active_requests.value"])
+                        str(content["queued_requests.count"]),
+                        str(content["active_requests.count"])
                     ])
                     if content["load_factor.value"] >= 60:
                         self.n1ql_nodes_above60 += 1
@@ -406,11 +384,6 @@ class DoctorN1QL():
 
     def log_index_stats_new(self, dataplane, print_duration=600):
         st_time = time.time()
-        self.scale_down = False
-        self.scale_up = False
-        self.gsi_auto_rebl = False
-        self.gsi_cooling = False
-        self.last_30_mins = defaultdict(list)
         while not self.stop_run:
             self.nodes_below_LWM = 0
             self.nodes_above_LWM = 0
@@ -554,11 +527,6 @@ class QueryLoad:
 
     def stop_query_load(self):
         self.stop_run = True
-        try:
-            if self.cluster_conn:
-                self.cluster_conn.close()
-        except:
-            pass
 
     def _run_concurrent_queries(self, bucket):
         threads = []

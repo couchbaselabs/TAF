@@ -248,7 +248,7 @@ class OPD:
         self.default_pattern = [100, 0, 0, 0, 0]
         buckets = buckets or self.cluster.buckets
         for bucket in buckets:
-            process_concurrency = min(bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections"), 5)
+            process_concurrency = bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections")
             pattern = overRidePattern or bucket.loadDefn.get("pattern", self.default_pattern)
             for scope in bucket.scopes.keys():
                 for collection in bucket.scopes[scope].collections.keys():
@@ -450,7 +450,7 @@ class OPD:
                         continue
                     if collection == "_default" and scope == "_default":
                         continue
-                    self.sleep(1)
+                    self.sleep(0.1)
                     taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
                     task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
                                             self.sdk_client_pool, self.durability_level,
@@ -677,47 +677,50 @@ class OPD:
 
         def check_ram():
             while not self.stop_run:
-                for dataplane in self.dataplane_objs.values():
-                    self.rest = BucketHelper(dataplane.master)
-                    table = TableView(self.log.info)
-                    table.set_headers(["Bucket",
-                                       "Total Ram(MB)",
-                                       "Total Data(GB)",
-                                       "Logical Data",
-                                       "Items"])
-                    logical_data = defaultdict(int)
-                    for node in dataplane.kv_nodes:
-                        _, stats = RestConnection(node).query_prometheus("kv_logical_data_size_bytes")
-                        if stats["status"] == "success":
-                            stats = [stat for stat in stats["data"]["result"] if stat["metric"]["state"] == "active"]
-                            for stat in stats:
-                                logical_data[stat["metric"]["bucket"]] += int(stat["value"][1])
-                    for bucket in self.cluster.buckets:
-                        data = self.rest.get_bucket_json(bucket.name)
-                        ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
-                        dataGB = data["basicStats"]["diskUsed"] / (1024 * 1024 * 1024)
-                        items = data["basicStats"]["itemCount"]
-                        logicalDdataGB = logical_data[bucket.name] / (1024 * 1024 * 1024)
-                        table.add_row([bucket.name, ramMB, dataGB, logicalDdataGB, items])
-                        for i, disk in enumerate(self.disk):
-                            if disk > logicalDdataGB:
-                                start = time.time()
-                                while time.time() < start + 1200 and ramMB != self.memory[i-1]:
-                                    self.log.info("Wait for bucket: {}, Expected: {}, Actual: {}".
-                                                  format(bucket.name,
-                                                         self.memory[i-1],
-                                                         ramMB))
-                                    time.sleep(5)
-                                    data = self.rest.get_bucket_json(bucket.name)
-                                    ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
-                                    continue
-                                if ramMB != self.memory[i-1]:
-                                    raise Exception("bucket: {}, Expected: {}, Actual: {}".
-                                                    format(bucket.name,
-                                                           self.memory[i-1],
-                                                           ramMB))
-                                break
-                    table.display("Bucket Memory Statistics")
+                try:
+                    for dataplane in self.dataplane_objs.values():
+                        self.rest = BucketHelper(dataplane.master)
+                        table = TableView(self.log.info)
+                        table.set_headers(["Bucket",
+                                           "Total Ram(MB)",
+                                           "Total Data(GB)",
+                                           "Logical Data",
+                                           "Items"])
+                        logical_data = defaultdict(int)
+                        for node in dataplane.kv_nodes:
+                            _, stats = RestConnection(node).query_prometheus("kv_logical_data_size_bytes")
+                            if stats["status"] == "success":
+                                stats = [stat for stat in stats["data"]["result"] if stat["metric"]["state"] == "active"]
+                                for stat in stats:
+                                    logical_data[stat["metric"]["bucket"]] += int(stat["value"][1])
+                        for bucket in self.cluster.buckets:
+                            data = self.rest.get_bucket_json(bucket.name)
+                            ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
+                            dataGB = data["basicStats"]["diskUsed"] / (1024 * 1024 * 1024)
+                            items = data["basicStats"]["itemCount"]
+                            logicalDdataGB = logical_data[bucket.name] / (1024 * 1024 * 1024)
+                            table.add_row([bucket.name, ramMB, dataGB, logicalDdataGB, items])
+                            for i, disk in enumerate(self.disk):
+                                if disk > logicalDdataGB:
+                                    start = time.time()
+                                    while time.time() < start + 1200 and ramMB != self.memory[i-1]:
+                                        self.log.info("Wait for bucket: {}, Expected: {}, Actual: {}".
+                                                      format(bucket.name,
+                                                             self.memory[i-1],
+                                                             ramMB))
+                                        time.sleep(5)
+                                        data = self.rest.get_bucket_json(bucket.name)
+                                        ramMB = data["quota"]["rawRAM"] / (1024 * 1024)
+                                        continue
+                                    if ramMB != self.memory[i-1]:
+                                        raise Exception("bucket: {}, Expected: {}, Actual: {}".
+                                                        format(bucket.name,
+                                                               self.memory[i-1],
+                                                               ramMB))
+                                    break
+                        table.display("Bucket Memory Statistics")
+                except Exception as e:
+                    self.log.critical(e)
                 time.sleep(120)
         mem_monitor = threading.Thread(target=check_ram)
         mem_monitor.start()
