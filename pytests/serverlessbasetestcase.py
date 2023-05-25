@@ -293,10 +293,10 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         services_type = self.input.param("services", "kv:n1ql:fts:index")
         services_type = services_type.split(":")
         disk_type = self.input.param("disk_type", "gp3")
-        kv_disk_size = self.input.param("kv_disk_size", 100)
-        index_disk_size = self.input.param("index_disk_size", 100)
+        kv_disk_size = self.input.param("kv_disk_size", 500)
+        index_disk_size = self.input.param("index_disk_size", 400)
         n1ql_disk_size = self.input.param("n1ql_disk_size", 50)
-        fts_disk_size = self.input.param("fts_disk_size", 100)
+        fts_disk_size = self.input.param("fts_disk_size", 400)
         disk_size = {"kv": kv_disk_size,
                      "index": index_disk_size,
                      "n1ql": n1ql_disk_size,
