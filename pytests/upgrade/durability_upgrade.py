@@ -517,7 +517,10 @@ class UpgradeTests(UpgradeBase):
         self.servers = self.cluster_util.get_kv_nodes(self.cluster)
         ### Swap Rebalance of all nodes post upgrade ###
         if self.complete_cluster_swap:
-            self.swap_rebalance_all_nodes()
+            if self.upgrade_type in ["failover_delta_recovery", "failover_full_recovery"]:
+                self.failover_recovery_all_nodes()
+            else:
+                self.swap_rebalance_all_nodes()
 
         ### Enabling CDC ###
         if(self.spec_bucket[Bucket.storageBackend]==Bucket.StorageBackend.magma):
@@ -1362,3 +1365,29 @@ class UpgradeTests(UpgradeBase):
         self.cluster.nodes_in_cluster = self.spare_nodes
         self.spare_nodes = nodes_to_replace
         self.spare_node = self.spare_nodes[0]
+
+    def failover_recovery_all_nodes(self):
+        rest = RestConnection(self.cluster.master)
+        nodes = rest.node_statuses()
+
+        for otp_node in nodes:
+
+            self.log.info("Failing over the node {0}".format(otp_node.ip))
+            failover_task = rest.fail_over(otp_node.id, graceful=True)
+
+            rebalance_passed = rest.monitorRebalance()
+
+            if rebalance_passed:
+                self.cluster_util.print_cluster_stats(self.cluster)
+
+            rest.set_recovery_type(otp_node.id,
+                                    recoveryType="full")
+
+            self.log.info("Rebalance starting...")
+            rest.rebalance(
+                otpNodes=[node.id for node in rest.node_statuses()])
+            rebalance_passed = rest.monitorRebalance()
+
+            if rebalance_passed:
+                self.log.info("Failover/recovery completed for node {0}".format(otp_node.ip))
+                self.cluster_util.print_cluster_stats(self.cluster)
