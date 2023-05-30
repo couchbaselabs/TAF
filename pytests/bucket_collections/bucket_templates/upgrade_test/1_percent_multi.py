@@ -32,7 +32,7 @@ spec = {
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 1,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 1000000,
             Bucket.ramQuotaMB: 1024,
-            Bucket.maxTTL : 27000
+            Bucket.maxTTL : 18000
         }
     }
 }
