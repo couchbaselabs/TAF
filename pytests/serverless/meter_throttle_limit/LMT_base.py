@@ -74,6 +74,7 @@ class LMT(ServerlessOnPremBaseTest):
         kv_memory = self.info.memoryQuota - 100
         ramQuota = self.input.param("ramQuota", kv_memory)
         self.PrintStep("Create required buckets and collections")
+        self.dynamic_throttling = self.input.param("dynamic_throttling", False)
         self.bucket_throttling_limit = self.input.param("bucket_throttling_limit", 5000)
         self.check_temporary_failure_exception = False
         self.retry_exceptions = [SDKException.TimeoutException,
@@ -145,9 +146,16 @@ class LMT(ServerlessOnPremBaseTest):
         self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
         self.log.debug("Collections list == {}".format(self.collections))
 
-        if self.bucket_throttling_limit != 5000:
+        if not self.dynamic_throttling:
+            for server in self.cluster.nodes_in_cluster:
+                self.cluster_util.set_node_capacity(server,
+                                                    data_node_capacity=-1,
+                                                    index_node_capacity=-1,
+                                                    search_node_capacity=-1,
+                                                    query_node_capacity=-1)
             for bucket in self.cluster.buckets:
                 # throttling limit will be set on each bucket node
+                self.log.info("Setting {} as throttle limit on bucket {}".format(self.bucket_throttling_limit, bucket.name))
                 self.bucket_util.set_throttle_n_storage_limit(bucket=bucket,
                                                      throttle_limit=self.bucket_throttling_limit)
 
@@ -646,7 +654,8 @@ class LMT(ServerlessOnPremBaseTest):
             self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
     def get_stat(self, bucket):
-        throttle_limit = list()
+        throttle_hard_limit = list()
+        throttle_reserved = list()
         ru = 0
         wu = 0
         num_throttled = 0
@@ -658,10 +667,11 @@ class LMT(ServerlessOnPremBaseTest):
             stat = mc_stat.bucket_details(node, bucket.name)
             ru += stat["ru"]
             wu += stat["wu"]
-            throttle_limit.append(stat["throttle_hard_limit"])
+            throttle_hard_limit.append(stat["throttle_hard_limit"])
+            throttle_reserved.append(stat["throttle_reserved"])
             num_throttled += stat["num_throttled"]
-        self.log.info("throttle_hard_limit: %s, num_throttled: %s, RU: %s, WU: %s"
-                      % (throttle_limit, num_throttled, ru, wu))
+        self.log.info("bucket : {}, throttle_hard_limit: {}, throttle_reserved: {}, num_throttled: {}, RU: {}, WU: {}"
+                      .format(bucket.name, throttle_hard_limit, throttle_reserved, num_throttled, ru, wu))
         # ru_from_prometheus, wu_from_prometheus = self.get_stat_from_prometheus(bucket)
         # ru_from_metering, wu_from_metering = self.get_stat_from_metering(bucket)
         # self.assertEqual(ru, ru_from_prometheus)

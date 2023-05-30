@@ -3500,6 +3500,12 @@ class RestConnection(newRC):
                                                 'GET')
         return status, content
 
+    def set_node_capacity(self, node_capacity_dict):
+        self.test_log.debug('Setting node capacities: {}'.format(node_capacity_dict))
+        api = self.baseUrl + '/settings/serverless/node'
+        params = urllib.urlencode(node_capacity_dict)
+        status, content, header = self._http_request(api, 'POST', params)
+        return status, content
 
 class MembaseServerVersion:
     def __init__(self, implementationVersion='', componentsVersion=''):

@@ -254,6 +254,23 @@ class ClusterUtils:
         self.log.info("Changed Rebalance settings: {0}"
                       .format(json.loads(result)))
 
+    def set_node_capacity(self, cluster_node,
+                          data_node_capacity=25000,
+                          index_node_capacity=1000000,
+                          search_node_capacity=50000,
+                          query_node_capacity=6000000):
+        rest = RestConnection(cluster_node)
+        node_capacity_dict = {
+                'dataNodeCapacity' : data_node_capacity,
+                'indexNodeCapacity' : index_node_capacity,
+                'searchNodeCapacity' : search_node_capacity,
+                'queryNodeCapacity' : query_node_capacity
+            }
+        status, content = rest.set_node_capacity(node_capacity_dict)
+        if not status :
+            self.log.critical("Could not update the node capacity of node {}".format(cluster_node.ip))
+        return status
+
     def cluster_cleanup(self, cluster, bucket_util):
         rest = RestConnection(cluster.master)
         if rest._rebalance_progress_status() == 'running':
