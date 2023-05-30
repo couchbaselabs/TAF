@@ -241,7 +241,6 @@ class UpgradeTests(UpgradeBase):
         update_task = None
 
         ### Considering buckets with less than 100% DGM and durability=none for data load###
-        self.buckets_to_load = []
         for bucket in self.cluster.buckets:
             bucket_items = self.bucket_util.get_expected_total_num_items(bucket)
             bucket_ram = bucket.ramQuotaMB

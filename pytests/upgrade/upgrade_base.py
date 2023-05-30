@@ -222,6 +222,8 @@ class UpgradeBase(BaseTestCase):
         if self.complete_cluster_swap:
             self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
 
+        self.buckets_to_load = []
+
         self.gen_load = doc_generator(self.key, 0, self.num_items,
                                       randomize_doc_size=True,
                                       randomize_value=True,
@@ -471,6 +473,8 @@ class UpgradeBase(BaseTestCase):
 
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
+        if len(self.buckets_to_load) == 0:
+            self.buckets_to_load = self.cluster.buckets
         if self.cluster_supports_collections:
                 spec_collection = self.bucket_util.get_crud_template_from_package(
                     self.collection_spec)
@@ -544,6 +548,9 @@ class UpgradeBase(BaseTestCase):
             services=[",".join(services_on_target_node)],
         )
 
+        if len(self.buckets_to_load) == 0:
+            self.buckets_to_load = self.cluster.buckets
+
         if self.upgrade_with_data_load:
             sub_load_spec = self.bucket_util.get_crud_template_from_package(
                 self.sub_data_spec)
@@ -574,7 +581,6 @@ class UpgradeBase(BaseTestCase):
 
                 spec_collection["doc_crud"][
                     MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
-                
                 if self.alternate_load is True:
                     spec_collection[MetaCrudParams.SCOPES_TO_DROP] = 0
                     spec_collection[MetaCrudParams.SCOPES_TO_RECREATE] = 0
@@ -708,6 +714,9 @@ class UpgradeBase(BaseTestCase):
                       services=services_on_target_node)
         otp_nodes = [node.id for node in rest.node_statuses()]
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
+
+        if len(self.buckets_to_load) == 0:
+            self.buckets_to_load = self.cluster.buckets
 
         if self.upgrade_with_data_load and \
                 self.cluster_supports_collections:
