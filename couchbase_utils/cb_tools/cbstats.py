@@ -117,7 +117,7 @@ class Cbstats:
         """
         Fetches stats using cbstat and greps for specific line.
         Uses command:
-          cbstats localhost:port 'stat_name' | grep 'field_to_grep'
+          cbstats localhost:port 'stat_name'
 
         Note: Function calling this API should take care of validating
         the outputs and handling the errors/warnings from execution.
@@ -125,7 +125,7 @@ class Cbstats:
         Arguments:
         :bucket_name   - Name of the bucket to get the stats
         :stat_name     - Any valid stat_command accepted by cbstats
-        :field_to_grep - Target stat name string to grep.
+        :key           - Target stat name(string) value to return.
                          Default=None, means fetch all data
 
         Returns:
