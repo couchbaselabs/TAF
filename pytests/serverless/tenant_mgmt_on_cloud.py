@@ -1168,7 +1168,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 desired_ram_quota = self.ram[count]
                 count+=1
             db_info["desired_ram_quota"] = desired_ram_quota
-            
+
         monitor_task = self.bucket_util.async_monitor_database_scaling(
                 [db_info], timeout=300, ignore_undesired_updates=False)
         self.task_manager.get_task_result(monitor_task)

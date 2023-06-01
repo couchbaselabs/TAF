@@ -6430,8 +6430,7 @@ class BucketUtils(ScopeUtils):
                                                 configured_size_per_vb):
         result = True
         for node in bucket_nodes:
-            shell = RemoteMachineShellConnection(node)
-            cbstat = Cbstats(shell)
+            cbstat = Cbstats(node)
             disk_info = cbstat.disk_info_detail(bucket.name)
             for vb_num, stat in disk_info.items():
                 if stat["history_disk_size"] > configured_size_per_vb:

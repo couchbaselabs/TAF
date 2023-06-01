@@ -93,7 +93,7 @@ class DocHistoryRetention(ClusterSetup):
                 ip, t_shell = t_node.ip, self.shells[t_node.ip]
                 if ip not in stat_dict:
                     stat_dict[ip] = dict()
-                cbstats = Cbstats(t_shell)
+                cbstats = Cbstats(t_node)
                 all_stats = cbstats.all_stats(b_obj.name)
                 dcp_stats = cbstats.dcp_stats(b_obj.name)
                 all_fields = ["ep_total_enqueued", "ep_total_persisted",
@@ -944,7 +944,7 @@ class DocHistoryRetention(ClusterSetup):
         self.log.info("Target node: %s, vbucket: %s"
                       % (target_node.ip, Bucket.vBucket.ACTIVE))
         for node in self.cluster.servers:
-            cb_stat[node.ip] = Cbstats(self.shells[node.ip])
+            cb_stat[node.ip] = Cbstats(node)
         cb_err = CouchbaseError(self.log,
                                 self.shells[target_node.ip],
                                 node=target_node)
@@ -1024,7 +1024,7 @@ class DocHistoryRetention(ClusterSetup):
         self.log.info("Target node: %s, vbucket: %s"
                       % (target_node.ip, Bucket.vBucket.REPLICA))
         for node in self.cluster.servers:
-            cb_stat[node.ip] = Cbstats(self.shells[node.ip])
+            cb_stat[node.ip] = Cbstats(node)
         cb_err = CouchbaseError(self.log,
                                 self.shells[target_node.ip],
                                 node=target_node)
@@ -1139,7 +1139,7 @@ class DocHistoryRetention(ClusterSetup):
         self.assertTrue(result, "Validation failed")
         # Check dedupe occurrence
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            stats = Cbstats(self.shells[node.ip]).all_stats(bucket.name)
+            stats = Cbstats(node).all_stats(bucket.name)
             ep_total_deduped = int(stats["ep_total_deduplicated"])
             self.assertEqual(ep_total_deduped, 0,
                              "{0} - Dedupe occurred: {1}"
@@ -1281,7 +1281,7 @@ class DocHistoryRetention(ClusterSetup):
         loader_spec[MetaCrudParams.DOC_TTL] = doc_ttl
         if load_on_particular_node:
             t_node = choice(nodes_out)
-            cb_stats = Cbstats(self.shells[t_node.ip])
+            cb_stats = Cbstats(t_node)
             for vb_type in [Bucket.vBucket.ACTIVE, Bucket.vBucket.REPLICA]:
                 target_vbs.extend(
                     cb_stats.vbucket_list(bucket.name, vb_type))
@@ -1528,7 +1528,7 @@ class DocHistoryRetention(ClusterSetup):
         bucket = self.cluster.buckets[0]
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         target_shell = self.shells[self.cluster.servers[1].ip]
-        cb_stat = Cbstats(target_shell)
+        cb_stat = Cbstats(self.cluster.servers[1])
         cb_err = CouchbaseError(self.log,
                                 target_shell,
                                 node=self.cluster.servers[1])

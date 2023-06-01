@@ -1720,7 +1720,7 @@ class basic_ops(ClusterSetup):
         cb_err = CouchbaseError(self.log,
                                 shell,
                                 node=self.cluster.master)
-        cb_stats = Cbstats(shell)
+        cb_stats = Cbstats(self.cluster.master)
 
         self.log.info("Collection stats before executing the scenario")
         stats = cb_stats.all_stats(bucket.name)
@@ -2074,7 +2074,7 @@ class basic_ops(ClusterSetup):
 
         for node in kv_nodes:
             shell = RemoteMachineShellConnection(node)
-            cb_stat= Cbstats(shell)
+            cb_stat= Cbstats(node)
             all_stats = cb_stat.all_stats(bucket.name)
             num_moved = int(all_stats["ep_defragmenter_num_moved"])
             num_visited = int(all_stats["ep_defragmenter_num_visited"])
@@ -2099,7 +2099,7 @@ class basic_ops(ClusterSetup):
                                                      self.cluster.buckets)
         for node in kv_nodes:
             shell = RemoteMachineShellConnection(node)
-            cb_stat= Cbstats(shell)
+            cb_stat= Cbstats(node)
             all_stats = cb_stat.all_stats(bucket.name)
             num_moved = int(all_stats["ep_defragmenter_num_moved"])
             num_visited = int(all_stats["ep_defragmenter_num_visited"])
@@ -2206,7 +2206,7 @@ class basic_ops(ClusterSetup):
 
         def set_and_validate_dcp_oso_backfill(t_node, backfill_val):
             shell = RemoteMachineShellConnection(t_node)
-            cbstats = Cbstats(shell)
+            cbstats = Cbstats(t_node)
             if backfill_val in ["enabled", "disabled"]:
                 cbepctl = Cbepctl(shell)
                 cbepctl.set(bucket.name, "dcp_param", "dcp_oso_backfill",
