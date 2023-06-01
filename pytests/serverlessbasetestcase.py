@@ -100,6 +100,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             self.dataplanes = self.dataplanes.split(",")
             self.dataplane_id = self.dataplanes[-1]
         else:
+            self.dataplanes = list()
             self.dataplane_id = ""
 
         self.delete_dataplanes = list()
