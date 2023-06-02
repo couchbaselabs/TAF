@@ -1088,7 +1088,7 @@ class Murphy(BaseTestCase, OPD):
                 load = True
                 self.create_databases(20, load_defn=self.real_users)
             else:
-                self.create_databases(20)
+                self.create_databases(20, load_defn=self.defaultLoadDefn)
             self.refresh_dp_obj(self.dataplane_id)
             buckets = self.cluster.buckets[(i-1)*20:(i)*20]
             kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
