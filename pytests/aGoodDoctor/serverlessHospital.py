@@ -1063,20 +1063,25 @@ class Murphy(BaseTestCase, OPD):
         self.real_users = {
             "valType": "SimpleValue",
             "scopes": 1,
-            "collections": 1,
-            "num_items": 100000000,
+            "collections": 4,
+            "num_items": 25000000,
             "start": 0,
-            "end": 100000000,
+            "end": 25000000,
             "ops": 10000,
             "doc_size": 1024,
             "pattern": [5, 90, 0, 5, 0], # CRUDE
             "load_type": ["create", "read", "delete"],
-            "2iQPS": 0,
-            "ftsQPS": 0,
+            "2iQPS": 2,
+            "ftsQPS": 2,
             "collections_defn": [
                 {
                     "valType": "SimpleValue",
-                    "2i": (0, 0),
+                    "2i": (1, 1),
+                    "FTS": [1, 1],
+                    },
+                {
+                    "valType": "SimpleValue",
+                    "2i": (1, 1),
                     "FTS": [0, 0],
                     }
                 ]
@@ -1090,7 +1095,7 @@ class Murphy(BaseTestCase, OPD):
             else:
                 self.create_databases(20, load_defn=self.defaultLoadDefn)
             self.refresh_dp_obj(self.dataplane_id)
-            buckets = self.cluster.buckets[(i-1)*20:(i)*20]
+            buckets = self.cluster.buckets[-20:]
             kv_nodes = len(self.dataplane_objs[self.dataplane_id].kv_nodes)
             if kv_nodes < min((i+1)*3, 11):
                 self.PrintStep("Step: Test KV Auto-Scaling due to num of databases per sub-cluster")
@@ -1114,9 +1119,9 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(status, "GSI index creation failed")
                 if prev_gsi_nodes < 10:
                     self.check_gsi_scaling(dataplane, prev_gsi_nodes)
+            self.start_initial_load(buckets)
             self.build_gsi_index(buckets, load=load)
             self.create_fts_indexes(buckets, wait=True, load=load)
-            self.start_initial_load(buckets)
             if i != 5:
                 try:
                     for bucket in buckets:
@@ -1128,12 +1133,16 @@ class Murphy(BaseTestCase, OPD):
                     pass
             self.sleep(30)
 
-        self.keyType = "CircularKey"
+        buckets = self.cluster.buckets[-20:]
         for bucket in self.cluster.buckets[-20:]:
-            self.generate_docs(bucket=bucket)
+            bucket.loadDefn["ops"] = 5000
 
-        tasks = list()
-        tasks.append(self.perform_load(buckets=self.cluster.buckets[-20:]))
+        for i in range(10):
+            for bucket in buckets:
+                self.generate_docs(bucket=bucket)
+            self.log.info("Starting incremental load: %s" % i)
+            self.perform_load(validate_data=False, buckets=buckets,
+                              wait_for_load=True)
 
         self.drIndex.stop_run = True
         self.drFTS.stop_run = True

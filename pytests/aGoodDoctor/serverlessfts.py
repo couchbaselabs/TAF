@@ -190,6 +190,11 @@ class DoctorFTS:
         self.log = logger.get("test")
         self.stop_run = False
 
+        self.scale_down = False
+        self.scale_up = False
+        self.fts_auto_rebl = False
+        self.fts_cooling = False
+
     def monitor_fts_auto_scaling(self, dataplane_id):
         '''
         1. Monitor when the FTS scaling should trigger.
