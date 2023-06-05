@@ -560,14 +560,6 @@ class Murphy(BaseTestCase, OPD):
                             "Incorrect number of kv nodes in the cluster - Actual: {}, Expected: {}".format(kv_nodes, kv_nodes+3))
             self.create_required_collections(self.cluster, buckets)
             self.start_initial_load(buckets)
-            for bucket in buckets:
-                try:
-                    self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
-                    self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
-                except TimeoutException as e:
-                    print e
-                except:
-                    pass
             for dataplane in self.dataplane_objs.values():
                 prev_gsi_nodes = self.get_num_nodes_in_cluster(dataplane.id,
                                                                service="index")
@@ -581,6 +573,14 @@ class Murphy(BaseTestCase, OPD):
             self.sleep(30)
 
         for bucket in self.cluster.buckets:
+            try:
+                self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
+            except TimeoutException as e:
+                print e
+            except:
+                pass
+
             start = time.time()
             state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
             while start + 3600 > time.time() and state is False:
