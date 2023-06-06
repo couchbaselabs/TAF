@@ -24,7 +24,7 @@ spec = {
         "default": {
             MetaConstants.NUM_SCOPES_PER_BUCKET: 10,
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 10,
-            MetaConstants.NUM_ITEMS_PER_COLLECTION: 245000,
+            MetaConstants.NUM_ITEMS_PER_COLLECTION: 263130,
             Bucket.ramQuotaMB: 256,
             Bucket.storageBackend: Bucket.StorageBackend.magma,
             Bucket.priority: Bucket.Priority.HIGH
