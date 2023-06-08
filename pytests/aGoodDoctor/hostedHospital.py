@@ -14,16 +14,18 @@ from BucketLib.bucket import Bucket
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from aGoodDoctor.hostedFTS import DoctorFTS, FTSQueryLoad
 from aGoodDoctor.hostedN1QL import QueryLoad, DoctorN1QL
-from aGoodDoctor.hostedCbas import DoctorCBAS
+from aGoodDoctor.hostedCbas import DoctorCBAS, CBASQueryLoad
 from aGoodDoctor.hostedXDCR import DoctorXDCR
 from aGoodDoctor.hostedBackupRestore import DoctorHostedBackupRestore
 from aGoodDoctor.hostedEventing import DoctorEventing
 from aGoodDoctor.hostedOPD import OPD
-from constants.cloud_constants.capella_constants import AWS
+from constants.cloud_constants.capella_constants import AWS, GCP
 from table_view import TableView
 import time
 from Cb_constants.CBServer import CbServer
 from bucket_utils.bucket_ready_functions import CollectionUtils
+from com.couchbase.test.sdk import Server
+from constants.cloud_constants import capella_constants
 
 
 class Murphy(BaseTestCase, OPD):
@@ -108,9 +110,8 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.fts_nodes:
             self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
 
-        if self.cluster.cbas_nodes and self.cluster.buckets:
-            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util, num_idx=self.num_of_datasets,
-                                     hotelquery=True, batch_size=10)
+        if self.cluster.cbas_nodes:
+            self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util)
 
         if self.backup_nodes > 0:
             self.drBackupRestore = DoctorHostedBackupRestore(cluster=self.cluster,
@@ -125,8 +126,10 @@ class Murphy(BaseTestCase, OPD):
 
         self.ql = list()
         self.ftsQL = list()
+        self.cbasQL = list()
         self.stop_run = False
         self.skip_init = self.input.param("skip_init", False)
+        self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
 
     def tearDown(self):
         self.check_dump_thread = False
@@ -142,19 +145,47 @@ class Murphy(BaseTestCase, OPD):
             self.drFTS.stop_run = True
         BaseTestCase.tearDown(self)
 
+    def create_sdk_client_pool(self, buckets, req_clients_per_bucket):
+        for bucket in buckets:
+            self.log.info("Using SDK endpoint %s" % self.cluster.srv)
+            server = Server(self.cluster.srv, self.cluster.master.port,
+                            self.cluster.master.rest_username,
+                            self.cluster.master.rest_password,
+                            str(self.cluster.master.memcached_port))
+            self.sdk_client_pool.create_clients(
+                bucket.name, server, req_clients_per_bucket)
+            bucket.clients = self.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
+        self.sleep(1, "Wait for SDK client pool to warmup")
+
     def rebalance_config(self, num):
         initial_services = self.input.param("services", "data")
         services = self.input.param("rebl_services", initial_services)
         server_group_list = list()
+        services_map = {"data": "data",
+                        "kv": "data",
+                        "index": "index",
+                        "2i": "index",
+                        "query": "query",
+                        "n1ql": "query",
+                        "analytics": "analytics",
+                        "cbas": "analytics",
+                        "search": "search",
+                        "fts": "search",
+                        "eventing": "eventing"}
+        provider = self.input.param("provider", "aws").lower()
+
+        _type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
+        storage_type = self.input.param("type", _type).upper()
         for service_group in services.split("-"):
-            service_group = service_group.split(":")
+            grp_services = service_group.split(":")
+            service = grp_services[0]
             config = {
-                "size": num,
-                "services": service_group,
-                "compute": self.input.param("compute", "m5.xlarge"),
+                "size": self.num_nodes[service] + num,
+                "services": [services_map[_service.lower()] for _service in grp_services],
+                "compute": self.compute[service],
                 "storage": {
-                    "type": self.input.param("type", "GP3"),
-                    "size": self.input.param("size", 50),
+                    "type": storage_type,
+                    "size": self.disk[service],
                     "iops": self.input.param("iops", 3000)
                 }
             }
@@ -165,9 +196,6 @@ class Murphy(BaseTestCase, OPD):
                 config["storage"].pop("iops")
             server_group_list.append(config)
         return server_group_list
-
-    def build_gsi_index(self, buckets):
-        self.drIndex.build_indexes(buckets, wait=True)
 
     def create_buckets(self):
         self.PrintStep("Step 2: Create required buckets and collections.")
@@ -211,6 +239,11 @@ class Murphy(BaseTestCase, OPD):
                     cluster.buckets.append(bucket)
                 if not cluster == self.xdcr_cluster:
                     self.buckets = cluster.buckets
+                    num_clients = self.input.param("clients_per_db",
+                                                   min(5, bucket.loadDefn.get("collections")))
+                    for bucket in cluster.buckets:
+                        self.create_sdk_client_pool([bucket],
+                                                    num_clients)
                 self.create_required_collections(cluster)
 
     def restart_query_load(self):
@@ -289,6 +322,29 @@ class Murphy(BaseTestCase, OPD):
                             str(ql.error_count),
                             ])
                     self.FTStable.display("FTS Query Statistics")
+
+                    self.CBAStable = TableView(self.log.info)
+                    self.CBAStable.set_headers(["Bucket",
+                                                "Total Queries",
+                                                "Failed Queries",
+                                                "Success Queries",
+                                                "Rejected Queries",
+                                                "Cancelled Queries",
+                                                "Timeout Queries",
+                                                "Errored Queries"])
+                    for ql in self.cbasQL:
+                        self.CBAStable.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                    self.CBAStable.display("CBAS Query Statistics")
+
                     st_time = time.time()
                     time.sleep(10)
 
@@ -305,40 +361,28 @@ class Murphy(BaseTestCase, OPD):
             "valType": "Hotel",
             "scopes": 1,
             "collections": 2,
-            "num_items": 1000000000,
+            "num_items": 5000000,
             "start": 0,
-            "end": 1000000000,
-            "ops": 80000,
-            "doc_size": 1024,
-            "pattern": [0, 80, 20, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2i": [5, 20],
-            "FTS": [0, 0]
-            }
-
-        self.loadDefn1 = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": 2,
-            "num_items": 1500000000,
-            "start": 0,
-            "end": 1500000000,
-            "ops": 80000,
+            "end": 5000000,
+            "ops": 100000,
             "doc_size": 1024,
             "pattern": [0, 50, 50, 0, 0], # CRUDE
             "load_type": ["read", "update"],
             "2iQPS": 200,
             "ftsQPS": 0,
+            "cbasQPS": 10,
             "collections_defn": [
                 {
-                    "valType": "NimbusM",
+                    "valType": "Hotel",
                     "2i": [2, 2],
                     "FTS": [0, 0],
+                    "cbas": [2, 2, 2]
                 },
                 {
-                    "valType": "NimbusP",
-                    "2i": [2, 3],
-                    "FTS": [0, 0],
+                    "valType": "Hotel",
+                    "2i": [2, 2],
+                    "FTS": [2, 2],
+                    "cbas": [1, 1, 1]
                 }
                 ]
             }
@@ -360,11 +404,13 @@ class Murphy(BaseTestCase, OPD):
                     "valType": "SimpleValue",
                     "2i": [5, 5],
                     "FTS": [5, 5],
+                    "cbas": [2, 2, 2]
                     },
                 {
                     "valType": "SimpleValue",
                     "2i": [5, 5],
                     "FTS": [5, 5],
+                    "cbas": [2, 2, 2]
                     }
                 ]
             }
@@ -380,6 +426,10 @@ class Murphy(BaseTestCase, OPD):
         else:
             for i, bucket in enumerate(self.cluster.buckets):
                 bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
+                num_clients = self.input.param("clients_per_db",
+                                               min(5, bucket.loadDefn.get("collections")))
+                self.create_sdk_client_pool([bucket],
+                                            num_clients)
                 for scope in bucket.scopes.keys():
                     if scope == CbServer.system_scope:
                         continue
@@ -420,50 +470,56 @@ class Murphy(BaseTestCase, OPD):
         if not self.skip_init:
             self.perform_load(validate_data=False, buckets=self.cluster.buckets, overRidePattern=[100,0,0,0,0])
 
-        if hasattr(self, "drCBAS"):
-
-            self.drCBAS.create_datasets()
-            self.drCBAS.create_indexes()
-
-            result = self.drCBAS.wait_for_ingestion_on_all_datasets(
-                self.cluster, self.index_timeout)
-
+        if self.cluster.cbas_nodes:
+            self.drCBAS.create_datasets(self.cluster.buckets)
+            self.drCBAS.create_indexes(self.cluster.buckets)
+            result = self.drCBAS.wait_for_ingestion(
+                self.cluster.buckets, self.index_timeout)
             self.assertTrue(result, "CBAS ingestion couldn't complete in time: %s" % self.index_timeout)
-            self.drCBAS.start_query_load()
+            for bucket in self.cluster.buckets:
+                if bucket.loadDefn.get("cbasQPS", 0) > 0:
+                    ql = CBASQueryLoad(bucket)
+                    ql.start_query_load()
+                    self.cbasQL.append(ql)
 
         if self.cluster.index_nodes:
-            self.drIndex.create_indexes(self.cluster.buckets, self.skip_init)
-            self.build_gsi_index(self.cluster.buckets)
+            self.drIndex.create_indexes(self.cluster.buckets)
+            self.drIndex.build_indexes(self.cluster.buckets, wait=True)
+            for bucket in self.cluster.buckets:
+                if bucket.loadDefn.get("2iQPS", 0) > 0:
+                    ql = QueryLoad(bucket)
+                    ql.start_query_load()
+                    self.ql.append(ql)
 
         if self.cluster.eventing_nodes:
             self.drEventing.create_eventing_functions()
             self.drEventing.lifecycle_operation_for_all_functions("deploy", "deployed")
 
-        for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("2iQPS", 0) > 0:
-                ql = QueryLoad(bucket)
-                ql.start_query_load()
-                self.ql.append(ql)
-
-        if self.cluster.fts_nodes and not self.skip_init:
+        if self.cluster.fts_nodes:
             self.drFTS.create_fts_indexes(self.cluster.buckets)
             status = self.drFTS.wait_for_fts_index_online(self.cluster.buckets,
                                                           self.index_timeout)
             self.assertTrue(status, "FTS index build failed.")
+            for bucket in self.cluster.buckets:
+                if bucket.loadDefn.get("ftsQPS", 0) > 0:
+                    ql = FTSQueryLoad(bucket)
+                    ql.start_query_load()
+                    self.ftsQL.append(ql)
 
-        for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("ftsQPS", 0) > 0:
-                ql = FTSQueryLoad(self.cluster, bucket)
-                ql.start_query_load()
-                self.ftsQL.append(ql)
-
+        provider = self.input.param("provider", "aws").lower()
+        computeList = GCP.compute
+        _type = GCP.StorageType.PD_SSD
+        if provider == capella_constants.AWS:
+            computeList = AWS.compute
+            _type = AWS.StorageType.GP3
+        storage_type = self.input.param("type", _type).upper()
         if not sanity:
             disk_increment = self.input.param("increment", 5)
             while self.loop <= self.iterations:
                 self.loop += 1
                 self.mutation_perc = self.input.param("mutation_perc", 100)
                 for bucket in self.cluster.buckets:
-                    bucket.loadDefn["ops"] = 10000
+                    bucket.loadDefn["ops"] = 5000
                     self.generate_docs(bucket=bucket)
                 tasks = self.perform_load(wait_for_load=False)
                 time.sleep(1*60*60)
@@ -484,7 +540,7 @@ class Murphy(BaseTestCase, OPD):
                             "services": service_group,
                             "compute": self.compute[service],
                             "storage": {
-                                "type": self.input.param("type", AWS.StorageType.GP3),
+                                "type": storage_type,
                                 "size": self.disk[service],
                                 "iops": self.iops[service]
                             }
@@ -517,15 +573,19 @@ class Murphy(BaseTestCase, OPD):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if service == "kv" or service == "data":
-                            self.compute[service] = "n2-custom-48-98304"
+                            comp = computeList.index(self.compute[service])
+                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            self.compute[service] = computeList[comp]
                         if "index" in service_group or "query" in service_group:
-                            self.compute[service] = "n2-standard-64"
+                            comp = computeList.index(self.compute[service])
+                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            self.compute[service] = computeList[comp]
                         config = {
                             "size": self.num_nodes[service],
                             "services": service_group,
                             "compute": self.compute[service],
                             "storage": {
-                                "type": self.input.param("type", AWS.StorageType.GP3),
+                                "type": storage_type,
                                 "size": self.disk[service],
                                 "iops": self.iops[service]
                             }
@@ -558,17 +618,23 @@ class Murphy(BaseTestCase, OPD):
                         if not(len(service_group) == 1 and service in ["query"]):
                             self.disk[service] = self.disk[service] + disk_increment
                         if service == "kv" or service == "data":
-                            self.compute[service] = "n2-custom-72-147456"
+                            comp = computeList.index(self.compute[service])
+                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            self.compute[service] = computeList[comp]
                         if "index" in service_group or "gsi" in service_group:
-                            self.compute[service] = "n2-standard-80"
+                            comp = computeList.index(self.compute[service])
+                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            self.compute[service] = computeList[comp]
                         if "query" in service_group or "n1ql" in service_group:
-                            self.compute[service] = "n2-standard-80"
+                            comp = computeList.index(self.compute[service])
+                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            self.compute[service] = computeList[comp]
                         config = {
                             "size": self.num_nodes[service],
                             "services": service_group,
                             "compute": self.compute[service],
                             "storage": {
-                                "type": self.input.param("type", AWS.StorageType.GP3),
+                                "type": storage_type,
                                 "size": self.disk[service],
                                 "iops": self.iops[service]
                             }
@@ -618,11 +684,10 @@ class Murphy(BaseTestCase, OPD):
                 if bucket_info['basicStats']['itemCount'] == item_count:
                     self.log.info("Post restore item count on the bucket is {}".format(item_count))
         else:
-            self.rebl_nodes = self.nodes_init
+            self.rebl_nodes = 0
             self.max_rebl_nodes = self.input.param("max_rebl_nodes",
                                                    self.nodes_init + 6)
 
-            self.rebl_services = self.input.param("rebl_services", "kv").split("-")
             self.mutation_perc = self.input.param("mutation_perc", 100)
 
             while self.loop <= self.iterations:
@@ -645,11 +710,20 @@ class Murphy(BaseTestCase, OPD):
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
+                self.loop += 1
                 self.sleep(60, "Sleep for 60s after rebalance")
 
+            self.loop = 0
+            self.rebl_nodes = 0
+            while self.loop <= self.iterations:
+                for bucket in self.cluster.buckets:
+                    self.generate_docs(bucket=bucket)
+                tasks = self.perform_load(wait_for_load=False)
+
+                self.rebl_nodes -= 3
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
-                config = self.rebalance_config(self.nodes_init)
+                config = self.rebalance_config(self.rebl_nodes)
                 rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                    config,
                                                                    timeout=5*60*60)

@@ -4,35 +4,25 @@ Created on May 31, 2022
 @author: ritesh.agarwal
 '''
 
-from FtsLib.FtsOperations import FtsHelper
-from global_vars import logger
-from TestInput import TestInputSingleton
-from membase.api.rest_client import RestConnection
-import time
-import json
-from Cb_constants.CBServer import CbServer
-from table_view import TableView
-import random
-from com.couchbase.client.java.search import SearchQuery
+from copy import deepcopy
 import itertools
-from sdk_client3 import SDKClient
-import threading
+import json
+import random
 from threading import Thread
-from com.couchbase.client.core.error import TimeoutException,\
-    AmbiguousTimeoutException, UnambiguousTimeoutException,\
-    RequestCanceledException, CouchbaseException, PlanningFailureException
+import threading
+import time
 
-ftsQueries = [
-            SearchQuery.queryString("pJohn"),
-            SearchQuery.match("pJohn"),
-            SearchQuery.prefix("Cari")
-            ]
+from Cb_constants.CBServer import CbServer
+from FtsLib.FtsOperations import FtsHelper
+from TestInput import TestInputSingleton
+from aGoodDoctor.serverlessfts import ftsQueries, ftsIndex, HotelQueries, \
+    HotelIndex, template
+from com.couchbase.client.core.error import TimeoutException, \
+    AmbiguousTimeoutException, UnambiguousTimeoutException, \
+    RequestCanceledException, CouchbaseException
+from com.couchbase.client.java.search import SearchQuery
+from global_vars import logger
 
-HotelQueries = [
-            SearchQuery.queryString("United Kingdom"),
-            SearchQuery.match("Algeria"),
-            SearchQuery.prefix("Serbi"),
-    ]
 
 NimbusPQueries = [
             SearchQuery.queryString("000000000000000000000000000000406101"),
@@ -53,7 +43,7 @@ class DoctorFTS:
         self.cluster = cluster
         self.bucket_util = bucket_util
         self.input = TestInputSingleton.input
-        self.fts_index_partitions = self.input.param("fts_index_partition", 1)
+        self.fts_index_partitions = self.input.param("fts_index_partition", 8)
         self.log = logger.get("test")
         self.fts_helper = FtsHelper(self.cluster.fts_nodes[0])
         self.indexes = dict()
@@ -62,8 +52,9 @@ class DoctorFTS:
     def create_fts_indexes(self, buckets):
         status = False
         for b in buckets:
-            b.FTSindexes = dict()
+            b.ftsIndexes = dict()
             b.FTSqueries = ftsQueries
+            b.ftsIndexes
             i = 0
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
@@ -73,95 +64,48 @@ class DoctorFTS:
                     workload = workloads[collection_num % len(workloads)]
                     valType = workload["valType"]
                     queryTypes = ftsQueries
+                    indexType = ftsIndex
                     if valType == "Hotel":
                         queryTypes = HotelQueries
+                        indexType = HotelIndex
                     if valType == "NimbusP":
                         queryTypes = NimbusPQueries
                     if valType == "NimbusM":
                         queryTypes = NimbusMQueries
                     i = 0
                     while i < workload.get("FTS")[0]:
-                        workload = b.loadDefn.get("collections_defn",
-                                                  [b.loadDefn])[collection_num % b.loadDefn.get("collections")]
-                        fts_param_template = self.get_fts_idx_template()
+                        name = str(b.name).replace("-", "_") + c + "_fts_idx_"+str(i)
+                        fts_param_template = deepcopy(template)
                         fts_param_template.update({
-                            "name": "fts_idx_{}".format(i), "sourceName": b.name})
+                            "name": name, "sourceName": str(b.name)})
                         fts_param_template["planParams"].update({
                             "indexPartitions": self.fts_index_partitions})
-                        fts_param_template["params"]["mapping"]["types"].update({
-                            "%s.%s" % (s, c): {
-                                "dynamic": True, "enabled": True}
-                            }
-                        )
+                        fts_param_template["params"]["mapping"]["types"].update({"%s.%s" % (s, c): indexType})
                         fts_param_template = str(fts_param_template).replace("True", "true")
                         fts_param_template = str(fts_param_template).replace("False", "false")
                         fts_param_template = str(fts_param_template).replace("'", "\"")
-                        name = "fts_idx_"+str(i)
-                        # index_tuple = (fts_param_template, b.name, s, c)
-                        b.FTSindexes.update({name: queryTypes})
-                        retry = 5
-                        status = False
-                        while not status and retry > 0:
-                            self.log.debug("Creating fts index: {} on {}.{}".format(name, b.name, c))
-                            try:
-                                status, _ = self.fts_helper.create_fts_index_from_json(
-                                    name, str(fts_param_template))
-                            except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
-                                print(e)
+                        self.log.debug("Creating fts index: {}".format(name))
+                        retry = 10
+                        while retry > 0:
+                            status, _ = self.fts_helper.create_fts_index_from_json(
+                                name, str(fts_param_template))
+                            if status is False:
+                                self.log.critical("FTS index creation failed")
                                 time.sleep(10)
-                            retry -= 1
+                                retry -= 1
+                            else:
+                                b.ftsIndexes.update({name: (queryTypes)})
+                                break
                         i += 1
+                        time.sleep(1)
 
     def discharge_FTS(self):
         self.stop_run = True
 
-    def get_fts_idx_template(self):
-        fts_idx_template = {
-            "type": "fulltext-index",
-            "name": "fts-index",
-            "sourceType": "gocbcore",
-            "sourceName": "default",
-            "planParams": {
-                "maxPartitionsPerPIndex": 1024,
-                "indexPartitions": 1,
-                "numReplicas": 1
-             },
-            "params": {
-                "doc_config": {
-                    "docid_prefix_delim": "",
-                    "docid_regexp": "",
-                    "mode": "scope.collection.type_field",
-                    "type_field": "type"
-                    },
-                "mapping": {
-                    "analysis": {},
-                    "default_analyzer": "standard",
-                    "default_datetime_parser": "dateTimeOptional",
-                    "default_field": "_all",
-                    "default_mapping": {
-                        "dynamic": True,
-                        "enabled": False
-                        },
-                    "default_type": "_default",
-                    "docvalues_dynamic": False,
-                    "index_dynamic": True,
-                    "store_dynamic": False,
-                    "type_field": "_type",
-                    "types": {}
-                    },
-                "store": {
-                    "indexType": "scorch",
-                    "segmentVersion": 15
-                    }
-                },
-            "sourceParams": {}
-           }
-        return fts_idx_template
-
     def wait_for_fts_index_online(self, buckets, timeout=86400):
         status = False
         for bucket in buckets:
-            for index_name, _ in bucket.FTSindexes.items():
+            for index_name, _ in bucket.ftsIndexes.items():
                 status = False
                 stop_time = time.time() + timeout
                 while time.time() < stop_time:
@@ -190,7 +134,7 @@ class DoctorFTS:
 
 
 class FTSQueryLoad:
-    def __init__(self, cluster, bucket):
+    def __init__(self, bucket):
         self.bucket = bucket
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
@@ -200,7 +144,6 @@ class FTSQueryLoad:
         self.timeout_count = itertools.count()
         self.total_query_count = 0
         self.stop_run = False
-        self.cluster_conn = SDKClient(cluster.nodes_in_cluster, None).cluster
         self.log = logger.get("infra")
 
     def start_query_load(self):
@@ -209,11 +152,6 @@ class FTSQueryLoad:
 
     def stop_query_load(self):
         self.stop_run = True
-        try:
-            if self.cluster_conn:
-                self.cluster_conn.close()
-        except:
-            pass
 
     def _run_concurrent_queries(self):
         threads = []
@@ -240,7 +178,7 @@ class FTSQueryLoad:
 
     def _run_query(self, validate_item_count=False, expected_count=0):
         while not self.stop_run:
-            index, queries = random.choice(self.bucket.FTSindexes.items())
+            index, queries = random.choice(self.bucket.ftsIndexes.items())
             query = random.choice(queries)
             start = time.time()
             e = ""
@@ -282,31 +220,5 @@ class FTSQueryLoad:
         """
         Executes a statement on CBAS using the REST API using REST Client
         """
-        result = self.cluster_conn.searchQuery(index, query)
+        result = random.choice(self.bucket.clients).cluster.searchQuery(index, query)
         return result
-
-    def monitor_query_status(self, print_duration=600):
-        st_time = time.time()
-        while not self.stop_run:
-            if st_time + print_duration < time.time():
-                self.table = TableView(self.log.info)
-                self.table.set_headers(["Bucket",
-                                        "Total Queries",
-                                        "Failed Queries",
-                                        "Success Queries",
-                                        "Rejected Queries",
-                                        "Cancelled Queries",
-                                        "Timeout Queries",
-                                        "Errored Queries"])
-                self.table.add_row([
-                    str(self.bucket.name),
-                    str(self.total_query_count),
-                    str(self.failed_count),
-                    str(self.success_count),
-                    str(self.rejected_count),
-                    str(self.cancel_count),
-                    str(self.timeout_count),
-                    str(self.error_count),
-                    ])
-                self.table.display("FTS Query Statistics")
-                st_time = time.time()

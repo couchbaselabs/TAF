@@ -46,12 +46,12 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         provider = self.input.param("provider", "aws").lower()
         self.compute = {
-            "data": self.input.param("kv_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
-            "query": self.input.param("n1ql_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
-            "index": self.input.param("gsi_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
-            "search": self.input.param("fts_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
-            "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard"),
-            "eventing": self.input.param("eventing_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard")
+            "data": self.input.param("kv_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
+            "query": self.input.param("n1ql_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
+            "index": self.input.param("gsi_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
+            "search": self.input.param("fts_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
+            "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
+            "eventing": self.input.param("eventing_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4")
             }
         self.iops = {
             "data": self.input.param("kv_iops", 3000),

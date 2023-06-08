@@ -264,7 +264,7 @@ class OPD:
         self.default_pattern = [100, 0, 0, 0, 0]
         buckets = buckets or self.cluster.buckets
         for bucket in buckets:
-            # process_concurrency = min(bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections"), 5)
+            process_concurrency = bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections")
             pattern = overRidePattern or bucket.loadDefn.get("pattern", self.default_pattern)
             for scope in bucket.scopes.keys():
                 for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
@@ -478,11 +478,12 @@ class OPD:
                         client = NewSDKClient(master, bucket.name, scope, collection)
                         client.initialiseSDK()
                         self.sleep(1)
-                        taskName = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
+                        taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
                                                 client, self.durability_level,
                                                 self.maxttl, self.time_unit,
                                                 self.track_failures, 0)
+                        # task.set_collection_for_load(bucket.name, scope, collection)
                         tasks.append(task)
                         self.doc_loading_tm.submit(task)
                         i -= 1

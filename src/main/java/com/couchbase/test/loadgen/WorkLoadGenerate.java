@@ -192,10 +192,16 @@ public class WorkLoadGenerate extends Task{
             }
             Instant start = Instant.now();
             if(dg.ws.creates > 0) {
+//            	Instant st = Instant.now();
                 List<Tuple2<String, Object>> docs = dg.nextInsertBatch();
+//                Instant end = Instant.now();
+//                System.out.println("Time Taken to generate " + docs.size() + " Docs: " + Duration.between(st, end).toMillis() + "ms");
                 if (docs.size()>0) {
                     flag = true;
+//                    st = Instant.now();
                     List<Result> result = docops.bulkInsert(this.sdk.connection, docs, setOptions);
+//                    end = Instant.now();
+//                    System.out.println("Time Taken by Inserts: " + Duration.between(st, end).toMillis() + "ms");
                     ops += dg.ws.batchSize*dg.ws.creates/100;
                     if(trackFailures && result.size()>0)
                         try {

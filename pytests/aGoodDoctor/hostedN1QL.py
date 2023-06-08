@@ -89,6 +89,30 @@ HotelQueries = ["select meta().id from {} where country is not null and `type` i
                 "SELECT * from {} where phone like \"San%\" limit 100",
                 "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = 'Bulgaria' limit 100"]
 
+HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};']
+
+
+HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
+                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`='Hotel' limit 100",
+                "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
+                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE country = 'Bulgaria' GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {0} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country='Bulgaria' limit 100",
+                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
+                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
+                "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
+                "SELECT * from {} where `name` is not null limit 100",
+                "SELECT * from {} where city like \"San%\" limit 100",
+                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = 'Bulgaria' limit 100"]
+
+
 NimbusPIndexes = ['CREATE INDEX {}{} ON {}(`uid`, `lastMessageDate` DESC,`unreadCount`, `lastReadDate`, `conversationId`) PARTITION BY hash(`uid`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                   'CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
 
@@ -186,9 +210,6 @@ class DoctorN1QL():
         self.cluster = cluster
         self.sdkClients = dict()
         self.log = logger.get("test")
-
-        self.sdkClient = SDKClient(cluster.query_nodes, None)
-        self.cluster_conn = self.sdkClient.cluster
         self.stop_run = False
         self.query_failure = False
 
@@ -201,7 +222,7 @@ class DoctorN1QL():
             query_count = 0
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 if b.name+s not in self.sdkClients.keys():
-                    self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
+                    self.sdkClients.update({b.name+s: b.clients[0].bucketObj.scope(s)})
                     time.sleep(5)
                 for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
                     if c == "_default":
@@ -433,29 +454,3 @@ class QueryLoad:
             end = time.time()
             if end - start < 1:
                 time.sleep(end - start)
-
-    def monitor_query_status(self, print_duration=600):
-        st_time = time.time()
-        while not self.stop_run:
-            if st_time + print_duration < time.time():
-                self.table = TableView(self.log.info)
-                self.table.set_headers(["Bucket",
-                                        "Total Queries",
-                                        "Failed Queries",
-                                        "Success Queries",
-                                        "Rejected Queries",
-                                        "Cancelled Queries",
-                                        "Timeout Queries",
-                                        "Errored Queries"])
-                self.table.add_row([
-                    str(self.bucket.name),
-                    str(self.total_query_count),
-                    str(self.failed_count),
-                    str(self.success_count),
-                    str(self.rejected_count),
-                    str(self.cancel_count),
-                    str(self.timeout_count),
-                    str(self.error_count),
-                    ])
-                self.table.display("N1QL Statistics")
-                st_time = time.time()
