@@ -1,4 +1,5 @@
-import random
+import random, time
+from cb_tools.cbstats import Cbstats
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 
@@ -346,3 +347,81 @@ class SteadyStateTests(MagmaBaseTest):
                                                                                                                     bucket.name, key)
                     self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] < history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
             seq_count = self.get_seqnumber_count()
+
+    def test_cdc_idle_bucket_condition(self):
+
+        bucket = self.cluster.buckets[0]
+        self.log.info("Updating bucket property - enabling CDC")
+        self.bucket_util.update_bucket_property(self.cluster.master,
+                                                bucket,
+                                                history_retention_seconds=self.bucket_dedup_retention_seconds)
+        self.sleep(60, "Wait for History params to get reflected")
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstat_obj = Cbstats(shell)
+        history_check = cbstat_obj.magma_stats(bucket,
+                                               field_to_grep="history_retention",
+                                               stat_name="all")
+        self.log.info(history_check)
+
+        self.log.info("Validating history start sequence numbers")
+        history_start_numbers = self.get_history_start_seq_for_each_vb()
+        self.log.debug(history_start_numbers)
+        active_mismatch_count = 0
+        replica_mismatch_count = 0
+        for vb_no in range(1024):
+            if history_start_numbers[bucket][vb_no]['active']['history_start_seqno'] > 1:
+                active_mismatch_count += 1
+            if history_start_numbers[bucket][vb_no]['replica'][0]['history_start_seqno'] > 1:
+                replica_mismatch_count += 1
+        if active_mismatch_count > 0:
+            self.log.info("History start sequence number mismatch for {0} active vbuckets".format(active_mismatch_count))
+        if replica_mismatch_count > 0:
+            self.log.info("History start sequence number mismatch for {0} replica vbuckets".format(replica_mismatch_count))
+        if active_mismatch_count == 0 and replica_mismatch_count == 0:
+            self.log.info("History start sequence numbers verified for all vbuckets")
+
+        time_start = time.time()
+
+        self.log.info("Starting initial data load")
+        self.initial_load()
+        self.log.info("Initial data load complete")
+
+        self.log.info("Performing some more creates on the bucket")
+        self.create_start = self.init_items_per_collection
+        self.create_end = self.init_items_per_collection * 2
+        self.generate_docs(doc_ops="create")
+        task = self.data_load()
+        self.wait_for_doc_load_completion(task)
+
+        self.log.info("Performing updates on the bucket")
+        self.update_start = 0
+        self.update_end = self.create_end
+        self.generate_docs(doc_ops="update")
+        task = self.data_load()
+        self.wait_for_doc_load_completion(task)
+
+        self.log.info("Data load complete, bucket is in idle condition now")
+
+        time_end = time.time()
+        time_taken = int(time_end - time_start)
+        time_to_wait = self.bucket_dedup_retention_seconds - time_taken
+
+        self.sleep(time_to_wait, "Wait until history starts getting cleared.")
+        self.sleep(60, "Wait for a few more seconds")
+
+        self.log.info("Validating history start sequence numbers")
+        history_start_numbers = self.get_history_start_seq_for_each_vb()
+        self.log.debug(history_start_numbers)
+        active_mismatch_count = 0
+        replica_mismatch_count = 0
+        for vb_no in range(1024):
+            if history_start_numbers[bucket][vb_no]['active']['history_start_seqno'] <= 1:
+                active_mismatch_count += 1
+            if history_start_numbers[bucket][vb_no]['replica'][0]['history_start_seqno'] <= 1:
+                replica_mismatch_count += 1
+        if active_mismatch_count > 0:
+            self.log.info("History start sequence number mismatch for {0} active vbuckets".format(active_mismatch_count))
+        if replica_mismatch_count > 0:
+            self.log.info("History start sequence number mismatch for {0} replica vbuckets".format(replica_mismatch_count))
+        if active_mismatch_count == 0 and replica_mismatch_count == 0:
+            self.log.info("History start sequence numbers verified for all vbuckets")
