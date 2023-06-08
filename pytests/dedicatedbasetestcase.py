@@ -353,7 +353,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     "cpu": 0,
                     "memoryInGb": 0
                 },
-                "services": [{"type": services_map[service.lower()]} for service in services],
+                "services": [{"type": services_map[_service.lower()]} for _service in services],
                 "disk": {
                     "type": storage_type,
                     "sizeInGb": self.disk[service]

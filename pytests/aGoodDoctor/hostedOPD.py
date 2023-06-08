@@ -514,7 +514,7 @@ class OPD:
         print "\t", "#"*60
         print "\n"
 
-    def print_cluster_cpu_ram(self, cluster, step=60):
+    def print_cluster_cpu_ram(self, cluster, step=300):
         if cluster.type in ["serverless"]:
             return
         while not self.stop_run:
