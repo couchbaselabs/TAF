@@ -59,12 +59,16 @@ from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 from constants.cloud_constants.capella_constants import AWS
 
+from java.util.concurrent.atomic import AtomicInteger
 from org.xbill.DNS import Lookup, Type
 
 
 class Task(Callable):
+    serial_number = AtomicInteger(0)
+
     def __init__(self, thread_name):
-        self.thread_name = thread_name
+        self.thread_name = "{}_{}".format(thread_name,
+                                          Task.serial_number.incrementAndGet())
         self.exception = None
         self.completed = False
         self.started = False
@@ -6789,8 +6793,7 @@ class ViewCompactionTask(Task):
 
 class CompactBucketTask(Task):
     def __init__(self, server, bucket, timeout=300):
-        Task.__init__(self, "CompactionTask_%s_%s"
-                            % (bucket.name, self.nextSerial()))
+        Task.__init__(self, "CompactionTask_{}" % bucket.name)
         self.server = server
         self.bucket = bucket
         self.progress = 0
