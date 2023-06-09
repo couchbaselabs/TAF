@@ -268,9 +268,6 @@ class DoctorN1QL():
                                         return False
                             i += 1
                         if q < workload.get("2i")[1]:
-                            if queryType[q % len(queryType)] in b.query_map.keys():
-                                q += 1
-                                continue
                             query = queryType[q % len(queryType)].format(c)
                             print query
                             if queryType[q % len(queryType)] not in b.query_map:
