@@ -3136,7 +3136,7 @@ class Index_Util(Synonym_Util):
     def create_cbas_index(self, cluster, index_name, indexed_fields, dataset_name,
                           analytics_index=False, validate_error_msg=False,
                           expected_error=None, username=None, password=None,
-                          timeout=120, analytics_timeout=120):
+                          timeout=120, analytics_timeout=120, if_not_exists=False):
         """
         Create index on dataset.
         :param index_name str, name of the index to be created.
@@ -3149,6 +3149,7 @@ class Index_Util(Synonym_Util):
         :param password : str
         :param timeout : str
         :param analytics_timeout : str
+        :param if_not_exists : bool, checks if index doesn't exist before issuing create command
         """
         index_fields = ""
         for index_field in indexed_fields:
@@ -3156,11 +3157,12 @@ class Index_Util(Synonym_Util):
         index_fields = index_fields[:-1]
 
         if analytics_index:
-            create_idx_statement = "create analytics index {0} on {1}({2});".format(
-                index_name, dataset_name, index_fields)
+            create_idx_statement = "create analytics index {0}".format(index_name)
         else:
-            create_idx_statement = "create index {0} on {1}({2});".format(
-                index_name, dataset_name, index_fields)
+            create_idx_statement = "create index {0}".format(index_name)
+        if if_not_exists:
+            create_idx_statement += " IF NOT EXISTS"
+        create_idx_statement += " on {0}({1});".format(dataset_name, index_fields)
 
         self.log.debug("Executing cmd - \n{0}\n".format(create_idx_statement))
 
@@ -3180,7 +3182,7 @@ class Index_Util(Synonym_Util):
     def drop_cbas_index(self, cluster, index_name, dataset_name, analytics_index=False,
                         validate_error_msg=False, expected_error=None,
                         username=None, password=None,
-                        timeout=120, analytics_timeout=120):
+                        timeout=120, analytics_timeout=120, if_exists=False):
         """
         Drop index on dataset.
         :param index_name str, name of the index to be created.
@@ -3192,14 +3194,19 @@ class Index_Util(Synonym_Util):
         :param password : str
         :param timeout : str
         :param analytics_timeout : str
+        :param if_exists : bool, checks if index even exists before issuing drop command
         """
 
         if analytics_index:
-            drop_idx_statement = "drop analytics index {0}.{1};".format(
+            drop_idx_statement = "drop analytics index {0}.{1}".format(
                 dataset_name, index_name)
         else:
-            drop_idx_statement = "drop index {0}.{1};".format(
+            drop_idx_statement = "drop index {0}.{1}".format(
                 dataset_name, index_name)
+        if if_exists:
+            drop_idx_statement += " IF EXISTS;"
+        else:
+            drop_idx_statement += ";"
 
         self.log.debug("Executing cmd - \n{0}\n".format(drop_idx_statement))
 
