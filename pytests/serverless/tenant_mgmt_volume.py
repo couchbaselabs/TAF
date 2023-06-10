@@ -25,7 +25,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         """
         self.cluster.buckets index mapping:
         0 . . . . . . . . . . . . . . . . . . .. . . . . . . . . . . . . . . N
-        <- idle - cont_updates - exp_load   ->< variable dbs sample(load_docs)> 
+        <- idle - cont_updates - exp_load   ->< variable dbs sample(load_docs)>
         <self.num_buckets - no manual scaling><-Manual scaling->
         """
         self.max_buckets = \
@@ -791,3 +791,141 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         for itr in range(0, iterations+1):
             self.log.critical("Iteration :: %s" % itr)
             self.__run_scenario()
+
+    def test_ram_scaling_volume(self):
+        """
+        1. Start with self.num_buckets with width = 1, self.num_buckets with width = 2, self.num_buckets with width = 3, self.num_buckets with width = 4
+        2. Change the storage limit to 1500 in each and turn throttling off
+        3. Create 10 collections each for a databand
+        4. Load data into a collection until the RAM is scaled.
+        5. Load data into different collection after
+        6. Delete the collection and observe the RAM down scaling
+        :return:
+        """
+
+        #serverless.tenant_mgmt_volume.TenantMgmtVolumeTest.test_ram_scaling_volume,runtype=serverless,num_buckets=4,ops_rate=50000,key_size=20,doc_size=1024,dynamic_throttling=False,
+
+        self.data_storage_limit = self.input.param("data_storage_limit", 1500)
+
+        self.bucket_width = 1
+        self.bucket_weight = 30
+        self.create_required_buckets()
+        self.bucket_width = 2
+        self.create_required_buckets()
+        self.bucket_width = 3
+        self.create_required_buckets()
+        self.bucket_width = 4
+        self.create_required_buckets()
+        self.get_servers_for_databases()
+
+        self.init_sdk_pool_object()
+        self.create_sdk_client_pool(self.cluster.buckets, 1)
+
+        start_index = 0
+        batch_size = 5000000
+        disk = [0, 50, 100, 150, 200, 250, 300, 350, 400, 450]
+        ram = [256, 256, 384, 512, 640, 768, 896, 1024, 1152, 1280]
+
+        work_load_settings = DocLoaderUtils.get_workload_settings(
+            key=self.key, key_size=self.key_size, doc_size=self.doc_size,
+            create_perc=100, create_start=start_index, create_end=start_index,
+            ops_rate=self.ops_rate, process_concurrency=20)
+        loader_map = dict()
+        to_track = list()
+        for bucket in self.cluster.buckets:
+            #Set storage and throttle limit
+            self.bucket_util.set_throttle_n_storage_limit(
+                bucket, throttle_limit=-1, storage_limit=self.data_storage_limit)
+
+            #Create 10 collections
+            for i in range(10):
+                self.bucket_util.create_collection(
+                                bucket.servers[0], bucket, CbServer.default_scope,
+                                {"name": "col-{}".format(i)})
+
+            #Set the band for each bucket
+            if bucket.serverless.width == 1:
+                bucket.band = 10
+            elif bucket.serverless.width == 2:
+                bucket.band = 8
+            elif bucket.serverless.width == 3:
+                bucket.band = 6
+            elif bucket.serverless.width == 4:
+                bucket.band = 4
+
+            #Create a loader for first collection
+            bucket.curr_collection = 0
+            dg = DocumentGenerator(work_load_settings,
+                        self.key_type, self.val_type)
+            loader_key = "{}:{}:{}".format(bucket.name, CbServer.default_scope,"col-{}".format(bucket.curr_collection))
+            bucket.loader_key = loader_key
+            loader_map.update({loader_key:dg})
+
+            #Add the bucket as part of RAM Scaling tracker
+            db_info = {
+                    "cluster": self.cluster,
+                    "bucket": bucket,
+                    "desired_ram_quota": 256,
+                    "desired_width": None,
+                    "desired_weight": None
+                }
+            to_track.append(db_info)
+
+        while len(loader_map) != 0:
+            monitor_task = self.bucket_util.async_monitor_database_scaling(
+                to_track, timeout=300, ignore_undesired_updates=False)
+            self.task_manager.get_task_result(monitor_task)
+
+            work_load_settings.dr.create_s = work_load_settings.dr.create_e
+            work_load_settings.dr.create_e += batch_size
+
+            for loader_key in loader_map:
+                self.log.info("Initializing doc loading on {}".format(loader_key))
+
+            DocLoaderUtils.perform_doc_loading(
+                self.doc_loading_tm, loader_map, self.cluster,
+                buckets=self.cluster.buckets, async_load=False,
+                validate_results=False, track_failures=False,
+                sdk_client_pool=self.sdk_client_pool,
+                process_concurrency=20)
+
+            self.sleep(10)
+            to_track = list()
+            for bucket in self.cluster.buckets:
+                logical_data, _ , _ = self.bucket_util.get_logical_data(bucket)
+                logical_data = logical_data / (1024 * 1024 * 1024)
+                self.log.info("Bucket {} Active Logical Data = {} GB".format(bucket.name, logical_data))
+
+                desired_ram_quota = ram[0]
+                count = 0
+                while count < len(disk) and logical_data >= disk[count]:
+                    desired_ram_quota = ram[count]
+                    count += 1
+
+                db_info = {
+                    "cluster": self.cluster,
+                    "bucket": bucket,
+                    "desired_ram_quota": desired_ram_quota,
+                    "desired_width": None,
+                    "desired_weight": None
+                }
+                to_track.append(db_info)
+
+                if bucket.curr_collection == bucket.band:
+                    continue
+                if logical_data > disk[bucket.curr_collection]:
+                    bucket.curr_collection += 1
+                    loader_map.pop(bucket.loader_key)
+                if bucket.curr_collection != bucket.band:
+                    dg = DocumentGenerator(work_load_settings,
+                                           self.key_type, self.val_type)
+                    loader_key = "{}:{}:{}".format(bucket.name, CbServer.default_scope,"col-{}".format(bucket.curr_collection))
+                    bucket.loader_key = loader_key
+                    loader_map.update({loader_key : dg})
+
+        monitor_task = self.bucket_util.async_monitor_database_scaling(
+                to_track, timeout=300, ignore_undesired_updates=False)
+        self.task_manager.get_task_result(monitor_task)
+
+        #TODO - Delete collections and check for RAM downscaling - CBQE-7929
+        self.fail("RAM Downscaling has to be implemented - CBQE-7929")
