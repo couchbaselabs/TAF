@@ -6793,7 +6793,7 @@ class ViewCompactionTask(Task):
 
 class CompactBucketTask(Task):
     def __init__(self, server, bucket, timeout=300):
-        Task.__init__(self, "CompactionTask_{}" % bucket.name)
+        Task.__init__(self, "CompactionTask_{}".format(bucket.name))
         self.server = server
         self.bucket = bucket
         self.progress = 0
