@@ -1,4 +1,5 @@
 import json
+import random
 import urllib
 from copy import deepcopy
 from random import choice, sample, randint
@@ -6,7 +7,10 @@ from random import choice, sample, randint
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading, CbServer
+from datetime import datetime, timedelta
 from basetestcase import ClusterSetup
+from cbas_utils.cbas_utils import BackupUtils
+from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from bucket_collections.collections_base import CollectionBase
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbepctl import Cbepctl
@@ -181,6 +185,90 @@ class DocHistoryRetention(ClusterSetup):
                 "Total enqueued: {0}, Tot_persisted: {1}, exp_dcp_items: {2}"
                 .format(total_enqueued, total_persisted,
                    expected_dcp_items_to_send+num_mutations))
+
+    def test_history_retention_in_server_stop_start(self):
+        self.failure = False
+        self.num_update = self.input.param("num_update", 2)
+        self.check_deletion = self.input.param("check_deletion", False)
+        self.server_to_fail = self.cluster.servers
+
+        self.bucket_util.create_default_bucket \
+            (self.cluster, ram_quota=256, replica=self.num_replicas,
+             eviction_policy=self.bucket_eviction_policy,
+             history_retention_bytes=self.bucket_dedup_retention_bytes,
+             history_retention_seconds=self.bucket_dedup_retention_seconds,
+             storage=Bucket.StorageBackend.magma)
+
+        # Data loading
+        self.log.info("Loading initial data")
+        stats = dict()
+        kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
+        doc_gen = doc_generator("test_collections", 0, self.num_items,
+                                doc_size=99999)
+        data_start_time = datetime.now()
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, self.cluster.buckets[0], doc_gen,
+            DocLoading.Bucket.DocOps.CREATE, track_failures=False,
+            exp=self.maxttl, sdk_client_pool=self.sdk_client_pool)
+        self.task_manager.get_task_result(load_task)
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets)
+        stats["before_ops"] = \
+            self.bucket_util.get_vb_details_for_bucket(
+                self.cluster.buckets[0], kv_nodes)
+        for i in range(self.num_update):
+            load_task = self.task.async_load_gen_docs(
+                self.cluster, self.cluster.buckets[0], doc_gen,
+                DocLoading.Bucket.DocOps.UPDATE, track_failures=False,
+                exp=self.maxttl, sdk_client_pool=self.sdk_client_pool)
+            self.task_manager.get_task_result(load_task)
+            self.bucket_util._wait_for_stats_all_buckets(
+                self.cluster, self.cluster.buckets)
+
+        # Nodes stop
+        for node in self.cluster.servers:
+            self.cluster_util.stop_server(self.cluster, node)
+
+        try:
+            # Assertions
+            if self.check_deletion:
+                while datetime.now() - data_start_time <= timedelta(
+                        seconds=self.bucket_dedup_retention_seconds):
+                    self.sleep(5, "waiting for history delete to be triggered")
+                for node in self.cluster.servers:
+                    self.cluster_util.start_server(self.cluster, node)
+                self.sleep(30, "waiting for servers to be online")
+
+                stats["after_ops"] = \
+                    self.bucket_util.get_vb_details_for_bucket(
+                        self.cluster.buckets[0],
+                        kv_nodes)
+                result = self.bucket_util.validate_history_start_seqno_stat(
+                    stats["before_ops"], stats["after_ops"], comparison='>=')
+                if result == False:
+                    self.failure = True
+                    raise Exception(
+                        "Expected history seq to be greater than prev")
+
+            else:
+                for node in self.cluster.servers:
+                    self.cluster_util.start_server(self.cluster, node)
+                self.sleep(30, "waiting for servers to be online")
+                stats["after_ops"] = \
+                    self.bucket_util.get_vb_details_for_bucket(
+                        self.cluster.buckets[0],
+                        kv_nodes)
+                result = self.bucket_util.validate_history_start_seqno_stat(
+                    stats["before_ops"], stats["after_ops"], comparison='==')
+                if result == False:
+                    self.failure = True
+                    raise Exception("Expected history seq to not be equal")
+        except Exception as e:
+            self.log.info(e)
+            for node in self.cluster.servers:
+                self.cluster_util.start_server(self.cluster, node)
+            if self.failure == True:
+                raise Exception(e)
 
     def get_loader_spec(self, update_percent=0, update_itr=-1,
                         replace_percent=0, replace_itr=-1,
