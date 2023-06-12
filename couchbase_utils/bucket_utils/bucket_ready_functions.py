@@ -5366,7 +5366,8 @@ class BucketUtils(ScopeUtils):
         """
         - no_history_preserved is True, expected curr::hist_start_seqno == 0
         - comparison '==', Fail if vb_hist_start_seqno :: prev != curr
-        - comparison '>', Fail if vb_hist_start_seqno :: prev <= curr
+        - comparison '>', Fail if vb_hist_start_seqno :: prev > curr
+        - comparison '>=', Fail if vb_hist_start_seqno :: prev >= curr
         """
         result = True
         active = Bucket.vBucket.ACTIVE
@@ -5422,9 +5423,22 @@ class BucketUtils(ScopeUtils):
                         > curr_stats[vb_num][active][hist_start_seqno]:
                     result = False
                     self.log.critical(
-                        "vb_{0} hist_start_seqno, prev::{1} <= curr::{2}"
+                        "vb_{0} hist_start_seqno, prev::{1} > curr::{2}"
                         .format(vb_num, prev_active_stats[hist_start_seqno],
                                 curr_stats[vb_num][active][hist_start_seqno]))
+
+        elif comparison == ">=":
+            for vb_num, stats in prev_stat.items():
+                prev_active_stats = stats[active]
+                if prev_active_stats[hist_start_seqno] \
+                        >= curr_stats[vb_num][active][hist_start_seqno]:
+                    result = False
+                    self.log.critical(
+                        "vb_{0} hist_start_seqno, prev::{1} >= curr::{2}"
+                            .format(vb_num,
+                                    prev_active_stats[hist_start_seqno],
+                                    curr_stats[vb_num][active][
+                                        hist_start_seqno]))
         return result
 
     def validate_disk_info_detail_history_stats(self, bucket, bucket_nodes,
