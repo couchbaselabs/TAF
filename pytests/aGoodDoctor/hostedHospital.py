@@ -356,20 +356,21 @@ class Murphy(BaseTestCase, OPD):
         cpu_monitor = threading.Thread(target=self.print_cluster_cpu_ram,
                                        kwargs={"cluster": self.cluster})
         cpu_monitor.start()
+        num_items = self.input.param("num_items", 5000000)
 
         self.loadDefn1 = {
             "valType": "Hotel",
             "scopes": 1,
             "collections": 2,
-            "num_items": 5000000,
+            "num_items": num_items,
             "start": 0,
-            "end": 5000000,
+            "end": num_items,
             "ops": 100000,
             "doc_size": 1024,
             "pattern": [0, 50, 50, 0, 0], # CRUDE
             "load_type": ["read", "update"],
             "2iQPS": 200,
-            "ftsQPS": 0,
+            "ftsQPS": 10,
             "cbasQPS": 10,
             "collections_defn": [
                 {
@@ -399,11 +400,12 @@ class Murphy(BaseTestCase, OPD):
             "load_type": ["read", "update"],
             "2iQPS": 10,
             "ftsQPS": 10,
+            "cbasQPS": 10,
             "collections_defn": [
                 {
                     "valType": "SimpleValue",
                     "2i": [5, 5],
-                    "FTS": [5, 5],
+                    "FTS": [2, 2],
                     "cbas": [2, 2, 2]
                     },
                 {
@@ -690,7 +692,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.mutation_perc = self.input.param("mutation_perc", 100)
 
-            while self.loop <= self.iterations:
+            while self.loop < self.iterations:
                 for bucket in self.cluster.buckets:
                     self.generate_docs(bucket=bucket)
                 tasks = self.perform_load(wait_for_load=False)
@@ -711,11 +713,13 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
                 self.loop += 1
+                self.wait_for_doc_load_completion(tasks)
+                if self.track_failures:
+                    self.data_validation()
                 self.sleep(60, "Sleep for 60s after rebalance")
 
             self.loop = 0
-            self.rebl_nodes = 0
-            while self.loop <= self.iterations:
+            while self.loop < self.iterations:
                 for bucket in self.cluster.buckets:
                     self.generate_docs(bucket=bucket)
                 tasks = self.perform_load(wait_for_load=False)

@@ -540,7 +540,7 @@ class Murphy(BaseTestCase, OPD):
         self.check_index_auto_scaling_rebl()
         self.monitor_query_status()
 
-        for i in range(1, 6):
+        for i in range(1, 3):
             self.create_databases(20, load_defn=self.workload)
             self.refresh_dp_obj(self.dataplane_id)
             buckets = self.cluster.buckets[(i-1)*20:(i)*20]

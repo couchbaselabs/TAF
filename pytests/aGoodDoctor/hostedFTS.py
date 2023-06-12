@@ -156,7 +156,7 @@ class FTSQueryLoad:
     def _run_concurrent_queries(self):
         threads = []
         self.total_query_count = 0
-        self.concurrent_queries_to_run = self.bucket.loadDefn.get("ftsQPS")[1]
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("ftsQPS")
         self.currently_running = 0
         query_count = 0
         for i in range(0, self.concurrent_queries_to_run):
