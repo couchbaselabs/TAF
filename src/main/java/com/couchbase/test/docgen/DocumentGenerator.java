@@ -112,6 +112,10 @@ abstract class KVGenerator{
     public boolean has_next_expiry() {
         if (this.ws.dr.expiryItr.get() < this.ws.dr.expiry_e)
             return true;
+        if (this.keyInstance.getSimpleName() == CircularKey.class.getSimpleName()) {
+            this.restExpiry();
+            return true;
+        }
         return false;
     }
 
