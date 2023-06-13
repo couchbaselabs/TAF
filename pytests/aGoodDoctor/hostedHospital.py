@@ -387,6 +387,35 @@ class Murphy(BaseTestCase, OPD):
                 }
                 ]
             }
+        self.nimbus = {
+            "valType": "Hotel",
+            "scopes": 1,
+            "collections": 2,
+            "num_items": self.input.param("num_items", 1500000000),
+            "start": 0,
+            "end": self.input.param("num_items", 1500000000),
+            "ops": 100000,
+            "doc_size": 1024,
+            "pattern": [0, 50, 50, 0, 0], # CRUDE
+            "load_type": ["read", "update"],
+            "2iQPS": 200,
+            "ftsQPS": 0,
+            "cbasQPS": 0,
+            "collections_defn": [
+                {
+                    "valType": "NimbusP",
+                    "2i": [2, 2],
+                    "FTS": [0, 0],
+                    "cbas": [0, 0, 0]
+                },
+                {
+                    "valType": "NimbusM",
+                    "2i": [2, 2],
+                    "FTS": [0, 0],
+                    "cbas": [0, 0, 0]
+                }
+                ]
+            }
         self.sanity = {
             "valType": "SimpleValue",
             "scopes": 1,
@@ -417,8 +446,12 @@ class Murphy(BaseTestCase, OPD):
                 ]
             }
         sanity = self.input.param("sanity", False)
+        nimbus = self.input.param("nimbus", False)
+
         if sanity:
             self.load_defn.append(self.sanity)
+        elif nimbus:
+            self.load_defn.append(self.nimbus)
         else:
             self.load_defn.append(self.loadDefn1)
 
@@ -519,7 +552,7 @@ class Murphy(BaseTestCase, OPD):
         self.key = "CircularKey"
         self.mutation_perc = self.input.param("mutation_perc", 100)
         for bucket in self.cluster.buckets:
-            bucket.loadDefn["ops"] = 5000
+            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
             self.generate_docs(bucket=bucket)
         tasks = self.perform_load(wait_for_load=False)
         if not sanity:
