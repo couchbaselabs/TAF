@@ -515,15 +515,17 @@ class Murphy(BaseTestCase, OPD):
             computeList = AWS.compute
             _type = AWS.StorageType.GP3
         storage_type = self.input.param("type", _type).upper()
+
+        self.key = "CircularKey"
+        self.mutation_perc = self.input.param("mutation_perc", 100)
+        for bucket in self.cluster.buckets:
+            bucket.loadDefn["ops"] = 5000
+            self.generate_docs(bucket=bucket)
+        tasks = self.perform_load(wait_for_load=False)
         if not sanity:
             disk_increment = self.input.param("increment", 5)
             while self.loop <= self.iterations:
                 self.loop += 1
-                self.mutation_perc = self.input.param("mutation_perc", 100)
-                for bucket in self.cluster.buckets:
-                    bucket.loadDefn["ops"] = 5000
-                    self.generate_docs(bucket=bucket)
-                tasks = self.perform_load(wait_for_load=False)
                 time.sleep(1*60*60)
                 if self.rebalance_type == "all" or self.rebalance_type == "disk":
                     # Rebalance 1 - Disk Upgrade
@@ -689,14 +691,7 @@ class Murphy(BaseTestCase, OPD):
             self.rebl_nodes = 0
             self.max_rebl_nodes = self.input.param("max_rebl_nodes",
                                                    self.nodes_init + 6)
-
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-
             while self.loop < self.iterations:
-                for bucket in self.cluster.buckets:
-                    self.generate_docs(bucket=bucket)
-                tasks = self.perform_load(wait_for_load=False)
-
                 self.rebl_nodes += 3
                 if self.rebl_nodes > self.max_rebl_nodes:
                     self.rebl_nodes = self.nodes_init
@@ -713,17 +708,10 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
                 self.loop += 1
-                self.wait_for_doc_load_completion(tasks)
-                if self.track_failures:
-                    self.data_validation()
                 self.sleep(60, "Sleep for 60s after rebalance")
 
             self.loop = 0
             while self.loop < self.iterations:
-                for bucket in self.cluster.buckets:
-                    self.generate_docs(bucket=bucket)
-                tasks = self.perform_load(wait_for_load=False)
-
                 self.rebl_nodes -= 3
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
@@ -739,9 +727,11 @@ class Murphy(BaseTestCase, OPD):
                 self.sleep(60, "Sleep for 60s after rebalance")
 
                 self.loop += 1
-                self.wait_for_doc_load_completion(tasks)
-                if self.track_failures:
-                    self.data_validation()
+        for task in tasks:
+            task.stop_work_load()
+        self.wait_for_doc_load_completion(tasks)
+        if self.track_failures:
+            self.data_validation()
         if self.cluster.eventing_nodes:
             self.drEventing.print_eventing_stats()
         if self.cluster.fts_nodes:
@@ -750,4 +740,3 @@ class Murphy(BaseTestCase, OPD):
             self.drCBAS.discharge_CBAS()
         if self.cluster.index_nodes:
             self.drIndex.discharge_N1QL()
-
