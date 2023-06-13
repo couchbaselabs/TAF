@@ -246,7 +246,8 @@ class CollectionBase(ClusterSetup):
                 update_percent=update_percent, update_itrs=update_itr)
             CollectionBase.over_ride_doc_loading_template_params(test_obj,
                                                                  load_spec)
-            CollectionBase.set_retry_exceptions(test_obj, load_spec)
+            CollectionBase.set_retry_exceptions(load_spec,
+                                                test_obj.durability_level)
 
             cont_doc_load = test_obj.bucket_util.run_scenario_from_spec(
                 test_obj.task, test_obj.cluster, test_obj.cluster.buckets,
@@ -362,7 +363,7 @@ class CollectionBase(ClusterSetup):
         # Process params to over_ride values if required
         CollectionBase.over_ride_doc_loading_template_params(
             test_obj, doc_loading_spec)
-        CollectionBase.set_retry_exceptions_for_initial_data_load(
+        CollectionBase.set_retry_exceptions(
             doc_loading_spec, test_obj.durability_level)
         doc_loading_task = \
             test_obj.bucket_util.run_scenario_from_spec(
@@ -567,7 +568,7 @@ class CollectionBase(ClusterSetup):
                         self.task_manager.get_task_result(task)
 
     @staticmethod
-    def set_retry_exceptions_for_initial_data_load(doc_loading_spec, d_level):
+    def set_retry_exceptions(doc_loading_spec, d_level):
         retry_exceptions = list()
         retry_exceptions.append(SDKException.AmbiguousTimeoutException)
         retry_exceptions.append(SDKException.TimeoutException)

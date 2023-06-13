@@ -103,7 +103,8 @@ class UpgradeTests(UpgradeBase):
             MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 10
         collection_load_spec[
             MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 50
-        CollectionBase.set_retry_exceptions_for_initial_data_load(collection_load_spec, self.durability_level)
+        CollectionBase.set_retry_exceptions(
+            collection_load_spec, self.durability_level)
         collection_task = \
             self.bucket_util.run_scenario_from_spec(self.task,
                                                     self.cluster,
@@ -264,7 +265,8 @@ class UpgradeTests(UpgradeBase):
         ### Upserting all data to increase fragmentation value ###
         upsert_spec = self.bucket_util.get_crud_template_from_package(self.upsert_data_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, upsert_spec)
-        CollectionBase.set_retry_exceptions_for_initial_data_load(upsert_spec, self.durability_level)
+        CollectionBase.set_retry_exceptions(
+            upsert_spec, self.durability_level)
 
         if(self.alternate_load == True):
             upsert_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 20
@@ -332,12 +334,13 @@ class UpgradeTests(UpgradeBase):
 
                     self.bucket_util.print_bucket_stats(self.cluster)
 
-                if(self.upgrade_type != "online_swap"):
+                if self.upgrade_type != "online_swap":
                     sub_load_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
                     CollectionBase.over_ride_doc_loading_template_params(self, sub_load_spec)
-                    CollectionBase.set_retry_exceptions_for_initial_data_load(sub_load_spec, self.durability_level)
+                    CollectionBase.set_retry_exceptions(
+                        sub_load_spec, self.durability_level)
 
-                    if(self.alternate_load == True):
+                    if self.alternate_load is True:
                         sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 10
                         sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 10
 
@@ -405,7 +408,8 @@ class UpgradeTests(UpgradeBase):
 
             sync_load_spec = self.bucket_util.get_crud_template_from_package(self.sync_write_spec)
             CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
-            CollectionBase.set_retry_exceptions_for_initial_data_load(sync_load_spec, self.durability_level)
+            CollectionBase.set_retry_exceptions(
+                sync_load_spec, self.durability_level)
 
             sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
 
@@ -964,12 +968,13 @@ class UpgradeTests(UpgradeBase):
         self.log.info("Starting data load...")
         rebalance_data_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, rebalance_data_spec)
-        CollectionBase.set_retry_exceptions_for_initial_data_load(rebalance_data_spec, self.durability_level)
+        CollectionBase.set_retry_exceptions(
+            rebalance_data_spec, self.durability_level)
 
         rebalance_data_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 10
         rebalance_data_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 10
 
-        if(self.alternate_load == True):
+        if self.alternate_load is True:
             rebalance_data_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 5
             rebalance_data_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 5
 
@@ -1207,6 +1212,7 @@ class UpgradeTests(UpgradeBase):
         
         self.bucket_util.print_bucket_stats(self.cluster)
 
+        new_bucket = self.cluster.buckets[0]
         for bucket in self.cluster.buckets:
             if bucket.name == "new-bucket":
                 new_bucket = bucket
@@ -1226,7 +1232,8 @@ class UpgradeTests(UpgradeBase):
         new_bucket_load = self.bucket_util.get_crud_template_from_package(
             self.initial_data_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, new_bucket_load)
-        CollectionBase.set_retry_exceptions_for_initial_data_load(new_bucket_load, self.durability_level)
+        CollectionBase.set_retry_exceptions(
+            new_bucket_load, self.durability_level)
         
         data_load_task = self.bucket_util.run_scenario_from_spec(
                                 self.task,
@@ -1298,7 +1305,8 @@ class UpgradeTests(UpgradeBase):
 
         rebalance_data_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, rebalance_data_spec)
-        CollectionBase.set_retry_exceptions_for_initial_data_load(rebalance_data_spec, self.durability_level)
+        CollectionBase.set_retry_exceptions(
+            rebalance_data_spec, self.durability_level)
 
         rebalance_data_spec["doc_crud"][
             MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 5

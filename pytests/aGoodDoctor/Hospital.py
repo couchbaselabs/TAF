@@ -939,8 +939,8 @@ class Murphy(BaseTestCase, OPD):
         def consecutive_data_load(data_load_spec, async_load=True):
             CollectionBase.over_ride_doc_loading_template_params(
                 self, data_load_spec)
-            CollectionBase.set_retry_exceptions_for_initial_data_load(
-                self, data_load_spec)
+            CollectionBase.set_retry_exceptions(
+                data_load_spec, self.durability_level)
 
             doc_loading_task = self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, data_load_spec,

@@ -416,7 +416,8 @@ class UpgradeBase(BaseTestCase):
                 spec_collection = self.bucket_util.get_crud_template_from_package(
                     self.collection_spec)
                 CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
-                CollectionBase.set_retry_exceptions_for_initial_data_load(spec_collection, self.durability_level)
+                CollectionBase.set_retry_exceptions(
+                    spec_collection, self.durability_level)
 
                 spec_collection["doc_crud"][
                     MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
@@ -486,7 +487,8 @@ class UpgradeBase(BaseTestCase):
         if self.upgrade_with_data_load:
             sub_load_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
             CollectionBase.over_ride_doc_loading_template_params(self, sub_load_spec)
-            CollectionBase.set_retry_exceptions_for_initial_data_load(sub_load_spec, self.durability_level)
+            CollectionBase.set_retry_exceptions(
+                sub_load_spec, self.durability_level)
 
             sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 0
             sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 10
@@ -504,7 +506,8 @@ class UpgradeBase(BaseTestCase):
                 spec_collection = self.bucket_util.get_crud_template_from_package(
                     self.collection_spec)
                 CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
-                CollectionBase.set_retry_exceptions_for_initial_data_load(spec_collection, self.durability_level)
+                CollectionBase.set_retry_exceptions(
+                    spec_collection, self.durability_level)
 
                 spec_collection["doc_crud"][
                     MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
@@ -647,7 +650,8 @@ class UpgradeBase(BaseTestCase):
             spec_collection = self.bucket_util.get_crud_template_from_package(
                 self.collection_spec)
             CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
-            CollectionBase.set_retry_exceptions_for_initial_data_load(spec_collection, self.durability_level)
+            CollectionBase.set_retry_exceptions(
+                spec_collection, self.durability_level)
 
             spec_collection["doc_crud"][
                     MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col

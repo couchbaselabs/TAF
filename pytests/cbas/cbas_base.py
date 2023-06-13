@@ -644,7 +644,7 @@ class CBASBaseTest(BaseTestCase):
                 self.doc_spec_name)
         CollectionBase.over_ride_doc_loading_template_params(
             self, doc_loading_spec)
-        CollectionBase.set_retry_exceptions_for_initial_data_load(
+        CollectionBase.set_retry_exceptions(
             doc_loading_spec, self.durability_level)
 
         doc_loading_task = self.bucket_util.run_scenario_from_spec(
