@@ -113,6 +113,8 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.rev_del = self.input.param("rev_del", False)
         self.random_key = self.input.param("random_key", False)
         self.mix_key_size = self.input.param("mix_key_size", False)
+        self.load_collections_exponentially = \
+            self.input.param("load_collections_exponentially", False)
         # End of doc specific parameters
 
         # Transactions parameters

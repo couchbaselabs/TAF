@@ -435,6 +435,9 @@ class CollectionBase(ClusterSetup):
                 elif key == "remove_default_collection":
                     bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
                         test_obj.input.param(key)
+                elif key == "load_collections_exponentially":
+                    bucket_spec[MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY] \
+                        = test_obj.load_collections_exponentially
         else:
             for key, val in test_obj.input.test_params.items():
                 if key == "replicas":
@@ -476,6 +479,9 @@ class CollectionBase(ClusterSetup):
                 elif key == "magma_seq_tree_data_block_size":
                     bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
                         = int(test_obj.magma_seq_tree_data_block_size)
+                elif key == "load_collections_exponentially":
+                    bucket_spec[MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY] \
+                        = test_obj.load_collections_exponentially
 
     @staticmethod
     def over_ride_doc_loading_template_params(test_obj, target_spec):

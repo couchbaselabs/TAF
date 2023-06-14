@@ -2419,6 +2419,27 @@ class BucketUtils(ScopeUtils):
             BucketUtils.expand_scope_spec(buckets_spec, bucket_name)
             bucket_obj_index += 1
 
+        # Handling code for exponential load
+        for bucket_name, bucket_spec in buckets_spec["buckets"].items():
+            if bucket_spec.get(MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY,
+                               False):
+                remaining_num_items = 0
+                # Fetch total_items to be expected as the end of initialization
+                for s_name, s_spec in bucket_spec["scopes"].items():
+                    for c_name, c_spec in s_spec["collections"].items():
+                        remaining_num_items += c_spec["num_items"]
+
+                # Set exponential num_items across the collections
+                for s_name, s_spec in bucket_spec["scopes"].items():
+                    for c_name, c_spec in s_spec["collections"].items():
+                        n_items = int(remaining_num_items / 2)
+                        if n_items == 0 and remaining_num_items != 0:
+                            n_items = remaining_num_items
+                            remaining_num_items = 0
+                        else:
+                            remaining_num_items -= n_items
+                        c_spec["num_items"] = n_items
+
         return buckets_spec["buckets"]
 
     def create_bucket_from_dict_spec(self, cluster, bucket_name,
