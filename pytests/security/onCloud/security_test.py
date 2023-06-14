@@ -168,8 +168,8 @@ class SecurityTest(BaseTestCase):
 
     def test_retrieve_cluster_details(self):
         self.log.info("Verifying status code for retrieving cluster details")
-        expected_response_code = {"organizationOwner": 200, "projectCreator": 403,
-                                  "cloudManager": 403, "organizationMember": 403}
+        expected_response_code = {"organizationOwner": 200, "projectCreator": 404,
+                                  "cloudManager": 404, "organizationMember": 404}
         for user in self.test_users:
             self.log.info("Verifying status code for Role: {0}"
                           .format(self.test_users[user]["role"]))
@@ -685,7 +685,7 @@ class SecurityTest(BaseTestCase):
                                        "beer-sample")
         self.sleep(20, "Waiting for the bucket to be loaded")
 
-        #Turning off a cluster
+        # Turning off a cluster
         resp = capella_api.turn_off_cluster(self.tenant_id, self.project_id, self.cluster_id)
         self.assertEqual(202, resp.status_code,
                          msg='FAIL, Outcome: {0}, Expected: {1}'.format(resp.status_code, 202))
@@ -708,4 +708,4 @@ class SecurityTest(BaseTestCase):
         ips = ["104.172.65.2"]  # Any random ip
         resp = capella_api.add_allowed_ips(self.tenant_id, self.project_id, self.cluster_id, ips)
         self.assertEqual(202, resp.status_code,
-                      msg='FAIL, Outcome: {0}, Expected: {1}'.format(resp.status_code, 202))
+                         msg='FAIL, Outcome: {0}, Expected: {1}'.format(resp.status_code, 202))
