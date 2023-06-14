@@ -8,6 +8,7 @@ spec = {
     MetaConstants.NUM_ITEMS_PER_COLLECTION: 0,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
     MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT: False,
+    MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY: False,
 
     Bucket.bucketType: Bucket.Type.MEMBASE,
     Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
