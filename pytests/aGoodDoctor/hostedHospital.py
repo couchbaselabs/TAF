@@ -476,7 +476,6 @@ class Murphy(BaseTestCase, OPD):
                             collection_spec = {"name": collection_name}
                             CollectionUtils.create_collection_object(bucket, scope, collection_spec)
 
-        self.loop = 1
         self.skip_read_on_error = True
         self.suppress_error_table = True
         '''
@@ -719,6 +718,7 @@ class Murphy(BaseTestCase, OPD):
                 if bucket_info['basicStats']['itemCount'] == item_count:
                     self.log.info("Post restore item count on the bucket is {}".format(item_count))
         else:
+            self.loop = 0
             self.rebl_nodes = 0
             self.max_rebl_nodes = self.input.param("max_rebl_nodes",
                                                    self.nodes_init + 6)
