@@ -447,7 +447,6 @@ class Murphy(BaseTestCase, OPD):
             }
         sanity = self.input.param("sanity", False)
         nimbus = self.input.param("nimbus", False)
-
         if sanity:
             self.load_defn.append(self.sanity)
         elif nimbus:
@@ -549,7 +548,6 @@ class Murphy(BaseTestCase, OPD):
             _type = AWS.StorageType.GP3
         storage_type = self.input.param("type", _type).upper()
 
-        self.key = "CircularKey"
         self.mutation_perc = self.input.param("mutation_perc", 100)
         for bucket in self.cluster.buckets:
             bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
