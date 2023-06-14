@@ -702,14 +702,16 @@ class SecurityTest(BaseTestCase):
             self.sleep(10, "Waiting for the cluster to be in turned off state")
 
         # Testing if running a query is allowed or not. Ideally it shouldn't
+        self.log.info("Running a query when the cluster is off")
         query = "SELECT * FROM `beer-sample`._default._default"
-        payload = {"timeout":"600s","statement": query,
-                   "profile":"timings","use_cbo":True,"txtimeout":"120s"}
+        payload = {"timeout": "600s", "statement": query,
+                   "profile": "timings", "use_cbo": True, "txtimeout": "120s"}
         resp = common_capella_api.run_query(self.cluster_id, payload)
         self.assertEqual(422, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 422))
 
         # Testing if adding ip to the allowlist is allowed or not. Ideally it should
+        self.log.info("Adding a IP when the cluster is off")
         ips = ["104.172.65.2"]  # Any random ip
         resp = capella_api.add_allowed_ips(self.tenant_id, self.project_id, self.cluster_id, ips)
         self.assertEqual(202, resp.status_code,
