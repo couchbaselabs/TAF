@@ -9,6 +9,8 @@ class MetaConstants(object):
         "create_collections_using_manifest_import"
     BUCKET_TAR_DIR = "bucket_tar_dir"
     BUCKET_TAR_SRC = "bucket_tar_src"
+    # Used to distribute docs/collection exponentially
+    LOAD_COLLECTIONS_EXPONENTIALLY = "load_collections_exponentially"
 
     @staticmethod
     def get_params():
