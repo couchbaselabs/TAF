@@ -6,6 +6,7 @@ import string
 import requests
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
+from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
@@ -680,10 +681,12 @@ class SecurityTest(BaseTestCase):
         self.log.info("Verifying the status code for turning clusters on/off")
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
                                  self.user, self.passwd)
+        common_capella_api = CommonCapellaAPI("https://" + self.url, self.secret_key,
+                                              self.access_key, self.user, self.passwd)
         # loading a sample bucket
         capella_api.load_sample_bucket(self.tenant_id, self.project_id, self.cluster_id,
                                        "beer-sample")
-        self.sleep(20, "Waiting for the bucket to be loaded")
+        self.sleep(20, "Waiting for the beer-sample bucket to be loaded")
 
         # Turning off a cluster
         resp = capella_api.turn_off_cluster(self.tenant_id, self.project_id, self.cluster_id)
@@ -700,7 +703,9 @@ class SecurityTest(BaseTestCase):
 
         # Testing if running a query is allowed or not. Ideally it shouldn't
         query = "SELECT * FROM `beer-sample`._default._default"
-        resp = capella_api.run_query(query, self.cluster_id)
+        payload = {"timeout":"600s","statement": query,
+                   "profile":"timings","use_cbo":True,"txtimeout":"120s"}
+        resp = common_capella_api.run_query(self.cluster_id, payload)
         self.assertEqual(422, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 422))
 
