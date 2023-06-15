@@ -246,17 +246,33 @@ class Murphy(BaseTestCase, OPD):
                                                     num_clients)
                 self.create_required_collections(cluster)
 
-    def restart_query_load(self):
+    def restart_query_load(self, num=10):
         for ql in self.ql:
+            ql.stop_query_load()
+        for ql in self.ftsQL:
+            ql.stop_query_load()
+        for ql in self.cbasQL:
             ql.stop_query_load()
         self.sleep(10)
         self.ql = list()
+        self.ftsQL = list()
+        self.cbasQL = list()
         for bucket in self.cluster.buckets:
             if bucket.loadDefn.get("2iQPS", 0) > 0:
-                # bucket.loadDefn.get("2i")[1] = bucket.loadDefn.get("2i")[1] + 10
+                bucket.loadDefn.get("2iQPS")[1] = bucket.loadDefn.get("2iQPS")[1] + num
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)
+            if bucket.loadDefn.get("ftsQPS", 0) > 0:
+                bucket.loadDefn.get("ftsQPS")[1] = bucket.loadDefn.get("ftsQPS")[1] + num
+                ql = FTSQueryLoad(bucket)
+                ql.start_query_load()
+                self.ftsQL.append(ql)
+            if bucket.loadDefn.get("cbasQPS", 0) > 0:
+                bucket.loadDefn.get("cbasQPS")[1] = bucket.loadDefn.get("cbasQPS")[1] + num
+                ql = CBASQueryLoad(bucket)
+                ql.start_query_load()
+                self.cbasQL.append(ql)
 
     def monitor_query_status(self, print_duration=120):
 
@@ -420,9 +436,9 @@ class Murphy(BaseTestCase, OPD):
             "valType": "SimpleValue",
             "scopes": 1,
             "collections": 2,
-            "num_items": 50000000,
+            "num_items": self.input.param("num_items", 50000000),
             "start": 0,
-            "end": 50000000,
+            "end": self.input.param("num_items", 50000000),
             "ops": 40000,
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
@@ -440,7 +456,7 @@ class Murphy(BaseTestCase, OPD):
                 {
                     "valType": "SimpleValue",
                     "2i": [5, 5],
-                    "FTS": [5, 5],
+                    "FTS": [0, 0],
                     "cbas": [2, 2, 2]
                     }
                 ]
@@ -561,7 +577,6 @@ class Murphy(BaseTestCase, OPD):
                     # Rebalance 1 - Disk Upgrade
                     initial_services = self.input.param("services", "data")
                     server_group_list = list()
-                    self.restart_query_load()
                     for service_group in initial_services.split("-"):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
@@ -593,7 +608,6 @@ class Murphy(BaseTestCase, OPD):
                                                                        timeout=96*60*60)
                     disk_increment = disk_increment * -1
                     self.sleep(1*60*60)
-                    self.restart_query_load()
                     self.task_manager.get_task_result(rebalance_task)
                     self.cluster_util.print_cluster_stats(self.cluster)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -725,7 +739,7 @@ class Murphy(BaseTestCase, OPD):
             while self.loop < self.iterations:
                 self.rebl_nodes += 3
                 if self.rebl_nodes > self.max_rebl_nodes:
-                    self.rebl_nodes = self.nodes_init
+                    self.rebl_nodes = 0
                 config = self.rebalance_config(self.rebl_nodes)
 
                 ###################################################################
@@ -740,9 +754,11 @@ class Murphy(BaseTestCase, OPD):
                 self.print_stats()
                 self.loop += 1
                 self.sleep(60, "Sleep for 60s after rebalance")
+                self.restart_query_load(num=10)
 
             self.loop = 0
             while self.loop < self.iterations:
+                self.restart_query_load(num=-10)
                 self.rebl_nodes -= 3
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))

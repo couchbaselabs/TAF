@@ -373,11 +373,6 @@ class QueryLoad:
 
     def stop_query_load(self):
         self.stop_run = True
-        try:
-            if self.cluster_conn:
-                self.cluster_conn.close()
-        except:
-            pass
 
     def _run_concurrent_queries(self):
         threads = []
