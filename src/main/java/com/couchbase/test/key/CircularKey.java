@@ -2,7 +2,7 @@ package com.couchbase.test.key;
 
 import com.couchbase.test.docgen.WorkLoadSettings;
 
-public class CircularKey extends SimpleKey {
+public class CircularKey extends RandomKey {
     public CircularKey() {
         super();
     }
