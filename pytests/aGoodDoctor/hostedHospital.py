@@ -622,11 +622,11 @@ class Murphy(BaseTestCase, OPD):
                         service = service_group[0]
                         if service == "kv" or service == "data":
                             comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            comp = comp + 1 if len(computeList) > comp + 1 else comp
                             self.compute[service] = computeList[comp]
                         if "index" in service_group or "query" in service_group:
                             comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            comp = comp + 1 if len(computeList) > comp + 1 else comp
                             self.compute[service] = computeList[comp]
                         config = {
                             "size": self.num_nodes[service],
@@ -667,15 +667,15 @@ class Murphy(BaseTestCase, OPD):
                             self.disk[service] = self.disk[service] + disk_increment
                         if service == "kv" or service == "data":
                             comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            comp = comp + 1 if len(computeList) > comp + 1 else comp
                             self.compute[service] = computeList[comp]
                         if "index" in service_group or "gsi" in service_group:
                             comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            comp = comp + 1 if len(computeList) > comp + 1 else comp
                             self.compute[service] = computeList[comp]
                         if "query" in service_group or "n1ql" in service_group:
                             comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(self.compute) > comp + 1 else comp
+                            comp = comp + 1 if len(computeList) > comp + 1 else comp
                             self.compute[service] = computeList[comp]
                         config = {
                             "size": self.num_nodes[service],
