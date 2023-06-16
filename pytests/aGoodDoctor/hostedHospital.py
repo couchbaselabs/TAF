@@ -259,17 +259,17 @@ class Murphy(BaseTestCase, OPD):
         self.cbasQL = list()
         for bucket in self.cluster.buckets:
             if bucket.loadDefn.get("2iQPS", 0) > 0:
-                bucket.loadDefn.get("2iQPS") = bucket.loadDefn.get("2iQPS") + num
+                bucket.loadDefn["2iQPS"] = bucket.loadDefn["2iQPS"] + num
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)
             if bucket.loadDefn.get("ftsQPS", 0) > 0:
-                bucket.loadDefn.get("ftsQPS") = bucket.loadDefn.get("ftsQPS") + num
+                bucket.loadDefn["ftsQPS"] = bucket.loadDefn["ftsQPS"] + num
                 ql = FTSQueryLoad(bucket)
                 ql.start_query_load()
                 self.ftsQL.append(ql)
             if bucket.loadDefn.get("cbasQPS", 0) > 0:
-                bucket.loadDefn.get("cbasQPS") = bucket.loadDefn.get("cbasQPS") + num
+                bucket.loadDefn["cbasQPS"] = bucket.loadDefn["cbasQPS"] + num
                 ql = CBASQueryLoad(bucket)
                 ql.start_query_load()
                 self.cbasQL.append(ql)
