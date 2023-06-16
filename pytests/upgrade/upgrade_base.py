@@ -65,6 +65,8 @@ class UpgradeBase(BaseTestCase):
         self.dur_level = self.input.param("dur_level", "default")
         self.alternate_load = self.input.param("alternate_load", False)
         self.complete_cluster_swap = self.input.param("complete_cluster_swap", False)
+        self.magma_upgrade = self.input.param("magma_upgrade", False)
+        self.perform_collection_ops = self.input.param("perform_collection_ops", False)
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -76,7 +78,6 @@ class UpgradeBase(BaseTestCase):
         self.cluster_supports_sync_write = (t_version >= 6.5)
         self.cluster_supports_collections = (t_version >= 7.0)
         self.cluster_supports_system_event_logs = (t_version >= 7.1)
-        self.cluster_supports_collections = (t_version >= 7.0)
 
         self.installer_job = InstallerJob()
 
@@ -97,9 +98,8 @@ class UpgradeBase(BaseTestCase):
 
         self.__validate_upgrade_type()
 
-
-        self.log.info("Installing initial version %s on servers"
-                      % self.initial_version)
+        self.PrintStep("Installing initial version {0} on servers"
+                       .format(self.initial_version))
         self.install_version_on_node(
             self.cluster.servers[0:self.nodes_init],
             self.initial_version)
@@ -136,15 +136,14 @@ class UpgradeBase(BaseTestCase):
             .update_autofailover_settings(False, 120, False)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
-            self.spec_name)
-
         RestConnection(self.cluster.master).set_internalSetting(
                 "magmaMinMemoryQuota", 256)
 
         # Creating buckets from spec file
         CollectionBase.deploy_buckets_from_spec_file(self)
 
+        self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
+            self.spec_name)
         if "buckets" not in self.spec_bucket:
             self.items_per_col = self.spec_bucket[MetaConstants.NUM_ITEMS_PER_COLLECTION]
         else:
@@ -154,19 +153,6 @@ class UpgradeBase(BaseTestCase):
         # Adding RBAC user
         self.bucket_util.add_rbac_user(self.cluster.master)
         self.bucket = self.cluster.buckets[0]
-        if self.test_storage_upgrade:
-            for i in range(3):
-                bucket_name = "testBucket" + str(i)
-                self.bucket_util.create_default_bucket(
-                    self.cluster,
-                    replica=self.num_replicas,
-                    compression_mode=self.compression_mode,
-                    ram_quota=self.bucket_size,
-                    bucket_type=self.bucket_type,
-                    storage=self.bucket_storage,
-                    eviction_policy=self.bucket_eviction_policy,
-                    bucket_durability=self.bucket_durability_level,
-                    bucket_name=bucket_name)
 
         if self.enable_tls:
             self.enable_verify_tls(self.cluster.master)
@@ -187,10 +173,9 @@ class UpgradeBase(BaseTestCase):
                                     bucket_durability=BucketDurability[Bucket.DurabilityLevel.MAJORITY])
 
         # Load initial async_write docs into the cluster
-        self.log.info("Initial doc generation process starting...")
-
-        CollectionBase.load_data_from_spec_file(self,self.initial_data_spec,validate_docs=True)
-
+        self.PrintStep("Initial doc generation process starting...")
+        CollectionBase.load_data_from_spec_file(self, self.initial_data_spec,
+                                                validate_docs=True)
         self.log.info("Initial doc generation completed")
 
         # Verify initial doc load count
@@ -366,7 +351,7 @@ class UpgradeBase(BaseTestCase):
             raise Exception("Build %s not found" % version)
         return appropriate_build
 
-    def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True, collection_ops=True):
+    def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True, collection_ops=False):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
         self.log.info("Failing over the node %s" % otp_node.id)
@@ -501,7 +486,7 @@ class UpgradeBase(BaseTestCase):
                 batch_size=500,
                 process_concurrency=4)
 
-            if self.cluster_supports_collections:
+            if self.cluster_supports_collections and self.perform_collection_ops:
                 spec_collection = self.bucket_util.get_crud_template_from_package(
                     self.collection_spec)
                 CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
@@ -625,8 +610,11 @@ class UpgradeBase(BaseTestCase):
         # Fetch active services on node_to_upgrade
         rest = self.__get_rest_node(node_to_upgrade)
         services = rest.get_nodes_services()
+        node_to_upgrade.port = CbServer.port
         services_on_target_node = services[(node_to_upgrade.ip + ":"
                                             + str(node_to_upgrade.port))]
+        if self.enable_tls and self.tls_level == "strict":
+            node_to_upgrade.port = CbServer.ssl_port
 
         if install_on_spare_node:
             # Install target version on spare node
@@ -645,7 +633,7 @@ class UpgradeBase(BaseTestCase):
             self.buckets_to_load = self.cluster.buckets
 
         if self.upgrade_with_data_load and \
-                self.cluster_supports_collections:
+                self.cluster_supports_collections and self.perform_collection_ops:
             spec_collection = self.bucket_util.get_crud_template_from_package(
                 self.collection_spec)
             CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
@@ -692,7 +680,7 @@ class UpgradeBase(BaseTestCase):
         otp_nodes = [node.id for node in rest.node_statuses()]
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[eject_otp_node.id])
         if self.upgrade_with_data_load and \
-                self.cluster_supports_collections:
+                self.cluster_supports_collections and self.perform_collection_ops:
             self.log.info("Performing collection ops during rebalance out...")
             for iterations in range(2):
                     collection_task = self.bucket_util.run_scenario_from_spec(
@@ -840,3 +828,12 @@ class UpgradeBase(BaseTestCase):
                 self.log.info("Rebalance failed")
 
             self.cluster_util.print_cluster_stats(self.cluster)
+
+    def PrintStep(self, msg=None):
+        print "\n"
+        print "\t", "#"*60
+        print "\t", "#"
+        print "\t", "#  %s" % msg
+        print "\t", "#"
+        print "\t", "#"*60
+        print "\n"
