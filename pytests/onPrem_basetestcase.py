@@ -87,8 +87,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.input.param("maxParallelIndexers", None)
         self.maxParallelReplicaIndexers = \
             self.input.param("maxParallelReplicaIndexers", None)
-        self.use_https = self.input.param("use_https", False)
-        self.enforce_tls = self.input.param("enforce_tls", False)
+        self.use_https = self.input.param("use_https", True)
+        self.enforce_tls = self.input.param("enforce_tls", True)
+        self.encryption_level = self.input.param("encryption_level", "all")
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
@@ -165,6 +166,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         if CbServer.cluster_profile == "serverless":
             self.use_https = True
             self.enforce_tls = True
+            self.encryption_level = "strict"
 
             self.bucket_storage = Bucket.StorageBackend.magma
             self.num_replicas = Bucket.ReplicaNum.TWO
@@ -185,6 +187,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Enable use_https and enforce_tls for 'serverless' cluster testing
         # And set default bucket/cluster setting values to tests
         if CbServer.cluster_profile == "serverless":
+            self.encryption_level = "strict"
             self.use_https = True
             self.enforce_tls = True
 
@@ -463,20 +466,28 @@ class OnPremBaseTest(CouchbaseBaseTest):
             server.eventing_port = CbServer.ssl_eventing_port
 
     def enable_tls_on_nodes(self):
-        if self.use_https and self.enforce_tls:
+        if self.enforce_tls:
             retry_count = self.input.param("tls_retry_count", 3)
             CbServer.n2n_encryption = True
-            CbServer.use_https = True
+            if self.use_https:
+                CbServer.use_https = True
             retry = 0
             status = False
             while retry < retry_count:
                 for _, cluster in self.cb_clusters.items():
-                    task = self.node_utils.async_enable_tls(cluster.master)
+                    status = True
+                    task = self.node_utils.async_enable_tls(cluster.master,
+                                                            self.encryption_level)
                     self.task_manager.get_task_result(task)
                     self.log.info("Validating if services obey tls only "
                                   "on servers {0}".format(cluster.servers))
-                    status = self.cluster_util.check_if_services_obey_tls(
-                        cluster.servers)
+                    if CbServer.cluster_profile != "serverless":
+                        if ClusterUtils.get_encryption_level_on_node(
+                                self.cluster.master) != self.encryption_level:
+                            status = False
+                    if self.encryption_level == "strict":
+                        status = self.cluster_util.check_if_services_obey_tls(
+                            cluster.servers)
                 if status:
                     break
                 else:

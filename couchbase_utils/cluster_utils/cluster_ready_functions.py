@@ -17,6 +17,7 @@ from TestInput import TestInputSingleton, TestInputServer
 from cb_tools.cb_collectinfo import CbCollectInfo
 from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI
+from couchbase_utils.cb_tools.cb_cli import CbCli
 from global_vars import logger
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux, Mac, Windows
@@ -1240,6 +1241,14 @@ class ClusterUtils:
                 if len(picked) == howmany:
                     break
         return picked
+
+    @staticmethod
+    def get_encryption_level_on_node(node):
+        shell_conn = RemoteMachineShellConnection(node)
+        cb_cli = CbCli(shell_conn, no_ssl_verify=True)
+        level = cb_cli.get_n2n_encryption_level()
+        shell_conn.disconnect()
+        return level
 
     def check_if_services_obey_tls(self, servers, port_map=CbServer.ssl_port_map):
         """
