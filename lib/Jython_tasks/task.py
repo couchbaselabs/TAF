@@ -308,6 +308,7 @@ class RebalanceTaskCapella(Task):
                     self.log.info("Scaling the cluster completed. State == {}".
                                   format(state))
                     self.sleep(300)
+                    self.result = True
                     break
             except Exception as e:
                 self.log.critical(e)
@@ -330,7 +331,6 @@ class RebalanceTaskCapella(Task):
             nodes.append(temp_server)
 
         self.cluster.refresh_object(nodes)
-        self.result = True
         return self.result
 
 

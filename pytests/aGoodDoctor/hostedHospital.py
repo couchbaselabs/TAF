@@ -568,6 +568,7 @@ class Murphy(BaseTestCase, OPD):
             bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
             self.generate_docs(bucket=bucket)
         tasks = self.perform_load(wait_for_load=False)
+        self.loop = 0
         if not sanity:
             disk_increment = self.input.param("increment", 5)
             while self.loop <= self.iterations:
@@ -747,7 +748,7 @@ class Murphy(BaseTestCase, OPD):
                                format(self.loop))
                 rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                    config,
-                                                                   timeout=5*60*60)
+                                                                   timeout=self.index_timeout)
 
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -765,7 +766,7 @@ class Murphy(BaseTestCase, OPD):
                 config = self.rebalance_config(self.rebl_nodes)
                 rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                    config,
-                                                                   timeout=5*60*60)
+                                                                   timeout=self.index_timeout)
 
                 self.task_manager.get_task_result(rebalance_task)
                 self.cluster_util.print_cluster_stats(self.cluster)
