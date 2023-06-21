@@ -251,6 +251,8 @@ class OPD:
                 self.servs_in.extend(servers)
                 self.available_servers = [servs for servs in self.available_servers
                                           if servs not in servers]
+        if "index" in services:
+            services=["index,n1ql"]
 
         print "Servers coming in : %s with services: %s" % ([server.ip for server in self.servs_in], services)
         print "Servers going out : %s" % ([server.ip for server in self.servs_out])

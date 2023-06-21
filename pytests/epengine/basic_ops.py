@@ -2213,7 +2213,7 @@ class basic_ops(ClusterSetup):
         self.log.info("Setting index mem. quota=256M")
         rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA: 256})
         self.log.info("Setting indexerThreads=1 for creating DCP pause/resume")
-        rest.set_indexer_params("indexerThreads", 1)
+        rest.set_indexer_params(indexerThreads=1)
         c_index = 1
         num_items = self.num_items
         c_dict = { CbServer.default_collection: self.num_items * 2 }
