@@ -57,8 +57,7 @@ class AWS(object):
 
 class GCP(object):
     __str__ = "gcp"
-    compute = ["n2-custom-4-8192",
-               "n2-custom-8-16384",
+    compute = ["n2-custom-8-16384",
                "n2-custom-16-32768",
                "n2-custom-36-73728",
                "n2-custom-48-98304",
@@ -68,18 +67,19 @@ class GCP(object):
                "n2-highcpu-32",
                "n2-highcpu-64",
                "n2-highcpu-80",
-               "n2-highmem-8",
                "n2-highmem-4",
+               "n2-highmem-8",
                "n2-highmem-16",
                "n2-highmem-32",
                "n2-highmem-64",
-               "n2-highmem-80",
+               "n2-highmem-96",
+               "n2-standard-2",
                "n2-standard-4",
                "n2-standard-8",
                "n2-standard-16",
                "n2-standard-32",
                "n2-standard-64",
-               "n2-standard-80"
+               "n2-standard-96"
                ]
 
     class StorageType(object):

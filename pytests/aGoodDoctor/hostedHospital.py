@@ -573,7 +573,7 @@ class Murphy(BaseTestCase, OPD):
             disk_increment = self.input.param("increment", 5)
             while self.loop <= self.iterations:
                 self.loop += 1
-                time.sleep(1*60*60)
+                time.sleep(5*60)
                 if self.rebalance_type == "all" or self.rebalance_type == "disk":
                     # Rebalance 1 - Disk Upgrade
                     initial_services = self.input.param("services", "data")
@@ -608,7 +608,6 @@ class Murphy(BaseTestCase, OPD):
                                                                        server_group_list,
                                                                        timeout=96*60*60)
                     disk_increment = disk_increment * -1
-                    self.sleep(1*60*60)
                     self.task_manager.get_task_result(rebalance_task)
                     self.cluster_util.print_cluster_stats(self.cluster)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -657,7 +656,6 @@ class Murphy(BaseTestCase, OPD):
 
                 if self.rebalance_type == "all" or self.rebalance_type == "disk_compute":
                     # Rebalance 3 - Both Disk/Compute Upgrade
-                    self.sleep(1*60*60)
                     self.restart_query_load()
                     server_group_list = list()
                     initial_services = self.input.param("services", "data")

@@ -387,7 +387,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "package": package,
             "projectId": None,
             "description": "",
-            "server": self.input.capella["server_version"]
+            # "server": self.input.capella["server_version"]
         }
 
         if self.input.capella.get("image"):

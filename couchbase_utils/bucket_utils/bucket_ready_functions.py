@@ -3215,7 +3215,7 @@ class BucketUtils(ScopeUtils):
         """
         tasks = list()
         for bucket in buckets:
-            if cluster.type == "default":
+            if cluster.type != "serverless":
                 self.get_updated_bucket_server_list(cluster, bucket)
             if bucket.bucketType == 'memcached':
                 continue
