@@ -911,7 +911,7 @@ class BaseSecondaryIndexingTests(QueryTests):
             cluster=self.cluster,
             service_type=CbServer.Services.INDEX)
         rest = RestConnection(server)
-        status = rest.set_indexer_params("logLevel", loglevel)
+        status = rest.set_indexer_params(logLevel=loglevel)
 
     def wait_until_cluster_is_healthy(self):
         master_node = self.cluster.master

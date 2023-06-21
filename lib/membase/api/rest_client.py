@@ -841,6 +841,26 @@ class RestConnection(object):
             self.test_log.warning(content)
         return status
 
+    def set_indexer_params(self, redistributeIndexes='false', numReplica=0, enablePageBloomFilter='false', indexerThreads=0,
+                          memorySnapshotInterval=200, stableSnapshotInterval=5000, maxRollbackPoints=2,
+                          logLevel="info", storageMode='plasma'):
+
+        api = self.baseUrl + 'settings/indexes'
+        params = urllib.urlencode({'redistributeIndexes': redistributeIndexes,
+                                   'numReplica': numReplica,
+                                   'enablePageBloomFilter': enablePageBloomFilter,
+                                   'indexerThreads': indexerThreads,
+                                   'memorySnapshotInterval': memorySnapshotInterval,
+                                   'stableSnapshotInterval': stableSnapshotInterval,
+                                   'maxRollbackPoints': maxRollbackPoints,
+                                   'logLevel': logLevel,
+                                   'storageMode': storageMode
+                                   })
+        #self.test_log.debug('settings/indexes params: {0}'.format(params))
+        status, content, header = self._http_request(api, 'POST', params)
+        #status, content, header = self._http_request(api, 'POST', params)
+        return status
+
     def cleanup_indexer_rebalance(self, server):
         if server:
             api = "{0}://{1}:{2}/".format(self.protocol, server.ip, self.index_port) + \
@@ -2627,23 +2647,6 @@ class RestConnection(object):
                         rebalance, cluster, views, stderr]] end, []]).'.format(loglevel)
         return self._http_request(api=api, method='POST', params=request_body,
                                   headers=self._create_headers())
-
-    def set_indexer_params(self, parameter, val):
-        """
-        :Possible  parameters:
-            -- indexerThreads
-            -- memorySnapshotInterval
-            -- stableSnapshotInterval
-            -- maxRollbackPoints
-            -- logLevel
-        """
-        params = {}
-        api = self.baseUrl + 'settings/indexes'
-        params[parameter] = val
-        params = urllib.urlencode(params)
-        status, content, header = self._http_request(api, "POST", params)
-        self.test_log.info('Indexer {0} set to {1}'.format(parameter, val))
-        return status
 
     def get_global_index_settings(self):
         api = self.baseUrl + "settings/indexes"
