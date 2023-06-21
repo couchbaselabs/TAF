@@ -1,5 +1,5 @@
 import json
-from random import choice, randint
+from random import choice, randint, sample
 from threading import Thread
 from time import time
 
@@ -15,6 +15,8 @@ from cluster_utils.cluster_ready_functions import CBCluster
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
+from gsiLib.gsiHelper import GsiHelper
+from index_utils.index_ready_functions import IndexUtils
 
 from mc_bin_client import MemcachedClient, MemcachedError
 from membase.api.rest_client import RestConnection
@@ -2242,6 +2244,68 @@ class basic_ops(ClusterSetup):
 
         self.assertFalse(self.crud_failure, "Crud failure observed")
 
+    def test_oso_backfill_not_sending_duplicate_items(self):
+        """
+        1. Create few collections and load initial data
+        2. Load further data and create indexing on one particular collection
+        3. Make sure the mutations are received only once by index-dcp
+
+        Ref: MB-57106
+        """
+
+        bucket = self.cluster.buckets[0]
+        rest = RestConnection(self.cluster.master)
+        self.log.info("Setting index mem. quota=256M")
+        rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA: 256})
+        self.log.info("Setting indexerThreads=1 for creating DCP pause/resume")
+        rest.set_indexer_params("indexerThreads", 1)
+        # col_to_create = ["c1", "c2", "c3"]
+        col_to_create = ["c1"]
+        for c_name in col_to_create:
+            self.log.info("Creating collections %s" % c_name)
+            self.bucket_util.create_collection(self.cluster.master, bucket,
+                                               collection_spec={"name": c_name})
+
+        tasks = list()
+        doc_gen = doc_generator("random_keys", 0, self.num_items,
+                                key_size=15, doc_size=1024,
+                                randomize_doc_size=True,
+                                randomize_value=True, deep_copy=True)
+        for c_name in [CbServer.default_collection] + col_to_create:
+            tasks.append(self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_gen,
+                DocLoading.Bucket.DocOps.CREATE,
+                batch_size=1000, process_concurrency=1,
+                sdk_client_pool=self.sdk_client_pool,
+                collection=c_name, print_ops_rate=False))
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+
+        # Wait for docs to persisted
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets)
+
+        self.log.info("Creating GSI index on collection 'c1'")
+        client = SDKClient([self.cluster.master], bucket)
+        _ = client.run_query(
+            "CREATE INDEX `c1` ON `{}`.`_default`.`c1`(body) USING GSI"
+            .format(bucket.name), timeout=300)
+        query = "SELECT state FROM system:indexes WHERE name='c1'"
+        state = client.cluster.query(query).rowsAsObject()[0].get("state")
+        client.close()
+        if state != "online":
+            self.fail("Create index timed out")
+        self.log.info("Index created")
+        self.sleep(15, "Wait before fetching index stats")
+        gsi_rest = GsiHelper(self.cluster.servers[2], self.log)
+        stats = gsi_rest.get_index_stats()
+        dict_key = "{}:{}:c1:c1".format(bucket.name, CbServer.default_scope)
+        for field in ["num_docs_indexed", "items_count", "num_items_flushed",
+                      "num_flush_queued"]:
+            val = stats["{}:{}".format(dict_key, field)]
+            self.assertEqual(val, self.num_items,
+                             "Mismatch in index stat {} :: {} != {}"
+                             .format(field, val, self.num_items))
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
