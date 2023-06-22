@@ -37,6 +37,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # Cluster level info settings
         self.log_info = self.input.param("log_info", None)
+        self.minimum_bucket_replica = self.input.param("minimum_bucket_replica", None)
         self.disable_max_fo_count = self.input.param("disable_max_fo_count",
                                                      'false')
         self.log_location = self.input.param("log_location", None)
@@ -439,6 +440,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.cluster_util.change_port_info(cluster, self.port_info)
         if self.port:
             self.port = self.port
+        if self.minimum_bucket_replica is not None:
+            rest = RestConnection(cluster.master)
+            status, content = rest.set_minimum_bucket_replica_for_cluster(
+                self.minimum_bucket_replica)
+            self.assertTrue(status, "minimum replica setting failed to update")
 
     def start_fetch_pcaps(self):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")

@@ -1,6 +1,8 @@
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
+from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
+from membase.api.rest_client import RestConnection
 from couchbase_helper.durability_helper import DurabilityHelper
 from sdk_exceptions import SDKException
 
@@ -326,6 +328,155 @@ class BucketParamTest(ClusterSetup):
                 self.bucket_util.verify_stats_all_buckets(self.cluster,
                                                           doc_count)
         return doc_count, start_doc_for_insert
+
+    def test_minimum_replica_update_with_non_admin_user(self):
+        """ trying to set minimum replica setting of cluster from a non
+        admin user"""
+        self.test_user = None
+        user_name = "Random"
+        user_pass = "Random"
+        permissions = 'data_writer[*],data_reader[*],query_insert[*],' \
+                      'data_backup[*],query_select[*]'
+        self.role_list = [{"id": user_name,
+                           "name": user_name,
+                           "roles": "{0}".format(permissions)}]
+        self.test_user = [{'id': user_name, 'name': user_name,
+                           'password': user_pass}]
+        self.bucket_util.add_rbac_user(self.cluster.master,
+                                       testuser=self.test_user,
+                                       rolelist=self.role_list)
+        rest = RestConnection(self.cluster.master)
+        rest.username = self.test_user[0]["name"]
+        rest.password = self.test_user[0]["password"]
+        status = rest.set_minimum_bucket_replica_for_cluster(2)
+        self.assertFalse(status[0], "Expected an exception while "
+                                    "updating the min replica from a non "
+                                    "admin user")
+
+    def test_minimum_replica_setting(self):
+        """
+            Setting minimum bucket replica for cluster
+            Creating bucket with different storage with replica = min_replica
+            replica = min_replica + 1 and min_replica - 1
+
+            Updating replicas of given buckets to  min_replica + 1 and  min_replica - 1
+            while data loading, verifying expected error
+
+           Setting minimum bucket replica for cluster again and verifying
+           replica updates
+        """
+        def update_bucket_replica_and_re_balance(replica, expected_fail=True):
+            bucket_update_fail_count = 0
+            for bucket in self.cluster.buckets:
+                try:
+                    self.bucket_util.update_bucket_property(
+                        self.cluster.master, bucket, replica_number=replica)
+                except Exception as e:
+                    if expected_fail:
+                        bucket_update_fail_count += 1
+                    else:
+                        raise Exception(e)
+                    continue
+            rebalance = self.task.async_rebalance(self.cluster, [], [])
+            self.task.jython_task_manager.get_task_result(rebalance)
+            if expected_fail:
+                self.assertTrue(
+                    len(self.cluster.buckets) == bucket_update_fail_count,
+                    "Bucket replica was not expected to be updated")
+
+        buckets_properties = [
+            {
+                "type": "couchbase",
+                "backend": Bucket.StorageBackend.magma,
+                "name": "magma"
+            },
+
+            {
+                "type": "couchbase",
+                "backend": Bucket.StorageBackend.couchstore,
+                "name": "couchstore"
+            },
+
+            {
+                "type": "ephemeral",
+                "backend": Bucket.StorageBackend.couchstore,
+                "name": "ephemeral"
+            }
+
+        ]
+        self.num_replicas = self.minimum_bucket_replica
+        for bucket in buckets_properties:
+            self.bucket_storage = bucket["backend"]
+            self.bucket_type = bucket["type"]
+            self.create_bucket(self.cluster, bucket["name"])
+
+        doc_create = doc_generator(self.key, 0, self.num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type,
+                                   vbuckets=self.cluster.vbuckets)
+        data_load_task = []
+        for bucket in self.cluster.buckets:
+            task = \
+                self.task.async_load_gen_docs(
+                    self.cluster, bucket, doc_create, "create", 0,
+                    persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout,
+                    batch_size=10, process_concurrency=8)
+            data_load_task.append(task)
+
+        self.log.info("Creating buckets with different replicas")
+        self.num_replicas = self.minimum_bucket_replica + 1
+        for bucket in buckets_properties:
+            self.bucket_storage = bucket["backend"]
+            self.bucket_type = bucket["type"]
+            self.create_bucket(self.cluster, bucket["name"] + "MoreReplica")
+
+        self.num_replicas = self.minimum_bucket_replica - 1
+        bucket_creation_fail_count = 0
+        for bucket in buckets_properties:
+            try:
+                self.bucket_storage = bucket["backend"]
+                self.bucket_type = bucket["type"]
+                self.create_bucket(self.cluster, bucket["name"] + "LessReplica")
+            except Exception as e:
+                bucket_creation_fail_count += 1
+                continue
+        self.assertTrue(len(buckets_properties) == bucket_creation_fail_count,
+                        "Bucket not expected to be created")
+
+        self.log.info("Updating bucket replica")
+        update_bucket_replica_and_re_balance(self.minimum_bucket_replica - 1)
+        update_bucket_replica_and_re_balance(self.minimum_bucket_replica + 1, False)
+
+        for task in data_load_task:
+            self.task.jython_task_manager.get_task_result(task)
+
+        self.log.info("Setting new minimum replica value for cluster")
+        new_minimum_replica = self.input.param("new_minimum_replica", 2)
+        rest = RestConnection(self.cluster.master)
+        status, content = rest.set_minimum_bucket_replica_for_cluster(
+            new_minimum_replica)
+        self.assertTrue(status, "minimum replica setting failed to update")
+        data_load_task = []
+
+        self.log.info("Data-load in old buckets post replica update")
+        for bucket in self.cluster.buckets:
+            task = \
+                self.task.async_load_gen_docs(
+                    self.cluster, bucket, doc_create, "update", 0,
+                    persist_to=self.persist_to, replicate_to=self.replicate_to,
+                    durability=self.durability_level,
+                    timeout_secs=self.sdk_timeout,
+                    batch_size=10, process_concurrency=8)
+            data_load_task.append(task)
+        for task in data_load_task:
+            self.task.jython_task_manager.get_task_result(task)
+
+        self.log.info("Updating bucket replica")
+        update_bucket_replica_and_re_balance(new_minimum_replica - 1)
+        update_bucket_replica_and_re_balance(new_minimum_replica, False)
 
     def test_replica_update(self):
         if self.atomicity:
