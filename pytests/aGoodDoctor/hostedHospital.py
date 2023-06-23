@@ -26,6 +26,8 @@ from Cb_constants.CBServer import CbServer
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from com.couchbase.test.sdk import Server
 from constants.cloud_constants import capella_constants
+from TestInput import TestInputServer
+from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 
 
 class Murphy(BaseTestCase, OPD):
@@ -366,6 +368,25 @@ class Murphy(BaseTestCase, OPD):
 
         query_monitor = threading.Thread(target=check_query_stats)
         query_monitor.start()
+
+    def refresh_cluster(self):
+        self.servers = DedicatedUtils.get_nodes(
+            self.cluster.pod, self.cluster.tenant, self.cluster.id)
+        nodes = list()
+        for server in self.servers:
+            temp_server = TestInputServer()
+            temp_server.ip = server.get("hostname")
+            temp_server.hostname = server.get("hostname")
+            temp_server.services = server.get("services")
+            temp_server.port = "18091"
+            temp_server.rest_username = self.cluster.username
+            temp_server.rest_password = self.cluster.password
+            temp_server.hosted_on_cloud = True
+            temp_server.memcached_port = "11207"
+            temp_server.type = "dedicated"
+            nodes.append(temp_server)
+
+        self.cluster.refresh_object(nodes)
 
     def test_rebalance(self):
         self.monitor_query_status()

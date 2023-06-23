@@ -516,10 +516,9 @@ class OPD:
         print "\n"
 
     def print_cluster_cpu_ram(self, cluster, step=300):
-        if cluster.type in ["serverless"]:
-            return
         while not self.stop_run:
             try:
+                self.refresh_cluster()
                 table = TableView(self.log.info)
                 table.set_headers(["Nodes", "Services", "CPU",
                                    "Mem_total", "Mem_free", "Mem_Used%",
