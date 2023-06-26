@@ -381,7 +381,6 @@ class CapellaUtils(object):
             print(resp.content)
             time.sleep(5)
             return CapellaUtils.get_nodes(pod, tenant, cluster_id)
-        CapellaUtils.log.info(json.loads(resp.content))
         return [server.get("data")
                 for server in json.loads(resp.content).get("data")]
 
