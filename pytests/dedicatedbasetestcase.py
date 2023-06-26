@@ -310,7 +310,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         provider = self.input.param("provider", AWS.__str__).lower()
         if provider == "aws":
             self.provider = "aws"
-            self.package = "developerPro"
+            self.package = "Developer Pro"
         elif provider == "gcp":
             self.provider = "hostedGCP"
             self.package = "Enterprise"
