@@ -43,8 +43,19 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
         self.xdcr_remote_clusters = self.input.param("xdcr_remote_clusters", 0)
-
-        provider = self.input.param("provider", "aws").lower()
+        self.diskAutoScaling = self.input.param("diskAutoScaling", True)
+        self.services_map = {"data": "kv",
+                             "kv": "kv",
+                             "index": "index",
+                             "2i": "index",
+                             "query": "n1ql",
+                             "n1ql": "n1ql",
+                             "analytics": "cbas",
+                             "cbas": "cbas",
+                             "search": "fts",
+                             "fts": "fts",
+                             "eventing": "eventing"}
+        provider = self.input.param("provider", AWS.__str__).lower()
         self.compute = {
             "data": self.input.param("kv_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
             "query": self.input.param("n1ql_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
@@ -115,7 +126,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.xdcr_cluster_name_format = "XDCR%s"
         default_cluster_index = cluster_index = 1
 
-        if self.input.capella.get("image") or self.input.capella.get("server_version"):
+        if self.input.capella.get("image"):
             self.generate_cluster_config_internal()
         else:
             self.generate_cluster_config()
@@ -142,7 +153,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                             self.tenant.user.split("@")[0].replace(".", "").replace("+", ""),
                             self.input.param("provider", "aws"),
                             cluster_name)
-                    self.log.info(self.capella_cluster_config)
                     deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
                                               self.capella_cluster_config,
                                               timeout=self.wait_timeout)
@@ -297,14 +307,20 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             cluster.buckets.append(bucket_obj)
 
     def generate_cluster_config(self):
+        provider = self.input.param("provider", AWS.__str__).lower()
+        if provider == "aws":
+            self.provider = "aws"
+            self.package = "developerPro"
+        elif provider == "gcp":
+            self.provider = "hostedGCP"
+            self.package = "Enterprise"
         self.capella_cluster_config = CapellaUtils.get_cluster_config(
-            environment="hosted",
             description="Amazing Cloud",
             single_az=False,
-            provider=self.input.param("provider", AWS.__str__).lower(),
+            provider=self.provider,
             region=self.input.param("region", AWS.Region.US_WEST_2),
             timezone=Cluster.Timezone.PT,
-            plan=Cluster.Plan.DEV_PRO,
+            plan=self.package,
             version=self.input.capella.get("server_version", None),
             cluster_name="taf_cluster")
 
@@ -313,29 +329,20 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             service_group = service_group.split(":")
             service = service_group[0]
             service_config = CapellaUtils.get_cluster_config_spec(
-                services=service_group,
+                provider=self.provider,
+                services=[self.services_map[_service.lower()] for _service in service_group],
                 count=self.num_nodes[service],
                 compute=self.compute[service],
-                storage_type=self.input.param("type", AWS.StorageType.GP3),
+                storage_type=self.input.param("type", AWS.StorageType.GP3).lower(),
                 storage_size_gb=self.disk[service],
-                storage_iops=self.iops[service])
-            if self.capella_cluster_config["place"]["hosted"]["provider"] \
+                storage_iops=self.iops[service],
+                diskAutoScaling=self.diskAutoScaling)
+            if self.capella_cluster_config["provider"] \
                     != AWS.__str__:
-                service_config["storage"].pop("iops")
-            self.capella_cluster_config["servers"].append(service_config)
+                service_config["disk"].pop("iops")
+            self.capella_cluster_config["specs"].append(service_config)
 
     def create_specs(self):
-        services_map = {"data": "kv",
-                        "kv": "kv",
-                        "index": "index",
-                        "2i": "index",
-                        "query": "n1ql",
-                        "n1ql": "n1ql",
-                        "analytics": "cbas",
-                        "cbas": "cbas",
-                        "search": "fts",
-                        "fts": "fts",
-                        "eventing": "eventing"}
         provider = self.input.param("provider", "aws").lower()
 
         _type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
@@ -353,7 +360,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     "cpu": 0,
                     "memoryInGb": 0
                 },
-                "services": [{"type": services_map[_service.lower()]} for _service in services],
+                "services": [{"type": self.services_map[_service.lower()]} for _service in services],
                 "disk": {
                     "type": storage_type,
                     "sizeInGb": self.disk[service]
@@ -387,7 +394,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "package": package,
             "projectId": None,
             "description": "",
-            # "server": self.input.capella["server_version"]
         }
 
         if self.input.capella.get("image"):

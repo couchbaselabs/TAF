@@ -12,8 +12,7 @@ class CapellaUtils(object):
     log = logger.get("infra")
 
     @staticmethod
-    def get_cluster_config(environment="hosted",
-                           provider=AWS.__str__,
+    def get_cluster_config(provider=AWS.__str__,
                            region=AWS.Region.US_WEST_2,
                            single_az=False,
                            plan=Cluster.Plan.DEV_PRO,
@@ -21,38 +20,38 @@ class CapellaUtils(object):
                            cluster_name="taf_cluster",
                            version=None,
                            description=""):
-        config = {"environment": environment,
-                  "clusterName": cluster_name,
-                  "projectId": "",
+        config = {"cidr": None,
                   "description": description,
-                  "place": {"singleAZ": single_az,
-                            "hosted": {"provider": provider,
-                                       "region": region,
-                                       "CIDR": None
-                                       }
-                            },
-                  "servers": list(),
-                  "supportPackage": {"timezone": timezone,
-                                     "type": plan},
+                  "name": cluster_name,
+                  "plan": plan,
+                  "projectId": "",
+                  "provider": provider,
+                  "region": region,
+                  "singleAZ": single_az,
+                  "specs": list(),
+                  "timezone": timezone
                   }
         if version:
             config.update({"server": version})
         return config
 
     @staticmethod
-    def get_cluster_config_spec(services, count,
+    def get_cluster_config_spec(provider, services, count,
                                 compute=AWS.ComputeNode.VCPU4_RAM16,
                                 storage_type=AWS.StorageType.GP3,
                                 storage_size_gb=AWS.StorageSize.MIN,
-                                storage_iops=AWS.StorageIOPS.MIN):
+                                storage_iops=AWS.StorageIOPS.MIN,
+                                diskAutoScaling=False):
         return {
+            "provider": provider,
             "services": services,
-            "size": count,
+            "count": count,
             "compute": compute,
-            "storage": {"type": storage_type,
-                        "size": storage_size_gb,
-                        "iops": storage_iops,
-                        }
+            "disk": {"type": storage_type,
+                     "sizeInGb": storage_size_gb,
+                     "iops": storage_iops
+                     },
+            "diskAutoScaling": {"enabled": diskAutoScaling}
         }
 
     @staticmethod
@@ -101,26 +100,19 @@ class CapellaUtils(object):
                                      tenant.api_access_key,
                                      tenant.user,
                                      tenant.pwd)
-            if cluster_details.get("overRide") or cluster_details.get("server"):
-                cluster_details.update({"cidr": subnet})
-                cluster_details.update({"projectId": tenant.project_id})
+            cluster_details.update({"cidr": subnet})
+            cluster_details.update({"projectId": tenant.project_id})
+            CapellaUtils.log.info(cluster_details)
+            if cluster_details.get("overRide"):
                 capella_api_resp = capella_api.create_cluster_customAMI(tenant.id, cluster_details)
-                if capella_api_resp.status_code == 202:
-                    cluster_id = json.loads(capella_api_resp.content).get("id")
-                    break
-                elif capella_api_resp.status_code == 500:
-                    CapellaUtils.log.critical(str(capella_api_resp.content))
-                    raise Exception(str(capella_api_resp.content))
             else:
-                cluster_details["place"]["hosted"].update({"CIDR": subnet})
-                cluster_details.update({"projectId": tenant.project_id})
-                capella_api_resp = capella_api.create_cluster(cluster_details)
-                if capella_api_resp.status_code == 202:
-                    cluster_id = capella_api_resp.headers['Location'].split("/")[-1]
-                    break
-                elif capella_api_resp.status_code == 500:
-                    CapellaUtils.log.critical(str(capella_api_resp.content))
-                    raise Exception(str(capella_api_resp.content))
+                capella_api_resp = capella_api.create_cluster_CPUI(tenant.id, cluster_details)
+            if capella_api_resp.status_code == 202:
+                cluster_id = json.loads(capella_api_resp.content).get("id")
+                break
+            elif capella_api_resp.status_code == 500:
+                CapellaUtils.log.critical(str(capella_api_resp.content))
+                raise Exception(str(capella_api_resp.content))
 
             CapellaUtils.log.critical("Create capella_utils cluster failed.")
             CapellaUtils.log.critical("Capella API returned " + str(

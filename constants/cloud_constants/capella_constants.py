@@ -1,6 +1,7 @@
 class Cluster(object):
     class Plan(object):
         DEV_PRO = "DeveloperPro"
+        ENTERPRISE = "Enterprise"
 
     class Timezone(object):
         PT = "PT"
