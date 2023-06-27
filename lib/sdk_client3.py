@@ -43,6 +43,7 @@ from com.couchbase.client.java.env import ClusterEnvironment
 from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.java.manager.collection import CollectionSpec
 from com.couchbase.client.java.kv import GetAllReplicasOptions
+from com.couchbase.client.java.query import QueryOptions
 from java.time import Duration
 from java.nio.charset import StandardCharsets
 from java.lang import RuntimeException
@@ -1496,3 +1497,12 @@ class SDKClient(object):
         for index, data in enumerate(documents):
             self.collection.insert(key_prefix+str(index),
                                    JsonObject.fromJson(data))
+
+    def run_query(self, query, timeout=None,
+                  timeunit=SDKConstants.TimeUnit.SECONDS):
+        if timeout is not None:
+            options = QueryOptions.queryOptions()
+            options = options.timeout(SDKOptions.get_duration(timeout,
+                                                              timeunit))
+            return self.cluster.query(query, options)
+        return self.cluster.query(query)
