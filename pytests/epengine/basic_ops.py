@@ -1,4 +1,5 @@
 import json
+import urllib
 from random import choice, randint
 from threading import Thread
 from time import time
@@ -1707,7 +1708,8 @@ class basic_ops(ClusterSetup):
 
         self.log.info("Starting XDCR replication")
         xdcr_cluster = CBCluster("C2", servers=[in_node])
-        RestConnection(in_node).init_node()
+        xdcr_rest = RestConnection(xdcr_cluster.master)
+        xdcr_rest.init_node()
         self.create_bucket(xdcr_cluster)
         rest = RestConnection(self.cluster.master)
         rest.add_remote_cluster(xdcr_cluster.master.ip,
@@ -1723,6 +1725,18 @@ class basic_ops(ClusterSetup):
             self.log.info("Waiting for all items to get replicated")
             self.bucket_util.verify_stats_all_buckets(xdcr_cluster,
                                                       num_items, timeout=180)
+            # MB-55446 validation
+            remote_uuid = xdcr_rest.get_pools_default()["controllers"][
+                "replication"]["createURI"].split("=")[-1]
+            q_str = urllib.quote_plus(
+                "/{}/{}/{}/meta_latency_wt"
+                .format(remote_uuid, self.cluster.buckets[0].name,
+                        xdcr_cluster.buckets[0].name))
+            api = "{}/pools/default/buckets/{}/stats/replications{}" \
+                .format(rest.baseUrl, self.cluster.buckets[0], q_str)
+            status, content, _ = rest._http_request(
+                api, 'GET', headers=rest._create_headers())
+            self.log.info("{}::{}".format(status, content))
         finally:
             self.log.info("Removing xdcr bucket and remote references")
             self.bucket_util.delete_all_buckets(xdcr_cluster)
