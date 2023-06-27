@@ -17,7 +17,7 @@ from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutExcep
 from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException, InternalServerFailureException,\
     AmbiguousTimeoutException, PlanningFailureException,\
-    UnambiguousTimeoutException, IndexNotFoundException
+    UnambiguousTimeoutException, IndexNotFoundException, IndexExistsException
 from string import ascii_uppercase, ascii_lowercase
 from encodings.punycode import digits
 from gsiLib.gsiHelper import GsiHelper
@@ -266,6 +266,8 @@ class DoctorN1QL():
                                         print "Returning from here as we get IndexNotFoundException"
                                         print(e)
                                         return False
+                                    except IndexExistsException:
+                                        break
                             i += 1
                         if q < workload.get("2i")[1]:
                             query = queryType[q % len(queryType)].format(c)

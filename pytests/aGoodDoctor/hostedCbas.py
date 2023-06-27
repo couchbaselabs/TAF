@@ -14,7 +14,8 @@ from com.couchbase.client.java.analytics import AnalyticsOptions,\
     AnalyticsScanConsistency, AnalyticsStatus
 from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException, AmbiguousTimeoutException, PlanningFailureException,\
-    UnambiguousTimeoutException, TimeoutException
+    UnambiguousTimeoutException, TimeoutException, DatasetExistsException,\
+    IndexExistsException
 import traceback
 from global_vars import logger
 from Cb_constants.CBServer import CbServer
@@ -151,7 +152,10 @@ class DoctorCBAS():
                         dataset = "{}_{}_ds{}".format(b.name, c, str(i))
                         if d < workload.get("cbas")[0]:
                             dataset_q = datasets[i % len(datasets)].format(dataset, b.name, s, c)
-                            execute_statement_on_cbas(b.clients[0].cluster, dataset_q)
+                            try:
+                                execute_statement_on_cbas(b.clients[0].cluster, dataset_q)
+                            except DatasetExistsException:
+                                pass
                             d += 1
                         if i < workload.get("cbas")[1]:
                             idx_q = indexType[i % len(indexType)].format("idx_" + dataset, dataset)
@@ -174,7 +178,10 @@ class DoctorCBAS():
     def create_indexes(self, buckets):
         for bucket in buckets:
             for index in bucket.datasets.values():
-                execute_statement_on_cbas(bucket.clients[0].cluster, index)
+                try:
+                    execute_statement_on_cbas(bucket.clients[0].cluster, index)
+                except IndexExistsException:
+                    pass
 
     def wait_for_ingestion(self, buckets, timeout=86400):
         status = False

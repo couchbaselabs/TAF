@@ -191,10 +191,7 @@ class Murphy(BaseTestCase, OPD):
                     "iops": self.input.param("iops", 3000)
                 }
             }
-            if self.capella_cluster_config.get("place"):
-                    if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                        config["storage"].pop("iops")
-            elif self.capella_cluster_config["provider"] != "hostedAWS":
+            if self.capella_cluster_config["provider"].lower() in ["hostedgcp", "gcp"]:
                 config["storage"].pop("iops")
             server_group_list.append(config)
         return server_group_list
@@ -616,10 +613,7 @@ class Murphy(BaseTestCase, OPD):
                                 "iops": self.iops[service]
                             }
                         }
-                        if self.capella_cluster_config.get("place"):
-                            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                                config["storage"].pop("iops")
-                        elif self.capella_cluster_config["provider"] != "hostedAWS":
+                        if self.capella_cluster_config["provider"].lower() in ["hostedgcp", "gcp"]:
                             config["storage"].pop("iops")
                         server_group_list.append(config)
                     self.log.info(server_group_list)
@@ -659,10 +653,7 @@ class Murphy(BaseTestCase, OPD):
                                 "iops": self.iops[service]
                             }
                         }
-                        if self.capella_cluster_config.get("place"):
-                            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                                config["storage"].pop("iops")
-                        elif self.capella_cluster_config["provider"] != "hostedAWS":
+                        if self.capella_cluster_config["provider"].lower() in ["hostedgcp", "gcp"]:
                             config["storage"].pop("iops")
                         server_group_list.append(config)
                     self.log.info(server_group_list)
@@ -707,10 +698,7 @@ class Murphy(BaseTestCase, OPD):
                                 "iops": self.iops[service]
                             }
                         }
-                        if self.capella_cluster_config.get("place"):
-                            if self.capella_cluster_config["place"]["hosted"]["provider"] != "aws":
-                                config["storage"].pop("iops")
-                        elif self.capella_cluster_config["provider"] != "hostedAWS":
+                        if self.capella_cluster_config["provider"].lower() in ["hostedgcp", "gcp"]:
                             config["storage"].pop("iops")
                         server_group_list.append(config)
                     if self.backup_nodes > 0:
