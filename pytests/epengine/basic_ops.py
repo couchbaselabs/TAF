@@ -16,6 +16,7 @@ from cluster_utils.cluster_ready_functions import CBCluster
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
+from gsiLib.gsiHelper import GsiHelper
 
 from mc_bin_client import MemcachedClient, MemcachedError
 from membase.api.rest_client import RestConnection
@@ -2256,6 +2257,100 @@ class basic_ops(ClusterSetup):
 
         self.assertFalse(self.crud_failure, "Crud failure observed")
 
+    def test_oso_backfill_not_sending_duplicate_items(self):
+        """
+        1. Create few collections and load initial data
+        2. Load further data and create indexing on one particular collection
+        3. Make sure the mutations are received only once by index-dcp
+
+        Ref: MB-57106
+        """
+
+        def set_and_validate_dcp_oso_backfill(t_node, backfill_val):
+            shell = RemoteMachineShellConnection(t_node)
+            cbstats = Cbstats(shell)
+            if backfill_val in ["enabled", "disabled"]:
+                cbepctl = Cbepctl(shell)
+                cbepctl.set(bucket.name, "dcp_param", "dcp_oso_backfill",
+                            backfill_val)
+            val = cbstats.all_stats(bucket.name)["ep_dcp_oso_backfill"]
+            self.log.info("Validate dcp_oso_backfill={}".format(backfill_val))
+            self.assertEqual(
+                val, backfill_val,
+                "ep_dcp_oso_backfill {} != {}".format(val, backfill_val))
+            shell.disconnect()
+
+        oso_backfill_enabled = self.input.param("oso_backfill_enabled", None)
+        bucket = self.cluster.buckets[0]
+        rest = RestConnection(self.cluster.master)
+        self.log.info("Setting index mem. quota=256M")
+        rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA: 256})
+        self.log.info("Setting indexerThreads=1 for creating DCP pause/resume")
+        rest.set_indexer_params("indexerThreads", 1)
+        c_index = 1
+        num_items = self.num_items
+        c_dict = { CbServer.default_collection: self.num_items * 2 }
+        while num_items != 0:
+            c_name = "c{}".format(c_index)
+            self.log.info("Creating collections %s" % c_name)
+            c_dict[c_name] = num_items
+            num_items = int(num_items / 2)
+            self.bucket_util.create_collection(self.cluster.master, bucket,
+                                               collection_spec={"name": c_name})
+            if num_items == c_dict[c_name]:
+                break
+            c_index += 1
+
+        tasks = list()
+        for c_name, num_items in c_dict.items():
+            self.log.info("Loading {} items into {} collection"
+                          .format(num_items, c_name))
+            doc_gen = doc_generator("random_keys", 0, num_items,
+                                    key_size=15, doc_size=1024,
+                                    randomize_doc_size=True,
+                                    randomize_value=True, deep_copy=True)
+            tasks.append(self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE,
+                collection=c_name, batch_size=1000, process_concurrency=1,
+                sdk_client_pool=self.sdk_client_pool, print_ops_rate=False))
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+
+        # Wait for docs to persisted
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets)
+
+        for kv_node in self.cluster_util.get_kv_nodes(self.cluster):
+            self.log.info("Enabling dcp::oso_backfill on {}"
+                          .format(kv_node.ip))
+            if oso_backfill_enabled is True:
+                set_and_validate_dcp_oso_backfill(kv_node, "enabled")
+            elif oso_backfill_enabled is False:
+                set_and_validate_dcp_oso_backfill(kv_node, "enabled")
+            else:
+                set_and_validate_dcp_oso_backfill(kv_node, "auto")
+
+        self.log.info("Creating GSI index on collection 'c1'")
+        client = SDKClient([self.cluster.master], bucket)
+        _ = client.run_query(
+            "CREATE INDEX `c1` ON `{}`.`_default`.`c1`(body) USING GSI"
+            .format(bucket.name), timeout=300)
+        query = "SELECT state FROM system:indexes WHERE name='c1'"
+        state = client.cluster.query(query).rowsAsObject()[0].get("state")
+        client.close()
+        if state != "online":
+            self.fail("Create index timed out")
+        self.log.info("Index created")
+        self.sleep(15, "Wait before fetching index stats")
+        gsi_rest = GsiHelper(self.cluster.servers[2], self.log)
+        stats = gsi_rest.get_index_stats()
+        dict_key = "{}:{}:c1:c1".format(bucket.name, CbServer.default_scope)
+        for field in ["num_docs_indexed", "items_count", "num_items_flushed",
+                      "num_flush_queued"]:
+            t_val = stats["{}:{}".format(dict_key, field)]
+            self.assertEqual(t_val, c_dict["c1"],
+                             "Mismatch in index stat {} :: {} != {}"
+                             .format(field, t_val, self.num_items))
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
