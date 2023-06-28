@@ -1,9 +1,11 @@
 import json
 import urllib
+import copy
 
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import DocLoading, CbServer
 from basetestcase import ClusterSetup
+from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from custom_exceptions.exception import BucketCreationException
 from BucketLib.bucket import Bucket
@@ -81,6 +83,56 @@ class CreateBucketTests(ClusterSetup):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
+
+    def test_recreate_bucket(self):
+        bucket_helper = BucketHelper(self.cluster.master)
+        minimum_replica = self.input.param("minimum_replica", 3)
+        rest = RestConnection(self.cluster.master)
+        self.num_replicas = 0
+        self.create_bucket(self.cluster, bucket_name="0_replica")
+        self.num_replicas = 1
+        self.create_bucket(self.cluster, bucket_name="1_replica")
+        self.num_replicas = 2
+        self.create_bucket(self.cluster, bucket_name="2_replica")
+        self.num_replicas = 3
+        self.create_bucket(self.cluster, bucket_name="3_replica")
+        loading_tasks = []
+        doc_create = doc_generator(self.key, 0, self.num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type)
+        for bucket in self.cluster.buckets:
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_create, "create", 0,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                timeout_secs=self.sdk_timeout,
+                batch_size=10, process_concurrency=8)
+            loading_tasks.append(task)
+        for task in loading_tasks:
+            self.task.jython_task_manager.get_task_result(task)
+
+        status, content = rest.\
+            set_minimum_bucket_replica_for_cluster(minimum_replica)
+        self.assertTrue(status, "minimum replica setting not updated")
+
+        buckets = copy.copy(self.cluster.buckets)
+        for bucket in buckets:
+            bucket_recreate_fail = False
+            bucket_helper.delete_bucket(bucket)
+            try:
+                self.num_replicas = bucket.replicaNumber
+                self.create_bucket(self.cluster, bucket_name=bucket.name)
+            except Exception as ex:
+                bucket_recreate_fail = True
+            finally:
+                if self.num_replicas < minimum_replica:
+                    self.assertTrue(bucket_recreate_fail,
+                                    "bucket creation expected to fail")
+                else:
+                    self.assertFalse(bucket_recreate_fail,
+                                     "bucket creation was not expected to "
+                                     "fail")
+                    continue
 
     def test_invalid_bucket_name(self):
         """

@@ -101,6 +101,15 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
 
+    def get_minimum_bucket_replica_for_cluster(self):
+        api = self.baseUrl + 'settings/dataService'
+        status, content, header = self._http_request(api, 'GET')
+        if status:
+            json_parsed = json.loads(content)
+            return json_parsed["minReplicasCount"]
+        else:
+            return None
+
     def is_cluster_compat_mode_greater_than(self, version):
         """
         curl -v -X POST -u Administrator:welcome http://10.3.4.186:8091/diag/eval

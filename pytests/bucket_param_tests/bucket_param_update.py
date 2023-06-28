@@ -365,12 +365,31 @@ class BucketParamTest(ClusterSetup):
            Setting minimum bucket replica for cluster again and verifying
            replica updates
         """
-        def update_bucket_replica_and_re_balance(replica, expected_fail=True):
+        def update_bucket_properties_and_re_balance(replica=None,
+                                                 expected_fail=True,
+                                                 history_retention_bytes=None,
+                                                 history_retention_seconds=None,
+                                                 ram_quota_mb=None,
+                                                 compression_mode=Bucket.CompressionMode.ACTIVE,
+                                                 max_ttl=50,
+                                                 bucket_durability='none'):
             bucket_update_fail_count = 0
             for bucket in self.cluster.buckets:
+                bucket_history_retention_bytes = None
+                bucket_history_retention_seconds = None
+                if bucket.replicaNumber == 3:
+                    bucket_durability = 'none'
+                if bucket.name == "magma":
+                    bucket_history_retention_bytes = history_retention_bytes
+                    bucket_history_retention_seconds = history_retention_seconds
                 try:
                     self.bucket_util.update_bucket_property(
-                        self.cluster.master, bucket, replica_number=replica)
+                        self.cluster.master, bucket, replica_number=replica,
+                        history_retention_bytes=bucket_history_retention_bytes,
+                        history_retention_seconds=bucket_history_retention_seconds,
+                        ram_quota_mb=ram_quota_mb, max_ttl=max_ttl,
+                        bucket_durability=bucket_durability,
+                        compression_mode=compression_mode)
                 except Exception as e:
                     if expected_fail:
                         bucket_update_fail_count += 1
@@ -388,24 +407,33 @@ class BucketParamTest(ClusterSetup):
             {
                 "type": "couchbase",
                 "backend": Bucket.StorageBackend.magma,
+                "replica": 3,
                 "name": "magma"
             },
-
+            {
+                "type": "couchbase",
+                "backend": Bucket.StorageBackend.magma,
+                "replica": 1,
+                "name": "magma1"
+            },
             {
                 "type": "couchbase",
                 "backend": Bucket.StorageBackend.couchstore,
+                "replica": 1,
                 "name": "couchstore"
             },
-
             {
                 "type": "ephemeral",
+                "replica": 0,
                 "backend": Bucket.StorageBackend.couchstore,
                 "name": "ephemeral"
             }
-
         ]
-        self.num_replicas = self.minimum_bucket_replica
         for bucket in buckets_properties:
+            if self.minimum_bucket_replica is not None:
+                self.num_replicas = self.minimum_bucket_replica
+            else:
+                self.num_replicas = self.num_replicas = bucket["replica"]
             self.bucket_storage = bucket["backend"]
             self.bucket_type = bucket["type"]
             self.create_bucket(self.cluster, bucket["name"])
@@ -426,41 +454,53 @@ class BucketParamTest(ClusterSetup):
                     batch_size=10, process_concurrency=8)
             data_load_task.append(task)
 
-        self.log.info("Creating buckets with different replicas")
-        self.num_replicas = self.minimum_bucket_replica + 1
-        for bucket in buckets_properties:
-            self.bucket_storage = bucket["backend"]
-            self.bucket_type = bucket["type"]
-            self.create_bucket(self.cluster, bucket["name"] + "MoreReplica")
-
-        self.num_replicas = self.minimum_bucket_replica - 1
-        bucket_creation_fail_count = 0
-        for bucket in buckets_properties:
-            try:
+        if self.minimum_bucket_replica is not None:
+            self.log.info("Creating buckets with different replicas")
+            self.num_replicas = self.minimum_bucket_replica + 1
+            for bucket in buckets_properties:
                 self.bucket_storage = bucket["backend"]
                 self.bucket_type = bucket["type"]
-                self.create_bucket(self.cluster, bucket["name"] + "LessReplica")
-            except Exception as e:
-                bucket_creation_fail_count += 1
-                continue
-        self.assertTrue(len(buckets_properties) == bucket_creation_fail_count,
-                        "Bucket not expected to be created")
+                self.create_bucket(self.cluster,
+                                   bucket["name"] + "MoreReplica")
 
-        self.log.info("Updating bucket replica")
-        update_bucket_replica_and_re_balance(self.minimum_bucket_replica - 1)
-        update_bucket_replica_and_re_balance(self.minimum_bucket_replica + 1, False)
+            self.num_replicas = self.minimum_bucket_replica - 1
+            bucket_creation_fail_count = 0
+            for bucket in buckets_properties:
+                try:
+                    self.bucket_storage = bucket["backend"]
+                    self.bucket_type = bucket["type"]
+                    self.create_bucket(self.cluster,
+                                       bucket["name"] + "LessReplica")
+                except Exception as e:
+                    bucket_creation_fail_count += 1
+                    continue
+            self.assertTrue(
+                len(buckets_properties) == bucket_creation_fail_count,
+                "Bucket not expected to be created")
+            self.log.info("Updating bucket replica")
+            update_bucket_properties_and_re_balance(
+                self.minimum_bucket_replica - 1)
+            update_bucket_properties_and_re_balance(
+                self.minimum_bucket_replica + 1, False)
 
         for task in data_load_task:
             self.task.jython_task_manager.get_task_result(task)
 
         self.log.info("Setting new minimum replica value for cluster")
+        expect_min_replica_update_fail = self.input.param(
+            "expect_min_replica_update_fail", False)
         new_minimum_replica = self.input.param("new_minimum_replica", 2)
         rest = RestConnection(self.cluster.master)
         status, content = rest.set_minimum_bucket_replica_for_cluster(
             new_minimum_replica)
-        self.assertTrue(status, "minimum replica setting failed to update")
+        if expect_min_replica_update_fail:\
+            self.assertFalse(status, "expected minimum replica setting "
+                                     "update to fail")
+        else:
+            result = rest.get_minimum_bucket_replica_for_cluster()
+            self.assertTrue(result == new_minimum_replica,
+                            "minimum replica setting failed to update")
         data_load_task = []
-
         self.log.info("Data-load in old buckets post replica update")
         for bucket in self.cluster.buckets:
             task = \
@@ -475,8 +515,24 @@ class BucketParamTest(ClusterSetup):
             self.task.jython_task_manager.get_task_result(task)
 
         self.log.info("Updating bucket replica")
-        update_bucket_replica_and_re_balance(new_minimum_replica - 1)
-        update_bucket_replica_and_re_balance(new_minimum_replica, False)
+        update_bucket_properties_and_re_balance(ram_quota_mb=300,
+                                                history_retention_bytes=2147483659,
+                                                history_retention_seconds=2147483659,
+                                                compression_mode=Bucket.CompressionMode.PASSIVE,
+                                                max_ttl=100,
+                                                bucket_durability='majority',
+                                                expected_fail=False)
+        if not expect_min_replica_update_fail:
+            update_bucket_properties_and_re_balance(replica=new_minimum_replica - 1)
+            update_bucket_properties_and_re_balance(
+                replica=new_minimum_replica,
+                expected_fail=False,
+                ram_quota_mb=256,
+                history_retention_bytes=2147483680,
+                history_retention_seconds=2147483680,
+                compression_mode=Bucket.CompressionMode.ACTIVE,
+                max_ttl=50,
+                bucket_durability='none')
 
     def test_replica_update(self):
         if self.atomicity:
