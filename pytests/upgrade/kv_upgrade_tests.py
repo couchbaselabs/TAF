@@ -38,27 +38,27 @@ class KVUpgradeTests(UpgradeBase):
                         msg="Not enough nodes to failover and upgrade")
 
         self.assertTrue(self.nodes_upgrade <= len(self.cluster.nodes_in_cluster),
-                       msg="The number of nodes specified for upgrade are more than number of nodes in cluster")
+                        msg="The number of nodes specified for upgrade are more than number of nodes in cluster")
 
         #Loading Travel Sample Bucket
-        travelSampleBucket=TravelSample()
+        travelSampleBucket = TravelSample()
         if float(self.initial_version[:3]) < 7.0:
             travelSampleBucket.stats.expected_item_count = 31591
         load_success=self.bucket_util.load_sample_bucket(self.cluster, travelSampleBucket)
         self.assertTrue(load_success,
-                        msg = "Travel Sample Bucket could not be loaded")
+                        msg="Travel Sample Bucket could not be loaded")
         self.log.info("Travel Sample Bucket Loaded")
 
         #Loading Beer Sample Bucket
         load_success=self.bucket_util.load_sample_bucket(self.cluster, BeerSample())
         self.assertTrue(load_success,
-                        msg = "Beer Sample Bucket could not be loaded")
+                        msg="Beer Sample Bucket could not be loaded")
         self.log.info("Beer Sample Bucket Loaded")
 
         #Loading Gamesim Sample Bucket
         load_success=self.bucket_util.load_sample_bucket(self.cluster, GamesimSample())
         self.assertTrue(load_success,
-                        msg = "Gamesim Sample Bucket could not be loaded")
+                        msg="Gamesim Sample Bucket could not be loaded")
         self.log.info("Gamesim Sample Bucket Loaded")
 
         self.cluster_util.print_cluster_stats(self.cluster)
@@ -69,7 +69,8 @@ class KVUpgradeTests(UpgradeBase):
         for node_to_upgrade in node_to_upgrades:
             self.failover_recovery(node_to_upgrade=node_to_upgrade,
                                    recovery_type=self.recovery_type,
-                                   graceful=self.graceful)
+                                   graceful=self.graceful,
+                                   collection_ops=False)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
 
