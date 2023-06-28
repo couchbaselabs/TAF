@@ -120,7 +120,7 @@ class CBCluster:
                 self.eventing_nodes.append(server)
             if "Analytics" in server.services or "cbas" in server.services:
                 self.cbas_nodes.append(server)
-            if "FTS" in server.services or "fts" in server.services:
+            if "Search" in server.services or "fts" in server.services:
                 self.fts_nodes.append(server)
             self.nodes_in_cluster.append(server)
         self.master = self.kv_nodes[0]

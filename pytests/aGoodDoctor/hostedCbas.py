@@ -128,7 +128,7 @@ class DoctorCBAS():
 
     def create_datasets(self, buckets):
         for b in buckets:
-            b.queries = list()
+            b.cbas_queries = list()
             b.datasets = dict()
             b.query_map = dict()
             i = 0
@@ -169,7 +169,7 @@ class DoctorCBAS():
                             print query
                             b.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
                             query_count += 1
-                            b.queries.append((queryType[i % len(queryType)].format(dataset), queryType[q % len(queryType)]))
+                            b.cbas_queries.append((queryType[i % len(queryType)].format(dataset), queryType[q % len(queryType)]))
                             q += 1
 
     def discharge_CBAS(self):
@@ -251,7 +251,7 @@ class DoctorCBAS():
 class CBASQueryLoad:
     def __init__(self, bucket):
         self.bucket = bucket
-        self.queries = bucket.queries
+        self.queries = bucket.cbas_queries
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
         self.rejected_count = itertools.count()
@@ -338,7 +338,6 @@ class CBASQueryLoad:
                 self.cancel_count.next()
             elif str(e).find("CouchbaseException") != -1:
                 self.rejected_count.next()
-
             if str(e).find("no more information available") != -1:
                 self.log.critical(query)
                 self.log.critical(e)
