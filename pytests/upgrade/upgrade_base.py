@@ -427,7 +427,7 @@ class UpgradeBase(BaseTestCase):
             raise Exception("Build %s not found" % version)
         return appropriate_build
 
-    def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True):
+    def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True, collection_ops=True):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
         self.log.info("Failing over the node {}".format(otp_node.id))
@@ -475,7 +475,7 @@ class UpgradeBase(BaseTestCase):
                        deltaRecoveryBuckets=delta_recovery_buckets)
         if len(self.buckets_to_load) == 0:
             self.buckets_to_load = self.cluster.buckets
-        if self.cluster_supports_collections:
+        if self.cluster_supports_collections and collection_ops:
                 spec_collection = self.bucket_util.get_crud_template_from_package(
                     self.collection_spec)
                 CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
