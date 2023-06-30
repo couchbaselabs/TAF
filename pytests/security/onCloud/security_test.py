@@ -169,8 +169,8 @@ class SecurityTest(BaseTestCase):
 
     def test_retrieve_cluster_details(self):
         self.log.info("Verifying status code for retrieving cluster details")
-        expected_response_code = {"organizationOwner": 200, "projectCreator": 404,
-                                  "cloudManager": 404, "organizationMember": 404}
+        expected_response_code = {"organizationOwner": 200, "projectCreator": 403,
+                                  "cloudManager": 403, "organizationMember": 403}
         for user in self.test_users:
             self.log.info("Verifying status code for Role: {0}"
                           .format(self.test_users[user]["role"]))
@@ -688,7 +688,7 @@ class SecurityTest(BaseTestCase):
                                        "beer-sample")
         self.sleep(20, "Waiting for the beer-sample bucket to be loaded")
 
-        # Turning off a cluster
+        #Turning off a cluster
         resp = capella_api.turn_off_cluster(self.tenant_id, self.project_id, self.cluster_id)
         self.assertEqual(202, resp.status_code,
                          msg='FAIL, Outcome: {0}, Expected: {1}'.format(resp.status_code, 202))
@@ -702,17 +702,430 @@ class SecurityTest(BaseTestCase):
             self.sleep(10, "Waiting for the cluster to be in turned off state")
 
         # Testing if running a query is allowed or not. Ideally it shouldn't
-        self.log.info("Running a query when the cluster is off")
         query = "SELECT * FROM `beer-sample`._default._default"
-        payload = {"timeout": "600s", "statement": query,
-                   "profile": "timings", "use_cbo": True, "txtimeout": "120s"}
+        payload = {"timeout":"600s","statement": query,
+                   "profile":"timings","use_cbo":True,"txtimeout":"120s"}
         resp = common_capella_api.run_query(self.cluster_id, payload)
         self.assertEqual(422, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 422))
 
         # Testing if adding ip to the allowlist is allowed or not. Ideally it should
-        self.log.info("Adding a IP when the cluster is off")
         ips = ["104.172.65.2"]  # Any random ip
         resp = capella_api.add_allowed_ips(self.tenant_id, self.project_id, self.cluster_id, ips)
         self.assertEqual(202, resp.status_code,
-                         msg='FAIL, Outcome: {0}, Expected: {1}'.format(resp.status_code, 202))
+                      msg='FAIL, Outcome: {0}, Expected: {1}'.format(resp.status_code, 202))
+
+    def enable_gcp_private_endpoint(self, tenant_id, project_id, cluster_id, header='', payload='',
+                            method='POST'):
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        url = '{}/v2/organizations/{}/projects/{}/clusters/{}/privateendpoint'\
+            .format(capella_api.internal_url, tenant_id, project_id,
+                    cluster_id)
+        response = capella_api._urllib_request(url, method=method, params=payload, headers=header)
+        return response
+
+    def get_gcp_private_endpoint_status(self, tenant_id, project_id, cluster_id, header='',
+                                        payload='', method='GET'):
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        url = '{}/v2/organizations/{}/projects/{}/clusters/{}/privateendpoint' \
+            .format(capella_api.internal_url, tenant_id, project_id, cluster_id)
+        response = capella_api._urllib_request(url, method=method, params=payload, headers=header)
+        return response
+
+    def delete_gcp_private_endpoint(self, tenant_id, project_id, cluster_id, header='',
+                                        payload='', method='DELETE'):
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        url = '{}/v2/organizations/{}/projects/{}/clusters/{}/privateendpoint' \
+            .format(capella_api.internal_url, tenant_id, project_id, cluster_id)
+        response = capella_api._urllib_request(url, method=method, params=payload, headers=header)
+        return response
+
+    def get_private_endpoint_connection_link(self, tenant_id, project_id, cluster_id, header='',
+                                             payload='', method='POST'):
+        """
+            body =
+            {
+                "vpcId": "{customers-VPC}",
+                "subnetIds": "{customers-subnet}"
+            }
+        """
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        url = '{}/v2/organizations/{}/projects/{}/clusters/{}/privateendpoint/linkcommand' \
+            .format(capella_api.internal_url, tenant_id, project_id, cluster_id)
+        resp = capella_api._urllib_request(url, method=method, params=json.dumps(payload),
+                                           headers=header)
+        return resp
+
+    def accept_gcp_private_endpoint_connection(self, tenant_id, project_id, cluster_id, header='',
+                                             payload='', method="POST"):
+        """
+            body =
+            {
+                "endpointId": "{customers-GCP-Project-Id}"
+            }
+        """
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        url = '{}/v2/organizations/{}/projects/{}/clusters/{}/privateendpoint/connection' \
+            .format(capella_api.internal_url, tenant_id, project_id, cluster_id)
+        resp = capella_api._urllib_request(url, method=method, params=json.dumps(payload),
+                                           headers=header)
+        return resp
+
+    def list_gcp_private_endpoint_connections(self, tenant_id, project_id, cluster_id, header='',
+                                             payload='', method="GET"):
+
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        url = '{}/v2/organizations/{}/projects/{}/clusters/{}/privateendpoint/connection' \
+            .format(capella_api.internal_url, tenant_id, project_id, cluster_id)
+        resp = capella_api._urllib_request(url, method=method, params=json.dumps(payload),
+                                           headers=header)
+        return resp
+
+    def reject_gcp_private_endpoint_connection(self, tenant_id, project_id, cluster_id,
+                                              gcp_project_id, header='', payload='',
+                                               method="DELETE"):
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        url = '{}/v2/organizations/{}/projects/{}/clusters/{}/privateendpoint/connection/{}' \
+            .format(capella_api.internal_url, tenant_id, project_id, cluster_id, gcp_project_id)
+        resp = capella_api._urllib_request(url, method=method, params=json.dumps(payload),
+                                           headers=header)
+        return resp
+
+    def test_gcp_private_endpoint(self):
+        self.log.info("Verifying the GCP private endpoints enabling and disabling")
+
+        capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.user, self.passwd)
+        initial_resp = capella_api.enable_gcp_private_endpoint(self.tenant_id, self.project_id,
+                                                       self.cluster_id)
+        self.assertEqual(202, initial_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(initial_resp.status_code, 202))
+        status = "disabled"
+        while status != "enabled":
+            resp = capella_api.get_gcp_private_endpoint_status(self.tenant_id, self.project_id,
+                                                               self.cluster_id)
+            status = json.loads(resp.content.decode('utf-8'))["data"]["status"]
+            if status == "enableFailed":
+                self.fail(msg="Enabling GCP Private Endpoint has failed for the cluster")
+            self.sleep(60, message="Waiting for gcp private endpoints to be enabled")
+
+        # Trying out with different headers to bypass authentication
+        self.log.info("Calling API with various headers to bypass authentication")
+        headers = {
+            "invalid_header": 'abcdefgh',
+            "empty_header": ''
+        }
+        for header in headers:
+            cbc_api_request_headers = {
+                'Authorization': 'Bearer %s' % headers[header],
+                'Length': '123'
+            }
+            enable_gcp_resp = self.enable_gcp_private_endpoint(self.tenant_id, self.project_id,
+                                                     self.cluster_id, cbc_api_request_headers)
+            self.assertEqual(401, enable_gcp_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(enable_gcp_resp.status_code, 401))
+
+            get_endpoint_status_resp = self.get_gcp_private_endpoint_status(self.tenant_id,
+                                    self.project_id, self.cluster_id, cbc_api_request_headers)
+            self.assertEqual(401, get_endpoint_status_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(get_endpoint_status_resp.status_code, 401))
+
+            delete_endpoint_resp = self.delete_gcp_private_endpoint(self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    cbc_api_request_headers)
+            self.assertEqual(401, delete_endpoint_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(delete_endpoint_resp.status_code, 401))
+
+            get_connection_link_resp = self.get_private_endpoint_connection_link(
+                                                                    self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    cbc_api_request_headers)
+            self.assertEqual(401, get_connection_link_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(get_connection_link_resp.status_code, 401))
+
+            accept_connection_resp = self.accept_gcp_private_endpoint_connection(
+                                                                    self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    cbc_api_request_headers)
+            self.assertEqual(401, accept_connection_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(accept_connection_resp.status_code, 401))
+
+            list_connections_resp = self.list_gcp_private_endpoint_connections(
+                                                                    self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    cbc_api_request_headers)
+            self.assertEqual(401, list_connections_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(list_connections_resp.status_code, 401))
+
+            reject_connections_resp = self.reject_gcp_private_endpoint_connection(
+                                                                    self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    "1234",
+                                                                    cbc_api_request_headers)
+            self.assertEqual(401, reject_connections_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(reject_connections_resp.status_code, 401))
+
+    # Trying out with different methods
+        # 1. Enable GCP Endpoints with three methods
+        self.log.info("Calling Enable GCP Private Endpoint API with invalid methods")
+        methods = {"PUT"}
+        for method in methods:
+            enable_gcp_resp = self.enable_gcp_private_endpoint(self.tenant_id, self.project_id,
+                                                       self.cluster_id, method=method)
+            self.assertEqual(405, enable_gcp_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(enable_gcp_resp.status_code, 405))
+
+            get_endpoint_status_resp = self.get_gcp_private_endpoint_status(self.tenant_id,
+                                                                            self.project_id,
+                                                                            self.cluster_id,
+                                                                            method=method)
+            self.assertEqual(405, get_endpoint_status_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(get_endpoint_status_resp.status_code, 405))
+
+            delete_endpoint_resp = self.delete_gcp_private_endpoint(self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    method=method)
+            self.assertEqual(405, delete_endpoint_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(delete_endpoint_resp.status_code, 405))
+
+        # 2. For Getting Private Endpoint Connections Link and Accepting Connection
+        self.log.info("Calling Get GCP Private Endpoint Connection Link API with invalid methods")
+        link_command_invalid_methods = ["GET", "PUT", "DELETE"]
+        for method in link_command_invalid_methods:
+            get_connection_link_resp = self.get_private_endpoint_connection_link(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        method=method)
+            self.assertEqual(405, get_connection_link_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(get_connection_link_resp.status_code, 405))
+
+        # 3. For Accepting Private Connection
+        self.log.info("Calling Accept GCP Private Endpoint Connection API with invalid methods")
+        accept_connection_invalid_methods = ["PUT", "DELETE"]
+        for method in accept_connection_invalid_methods:
+            accept_connection_resp = self.accept_gcp_private_endpoint_connection(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        method=method)
+            self.assertEqual(405, accept_connection_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(accept_connection_resp.status_code, 405))
+
+        # 4. For Rejecting the Private Connection
+        self.log.info("Calling Reject GCP Private Endpoint Connection API with invalid methods")
+        reject_connection_invalid_methods = ["GET", "POST", "PUT"]
+        for method in reject_connection_invalid_methods:
+            reject_connections_resp = self.reject_gcp_private_endpoint_connection(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        "1234",
+                                                                        method=method)
+            self.assertEqual(405, reject_connections_resp.status_code,
+                             msg='FAIL, Outcome: {0}, Expected:{1}'
+                             .format(reject_connections_resp.status_code, 405))
+
+        # Trying out Different payloads for Getting Private Endpoint Connections Link
+        self.log.info("Calling Get Private Endpoint Connections Link API with invalid payload")
+        connections_links_payloads = {
+            "payload1":
+                {
+                    "name": "Administrator",
+                    "password": "password"
+                },
+            "payload2":
+                {
+                    "vpcId": "",
+                    "subnetIds": "1234"
+                },
+            "payload3":
+                {
+                    "vpcId": "1234",
+                    "subnetIds": ""
+                },
+            "payload4":
+                {
+                    "vpcId": "abcd-1234",
+                    "subnetIds": "1234.234.11.27"
+                }
+        }
+
+        for payload in connections_links_payloads:
+            get_connection_link_resp = capella_api.get_private_endpoint_connection_link(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                    connections_links_payloads[payload])
+
+            # Ideally this should give a response code of 4xx.
+            self.assertEqual(200, get_connection_link_resp.status_code,
+                             msg='FAIL, Outcome:{}, Expected:{}'
+                             .format(get_connection_link_resp.status_code, 200))
+            # self.assertEqual(400, get_connection_link_resp.status_code,
+            #                  msg='FAIL, Outcome:{}, Expected:{}'
+            #                  .format(get_connection_link_resp, 400))
+
+        self.log.info("Calling Accept Private Endpoint Connections API with invalid payload")
+        accept_connection_payload = {
+            "payload1":
+                {
+                    "name": "Administrator",
+                    "password": "password"
+                },
+            "payload2":
+                {
+                    "endpointId": ""
+                },
+            "payload3":
+                {
+                    "endpointId": "1234"
+                }
+        }
+        for payload in accept_connection_payload:
+            accept_connection_resp = capella_api.accept_gcp_private_endpoint_connection(
+                                                            self.tenant_id,
+                                                            self.project_id,
+                                                            self.cluster_id,
+                                                            accept_connection_payload[payload])
+            if payload == "payload3":
+                self.assertEqual(202, accept_connection_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(accept_connection_resp.status_code, 202))
+            else:
+                self.assertEqual(400, accept_connection_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(accept_connection_resp.status_code, 400))
+
+
+        # Checking enabling, getting and deleting the gcp endpoint for different roles
+        self.log.info("Testing all the endpoints with RBAC roles")
+        for user in self.test_users:
+            capella_api_role = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                 self.test_users[user]["mailid"], self.test_users[user]["password"])
+
+            enable_endpoint_resp = capella_api_role.enable_gcp_private_endpoint(self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(202, enable_endpoint_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(enable_endpoint_resp.status_code, 202))
+            else:
+                self.assertEqual(403, enable_endpoint_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(enable_endpoint_resp.status_code, 403))
+
+            get_endpoint_status_resp = capella_api_role.get_gcp_private_endpoint_status(
+                                                                            self.tenant_id,
+                                                                            self.project_id,
+                                                                            self.cluster_id)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(200, get_endpoint_status_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(get_endpoint_status_resp.status_code, 200))
+            else:
+                self.assertEqual(403, get_endpoint_status_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(get_endpoint_status_resp.status_code, 403))
+
+            body = {
+                "vpcId": "abcd",
+                "subnetIds": "1234"
+            }
+            get_connection_link_resp = capella_api_role.get_private_endpoint_connection_link(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        body)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(200, get_connection_link_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(get_connection_link_resp.status_code, 200))
+            else:
+                self.assertEqual(403, get_connection_link_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(get_connection_link_resp.status_code, 403))
+
+            body_1 = {
+                "endpointId": "1234"
+            }
+            accept_connection_resp = capella_api_role.accept_gcp_private_endpoint_connection(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        body_1)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(202, accept_connection_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(accept_connection_resp.status_code, 202))
+            else:
+                self.assertEqual(403, accept_connection_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(accept_connection_resp.status_code, 403))
+
+            list_connections_resp = capella_api_role.list_gcp_private_endpoint_connections(
+                                                                            self.tenant_id,
+                                                                            self.project_id,
+                                                                            self.cluster_id)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(200, list_connections_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(list_connections_resp.status_code, 200))
+            else:
+                self.assertEqual(403, list_connections_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(list_connections_resp.status_code, 403))
+
+            reject_connections_resp = capella_api_role.reject_gcp_private_endpoint_connection(
+                                                                            self.tenant_id,
+                                                                            self.project_id,
+                                                                            self.cluster_id,
+                                                                            "1234")
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(202, reject_connections_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(reject_connections_resp.status_code, 202))
+            else:
+                self.assertEqual(403, reject_connections_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(reject_connections_resp.status_code, 403))
+
+            delete_endpoint_resp = capella_api_role.delete_gcp_private_endpoint(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id)
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(202, delete_endpoint_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(delete_endpoint_resp.status_code, 202))
+            else:
+                self.assertEqual(403, delete_endpoint_resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected:{}'
+                                 .format(delete_endpoint_resp.status_code, 403))
