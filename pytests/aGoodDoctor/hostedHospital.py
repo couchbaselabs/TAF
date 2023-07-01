@@ -62,11 +62,7 @@ class Murphy(BaseTestCase, OPD):
         self.xdcr_scopes = self.input.param("xdcr_scopes", self.num_scopes)
         self.num_buckets = self.input.param("num_buckets", 1)
         self.rebalance_type = self.input.param("rebalance_type", "all")
-        self.kv_nodes = self.nodes_init
-        self.cbas_nodes = self.input.param("cbas_nodes", 0)
-        self.fts_nodes = self.input.param("fts_nodes", 0)
         self.index_nodes = self.input.param("index_nodes", 0)
-        self.eventing_nodes = self.input.param("eventing_nodes", 0)
         self.backup_nodes = self.input.param("backup_nodes", 0)
         self.xdcr_remote_clusters = self.input.param("xdcr_remote_clusters", 0)
         self.num_indexes = self.input.param("num_indexes", 0)
@@ -139,12 +135,14 @@ class Murphy(BaseTestCase, OPD):
         self.stop_run = True
         if self.cluster.query_nodes:
             for ql in self.ql:
-                ql.stop_run = True
-            self.drIndex.stop_run = True
+                ql.stop_query_load()
         if self.cluster.fts_nodes:
             for ql in self.ftsQL:
-                ql.stop_run = True
-            self.drFTS.stop_run = True
+                ql.stop_query_load()
+        if self.cluster.cbas_nodes:
+            for ql in self.cbasQL:
+                ql.stop_query_load()
+        self.sleep(10)
         BaseTestCase.tearDown(self)
 
     def create_sdk_client_pool(self, buckets, req_clients_per_bucket):
@@ -257,17 +255,17 @@ class Murphy(BaseTestCase, OPD):
         self.ftsQL = list()
         self.cbasQL = list()
         for bucket in self.cluster.buckets:
-            if bucket.loadDefn.get("2iQPS", 0) > 0:
+            if self.cluster.index_nodes and bucket.loadDefn.get("2iQPS", 0) > 0:
                 bucket.loadDefn["2iQPS"] = bucket.loadDefn["2iQPS"] + num
                 ql = QueryLoad(bucket)
                 ql.start_query_load()
                 self.ql.append(ql)
-            if bucket.loadDefn.get("ftsQPS", 0) > 0:
+            if self.cluster.fts_nodes and bucket.loadDefn.get("ftsQPS", 0) > 0:
                 bucket.loadDefn["ftsQPS"] = bucket.loadDefn["ftsQPS"] + num
                 ql = FTSQueryLoad(bucket)
                 ql.start_query_load()
                 self.ftsQL.append(ql)
-            if bucket.loadDefn.get("cbasQPS", 0) > 0:
+            if self.cluster.cbas_nodes and bucket.loadDefn.get("cbasQPS", 0) > 0:
                 bucket.loadDefn["cbasQPS"] = bucket.loadDefn["cbasQPS"] + num
                 ql = CBASQueryLoad(bucket)
                 ql.start_query_load()
@@ -392,35 +390,6 @@ class Murphy(BaseTestCase, OPD):
         cpu_monitor.start()
         num_items = self.input.param("num_items", 5000000)
 
-        self.loadDefn1 = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": 2,
-            "num_items": num_items,
-            "start": 0,
-            "end": num_items,
-            "ops": 100000,
-            "doc_size": 1024,
-            "pattern": [0, 50, 50, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2iQPS": 200,
-            "ftsQPS": 10,
-            "cbasQPS": 10,
-            "collections_defn": [
-                {
-                    "valType": "Hotel",
-                    "2i": [2, 2],
-                    "FTS": [0, 0],
-                    "cbas": [2, 2, 2]
-                },
-                {
-                    "valType": "Hotel",
-                    "2i": [2, 2],
-                    "FTS": [2, 2],
-                    "cbas": [1, 1, 1]
-                }
-                ]
-            }
         self.nimbus = {
             "valType": "Hotel",
             "scopes": 1,
@@ -450,30 +419,30 @@ class Murphy(BaseTestCase, OPD):
                 }
                 ]
             }
-        self.sanity = {
-            "valType": "SimpleValue",
+        self.default = {
+            "valType": "Hotel",
             "scopes": 1,
             "collections": 2,
             "num_items": self.input.param("num_items", 50000000),
             "start": 0,
             "end": self.input.param("num_items", 50000000),
-            "ops": 40000,
+            "ops": self.input.param("ops_rate", 50000),
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "update"],
-            "2iQPS": 10,
+            "2iQPS": 20,
             "ftsQPS": 10,
             "cbasQPS": 10,
             "collections_defn": [
                 {
-                    "valType": "SimpleValue",
-                    "2i": [5, 5],
+                    "valType": "Hotel",
+                    "2i": [2, 2],
                     "FTS": [2, 2],
                     "cbas": [2, 2, 2]
                     },
                 {
-                    "valType": "SimpleValue",
-                    "2i": [5, 5],
+                    "valType": "Hotel",
+                    "2i": [2, 2],
                     "FTS": [0, 0],
                     "cbas": [2, 2, 2]
                     }
@@ -481,12 +450,10 @@ class Murphy(BaseTestCase, OPD):
             }
         sanity = self.input.param("sanity", False)
         nimbus = self.input.param("nimbus", False)
-        if sanity:
-            self.load_defn.append(self.sanity)
-        elif nimbus:
+        self.load_defn.append(self.default)
+        if nimbus:
+            self.load_defn = list()
             self.load_defn.append(self.nimbus)
-        else:
-            self.load_defn.append(self.loadDefn1)
 
         #######################################################################
         if not self.skip_init:
@@ -742,8 +709,7 @@ class Murphy(BaseTestCase, OPD):
         else:
             self.loop = 0
             self.rebl_nodes = 0
-            self.max_rebl_nodes = self.input.param("max_rebl_nodes",
-                                                   self.nodes_init + 6)
+            self.max_rebl_nodes = self.input.param("max_rebl_nodes", 27)
             while self.loop < self.iterations:
                 self.rebl_nodes += 3
                 if self.rebl_nodes > self.max_rebl_nodes:

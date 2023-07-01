@@ -38,7 +38,7 @@ HotelQueries = [
     "SELECT * from {} where phone like \"4%\" limit 100",
     "SELECT * from {} where `type` is not null limit 100",
     # "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC  limit 100",
-    "SELECT COUNT(CASE WHEN free_breakfast THEN 1 ELSE NULL END) AS count_free_breakfast, COUNT(CASE WHEN free_parking THEN 1 ELSE NULL END) AS count_free_parking, COUNT(CASE WHEN free_parking AND free_breakfast THEN 1 ELSE NULL END) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC  limit 100"
+    "SELECT COUNT(CASE WHEN free_breakfast THEN 1 ELSE NULL END) AS count_free_breakfast, COUNT(CASE WHEN free_parking THEN 1 ELSE NULL END) AS count_free_parking, COUNT(CASE WHEN free_parking AND free_breakfast THEN 1 ELSE NULL END) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC  limit 100",
     "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE price IS NOT NULL GROUP BY city) SELECT h.name, h.price FROM {0} h JOIN city_avg ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.price IS NOT NULL limit 100",
     "select city,country,count(*) from {} where free_breakfast=True and free_parking=True group by country,city order by country,city limit 100",
     "select avg(price) as AvgPrice, min(price) as MinPrice, max(price) as MaxPrice from {} where free_breakfast=True and free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' group by country limit 100",
@@ -169,7 +169,7 @@ class DoctorCBAS():
                             print query
                             b.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
                             query_count += 1
-                            b.cbas_queries.append((queryType[i % len(queryType)].format(dataset), queryType[q % len(queryType)]))
+                            b.cbas_queries.append((query, queryType[q % len(queryType)]))
                             q += 1
 
     def discharge_CBAS(self):
@@ -270,11 +270,6 @@ class CBASQueryLoad:
 
     def stop_query_load(self):
         self.stop_run = True
-        try:
-            if self.cluster_conn:
-                self.cluster_conn.close()
-        except:
-            pass
 
     def _run_concurrent_queries(self):
         threads = []

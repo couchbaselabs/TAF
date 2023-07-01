@@ -214,12 +214,12 @@ class DoctorN1QL():
         self.query_failure = False
 
     def create_indexes(self, buckets, skip_index=False):
+        counter = 0
         for b in buckets:
             b.indexes = dict()
             b.queries = list()
             b.query_map = dict()
             self.log.info("Creating GSI indexes on {}".format(b.name))
-            query_count = 0
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 if b.name+s not in self.sdkClients.keys():
                     self.sdkClients.update({b.name+s: b.clients[0].bucketObj.scope(s)})
@@ -248,7 +248,7 @@ class DoctorN1QL():
                     q = 0
                     while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
                         if i < workload.get("2i")[0]:
-                            self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
+                            self.idx_q = indexType[counter % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             print self.idx_q
                             b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
                             retry = 5
@@ -270,17 +270,19 @@ class DoctorN1QL():
                                         break
                             i += 1
                         if q < workload.get("2i")[1]:
-                            query = queryType[q % len(queryType)].format(c)
+                            unformatted_q = queryType[counter % len(queryType)]
+                            query = unformatted_q.format(c)
                             print query
-                            if queryType[q % len(queryType)] not in b.query_map:
-                                b.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
-                                query_count += 1
+                            if unformatted_q not in b.query_map.keys():
+                                b.query_map[unformatted_q] = ["Q%s" % (counter % len(queryType))]
                                 if queryParams:
-                                    b.query_map[queryType[q % len(queryType)]].append(queryParams[q % len(queryParams)])
+                                    b.query_map[unformatted_q].append(queryParams[q % len(queryParams)])
                                 else:
-                                    b.query_map[queryType[q % len(queryType)]].append("")
-                            b.queries.append((query, self.sdkClients[b.name+s], queryType[q % len(queryType)]))
+                                    b.query_map[unformatted_q].append("")
+                                b.queries.append((query, self.sdkClients[b.name+s], unformatted_q))
                             q += 1
+                        counter += 1
+
             print [v[0] + " == " + k for k, v in b.query_map.items()]
         return True
 
