@@ -22,7 +22,6 @@ class DurabilityTestsBase(ClusterSetup):
         self.create_bucket(self.cluster)
 
         self.simulate_error = self.input.param("simulate_error", None)
-        self.error_type = self.input.param("error_type", "memory")
         self.doc_ops = self.input.param("doc_ops", None)
         self.with_non_sync_writes = self.input.param("with_non_sync_writes",
                                                      False)
