@@ -398,8 +398,10 @@ class QueryLoad:
 
     def _run_query(self, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
-        client_context_id = name
+        counter = 0
         while not self.stop_run:
+            client_context_id = name + str(counter)
+            counter += 1
             start = time.time()
             e = ""
             try:
