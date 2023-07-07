@@ -3,9 +3,9 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 spec = {
     # Scope/Collection ops params
     MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
-    MetaCrudParams.COLLECTIONS_TO_DROP: 4,
+    MetaCrudParams.COLLECTIONS_TO_DROP: 2,
 
-    MetaCrudParams.SCOPES_TO_DROP: 2,
+    MetaCrudParams.SCOPES_TO_DROP: 1,
     MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
     MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 0,
 
