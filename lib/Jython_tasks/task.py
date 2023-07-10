@@ -262,6 +262,83 @@ class DeployCloud(Task):
         return self.result
 
 
+class UpgradeProvisionedCluster(Task):
+    def __init__(self, cluster, params=dict(), timeout=1200, poll_interval=60):
+        Task.__init__(self, "upgrade_task_{}".format(str(time.time())))
+        self.cluster = cluster
+        self.params = params
+        self.timeout = timeout
+        self.servers = None
+        self.test_log.critical("upgrade_params: %s" % params)
+        self.poll_interval = poll_interval
+
+    def call(self):
+        import pydevd
+        pydevd.settrace(trace_only_current_thread=False)
+        try:
+            DedicatedUtils.upgrade(self.cluster, self.params)
+        except Exception as e:
+            self.result = False
+            return
+        capella_api = decicatedCapellaAPI(self.cluster.pod.url_public,
+                                          self.cluster.tenant.api_secret_key,
+                                          self.cluster.tenant.api_access_key,
+                                          self.cluster.tenant.user,
+                                          self.cluster.tenant.pwd)
+        end = time.time() + self.timeout
+        while end > time.time():
+            try:
+                content = DedicatedUtils.jobs(capella_api,
+                                              self.cluster.pod,
+                                              self.cluster.tenant,
+                                              self.cluster.id)
+                state = DedicatedUtils.get_cluster_state(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                if state in ["deployment_failed",
+                             "deploymentFailed",
+                             "redeploymentFailed",
+                             "rebalance_failed",
+                             "scaleFailed"]:
+                    raise Exception("{} for cluster {}".format(
+                        state, self.cluster.id))
+                if content.get("data") or state != "healthy":
+                    for data in content.get("data"):
+                        data = data.get("data")
+                        if data.get("clusterId") == self.cluster.id:
+                            step, progress = data.get("currentStep"), \
+                                             data.get("completionPercentage")
+                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
+                    time.sleep(self.poll_interval)
+                else:
+                    self.log.info("Scaling the cluster completed. State == {}".
+                                  format(state))
+                    self.sleep(300)
+                    self.result = True
+                    break
+            except Exception as e:
+                self.log.critical(e)
+                self.result = False
+                return self.result
+        self.servers = DedicatedUtils.get_nodes(
+            self.cluster.pod, self.cluster.tenant, self.cluster.id)
+        nodes = list()
+        for server in self.servers:
+            temp_server = TestInputServer()
+            temp_server.ip = server.get("hostname")
+            temp_server.hostname = server.get("hostname")
+            temp_server.services = server.get("services")
+            temp_server.port = "18091"
+            temp_server.rest_username = self.cluster.username
+            temp_server.rest_password = self.cluster.password
+            temp_server.hosted_on_cloud = True
+            temp_server.memcached_port = "11207"
+            temp_server.type = "dedicated"
+            nodes.append(temp_server)
+
+        self.cluster.refresh_object(nodes)
+        return self.result
+
+
 class RebalanceTaskCapella(Task):
     def __init__(self, cluster, scale_params=list(), timeout=1200, poll_interval=60):
         Task.__init__(self, "Scaling_task_{}".format(str(time.time())))

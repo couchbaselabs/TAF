@@ -602,6 +602,25 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
+    def async_upgrade_capella_prov(self, cluster, params, timeout=1200, poll_interval=60):
+        """
+        Asynchronously rebalances a cluster
+
+        Parameters:
+          servers - Servers participating in the rebalance ([TestServers])
+          to_add - Servers being added to the cluster ([TestServers])
+          to_remove - Servers being removed from the cluster ([TestServers])
+          use_hostnames - True if nodes should be added using hostnames (Bool)
+
+        Returns:
+          RebalanceTask - A task future that is a handle to the scheduled task
+        """
+        _task = jython_tasks.UpgradeProvisionedCluster(cluster, params,
+                                                       timeout=timeout,
+                                                       poll_interval=poll_interval)
+        self.jython_task_manager.add_new_task(_task)
+        return _task
+
     def async_wait_for_stats(self, servers, bucket, stat_cmd, stat,
                              comparison, value, timeout=60):
         """

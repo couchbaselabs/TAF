@@ -244,6 +244,7 @@ class Murphy(BaseTestCase, OPD):
                 self.create_required_collections(cluster)
 
     def restart_query_load(self, num=10):
+        self.log.info("Changing query load by: {}".format(num))
         for ql in self.ql:
             ql.stop_query_load()
         for ql in self.ftsQL:
@@ -383,12 +384,11 @@ class Murphy(BaseTestCase, OPD):
 
         self.cluster.refresh_object(nodes)
 
-    def test_rebalance(self):
+    def initial_setup(self):
         self.monitor_query_status()
         cpu_monitor = threading.Thread(target=self.print_cluster_cpu_ram,
                                        kwargs={"cluster": self.cluster})
         cpu_monitor.start()
-        num_items = self.input.param("num_items", 5000000)
 
         self.nimbus = {
             "valType": "Hotel",
@@ -448,13 +448,17 @@ class Murphy(BaseTestCase, OPD):
                     }
                 ]
             }
-        sanity = self.input.param("sanity", False)
         nimbus = self.input.param("nimbus", False)
+        expiry = self.input.param("expiry", False)
         self.load_defn.append(self.default)
         if nimbus:
             self.load_defn = list()
             self.load_defn.append(self.nimbus)
 
+        if expiry:
+            for load in self.load_defn:
+                load["pattern"] = [0, 50, 0, 0, 50]
+                load["load_type"] = ["read", "expiry"]
         #######################################################################
         if not self.skip_init:
             self.create_buckets()
@@ -539,7 +543,29 @@ class Murphy(BaseTestCase, OPD):
                     ql = FTSQueryLoad(bucket)
                     ql.start_query_load()
                     self.ftsQL.append(ql)
+        upgrade = self.input.capella.get("upgrade_image")
+        if upgrade:
+            config = {
+                "token": self.input.capella.get("override_token"),
+                "image": self.input.capella.get("upgrade_image"),
+                "server": self.input.capella.get("upgrade_server_version"),
+                "releaseID": self.input.capella.get("upgrade_release_id")
+                }
+            task = self.task.async_upgrade_capella_prov(self.cluster, config)
+            self.task_manager.get_task_result(task)
+            self.assertTrue(task.result, "Cluster Upgrade Failed...")
 
+        self.mutation_perc = self.input.param("mutation_perc", 100)
+        for bucket in self.cluster.buckets:
+            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
+            self.generate_docs(bucket=bucket)
+        self.tasks = self.perform_load(wait_for_load=False)
+
+    def test_rebalance(self):
+        self.initial_setup()
+        h_scaling = self.input.param("h_scaling", True)
+        v_scaling = self.input.param("v_scaling", False)
+        vh_scaling = self.input.param("vh_scaling", False)
         provider = self.input.param("provider", "aws").lower()
         computeList = GCP.compute
         _type = GCP.StorageType.PD_SSD
@@ -548,16 +574,11 @@ class Murphy(BaseTestCase, OPD):
             _type = AWS.StorageType.GP3
         storage_type = self.input.param("type", _type).upper()
 
-        self.mutation_perc = self.input.param("mutation_perc", 100)
-        for bucket in self.cluster.buckets:
-            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-            self.generate_docs(bucket=bucket)
-        tasks = self.perform_load(wait_for_load=False)
-        self.loop = 0
-        if not sanity:
-            disk_increment = self.input.param("increment", 5)
+        if v_scaling or vh_scaling:
+            self.loop = 0
             while self.loop <= self.iterations:
                 self.loop += 1
+                disk_increment = self.input.param("increment", 5)
                 time.sleep(5*60)
                 if self.rebalance_type == "all" or self.rebalance_type == "disk":
                     # Rebalance 1 - Disk Upgrade
@@ -594,6 +615,9 @@ class Murphy(BaseTestCase, OPD):
                     self.cluster_util.print_cluster_stats(self.cluster)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
+            self.loop = 0
+            while self.loop <= self.iterations:
+                self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "compute":
                     # Rebalance 2 - Compute Upgrade
                     self.restart_query_load()
@@ -633,6 +657,9 @@ class Murphy(BaseTestCase, OPD):
                     self.cluster_util.print_cluster_stats(self.cluster)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
 
+            self.loop = 0
+            while self.loop <= self.iterations:
+                self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "disk_compute":
                     # Rebalance 3 - Both Disk/Compute Upgrade
                     self.restart_query_load()
@@ -706,12 +733,13 @@ class Murphy(BaseTestCase, OPD):
                     "collections")
                 if bucket_info['basicStats']['itemCount'] == item_count:
                     self.log.info("Post restore item count on the bucket is {}".format(item_count))
-        else:
+
+        if h_scaling or vh_scaling:
             self.loop = 0
             self.rebl_nodes = 0
             self.max_rebl_nodes = self.input.param("max_rebl_nodes", 27)
             while self.loop < self.iterations:
-                self.rebl_nodes += 3
+                self.rebl_nodes += self.input.param("horizontal_scale", 3)
                 if self.rebl_nodes > self.max_rebl_nodes:
                     self.rebl_nodes = 0
                 config = self.rebalance_config(self.rebl_nodes)
@@ -733,7 +761,7 @@ class Murphy(BaseTestCase, OPD):
             self.loop = 0
             while self.loop < self.iterations:
                 self.restart_query_load(num=-10)
-                self.rebl_nodes -= 3
+                self.rebl_nodes -= self.input.param("horizontal_scale", 3)
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
                 config = self.rebalance_config(self.rebl_nodes)
@@ -748,16 +776,11 @@ class Murphy(BaseTestCase, OPD):
                 self.sleep(60, "Sleep for 60s after rebalance")
 
                 self.loop += 1
-        for task in tasks:
+
+        for task in self.tasks:
             task.stop_work_load()
-        self.wait_for_doc_load_completion(tasks)
+        self.wait_for_doc_load_completion(self.tasks)
         if self.track_failures:
             self.data_validation()
         if self.cluster.eventing_nodes:
             self.drEventing.print_eventing_stats()
-        if self.cluster.fts_nodes:
-            self.drFTS.discharge_FTS()
-        if self.cluster.cbas_nodes:
-            self.drCBAS.discharge_CBAS()
-        if self.cluster.index_nodes:
-            self.drIndex.discharge_N1QL()

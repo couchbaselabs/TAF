@@ -318,6 +318,32 @@ class CapellaUtils(object):
                     CapellaUtils.wait_until_done(
                         cluster.pod, cluster.tenant, cluster.id,
                         "Wait for healthy cluster state")
+                else:
+                    CapellaUtils.log.critical(result)
+                    raise Exception(result)
+            else:
+                break
+
+    @staticmethod
+    def upgrade(cluster, config):
+        capella_api = CapellaAPI(cluster.pod.url_public,
+                                 cluster.tenant.api_secret_key,
+                                 cluster.tenant.api_access_key,
+                                 cluster.tenant.user,
+                                 cluster.tenant.pwd)
+        while True:
+            resp = capella_api.upgrade_cluster(cluster.tenant.id,
+                                               cluster.tenant.project_id,
+                                               cluster.id, config)
+            if resp.status_code != 202:
+                result = json.loads(resp.content)
+                if result["errorType"] == "ClusterModifySpecsInvalidState":
+                    CapellaUtils.wait_until_done(
+                        cluster.pod, cluster.tenant, cluster.id,
+                        "Wait for healthy cluster state")
+                else:
+                    CapellaUtils.log.critical(result)
+                    raise Exception(result)
             else:
                 break
 
@@ -498,3 +524,61 @@ class CapellaUtils(object):
                                                    cluster_id=cluster.id, bucket_id=bucket_id)
         CapellaUtils.log.info("Response from list_all_backups method: {}".format(resp))
         return resp
+
+    @staticmethod
+    def trigger_log_collection(pod, tenant, cluster_id, log_id={}):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        if log_id:
+            log_id = {"ticketId": log_id}
+        resp = capella_api.trigger_log_collection(cluster_id,
+                                                  log_id=log_id)
+        if resp.status_code != 201:
+            CapellaUtils.log.critical("Logs collection failed:{}".
+                                      format(resp.status_code))
+            raise Exception("Logs collection failed: {}".
+                            format(resp.content))
+
+    @staticmethod
+    def check_logs_collect_status(pod, tenant, cluster_id, timeout=1200):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        timeout = timeout
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = capella_api.get_cluster_tasks(cluster_id)
+            tasks = json.loads(resp.content)
+            if resp.status_code != 200:
+                CapellaUtils.log.critical("Logs collection failed:{}".
+                                          format(resp.status_code))
+                raise Exception("Logs collection failed: {}".
+                                format(resp.content))
+            task = [task for task in tasks if task["type"] == "clusterLogsCollection"][0]
+            CapellaUtils.log.info("Logs for Cluster {}: Status {} - Progress {}%".
+                                  format(cluster_id, task["status"], task["progress"]))
+            if task["status"] == "completed":
+                return task
+            time.sleep(10)
+
+    @staticmethod
+    def get_cluster_tasks(pod, tenant, cluster_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.get_cluster_tasks(cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Logs collection failed:{}".
+                                      format(resp.status_code))
+            raise Exception("Logs collection failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)

@@ -393,7 +393,7 @@ class OPD:
                                                   cmd.get("workers", pc),
                                                   cmd.get("ops", bucket.loadDefn.get("ops")),
                                                   cmd.get("loadType", None),
-                                                  cmd.get("keyType", None),
+                                                  cmd.get("keyType", self.key_type),
                                                   cmd.get("valueType", valType),
                                                   cmd.get("validate", True),
                                                   cmd.get("gtm", False),

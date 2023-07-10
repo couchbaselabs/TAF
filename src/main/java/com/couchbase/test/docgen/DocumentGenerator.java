@@ -55,9 +55,9 @@ abstract class KVGenerator{
         if(valClass.equals(anySizeValue.class.getSimpleName()))
             this.valInstance = anySizeValue.class;
         else if (valClass.equals(NimbusP.class.getSimpleName()))
-        	this.valInstance = NimbusP.class;
+            this.valInstance = NimbusP.class;
         else if (valClass.equals(NimbusM.class.getSimpleName()))
-        	this.valInstance = NimbusM.class;
+            this.valInstance = NimbusM.class;
         else if (valClass.equals(Hotel.class.getSimpleName()))
             this.valInstance = Hotel.class;
         else
@@ -92,7 +92,7 @@ abstract class KVGenerator{
     public boolean has_next_read() {
         if (this.ws.dr.readItr.get() < this.ws.dr.read_e)
             return true;
-        if (this.keyInstance.getSimpleName() == CircularKey.class.getSimpleName()) {
+        if (this.keyInstance.getSimpleName().equals(CircularKey.class.getSimpleName())) {
             this.resetRead();
             return true;
         }
@@ -102,7 +102,7 @@ abstract class KVGenerator{
     public boolean has_next_update() {
         if (this.ws.dr.updateItr.get() < this.ws.dr.update_e)
             return true;
-        if (this.keyInstance.getSimpleName() == CircularKey.class.getSimpleName()) {
+        if (this.keyInstance.getSimpleName().equals(CircularKey.class.getSimpleName())) {
             this.resetUpdate();
             return true;
         }
@@ -112,7 +112,7 @@ abstract class KVGenerator{
     public boolean has_next_expiry() {
         if (this.ws.dr.expiryItr.get() < this.ws.dr.expiry_e)
             return true;
-        if (this.keyInstance.getSimpleName() == CircularKey.class.getSimpleName()) {
+        if (this.keyInstance.getSimpleName().equals(CircularKey.class.getSimpleName())) {
             this.restExpiry();
             return true;
         }

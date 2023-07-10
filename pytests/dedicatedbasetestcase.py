@@ -18,6 +18,7 @@ from constants.cloud_constants.capella_constants import AWS, Cluster
 from security_config import trust_all_certs
 from Jython_tasks.task import DeployCloud
 import uuid
+from table_view import TableView
 
 
 class OnCloudBaseTest(CouchbaseBaseTest):
@@ -93,7 +94,9 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         # initialise pod object
         url = self.input.capella.get("pod")
-        self.pod = Pod("https://%s" % url)
+        self.pod = Pod("https://%s" % url,
+                       self.input.capella.get("override_token",
+                                              None))
         self.xdcr_cluster = None
         self.tenant = Tenant(self.input.capella.get("tenant_id"),
                              self.input.capella.get("capella_user"),
@@ -207,6 +210,17 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             raise Exception("SetUp Failed - {}".format(e))
 
     def tearDown(self):
+        if self.is_test_failed():
+            for _, cluster in self.cb_clusters.items():
+                CapellaUtils.trigger_log_collection(self.pod, self.tenant, cluster.id)
+            for _, cluster in self.cb_clusters.items():
+                table = TableView(self.log.info)
+                table.add_row(["Node", "URL"])
+                task = CapellaUtils.check_logs_collect_status(self.pod, self.tenant, cluster.id)
+                for node, logInfo in sorted(task["perNode"].items()):
+                    table.add_row([node, logInfo["url"]])
+                table.display("Cluster: {}".format(cluster.id))
+
         self.shutdown_task_manager()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
@@ -278,8 +292,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 cluster.cbas_nodes.append(temp_server)
             if "Search" in temp_server.services:
                 cluster.fts_nodes.append(temp_server)
-        cluster.master = cluster.kv_nodes[0]
-        self.tenant.clusters.update({cluster.id: cluster})
 
         cluster.master = cluster.kv_nodes[0]
         self.tenant.clusters.update({cluster.id: cluster})
