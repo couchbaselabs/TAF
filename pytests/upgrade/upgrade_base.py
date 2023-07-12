@@ -104,25 +104,56 @@ class UpgradeBase(BaseTestCase):
             self.cluster.servers[0:self.nodes_init],
             self.initial_version)
 
-        # Get service list to initialize the cluster
+        if self.disk_location_data == testconstants.COUCHBASE_DATA_PATH and \
+                self.disk_location_index == testconstants.COUCHBASE_DATA_PATH:
+
+            # Construct dict of mem. quota percent / mb per service
+            mem_quota_percent = dict()
+            # Construct dict of mem. quota percent per service
+            if self.kv_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.KV] = \
+                    self.kv_mem_quota_percent
+            if self.index_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.INDEX] = \
+                    self.index_mem_quota_percent
+            if self.cbas_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.CBAS] = \
+                    self.cbas_mem_quota_percent
+            if self.fts_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.FTS] = \
+                    self.fts_mem_quota_percent
+            if self.eventing_mem_quota_percent:
+                mem_quota_percent[CbServer.Services.EVENTING] = \
+                    self.eventing_mem_quota_percent
+
+            if not mem_quota_percent:
+                mem_quota_percent = None
+
+            for cluster_name, cluster in self.cb_clusters.items():
+                if not self.skip_cluster_reset:
+                    self.initialize_cluster(
+                        cluster_name, cluster, services=None,
+                        services_mem_quota_percent=mem_quota_percent)
+                else:
+                    self.quota = ""
+                # Set this unconditionally
+                RestConnection(cluster.master).set_internalSetting(
+                    "magmaMinMemoryQuota", 256)
+            else:
+                self.quota = ""
+
+        self.cluster = self.cb_clusters.values()[0]
         if self.services_init:
             self.services_init = self.cluster_util.get_services(
                 [self.cluster.master], self.services_init, 0)
-
-        # Initialize first node in cluster
-        master_node = self.cluster.servers[0]
-        if self.services_init:
-            master_node.services = self.services_init[0]
-        master_rest = RestConnection(master_node)
-        master_rest.init_node()
 
         # Initialize cluster using given nodes
         for index, server \
                 in enumerate(self.cluster.servers[1:self.nodes_init]):
             node_service = None
             if self.services_init and len(self.services_init) > index:
-                node_service = self.services_init[index+1].split(',')
-            master_rest.add_node(
+                node_service = self.services_init[index + 1].split(',')
+            RestConnection(self.cluster.master).add_node(
                 user=server.rest_username, password=server.rest_password,
                 remoteIp=server.ip, port=server.port, services=node_service)
 
@@ -275,6 +306,16 @@ class UpgradeBase(BaseTestCase):
         install_params['init_nodes'] = False
         install_params['debug_logs'] = False
         self.installer_job.parallel_install(nodes, install_params)
+
+        if self.disk_location_data != testconstants.COUCHBASE_DATA_PATH or \
+                self.disk_location_index != testconstants.COUCHBASE_DATA_PATH:
+            master_services = self.cluster_util.get_services(
+                self.cluster.servers[:1], self.services_init, start_node=0)
+            for node in nodes:
+                self._initialize_node_with_new_data_location(
+                    node, self.disk_location_data, self.disk_location_index,
+                    master_services)
+        self.sleep(30, "Waiting for node to warm up")
 
     def __getTestServerObj(self, node_obj):
         for node in self.cluster.servers:
