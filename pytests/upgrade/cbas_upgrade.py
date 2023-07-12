@@ -643,8 +643,8 @@ class UpgradeTests(UpgradeBase):
                           % node_to_upgrade.ip)
             rest = RestConnection(node_to_upgrade)
             services = rest.get_nodes_services()
-            services_on_target_node = services[(node_to_upgrade.ip + ":"
-                                                + node_to_upgrade.port)]
+            services_on_target_node = services["{0}:{1}".format(
+                node_to_upgrade.ip, node_to_upgrade.port)]
             self.log.info("Selected node services {0}".format(
                 services_on_target_node))
             if "cbas" in services_on_target_node:

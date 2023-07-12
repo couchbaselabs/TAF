@@ -915,7 +915,8 @@ class CollectionUtils(DocLoaderUtils):
         collection = CollectionUtils.get_collection_obj(scope, collection_name)
 
         # If collection already dropped with same name use it or create one
-        if "history" not in collection_spec.keys():
+        if "nonDedupedHistory" in bucket.bucketCapabilities and "history" \
+                not in collection_spec.keys():
             collection_spec["history"] = \
                 bucket.historyRetentionCollectionDefault \
                     if bucket.storageBackend == Bucket.StorageBackend.magma else "false"

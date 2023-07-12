@@ -104,8 +104,6 @@ class RestConnection(object):
             if hasattr(serverInfo, 'hostname') and serverInfo.hostname and \
                     serverInfo.hostname.find(self.ip) == -1:
                 self.hostname = serverInfo.hostname
-            if hasattr(serverInfo, 'services'):
-                self.services = serverInfo.services
 
         if CbServer.use_https:
             self.port = CbServer.ssl_port
