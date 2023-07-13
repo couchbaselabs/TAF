@@ -874,7 +874,7 @@ class UpgradeTests(UpgradeBase):
             self.log.info(
                 "History start sequence numbers verified for all 1024 vbuckets")
 
-    def tasks_post_upgrade(self):
+    def tasks_post_upgrade(self, data_load=True):
         rebalance_tasks = []
 
         if(self.rebalance_op == "all"):
@@ -883,38 +883,12 @@ class UpgradeTests(UpgradeBase):
         else:
             rebalance_tasks.append(self.rebalance_op)
 
-        self.log.info("Starting data load...")
-        rebalance_data_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
-        CollectionBase.over_ride_doc_loading_template_params(self, rebalance_data_spec)
-        CollectionBase.set_retry_exceptions(
-            rebalance_data_spec, self.durability_level)
-
-        rebalance_data_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 10
-        rebalance_data_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 10
-
-        if self.alternate_load is True:
-            rebalance_data_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 5
-            rebalance_data_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 5
-
-        if self.cluster_supports_collections and self.perform_collection_ops:
-            self.log.info("Performing collection ops during rebalance/failover tasks...")
-            rebalance_data_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 3
-            rebalance_data_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 2
-            rebalance_data_spec["doc_crud"][
-                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
-
         for reb_task in rebalance_tasks:
 
-            rebalance_data_load = self.bucket_util.run_scenario_from_spec(
-            self.task,
-            self.cluster,
-            self.cluster.buckets,
-            rebalance_data_spec,
-            mutation_num=0,
-            async_load=True,
-            batch_size=500,
-            process_concurrency=4,
-            validate_task=True)
+            rebalance_data_load = None
+            if data_load:
+                rebalance_data_load = self.load_during_rebalance(self.sub_data_spec,
+                                                                 async_load=True)
 
             if reb_task == "rebalance_in":
                 self.install_version_on_node([self.spare_node],
@@ -1102,8 +1076,8 @@ class UpgradeTests(UpgradeBase):
 
                 self.cluster_util.print_cluster_stats(self.cluster)
 
-            rebalance_data_load.stop_indefinite_doc_loading_tasks()
-            self.task_manager.get_task_result(rebalance_data_load)
+            if rebalance_data_load is not None:
+                self.task_manager.get_task_result(rebalance_data_load)
 
     def create_new_bucket_post_upgrade_and_load_data(self):
 
@@ -1205,7 +1179,7 @@ class UpgradeTests(UpgradeBase):
                                             scope_name=CbServer.default_scope,
                                             collection_spec=coll_obj)
 
-    def swap_rebalance_all_nodes(self):
+    def swap_rebalance_all_nodes(self, data_load=True):
         self.PrintStep("Starting Swap Rebalance of all nodes post upgrade")
         self.spare_nodes.append(self.spare_node)
 
@@ -1217,22 +1191,6 @@ class UpgradeTests(UpgradeBase):
 
         i = 0
 
-        rebalance_data_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
-        CollectionBase.over_ride_doc_loading_template_params(self, rebalance_data_spec)
-        CollectionBase.set_retry_exceptions(
-            rebalance_data_spec, self.durability_level)
-
-        rebalance_data_spec["doc_crud"][
-            MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 5
-        rebalance_data_spec["doc_crud"][
-            MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 5
-
-        if self.cluster_supports_collections and self.perform_collection_ops:
-            rebalance_data_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
-            rebalance_data_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
-            rebalance_data_spec["doc_crud"][
-                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
-
         for node in nodes_to_replace:
             rest = RestConnection(node)
             services = rest.get_nodes_services()
@@ -1241,17 +1199,10 @@ class UpgradeTests(UpgradeBase):
 
             node_to_add = self.spare_nodes[i]
 
-            self.log.info("Starting data load and collection ops...")
-            rebalance_data_load = self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.cluster.buckets,
-                rebalance_data_spec,
-                mutation_num=0,
-                async_load=True,
-                batch_size=500,
-                process_concurrency=4,
-                validate_task=True)
+            rebalance_data_load = None
+            if data_load:
+                rebalance_data_load = self.load_during_rebalance(self.sub_data_spec,
+                                                                 async_load=True)
 
             rebalance_passed = self.task.rebalance(
                         self.cluster,
@@ -1259,7 +1210,7 @@ class UpgradeTests(UpgradeBase):
                         to_remove=[node],
                         check_vbucket_shuffling=False,
                         services=[",".join(services_on_target_node)])
-            
+
             if rebalance_passed:
                 self.log.info("Swap Rebalance successful for node {0}".format(i+1))
                 i += 1
@@ -1268,8 +1219,8 @@ class UpgradeTests(UpgradeBase):
             else:
                 self.log.info("Swap Rebalance failed for node {0}".format(i+1))
 
-            rebalance_data_load.stop_indefinite_doc_loading_tasks()
-            self.task_manager.get_task_result(rebalance_data_load)
+            if rebalance_data_load is not None:
+                self.task_manager.get_task_result(rebalance_data_load)
 
         self.cluster.nodes_in_cluster = self.spare_nodes
         self.spare_nodes = nodes_to_replace
