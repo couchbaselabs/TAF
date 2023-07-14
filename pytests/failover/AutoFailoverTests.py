@@ -408,7 +408,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.wait_for_async_data_load_to_complete(task)
             CollectionBase.wait_for_cont_doc_load_to_complete(
                 self, cont_load_task)
-        rebalance = self.task.async_rebalance(self.cluster.servers[:self.nodes_init], [], [],
+        rebalance = self.task.async_rebalance(self.cluster, [], [],
                                               retry_get_process_num=self.retry_get_process_num)
         self.task.jython_task_manager.get_task_result(rebalance)
         self.assertTrue(rebalance.result, "Rebalance Failed")
