@@ -95,6 +95,10 @@ class basic_ops(ClusterSetup):
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
 
+        # Set index storage to avoid failures during index creation
+        RestConnection(self.cluster.master).set_indexer_storage_mode(
+            storageMode="plasma")
+
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("==========Finished Basic_ops base setup========")
 
@@ -2249,7 +2253,7 @@ class basic_ops(ClusterSetup):
             if oso_backfill_enabled is True:
                 set_and_validate_dcp_oso_backfill(kv_node, "enabled")
             elif oso_backfill_enabled is False:
-                set_and_validate_dcp_oso_backfill(kv_node, "enabled")
+                set_and_validate_dcp_oso_backfill(kv_node, "disabled")
             else:
                 set_and_validate_dcp_oso_backfill(kv_node, "auto")
 
@@ -2264,7 +2268,8 @@ class basic_ops(ClusterSetup):
         if state != "online":
             self.fail("Create index timed out")
         self.log.info("Index created")
-        self.sleep(15, "Wait before fetching index stats")
+        self.sleep((c_dict["c1"] * 2) / 10000,
+                   "Wait before fetching index stats")
         gsi_rest = GsiHelper(self.cluster.servers[2], self.log)
         stats = gsi_rest.get_index_stats()
         dict_key = "{}:{}:c1:c1".format(bucket.name, CbServer.default_scope)
