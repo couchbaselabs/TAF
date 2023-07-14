@@ -575,6 +575,16 @@ class BucketHelper(RestConnection):
         status, content, _ = self._http_request(api, "PATCH", params)
         return status, content
 
+    def set_collection_maxttl(self, bucket_name, scope, collection,
+                               maxTTL):
+        api = self.baseUrl \
+            + "/pools/default/buckets/%s/scopes/%s/collections/%s" \
+            % (bucket_name, scope, collection)
+        params = {"maxTTL": maxTTL}
+        params = urllib.urlencode(params)
+        status, content, _ = self._http_request(api, "PATCH", params)
+        return status, content
+
     def get_auto_compaction_settings(self):
         api = self.baseUrl + "settings/autoCompaction"
         _, content, _ = self._http_request(api)

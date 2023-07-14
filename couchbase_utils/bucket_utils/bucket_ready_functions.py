@@ -1245,6 +1245,15 @@ class CollectionUtils(DocLoaderUtils):
         return status, content
 
     @staticmethod
+    def set_maxTTL_for_collection(cluster_node, bucket, scope,
+                                  collection, maxttl):
+        status, content = BucketHelper(cluster_node).set_collection_maxttl(
+            bucket.name, scope, collection, maxTTL=maxttl)
+        if status:
+            bucket.scopes[scope].collections[collection].maxTTL = maxttl
+        return status
+
+    @staticmethod
     def mark_collection_as_dropped(bucket, scope_name, collection_name):
         """
         Function to mark the collection as dropped
@@ -6442,3 +6451,29 @@ class BucketUtils(ScopeUtils):
                     elif stat["metric"]["state"] == "replica":
                         replica_logical_data += int(stat["value"][1])
         return active_logical_data, pending_logical_data, replica_logical_data
+
+    def update_ttl_for_collections(self, cluster, bucket, ttl_value, enable_ttl=False):
+            for scope_name in bucket.scopes:
+                if scope_name == "_system":
+                    continue
+                for coll_name in bucket.scopes[scope_name].collections:
+                    col_ttl = bucket.scopes[scope_name].collections[coll_name].maxTTL
+                    if (col_ttl > 0 and not enable_ttl) or (enable_ttl and col_ttl == 0):
+                        self.log.info("Setting maxTTL for {0} {1}".format(scope_name, coll_name))
+                        self.set_maxTTL_for_collection(cluster.master,
+                                                        bucket,
+                                                        scope_name,
+                                                        coll_name,
+                                                        maxttl=ttl_value)
+
+    def disable_ttl_for_collections(self, cluster, bucket):
+        for scope_name in bucket.scopes:
+            for coll_name in bucket.scopes[scope_name].collections:
+                col_ttl = bucket.scopes[scope_name].collections[coll_name].maxTTL
+                if col_ttl > 0:
+                    self.log.info("Setting ttl=0 for {0}:{1}".format(scope_name,coll_name))
+                    self.set_maxTTL_for_collection(cluster.master,
+                                                    bucket,
+                                                    scope_name,
+                                                    coll_name,
+                                                    maxttl=0)

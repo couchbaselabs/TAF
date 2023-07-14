@@ -46,7 +46,7 @@ class CollectionsRebalance(CollectionBase):
                                                                         True)
         if self.change_ephemeral_purge_age_and_interval:
             self.set_ephemeral_purge_age_and_interval()
-        self.skip_validations = self.input.param("skip_validations", True)
+        self.skip_validations = self.input.param("skip_validations", False)
         self.compaction_tasks = list()
         self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)  # if dgm with ttl
         self.dgm = self.input.param("dgm", "100")  # Initial dgm threshold, for dgm test; 100 means no dgm
@@ -84,6 +84,8 @@ class CollectionsRebalance(CollectionBase):
             self.load_metakv_entries_using_fts()
             self.log.info("Creating metakv entries end")
         self.allowed_hosts = self.input.param("allowed_hosts", False)
+        self.update_max_ttl = self.input.param("update_max_ttl", False)
+        self.remaining_docs = self.input.param("remaining_docs", 0)
 
     def tearDown(self):
         self.bucket_util.print_bucket_stats(self.cluster)
@@ -931,8 +933,10 @@ class CollectionsRebalance(CollectionBase):
                     self.cluster, self.cluster.buckets, timeout=1200)
                 for bucket in self.cluster.buckets:
                     items = items + self.bucket_helper_obj.get_active_key_count(bucket)
-                if items != 0:
-                    self.fail("Items did not go to 0. Number of items left in the bukcet : {0}".format(items))
+                if items != self.remaining_docs:
+                    self.fail("Items did not go to {0}." \
+                              "Number of items left in the bucket : {1}".format(self.remaining_docs,
+                                                                                items))
             elif self.forced_hard_failover:
                 pass
             else:
@@ -1135,6 +1139,18 @@ class CollectionsRebalance(CollectionBase):
             failover_nodes = self.get_failover_nodes()
             rebalance = self.forced_failover_operation(self.cluster,
                                                        failover_nodes=failover_nodes)
+        # Updating collection maxTTL value during rebalance
+        if self.update_max_ttl:
+            if self.spec_name == "multi_bucket.buckets_for_rebalance_tests_with_ttl_large" or \
+                self.spec_name == "multi_bucket.buckets_all_membase_for_rebalance_tests_with_ttl_large":
+                new_ttl = 300
+            else:
+                new_ttl = 100000
+            self.sleep(25, "Wait before updating ttl")
+            for bucket in self.cluster.buckets:
+                self.bucket_util.update_ttl_for_collections(self.cluster, bucket, ttl_value=new_ttl)
+                self.sleep(10, "Wait for a few seconds before starting data load")
+
         if self.data_load_stage == "during":
             if self.data_load_type == "async":
                 tasks = self.async_data_load()
