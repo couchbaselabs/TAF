@@ -543,6 +543,14 @@ class Murphy(BaseTestCase, OPD):
                     ql = FTSQueryLoad(bucket)
                     ql.start_query_load()
                     self.ftsQL.append(ql)
+
+        self.mutation_perc = self.input.param("mutation_perc", 100)
+        for bucket in self.cluster.buckets:
+            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
+            self.generate_docs(bucket=bucket)
+        self.tasks = self.perform_load(wait_for_load=False)
+        self.sleep(300)
+
         upgrade = self.input.capella.get("upgrade_image")
         if upgrade:
             config = {
@@ -554,12 +562,6 @@ class Murphy(BaseTestCase, OPD):
             task = self.task.async_upgrade_capella_prov(self.cluster, config)
             self.task_manager.get_task_result(task)
             self.assertTrue(task.result, "Cluster Upgrade Failed...")
-
-        self.mutation_perc = self.input.param("mutation_perc", 100)
-        for bucket in self.cluster.buckets:
-            bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
-            self.generate_docs(bucket=bucket)
-        self.tasks = self.perform_load(wait_for_load=False)
 
     def test_rebalance(self):
         self.initial_setup()
