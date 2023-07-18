@@ -158,41 +158,32 @@ class Murphy(BaseTestCase, OPD):
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def rebalance_config(self, num):
-        initial_services = self.input.param("services", "data")
-        services = self.input.param("rebl_services", initial_services)
-        server_group_list = list()
-        services_map = {"data": "data",
-                        "kv": "data",
-                        "index": "index",
-                        "2i": "index",
-                        "query": "query",
-                        "n1ql": "query",
-                        "analytics": "analytics",
-                        "cbas": "analytics",
-                        "search": "search",
-                        "fts": "search",
-                        "eventing": "eventing"}
         provider = self.input.param("provider", "aws").lower()
 
         _type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
-        storage_type = self.input.param("type", _type).upper()
+        storage_type = self.input.param("type", _type).lower()
+
+        specs = []
+        services = self.input.param("services", "data")
         for service_group in services.split("-"):
-            grp_services = service_group.split(":")
-            service = grp_services[0]
-            config = {
-                "size": self.num_nodes[service] + num,
-                "services": [services_map[_service.lower()] for _service in grp_services],
-                "compute": self.compute[service],
-                "storage": {
+            services = service_group.split(":")
+            service = services[0]
+            spec = {
+                "count": self.num_nodes[service] + num,
+                "compute": {
+                    "type": self.compute[service],
+                },
+                "services": [{"type": self.services_map[_service.lower()]} for _service in services],
+                "disk": {
                     "type": storage_type,
-                    "size": self.disk[service],
-                    "iops": self.input.param("iops", 3000)
-                }
+                    "sizeInGb": self.disk[service]
+                },
+                "diskAutoScaling": {"enabled": self.diskAutoScaling}
             }
-            if self.capella_cluster_config["provider"].lower() in ["hostedgcp", "gcp"]:
-                config["storage"].pop("iops")
-            server_group_list.append(config)
-        return server_group_list
+            if provider == "aws":
+                spec["disk"]["iops"] = self.iops[service]
+            specs.append(spec)
+        return specs
 
     def create_buckets(self):
         self.PrintStep("Step 2: Create required buckets and collections.")
@@ -576,6 +567,49 @@ class Murphy(BaseTestCase, OPD):
             _type = AWS.StorageType.GP3
         storage_type = self.input.param("type", _type).upper()
 
+        if h_scaling or vh_scaling:
+            self.loop = 0
+            self.rebl_nodes = 0
+            self.max_rebl_nodes = self.input.param("max_rebl_nodes", 27)
+            while self.loop < self.iterations:
+                self.rebl_nodes += self.input.param("horizontal_scale", 3)
+                if self.rebl_nodes > self.max_rebl_nodes:
+                    self.rebl_nodes = 0
+                config = self.rebalance_config(self.rebl_nodes)
+
+                ###################################################################
+                self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
+                               format(self.loop))
+                rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                   config,
+                                                                   timeout=self.index_timeout)
+
+                self.task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                self.print_stats()
+                self.loop += 1
+                self.sleep(60, "Sleep for 60s after rebalance")
+                self.restart_query_load(num=10)
+
+            self.loop = 0
+            while self.loop < self.iterations:
+                self.restart_query_load(num=-10)
+                self.rebl_nodes -= self.input.param("horizontal_scale", 3)
+                self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
+                               format(self.loop))
+                config = self.rebalance_config(self.rebl_nodes)
+                rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                   config,
+                                                                   timeout=self.index_timeout)
+
+                self.task_manager.get_task_result(rebalance_task)
+                self.cluster_util.print_cluster_stats(self.cluster)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                self.print_stats()
+                self.sleep(60, "Sleep for 60s after rebalance")
+
+                self.loop += 1
+
         if v_scaling or vh_scaling:
             self.loop = 0
             while self.loop <= self.iterations:
@@ -735,49 +769,6 @@ class Murphy(BaseTestCase, OPD):
                     "collections")
                 if bucket_info['basicStats']['itemCount'] == item_count:
                     self.log.info("Post restore item count on the bucket is {}".format(item_count))
-
-        if h_scaling or vh_scaling:
-            self.loop = 0
-            self.rebl_nodes = 0
-            self.max_rebl_nodes = self.input.param("max_rebl_nodes", 27)
-            while self.loop < self.iterations:
-                self.rebl_nodes += self.input.param("horizontal_scale", 3)
-                if self.rebl_nodes > self.max_rebl_nodes:
-                    self.rebl_nodes = 0
-                config = self.rebalance_config(self.rebl_nodes)
-
-                ###################################################################
-                self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
-                               format(self.loop))
-                rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                   config,
-                                                                   timeout=self.index_timeout)
-
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.loop += 1
-                self.sleep(60, "Sleep for 60s after rebalance")
-                self.restart_query_load(num=10)
-
-            self.loop = 0
-            while self.loop < self.iterations:
-                self.restart_query_load(num=-10)
-                self.rebl_nodes -= self.input.param("horizontal_scale", 3)
-                self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
-                               format(self.loop))
-                config = self.rebalance_config(self.rebl_nodes)
-                rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                   config,
-                                                                   timeout=self.index_timeout)
-
-                self.task_manager.get_task_result(rebalance_task)
-                self.cluster_util.print_cluster_stats(self.cluster)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.sleep(60, "Sleep for 60s after rebalance")
-
-                self.loop += 1
 
         for task in self.tasks:
             task.stop_work_load()

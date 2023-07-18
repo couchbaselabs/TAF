@@ -343,7 +343,7 @@ class RebalanceTaskCapella(Task):
     def __init__(self, cluster, scale_params=list(), timeout=1200, poll_interval=60):
         Task.__init__(self, "Scaling_task_{}".format(str(time.time())))
         self.cluster = cluster
-        self.scale_params = {"servers": scale_params}
+        self.scale_params = {"specs": scale_params}
         self.timeout = timeout
         self.servers = None
         self.test_log.critical("Scale_params: %s" % scale_params)
@@ -351,7 +351,7 @@ class RebalanceTaskCapella(Task):
 
     def call(self):
         DedicatedUtils.scale(self.cluster, self.scale_params)
-        self.cluster.cluster_config["servers"] = self.scale_params["servers"]
+        self.cluster.cluster_config["specs"] = self.scale_params["specs"]
         capella_api = decicatedCapellaAPI(self.cluster.pod.url_public,
                                           self.cluster.tenant.api_secret_key,
                                           self.cluster.tenant.api_access_key,

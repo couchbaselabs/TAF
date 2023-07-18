@@ -65,6 +65,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
             "eventing": self.input.param("eventing_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4")
             }
+        aws_storage_range = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+        aws_min_iops = [3000, 4370, 5740, 7110, 8480, 9850, 11220, 12590, 13960, 15330, 16000]
         self.iops = {
             "data": self.input.param("kv_iops", 3000),
             "query": self.input.param("n1ql_iops", 3000),
@@ -81,6 +83,10 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "analytics": self.input.param("cbas_disk", 200),
             "eventing": self.input.param("eventing_disk", 200)
             }
+        for i, storage in enumerate(aws_storage_range):
+            for service in ["data", "query", "index", "search", "analytics", "eventing"]:
+                if self.disk[service] >= storage:
+                    self.iops[service] = max(aws_min_iops[i+1], self.iops[service])
         self.num_nodes = {
             "data": self.input.param("kv_nodes", 3),
             "query": self.input.param("n1ql_nodes", 2),
@@ -369,14 +375,13 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 "count": self.num_nodes[service],
                 "compute": {
                     "type": self.compute[service],
-                    "cpu": 0,
-                    "memoryInGb": 0
                 },
                 "services": [{"type": self.services_map[_service.lower()]} for _service in services],
                 "disk": {
                     "type": storage_type,
                     "sizeInGb": self.disk[service]
-                }
+                },
+                "diskAutoScaling": {"enabled": self.diskAutoScaling}
             }
             if provider == "aws":
                 spec["disk"]["iops"] = self.iops[service]
