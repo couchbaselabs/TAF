@@ -1,4 +1,5 @@
 import json
+from datetime import datetime
 
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux
@@ -493,34 +494,47 @@ class audit:
     def validateTimeStamp(self, actualTime=None):
         try:
             self.log.info(actualTime)
-            date = actualTime[:10]
-            hourMin = actualTime[11:16]
-            tempTimeZone = actualTime[-6:]
+            # Convert the string to a datetime object
+            timestamp = datetime.strptime(actualTime, '%Y-%m-%dT%H:%M:%S.%fZ')
+
+            # Extract the date, time, and timezone
+            date = timestamp.date()
+            time = timestamp.time()
+            timezone = timestamp.strftime('%z')
+
             shell = RemoteMachineShellConnection(self.host)
             try:
-                currDate = shell.execute_command('date +"%Y-%m-%d"')
-                currHourMin = shell.execute_command('date +"%H:%M"')
-                currTimeZone = shell.execute_command('date +%z')
+                curr_timestamp = shell.execute_command('date '
+                                                       '+%Y-%m-%dT%H:%M:%S.%z')
+                curr_timestamp = datetime.strptime(curr_timestamp[0][
+                    0].rstrip()[:-6], '%Y-%m-%dT%H:%M:%S')
+                currDate = curr_timestamp.date()
+                currtime = curr_timestamp.time()
+                currTimeZone = curr_timestamp.strftime('%z')
             finally:
                 shell.disconnect()
-            self.log.info (" Matching expected date - currDate {0}; actual Date - {1}".format(currDate[0][0], date))
-            self.log.info (" Matching expected time - currTime {0} ; actual Time - {1}".format(currHourMin[0][0], hourMin))
-            if date != currDate[0][0].rstrip():
+
+            self.log.info (" Matching expected date - currDate {0}; actual "
+                           "Date - {1}".format(currDate, date))
+            if date != currDate:
                 self.log.info('Compare date')
                 self.log.info ("Mis-match in values for timestamp - date")
                 return False
             else:
-                self.log.info('Compare hours and minutes')
-                if ((int((hourMin.split(":"))[0])) != (int((currHourMin[0][0].split(":"))[0]))) or ((int((hourMin.split(":"))[1]) + 10) < (int((currHourMin[0][0].split(":"))[1]))):
+                self.log.info(
+                    " Matching expected time - currTime {0} ; actual "
+                    "Time - {1}".format(currtime, time))
+                if currtime < time:
                     self.log.info ("Mis-match in values for timestamp - time")
                     return False
                 else:
                     self.log.info('Compare timezone')
-                    tempTimeZone = tempTimeZone.replace(":", "")
-                    if (tempTimeZone != currTimeZone[0][0].rstrip()):
-                        self.log.info("Mis-match in value of timezone. Actual: %s Expected: %s" %(tempTimeZone, currTimeZone[0][0].rstrip()))
+                    if timezone != currTimeZone:
+                        self.log.info("Mis-match in value of timezone. "
+                                      "Actual: %s Expected: %s" %(
+                            timezone, currTimeZone))
                         return False
-
+                    return True
         except Exception, e:
             self.log.info ("Value of execption is {0}".format(e))
             return False
