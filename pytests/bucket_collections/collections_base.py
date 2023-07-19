@@ -333,6 +333,12 @@ class CollectionBase(ClusterSetup):
             test_obj.cluster, buckets_spec)
         if not (hasattr(test_obj, "initial_version")
                 and int(test_obj.initial_version[0]) < 7):
+            t_version = float(test_obj.initial_version[:3])
+            if t_version <= 7.2:
+                for bucket in test_obj.cluster.buckets:
+                    for coll in bucket.scopes[CbServer.system_scope].collections:
+                        bucket.scopes[CbServer.system_scope].collections.pop(coll)
+                    bucket.scopes.pop(CbServer.system_scope)
             test_obj.bucket_util.wait_for_collection_creation_to_complete(
                 test_obj.cluster)
 

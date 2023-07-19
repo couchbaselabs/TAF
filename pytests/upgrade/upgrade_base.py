@@ -14,6 +14,7 @@ from testconstants import CB_RELEASE_BUILDS, CB_REPO, CB_VERSION_NAME
 from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.durability_helper import BucketDurability
 from BucketLib.bucket import Bucket
+import testconstants
 
 
 class UpgradeBase(BaseTestCase):
@@ -35,6 +36,10 @@ class UpgradeBase(BaseTestCase):
                                                 "6.0.1-2037")
         self.upgrade_version = self.input.param("upgrade_version",
                                                 "6.5.0-3939")
+        self.disk_location_data = self.input.param("data_location",
+                                                   testconstants.COUCHBASE_DATA_PATH)
+        self.disk_location_index = self.input.param("index_location",
+                                                    testconstants.COUCHBASE_DATA_PATH)
         self.test_storage_upgrade = \
             self.input.param("test_storage_upgrade", False)
         self.upgrade_type = self.input.param("upgrade_type", "online_swap")
@@ -49,6 +54,10 @@ class UpgradeBase(BaseTestCase):
                                                     False)
         self.sync_write_abort_pattern = \
             self.input.param("sync_write_abort_pattern", "all_aborts")
+        self.migrate_storage_backend = self.input.param("migrate_storage_backend", False)
+        self.preferred_storage_mode = self.input.param("preferred_storage_mode",
+                                                      Bucket.StorageBackend.magma)
+        self.migration_procedure = self.input.param("migration_procedure", "swap_rebalance")
 
         #### Spec File Parameters ####
 
@@ -58,13 +67,12 @@ class UpgradeBase(BaseTestCase):
         self.upsert_data_spec = self.input.param("upsert_data_spec", "upsert_load")
         self.sync_write_spec = self.input.param("sync_write_spec", "sync_write_magma")
         self.collection_spec = self.input.param("collection_spec","collections_magma")
-        self.load_large_docs = self.input.param("load_large_docs", True)
+        self.load_large_docs = self.input.param("load_large_docs", False)
         self.collection_operations = self.input.param("collection_operations", True)
         ####
         self.rebalance_op = self.input.param("rebalance_op", "all")
         self.dur_level = self.input.param("dur_level", "default")
         self.alternate_load = self.input.param("alternate_load", False)
-        self.complete_cluster_swap = self.input.param("complete_cluster_swap", False)
         self.magma_upgrade = self.input.param("magma_upgrade", False)
         self.perform_collection_ops = self.input.param("perform_collection_ops", False)
         self.collection_ops_iterations = self.input.param("collection_ops_iterations", 1)
@@ -148,6 +156,13 @@ class UpgradeBase(BaseTestCase):
             self.services_init = self.cluster_util.get_services(
                 [self.cluster.master], self.services_init, 0)
 
+        # Initialize first node in cluster
+        master_node = self.cluster.servers[0]
+        if self.services_init:
+            master_node.services = self.services_init[0]
+        master_rest = RestConnection(master_node)
+        master_rest.init_node()
+
         # Initialize cluster using given nodes
         for index, server \
                 in enumerate(self.cluster.servers[1:self.nodes_init]):
@@ -223,9 +238,6 @@ class UpgradeBase(BaseTestCase):
 
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]
-        if self.complete_cluster_swap and \
-                    len(self.cluster.servers) == 2 * self.nodes_init:
-            self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
 
         self.buckets_to_load = []
 
@@ -788,7 +800,7 @@ class UpgradeBase(BaseTestCase):
         data_load_task = self.bucket_util.run_scenario_from_spec(
             self.task,
             self.cluster,
-            self.buckets_to_load,
+            self.cluster.buckets,
             sub_load_spec,
             mutation_num=0,
             async_load=async_load,

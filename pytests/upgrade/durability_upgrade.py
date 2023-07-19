@@ -2,7 +2,7 @@ import time
 from random import choice
 from threading import Thread
 import testconstants
-from BucketLib.bucket import Bucket
+from BucketLib.bucket import Bucket, Collection, Scope
 from Cb_constants import DocLoading, CbServer
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cb_tools.cbstats import Cbstats
@@ -16,6 +16,7 @@ from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
 from bucket_collections.collections_base import CollectionBase
+from BucketLib.BucketOperations import BucketHelper
 
 class UpgradeTests(UpgradeBase):
     def setUp(self):
@@ -325,19 +326,51 @@ class UpgradeTests(UpgradeBase):
 
         ### Printing cluster stats after the upgrade of the whole cluster ###
         self.cluster_util.print_cluster_stats(self.cluster)
-        self.PrintStep("Upgrade of the whole cluster complete")
+        self.PrintStep("Upgrade of the whole cluster to {0} complete".format(
+                                                            self.upgrade_version))
 
         self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
         self.servers = self.cluster_util.get_kv_nodes(self.cluster)
 
-        ### Swap Rebalance/Failover recovery of all nodes post upgrade ###
-        if self.complete_cluster_swap:
-            if self.upgrade_type in ["failover_delta_recovery", "failover_full_recovery"]:
+        # Adding _system scope and collections under it to the local bucket object since 
+        # these are added once the cluster is upgraded to 7.6
+        if float(self.upgrade_version[:3]) >= 7.6:
+            for bucket in self.cluster.buckets:
+                scope = Scope({"name": CbServer.system_scope})
+                bucket.scopes[CbServer.system_scope] = scope
+                for c_name in [CbServer.query_collection,
+                            CbServer.mobile_collection]:
+                    collection = Collection({"name": c_name})
+                    bucket.scopes[CbServer.system_scope].collections[c_name] = collection
+
+        self.bucket = self.cluster.buckets[0]
+        self.ver = float(self.upgrade_version[:3])
+
+        ### Updating the storageBackend for migration ###
+        if self.migrate_storage_backend:
+            self.PrintStep("Migration of the storageBackend to {0}".format(
+                                                    self.preferred_storage_mode))
+            self.bucket_util.update_bucket_property(self.cluster.master,
+                                                    self.bucket,
+                                                    storageBackend=self.preferred_storage_mode)
+            self.bucket_util.get_all_buckets(self.cluster)
+            self.bucket = self.cluster.buckets[0]
+
+            self.verify_storage_key_for_migration(self.bucket_storage)
+
+            ### Swap Rebalance/Failover recovery of all nodes post upgrade for migration ###
+            if self.migration_procedure == "failover_recovery":
                 self.failover_recovery_all_nodes()
             else:
-                self.swap_rebalance_all_nodes()
+                self.swap_rebalance_all_nodes_iteratively()
+            self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
+            self.servers = self.cluster_util.get_kv_nodes(self.cluster)
+            self.bucket_util.print_bucket_stats(self.cluster)
 
-        self.ver = float(self.upgrade_version[:3])
+            if self.preferred_storage_mode == Bucket.StorageBackend.magma:
+                self.magma_upgrade = True
+            else:
+                self.magma_upgrade = False
 
         ### Enabling CDC ###
         if self.magma_upgrade and self.ver >= 7.2:
@@ -367,8 +400,7 @@ class UpgradeTests(UpgradeBase):
             self.edit_history_for_collections_existing_bucket()
 
         ### Creation of a new bucket post upgrade ###
-        if self.magma_upgrade:
-            self.create_new_bucket_post_upgrade_and_load_data()
+        self.create_new_bucket_post_upgrade_and_load_data()
 
         ### Rebalance/failover tasks after the whole cluster is upgraded ###
         if self.rebalance_op != "None":
@@ -1092,11 +1124,11 @@ class UpgradeTests(UpgradeBase):
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 5,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 1000,
             Bucket.ramQuotaMB: 512,
-            Bucket.storageBackend: self.spec_bucket[Bucket.storageBackend],
+            Bucket.storageBackend: Bucket.StorageBackend.magma,
             Bucket.evictionPolicy: self.spec_bucket[Bucket.evictionPolicy]
         }
 
-        CollectionBase.over_ride_bucket_template_params(self, self.bucket_storage, 
+        CollectionBase.over_ride_bucket_template_params(self, self.bucket_storage,
                                                         new_bucket_spec)
         self.bucket_util.create_buckets_using_json_data(self.cluster, new_bucket_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
@@ -1189,42 +1221,66 @@ class UpgradeTests(UpgradeBase):
 
         nodes_to_replace = self.cluster.nodes_in_cluster
 
-        i = 0
+        rest = RestConnection(self.cluster.master)
+        services = rest.get_nodes_services()
+        services_on_target_node = services[
+                (self.cluster.master.ip + ":" + str(self.cluster.master.port))]
 
-        for node in nodes_to_replace:
-            rest = RestConnection(node)
-            services = rest.get_nodes_services()
-            services_on_target_node = services[
-                    (node.ip + ":" + str(self.cluster.master.port))]
+        rebalance_passed = self.task.async_rebalance(
+                    self.cluster,
+                    to_add=self.spare_nodes,
+                    to_remove=self.cluster.nodes_in_cluster,
+                    check_vbucket_shuffling=False,
+                    services=[",".join(services_on_target_node)])
 
-            node_to_add = self.spare_nodes[i]
-
-            rebalance_data_load = None
-            if data_load:
-                rebalance_data_load = self.load_during_rebalance(self.sub_data_spec,
-                                                                 async_load=True)
-
-            rebalance_passed = self.task.rebalance(
-                        self.cluster,
-                        to_add=[node_to_add],
-                        to_remove=[node],
-                        check_vbucket_shuffling=False,
-                        services=[",".join(services_on_target_node)])
-
-            if rebalance_passed:
-                self.log.info("Swap Rebalance successful for node {0}".format(i+1))
-                i += 1
-                if node.ip == self.cluster.master.ip:
-                    self.cluster.master = node_to_add
-            else:
-                self.log.info("Swap Rebalance failed for node {0}".format(i+1))
-
-            if rebalance_data_load is not None:
-                self.task_manager.get_task_result(rebalance_data_load)
+        self.task_manager.get_task_result(rebalance_passed)
+        if rebalance_passed.result is True:
+            self.log.info("Swap Rebalance successful")
+        else:
+            self.log.info("Swap Rebalance failed")
 
         self.cluster.nodes_in_cluster = self.spare_nodes
+        self.cluster.master = self.cluster.nodes_in_cluster[0]
         self.spare_nodes = nodes_to_replace
         self.spare_node = self.spare_nodes[0]
+
+    def swap_rebalance_all_nodes_iteratively(self):
+        self.PrintStep("Swap rebalance of all nodes iteratively")
+        self.log.info("Installing the version {0} on the spare node".format(
+                                                    self.upgrade_version))
+        self.install_version_on_node([self.spare_node], self.upgrade_version)
+
+        cluster_nodes = self.cluster.nodes_in_cluster
+
+        for node in cluster_nodes:
+            rest = RestConnection(node)
+            services = rest.get_nodes_services()
+            services_on_node = services[(node.ip + ":" + str(node.port))]
+
+            self.log.info("Swap rebalance starting...")
+            swap_reb_task = self.task.async_rebalance(
+                self.cluster,
+                to_add=[self.spare_node],
+                to_remove=[node],
+                check_vbucket_shuffling=False,
+                services=[",".join(services_on_node)])
+
+            self.log.info("Starting data load during rebalance...")
+            self.load_during_rebalance(self.sub_data_spec)
+
+            self.task_manager.get_task_result(swap_reb_task)
+            if swap_reb_task.result is True:
+                self.log.info("Swap rebalance of node {0} passed".format(node.ip))
+                print(self.cluster.nodes_in_cluster)
+                migrated_node_in = self.spare_node
+                self.cluster.master = self.spare_node
+                self.spare_node = node
+                self.validate_mixed_storage_during_migration(migrated_node_in)
+            else:
+                self.log.info("Swap rebalance of node {0} failed".format(node.ip))
+                return
+
+        self.log.info("Iterative swap rebalance of all nodes done.")
 
     def failover_recovery_all_nodes(self):
         self.PrintStep("Starting Failover/Recovery of all nodes post upgrade")
@@ -1252,3 +1308,58 @@ class UpgradeTests(UpgradeBase):
             if rebalance_passed:
                 self.log.info("Failover/recovery completed for node {0}".format(otp_node.ip))
                 self.cluster_util.print_cluster_stats(self.cluster)
+                self.validate_mixed_storage_during_migration(otp_node)
+
+    def verify_storage_key_for_migration(self, storage_backend):
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_stats = bucket_helper.get_bucket_json(self.bucket.name)
+        for node in bucket_stats['nodes']:
+            if 'storageBackend' not in node or \
+                ('storageBackend' in node and node['storageBackend'] != storage_backend):
+                self.log.info("storageBackend key mismatch/not present in node {0}".format(
+                                                                        node['hostname']))
+            else:
+                self.log.info("storageBackend key introduced correctly for node {0}".format(
+                                                                        node['hostname']))
+
+    def validate_mixed_storage_during_migration(self, migrated_node):
+        bucket_helper = BucketHelper(self.cluster.master)
+        bucket_stats = bucket_helper.get_bucket_json(self.bucket.name)
+        for node in bucket_stats['nodes']:
+            if migrated_node.ip == node['hostname'][:-5]:
+                if 'storageBackend' not in node:
+                    self.log.info("Storage mode of node {0} is updated correctly"
+                                  " and now set to the global storage mode".format(migrated_node.ip))
+                else:
+                    self.log.info("Storage mode wasn't updated correctly for node {0}".format(
+                                                                            migrated_node.ip))
+
+        sync_load_spec = self.bucket_util.get_crud_template_from_package(self.sync_write_spec)
+        CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
+        CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
+
+        sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
+
+        ### Collections are dropped and re-created while the cluster is mixed mode ###
+        self.log.info("Performing collection ops in mixed mode cluster setting...")
+        sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
+        sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
+        sync_load_spec["doc_crud"][
+            MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+
+        # Validate sync_write results after upgrade
+        self.PrintStep("Sync Write and Collection Ops task starting...")
+        sync_write_task = self.bucket_util.run_scenario_from_spec(
+            self.task,
+            self.cluster,
+            self.cluster.buckets,
+            sync_load_spec,
+            mutation_num=0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            validate_task=True)
+
+        if sync_write_task.result is True:
+            self.log.info("SyncWrite and collectionOps task succeeded during migration")
+        else:
+            self.log_failure("SyncWrite/collectionOps failed during migration")

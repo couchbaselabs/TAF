@@ -42,6 +42,7 @@ RPM_DIS_NAME = ["centos", "red hat", "opensuse", "suse", "oracle linux"]
 # be running this locally without being on VPN (which my test machines isn't)
 CB_DOWNLOAD_SERVER = "172.23.126.166"
 CB_DOWNLOAD_SERVER_FQDN = "latestbuilds.service.couchbase.com"
+COUCHBASE_DATA_PATH = "/opt/couchbase/var/lib/couchbase/data/"
 
 MV_LATESTBUILD_REPO = "http://latestbuilds.service.couchbase.com/"
 COUCHBASE_REPO = "http://{0}/builds/latestbuilds/couchbase-server/".format(CB_DOWNLOAD_SERVER)
