@@ -80,6 +80,7 @@ class UpgradeBase(BaseTestCase):
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
+        self.community_upgrade = self.input.param("community_upgrade", False)
 
         if self.initial_version == "same_version":
             self.initial_version = self.upgrade_version
@@ -108,11 +109,18 @@ class UpgradeBase(BaseTestCase):
 
         self.__validate_upgrade_type()
 
+        if self.community_upgrade:
+            build_type = "community"
+            CbServer.enterprise_edition = False
+            self.initial_version = self.upgrade_version
+        else:
+            build_type = "enterprise"
+
         self.PrintStep("Installing initial version {0} on servers"
                        .format(self.initial_version))
         self.install_version_on_node(
             self.cluster.servers[0:self.nodes_init],
-            self.initial_version)
+            self.initial_version, build_type)
 
         if self.disk_location_data == testconstants.COUCHBASE_DATA_PATH and \
                 self.disk_location_index == testconstants.COUCHBASE_DATA_PATH:
@@ -180,12 +188,13 @@ class UpgradeBase(BaseTestCase):
         self.cluster_util.print_cluster_stats(self.cluster)
 
         # Disable auto-failover to avoid failover of nodes
-        status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120, False)
-        self.assertTrue(status, msg="Failure during disabling auto-failover")
+        if not self.community_upgrade:
+            status = RestConnection(self.cluster.master) \
+                .update_autofailover_settings(False, 120, False)
+            self.assertTrue(status, msg="Failure during disabling auto-failover")
 
-        RestConnection(self.cluster.master).set_internalSetting(
-                "magmaMinMemoryQuota", 256)
+            RestConnection(self.cluster.master).set_internalSetting(
+                    "magmaMinMemoryQuota", 256)
 
         # Creating buckets from spec file
         CollectionBase.deploy_buckets_from_spec_file(self)
@@ -289,14 +298,14 @@ class UpgradeBase(BaseTestCase):
 
         if self.prefer_master:
             node_info = RestConnection(self.cluster.master).get_nodes_self(10)
-            if self.upgrade_version not in node_info.version \
+            if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
                     and check_node_runs_service(node_info["services"]):
                 cluster_node = self.cluster.master
 
         if cluster_node is None:
             for node in self.cluster_util.get_nodes(self.cluster.master):
                 node_info = RestConnection(node).get_nodes_self(10)
-                if self.upgrade_version not in node_info.version \
+                if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
                         and check_node_runs_service(node_info.services):
                     cluster_node = node
                     break
@@ -307,7 +316,7 @@ class UpgradeBase(BaseTestCase):
 
         return cluster_node
 
-    def install_version_on_node(self, nodes, version):
+    def install_version_on_node(self, nodes, version, build_type="enterprise"):
         """
         Installs required Couchbase-server version on the target nodes.
 
@@ -322,6 +331,7 @@ class UpgradeBase(BaseTestCase):
         install_params['vbuckets'] = [self.cluster.vbuckets]
         install_params['init_nodes'] = False
         install_params['debug_logs'] = False
+        install_params['type'] = build_type
         self.installer_job.parallel_install(nodes, install_params)
 
         if self.disk_location_data != testconstants.COUCHBASE_DATA_PATH or \

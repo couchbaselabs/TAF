@@ -1756,7 +1756,7 @@ class RestConnection(newRC):
                 stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats'].get('swap_total')
                 stat_dict[node_stat['hostname']]['active_item_count'] = 0
                 stat_dict[node_stat['hostname']]['replica_item_count'] = 0
-                if node_stat['version'][:5] >= '7.5.0':
+                if node_stat['version'][:5] >= '7.5.0' and 'serverGroup' in node_stat:
                     stat_dict[node_stat['hostname']]['serverGroup'] = \
                         node_stat['serverGroup']
                 if 'curr_items' in node_stat['interestingStats']:
