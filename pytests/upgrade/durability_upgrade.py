@@ -471,6 +471,95 @@ class UpgradeTests(UpgradeBase):
         self.PrintStep("Starting rebalance/failover tasks post downgrade")
         self.tasks_post_upgrade()
 
+    def test_upgrade_from_ce_to_ee(self):
+        iter = 0
+        large_docs_start_num = 0
+        self.PrintStep("Upgrade begins...")
+        node_to_upgrade = self.fetch_node_to_upgrade()
+
+        while node_to_upgrade is not None:
+
+            self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
+
+            if self.load_large_docs:
+                self.buckets_to_load = self.cluster.buckets
+                self.loading_large_documents(large_docs_start_num)
+
+            self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                    self.upgrade_version)
+
+            self.cluster_util.print_cluster_stats(self.cluster)
+
+            ### Performing sync write while the cluster is in mixed mode ###
+            sync_load_spec = self.bucket_util.get_crud_template_from_package(
+                self.sync_write_spec)
+            CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
+            CollectionBase.set_retry_exceptions_for_initial_data_load(self, sync_load_spec)
+
+            sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
+
+            ### Collections are dropped and re-created while the cluster is mixed mode ###
+            if self.cluster_supports_collections and self.perform_collection_ops:
+                self.log.info("Performing collection ops in mixed mode cluster setting...")
+                sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 4
+                sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 2
+                sync_load_spec["doc_crud"][
+                    MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+
+            # Validate sync_write results after upgrade
+            self.PrintStep("Sync Write task starting...")
+            sync_write_task = self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.cluster.buckets,
+                sync_load_spec,
+                mutation_num=0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                validate_task=True)
+
+            if sync_write_task.result is True:
+                self.log.info("SyncWrite task succeeded")
+            else:
+                self.log_failure("SyncWrite failed during upgrade")
+
+            ### Fetching the next node to upgrade ###
+            node_to_upgrade = self.fetch_node_to_upgrade()
+            iter += 1
+            if self.load_large_docs:
+                large_docs_start_num += 1000
+
+            if iter == 1:
+                CbServer.enterprise_edition = True
+
+            self.PrintStep("Upgrade of node {0} done".format(iter))
+            if iter < self.nodes_init:
+                self.PrintStep("Starting the upgrade of the next node")
+
+            # Halt further upgrade if test has failed during current upgrade
+            if self.test_failure is not None:
+                break
+
+        ### Printing cluster stats after the upgrade of the whole cluster ###
+        self.cluster_util.print_cluster_stats(self.cluster)
+        self.PrintStep("Upgrade of the whole cluster complete")
+
+        if self.load_large_docs:
+            self.update_item_count_after_loading_large_docs()
+
+        self.log.info("starting doc verification")
+        self.__wait_for_persistence_and_validate()
+        self.log.info("Final doc count verified")
+
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        ### Rebalance/failover tasks after the whole cluster is upgraded ###
+        if self.rebalance_op != "None":
+            self.PrintStep("Starting rebalance/failover tasks post upgrade...")
+            self.tasks_post_upgrade(data_load=True)
+
+        self.validate_test_failure()
+
     def test_bucket_durability_upgrade(self):
         update_task = None
         self.sdk_timeout = 60
