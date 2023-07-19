@@ -494,23 +494,24 @@ class audit:
     def validateTimeStamp(self, actualTime=None):
         try:
             self.log.info(actualTime)
-            # Convert the string to a datetime object
-            timestamp = datetime.strptime(actualTime, '%Y-%m-%dT%H:%M:%S.%fZ')
+
+            timestamp = datetime.strptime(actualTime[:-6],
+                                          '%Y-%m-%dT%H:%M:%S.%f')
 
             # Extract the date, time, and timezone
             date = timestamp.date()
             time = timestamp.time()
-            timezone = timestamp.strftime('%z')
+            timezone = actualTime[-6:]
 
             shell = RemoteMachineShellConnection(self.host)
             try:
-                curr_timestamp = shell.execute_command('date '
-                                                       '+%Y-%m-%dT%H:%M:%S.%z')
-                curr_timestamp = datetime.strptime(curr_timestamp[0][
-                    0].rstrip()[:-6], '%Y-%m-%dT%H:%M:%S')
+                curr_timestamp = shell.execute_command(
+                    'date +%Y-%m-%dT%H:%M:%S%:z')[0][0].rstrip()
+                currTimeZone = curr_timestamp[-6:]
+                curr_timestamp = datetime.strptime(curr_timestamp[:-6],
+                                                   '%Y-%m-%dT%H:%M:%S')
                 currDate = curr_timestamp.date()
                 currtime = curr_timestamp.time()
-                currTimeZone = curr_timestamp.strftime('%z')
             finally:
                 shell.disconnect()
 
