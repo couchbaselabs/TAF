@@ -234,15 +234,15 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 self.serverless_util.trigger_log_collection(dataplane.cluster_id)
             for dataplane in self.dataplane_objs.values():
                 table = TableView(self.log.info)
-                table.add_row(["Node", "URL"])
+                table.add_row(["URL"])
                 while True:
                     tasks = self.serverless_util.get_cluster_tasks(dataplane.cluster_id)
                     task = [task for task in tasks if task["type"] == "clusterLogsCollection"][0]
                     self.log.info("Logs on Dataplane {}: Status {} - Progress {}%".
                                   format(dataplane.id, task["status"], task["progress"]))
                     if task["status"] == "completed":
-                        for node, logInfo in sorted(task["perNode"].items()):
-                            table.add_row([node, logInfo["url"]])
+                        for _, logInfo in sorted(task["perNode"].items()):
+                            table.add_row([logInfo["url"]])
                         table.display("Dataplane: {}".format(dataplane.id))
                         break
                     self.sleep(10)

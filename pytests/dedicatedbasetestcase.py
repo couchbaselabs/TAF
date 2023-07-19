@@ -221,10 +221,10 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 CapellaUtils.trigger_log_collection(self.pod, self.tenant, cluster.id)
             for _, cluster in self.cb_clusters.items():
                 table = TableView(self.log.info)
-                table.add_row(["Node", "URL"])
+                table.add_row(["URL"])
                 task = CapellaUtils.check_logs_collect_status(self.pod, self.tenant, cluster.id)
-                for node, logInfo in sorted(task["perNode"].items()):
-                    table.add_row([node, logInfo["url"]])
+                for _, logInfo in sorted(task["perNode"].items()):
+                    table.add_row([logInfo["url"]])
                 table.display("Cluster: {}".format(cluster.id))
 
         self.shutdown_task_manager()

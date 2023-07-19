@@ -273,8 +273,6 @@ class UpgradeProvisionedCluster(Task):
         self.poll_interval = poll_interval
 
     def call(self):
-        import pydevd
-        pydevd.settrace(trace_only_current_thread=False)
         try:
             DedicatedUtils.upgrade(self.cluster, self.params)
         except Exception as e:
