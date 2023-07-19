@@ -122,8 +122,7 @@ class CapellaUtils(object):
         CapellaUtils.log.info("Cluster created with cluster ID: {}"\
                               .format(cluster_id))
         CapellaUtils.wait_until_done(pod, tenant, cluster_id,
-                                     "Creating Cluster {}".format(
-                                         cluster_details.get("clusterName")),
+                                     "Creating Cluster {}".format(cluster_id),
                                      timeout=timeout)
         cluster_srv = CapellaUtils.get_cluster_srv(pod, tenant, cluster_id)
         CapellaUtils.allow_my_ip(pod, tenant, cluster_id)

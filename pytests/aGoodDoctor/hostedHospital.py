@@ -545,7 +545,7 @@ class Murphy(BaseTestCase, OPD):
         upgrade = self.input.capella.get("upgrade_image")
         if upgrade:
             config = {
-                "token": self.input.capella.get("CP_API_TEST_OVERRIDE_KEY"),
+                "token": self.input.capella.get("override_key"),
                 "image": self.input.capella.get("upgrade_image"),
                 "server": self.input.capella.get("upgrade_server_version"),
                 "releaseID": self.input.capella.get("upgrade_release_id")

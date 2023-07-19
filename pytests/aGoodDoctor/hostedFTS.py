@@ -87,8 +87,10 @@ class DoctorFTS:
                         self.log.debug("Creating fts index: {}".format(name))
                         retry = 10
                         while retry > 0:
-                            status, _ = self.fts_helper.create_fts_index_from_json(
+                            status, content = self.fts_helper.create_fts_index_from_json(
                                 name, str(fts_param_template))
+                            if content.find(" an index with the same name already exists") != -1:
+                                status = True
                             if status is False:
                                 self.log.critical("FTS index creation failed")
                                 time.sleep(10)

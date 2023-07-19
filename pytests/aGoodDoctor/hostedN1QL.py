@@ -27,8 +27,10 @@ from table_view import TableView
 import itertools
 from com.couchbase.client.core.deps.io.netty.handler.codec import string
 from com.couchbase.client.java.json import JsonObject
+from com.github.javafaker import Faker
 
 letters = ascii_uppercase + ascii_lowercase + digits
+faker = Faker()
 
 queries = ['select name from {} where age between 30 and 50 limit 100;',
            'select name from {} where body is not null and age between 0 and 50 limit 100;',
@@ -102,16 +104,27 @@ HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`
 
 
 HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
-                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`='Hotel' limit 100",
+                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`= $type limit 100",
                 "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
-                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE country = 'Bulgaria' GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {0} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country='Bulgaria' limit 100",
+                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE country = $country GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {0} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country=$country limit 100",
                 "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
                 "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
                 "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
                 "SELECT * from {} where `name` is not null limit 100",
                 "SELECT * from {} where city like \"San%\" limit 100",
-                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = 'Bulgaria' limit 100"]
+                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = $country limit 100"]
 
+HotelQueriesParams = [{},
+                      {"type": "random.choice(['Inn', 'Hostel', 'Place', 'Center', 'Hotel', 'Motel', 'Suites'])"},
+                      {},
+                      {"country": "faker.address().country()"},
+                      {},
+                      {},
+                      {},
+                      {},
+                      {},
+                      {"country": "faker.address().country()"}
+                      ]
 
 NimbusPIndexes = ['CREATE INDEX {}{} ON {}(`uid`, `lastMessageDate` DESC,`unreadCount`, `lastReadDate`, `conversationId`) PARTITION BY hash(`uid`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                   'CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
@@ -236,6 +249,7 @@ class DoctorN1QL():
                     if valType == "Hotel":
                         indexType = HotelIndexes
                         queryType = HotelQueries
+                        queryParams = HotelQueriesParams
                     if valType == "NimbusP":
                         indexType = NimbusPIndexes
                         queryType = NimbusPQueries
@@ -276,7 +290,7 @@ class DoctorN1QL():
                             if unformatted_q not in b.query_map.keys():
                                 b.query_map[unformatted_q] = ["Q%s" % (counter % len(queryType))]
                                 if queryParams:
-                                    b.query_map[unformatted_q].append(queryParams[q % len(queryParams)])
+                                    b.query_map[unformatted_q].append(queryParams[counter % len(queryParams)])
                                 else:
                                     b.query_map[unformatted_q].append("")
                                 b.queries.append((query, self.sdkClients[b.name+s], unformatted_q))
@@ -445,10 +459,9 @@ class QueryLoad:
             elif str(e).find("CouchbaseException") != -1:
                 self.rejected_count.next()
 
-            if str(e).find("no more information available") != -1:
-                self.log.critical(query)
+            if e or str(e).find("no more information available") != -1:
+                self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
-                self.log.critical(client_context_id)
             end = time.time()
             if end - start < 1:
                 time.sleep(end - start)

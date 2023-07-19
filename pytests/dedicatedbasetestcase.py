@@ -216,7 +216,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             raise Exception("SetUp Failed - {}".format(e))
 
     def tearDown(self):
-        if self.is_test_failed():
+        if self.is_test_failed() and self.get_cbcollect_info:
             for _, cluster in self.cb_clusters.items():
                 CapellaUtils.trigger_log_collection(self.pod, self.tenant, cluster.id)
             for _, cluster in self.cb_clusters.items():
