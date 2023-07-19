@@ -84,6 +84,28 @@ class CreateBucketTests(ClusterSetup):
                                                      self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
+    def test_sample_buckets_with_minimum_replica_setting(self):
+        rest = RestConnection(self.cluster.master)
+        bucket_helper = BucketHelper(self.cluster.master)
+        status, content = rest. \
+            set_minimum_bucket_replica_for_cluster(3)
+        self.assertTrue(status, "minimum replica setting not updated")
+        bucket_helper.load_sample("beer-sample")
+        self.sleep(5, "waiting for previous sample bucket to gert deployed")
+        status, content = rest. \
+            set_minimum_bucket_replica_for_cluster(2)
+        self.assertTrue(status, "minimum replica setting not updated")
+        bucket_helper.load_sample("travel-sample")
+        self.sleep(5, "waiting for previous sample bucket to gert deployed")
+        status, content = rest. \
+            set_minimum_bucket_replica_for_cluster(1)
+        self.assertTrue(status, "minimum replica setting not updated")
+        bucket_helper.load_sample("gamesim-sample")
+        self.sleep(5, "waiting for previous sample bucket to gert deployed")
+        self.assertTrue(bucket_helper.bucket_exists("beer-sample"))
+        self.assertTrue(bucket_helper.bucket_exists("travel-sample"))
+        self.assertTrue(bucket_helper.bucket_exists("gamesim-sample"))
+
     def test_recreate_bucket(self):
         bucket_helper = BucketHelper(self.cluster.master)
         minimum_replica = self.input.param("minimum_replica", 3)

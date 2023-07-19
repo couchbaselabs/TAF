@@ -24,15 +24,16 @@ class BucketHelper(RestConnection):
     def bucket_exists(self, bucket):
         try:
             buckets = self.get_buckets_json()
-            names = [item.name for item in buckets]
+            names = [item["name"] for item in buckets]
             self.log.debug("Node %s existing buckets: %s" % (self.ip, names))
             for item in buckets:
-                if item.name == bucket:
+                if item["name"] == bucket:
                     self.log.debug("Node %s found bucket %s"
                                    % (bucket, self.ip))
                     return True
             return False
-        except Exception:
+        except Exception as e:
+            self.log.info(e)
             return False
 
     def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
