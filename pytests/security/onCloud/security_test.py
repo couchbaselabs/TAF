@@ -743,7 +743,7 @@ class SecurityTest(BaseTestCase):
         response = capella_api._urllib_request(url, method=method, params=payload, headers=header)
         return response
 
-    def get_private_endpoint_connection_link(self, tenant_id, project_id, cluster_id, header='',
+    def get_gcp_private_endpoint_connection_link(self, tenant_id, project_id, cluster_id, header='',
                                              payload='', method='POST'):
         """
             body =
@@ -803,14 +803,39 @@ class SecurityTest(BaseTestCase):
 
         capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
                                  self.user, self.passwd)
-        initial_resp = capella_api.enable_gcp_private_endpoint(self.tenant_id, self.project_id,
+
+        # To be integrated when the GCP Private Endpoint changes have been merged to master
+        #
+        # create_cluster_body = {"projectId": "28c626d3-5fa1-4247-8670-b5b7ec7b229d", "specs": [
+        #     {"provider": "gcp", "compute": "n2-standard-4",
+        #      "disk": {"type": "pd-ssd", "sizeInGb": 50, "iops": 3000},
+        #      "services": ["kv", "index", "n1ql", "fts"],
+        #      "count": 3, "diskAutoScaling": {"enabled": True}}], "name": "PrivateEndpointDB",
+        #  "region": "us-east1", "provider": "hostedGCP", "cidr": "10.0.6.0/23", "description": "",
+        #  "timezone": "PT", "singleAZ": False, "plan": "Developer Pro", "server": "7.1"}
+        #
+        # subnet = CapellaUtils.get_next_cidr() + "/20"
+        # create_cluster_body["cidr"] = subnet
+        #
+        # create_cluster_resp = capella_api.create_cluster(json.dumps(create_cluster_body))
+        # print("The cluster id is -", create_cluster_resp.content)
+        # cluster_id = json.loads(create_cluster_resp.content.decode('utf-8'))["id"]
+        # cluster_status = capella_api.get_cluster_status(cluster_id)
+        #
+        # while cluster_status != "healthy":
+        #     cluster_status = json.loads(create_cluster_resp.content.decode('utf-8'))["id"]
+        #     if cluster_status == "healthy":
+        #         break
+        #     self.sleep(10, message="Waiting for cluster to be in healthy state")
+
+        initial_resp = capella_api.enable_private_endpoint(self.tenant_id, self.project_id,
                                                        self.cluster_id)
         self.assertEqual(202, initial_resp.status_code,
                              msg='FAIL, Outcome: {0}, Expected:{1}'
                              .format(initial_resp.status_code, 202))
         status = "disabled"
         while status != "enabled":
-            resp = capella_api.get_gcp_private_endpoint_status(self.tenant_id, self.project_id,
+            resp = capella_api.get_private_endpoint_status(self.tenant_id, self.project_id,
                                                                self.cluster_id)
             status = json.loads(resp.content.decode('utf-8'))["data"]["status"]
             if status == "enableFailed":
@@ -848,7 +873,7 @@ class SecurityTest(BaseTestCase):
                              msg='FAIL, Outcome: {0}, Expected:{1}'
                              .format(delete_endpoint_resp.status_code, 401))
 
-            get_connection_link_resp = self.get_private_endpoint_connection_link(
+            get_connection_link_resp = self.get_gcp_private_endpoint_connection_link(
                                                                     self.tenant_id,
                                                                     self.project_id,
                                                                     self.cluster_id,
@@ -916,7 +941,7 @@ class SecurityTest(BaseTestCase):
         self.log.info("Calling Get GCP Private Endpoint Connection Link API with invalid methods")
         link_command_invalid_methods = ["GET", "PUT", "DELETE"]
         for method in link_command_invalid_methods:
-            get_connection_link_resp = self.get_private_endpoint_connection_link(
+            get_connection_link_resp = self.get_gcp_private_endpoint_connection_link(
                                                                         self.tenant_id,
                                                                         self.project_id,
                                                                         self.cluster_id,
@@ -978,7 +1003,7 @@ class SecurityTest(BaseTestCase):
         }
 
         for payload in connections_links_payloads:
-            get_connection_link_resp = capella_api.get_private_endpoint_connection_link(
+            get_connection_link_resp = capella_api.get_gcp_private_endpoint_connection_link(
                                                                         self.tenant_id,
                                                                         self.project_id,
                                                                         self.cluster_id,
@@ -1030,7 +1055,7 @@ class SecurityTest(BaseTestCase):
             capella_api_role = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
                                  self.test_users[user]["mailid"], self.test_users[user]["password"])
 
-            enable_endpoint_resp = capella_api_role.enable_gcp_private_endpoint(self.tenant_id,
+            enable_endpoint_resp = capella_api_role.enable_private_endpoint(self.tenant_id,
                                                                         self.project_id,
                                                                         self.cluster_id)
             if self.test_users[user]["role"] == "organizationOwner":
@@ -1042,7 +1067,7 @@ class SecurityTest(BaseTestCase):
                                  msg='FAIL, Outcome:{}, Expected:{}'
                                  .format(enable_endpoint_resp.status_code, 403))
 
-            get_endpoint_status_resp = capella_api_role.get_gcp_private_endpoint_status(
+            get_endpoint_status_resp = capella_api_role.get_private_endpoint_status(
                                                                             self.tenant_id,
                                                                             self.project_id,
                                                                             self.cluster_id)
@@ -1059,7 +1084,7 @@ class SecurityTest(BaseTestCase):
                 "vpcId": "abcd",
                 "subnetIds": "1234"
             }
-            get_connection_link_resp = capella_api_role.get_private_endpoint_connection_link(
+            get_connection_link_resp = capella_api_role.get_gcp_private_endpoint_connection_link(
                                                                         self.tenant_id,
                                                                         self.project_id,
                                                                         self.cluster_id,
@@ -1090,7 +1115,7 @@ class SecurityTest(BaseTestCase):
                                  msg='FAIL, Outcome:{}, Expected:{}'
                                  .format(accept_connection_resp.status_code, 403))
 
-            list_connections_resp = capella_api_role.list_gcp_private_endpoint_connections(
+            list_connections_resp = capella_api_role.list_private_endpoint_connections(
                                                                             self.tenant_id,
                                                                             self.project_id,
                                                                             self.cluster_id)
@@ -1103,7 +1128,7 @@ class SecurityTest(BaseTestCase):
                                  msg='FAIL, Outcome:{}, Expected:{}'
                                  .format(list_connections_resp.status_code, 403))
 
-            reject_connections_resp = capella_api_role.reject_gcp_private_endpoint_connection(
+            reject_connections_resp = capella_api_role.reject_private_endpoint_connection(
                                                                             self.tenant_id,
                                                                             self.project_id,
                                                                             self.cluster_id,
@@ -1117,7 +1142,7 @@ class SecurityTest(BaseTestCase):
                                  msg='FAIL, Outcome:{}, Expected:{}'
                                  .format(reject_connections_resp.status_code, 403))
 
-            delete_endpoint_resp = capella_api_role.delete_gcp_private_endpoint(
+            delete_endpoint_resp = capella_api_role.delete_private_endpoint(
                                                                         self.tenant_id,
                                                                         self.project_id,
                                                                         self.cluster_id)
