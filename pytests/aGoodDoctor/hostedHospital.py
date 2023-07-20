@@ -550,7 +550,8 @@ class Murphy(BaseTestCase, OPD):
                 "server": self.input.capella.get("upgrade_server_version"),
                 "releaseID": self.input.capella.get("upgrade_release_id")
                 }
-            task = self.task.async_upgrade_capella_prov(self.cluster, config)
+            task = self.task.async_upgrade_capella_prov(self.cluster, config,
+                                                        timeout=24*60*60)
             self.task_manager.get_task_result(task)
             self.assertTrue(task.result, "Cluster Upgrade Failed...")
 
