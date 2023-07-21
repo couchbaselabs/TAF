@@ -3,20 +3,18 @@ from collections_helper.collections_spec_constants import MetaConstants
 
 spec = {
     MetaConstants.NUM_BUCKETS: 3,
-    MetaConstants.NUM_SCOPES_PER_BUCKET: 3,
-    MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 2,
+    MetaConstants.NUM_SCOPES_PER_BUCKET: 5,
+    MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 5,
     MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
 
     Bucket.bucketType: Bucket.Type.MEMBASE,
     Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
-    Bucket.ramQuotaMB: 100,
     Bucket.replicaIndex: 1,
     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
     Bucket.priority: Bucket.Priority.LOW,
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
     Bucket.maxTTL: 0,
-    Bucket.storageBackend: Bucket.StorageBackend.couchstore,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.VALUE_ONLY,
     Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,
 
@@ -26,6 +24,8 @@ spec = {
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 10,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
             Bucket.bucketType: Bucket.Type.MEMBASE,
+            Bucket.ramQuotaMB: 512,
+            Bucket.storageBackend: Bucket.StorageBackend.magma,
             "privileges": [
                 "Perm1"
             ],
@@ -67,7 +67,9 @@ spec = {
             }
         },
         "bucket1": {
+            Bucket.ramQuotaMB: 512,
             Bucket.bucketType: Bucket.Type.MEMBASE,
+            Bucket.storageBackend: Bucket.StorageBackend.couchstore,
             "privileges": [
                 "Perm2"
             ],
@@ -109,6 +111,7 @@ spec = {
             }
         },
         "bucket2": {
+            Bucket.ramQuotaMB: 1024,
             Bucket.bucketType: Bucket.Type.EPHEMERAL,
             Bucket.evictionPolicy: Bucket.EvictionPolicy.NO_EVICTION,
             "privileges": [

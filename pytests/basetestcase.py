@@ -124,6 +124,7 @@ class BaseTestCase(unittest.TestCase):
         self.input.param("magma_key_tree_data_block_size", None)
         self.magma_seq_tree_data_block_size = \
         self.input.param("magma_seq_tree_data_block_size", None)
+        self.oso_dcp_backfill = self.input.param("oso_dcp_backfill", None)
         # End of bucket parameters
 
         # Doc specific params
