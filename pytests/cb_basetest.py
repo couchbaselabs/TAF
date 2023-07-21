@@ -75,6 +75,7 @@ class CouchbaseBaseTest(unittest.TestCase):
                                                       1)
         self.bucket_durability_level = \
             BucketDurability[self.bucket_durability_level]
+        self.oso_dcp_backfill = self.input.param("oso_dcp_backfill", None)
         self.bucket_collection_history_retention_default = \
             self.input.param("default_history_retention_for_collections", None)
         self.bucket_dedup_retention_seconds = \

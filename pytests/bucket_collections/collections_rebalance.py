@@ -1,4 +1,5 @@
 import time
+from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
@@ -1070,6 +1071,7 @@ class CollectionsRebalance(CollectionBase):
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = (None, None)
         rebalance = None
+
         self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
         if self.data_load_stage == "before":
             if self.data_load_type == "async":
@@ -1191,6 +1193,8 @@ class CollectionsRebalance(CollectionBase):
             self.validate_N1qltxn_data()
         if self.continous_update_replica:
             self.update_replica_and_validate_vbuckets()
+        if self.input.param("test_oso_backfill", False):
+            CollectionBase.recreate_indexes_on_each_collection(self, 1)
 
     def test_data_load_collections_with_rebalance_in(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")

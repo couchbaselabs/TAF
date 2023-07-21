@@ -3365,6 +3365,28 @@ class BucketUtils(ScopeUtils):
                         self.log.critical(log_msg)
         return result
 
+    def validate_oso_dcp_backfill_value(self, kv_nodes, buckets,
+                                        expected_val="auto"):
+        result = True
+        if expected_val is None:
+            expected_val = "auto"
+        elif expected_val == 1:
+            expected_val = 'true'
+        elif expected_val == 0:
+            expected_val = 'false'
+
+        for node in kv_nodes:
+            shell = RemoteMachineShellConnection(node)
+            cbstat = Cbstats(shell)
+            for bucket in buckets:
+                val = cbstat.all_stats(bucket.name)["ep_dcp_oso_backfill"]
+                if val != expected_val:
+                    result = False
+                    self.log.critical("Bucket {}, oso_dcp_backfill mismatch."
+                                      "Expected {}, Actual: {}"
+                                      .format(bucket.name, expected_val, val))
+        return result
+
     def wait_for_collection_creation_to_complete(self, cluster, timeout=60):
         self.log.info("Waiting for all collections to be created")
         bucket_helper = BucketHelper(cluster.master)
