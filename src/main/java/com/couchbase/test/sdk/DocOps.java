@@ -30,6 +30,8 @@ import com.couchbase.client.java.kv.UpsertOptions;
 
 import com.couchbase.test.docgen.DocType.Person;
 import com.couchbase.test.sdk.Result;
+import com.couchbase.test.val.Hotel;
+
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.annotation.Nullable;
@@ -88,7 +90,7 @@ public class DocOps {
                         return reactiveCollection.get(id, getOptions)
                                 .map(new Function<GetResult, Tuple2<String, Object>>() {
                                     public Tuple2<String, Object> apply(GetResult result) {
-                                        return Tuples.of(id, result.contentAs(Person.class));
+                                        return Tuples.of(id, result.contentAsObject());
                                     }
                                 }).onErrorResume(new Function<Throwable, Mono<Tuple2<String, Object>>>() {
                                     public Mono<Tuple2<String, Object>> apply(Throwable error) {

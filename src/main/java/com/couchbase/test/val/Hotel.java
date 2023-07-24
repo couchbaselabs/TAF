@@ -37,35 +37,41 @@ public class Hotel {
         super();
         this.random = new Random();
         this.random.setSeed(ws.keyPrefix.hashCode());
-        faker = new Faker(random);
+        this.faker = new Faker(this.random);
         for (int index=0; index<4096; index++) {
             addresses.add(faker.address().streetAddress());
-            city.add(faker.address().city());
-            country.add(faker.address().country());
-            String fn = faker.name().firstName();
-            String ln = faker.name().lastName();
-            names.add(faker.name().fullName());
+            city.add(this.faker.address().city());
+            country.add(this.faker.address().country());
+            String fn = this.faker.name().firstName();
+            String ln = this.faker.name().lastName();
+            names.add(this.faker.name().fullName());
             emails.add(fn + '.' + ln + "@hotels.com");
-            country.add(faker.address().country());
+            country.add(this.faker.address().country());
 
             ArrayList<String> temp = new ArrayList<String>();
             int numLikes = this.random.nextInt(10);
             for (int n = 0; n <= numLikes; n++) {
-                temp.add(faker.name().fullName());
+                temp.add(this.faker.name().fullName());
             }
             this.likes.add(temp);
-            url.add(faker.internet().url());
+            url.add(this.faker.internet().url());
             this.setReviewsArray();
         }
     }
 
     public void setReviewsArray() {
         int numReviews = this.random.nextInt(10);
-        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime now = LocalDateTime.of(
+                1900 + this.random.nextInt(120),
+                1 + this.random.nextInt(12),
+                1 + this.random.nextInt(25),
+                this.random.nextInt(24),
+                this.random.nextInt(60),
+                this.random.nextInt(24));
         ArrayList<JsonObject> temp = new ArrayList<JsonObject>();
         for (int n = 0; n <= numReviews; n++) {
             JsonObject review = JsonObject.create();
-            review.put("author", faker.name().fullName());
+            review.put("author", this.faker.name().fullName());
             review.put("date", now.plus(n, ChronoUnit.WEEKS).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
             JsonObject ratings = JsonObject.create();
             ratings.put("Check in / front desk", this.random.nextInt(5));
@@ -90,7 +96,7 @@ public class Hotel {
         jsonObject.put("email", this.emails.get(index));
         jsonObject.put("free_breakfast", this.random.nextBoolean());
         jsonObject.put("free_parking", this.random.nextBoolean());
-        jsonObject.put("phone", faker.phoneNumber().phoneNumber());
+        jsonObject.put("phone", this.faker.phoneNumber().cellPhone());
         jsonObject.put("name", this.names.get(index));
         jsonObject.put("price", 500 + this.random.nextInt(1500));
         jsonObject.put("avg_rating", this.random.nextFloat()*5);

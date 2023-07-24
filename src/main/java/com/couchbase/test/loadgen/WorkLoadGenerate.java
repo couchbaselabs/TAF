@@ -269,21 +269,21 @@ public class WorkLoadGenerate extends Task{
                                 String b = om.writeValueAsString(trnx_docs.get(name));
                                 if(this.dg.ws.expectDeleted) {
                                     if(!a.contains(DocumentNotFoundException.class.getSimpleName())) {
-                                        logger.info("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
-                                        logger.info("Actual Value - " + a);
-                                        logger.info("Expected Value - " + b);
+                                        logger.fatal("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
+                                        logger.fatal("Actual Value - " + a);
+                                        logger.fatal("Expected Value - " + b);
                                         if(this.sdkClientPool != null)
                                             this.sdkClientPool.release_client(this.sdk);
                                         logger.info(this.taskName + " is completed!");
                                         return;
                                     }
                                 } else if(!a.equals(b) && !a.contains("TimeoutException")){
-                                    logger.info("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
-                                    logger.info("Actual Value - " + a);
-                                    logger.info("Expected Value - " + b);
+                                    logger.fatal("Validation failed for key: " + this.sdk.scope + ":" + this.sdk.collection + ":" + name);
+                                    logger.fatal("Actual Value - " + a);
+                                    logger.fatal("Expected Value - " + b);
                                     if(this.sdkClientPool != null)
                                         this.sdkClientPool.release_client(this.sdk);
-                                    logger.info(this.taskName + " is completed!");
+                                    logger.fatal(this.taskName + " is completed!");
                                     return;
                                 }
                             } catch (JsonProcessingException e) {

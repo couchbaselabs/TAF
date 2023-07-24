@@ -775,6 +775,7 @@ class Murphy(BaseTestCase, OPD):
             task.stop_work_load()
         self.wait_for_doc_load_completion(self.tasks)
         if self.track_failures:
+            self.key_type = "RandomKey"
             self.data_validation()
         if self.cluster.eventing_nodes:
             self.drEventing.print_eventing_stats()
