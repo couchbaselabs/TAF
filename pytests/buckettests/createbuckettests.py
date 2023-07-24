@@ -84,6 +84,44 @@ class CreateBucketTests(ClusterSetup):
                                                      self.cluster.buckets)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
+    def test_minimum_replica_update_during_replica_update_rebalance(self):
+        rest = RestConnection(self.cluster.master)
+        minimum_replica = self.input.param("minimum_replica", 2)
+        update_setting_during_regression = self.input.param(
+            "update_setting_during_regression", True)
+        self.num_replicas = 3
+        self.create_bucket(self.cluster, bucket_name="3_replica")
+        doc_create = doc_generator(self.key, 0, self.num_items,
+                                   key_size=self.key_size,
+                                   doc_size=self.doc_size,
+                                   doc_type=self.doc_type)
+        loading_tasks = []
+        for bucket in self.cluster.buckets:
+            task = self.task.async_load_gen_docs(
+                self.cluster, bucket, doc_create, "create", 0,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                timeout_secs=self.sdk_timeout,
+                batch_size=10, process_concurrency=8)
+            loading_tasks.append(task)
+        for task in loading_tasks:
+            self.task.jython_task_manager.get_task_result(task)
+        for bucket in self.cluster.buckets:
+            self.bucket_util.update_bucket_property(
+                self.cluster.master, bucket, replica_number=0)
+        if not update_setting_during_regression:
+            status, content = rest. \
+                set_minimum_bucket_replica_for_cluster(minimum_replica)
+            self.assertTrue(status, "minimum replica setting not updated")
+        rebalance = self.task.async_rebalance(self.cluster, [], [])
+        if update_setting_during_regression:
+            self.sleep(5, "waiting for rebalance to start")
+            status, content = rest. \
+                set_minimum_bucket_replica_for_cluster(minimum_replica)
+            self.assertTrue(status, "minimum replica setting not updated")
+
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.assertTrue(rebalance.result, "Rebalance Failed")
+
     def test_sample_buckets_with_minimum_replica_setting(self):
         rest = RestConnection(self.cluster.master)
         bucket_helper = BucketHelper(self.cluster.master)
