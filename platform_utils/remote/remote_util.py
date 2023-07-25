@@ -11,7 +11,7 @@ import TestInput
 from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
-from Cb_constants import constants, ClusterRun
+from Cb_constants import CbServer, constants, ClusterRun
 from common_lib import sleep
 from global_vars import logger
 from platform_constants.os_constants import Linux, Mac, Windows
@@ -4821,10 +4821,14 @@ class RemoteMachineShellConnection:
         else:
             self.log.info("*** You need to set rest password at ini file ***")
             rest_password = "password"
-        command = "curl http://{0}:{1}@localhost:{2}/diag/eval -X POST -d " \
+        if CbServer.use_https:
+            prefix = "-k https"
+        else:
+            prefix = "http"
+        command = "curl {4}://{0}:{1}@localhost:{2}/diag/eval -X POST -d " \
                   "'ns_config:set(allow_nonlocal_eval, {3}).'" \
             .format(rest_username, rest_password, self.port,
-                    state.__str__().lower())
+                    state.__str__().lower(), prefix)
         server = {"ip": self.ip, "username": rest_username,
                   "password": rest_password, "port": self.port}
         rest_connection = RestConnection(server)
