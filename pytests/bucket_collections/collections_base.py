@@ -16,6 +16,9 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 
 from com.couchbase.client.core.error import InternalServerFailureException
+from com.couchbase.client.core.error import \
+    IndexFailureException,\
+    IndexNotFoundException
 
 from java.lang import Exception as Java_base_exception
 
@@ -211,6 +214,7 @@ class CollectionBase(ClusterSetup):
                     state = sdk_client.cluster.query(query) \
                         .rowsAsObject()[0].get("state")
                     if state == "online":
+                        test_obj.log.debug("Index {} online".format(i_name))
                         break
                     test_obj.sleep(30)
                 else:
@@ -291,16 +295,25 @@ class CollectionBase(ClusterSetup):
         This code is used by oso_dcp_backfill tests
         Refer: CBQE-7927
         """
+        b_util = test_obj.bucket_util
         sdk_client = SDKClient([test_obj.cluster.master], None)
         for itr in range(1, iterations+1):
-            test_obj.log.info("Itr::{}. Dropping existing indexes")
+            test_obj.log.info("Itr::{}. Dropping existing indexes".format(itr))
             for bucket in test_obj.cluster.buckets:
-                for s_name, scope in bucket.scopes.items():
-                    for c_name, col in scope[s_name].collection.items():
-                        query = "DROP INDEX `{0}_{1}_{2}_index` USING GSI" \
-                                .format(bucket.name, s_name, c_name)
-                        test_obj.log.info(sdk_client.cluster.query(query))
-        CollectionBase.create_indexes_for_all_collections(test_obj, sdk_client)
+                for scope in b_util.get_active_scopes(bucket):
+                    for col in b_util.get_active_collections(bucket,
+                                                             scope.name):
+                        query = "DROP INDEX `{0}_{1}_{2}_index` " \
+                                "on `{0}`.`{1}`.`{2}` USING GSI" \
+                                .format(bucket.name, scope.name, col.name)
+                        try:
+                            sdk_client.cluster.query(query)
+                        except (IndexFailureException,
+                                IndexNotFoundException) as e:
+                            test_obj.log.warning(e)
+
+            CollectionBase.create_indexes_for_all_collections(test_obj,
+                                                              sdk_client)
         sdk_client.close()
 
     @staticmethod
