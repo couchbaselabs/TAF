@@ -1347,8 +1347,8 @@ class RemoteMachineShellConnection:
                                            pause_time=60)
             count += 1
             if not file_status and count == 3:
-                self.log.error("%s - Build {0} not downloaded completely"
-                               % (self.ip, version))
+                self.log.error("{0} - Build {1} not downloaded completely"
+                               .format(self.ip, version))
                 mesg = "stop job due to failure download build {0} at {1} " \
                     .format(version, self.ip)
                 self.stop_current_python_running(mesg)
