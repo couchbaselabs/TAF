@@ -223,12 +223,14 @@ class OPD:
             if expire_start is not None:
                 bucket.expire_start = expire_start
             else:
-                bucket.expire_start = bucket.delete_end
+                bucket.expire_start = bucket.end
+            bucket.start = bucket.expire_start
             if expire_end is not None:
                 bucket.expire_end = expire_end
             else:
                 bucket.expire_end = bucket.expire_start + bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
-            bucket.final_items -= (bucket.expire_end - bucket.expire_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
+            bucket.end = bucket.expire_end
+            # bucket.final_items -= (bucket.expire_end - bucket.expire_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
 
         if "create" in doc_ops:
             if create_start is not None:

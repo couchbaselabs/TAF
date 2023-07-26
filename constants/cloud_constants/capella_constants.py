@@ -19,21 +19,22 @@ class AWS(object):
     compute = [
         "c5.xlarge",
         "c5.2xlarge",
-        "c5.9xlarge",
-        "c5.18xlarge",
         "c5.4xlarge",
+        "c5.9xlarge",
         "c5.12xlarge",
-        "m5.12xlarge",
-        "m5.16xlarge",
+        "c5.18xlarge",
+        "m5.xlarge",
         "m5.2xlarge",
         "m5.4xlarge",
         "m5.8xlarge",
-        "m5.xlarge",
-        "r5.12xlarge",
-        "r5.8xlarge",
-        "r5.2xlarge",
+        "m5.12xlarge",
+        "m5.16xlarge",
         "r5.xlarge",
-        "r5.4xlarge"]
+        "r5.2xlarge",
+        "r5.4xlarge"
+        "r5.8xlarge",
+        "r5.12xlarge",
+        ]
 
     class Region(object):
         US_WEST_2 = "us-west-2"

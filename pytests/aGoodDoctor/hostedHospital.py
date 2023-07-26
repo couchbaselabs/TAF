@@ -28,6 +28,7 @@ from com.couchbase.test.sdk import Server
 from constants.cloud_constants import capella_constants
 from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
+import pprint
 
 
 class Murphy(BaseTestCase, OPD):
@@ -166,10 +167,11 @@ class Murphy(BaseTestCase, OPD):
         specs = []
         services = self.input.param("services", "data")
         for service_group in services.split("-"):
-            services = service_group.split(":")
+            services = sorted(service_group.split(":"))
             service = services[0]
+            self.num_nodes[service] = self.num_nodes[service] + num
             spec = {
-                "count": self.num_nodes[service] + num,
+                "count": self.num_nodes[service],
                 "compute": {
                     "type": self.compute[service],
                 },
@@ -181,6 +183,13 @@ class Murphy(BaseTestCase, OPD):
                 "diskAutoScaling": {"enabled": self.diskAutoScaling}
             }
             if provider == "aws":
+                aws_storage_range = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
+                aws_min_iops = [3000, 4370, 5740, 7110, 8480, 9850, 11220, 12590, 13960, 15330, 16000]
+                for i, storage in enumerate(aws_storage_range):
+                    if self.disk[service] >= storage:
+                        self.iops[service] = aws_min_iops[i+1]
+                    if self.disk[service] < 100:
+                        self.iops[service] = aws_min_iops[0]
                 spec["disk"]["iops"] = self.iops[service]
             specs.append(spec)
         return specs
@@ -413,7 +422,7 @@ class Murphy(BaseTestCase, OPD):
         self.default = {
             "valType": "Hotel",
             "scopes": 1,
-            "collections": 2,
+            "collections": self.input.param("collections", 2),
             "num_items": self.input.param("num_items", 50000000),
             "start": 0,
             "end": self.input.param("num_items", 50000000),
@@ -439,6 +448,15 @@ class Murphy(BaseTestCase, OPD):
                     }
                 ]
             }
+
+        temp = [{
+            "valType": "Hotel",
+            "2i": [0, 0],
+            "FTS": [0, 0],
+            "cbas": [0, 0, 0]
+            }]*8
+        self.default["collections_defn"].extend(temp)
+
         nimbus = self.input.param("nimbus", False)
         expiry = self.input.param("expiry", False)
         self.load_defn.append(self.default)
@@ -560,22 +578,16 @@ class Murphy(BaseTestCase, OPD):
         h_scaling = self.input.param("h_scaling", True)
         v_scaling = self.input.param("v_scaling", False)
         vh_scaling = self.input.param("vh_scaling", False)
-        provider = self.input.param("provider", "aws").lower()
         computeList = GCP.compute
-        _type = GCP.StorageType.PD_SSD
-        if provider == capella_constants.AWS:
+        provider = self.input.param("provider", "aws").lower()
+        if provider == "aws":
             computeList = AWS.compute
-            _type = AWS.StorageType.GP3
-        storage_type = self.input.param("type", _type).upper()
 
         if h_scaling or vh_scaling:
             self.loop = 0
-            self.rebl_nodes = 0
+            self.rebl_nodes = self.input.param("horizontal_scale", 3)
             self.max_rebl_nodes = self.input.param("max_rebl_nodes", 27)
             while self.loop < self.iterations:
-                self.rebl_nodes += self.input.param("horizontal_scale", 3)
-                if self.rebl_nodes > self.max_rebl_nodes:
-                    self.rebl_nodes = 0
                 config = self.rebalance_config(self.rebl_nodes)
 
                 ###################################################################
@@ -593,9 +605,9 @@ class Murphy(BaseTestCase, OPD):
                 self.restart_query_load(num=10)
 
             self.loop = 0
+            self.rebl_nodes = -self.rebl_nodes
             while self.loop < self.iterations:
                 self.restart_query_load(num=-10)
-                self.rebl_nodes -= self.input.param("horizontal_scale", 3)
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
                 config = self.rebalance_config(self.rebl_nodes)
@@ -604,8 +616,8 @@ class Murphy(BaseTestCase, OPD):
                                                                    timeout=self.index_timeout)
 
                 self.task_manager.get_task_result(rebalance_task)
-                self.cluster_util.print_cluster_stats(self.cluster)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                self.cluster_util.print_cluster_stats(self.cluster)
                 self.print_stats()
                 self.sleep(60, "Sleep for 60s after rebalance")
 
@@ -613,134 +625,80 @@ class Murphy(BaseTestCase, OPD):
 
         if v_scaling or vh_scaling:
             self.loop = 0
-            while self.loop <= self.iterations:
+            disk_increment = self.input.param("increment", 10)
+            while self.loop < self.iterations:
                 self.loop += 1
-                disk_increment = self.input.param("increment", 5)
                 time.sleep(5*60)
                 if self.rebalance_type == "all" or self.rebalance_type == "disk":
                     # Rebalance 1 - Disk Upgrade
                     initial_services = self.input.param("services", "data")
-                    server_group_list = list()
                     for service_group in initial_services.split("-"):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
                             self.disk[service] = self.disk[service] + disk_increment
-                            if service == "query":
-                                self.disk[service_group[1]] = self.disk[service_group[1]] + disk_increment
-                        config = {
-                            "size": self.num_nodes[service],
-                            "services": service_group,
-                            "compute": self.compute[service],
-                            "storage": {
-                                "type": storage_type,
-                                "size": self.disk[service],
-                                "iops": self.iops[service]
-                            }
-                        }
-                        if self.capella_cluster_config["provider"].lower() in ["hostedgcp", "gcp"]:
-                            config["storage"].pop("iops")
-                        server_group_list.append(config)
-                    self.log.info(server_group_list)
+                    config = self.rebalance_config(0)
+                    pprint.pprint(config)
                     if self.backup_nodes > 0:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                       server_group_list,
+                                                                       config,
                                                                        timeout=96*60*60)
-                    disk_increment = disk_increment * -1
                     self.task_manager.get_task_result(rebalance_task)
-                    self.cluster_util.print_cluster_stats(self.cluster)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    disk_increment = disk_increment * -1
+                    self.cluster_util.print_cluster_stats(self.cluster)
 
             self.loop = 0
-            while self.loop <= self.iterations:
+            while self.loop < self.iterations:
                 self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "compute":
                     # Rebalance 2 - Compute Upgrade
-                    self.restart_query_load()
-                    server_group_list = list()
+                    # self.restart_query_load()
                     initial_services = self.input.param("services", "data")
                     for service_group in initial_services.split("-"):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
-                        if service == "kv" or service == "data":
-                            comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(computeList) > comp + 1 else comp
-                            self.compute[service] = computeList[comp]
-                        if "index" in service_group or "query" in service_group:
-                            comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(computeList) > comp + 1 else comp
-                            self.compute[service] = computeList[comp]
-                        config = {
-                            "size": self.num_nodes[service],
-                            "services": service_group,
-                            "compute": self.compute[service],
-                            "storage": {
-                                "type": storage_type,
-                                "size": self.disk[service],
-                                "iops": self.iops[service]
-                            }
-                        }
-                        if self.capella_cluster_config["provider"].lower() in ["hostedgcp", "gcp"]:
-                            config["storage"].pop("iops")
-                        server_group_list.append(config)
-                    self.log.info(server_group_list)
+                        comp = computeList.index(self.compute[service])
+                        comp = comp + 1 if len(computeList) > comp + 1 else comp
+                        self.compute[service] = computeList[comp]
+                    config = self.rebalance_config(0)
+                    pprint.pprint(config)
                     if self.backup_nodes > 0:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                       server_group_list,
+                                                                       config,
                                                                        timeout=96*60*60)
                     self.task_manager.get_task_result(rebalance_task)
-                    self.cluster_util.print_cluster_stats(self.cluster)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.cluster_util.print_cluster_stats(self.cluster)
 
             self.loop = 0
             while self.loop <= self.iterations:
                 self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "disk_compute":
                     # Rebalance 3 - Both Disk/Compute Upgrade
-                    self.restart_query_load()
-                    server_group_list = list()
+                    # self.restart_query_load()
                     initial_services = self.input.param("services", "data")
                     for service_group in initial_services.split("-"):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
                             self.disk[service] = self.disk[service] + disk_increment
-                        if service == "kv" or service == "data":
-                            comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(computeList) > comp + 1 else comp
-                            self.compute[service] = computeList[comp]
-                        if "index" in service_group or "gsi" in service_group:
-                            comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(computeList) > comp + 1 else comp
-                            self.compute[service] = computeList[comp]
-                        if "query" in service_group or "n1ql" in service_group:
-                            comp = computeList.index(self.compute[service])
-                            comp = comp + 1 if len(computeList) > comp + 1 else comp
-                            self.compute[service] = computeList[comp]
-                        config = {
-                            "size": self.num_nodes[service],
-                            "services": service_group,
-                            "compute": self.compute[service],
-                            "storage": {
-                                "type": storage_type,
-                                "size": self.disk[service],
-                                "iops": self.iops[service]
-                            }
-                        }
-                        if self.capella_cluster_config["provider"].lower() in ["hostedgcp", "gcp"]:
-                            config["storage"].pop("iops")
-                        server_group_list.append(config)
+                        comp = computeList.index(self.compute[service])
+                        comp = comp + 1 if len(computeList) > comp + 1 else comp
+                        self.compute[service] = computeList[comp]
+                    config = self.rebalance_config(0)
+                    pprint.pprint(config)
                     if self.backup_nodes > 0:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                       server_group_list,
+                                                                       config,
                                                                        timeout=96*60*60)
                     self.task_manager.get_task_result(rebalance_task)
+                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
-                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
             self.PrintStep("Step 4: XDCR replication being set up")
             if self.xdcr_remote_clusters > 0:
                 num_items = self.cluster.buckets[0].loadDefn.get("num_items") * self.cluster.buckets[0].loadDefn.get(

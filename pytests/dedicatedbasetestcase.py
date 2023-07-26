@@ -344,7 +344,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         services = self.input.param("services", "data")
         for service_group in services.split("-"):
-            service_group = service_group.split(":")
+            service_group = sorted(service_group.split(":"))
             service = service_group[0]
             service_config = CapellaUtils.get_cluster_config_spec(
                 provider=self.provider,
@@ -369,7 +369,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         specs = []
         services = self.input.param("services", "data")
         for service_group in services.split("-"):
-            services = service_group.split(":")
+            services = sorted(service_group.split(":"))
             service = services[0]
             spec = {
                 "count": self.num_nodes[service],
