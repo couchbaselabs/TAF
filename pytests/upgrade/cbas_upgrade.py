@@ -333,28 +333,26 @@ class UpgradeTests(UpgradeBase):
         if major_version >= 7.0:
             self.log.info("Creating scopes and collections in existing bucket")
             scope_spec = {"name": self.cbas_util.generate_name()}
-            self.bucket_util.create_scope_object(
-                self.cluster.buckets[0], scope_spec)
             collection_spec = {"name": self.cbas_util.generate_name(),
                                "num_items": self.num_items}
-            self.bucket_util.create_collection_object(
-                self.cluster.buckets[0], scope_spec["name"], collection_spec)
-
             bucket_helper = BucketHelper(self.cluster.master)
+
             status, content = bucket_helper.create_scope(
                 self.cluster.buckets[0].name, scope_spec["name"])
-            if status is False:
-                self.fail(
-                    "Create scope failed for %s:%s, Reason - %s" % (
-                        self.cluster.buckets[0].name, scope_spec["name"], content))
-            self.bucket.stats.increment_manifest_uid()
+            self.assertTrue(status,
+                "Create scope failed for %s:%s, Reason - %s" % (
+                    self.cluster.buckets[0].name, scope_spec["name"], content))
+            self.bucket_util.create_scope_object(
+                self.cluster.buckets[0], scope_spec)
+
             status, content = bucket_helper.create_collection(
                 self.cluster.buckets[0].name, scope_spec["name"], collection_spec)
-            if status is False:
-                self.fail("Create collection failed for %s:%s:%s, Reason - %s"
-                          % (self.cluster.buckets[0].name, scope_spec["name"],
-                             collection_spec["name"], content))
-            self.bucket.stats.increment_manifest_uid()
+            self.assertTrue(
+                status, "Create collection failed for %s:%s:%s, Reason - %s"
+                        % (self.cluster.buckets[0].name, scope_spec["name"],
+                           collection_spec["name"], content))
+            self.bucket_util.create_collection_object(
+                self.cluster.buckets[0], scope_spec["name"], collection_spec)
 
         self.log.info("Creating new buckets with scopes and collections")
         for i in range(1, self.input.param("num_buckets", 1)+1):
