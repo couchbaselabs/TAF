@@ -30,6 +30,7 @@ public class Hotel {
     private ArrayList<String> emails = new ArrayList<String>();
     private ArrayList<ArrayList<String>> likes = new ArrayList<ArrayList<String>>();
     private ArrayList<String> names = new ArrayList<String>();
+    private ArrayList<String> phone = new ArrayList<String>();
     private ArrayList<String> url = new ArrayList<String>();
     private ArrayList<ArrayList<JsonObject>> reviews = new ArrayList<ArrayList<JsonObject>>();
 
@@ -47,6 +48,7 @@ public class Hotel {
             names.add(this.faker.name().fullName());
             emails.add(fn + '.' + ln + "@hotels.com");
             country.add(this.faker.address().country());
+            phone.add(this.faker.phoneNumber().cellPhone());
 
             ArrayList<String> temp = new ArrayList<String>();
             int numLikes = this.random.nextInt(10);
@@ -86,20 +88,20 @@ public class Hotel {
     }
 
     public JsonObject next(String key) {
-        this.random = new Random();
+        Random random = new Random();
         JsonObject jsonObject = JsonObject.create();
-        this.random.setSeed(key.hashCode());
-        int index = this.random.nextInt(4096);
+        random.setSeed(key.hashCode());
+        int index = random.nextInt(4096);
         jsonObject.put("address", this.addresses.get(index));
         jsonObject.put("city", this.city.get(index));
         jsonObject.put("country", this.country.get(index));
         jsonObject.put("email", this.emails.get(index));
-        jsonObject.put("free_breakfast", this.random.nextBoolean());
-        jsonObject.put("free_parking", this.random.nextBoolean());
-        jsonObject.put("phone", this.faker.phoneNumber().cellPhone());
+        jsonObject.put("free_breakfast", random.nextBoolean());
+        jsonObject.put("free_parking", random.nextBoolean());
+        jsonObject.put("phone", this.phone.get(index));
         jsonObject.put("name", this.names.get(index));
-        jsonObject.put("price", 500 + this.random.nextInt(1500));
-        jsonObject.put("avg_rating", this.random.nextFloat()*5);
+        jsonObject.put("price", 500 + random.nextInt(1500));
+        jsonObject.put("avg_rating", random.nextFloat()*5);
         jsonObject.put("public_likes", this.likes.get(index));
         jsonObject.put("reviews", this.reviews.get(index));
         jsonObject.put("type", this.htypes.get(index % htypes.size()));

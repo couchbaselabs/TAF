@@ -149,7 +149,7 @@ public class WorkLoadGenerate extends Task{
 
     @Override
     public void run() {
-        logger.info("Starting " + this.taskName);
+        System.out.println("Starting " + this.taskName);
         // Set timeout in WorkLoadSettings
         this.dg.ws.setTimeoutDuration(60, "seconds");
         // Set Durability in WorkLoadSettings
@@ -181,8 +181,11 @@ public class WorkLoadGenerate extends Task{
 
         Instant trackFailureTime_start = Instant.now();
         while(! this.stop_loading) {
+//        	Instant st = Instant.now();
             if (this.sdkClientPool != null)
                 this.sdk = this.sdkClientPool.get_client_for_bucket(this.bucket_name, this.scope, this.collection);
+//            Instant en = Instant.now();
+//            System.out.println(this.taskName + " Time Taken to get client: " + Duration.between(st, en).toMillis() + "ms");
             Instant trackFailureTime_end = Instant.now();
             Duration timeElapsed = Duration.between(trackFailureTime_start, trackFailureTime_end);
             if(timeElapsed.toMinutes() > 5) {
@@ -192,16 +195,16 @@ public class WorkLoadGenerate extends Task{
             }
             Instant start = Instant.now();
             if(dg.ws.creates > 0) {
-//            	Instant st = Instant.now();
+//            	st = Instant.now();
                 List<Tuple2<String, Object>> docs = dg.nextInsertBatch();
-//                Instant end = Instant.now();
-//                System.out.println("Time Taken to generate " + docs.size() + " Docs: " + Duration.between(st, end).toMillis() + "ms");
+//                en = Instant.now();
+//                System.out.println(this.taskName + " Time Taken to generate " + docs.size() + " Docs: " + Duration.between(st, en).toMillis() + "ms");
                 if (docs.size()>0) {
                     flag = true;
 //                    st = Instant.now();
                     List<Result> result = docops.bulkInsert(this.sdk.connection, docs, setOptions);
-//                    end = Instant.now();
-//                    System.out.println("Time Taken by Inserts: " + Duration.between(st, end).toMillis() + "ms");
+//                    en = Instant.now();
+//                    System.out.println(this.taskName + " Time Taken by Inserts: " + Duration.between(st, en).toMillis() + "ms");
                     ops += dg.ws.batchSize*dg.ws.creates/100;
                     if(trackFailures && result.size()>0)
                         try {

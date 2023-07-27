@@ -1162,7 +1162,7 @@ class RestConnection(newRC):
         status, content = self.diag_eval(code)
         return status, content
 
-    def monitorRebalance(self, stop_if_loop=True):
+    def monitorRebalance(self, stop_if_loop=True, sleep_step=3):
         start = time.time()
         progress = 0
         retry = 0
@@ -1194,19 +1194,16 @@ class RestConnection(newRC):
                                         "infinite loop: %s" % progress)
                     return False
             # Sleep to printout less log
-            sleep(3, log_type="infra")
+            sleep(sleep_step, log_type="infra")
         if progress < 0:
             self.test_log.error("Rebalance progress code: %s" % progress)
             return False
         else:
             duration = time.time() - start
-            sleep_time = duration
-            if duration > 10:
-                sleep_time = 5
             self.test_log.info("Rebalance done. Taken %s seconds to complete"
                                % duration)
             # Sleep required for ns_server to be ready for further actions
-            sleep(sleep_time, "Wait after rebalance complete")
+            sleep(10, "Wait after rebalance complete")
             return True
 
     def _rebalance_progress_status(self, include_failover=True):

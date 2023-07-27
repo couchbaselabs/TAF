@@ -346,6 +346,7 @@ class RebalanceTaskCapella(Task):
         self.servers = None
         self.test_log.critical("Scale_params: %s" % scale_params)
         self.poll_interval = poll_interval
+        self.state = "Temp_State"
 
     def call(self):
         DedicatedUtils.scale(self.cluster, self.scale_params)
@@ -362,26 +363,26 @@ class RebalanceTaskCapella(Task):
                                               self.cluster.pod,
                                               self.cluster.tenant,
                                               self.cluster.id)
-                state = DedicatedUtils.get_cluster_state(
+                self.state = DedicatedUtils.get_cluster_state(
                     self.cluster.pod, self.cluster.tenant, self.cluster.id)
-                if state in ["deployment_failed",
+                if self.state in ["deployment_failed",
                              "deploymentFailed",
                              "redeploymentFailed",
                              "rebalance_failed",
                              "scaleFailed"]:
                     raise Exception("{} for cluster {}".format(
-                        state, self.cluster.id))
-                if content.get("data") or state != "healthy":
+                        self.state, self.cluster.id))
+                if content.get("data") or self.state != "healthy":
                     for data in content.get("data"):
                         data = data.get("data")
                         if data.get("clusterId") == self.cluster.id:
                             step, progress = data.get("currentStep"), \
                                              data.get("completionPercentage")
-                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
+                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", self.state, step, progress))
                     time.sleep(self.poll_interval)
                 else:
                     self.log.info("Scaling the cluster completed. State == {}".
-                                  format(state))
+                                  format(self.state))
                     self.sleep(300)
                     self.result = True
                     break

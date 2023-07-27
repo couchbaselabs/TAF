@@ -263,6 +263,7 @@ class CBASQueryLoad:
         self.log = logger.get("infra")
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("cbasQPS")
         self.query_stats = {key[1]: [0, 0] for key in self.queries}
+        self.failures = 0
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -330,9 +331,9 @@ class CBASQueryLoad:
                     or str(e).find("UnambiguousTimeoutException") != -1:
                 self.timeout_count.next()
             elif str(e).find("RequestCanceledException") != -1:
-                self.cancel_count.next()
+                self.failures += self.cancel_count.next()
             elif str(e).find("CouchbaseException") != -1:
-                self.rejected_count.next()
+                self.failures += self.rejected_count.next()
             if str(e).find("no more information available") != -1:
                 self.log.critical(query)
                 self.log.critical(e)

@@ -29,6 +29,7 @@ from constants.cloud_constants import capella_constants
 from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
+from custom_exceptions.exception import ServerUnavailableException
 
 
 class Murphy(BaseTestCase, OPD):
@@ -129,6 +130,7 @@ class Murphy(BaseTestCase, OPD):
         self.stop_run = False
         self.skip_init = self.input.param("skip_init", False)
         self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
+        self.query_result = True
 
     def tearDown(self):
         self.check_dump_thread = False
@@ -166,16 +168,18 @@ class Murphy(BaseTestCase, OPD):
 
         specs = []
         services = self.input.param("services", "data")
+        rebl_services = self.input.param("rebl_services", services).split("-")
         for service_group in services.split("-"):
-            services = sorted(service_group.split(":"))
-            service = services[0]
-            self.num_nodes[service] = self.num_nodes[service] + num
+            _services = sorted(service_group.split(":"))
+            service = _services[0]
+            if service_group in rebl_services:
+                self.num_nodes[service] = self.num_nodes[service] + num
             spec = {
                 "count": self.num_nodes[service],
                 "compute": {
                     "type": self.compute[service],
                 },
-                "services": [{"type": self.services_map[_service.lower()]} for _service in services],
+                "services": [{"type": self.services_map[_service.lower()]} for _service in _services],
                 "disk": {
                     "type": storage_type,
                     "sizeInGb": self.disk[service]
@@ -273,6 +277,7 @@ class Murphy(BaseTestCase, OPD):
                 self.cbasQL.append(ql)
 
     def monitor_query_status(self, print_duration=120):
+        self.query_result = True
 
         def check_query_stats():
             st_time = time.time()
@@ -313,6 +318,8 @@ class Murphy(BaseTestCase, OPD):
                             str(ql.timeout_count),
                             str(ql.error_count),
                             ])
+                        if ql.failures > 0:
+                            self.query_result = False
                     self.table.display("N1QL Query Statistics")
 
                     self.FTStable = TableView(self.log.info)
@@ -335,6 +342,8 @@ class Murphy(BaseTestCase, OPD):
                             str(ql.timeout_count),
                             str(ql.error_count),
                             ])
+                        if ql.failures > 0:
+                            self.query_result = False
                     self.FTStable.display("FTS Query Statistics")
 
                     self.CBAStable = TableView(self.log.info)
@@ -357,6 +366,8 @@ class Murphy(BaseTestCase, OPD):
                             str(ql.timeout_count),
                             str(ql.error_count),
                             ])
+                        if ql.failures > 0:
+                            self.query_result = False
                     self.CBAStable.display("CBAS Query Statistics")
 
                     st_time = time.time()
@@ -573,6 +584,18 @@ class Murphy(BaseTestCase, OPD):
             self.task_manager.get_task_result(task)
             self.assertTrue(task.result, "Cluster Upgrade Failed...")
 
+    def monitor_rebalance(self, task):
+        self.rest = RestConnection(self.cluster.master)
+        while task.state != "healthy":
+            try:
+                self.assertTrue(self.rest.monitorRebalance(sleep_step=60),
+                                msg="Cluster Rebalance failed")
+                if task.state != "healthy":
+                    self.sleep(300, "Wait for CP to trigger sub-rebalance")
+            except ServerUnavailableException:
+                self.refresh_cluster()
+                self.rest = RestConnection(self.cluster.master)
+
     def test_rebalance(self):
         self.initial_setup()
         h_scaling = self.input.param("h_scaling", True)
@@ -596,7 +619,7 @@ class Murphy(BaseTestCase, OPD):
                 rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                    config,
                                                                    timeout=self.index_timeout)
-
+                self.monitor_rebalance(rebalance_task)
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
@@ -614,7 +637,7 @@ class Murphy(BaseTestCase, OPD):
                 rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                    config,
                                                                    timeout=self.index_timeout)
-
+                self.monitor_rebalance(rebalance_task)
                 self.task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
                 self.cluster_util.print_cluster_stats(self.cluster)
@@ -644,6 +667,7 @@ class Murphy(BaseTestCase, OPD):
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
                                                                        timeout=96*60*60)
+                    self.monitor_rebalance(rebalance_task)
                     self.task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
@@ -669,6 +693,7 @@ class Murphy(BaseTestCase, OPD):
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
                                                                        timeout=96*60*60)
+                    self.monitor_rebalance(rebalance_task)
                     self.task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     self.cluster_util.print_cluster_stats(self.cluster)
@@ -695,6 +720,7 @@ class Murphy(BaseTestCase, OPD):
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
                                                                        timeout=96*60*60)
+                    self.monitor_rebalance(rebalance_task)
                     self.task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
@@ -750,3 +776,4 @@ class Murphy(BaseTestCase, OPD):
             self.data_validation()
         if self.cluster.eventing_nodes:
             self.drEventing.print_eventing_stats()
+        self.assertTrue(self.query_result, "Please check the logs for query failures")
