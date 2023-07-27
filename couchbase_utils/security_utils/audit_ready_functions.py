@@ -494,22 +494,25 @@ class audit:
     def validateTimeStamp(self, actualTime=None):
         try:
             self.log.info(actualTime)
-
-            timestamp = datetime.strptime(actualTime[:-6],
-                                          '%Y-%m-%dT%H:%M:%S.%f')
+            # Convert the string to a datetime object
+            try:
+                timestamp = datetime.strptime(actualTime, '%Y-%m-%dT%H:%M:%S.%fZ')
+                timezone = "+00:00"
+            except ValueError:
+                timestamp = datetime.strptime(actualTime[:-6], '%Y-%m-%dT%H:%M:%S.%f')
+                timezone = actualTime[-6:]
 
             # Extract the date, time, and timezone
             date = timestamp.date()
             time = timestamp.time()
-            timezone = actualTime[-6:]
 
             shell = RemoteMachineShellConnection(self.host)
             try:
-                curr_timestamp = shell.execute_command(
-                    'date +%Y-%m-%dT%H:%M:%S%:z')[0][0].rstrip()
-                currTimeZone = curr_timestamp[-6:]
-                curr_timestamp = datetime.strptime(curr_timestamp[:-6],
-                                                   '%Y-%m-%dT%H:%M:%S')
+                curr_timestamp = shell.execute_command('date '
+                                                       '+%Y-%m-%dT%H:%M:%S%:z')
+                currTimeZone = curr_timestamp[0][0].rstrip()[-6:]
+                curr_timestamp = datetime.strptime(curr_timestamp[0][
+                    0].rstrip()[:-6], '%Y-%m-%dT%H:%M:%S')
                 currDate = curr_timestamp.date()
                 currtime = curr_timestamp.time()
             finally:
@@ -525,17 +528,18 @@ class audit:
                 self.log.info(
                     " Matching expected time - currTime {0} ; actual "
                     "Time - {1}".format(currtime, time))
-                if currtime < time:
-                    self.log.info ("Mis-match in values for timestamp - time")
-                    return False
-                else:
+                if currtime >= time:
                     self.log.info('Compare timezone')
                     if timezone != currTimeZone:
                         self.log.info("Mis-match in value of timezone. "
-                                      "Actual: %s Expected: %s" %(
-                            timezone, currTimeZone))
+                                      "Actual: %s Expected: %s" % (
+                                          timezone, currTimeZone))
                         return False
                     return True
+                else:
+                    self.log.info("Mis-match in values for timestamp - time")
+                    return False
+
         except Exception, e:
             self.log.info ("Value of execption is {0}".format(e))
             return False
