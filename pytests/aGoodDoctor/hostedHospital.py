@@ -729,6 +729,19 @@ class Murphy(BaseTestCase, OPD):
                 if bucket_info['basicStats']['itemCount'] == item_count:
                     self.log.info("Post restore item count on the bucket is {}".format(item_count))
 
+        self.stop_crash = True
+        self.stop_run = True
+        if self.cluster.query_nodes:
+            for ql in self.ql:
+                ql.stop_query_load()
+        if self.cluster.fts_nodes:
+            for ql in self.ftsQL:
+                ql.stop_query_load()
+        if self.cluster.cbas_nodes:
+            for ql in self.cbasQL:
+                ql.stop_query_load()
+        self.sleep(10, "Wait for 10s until all the query workload stops.")
+
         for task in self.tasks:
             task.stop_work_load()
         self.wait_for_doc_load_completion(self.tasks)
