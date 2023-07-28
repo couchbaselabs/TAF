@@ -5740,9 +5740,8 @@ class BucketUtils(ScopeUtils):
         Delete all created scope-collection for the given bucket
         """
         for scope in self.get_active_scopes(bucket):
-            # In serverless, system scope/collections cannot be dropped
-            if CbServer.cluster_profile == "serverless" \
-                    and scope.name == CbServer.system_scope:
+            # we can't remove the _system scope
+            if scope.name == CbServer.system_scope:
                 continue
 
             for collection in self.get_active_collections(bucket, scope.name):
