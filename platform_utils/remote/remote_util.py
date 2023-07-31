@@ -3326,13 +3326,13 @@ class RemoteMachineShellConnection:
                         line = file.readline()
 
                     os_distro_dict = {'ubuntu': 'Ubuntu', 'debian': 'Ubuntu', 'mint': 'Ubuntu',
-                                      'amazon linux ami': 'CentOS', 'centos': 'CentOS', 'opensuse': 'openSUSE',
-                                      'red': 'Red Hat', 'suse': 'SUSE', 'oracle': 'Oracle Linux',
-                                      'openshift': 'CentOS', 'amazon': 'CentOS'}
+                        'amazon linux ami': 'CentOS', 'centos': 'CentOS', 'opensuse': 'openSUSE',
+                        'red': 'Red Hat', 'suse': 'SUSE', 'oracle': 'Oracle Linux', 'openshift' : 'CentOS',
+                        'almalinux': 'AlmaLinux OS'}
                     os_shortname_dict = {'ubuntu': 'ubuntu', 'debian': 'debian', 'mint': 'ubuntu',
-                                         'amazon linux ami': 'amzn2', 'centos': 'centos', 'opensuse': 'suse',
-                                         'red': 'rhel', 'suse': 'suse', 'oracle': 'oel', 'openshift': 'centos',
-                                         'amazon': 'centos'}
+                        'amazon linux ami': 'amzn2', 'centos': 'centos', 'opensuse': 'suse',
+                        'red': 'rhel', 'suse': 'suse', 'oracle': 'oel', 'openshift' : 'centos',
+                        'almalinux': 'alma'}
                     # self.log.debug("os_pretty_name:" + os_pretty_name)
                     if os_pretty_name:
                         os_name = os_pretty_name.split(' ')[0].lower()
@@ -3432,14 +3432,16 @@ class RemoteMachineShellConnection:
             for line in text:
                 os_arch += line.rstrip()
                 # at this point we should know if its a linux or windows ditro
-            ext = {'Ubuntu': "deb",
-                   'CentOS': "rpm",
-                   'Red Hat': "rpm",
-                   "Mac": "zip",
-                   "Debian": "deb",
-                   "openSUSE": "rpm",
-                   "SUSE": "rpm",
-                   "Oracle Linux": "rpm"}.get(os_distro, '')
+            ext = {'Ubuntu'         : 'deb',
+                   'CentOS'         : 'rpm',
+                   'Red Hat'        : 'rpm',
+                   'Mac'            : 'dmg',
+                   'Debian'         : 'deb',
+                   'openSUSE'       : 'rpm',
+                   'SUSE'           : 'rpm',
+                   'Oracle Linux'   : 'rpm',
+                   'Amazon Linux 2' : 'rpm',
+                   'AlmaLinux OS'   : 'rpm'}.get(os_distro, '')
             arch = {'i686': 'x86',
                     'i386': 'x86'}.get(os_arch, os_arch)
 
