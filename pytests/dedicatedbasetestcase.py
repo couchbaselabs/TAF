@@ -197,18 +197,20 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                                                  self.capella_cluster_config)
 
             # Initialize self.cluster with first available cluster as default
-            self.cluster = self.cb_clusters[self.cluster_name_format
-                                            % default_cluster_index]
+            if self.cb_clusters:
+                self.cluster = self.cb_clusters[self.cluster_name_format
+                                                % default_cluster_index]
+                self.cluster.edition = "enterprise"
+                self.servers = self.cluster.servers
+
             if self.xdcr_remote_clusters > 0:
                 self.xdcr_cluster = self.cb_clusters[self.xdcr_cluster_name_format
                                                      % default_xdcr_cluster_index]
-            self.servers = self.cluster.servers
             self.cluster_util = ClusterUtils(self.task_manager)
             self.bucket_util = BucketUtils(self.cluster_util, self.task)
             for _, cluster in self.cb_clusters.items():
                 self.cluster_util.print_cluster_stats(cluster)
 
-            self.cluster.edition = "enterprise"
             self.sleep(10)
         except Exception as e:
             self.log.critical(e)
