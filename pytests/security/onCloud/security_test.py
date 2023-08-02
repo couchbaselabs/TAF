@@ -309,7 +309,7 @@ class SecurityTest(BaseTestCase):
                 url = url + '/allowlists-bulk'
                 capella_api.do_internal_request(url, method="POST",
                                                 params=json.dumps(del_ip_body))
-                self.sleep(1000, message="Waiting for ips to get deleted")
+                self.sleep(50, message="Waiting for ips to get deleted")
 
                 ports = valid_ports + invalid_ports
                 self.connect_node_port(node, ports, expect_to_connect=False)
