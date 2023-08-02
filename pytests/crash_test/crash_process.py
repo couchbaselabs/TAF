@@ -504,6 +504,8 @@ class CrashTest(BaseTestCase):
             self.task_manager.stop_task(task)
         self.log.info("Workload stopped on all buckets")
 
+        self.sleep(30, "Wait for num_items to be reflected in ephemeral buckets")
+
         for bucket in self.cluster.buckets:
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
