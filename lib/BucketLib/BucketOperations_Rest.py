@@ -504,7 +504,8 @@ class BucketHelper(RestConnection):
                             history_retention_bytes=None,
                             history_retention_seconds=None,
                             magma_key_tree_data_block_size=None,
-                            magma_seq_tree_data_block_size=None):
+                            magma_seq_tree_data_block_size=None,
+                            storageBackend=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -546,6 +547,8 @@ class BucketHelper(RestConnection):
         if magma_seq_tree_data_block_size is not None:
             params_dict[Bucket.magmaSeqTreeDataBlockSize] \
                 = magma_seq_tree_data_block_size
+        if storageBackend is not None:
+            params_dict[Bucket.storageBackend] = storageBackend
         params = urllib.urlencode(params_dict)
 
         self.log.info("Updating bucket properties for %s" % bucket)
