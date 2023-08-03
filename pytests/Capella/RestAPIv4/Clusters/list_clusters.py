@@ -1,51 +1,144 @@
 """
-Created on June 28, 2023
+Created on August 02, 2023
 
 @author: Vipul Bhardwaj
 """
 
-import base64
 from pytests.Capella.RestAPIv4.api_base import APIBase
+import itertools
 import time
+import base64
+from couchbase_utils.capella_utils.dedicated import CapellaUtils
 
 
-class GetOrganization(APIBase):
+class ListCluster(APIBase):
 
     def setUp(self):
         APIBase.setUp(self)
 
-        organisation_name = self.input.capella.get("tenant_name")
         # Create project.
         # The project ID will be used to create API keys for roles that
         # require project ID
-        project_name = self.generate_random_string(prefix=self.prefix)
-        project_description = self.generate_random_string(
-            100, prefix=self.prefix)
         self.project_id = self.capellaAPI.org_ops_apis.create_project(
             organizationId=self.organisation_id,
-            name=project_name,
-            description=project_description).json()["id"]
+            name=self.generate_random_string(prefix=self.prefix),
+            description=self.generate_random_string(
+                100, prefix=self.prefix)).json()["id"]
 
+        self.cluster_name = self.prefix + 'TestList'
         self.expected_result = {
-            "id": self.organisation_id,
-            "name": organisation_name,
-            "description": None,
-            "preferences": {
-                "sessionDuration": None
+            "cursor": {
+                "hrefs": {
+                    "first": None,
+                    "last": None,
+                    "next": None,
+                    "previous": None
+                },
+                "pages": {
+                    "last": None,
+                    "next": None,
+                    "page": None,
+                    "perPage": None,
+                    "previous": None,
+                    "totalItems": None
+                }
             },
-            "audit": {
-                "createdBy": None,
-                "createdAt": None,
-                "modifiedBy": None,
-                "modifiedAt": None,
-                "version": None
-            }
+            "data": [
+                {
+                    "name": self.cluster_name,
+                    "description": None,
+                    "cloudProvider": {
+                        "type": "aws",
+                        "region": "us-east-1",
+                        "cidr": CapellaUtils.get_next_cidr() + "/20"
+                    },
+                    "couchbaseServer": {
+                        "version": "7.1"
+                    },
+                    "serviceGroups": [
+                        {
+                            "node": {
+                                "compute": {
+                                    "cpu": 4,
+                                    "ram": 16
+                                },
+                                "disk": {
+                                    "storage": 50,
+                                    "type": "gp3",
+                                    "iops": 3000,
+                                    "autoExpansion": "on"
+                                }
+                            },
+                            "numOfNodes": 3,
+                            "services": [
+                                "data"
+                            ]
+                        }
+                    ],
+                    "availability": {
+                        "type": "single"
+                    },
+                    "support": {
+                        "plan": "basic",
+                        "timezone": "GMT"
+                    },
+                    "currentState": None,
+                    "audit": {
+                        "createdBy": None,
+                        "createdAt": None,
+                        "modifiedBy": None,
+                        "modifiedAt": None,
+                        "version": None
+
+                    }
+                }
+            ]
         }
+        cluster_created = False
+        while not cluster_created:
+            resp = self.capellaAPI.cluster_ops_apis.create_cluster(
+                self.organisation_id, self.project_id, self.cluster_name,
+                self.expected_result["data"][0]['cloudProvider'],
+                self.expected_result["data"][0]['couchbaseServer'],
+                self.expected_result["data"][0]['serviceGroups'],
+                self.expected_result["data"][0]['availability'],
+                self.expected_result["data"][0]['support'])
+            if resp.status_code == 202:
+                cluster_created = True
+            else:
+                self.expected_result["data"][0]['cloudProvider'][
+                    "cidr"] = CapellaUtils.get_next_cidr() + "/20"
+        self.cluster_id = resp.json()['id']
+        self.expected_result["data"][0]['id'] = self.cluster_id
+        self.api_keys = dict()
+
+        # Wait for the cluster to be deployed.
+        self.log.info("Waiting for cluster to be deployed.")
+        while self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, self.project_id,
+                self.cluster_id).json()["currentState"] == "deploying":
+            time.sleep(10)
+        self.log.info("Cluster deployed successfully.")
 
     def tearDown(self):
         failures = list()
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
+
+        # Delete the cluster that was created.
+        if self.capellaAPI.cluster_ops_apis.delete_cluster(
+                self.organisation_id, self.project_id,
+                self.cluster_id).status_code != 202:
+            failures.append("Error while deleting cluster {}".format(
+                self.cluster_id))
+
+        # Wait for the cluster to be destroyed.
+        self.log.info("Waiting for cluster to be destroyed.")
+        while not self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, self.project_id,
+                self.cluster_id).status_code == 404:
+            time.sleep(10)
+        self.log.info("Cluster destroyed, destroying Project now.")
 
         # Delete the project that was created.
         if self.delete_projects(self.organisation_id, [self.project_id],
@@ -56,68 +149,116 @@ class GetOrganization(APIBase):
         if failures:
             self.fail("Following error occurred in teardown: {}".format(
                 failures))
-        super(GetOrganization, self).tearDown()
+        super(ListCluster, self).tearDown()
 
-    def validate_org_api_response(self, expected_resp, actual_resp):
-        for key in expected_resp:
-            if key not in actual_resp:
+    def validate_cluster_api_response(self, expected_res, actual_res):
+        for key in actual_res:
+            if key not in expected_res:
                 return False
-            elif isinstance(expected_resp[key], dict):
-                self.validate_org_api_response(
-                    expected_resp[key], actual_resp[key])
-            elif expected_resp[key]:
-                if expected_resp[key] != actual_resp[key]:
+            if isinstance(expected_res[key], dict):
+                self.validate_cluster_api_response(
+                    expected_res[key], actual_res[key])
+            elif isinstance(expected_res[key], list):
+                if key == "services":
+                    for service in expected_res[key]:
+                        if service not in actual_res[key]:
+                            return False
+                    continue
+                for i in range(len(expected_res[key])):
+                    if (actual_res[key] is "data" and
+                            actual_res[key][i]["name"] != self.cluster_name):
+                        continue
+                    self.validate_cluster_api_response(
+                        expected_res[key][i], actual_res[key][i])
+            elif expected_res[key]:
+                if expected_res[key] == "version":
+                    if expected_res[key] not in actual_res[key]:
+                        return False
+                elif expected_res[key] != actual_res[key]:
                     return False
         return True
 
     def test_api_path(self):
         testcases = [
             {
-                "description": "Fetch info for a valid organization"
+                "description": "List clusters with valid path, params."
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations",
+                "url": "/v3/organizations/{}/projects/{}/clusters",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
                     "message": "Not found"
                 }
             }, {
-                "description": "Replace organizations with organization in "
-                               "URI",
-                "url": "/v4/organization",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
-            }, {
-                "description": "Replace organizations with organisations in "
-                               "URI",
-                "url": "/v4/organisations",
+                "description": "Replace clusters with cluster in URI",
+                "url": "/v4/organizations/{}/projects/{}/cluster",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/organization",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "url": "/v4/organizations/{}/projects/{}/clusters/cluster",
+                "expected_status_code": 400,
+                "expected_error": {
+                        "code": 1000,
+                        "hint": "Check if all the required params are "
+                                "present in the request body.",
+                        "httpStatusCode": 400,
+                        "message": "The server cannot or will not process the "
+                                   "request due to something that is "
+                                   "perceived to be a client error."
+                    }
+            }, {
+                "description": "Fetch cluster but with non-hex organizationID",
+                "invalid_organizationID": self.replace_last_character(
+                    self.organisation_id, non_hex=True),
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if all the required params are present "
+                            "in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived"
+                               " to be a client error."
+                }
+            }, {
+                "description": "Fetch cluster but with non-hex projectID",
+                "invalid_projectID": self.replace_last_character(
+                    self.project_id, non_hex=True),
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if all the required params are present "
+                            "in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived"
+                               " to be a client error."
+                }
             }
         ]
-
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-            if "url" in testcase:
-                self.capellaAPI.org_ops_apis.organization_endpoint = \
-                    testcase["url"]
+            org = self.organisation_id
+            proj = self.project_id
 
-            result = self.capellaAPI.org_ops_apis.fetch_organization_info(
-                self.organisation_id)
+            if "url" in testcase:
+                self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
+                    testcase["url"]
+            if "invalid_organizationID" in testcase:
+                org = testcase["invalid_organizationID"]
+            elif "invalid_projectID" in testcase:
+                proj = testcase["invalid_projectID"]
+
+            result = self.capellaAPI.cluster_ops_apis.list_clusters(org, proj)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_organization_info(
-                    self.organisation_id)
-
+                result = self.capellaAPI.cluster_ops_apis.list_clusters(
+                    org, proj)
             if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_org_api_response(
+                if not self.validate_cluster_api_response(
                         self.expected_result, result.json()):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
@@ -135,26 +276,24 @@ class GetOrganization(APIBase):
                             self.log.error("Status != 200, Key validation "
                                            "Failure : {}".format(
                                             testcase["description"]))
-                            self.log.warning("Result: {}".format(result))
+                            self.log.warning("Result : {}".format(result))
                             failures.append(testcase["description"])
                             break
                 except (Exception, ):
-                    if str(testcase["expected_error"]) not in \
-                            result.content:
-                        self.log.error(
-                            "Response type not JSON, Failure : {}".format(
-                                testcase["description"]))
-                        self.log.warning("Result: {}".format(result))
+                    if str(testcase["expected_error"]) not in result.content:
+                        self.log.error("Response type not JSON, Failure : {}"
+                                       .format(testcase["description"]))
+                        self.log.warning(result.content)
                         failures.append(testcase["description"])
             else:
                 self.log.error("Expected HTTP status code {}, Actual "
                                "HTTP status code {}".format(
                                 testcase["expected_status_code"],
                                 result.status_code))
-                self.log.warning("Result: {}".format(result))
+                self.log.warning("Result : {}".format(result.content))
                 failures.append(testcase["description"])
-            self.capellaAPI.org_ops_apis.organization_endpoint = \
-                "/v4/organizations"
+            self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
+                "/v4/organizations/{}/projects/{}/clusters"
 
         if failures:
             for fail in failures:
@@ -167,19 +306,25 @@ class GetOrganization(APIBase):
             self.create_api_keys_for_all_combinations_of_roles(
                 [self.project_id]))
 
+        resp = self.capellaAPI.org_ops_apis.create_project(
+            organizationId=self.organisation_id,
+            name=self.generate_random_string(),
+            description=self.generate_random_string(100))
+        if resp.status_code == 201:
+            other_project_id = resp.json()["id"]
+        else:
+            self.fail("Error while creating project")
+
         testcases = []
         for role in self.api_keys:
             testcase = {
                 "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"],
+                "token": self.api_keys[role]["token"]
             }
-            if not any(element in ["organizationOwner", "organizationMember",
-                                   "projectCreator", "projectViewer",
-                                   "projectOwner", "projectManager",
-                                   "projectDataReader",
-                                   "projectDataReaderWriter"] for element in
-                       self.api_keys[role]["roles"]):
-                testcase["expected_status_code"] = 403,
+            if not any(element in ["organizationOwner", "projectDataReader",
+                                   "projectOwner", "projectDataReaderWriter",
+                                   "projectViewer", "projectManager"] for
+                       element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1003,
                     "hint": "Make sure you have adequate access to the "
@@ -187,6 +332,7 @@ class GetOrganization(APIBase):
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
+                testcase["expected_status_code"] = 403
             testcases.append(testcase)
         testcases.extend([
             {
@@ -245,6 +391,23 @@ class GetOrganization(APIBase):
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
+            }, {
+                "description": "Calling API with user having access to get "
+                               "multiple projects ",
+                "has_multi_project_access": True
+            }, {
+                "description": "Calling API with user not having access to "
+                               "get project specific but has access to get "
+                               "other project",
+                "has_multi_project_access": False,
+                "expected_status_code": 403,
+                "expected_error": {
+                    "code": 1003,
+                    "hint": "Make sure you have adequate access to the "
+                            "resource.",
+                    "message": "Access Denied.",
+                    "httpStatusCode": 403
+                }
             }
         ])
 
@@ -258,9 +421,8 @@ class GetOrganization(APIBase):
                 # create a new API key with expiry of approx 2 mins
                 resp = self.capellaAPI.org_ops_apis.create_api_key(
                     organizationId=self.organisation_id,
-                    name=self.generate_random_string(prefix=self.prefix),
-                    description=self.generate_random_string(
-                        50, prefix=self.prefix),
+                    name=self.generate_random_string(),
+                    description=self.generate_random_string(50),
                     organizationRoles=["organizationOwner"],
                     expiry=0.001
                 )
@@ -279,7 +441,7 @@ class GetOrganization(APIBase):
                 self.update_auth_with_api_token(self.org_owner_key["token"])
                 resp = self.capellaAPI.org_ops_apis.delete_api_key(
                     organizationId=self.organisation_id,
-                    accessKey=self.api_keys["organizationOwner"]["Id"])
+                    accessKey=self.api_keys["organizationOwner"]["id"])
                 if resp.status_code != 204:
                     failures.append(testcase["description"])
                 self.update_auth_with_api_token(
@@ -289,17 +451,52 @@ class GetOrganization(APIBase):
                 basic = base64.b64encode("{}:{}".format(
                     self.user, self.passwd).encode()).decode()
                 header["Authorization"] = 'Basic {}'.format(basic)
+            elif "has_multi_project_access" in testcase:
+                header = {}
+                org_roles = ["organizationMember"]
+                resource = [{
+                    "type": "project",
+                    "id": other_project_id,
+                    "roles": ["projectOwner"]
+                }]
+                if testcase["has_multi_project_access"]:
+                    key = "multi_project_1"
+                    resource.append({
+                        "type": "project",
+                        "id": self.project_id,
+                        "roles": ["projectOwner"]
+                    })
+                else:
+                    key = "multi_project_2"
+                    org_roles.append("projectCreator")
+                self.update_auth_with_api_token(self.org_owner_key["token"])
+                # create a new API key with expiry of approx 2 mins
+                resp = self.capellaAPI.org_ops_apis.create_api_key(
+                    organizationId=self.organisation_id,
+                    name=self.generate_random_string(),
+                    organizationRoles=org_roles,
+                    description=self.generate_random_string(50),
+                    expiry=180,
+                    allowedCIDRs=["0.0.0.0/0"],
+                    resources=resource)
+                if resp.status_code == 201:
+                    self.api_keys[key] = resp.json()
+                else:
+                    self.fail("Error while creating API key for role having "
+                              "access to multiple projects")
+                self.update_auth_with_api_token(self.api_keys[key]["token"])
             else:
                 header = {}
                 self.update_auth_with_api_token(testcase["token"])
 
-            result = self.capellaAPI.org_ops_apis.fetch_organization_info(
-                self.organisation_id, header)
+            result = self.capellaAPI.cluster_ops_apis.list_clusters(
+                self.organisation_id, self.project_id, headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-
+                result = self.capellaAPI.cluster_ops_apis.list_clusters(
+                    self.organisation_id, self.project_id, headers=header)
             if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_org_api_response(
+                if not self.validate_cluster_api_response(
                         self.expected_result, result.json()):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
@@ -323,18 +520,23 @@ class GetOrganization(APIBase):
                 except (Exception,):
                     if str(testcase["expected_error"]) not in \
                             result.content:
-                        self.log.error(
-                            "Response type not JSON, Failure : {}".format(
-                                testcase["description"]))
-                        self.log.warning("Failure : {}".format(result))
+                        self.log.error("Response type not JSON, Failure : {}"
+                                       .format(testcase["description"]))
+                        self.log.warning(result.content)
                         failures.append(testcase["description"])
             else:
                 self.log.error("Expected HTTP status code {}, Actual "
                                "HTTP status code {}".format(
                                 testcase["expected_status_code"],
                                 result.status_code))
-                self.log.warning("Result : {}".format(result))
+                self.log.warning("Result : {}".format(result.content))
                 failures.append(testcase["description"])
+
+        resp = self.capellaAPI.org_ops_apis.delete_project(
+            self.organisation_id, other_project_id)
+        if resp.status_code != 204:
+            failures.append("Error while deleting project {}".format(
+                other_project_id))
 
         if failures:
             for fail in failures:
@@ -343,6 +545,8 @@ class GetOrganization(APIBase):
                 len(failures), len(testcases)))
 
     def test_query_parameters(self):
+        self.log.debug("Correct Params - OrgID: {}, ProjID: {}"
+                       .format(self.organisation_id, self.project_id))
         organization_id_values = [
             self.organisation_id,
             self.replace_last_character(self.organisation_id),
@@ -355,45 +559,67 @@ class GetOrganization(APIBase):
             {self.organisation_id},
             None
         ]
+        project_id_values = [
+            self.project_id,
+            self.replace_last_character(self.project_id),
+            True,
+            123456789,
+            123456789.123456789,
+            "",
+            [self.project_id],
+            (self.project_id,),
+            {self.project_id},
+            None
+        ]
+        combinations = list(itertools.product(*[
+            organization_id_values, project_id_values]))
 
         testcases = list()
-        for val in organization_id_values:
+        for combination in combinations:
             testcase = {
-                "description": "Organization ID : {}".format(str(val)),
-                "organizationID": val
+                "description": "OrganizationID: {}, ProjectID: {}".format(
+                    str(combination[0]), str(combination[1])),
+                "organizationID": combination[0],
+                "projectID": combination[1]
             }
-            if val == "":
-                testcase["expected_status_code"] = 404
-                testcase["expected_error"] = "404 page not found"
-            elif type(val) in [int, bool, float, list, tuple, set,
-                               type(None)]:
-                testcase["expected_status_code"] = 400
-                testcase["expected_error"] = {
-                    "code": 1000,
-                    "hint": "Check if all the required params are "
-                            "present in the request body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is "
-                               "perceived to be a client error."
-                }
-            elif val != self.organisation_id:
-                testcase["expected_status_code"] = 403
-                testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
-                }
+            if not (combination[0] == self.organisation_id and
+                    combination[1] == self.project_id):
+                if combination[0] == "":
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = "404 page not found"
+                elif combination[1] == "" or any(variable in [
+                    int, bool, float, list, tuple, set, type(None)] for
+                         variable in [type(combination[0]),
+                                      type(combination[1])]):
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 1000,
+                        "hint": "Check if all the required params are "
+                                "present in the request body.",
+                        "httpStatusCode": 400,
+                        "message": "The server cannot or will not process the "
+                                   "request due to something that is "
+                                   "perceived to be a client error."
+                    }
+                elif combination[0] != self.organisation_id:
+                    testcase["expected_status_code"] = 403
+                    testcase["expected_error"] = {
+                        "code": 1003,
+                        "hint": "Make sure you have adequate access to the "
+                                "resource.",
+                        "message": "Access Denied.",
+                        "httpStatusCode": 403
+                    }
+                else:
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = {
+                        "code": 2000,
+                        "hint": "Check if the project ID is valid.",
+                        "httpStatusCode": 404,
+                        "message": "The server cannot find a project by it's "
+                                   "ID."
+                    }
             testcases.append(testcase)
-
-        testcases.append({
-            "description": "Pass extra query parameter",
-            "organizationID": self.organisation_id,
-            "param": "page",
-            "paramValue": 10
-        })
 
         failures = list()
         for testcase in testcases:
@@ -403,15 +629,15 @@ class GetOrganization(APIBase):
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.org_ops_apis.fetch_organization_info(
-                testcase["organizationID"], **kwarg)
+            result = self.capellaAPI.cluster_ops_apis.list_clusters(
+                testcase["organizationID"], testcase["projectID"], **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.org_ops_apis.fetch_organization_info(
-                    testcase["organizationID"], **kwarg)
+                result = self.capellaAPI.cluster_ops_apis.list_clusters(
+                    testcase["organizationID"], testcase["projectID"], **kwarg)
             if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_org_api_response(self.expected_result,
-                                                      result.json()):
+                if not self.validate_cluster_api_response(
+                        self.expected_result, result.json()):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     failures.append(testcase["description"])
@@ -437,7 +663,7 @@ class GetOrganization(APIBase):
                         self.log.error(
                             "Response type not JSON, Failure : {}".format(
                                 testcase["description"]))
-                        self.log.warning("Failure : {}".format(result))
+                        self.log.warning(result.content)
                         failures.append(testcase["description"])
             else:
                 self.log.error("Expected HTTP status code {}, Actual "
@@ -456,22 +682,13 @@ class GetOrganization(APIBase):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
 
-        api_func_list = [[self.capellaAPI.org_ops_apis.fetch_organization_info,
-                          (self.organisation_id,)]]
+        api_func_list = [[self.capellaAPI.cluster_ops_apis.list_clusters,
+                          (self.organisation_id, self.project_id)]]
 
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id,
-                self.generate_random_string(prefix=self.prefix),
-                ["organizationOwner"],
-                self.generate_random_string(50, prefix=self.prefix))
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id,
-                    self.generate_random_string(prefix=self.prefix),
-                    ["organizationOwner"],
-                    self.generate_random_string(50, prefix=self.prefix))
+                self.organisation_id, self.generate_random_string(),
+                ["organizationOwner"], self.generate_random_string(50))
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_{}".format(i)] = resp.json()
             else:
@@ -499,10 +716,9 @@ class GetOrganization(APIBase):
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")
 
-
     def test_multiple_requests_using_API_keys_with_diff_role(self):
-        api_func_list = [[self.capellaAPI.org_ops_apis.fetch_organization_info,
-                          (self.organisation_id,)]]
+        api_func_list = [[self.capellaAPI.cluster_ops_apis.list_clusters,
+                          (self.organisation_id, self.project_id)]]
 
         org_roles = self.input.param("org_roles", "organizationOwner")
         proj_roles = self.input.param("proj_roles", "projectDataReader")

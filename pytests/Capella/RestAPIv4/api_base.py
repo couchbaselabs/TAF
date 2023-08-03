@@ -328,8 +328,8 @@ class APIBase(BaseTestCase):
             thread.join()
 
         for result in results:
-            self.log.info("API call result for API ID {0} with role {"
-                          "1}".format(result, results[result]["role"]))
+            self.log.info("API call result for API ID {0} with role {1}"
+                          .format(result, results[result]["role"]))
 
             if results[result]["rate_limit_hit"]:
                 self.log.info("Rate limit was hit after {0} API calls".format(
