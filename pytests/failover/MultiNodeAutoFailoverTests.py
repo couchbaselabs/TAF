@@ -314,5 +314,9 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                 process_concurrency=self.process_concurrency)
         return [tasks, cont_doc_load]
 
-    def wait_for_async_data_load_to_complete(self, task):
-        self.task.jython_task_manager.get_task_result(task)
+    def wait_for_async_data_load_to_complete(self, tasks):
+        if isinstance(tasks, list):
+            [self.task.jython_task_manager.get_task_result(task)
+             for task in tasks]
+        else:
+            self.task.jython_task_manager.get_task_result(tasks)
