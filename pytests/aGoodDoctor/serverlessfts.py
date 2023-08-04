@@ -210,6 +210,8 @@ class DoctorFTS:
             self.log.info("Creating FTS indexes on {}".format(b.name))
             self.fts_helper = FtsHelper(b.serverless.nebula_endpoint)
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                if s == CbServer.system_scope:
+                    continue
                 for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
                     if c == CbServer.default_collection:
                         continue

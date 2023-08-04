@@ -21,6 +21,7 @@ from table_view import TableView
 import itertools
 from _collections import defaultdict
 from membase.api.rest_client import RestConnection
+from Cb_constants.CBServer import CbServer
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
@@ -196,6 +197,8 @@ class DoctorN1QL():
             indexType = indexes
             self.log.info("Creating GSI indexes on {}".format(b.name))
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                if s == CbServer.system_scope:
+                    continue
                 if b.name+s not in self.sdkClients.keys():
                     self.sdkClients.update({b.name+s: b.clients[0].bucketObj.scope(s)})
                     time.sleep(1)

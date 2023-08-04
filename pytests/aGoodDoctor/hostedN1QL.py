@@ -28,6 +28,7 @@ import itertools
 from com.couchbase.client.core.deps.io.netty.handler.codec import string
 from com.couchbase.client.java.json import JsonObject
 from com.github.javafaker import Faker
+from Cb_constants.CBServer import CbServer
 
 letters = ascii_uppercase + ascii_lowercase + digits
 faker = Faker()
@@ -234,11 +235,13 @@ class DoctorN1QL():
             b.query_map = dict()
             self.log.info("Creating GSI indexes on {}".format(b.name))
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                if s == CbServer.system_scope:
+                    continue
                 if b.name+s not in self.sdkClients.keys():
                     self.sdkClients.update({b.name+s: b.clients[0].bucketObj.scope(s)})
                     time.sleep(5)
                 for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
-                    if c == "_default":
+                    if c == CbServer.default_collection:
                         continue
                     workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
                     workload = workloads[collection_num % len(workloads)]
