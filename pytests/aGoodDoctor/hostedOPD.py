@@ -331,10 +331,10 @@ class OPD:
                             task.result = False
                         except (DocumentNotFoundException, DocumentExistsException) as e:
                             pass
-            try:
-                task.sdk.disconnectCluster()
-            except Exception as e:
-                print(e)
+            # try:
+            #     task.sdk.disconnectCluster()
+            # except Exception as e:
+            #     print(e)
             self.assertTrue(task.result, "Task Failed: {}".format(task.taskName))
         if wait_for_stats:
             try:
@@ -349,15 +349,14 @@ class OPD:
                 raise e
 
     def data_validation(self, skip_default=True):
-        doc_ops = self.mutations_to_validate
         pc = min(self.process_concurrency, 20)
         if self._data_validation:
             self.log.info("Validating Active/Replica Docs")
             cmd = dict()
             self.ops_rate = self.input.param("ops_rate", 2000)
-            master = Server(self.cluster.master.ip, self.cluster.master.port,
-                            self.cluster.master.rest_username, self.cluster.master.rest_password,
-                            str(self.cluster.master.memcached_port))
+            # master = Server(self.cluster.master.ip, self.cluster.master.port,
+            #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
+            #                 str(self.cluster.master.memcached_port))
             self.loader_map = dict()
             for bucket in self.cluster.buckets:
                 for scope in bucket.scopes.keys():
@@ -380,6 +379,10 @@ class OPD:
                             elif op_type == "delete":
                                 hm.putAll({DRConstants.read_s: bucket.delete_start,
                                            DRConstants.read_e: bucket.delete_end})
+                                cmd.update({"deleted": True})
+                            elif op_type == "expiry":
+                                hm.putAll({DRConstants.read_s: bucket.expire_start,
+                                           DRConstants.read_e: bucket.expire_end})
                                 cmd.update({"deleted": True})
                             else:
                                 continue
@@ -415,26 +418,27 @@ class OPD:
                         for collection in bucket.scopes[scope].collections.keys():
                             if collection == "_default" and scope == "_default" and skip_default:
                                 continue
-                            for op_type in doc_ops:
-                                if op_type not in ["create", "update", "delete"]:
+                            for op_type in bucket.loadDefn.get("load_type"):
+                                if op_type not in ["create", "update", "delete", "expiry"]:
                                     continue
-                                client = NewSDKClient(master, bucket.name, scope, collection)
-                                client.initialiseSDK()
-                                self.sleep(1)
+                                # client = NewSDKClient(master, bucket.name, scope, collection)
+                                # client.initialiseSDK()
+                                # self.sleep(1)
                                 taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
                                 task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
-                                                        client, "NONE",
+                                                        self.sdk_client_pool, "NONE",
                                                         self.maxttl, self.time_unit,
                                                         self.track_failures, 0)
+                                task.set_collection_for_load(bucket.name, scope, collection)
                                 tasks.append(task)
                                 self.doc_loading_tm.submit(task)
                                 i -= 1
         self.doc_loading_tm.getAllTaskResult()
-        for task in tasks:
-            try:
-                task.sdk.disconnectCluster()
-            except Exception as e:
-                print(e)
+        # for task in tasks:
+        #     try:
+        #         task.sdk.disconnectCluster()
+        #     except Exception as e:
+        #         print(e)
         for task in tasks:
             self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
 
@@ -462,9 +466,9 @@ class OPD:
         self.get_memory_footprint()
         buckets = buckets or self.cluster.buckets
         self._loader_dict(buckets, overRidePattern, skip_default=skip_default)
-        master = Server(self.cluster.master.ip, self.cluster.master.port,
-                        self.cluster.master.rest_username, self.cluster.master.rest_password,
-                        str(self.cluster.master.memcached_port))
+        # master = Server(self.cluster.master.ip, self.cluster.master.port,
+        #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
+        #                 str(self.cluster.master.memcached_port))
         tasks = list()
         i = self.process_concurrency
         while i > 0:
@@ -477,15 +481,15 @@ class OPD:
                             continue
                         if collection == "_default" and scope == "_default" and skip_default:
                             continue
-                        client = NewSDKClient(master, bucket.name, scope, collection)
-                        client.initialiseSDK()
-                        self.sleep(1)
+                        # client = NewSDKClient(master, bucket.name, scope, collection)
+                        # client.initialiseSDK()
+                        # self.sleep(1)
                         taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
-                                                client, self.durability_level,
+                                                self.sdk_client_pool, self.durability_level,
                                                 self.maxttl, self.time_unit,
                                                 self.track_failures, 0)
-                        # task.set_collection_for_load(bucket.name, scope, collection)
+                        task.set_collection_for_load(bucket.name, scope, collection)
                         tasks.append(task)
                         self.doc_loading_tm.submit(task)
                         i -= 1

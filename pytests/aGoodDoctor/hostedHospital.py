@@ -410,7 +410,7 @@ class Murphy(BaseTestCase, OPD):
             "end": self.input.param("num_items", 1500000000),
             "ops": 100000,
             "doc_size": 1024,
-            "pattern": [0, 50, 50, 0, 0], # CRUDE
+            "pattern": [0, 90, 10, 0, 0], # CRUDE
             "load_type": ["read", "update"],
             "2iQPS": 200,
             "ftsQPS": 0,
@@ -424,7 +424,7 @@ class Murphy(BaseTestCase, OPD):
                 },
                 {
                     "valType": "NimbusM",
-                    "2i": [2, 2],
+                    "2i": [1, 2],
                     "FTS": [0, 0],
                     "cbas": [0, 0, 0]
                 }
@@ -477,7 +477,7 @@ class Murphy(BaseTestCase, OPD):
 
         if expiry:
             for load in self.load_defn:
-                load["pattern"] = [0, 50, 0, 0, 50]
+                load["pattern"] = [0, 90, 0, 0, 10]
                 load["load_type"] = ["read", "expiry"]
         #######################################################################
         if not self.skip_init:
@@ -586,7 +586,8 @@ class Murphy(BaseTestCase, OPD):
 
     def monitor_rebalance(self, task):
         self.rest = RestConnection(self.cluster.master)
-        while task.state != "healthy":
+        srt = time.time()
+        while task.state != "healthy" and srt + self.index_timeout > time.time():
             try:
                 self.assertTrue(self.rest.monitorRebalance(sleep_step=60),
                                 msg="Cluster Rebalance failed")
@@ -595,6 +596,30 @@ class Murphy(BaseTestCase, OPD):
             except ServerUnavailableException:
                 self.refresh_cluster()
                 self.rest = RestConnection(self.cluster.master)
+
+    def test_upgrades(self):
+        self.initial_setup()
+        self.stop_run = True
+        if self.cluster.query_nodes:
+            for ql in self.ql:
+                ql.stop_query_load()
+        if self.cluster.fts_nodes:
+            for ql in self.ftsQL:
+                ql.stop_query_load()
+        if self.cluster.cbas_nodes:
+            for ql in self.cbasQL:
+                ql.stop_query_load()
+        self.sleep(10, "Wait for 10s until all the query workload stops.")
+
+        for task in self.tasks:
+            task.stop_work_load()
+        self.wait_for_doc_load_completion(self.tasks)
+        if self.track_failures:
+            self.key_type = "RandomKey"
+            self.data_validation()
+        if self.cluster.eventing_nodes:
+            self.drEventing.print_eventing_stats()
+        self.assertTrue(self.query_result, "Please check the logs for query failures")
 
     def test_rebalance(self):
         self.initial_setup()

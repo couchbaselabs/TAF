@@ -463,7 +463,7 @@ class QueryLoad:
             elif str(e).find("CouchbaseException") != -1:
                 self.failures += self.rejected_count.next()
 
-            if e or str(e).find("no more information available") != -1:
+            if e and (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1):
                 self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
             end = time.time()

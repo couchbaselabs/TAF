@@ -316,7 +316,7 @@ public class WorkLoadGenerate extends Task{
                     e.printStackTrace();
                 }
         }
-        logger.info(this.taskName + " is completed!");
+        System.out.println(this.taskName + " is completed!");
         this.result = true;
         if (this.retryTimes > 0 && this.failedMutations.size() > 0) {
             logger.info(this.retryTimes);
