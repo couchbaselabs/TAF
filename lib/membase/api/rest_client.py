@@ -1496,7 +1496,7 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api)
         return json.loads(content)
 
-    def get_nodes(self, inactive=False):
+    def get_nodes(self, inactive_added=False, inactive_failed=False):
         nodes = []
         api = self.baseUrl + 'pools/default'
         status, content, header = self._http_request(api)
@@ -1509,6 +1509,12 @@ class RestConnection(newRC):
         if count == 7:
             raise Exception("could not get node info after 30 seconds")
         json_parsed = json.loads(content)
+        nodes_to_consider = ["active"]
+        # this is really useful when we want to do cbcollect on failed over/recovered node
+        if inactive_added:
+            nodes_to_consider.append("inactiveAdded")
+        if inactive_failed:
+            nodes_to_consider.append("inactiveFailed")
         if status:
             if "nodes" in json_parsed:
                 for json_node in json_parsed["nodes"]:
@@ -1519,16 +1525,12 @@ class RestConnection(newRC):
                     if node.ip == "127.0.0.1":
                         node.ip = self.ip
                     # Only add nodes which are active on cluster
-                    if node.clusterMembership == 'active':
+                    if node.clusterMembership in nodes_to_consider:
                         nodes.append(node)
                     else:
                         self.test_log.warn("{0} - Node not part of cluster {1}"
                                            .format(node.ip,
                                                    node.clusterMembership))
-                    # this is really useful when we want to do cbcollect on failed over/recovered node
-                    if inactive:
-                        if node.clusterMembership == 'inactiveAdded' or node.clusterMembership == 'inactiveFailed':
-                            nodes.append(node)
         return nodes
 
     # this method returns the number of node in cluster

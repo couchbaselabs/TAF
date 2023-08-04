@@ -5542,7 +5542,8 @@ class CBASRebalanceUtil(object):
                 return rebalance_task
         else:
             node_ids = dict()
-            for node in cluster.rest.get_nodes(True):
+            for node in cluster.rest.get_nodes(inactive_added=True,
+                                               inactive_failed=True):
                 node_ids[node.ip] = node.id
 
             if action == "FullRecovery":

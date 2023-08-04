@@ -459,7 +459,8 @@ class RebalanceTask(Task):
 
         # Get current 'active' nodes in the cluster
         # and update the nodes_in_cluster accordingly
-        for r_node in self.rest.get_nodes(inactive=True):
+        for r_node in self.rest.get_nodes(inactive_added=True,
+                                          inactive_failed=True):
             for server in self.cluster.servers:
                 if r_node.ip == server.ip and r_node.port == server.port:
                     if r_node.clusterMembership not in valid_membership:

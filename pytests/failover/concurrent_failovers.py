@@ -200,7 +200,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         fo_nodes = set()
         num_unreachable_nodes = 0
-        active_cluster_nodes = len(self.rest.get_nodes(inactive=False))
+        active_cluster_nodes = len(self.rest.get_nodes())
         total_nodes = active_cluster_nodes + self.fo_events + self.nodes_in
         min_nodes_for_quorum = int(total_nodes/2) + 1
         max_allowed_unreachable_nodes = total_nodes - min_nodes_for_quorum
@@ -363,7 +363,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
     def __display_failure_node_status(self, message):
         self.test_status_tbl.rows = list()
-        cluster_nodes = self.rest.get_nodes(inactive=True)
+        cluster_nodes = self.rest.get_nodes(inactive_added=True,
+                                            inactive_failed=True)
         for node, fo_type in self.nodes_to_fail.items():
             node = [t_node for t_node in cluster_nodes
                     if t_node.ip == node.ip][0]
@@ -544,7 +545,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         if choice([True, False]):
             # Add back all nodes and rebalance
             self.log.info("Performing node add back operation")
-            rest_nodes = self.rest.get_nodes(inactive=True)
+            rest_nodes = self.rest.get_nodes(inactive_added=True,
+                                             inactive_failed=True)
             for node in rest_nodes:
                 if node.clusterMembership == "inactiveFailed":
                     self.rest.add_back_node(node.id)
@@ -720,7 +722,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         finally:
             recover_from_split(node_split_1 + node_split_2)
             self.sleep(5, "Wait for n/w split to heal")
-            rest_nodes = self.rest.get_nodes(inactive=True)
+            rest_nodes = self.rest.get_nodes(inactive_added=True,
+                                             inactive_failed=True)
             for t_node in rest_nodes:
                 if t_node.clusterMembership == "active":
                     for node in self.cluster.servers:

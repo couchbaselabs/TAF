@@ -691,7 +691,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
         is_single_node_server = len(self.servers) == 1
         for _, cluster in self.cb_clusters.items():
             rest = RestConnection(cluster.master)
-            nodes = rest.get_nodes(inactive=True)
+            nodes = rest.get_nodes(inactive_added=True,
+                                   inactive_failed=True)
             # Creating cluster_util object to handle multi_cluster scenario
             status = self.cluster_util.trigger_cb_collect_on_cluster(
                 rest, nodes,
