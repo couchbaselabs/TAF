@@ -628,6 +628,11 @@ class RebalanceTask(Task):
                                         "swap rebalance")
             self.state = "add_nodes"
             self.add_nodes()
+            # Validate the current orchestrator is selected as expected
+            result = global_vars.cluster_util.\
+                validate_orchestrator_selection(self.cluster)
+            if result is False:
+                return self.result
             self.state = "triggering"
             self.start_rebalance()
             if self.state == "trigger_failed":
@@ -649,10 +654,8 @@ class RebalanceTask(Task):
                     self.prev_rebalance_status_id = server_task["statusId"]
                     self.log.debug("New rebalance status_id: %s"
                                    % server_task["statusId"])
-
             self.state = "running"
             self.check()
-            # self.task_manager.schedule(self)
         except Exception as e:
             self.exception = e
             self.result = False
@@ -665,16 +668,22 @@ class RebalanceTask(Task):
                     self.cluster, bucket)
 
         self.complete_task()
-        self.result = True
 
-        print_nodes("Nodes in cluster", self.cluster.nodes_in_cluster)
-        print_nodes("KV nodes        ", self.cluster.kv_nodes)
-        print_nodes("Index nodes     ", self.cluster.index_nodes)
-        print_nodes("Query nodes     ", self.cluster.index_nodes)
-        print_nodes("CBAS nodes      ", self.cluster.cbas_nodes)
-        print_nodes("FTS nodes       ", self.cluster.fts_nodes)
-        print_nodes("Eventing nodes  ", self.cluster.eventing_nodes)
-        print_nodes("Backup nodes    ", self.cluster.backup_nodes)
+        # Validate the current orchestrator is selected as expected
+        result = global_vars.cluster_util.\
+            validate_orchestrator_selection(self.cluster)
+        if result:
+            self.result = True
+
+        print_nodes("Cluster nodes..", self.cluster.nodes_in_cluster)
+        print_nodes("KV............", self.cluster.kv_nodes)
+        print_nodes("Index.........", self.cluster.index_nodes)
+        print_nodes("Query.........", self.cluster.index_nodes)
+        print_nodes("CBAS..........", self.cluster.cbas_nodes)
+        print_nodes("FTS...........", self.cluster.fts_nodes)
+        print_nodes("Eventing......", self.cluster.eventing_nodes)
+        print_nodes("Backup........", self.cluster.backup_nodes)
+        print_nodes("Serviceless...", self.cluster.backup_nodes)
         return self.result
 
     def add_nodes(self):

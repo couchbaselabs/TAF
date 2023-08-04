@@ -67,6 +67,7 @@ class CBCluster:
         self.query_nodes = list()
         self.eventing_nodes = list()
         self.backup_nodes = list()
+        self.serviceless_nodes = list()
         self.nodes_in_cluster = list()
         self.xdcr_remote_clusters = list()
         self.buckets = list()
@@ -244,6 +245,54 @@ class ClusterUtils:
         if len(list(set(profiles))) > 1:
             raise Exception("Profile type mismatch")
         return profiles[0]
+
+    def get_possible_orchestrotor_nodes(self, cluster):
+        nodes = list()
+        min_node_weight = 999999
+        services = CbServer.Services
+        for node in cluster.nodes_in_cluster:
+            node_weight = 0
+            if node in cluster.serviceless_nodes:
+                pass
+            else:
+                if node in cluster.kv_nodes:
+                    node_weight += constants.service_weight[services.KV]
+                if node in cluster.index_nodes:
+                    node_weight += constants.service_weight[services.INDEX]
+                if node in cluster.cbas_nodes:
+                    node_weight += constants.service_weight[services.CBAS]
+                if node in cluster.fts_nodes:
+                    node_weight += constants.service_weight[services.FTS]
+                if node in cluster.query_nodes:
+                    node_weight += constants.service_weight[services.N1QL]
+                if node in cluster.eventing_nodes:
+                    node_weight += constants.service_weight[services.EVENTING]
+                if node in cluster.backup_nodes:
+                    node_weight += constants.service_weight[services.BACKUP]
+
+            if node_weight < min_node_weight:
+                nodes = [node.ip]
+                min_node_weight = node_weight
+            elif node_weight == min_node_weight:
+                nodes.append(node.ip)
+        return nodes
+
+    def validate_orchestrator_selection(self, cluster):
+        result = False
+        status, ns_node = self.find_orchestrator(cluster)
+        if not status:
+            return result
+        self.update_cluster_nodes_service_list(cluster, inactive_added=True)
+        nodes = self.get_possible_orchestrotor_nodes(cluster)
+        ns_node = ns_node.split("@")[1]
+        if ns_node not in nodes:
+            self.log.critical("Unexpected orchestrotor: %s. "
+                              "Expected orchestrators : %s" % (ns_node, nodes))
+        else:
+            result = True
+            self.log.debug("Orchestartor candidates: %s" % nodes)
+            self.log.debug("Orchestrotor: %s" % ns_node)
+        return result
 
     def set_rebalance_moves_per_nodes(self, cluster_node,
                                       rebalanceMovesPerNode=4):
@@ -691,7 +740,7 @@ class ClusterUtils:
                 remote_client.disable_firewall()
                 remote_client.disconnect()
 
-    def update_cluster_nodes_service_list(self, cluster):
+    def update_cluster_nodes_service_list(self, cluster, inactive_added=False):
         def append_nodes_to_list(nodes, list_to_append):
             for t_node in nodes:
                 t_node = t_node.split(":")
@@ -699,9 +748,12 @@ class ClusterUtils:
                     if server.ip == t_node[0] \
                             and int(server.port) == int(t_node[1]):
                         list_to_append.append(server)
+                        if server not in cluster.nodes_in_cluster:
+                            cluster.nodes_in_cluster.append(server)
                         break
 
-        service_map = self.get_services_map(cluster)
+        service_map = self.get_services_map(cluster,
+                                            inactive_added=inactive_added)
         cluster.kv_nodes = list()
         cluster.fts_nodes = list()
         cluster.cbas_nodes = list()
@@ -709,6 +761,8 @@ class ClusterUtils:
         cluster.query_nodes = list()
         cluster.eventing_nodes = list()
         cluster.backup_nodes = list()
+        cluster.serviceless_nodes = list()
+        cluster.nodes_in_cluster = list()
         for service_type, node_list in service_map.items():
             if service_type == constants.Services.KV:
                 append_nodes_to_list(node_list, cluster.kv_nodes)
@@ -724,6 +778,8 @@ class ClusterUtils:
                 append_nodes_to_list(node_list, cluster.fts_nodes)
             elif service_type == constants.Services.BACKUP:
                 append_nodes_to_list(node_list, cluster.backup_nodes)
+            elif service_type == constants.Services.SERVICELESS:
+                append_nodes_to_list(node_list, cluster.serviceless_nodes)
 
     def get_nodes_from_services_map(self, cluster, service_type="n1ql",
                                     get_all_nodes=False, servers=None):
@@ -787,15 +843,21 @@ class ClusterUtils:
                 return node_list[0]
 
     @staticmethod
-    def get_services_map(cluster):
+    def get_services_map(cluster, inactive_added=False):
         services_map = dict()
         rest = RestConnection(cluster.master)
-        tem_map = rest.get_nodes_services()
-        for key, val in tem_map.iteritems():
-            for service in val:
-                if service not in services_map.keys():
-                    services_map[service] = list()
-                services_map[service].append(key)
+        tem_map = rest.get_nodes_services(inactive_added=inactive_added)
+        for key, val in tem_map.items():
+            if not val:
+                # None means service-less node
+                if None not in services_map:
+                    services_map[None] = list()
+                services_map[None].append(key)
+            else:
+                for service in val:
+                    if service not in services_map.keys():
+                        services_map[service] = list()
+                    services_map[service].append(key)
         return services_map
 
     @staticmethod

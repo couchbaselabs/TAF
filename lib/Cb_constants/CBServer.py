@@ -7,6 +7,7 @@ class CbServer(object):
         FTS = "fts"
         EVENTING = "eventing"
         BACKUP = "backup"
+        SERVICELESS = None
 
         @classmethod
         def services_require_memory(cls):
@@ -54,6 +55,17 @@ class CbServer(object):
         VB_COUNT = 64
         MAX_BUCKETS = 25
         MAX_WEIGHT = 10000
+
+    service_weight = {
+        Services.KV: 10000,
+        Services.INDEX: 1000,
+        Services.CBAS: 1000,
+        Services.FTS: 1000,
+        Services.N1QL: 100,
+        Services.EVENTING: 100,
+        Services.BACKUP: 10,
+        Services.SERVICELESS: 0
+    }
 
     enterprise_edition = True
 

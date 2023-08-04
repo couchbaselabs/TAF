@@ -1583,13 +1583,14 @@ class RestConnection(newRC):
         return is_compatible
 
     # this method returns the services of nodes in cluster - implemented for Sherlock
-    def get_nodes_services(self):
-        nodes = self.get_nodes()
-        map = {}
+    def get_nodes_services(self, inactive_added=False, inactive_failed=False):
+        nodes = self.get_nodes(inactive_added=inactive_added,
+                               inactive_failed=inactive_failed)
+        n_map = dict()
         for node in nodes:
             key = "{0}:{1}".format(node.ip, node.port)
-            map[key] = node.services
-        return map
+            n_map[key] = node.services
+        return n_map
 
     # Check node version
     def check_node_versions(self, check_version="4.0"):
