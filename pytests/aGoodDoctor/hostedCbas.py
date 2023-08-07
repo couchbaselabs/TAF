@@ -16,7 +16,6 @@ from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException, AmbiguousTimeoutException, PlanningFailureException,\
     UnambiguousTimeoutException, TimeoutException, DatasetExistsException,\
     IndexExistsException
-import traceback
 from global_vars import logger
 from Cb_constants.CBServer import CbServer
 from hostedN1QL import execute_statement_on_n1ql
@@ -266,6 +265,7 @@ class CBASQueryLoad:
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("cbasQPS")
         self.query_stats = {key[1]: [0, 0] for key in self.queries}
         self.failures = 0
+        self.cluster_conn = random.choice(self.bucket.clients).cluster
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -306,7 +306,7 @@ class CBASQueryLoad:
                 # print query
                 # print original_query
                 status, metrics, _, results, _ = execute_statement_on_cbas(
-                    random.choice(self.bucket.clients).cluster, query, client_context_id)
+                    self.cluster_conn, query, client_context_id)
                 self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
                 self.query_stats[original_query][1] += 1
                 if status == AnalyticsStatus.SUCCESS:
