@@ -589,11 +589,17 @@ class Murphy(BaseTestCase, OPD):
         srt = time.time()
         while task.state != "healthy" and srt + self.index_timeout > time.time():
             try:
-                self.assertTrue(self.rest.monitorRebalance(sleep_step=60),
+                result = self.rest.monitorRebalance(sleep_step=60)
+                if result is False:
+                    progress = self.rest._rebalance_progress()
+                    if progress == -100:
+                        raise ServerUnavailableException
+                self.assertTrue(result,
                                 msg="Cluster Rebalance failed")
                 if task.state != "healthy":
                     self.sleep(300, "Wait for CP to trigger sub-rebalance")
             except ServerUnavailableException:
+                self.log.critical("Node to get rebalance progress is not part of cluster")
                 self.refresh_cluster()
                 self.rest = RestConnection(self.cluster.master)
 
