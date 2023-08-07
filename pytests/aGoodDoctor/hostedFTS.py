@@ -213,7 +213,7 @@ class FTSQueryLoad:
             elif str(e).find("RequestCanceledException") != -1:
                 self.failures += self.cancel_count.next()
             elif str(e).find("CouchbaseException") != -1:
-                self.failures += self.rejected_count.next()
+                self.failures += self.error_count.next()
 
             if str(e).find("no more information available") != -1:
                 self.log.critical(query)
