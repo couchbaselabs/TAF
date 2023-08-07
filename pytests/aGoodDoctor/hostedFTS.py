@@ -150,6 +150,7 @@ class FTSQueryLoad:
         self.stop_run = False
         self.log = logger.get("infra")
         self.failures = 0
+        self.cluster_conn = random.choice(self.bucket.clients).cluster
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -225,5 +226,5 @@ class FTSQueryLoad:
         """
         Executes a statement on CBAS using the REST API using REST Client
         """
-        result = random.choice(self.bucket.clients).cluster.searchQuery(index, query)
+        result = self.cluster_conn.searchQuery(index, query)
         return result
