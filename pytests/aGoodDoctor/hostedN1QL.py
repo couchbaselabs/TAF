@@ -291,7 +291,7 @@ class DoctorN1QL():
                             query = unformatted_q.format(c)
                             print query
                             if unformatted_q not in b.query_map.keys():
-                                b.query_map[unformatted_q] = ["Q%s" % (counter % len(queryType))]
+                                b.query_map[unformatted_q] = ["Q%s" % (counter)]
                                 if queryParams:
                                     b.query_map[unformatted_q].append(queryParams[counter % len(queryParams)])
                                 else:
@@ -388,6 +388,7 @@ class QueryLoad:
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         self.query_stats = {key[2]: [0, 0] for key in self.queries}
         self.failures = 0
+        self.timeout_failures = 0
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -457,7 +458,10 @@ class QueryLoad:
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
-                self.timeout_count.next()
+                self.timeout_failures += self.timeout_count.next()
+                if self.timeout_failures % 50 == 0:
+                    self.log.critical(client_context_id + ":" + query)
+                    self.log.critical(e)
             elif str(e).find("RequestCanceledException") != -1:
                 self.failures += self.cancel_count.next()
             elif str(e).find("CouchbaseException") != -1:

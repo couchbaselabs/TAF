@@ -1162,7 +1162,7 @@ class RestConnection(newRC):
         status, content = self.diag_eval(code)
         return status, content
 
-    def monitorRebalance(self, stop_if_loop=True, sleep_step=3):
+    def monitorRebalance(self, stop_if_loop=True, sleep_step=3, progress_count=100):
         start = time.time()
         progress = 0
         retry = 0
@@ -1189,7 +1189,7 @@ class RestConnection(newRC):
                     same_progress_count = 0
                 else:
                     same_progress_count += 1
-                if same_progress_count > 500:
+                if same_progress_count > progress_count:
                     self.test_log.error("Rebalance progress code in "
                                         "infinite loop: %s" % progress)
                     return False

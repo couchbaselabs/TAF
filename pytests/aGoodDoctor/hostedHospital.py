@@ -65,7 +65,7 @@ class Murphy(BaseTestCase, OPD):
         self.num_buckets = self.input.param("num_buckets", 1)
         self.rebalance_type = self.input.param("rebalance_type", "all")
         self.index_nodes = self.input.param("index_nodes", 0)
-        self.backup_nodes = self.input.param("backup_nodes", 0)
+        self.backup_restore = self.input.param("bkrs", False)
         self.xdcr_remote_clusters = self.input.param("xdcr_remote_clusters", 0)
         self.num_indexes = self.input.param("num_indexes", 0)
         self.mutation_perc = 100
@@ -113,7 +113,7 @@ class Murphy(BaseTestCase, OPD):
         if self.cluster.cbas_nodes:
             self.drCBAS = DoctorCBAS(self.cluster, self.bucket_util)
 
-        if self.backup_nodes > 0:
+        if self.backup_restore:
             self.drBackupRestore = DoctorHostedBackupRestore(cluster=self.cluster,
                                                              bucket_name=self.cluster.buckets[0].name,
                                                              pod=self.pod,
@@ -412,7 +412,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 90, 10, 0, 0], # CRUDE
             "load_type": ["read", "update"],
-            "2iQPS": 200,
+            "2iQPS": 300,
             "ftsQPS": 0,
             "cbasQPS": 0,
             "collections_defn": [
@@ -589,7 +589,8 @@ class Murphy(BaseTestCase, OPD):
         srt = time.time()
         while task.state != "healthy" and srt + self.index_timeout > time.time():
             try:
-                result = self.rest.monitorRebalance(sleep_step=60)
+                result = self.rest.monitorRebalance(sleep_step=60,
+                                                    progress_count=1000)
                 if result is False:
                     progress = self.rest._rebalance_progress()
                     if progress == -100:
@@ -693,7 +694,7 @@ class Murphy(BaseTestCase, OPD):
                             self.disk[service] = self.disk[service] + disk_increment
                     config = self.rebalance_config(0)
                     pprint.pprint(config)
-                    if self.backup_nodes > 0:
+                    if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
@@ -719,7 +720,7 @@ class Murphy(BaseTestCase, OPD):
                         self.compute[service] = computeList[comp]
                     config = self.rebalance_config(0)
                     pprint.pprint(config)
-                    if self.backup_nodes > 0:
+                    if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
@@ -746,7 +747,7 @@ class Murphy(BaseTestCase, OPD):
                         self.compute[service] = computeList[comp]
                     config = self.rebalance_config(0)
                     pprint.pprint(config)
-                    if self.backup_nodes > 0:
+                    if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
@@ -766,7 +767,7 @@ class Murphy(BaseTestCase, OPD):
                     item_count=num_items)
                 if not replication_done:
                     self.log.error("Replication did not complete. Check logs!")
-            if self.backup_nodes > 0:
+            if self.backup_restore:
                 list_backups = self.drBackupRestore.list_all_backups().json()
                 backups_on_bucket = list_backups['backups']['data']
                 if not backups_on_bucket:
