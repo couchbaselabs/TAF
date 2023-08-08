@@ -3971,8 +3971,12 @@ class CbasUtil(CBOUtil):
         """
         self.log.debug("Executing %s queries concurrently", num_queries)
 
-        cbas_base_url = "http://{0}:8095/analytics/service" \
-            .format(cluster.cbas_cc_node.ip)
+        if CbServer.use_https:
+            cbas_base_url = "https://{0}:18095/analytics/service" \
+                .format(cluster.cbas_cc_node.ip)
+        else:
+            cbas_base_url = "http://{0}:8095/analytics/service" \
+                .format(cluster.cbas_cc_node.ip)
 
         pretty = "true"
         tasks = []
@@ -4868,7 +4872,8 @@ class CbasUtil(CBOUtil):
         response = self.fetch_analytics_cluster_response(cluster)
         if response:
             replica_num_matched = True
-            if response["partitionsTopology"]["numReplicas"] == expected_num:
+            if int(response["partitionsTopology"]["numReplicas"]) == \
+                    expected_num:
                 replica_num_matched = replica_num_matched and True
             else:
                 self.log.error("Expected number of replicas - {0}, Actual "
@@ -4878,10 +4883,10 @@ class CbasUtil(CBOUtil):
 
             partition_ids = list()
             for partition in response["partitions"]:
-                partition_ids.append(partition["partitionId"])
+                partition_ids.append(int(partition["partitionId"]))
 
             for partition in response["partitionsTopology"]["partitions"]:
-                if partition["id"] in partition_ids:
+                if int(partition["id"]) in partition_ids:
                     if len(partition["replicas"]) == expected_num:
                         replica_num_matched = replica_num_matched and True
                     else:
@@ -4899,8 +4904,12 @@ class CbasUtil(CBOUtil):
         This method force flushes the data to the disk for the dataset
         specified.
         """
-        url = "http://{0}:8095/analytics/connector?".format(
-            cbas_node.ip)
+        if CbServer.use_https:
+            url = "https://{0}:18095/analytics/connector?".format(
+                cbas_node.ip)
+        else:
+            url = "http://{0}:8095/analytics/connector?".format(
+                cbas_node.ip)
         for dv_part in dataverse_name.split("."):
             url += "dataverseName={0}&".format(urllib.quote_plus(
                 CBASHelper.unformat_name(dv_part), safe=""))
@@ -4911,7 +4920,7 @@ class CbasUtil(CBOUtil):
             username = cbas_node.rest_username
         if not password:
             password = cbas_node.rest_password
-        response = requests.get(url, auth=(username, password))
+        response = requests.get(url, auth=(username, password), verify=False)
         if response.status_code in [200, 201, 204]:
             return True
         else:

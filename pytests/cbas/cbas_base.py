@@ -272,8 +272,8 @@ class CBASBaseTest(BaseTestCase):
             # Wait for analytics service to be up.
             if hasattr(cluster, "cbas_cc_node"):
                 if not self.cbas_util.is_analytics_running(cluster):
-                    self.fail("Analytics service did not come up even after 10\
-                                 mins of wait after initialisation")
+                    self.fail("Analytics service did not come up even after "
+                              "10 mins of wait after initialisation")
 
             if self.input.param("n2n_encryption", False):
 
@@ -297,13 +297,16 @@ class CBASBaseTest(BaseTestCase):
                         True, 300, False):
                     self.fail("Enabling Auto-Failover failed")
 
+                for server in self.input.servers:
+                    self.set_ports_for_server(server, "ssl")
+
                 if not self.cbas_util.wait_for_cbas_to_recover(cluster, 300):
                     self.fail("Analytics service Failed to recover")
 
             if self.input.param("analytics_loggers", None):
                 """
-                This flag is used for setting analytics internal log levels. 
-                These logs are helpful while dubugging issues as they 
+                This flag is used for setting analytics internal log levels.
+                These logs are helpful while dubugging issues as they
                 provide a deeper insight into working on CBAS service.
                 This flag can be used to set one or more logger for analytics.
                 logger_name_1:level-logger_name_2:level-......

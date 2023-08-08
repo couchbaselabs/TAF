@@ -219,9 +219,6 @@ class BaseTestCase(unittest.TestCase):
         self.ipv4_only = self.input.param("ipv4_only", False)
         self.ipv6_only = self.input.param("ipv6_only", False)
         self.multiple_ca = self.input.param("multiple_ca", False)
-        if self.use_https:
-            CbServer.use_https = True
-            trust_all_certs()
 
         # SDKClientPool object for creating generic clients across tasks
         if self.sdk_client_pool is True:
@@ -286,6 +283,12 @@ class BaseTestCase(unittest.TestCase):
                         ClusterRun.memcached_port \
                         + (2 * (int(server.port) - ClusterRun.port))
 
+        # Force disable TLS to avoid initial connection issues
+        tasks = [self.node_utils.async_disable_tls(server)
+                 for server in self.servers]
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+
         self.log_setup_status(self.__class__.__name__, "started")
         cluster_name_format = "C%s"
         default_cluster_index = counter_index = 1
@@ -303,6 +306,10 @@ class BaseTestCase(unittest.TestCase):
             self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
                                                        servers=self.servers,
                                                        vbuckets=self.vbuckets)
+
+        if self.use_https:
+            CbServer.use_https = True
+            trust_all_certs()
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
@@ -512,6 +519,25 @@ class BaseTestCase(unittest.TestCase):
         is_test_failed = self.is_test_failed()
         self.node_utils.start_fetch_pcaps(self.servers, log_path, is_test_failed)
 
+    def set_ports_for_server(self, server, port_type="non_ssl"):
+        self.log.debug("Setting %s ports for server %s" % (port_type, server))
+        if port_type == "non_ssl":
+            server.port = CbServer.port
+            server.memcached_port = CbServer.memcached_port
+            server.fts_port = CbServer.fts_port
+            server.index_port = CbServer.index_port
+            server.n1ql_port = CbServer.n1ql_port
+            server.cbas_port = CbServer.cbas_port
+            server.eventing_port = CbServer.eventing_port
+        elif port_type == "ssl":
+            server.port = CbServer.ssl_port
+            server.memcached_port = CbServer.memcached_port
+            server.fts_port = CbServer.ssl_fts_port
+            server.index_port = CbServer.ssl_index_port
+            server.n1ql_port = CbServer.ssl_n1ql_port
+            server.cbas_port = CbServer.ssl_cbas_port
+            server.eventing_port = CbServer.ssl_eventing_port
+
     def tearDown(self):
         # Perform system event log validation and get failures (if any)
         sys_event_validation_failure = None
@@ -525,14 +551,18 @@ class BaseTestCase(unittest.TestCase):
                     cluster, False, self.ipv4_only, self.ipv6_only)
 
         # Disable n2n encryption on nodes of all clusters
-        if self.use_https and self.enforce_tls:
-            for _, cluster in self.cb_clusters.items():
-                tasks = []
-                for node in cluster.servers:
-                    task = self.node_utils.async_disable_tls(node)
-                    tasks.append(task)
-                for task in tasks:
-                    self.task_manager.get_task_result(task)
+        if self.use_https:
+            if self.enforce_tls:
+                for _, cluster in self.cb_clusters.items():
+                    tasks = []
+                    for node in cluster.servers:
+                        task = self.node_utils.async_disable_tls(node)
+                        tasks.append(task)
+                    for task in tasks:
+                        self.task_manager.get_task_result(task)
+            for server in self.input.servers:
+                self.set_ports_for_server(server, "non_ssl")
+
         if self.multiple_ca:
             CbServer.use_https = False
             for _, cluster in self.cb_clusters.items():

@@ -177,3 +177,31 @@ class CbCli(CbCmdBase):
             return security_dict["clusterEncryptionLevel"]
         else:
             return None
+
+    def auto_failover(self, enable_auto_fo=1,
+                      fo_timeout=None, max_failovers=None,
+                      disk_fo=None, disk_fo_timeout=None,
+                      can_abort_rebalance=None):
+        cmd = "%s setting-autofailover -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        cmd += " --enable-auto-failover %s" % enable_auto_fo
+        if fo_timeout:
+            cmd += " --auto-failover-timeout %s" % fo_timeout
+        if max_failovers:
+            cmd += " --max-failovers %s" % max_failovers
+        if disk_fo:
+            cmd += " --enable-failover-on-data-disk-issues %s" % disk_fo
+        if disk_fo_timeout:
+            cmd += " --failover-data-disk-period %s" % disk_fo_timeout
+        if can_abort_rebalance:
+            cmd += " --can-abort-rebalance %s" % can_abort_rebalance
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception("\n".join(error))
+        return output
+
+    def __get_http_port(self):
+        if self.port == CbServer.ssl_port:
+            return CbServer.port
+        return self.port
