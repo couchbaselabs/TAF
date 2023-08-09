@@ -93,7 +93,7 @@ class KVUpgradeTests(UpgradeBase):
         key_vb = self.bucket_util.get_vbucket_num_for_key(key)
         bucket = self.cluster.buckets[0]
         in_node = self.cluster.servers[1]
-        num_items = 0
+        num_items = self.num_items
 
          # Install the initial version on the 2nd node as well
         self.install_version_on_node(self.cluster.servers[1:2],
