@@ -581,6 +581,7 @@ class Murphy(BaseTestCase, OPD):
                 }
             task = self.task.async_upgrade_capella_prov(self.cluster, config,
                                                         timeout=24*60*60)
+            self.monitor_rebalance(task)
             self.task_manager.get_task_result(task)
             self.assertTrue(task.result, "Cluster Upgrade Failed...")
 
