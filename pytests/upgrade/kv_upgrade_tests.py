@@ -69,8 +69,7 @@ class KVUpgradeTests(UpgradeBase):
         for node_to_upgrade in node_to_upgrades:
             self.failover_recovery(node_to_upgrade=node_to_upgrade,
                                    recovery_type=self.recovery_type,
-                                   graceful=self.graceful,
-                                   collection_ops=False)
+                                   graceful=self.graceful)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
 
