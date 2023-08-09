@@ -17,6 +17,7 @@ from aGoodDoctor.hostedN1QL import QueryLoad, DoctorN1QL
 from aGoodDoctor.hostedCbas import DoctorCBAS, CBASQueryLoad
 from aGoodDoctor.hostedXDCR import DoctorXDCR
 from aGoodDoctor.hostedBackupRestore import DoctorHostedBackupRestore
+from aGoodDoctor.hostedOnOff import DoctorHostedOnOff
 from aGoodDoctor.hostedEventing import DoctorEventing
 from aGoodDoctor.hostedOPD import OPD
 from constants.cloud_constants.capella_constants import AWS, GCP
@@ -88,6 +89,7 @@ class Murphy(BaseTestCase, OPD):
         self.loader_dict = None
         self.parallel_reads = self.input.param("parallel_reads", False)
         self._data_validation = self.input.param("data_validation", True)
+        self.turn_cluster_off = self.input.param("cluster_off", False)
         self.fragmentation = int(self.input.param("fragmentation", 50))
         self.key_type = self.input.param("key_type", "SimpleKey")
         self.val_type = self.input.param("val_type", "SimpleValue")
@@ -123,6 +125,8 @@ class Murphy(BaseTestCase, OPD):
                                      source_bucket=self.cluster.buckets[0].name,
                                      destination_bucket=self.xdcr_cluster.buckets[0].name,
                                      pod=self.pod, tenant=self.tenant)
+        if self.turn_cluster_off:
+            self.drClusterOnOff = DoctorHostedOnOff(self.cluster, self.pod, self.tenant)
 
         self.ql = list()
         self.ftsQL = list()
@@ -667,6 +671,14 @@ class Murphy(BaseTestCase, OPD):
                 self.print_stats()
                 self.loop += 1
                 self.sleep(60, "Sleep for 60s after rebalance")
+                #turn cluster off and back on
+                if self.turn_cluster_off:
+                    cluster_off_result = self.drClusterOnOff.turn_off_cluster()
+                    self.assertTrue(cluster_off_result, "Failed to turn off cluster")
+                    self.sleep(200, "Wait before turning cluster on")
+                    cluster_on_result = self.drClusterOnOff.turn_on_cluster()
+                    self.assertTrue(cluster_on_result, "Failed to turn on cluster")
+                    self.sleep(60, "Wait after cluster is turned on")
                 self.restart_query_load(num=10)
 
             self.loop = 0
@@ -685,6 +697,14 @@ class Murphy(BaseTestCase, OPD):
                 self.cluster_util.print_cluster_stats(self.cluster)
                 self.print_stats()
                 self.sleep(60, "Sleep for 60s after rebalance")
+                #turn cluster off and back on
+                if self.turn_cluster_off:
+                    cluster_off_result = self.drClusterOnOff.turn_off_cluster()
+                    self.assertTrue(cluster_off_result, "Failed to turn off cluster")
+                    self.sleep(200, "Wait before turning cluster on")
+                    cluster_on_result = self.drClusterOnOff.turn_on_cluster()
+                    self.assertTrue(cluster_on_result, "Failed to turn on cluster")
+                    self.sleep(60, "Wait after cluster is turned on")
 
                 self.loop += 1
 
@@ -714,6 +734,14 @@ class Murphy(BaseTestCase, OPD):
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
+                    #turn cluster off and back on
+                    if self.turn_cluster_off:
+                        cluster_off_result = self.drClusterOnOff.turn_off_cluster()
+                        self.assertTrue(cluster_off_result, "Failed to turn off cluster")
+                        self.sleep(200, "Wait before turning cluster on")
+                        cluster_on_result = self.drClusterOnOff.turn_on_cluster()
+                        self.assertTrue(cluster_on_result, "Failed to turn on cluster")
+                        self.sleep(60, "Wait after cluster is turned on")
 
             self.loop = 0
             while self.loop < self.iterations:
@@ -739,6 +767,14 @@ class Murphy(BaseTestCase, OPD):
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     self.cluster_util.print_cluster_stats(self.cluster)
                     compute_change = compute_change * -1
+                    #turn cluster off and back on
+                    if self.turn_cluster_off:
+                        cluster_off_result = self.drClusterOnOff.turn_off_cluster()
+                        self.assertTrue(cluster_off_result, "Failed to turn off cluster")
+                        self.sleep(200, "Wait before turning cluster on")
+                        cluster_on_result = self.drClusterOnOff.turn_on_cluster()
+                        self.assertTrue(cluster_on_result, "Failed to turn on cluster")
+                        self.sleep(60, "Wait after cluster is turned on")
 
             self.loop = 0
             while self.loop <= self.iterations:
@@ -767,6 +803,15 @@ class Murphy(BaseTestCase, OPD):
                     disk_increment = disk_increment * -1
                     compute_change = compute_change * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
+                    #turn cluster off and back on
+                    if self.turn_cluster_off:
+                        cluster_off_result = self.drClusterOnOff.turn_off_cluster()
+                        self.assertTrue(cluster_off_result, "Failed to turn off cluster")
+                        self.sleep(200, "Wait before turning cluster on")
+                        cluster_on_result = self.drClusterOnOff.turn_on_cluster()
+                        self.assertTrue(cluster_on_result, "Failed to turn on cluster")
+                        self.sleep(60, "Wait after cluster is turned on")
+
             self.PrintStep("Step 4: XDCR replication being set up")
             if self.xdcr_remote_clusters > 0:
                 num_items = self.cluster.buckets[0].loadDefn.get("num_items") * self.cluster.buckets[0].loadDefn.get(
