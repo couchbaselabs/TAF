@@ -787,9 +787,7 @@ class ClusterUtils:
                 return node_list[0]
 
     @staticmethod
-    def get_services_map(cluster, reset=True):
-        if not reset:
-            return
+    def get_services_map(cluster):
         services_map = dict()
         rest = RestConnection(cluster.master)
         tem_map = rest.get_nodes_services()
@@ -826,7 +824,7 @@ class ClusterUtils:
             nodes_out_dist = list()
         index_nodes_out = list()
         nodes_out_list = list()
-        services_map = self.get_services_map(reset=True)
+        services_map = self.get_services_map(cluster)
         if not nodes_out_dist:
             if len(cluster.servers) > 1:
                 nodes_out_list.append(cluster.servers[1])
