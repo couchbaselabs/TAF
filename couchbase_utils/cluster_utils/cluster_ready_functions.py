@@ -109,7 +109,7 @@ class CBCluster:
         self.nodes_in_cluster = list()
 
         for server in servers:
-            server.type = "serverless"
+            server.type = self.type
             if "Data" in server.services or "kv" in server.services:
                 self.kv_nodes.append(server)
             if "Query" in server.services or "n1ql" in server.services:
