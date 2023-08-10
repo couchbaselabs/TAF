@@ -441,7 +441,7 @@ class Murphy(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 80, 20, 0, 0], # CRUDE
             "load_type": ["read", "update"],
-            "2iQPS": 20,
+            "2iQPS": 10,
             "ftsQPS": 10,
             "cbasQPS": 10,
             "collections_defn": [
