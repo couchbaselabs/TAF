@@ -2291,6 +2291,34 @@ class basic_ops(ClusterSetup):
                              "Mismatch in index stat {} :: {} != {}"
                              .format(field, t_val, self.num_items))
 
+    def test_expel_non_meta_items_from_checkpoint(self):
+        """
+        Ref: MB-39344
+        """
+        cp_mem_ratio = self.input.param("checkpoint_mem_ratio", "0.1")
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbepctl = Cbepctl(shell)
+
+        self.log.info("Loading data into all vbuckets")
+        shell.execute_command(
+            "/opt/couchbase/bin/cbc-pillowfight -u Administrator -P password "
+            "-U couchbase://localhost/%s -I 10 -m 20000000 -M 20000000 -c 2"
+            % self.cluster.buckets[0])
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
+        self.log.info("Setting checkpoint_memory_ratio=%s" % cp_mem_ratio)
+        cbepctl.set(self.cluster.buckets[0].name, "checkpoint_param",
+                    "checkpoint_memory_ratio", str(cp_mem_ratio))
+        shell.disconnect()
+
+        self.sleep(10, "WAIT")
+        self.log.info("Rebalance-in %s nodes" % self.num_replicas)
+        result = self.task.rebalance(
+            [self.cluster.master],
+            self.cluster.servers[1:1+self.num_replicas], [])
+        self.assertTrue(result, "Rebalance failed")
+
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
         mc = MemcachedClient(self.cluster.master.ip,
