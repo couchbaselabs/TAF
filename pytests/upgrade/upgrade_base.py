@@ -754,7 +754,7 @@ class UpgradeBase(BaseTestCase):
         spec_collection = self.bucket_util.get_crud_template_from_package(
             collections_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
-        CollectionBase.set_retry_exceptions_for_initial_data_load(self, spec_collection)
+        CollectionBase.set_retry_exceptions(spec_collection, self.durability_level)
 
         spec_collection["doc_crud"][
             MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
@@ -783,7 +783,7 @@ class UpgradeBase(BaseTestCase):
 
         sub_load_spec = self.bucket_util.get_crud_template_from_package(data_spec)
         CollectionBase.over_ride_doc_loading_template_params(self,sub_load_spec)
-        CollectionBase.set_retry_exceptions_for_initial_data_load(self,sub_load_spec)
+        CollectionBase.set_retry_exceptions(sub_load_spec, self.durability_level)
 
         data_load_task = self.bucket_util.run_scenario_from_spec(
             self.task,
