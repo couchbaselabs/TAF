@@ -20,8 +20,6 @@ spec = {
 
     "buckets": {
         "default": {
-            MetaConstants.NUM_SCOPES_PER_BUCKET: 3,
-            MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 5,
             "scopes": {
                 "scope1": {
                     "collections": {
