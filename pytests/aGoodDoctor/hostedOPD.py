@@ -542,6 +542,7 @@ class OPD:
                     row.append(humanbytes(str(node_stats["swap_mem_used"])) + " / "
                                + humanbytes(str(node_stats["swap_mem_total"])))
                     table.add_row(row)
+                table.rows.sort(key=lambda x: x[0])
                 table.display("Cluster statistics")
             except:
                 pass

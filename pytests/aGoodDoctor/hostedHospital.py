@@ -196,6 +196,7 @@ class Murphy(BaseTestCase, OPD):
                         self.iops[service] = aws_min_iops[0]
                 spec["disk"]["iops"] = self.iops[service]
             specs.append(spec)
+        pprint.pprint(specs)
         return specs
 
     def create_buckets(self):
@@ -587,6 +588,14 @@ class Murphy(BaseTestCase, OPD):
 
     def monitor_rebalance(self, task):
         self.rest = RestConnection(self.cluster.master)
+        i = 30
+        task_details = None
+        while i > 0 and task_details is None:
+            task_details = self.rest.ns_server_tasks("rebalance", "rebalance")
+            self.sleep(10)
+        if task_details:
+            self.cluster.master.ip = task_details["masterNode"].split("@")[1]
+            self.cluster.master.hostname = self.cluster.master.ip
         srt = time.time()
         while task.state != "healthy" and srt + self.index_timeout > time.time():
             try:
@@ -694,7 +703,6 @@ class Murphy(BaseTestCase, OPD):
                         if not(len(service_group) == 1 and service in ["query"]):
                             self.disk[service] = self.disk[service] + disk_increment
                     config = self.rebalance_config(0)
-                    pprint.pprint(config)
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
@@ -720,7 +728,6 @@ class Murphy(BaseTestCase, OPD):
                         comp = comp + 1 if len(computeList) > comp + 1 else comp
                         self.compute[service] = computeList[comp]
                     config = self.rebalance_config(0)
-                    pprint.pprint(config)
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
@@ -747,7 +754,6 @@ class Murphy(BaseTestCase, OPD):
                         comp = comp + 1 if len(computeList) > comp + 1 else comp
                         self.compute[service] = computeList[comp]
                     config = self.rebalance_config(0)
-                    pprint.pprint(config)
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     rebalance_task = self.task.async_rebalance_capella(self.cluster,
