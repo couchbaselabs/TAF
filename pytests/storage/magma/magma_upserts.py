@@ -365,7 +365,8 @@ class BasicUpsertTests(BasicCrudTests):
                                                          self.cluster.buckets,
                                                          timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                      self.num_items)
+                                                      self.num_items,
+                                                      timeout=2400)
 
             ###################################################################
             '''
@@ -431,7 +432,8 @@ class BasicUpsertTests(BasicCrudTests):
                                                          self.cluster.buckets,
                                                          timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                      self.num_items)
+                                                      self.num_items,
+                                                      timeout=2400)
 
             ###################################################################
             '''
@@ -965,7 +967,7 @@ class BasicUpsertTests(BasicCrudTests):
                                                          self.cluster.buckets,
                                                          timeout=3600)
             self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                      self.num_items)
+                                                      self.num_items, 2400)
             if count == self.test_itr:
                 self.validate_data("update", self.gen_update)
             self.update_start = copy.deepcopy(self.create_start)

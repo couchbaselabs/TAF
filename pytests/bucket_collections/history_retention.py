@@ -122,8 +122,7 @@ class DocHistoryRetention(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             print_ops_rate=False, batch_size=500, process_concurrency=2,
-            iterations=iterations, scope=scope, collection=collection,
-            sdk_client_pool=self.sdk_client_pool)
+            iterations=iterations, scope=scope, collection=collection)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
 
@@ -773,7 +772,6 @@ class DocHistoryRetention(ClusterSetup):
         self.log.info("Creating / recreating collection")
         load_tasks = list()
         num_items = 10000
-        doc_gen = doc_generator(self.key, 0, num_items)
         for scope_col in selected_cols:
             s_name, c_name = scope_col
             self.log.info("Drop collection %s::%s" % (s_name, c_name))
@@ -783,10 +781,12 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.create_collection(self.cluster.master, bucket,
                                                s_name, {"name": c_name})
             bucket.scopes[s_name].collections[c_name].num_items = num_items
+            doc_gen = doc_generator(self.key, 0, num_items)
             load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 durability=self.durability_level, batch_size=500,
                 process_concurrency=1, iterations=20,
+                scope=s_name,collection=c_name,
                 sdk_client_pool=self.sdk_client_pool)
             load_tasks.append(load_task)
         self.validate_retention_settings_on_all_nodes()
@@ -1098,7 +1098,6 @@ class DocHistoryRetention(ClusterSetup):
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, loader_spec,
-                scope=CbServer.default_scope, collection="c1",
                 mutation_num=1, batch_size=500, process_concurrency=1,
                 async_load=True)
 
@@ -1109,6 +1108,7 @@ class DocHistoryRetention(ClusterSetup):
             if choice([True, False]):
                 compact_task = self.task.async_compact_bucket(
                     self.cluster.master, self.cluster.buckets[0])
+            self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
             node = choice(self.cluster.kv_nodes)
             shell = RemoteMachineShellConnection(node)
             err = CouchbaseError(self.log, shell)
@@ -1353,8 +1353,8 @@ class DocHistoryRetention(ClusterSetup):
         b1 = self.cluster.buckets[0]
         b2 = self.cluster.buckets[1]
         b3 = self.cluster.buckets[2]
-        self.cluster.buckets.pop(b2)
-        self.cluster.buckets.pop(b3)
+        self.cluster.buckets.remove(b2)
+        self.cluster.buckets.remove(b3)
         buckets = [b1, b2, b3]
         bucket_spec = {
             b1: {CbServer.default_scope: {
