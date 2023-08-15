@@ -257,25 +257,19 @@ class Murphy(BaseTestCase, OPD):
         for ql in self.cbasQL:
             ql.stop_query_load()
         self.sleep(10)
-        self.ql = list()
-        self.ftsQL = list()
-        self.cbasQL = list()
         for bucket in self.cluster.buckets:
             if self.cluster.index_nodes and bucket.loadDefn.get("2iQPS", 0) > 0:
                 bucket.loadDefn["2iQPS"] = bucket.loadDefn["2iQPS"] + num
-                ql = QueryLoad(bucket)
+                ql = [ql for ql in self.ql if ql.bucket == bucket][0]
                 ql.start_query_load()
-                self.ql.append(ql)
             if self.cluster.fts_nodes and bucket.loadDefn.get("ftsQPS", 0) > 0:
                 bucket.loadDefn["ftsQPS"] = bucket.loadDefn["ftsQPS"] + num
-                ql = FTSQueryLoad(bucket)
+                ql = [ql for ql in self.ftsQL if ql.bucket == bucket][0]
                 ql.start_query_load()
-                self.ftsQL.append(ql)
             if self.cluster.cbas_nodes and bucket.loadDefn.get("cbasQPS", 0) > 0:
                 bucket.loadDefn["cbasQPS"] = bucket.loadDefn["cbasQPS"] + num
-                ql = CBASQueryLoad(bucket)
+                ql = [ql for ql in self.cbasQL if ql.bucket == bucket][0]
                 ql.start_query_load()
-                self.cbasQL.append(ql)
 
     def monitor_query_status(self, print_duration=120):
         self.query_result = True
@@ -587,16 +581,16 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(task.result, "Cluster Upgrade Failed...")
 
     def monitor_rebalance(self, task):
-        self.rest = RestConnection(self.cluster.master)
         i = 30
         task_details = None
         while i > 0 and task_details is None:
             task_details = self.rest.ns_server_tasks("rebalance", "rebalance")
             self.sleep(10)
-        if task_details:
+        if task_details and task_details["status"] == "running":
             self.cluster.master.ip = task_details["masterNode"].split("@")[1]
             self.cluster.master.hostname = self.cluster.master.ip
         srt = time.time()
+        self.rest = RestConnection(self.cluster.master)
         while task.state != "healthy" and srt + self.index_timeout > time.time():
             try:
                 result = self.rest.monitorRebalance(sleep_step=60,

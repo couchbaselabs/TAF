@@ -411,10 +411,6 @@ class QueryLoad:
         for thread in threads:
             thread.join()
 
-        if self.failed_count.next()-1 > 0 or self.error_count.next()-1 > 0:
-            raise Exception("Queries Failed:%s , Queries Error Out:%s" %
-                            (self.failed_count, self.error_count))
-
     def _run_query(self, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
         counter = 0

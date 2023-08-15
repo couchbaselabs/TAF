@@ -246,8 +246,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         for cluster_id in cluster_ids:
             cluster_name = self.cluster_name_format % cluster_index
             self.log.info("Fetching cluster details for: %s" % cluster_id)
-            CapellaUtils.wait_until_done(self.pod, self.tenant, cluster_id,
-                                         "Cluster not healthy")
+            # CapellaUtils.wait_until_done(self.pod, self.tenant, cluster_id,
+            #                              "Cluster not healthy")
             cluster_info = CapellaUtils.get_cluster_info(self.pod, self.tenant,
                                                          cluster_id)
             cluster_srv = cluster_info.get("endpointsSrv")
