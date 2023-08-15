@@ -583,6 +583,12 @@ class Murphy(BaseTestCase, OPD):
     def monitor_rebalance(self, task):
         i = 30
         task_details = None
+        while True:
+            try:
+                self.rest = RestConnection(random.choice(self.cluster.nodes_in_cluster))
+                break
+            except ServerUnavailableException:
+                pass
         while i > 0 and task_details is None:
             task_details = self.rest.ns_server_tasks("rebalance", "rebalance")
             self.sleep(10)
