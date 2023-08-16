@@ -302,7 +302,6 @@ class Murphy(BaseTestCase, OPD):
                                                               ql.query_stats[query][0]/ql.query_stats[query][1]])
                         except Exception as e:
                             print(e)
-                        self.query_table.display("N1QL Query Execution Stats")
                         self.table.add_row([
                             str(ql.bucket.name),
                             str(ql.total_query_count),
@@ -316,6 +315,7 @@ class Murphy(BaseTestCase, OPD):
                         if ql.failures > 0:
                             self.query_result = False
                     self.table.display("N1QL Query Statistics")
+                    self.query_table.display("N1QL Query Execution Stats")
 
                     self.FTStable = TableView(self.log.info)
                     self.FTStable.set_headers(["Bucket",
