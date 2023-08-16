@@ -691,6 +691,7 @@ class Murphy(BaseTestCase, OPD):
         if v_scaling or vh_scaling:
             self.loop = 0
             disk_increment = self.input.param("increment", 10)
+            compute_change = 1
             while self.loop < self.iterations:
                 self.loop += 1
                 time.sleep(5*60)
@@ -719,13 +720,13 @@ class Murphy(BaseTestCase, OPD):
                 self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "compute":
                     # Rebalance 2 - Compute Upgrade
-                    # self.restart_query_load()
+                    self.restart_query_load(num=10*compute_change)
                     initial_services = self.input.param("services", "data")
                     for service_group in initial_services.split("-"):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         comp = computeList.index(self.compute[service])
-                        comp = comp + 1 if len(computeList) > comp + 1 else comp
+                        comp = comp + compute_change if len(computeList) > comp + compute_change else comp
                         self.compute[service] = computeList[comp]
                     config = self.rebalance_config(0)
                     if self.backup_restore:
@@ -737,13 +738,14 @@ class Murphy(BaseTestCase, OPD):
                     self.task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     self.cluster_util.print_cluster_stats(self.cluster)
+                    compute_change = compute_change * -1
 
             self.loop = 0
             while self.loop <= self.iterations:
                 self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "disk_compute":
                     # Rebalance 3 - Both Disk/Compute Upgrade
-                    # self.restart_query_load()
+                    self.restart_query_load(num=10*compute_change)
                     initial_services = self.input.param("services", "data")
                     for service_group in initial_services.split("-"):
                         service_group = sorted(service_group.split(":"))
@@ -751,7 +753,7 @@ class Murphy(BaseTestCase, OPD):
                         if not(len(service_group) == 1 and service in ["query"]):
                             self.disk[service] = self.disk[service] + disk_increment
                         comp = computeList.index(self.compute[service])
-                        comp = comp + 1 if len(computeList) > comp + 1 else comp
+                        comp = comp + compute_change if len(computeList) > comp + compute_change else comp
                         self.compute[service] = computeList[comp]
                     config = self.rebalance_config(0)
                     if self.backup_restore:
@@ -763,6 +765,7 @@ class Murphy(BaseTestCase, OPD):
                     self.task_manager.get_task_result(rebalance_task)
                     self.assertTrue(rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
+                    compute_change = compute_change * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
             self.PrintStep("Step 4: XDCR replication being set up")
             if self.xdcr_remote_clusters > 0:
