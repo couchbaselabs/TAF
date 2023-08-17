@@ -144,7 +144,7 @@ class RestConnection(newRC):
         return True
 
     def is_cluster_balanced(self):
-        _, content, _ = self._http_request(self.baseUrl+"/pools/default")
+        _, content, _ = self._http_request(self.baseUrl + "/pools/default")
         return json.loads(content)["balanced"]
 
     def rename_node(self, hostname, username='Administrator',
@@ -585,9 +585,10 @@ class RestConnection(newRC):
             self.test_log.warning(content)
         return status
 
-    def set_indexer_params(self, redistributeIndexes='false', numReplica=0, enablePageBloomFilter='false', indexerThreads=0,
-                          memorySnapshotInterval=200, stableSnapshotInterval=5000, maxRollbackPoints=2,
-                          logLevel="info", storageMode='plasma'):
+    def set_indexer_params(self, redistributeIndexes='false', numReplica=0, enablePageBloomFilter='false',
+                           indexerThreads=0,
+                           memorySnapshotInterval=200, stableSnapshotInterval=5000, maxRollbackPoints=2,
+                           logLevel="info", storageMode='plasma'):
 
         api = self.baseUrl + 'settings/indexes'
         params = urllib.urlencode({'redistributeIndexes': redistributeIndexes,
@@ -600,9 +601,9 @@ class RestConnection(newRC):
                                    'logLevel': logLevel,
                                    'storageMode': storageMode
                                    })
-        #self.test_log.debug('settings/indexes params: {0}'.format(params))
+        # self.test_log.debug('settings/indexes params: {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
-        #status, content, header = self._http_request(api, 'POST', params)
+        # status, content, header = self._http_request(api, 'POST', params)
         return status
 
     def cleanup_indexer_rebalance(self, server):
@@ -1071,7 +1072,7 @@ class RestConnection(newRC):
         if print_log:
             self.test_log.debug(
                 "/diag/eval status on {0}:{1}: {2} content: {3} command: {4}"
-                    .format(self.ip, self.port, status, content, code))
+                .format(self.ip, self.port, status, content, code))
         return status, content
 
     def set_chk_max_items(self, max_items):
@@ -1101,7 +1102,7 @@ class RestConnection(newRC):
 
     def fail_bucket_rebalance_at_bucket(self, bucket_name):
         code = 'testconditions:set({{fail_bucket_rebalance_at_bucket,"{0}"}}, fail)' \
-                .format(bucket_name)
+            .format(bucket_name)
         status, content = self.diag_eval(code)
         return status, content
 
@@ -1377,7 +1378,7 @@ class RestConnection(newRC):
 
     def extract_nodes_self_from_pools_default(self, pools_default):
         return next(iter(filter(lambda node: "thisNode" in node and node["thisNode"],
-                    pools_default["nodes"])), None)
+                                pools_default["nodes"])), None)
 
     # returns node data for this host
     def get_nodes_self_unparsed(self, timeout=120):
@@ -2248,7 +2249,7 @@ class RestConnection(newRC):
         if status:
             content = json.loads(content)
             return content['total_hits'], content['hits'], content['took'], \
-                   content['status']
+                content['status']
 
     def run_fts_query_with_facets(self, index_name, query_json):
         """Method run an FTS query through rest api"""
@@ -2264,7 +2265,7 @@ class RestConnection(newRC):
         if status:
             content = json.loads(content)
             return content['total_hits'], content['hits'], content['took'], \
-                   content['status'], content['facets']
+                content['status'], content['facets']
 
     """ End of FTS rest APIs """
 
@@ -2765,7 +2766,7 @@ class RestConnection(newRC):
                         if not tmp:
                             self.test_log.info(
                                 "Zone {0} is existed but no node in it"
-                                    .format(zone_name))
+                                .format(zone_name))
                         # remove port
                         for node in tmp:
                             node["hostname"] = node["hostname"].split(":")
@@ -3219,6 +3220,7 @@ class RestConnection(newRC):
     '''
     Update user password
     '''
+
     def update_password(self, user_id, password):
         url = "settings/rbac/users/local/" + user_id
         api = self.baseUrl + url
@@ -3523,6 +3525,40 @@ class RestConnection(newRC):
         params = urllib.urlencode(node_capacity_dict)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
+
+    # Calls to add aws bucket to analytics for compute storage separation, to be removed in the future.
+    def set_AWS_bucket_credential_to_anlaytics(self, aws_access_key, aws_secret_key, aws_bucket_name,
+                                               aws_bucket_region):
+        url_access_key = 'http://{}:8091/_metakv/cbas/debug/settings/blob_storage_access_key_id'.format(self.ip)
+        url_secret_key = 'http://{}:8091/_metakv/cbas/debug/settings/blob_storage_secret_access_key'.format(self.ip)
+        access_key_data = {'value': aws_access_key}
+        secret_key_data = {'value': aws_secret_key}
+        headers = {'Content-Type': "application/x-www-form-urlencoded"}
+        status_access_key, _, _ = self._http_request(url_access_key,
+                                                     'PUT',
+                                                     urllib.urlencode(access_key_data),
+                                                     headers=headers)
+        status_secret_key, _, _ = self._http_request(url_secret_key,
+                                                     'PUT',
+                                                     urllib.urlencode(secret_key_data),
+                                                     headers=headers)
+
+        url = 'http://{}:8091/settings/analytics'.format(self.ip)
+        headers = {
+            'Content-Type': "application/x-www-form-urlencoded"
+        }
+
+        data = {'blobStorageRegion': aws_bucket_region,
+                'blobStoragePrefix': '',
+                'blobStorageBucket': aws_bucket_name,
+                'blobStorageScheme': 's3'}
+        status_bucket_access, content, header = self._http_request(url, 'POST', urllib.urlencode(data),
+                                                                   headers=headers)
+
+        if not status_access_key or not status_secret_key or not status_bucket_access:
+            return False
+        return True
+
 
 class MembaseServerVersion:
     def __init__(self, implementationVersion='', componentsVersion=''):
