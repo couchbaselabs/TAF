@@ -366,10 +366,11 @@ class RebalanceTaskCapella(Task):
                 self.state = DedicatedUtils.get_cluster_state(
                     self.cluster.pod, self.cluster.tenant, self.cluster.id)
                 if self.state in ["deployment_failed",
-                             "deploymentFailed",
-                             "redeploymentFailed",
-                             "rebalance_failed",
-                             "scaleFailed"]:
+                                  "deploymentFailed",
+                                  "redeploymentFailed",
+                                  "rebalance_failed",
+                                  "rebalanceFailed",
+                                  "scaleFailed"]:
                     raise Exception("{} for cluster {}".format(
                         self.state, self.cluster.id))
                 if content.get("data") or self.state != "healthy":

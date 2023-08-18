@@ -599,9 +599,13 @@ class Murphy(BaseTestCase, OPD):
         if task_details and task_details["status"] == "running":
             self.cluster.master.ip = task_details["masterNode"].split("@")[1]
             self.cluster.master.hostname = self.cluster.master.ip
-        srt = time.time()
         self.rest = RestConnection(self.cluster.master)
-        while task.state != "healthy" and srt + self.index_timeout > time.time():
+        while task.state != "healthy" or \
+            task.state not in ["upgradeFailed",
+                               "deploymentFailed",
+                               "redeploymentFailed",
+                               "rebalanceFailed",
+                               "scaleFailed"]:
             try:
                 result = self.rest.monitorRebalance(sleep_step=60,
                                                     progress_count=1000)
