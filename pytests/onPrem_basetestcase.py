@@ -414,6 +414,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.aws_bucket_region = self.input.param("aws_bucket_region", None)
                 self.aws_session_token = self.input.param("aws_session_token", "")
                 self.aws_bucket_name = "css" + str(random.randint(1, 100000))
+                self.log.info("Creating S3 bucket")
                 self.aws_bucket_created = perform_S3_operation(
                     aws_access_key=self.aws_access_key,
                     aws_secret_key=self.aws_secret_key,
@@ -423,6 +424,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 if not self.aws_bucket_created:
                     self.fail("Creating S3 bucket - {0} in region {1}. Failed.".format(
                         self.aws_bucket_name, self.aws_bucket_region))
+                self.log.info("Adding aws bucket credentials to analytics")
                 rest = RestConnection(self.cluster.master)
                 status = rest.set_AWS_bucket_credential_to_anlaytics(self.aws_access_key,
                                                                      self.aws_secret_key,
