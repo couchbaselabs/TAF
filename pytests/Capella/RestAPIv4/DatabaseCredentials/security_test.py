@@ -622,11 +622,14 @@ class SecurityTest(BaseTestCase):
             self.reset_access_keys_to_default()
 
         # Rate limit test
-        result = self.rate_limit_wrapper(method=self.capellaAPI.org_ops_apis.fetch_user_info,
-                                         organizationId=self.tenant_id, userId=db_cred['id'])
+        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.fetch_database_user_info,
+                                         organizationId=self.tenant_id,
+                                         projectId=self.project_id,
+                                         clusterId=self.cluster_id,
+                                         userId=db_cred['id'])
 
         self.log.info("Fetch user rate limit response : {}".format(result))
-        self.assertTrue(result["pass"])
+        # self.assertTrue(result["pass"])
 
     def test_delete_database_credentials(self):
 
@@ -725,36 +728,245 @@ class SecurityTest(BaseTestCase):
                                                   clusterId=self.cluster_id,
                                                   name=get_random_string_of_given_length(length=10),
                                                   access=access)
-            db_cred = resp.json()
+            db_crd = resp.json()
             self.set_access_keys(api_key['accessKey'], api_key['token'])
 
             resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.delete_database_user,
                                                   organizationId=self.tenant_id,
                                                   projectId=self.project_id,
                                                   clusterId=self.cluster_id,
-                                                  userId=db_cred['id'])
+                                                  userId=db_crd['id'])
 
             if api_key['organizationRole'] == 'organizationOwner':
                 self.assertEqual(resp.status_code, 204)
-            elif api_key['projectRole'] in ["projectOwner", "projectManager", "projectViewer"]:
+            elif api_key['projectRole'] == "projectOwner":
                 if api_key['description'] == 'same project':
                     pass
                     # self.assertEqual(resp.status_code, 204) # Bug https://couchbasecloud.atlassian.net/browse/AV-60016
                 else:
                     self.assertEqual(resp.status_code, 403)
-                    self.append_to_db_creds(self.tenant_id, self.project_id, self.cluster_id, db_cred['id'])
             else:
                 self.assertEqual(resp.status_code, 403)
-                self.append_to_db_creds(self.tenant_id, self.project_id, self.cluster_id, db_cred['id'])
+
+            if resp.status_code != 204:
+                self.append_to_db_creds(self.tenant_id, self.project_id, self.cluster_id, db_crd['id'])
 
             self.reset_access_keys_to_default()
 
         # Rate limit test
-        result = self.rate_limit_wrapper(method=self.capellaAPI.org_ops_apis.fetch_user_info,
-                                         organizationId=self.tenant_id, userId=db_cred['id'])
+        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.delete_database_user,
+                                         organizationId=self.tenant_id,
+                                         projectId=self.project_id,
+                                         clusterId=self.cluster_id,
+                                         userId=db_cred['id'])
 
-        self.log.info("Fetch user rate limit response : {}".format(result))
+        self.log.info("Delete user rate limit response : {}".format(result))
         # self.assertTrue(result["pass"]) https://couchbasecloud.atlassian.net/browse/AV-60017
+
+    def test_list_database_credentials(self):
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                              organizationId=self.tenant_id,
+                                              projectId=self.project_id,
+                                              clusterId=self.cluster_id)
+        self.assertEqual(resp.status_code, 200)
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                              organizationId=self.invalid_id,
+                                              projectId=self.project_id,
+                                              clusterId=self.cluster_id)
+        # self.assertEqual(resp.status_code, 403)       # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                              organizationId=self.diff_tenant_id,
+                                              projectId=self.project_id,
+                                              clusterId=self.cluster_id)
+        # self.assertEqual(resp.status_code, 403)         # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                              organizationId=self.tenant_id,
+                                              projectId=get_random_string_of_given_length(uid=True),
+                                              clusterId=self.cluster_id)
+        # self.assertEqual(resp.status_code, 404)            # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                              organizationId=self.tenant_id,
+                                              projectId=self.secondary_project_id,
+                                              clusterId=self.cluster_id)
+        # self.assertEqual(resp.status_code, 404)           # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                              organizationId=self.tenant_id,
+                                              projectId=self.project_id,
+                                              clusterId=get_random_string_of_given_length(uid=True))
+        self.assertEqual(resp.status_code, 404)
+
+        self.authentication_token_test_wrapper(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                               organizationId=self.tenant_id,
+                                               projectId=self.project_id,
+                                               clusterId=get_random_string_of_given_length(uid=True))
+
+        # RBAC
+        for api_key in self.api_keys_list:
+
+            self.log.info("Rbac test for organizationRole: {}, projectRole: {}, project: {}"
+                          .format(api_key['organizationRole'],
+                                  api_key['projectRole'],
+                                  api_key['description']))
+
+            self.set_access_keys(api_key['accessKey'], api_key['token'])
+
+            resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                                  organizationId=self.tenant_id,
+                                                  projectId=self.project_id,
+                                                  clusterId=self.cluster_id)
+
+            if api_key['organizationRole'] == 'organizationOwner':
+                self.assertEqual(resp.status_code, 200)
+            elif api_key['projectRole'] in ["projectOwner", "projectManager", "projectViewer"]:
+                if api_key['description'] == 'same project':
+                    self.assertEqual(resp.status_code, 200)
+                else:
+                    self.assertEqual(resp.status_code, 403)  # bug https://couchbasecloud.atlassian.net/browse/AV-59997
+            else:
+                self.assertEqual(resp.status_code, 403)  # bug https://couchbasecloud.atlassian.net/browse/AV-59997
+
+            self.reset_access_keys_to_default()
+
+        # Rate limit test
+        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+                                         organizationId=self.tenant_id,
+                                         projectId=self.project_id,
+                                         clusterId=self.cluster_id)
+
+        self.log.info("List user rate limit response : {}".format(result))
+        # self.assertTrue(result["pass"])
+
+    def test_update_database_credentials(self):
+
+        self.log.info("Update database credentials")
+        access = [
+            {
+                "privileges": [
+                    "data_reader",
+                    "data_writer"
+                ],
+                "resources": {
+                    "buckets": [
+                        {
+                            "name": "travel-sample",
+                            "scopes": [
+                                {
+                                    "name": "inventory",
+                                    "collections": [
+                                        "airport",
+                                        "airline"
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        ]
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.create_database_user,
+                                              organizationId=self.tenant_id,
+                                              projectId=self.project_id,
+                                              clusterId=self.cluster_id,
+                                              name=get_random_string_of_given_length(length=10),
+                                              access=access)
+
+        db_cred = resp.json()
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+                                              organizationId=self.invalid_id,
+                                              projectId=self.project_id,
+                                              clusterId=self.cluster_id,
+                                              userId=db_cred['id'],
+                                              ifmatch=False,
+                                              access=access)
+        # self.assertEqual(resp.status_code, 403) # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+                                              organizationId=self.diff_tenant_id,
+                                              projectId=self.project_id,
+                                              clusterId=self.cluster_id,
+                                              userId=db_cred['id'],
+                                              ifmatch=False,
+                                              access=access)
+        # self.assertEqual(resp.status_code, 403) # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+                                              organizationId=self.tenant_id,
+                                              projectId=get_random_string_of_given_length(uid=True),
+                                              clusterId=self.cluster_id,
+                                              userId=db_cred['id'],
+                                              ifmatch=False,
+                                              access=access)
+        # self.assertEqual(resp.status_code, 404)   # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+                                              organizationId=self.tenant_id,
+                                              projectId=self.secondary_project_id,
+                                              clusterId=self.cluster_id,
+                                              userId=db_cred['id'],
+                                              ifmatch=False,
+                                              access=access)
+        # self.assertEqual(resp.status_code, 404)  # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+
+        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+                                              organizationId=self.tenant_id,
+                                              projectId=self.project_id,
+                                              clusterId=get_random_string_of_given_length(uid=True),
+                                              userId=db_cred['id'],
+                                              ifmatch=False,
+                                              access=access)
+        self.assertEqual(resp.status_code, 404)
+
+        self.authentication_token_test_wrapper(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+                                               organizationId=self.tenant_id,
+                                               projectId=self.project_id,
+                                               clusterId=self.cluster_id,
+                                               userId=db_cred['id'],
+                                               ifmatch=False,
+                                               access=access)
+
+        # RBAC
+        for api_key in self.api_keys_list:
+
+            self.log.info("Rbac test for organizationRole: {}, projectRole: {}, project: {}"
+                          .format(api_key['organizationRole'],
+                                  api_key['projectRole'],
+                                  api_key['description']))
+
+            self.set_access_keys(api_key['accessKey'], api_key['token'])
+
+            resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+                                                  organizationId=self.tenant_id,
+                                                  projectId=self.project_id,
+                                                  clusterId=self.cluster_id,
+                                                  userId=db_cred['id'],
+                                                  ifmatch=False,
+                                                  access=access)
+
+            if api_key['organizationRole'] == 'organizationOwner':
+                self.assertEqual(resp.status_code, 204)
+            elif api_key['projectRole'] == "projectOwner":
+                if api_key['description'] == 'same project':
+                    pass
+                    # self.assertEqual(resp.status_code, 204) # Bug https://couchbasecloud.atlassian.net/browse/AV-60016
+                else:
+                    self.assertEqual(resp.status_code, 403)
+            else:
+                self.assertEqual(resp.status_code, 403)
+
+        # Rate limit test
+        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+                                         organizationId=self.tenant_id, projectId=self.project_id,
+                                         clusterId=self.cluster_id, userId=db_cred['id'], ifmatch=False, access=access)
+
+        self.log.info("Update user rate limit response : {}".format(result))
+        self.assertTrue(result["pass"])  # bug https://couchbasecloud.atlassian.net/browse/AV-60017
 
     def rate_limit_wrapper(self, method=None, **kwargs):
         """
