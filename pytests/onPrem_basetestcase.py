@@ -603,14 +603,15 @@ class OnPremBaseTest(CouchbaseBaseTest):
                               % sys_event_validation_failure)
 
         # delete aws bucket that was created for compute storage separation
-        if self.aws_bucket_created:
-            if not perform_S3_operation(
-                aws_access_key=self.aws_access_key,
-                aws_secret_key=self.aws_secret_key,
-                aws_session_token=self.aws_session_token,
-                delete_bucket=True, bucket_name=self.aws_bucket_name,
-                    region=self.aws_bucket_region):
-                self.log.critical("AWS bucket failed to delete")
+        if self.storage_compute_separation and CbServer.cluster_profile == "serverless" \
+            and self.aws_bucket_created and \
+                not perform_S3_operation(
+                    aws_access_key=self.aws_access_key,
+                    aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token,
+                    delete_bucket=True, bucket_name=self.aws_bucket_name,
+                        region=self.aws_bucket_region):
+            self.log.critical("AWS bucket failed to delete")
 
         self.shutdown_task_manager()
 
