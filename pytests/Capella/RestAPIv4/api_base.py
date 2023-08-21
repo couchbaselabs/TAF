@@ -1,8 +1,8 @@
-'''
+"""
 Created on June 28, 2023
 
 @author: umang.agrawal
-'''
+"""
 
 import time
 import string
@@ -11,7 +11,7 @@ import itertools
 from datetime import datetime
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from pytests.basetestcase import BaseTestCase
-import concurrent.futures
+import threading
 
 
 class APIBase(BaseTestCase):
@@ -50,6 +50,16 @@ class APIBase(BaseTestCase):
         self.api_keys = dict()
 
     def tearDown(self):
+        # Delete organizationOwner API key
+        self.log.info("Deleting API key for role organization Owner")
+        resp = self.capellaAPI.org_ops_apis.delete_api_key(
+            organizationId=self.organisation_id,
+            accessKey=self.org_owner_key["id"]
+        )
+        if resp.status_code != 204:
+            self.fail("Error while deleting api key for role organization "
+                      "Owner")
+
         if hasattr(self, "v2_control_plane_api_access_key"):
             response = self.capellaAPI.delete_control_plane_api_key(
                 self.organisation_id, self.v2_control_plane_api_access_key
@@ -57,7 +67,6 @@ class APIBase(BaseTestCase):
             if response.status_code != 204:
                 self.log.error("Error while deleting V2 control plane API key")
                 self.fail("{}".format(response.content))
-
         super(APIBase, self).tearDown()
 
     def create_v2_control_plane_api_key(self):
@@ -74,7 +83,8 @@ class APIBase(BaseTestCase):
             self.log.error("Error while creating V2 control plane API key")
             self.fail("{}".format(response.content))
 
-    def generate_random_string(self, length=10, special_characters=True,
+    @staticmethod
+    def generate_random_string(length=10, special_characters=True,
                                prefix=""):
         """
         Generates random name of specified length
@@ -94,12 +104,11 @@ class APIBase(BaseTestCase):
 
         return name
 
-    def rate_limit_failsafe(self):
-        self.count += 1
-        if self.count % 99:
-            return
-        self.log.debug("Sleeping 60 seconds to avoid hitting rate limit")
-        time.sleep(60)
+    def handle_rate_limit(self, retry_after):
+        self.log.warning("Rate Limit hit.")
+        self.log.info("Sleeping for {0} for rate limit to "
+                      "expire".format(retry_after))
+        time.sleep(retry_after)
 
     def create_api_keys_for_all_combinations_of_roles(
             self, project_ids, project_roles=[], organization_roles=[]):
@@ -146,11 +155,21 @@ class APIBase(BaseTestCase):
                 expiry=180,
                 allowedCIDRs=["0.0.0.0/0"],
                 resources=resource)
-            self.rate_limit_failsafe()
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.org_ops_apis.create_api_key(
+                    organizationId=self.organisation_id,
+                    name=self.generate_random_string(prefix=self.prefix),
+                    organizationRoles=o_roles,
+                    description=self.generate_random_string(
+                        50, prefix=self.prefix),
+                    expiry=180,
+                    allowedCIDRs=["0.0.0.0/0"],
+                    resources=resource)
 
             if resp.status_code == 201:
                 api_key_dict["-".join(role_combination)] = {
-                    "Id": resp.json()["Id"],
+                    "id": resp.json()["id"],
                     "token": resp.json()["token"],
                     "roles": role_combination
                 }
@@ -186,9 +205,15 @@ class APIBase(BaseTestCase):
             while api_key_dict[role]["retry"] < 5:
                 resp = self.capellaAPI.org_ops_apis.delete_api_key(
                     organizationId=self.organisation_id,
-                    accessKey=api_key_dict[role]["Id"]
+                    accessKey=api_key_dict[role]["id"]
                 )
-                self.rate_limit_failsafe()
+                if resp.status_code == 429:
+                    self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                    resp = self.capellaAPI.org_ops_apis.delete_api_key(
+                        organizationId=self.organisation_id,
+                        accessKey=api_key_dict[role]["id"]
+                    )
+
                 if resp.status_code != 204:
                     try:
                         resp = resp.json()
@@ -216,71 +241,113 @@ class APIBase(BaseTestCase):
         self.log.info("All API keys were deleted")
         return failed_deletion
 
-
     def update_auth_with_api_token(self, token):
         self.capellaAPI.org_ops_apis.bearer_token = token
         self.capellaAPI.cluster_ops_apis.bearer_token = token
 
     """
     Method make parallel api calls.
-    param num_of_parallel_calls (int) Number of parallel API calls to be made.
+    param num_of_calls_per_api (int) Number of API calls per API to be made.
     param apis_to_call (list(list)) List of lists, where inner list is of
     format [api_function_call, function_args]
+    param api_key_dict dict API keys to be used while making API calls
     """
-    def make_parallel_api_calls(self, num_of_parallel_calls=100,
-                                apis_to_call=[], api_key_dict={}, wait_time=0):
-        results = list()
+    def make_parallel_api_calls(
+            self, num_of_calls_per_api=100, apis_to_call=[],
+            api_key_dict={}, wait_time=0):
+        results = dict()
         for role in api_key_dict:
             api_key_dict[role].update({"role": role})
         api_key_list = [api_key_dict[role] for role in api_key_dict]
-        with concurrent.futures.ThreadPoolExecutor() as executor:
-            api_call_futures = list()
-            num_api_calls = len(apis_to_call)
 
-            def call_api_with_api_key(api_role, api_func, api_args):
-                self.update_auth_with_api_token(api_role["token"])
-                resp = api_func(*api_args)
-                resp.api_role = api_role["role"]
-                return resp
+        threads = list()
 
-            # Submit API call tasks to the executor
-            for i in range(num_of_parallel_calls):
+        def call_api_with_api_key(api_role, api_func, api_args, results):
+            header = {
+                'Authorization': 'Bearer ' + api_role["token"],
+                'Content-Type': 'application/json'
+            }
+            results[api_role["id"]] = {
+                "role": api_role["role"],
+                "rate_limit_hit": False,
+                "total_api_calls_made_to_hit_rate_limit": 0,
+                "2xx_status_code": {},
+                "4xx_errors": {},
+                "5xx_errors": {}
+            }
+            for i in range(num_of_calls_per_api):
+                resp = api_func(*api_args, headers=header)
+                results[api_role["id"]][
+                    "total_api_calls_made_to_hit_rate_limit"] += 1
+                if resp.status_code == 429:
+                    results[api_role["id"]]["rate_limit_hit"] = True
+                    self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                    break
+                elif str(resp.status_code).startswith("2"):
+                    if str(resp.status_code) in results[
+                        api_role["id"]]["2xx_status_code"]:
+                        results[api_role["id"]]["2xx_status_code"][
+                            str(resp.status_code)] += 1
+                    else:
+                        results[api_role["id"]]["2xx_status_code"][
+                            str(resp.status_code)] = 1
+                elif str(resp.status_code).startswith("4"):
+                    if str(resp.status_code) in results[
+                        api_role["id"]]["4xx_errors"]:
+                        results[api_role["id"]]["4xx_errors"][
+                            str(resp.status_code)] += 1
+                    else:
+                        results[api_role["id"]]["4xx_errors"][
+                            str(resp.status_code)] = 1
+                elif str(resp.status_code).startswith("5"):
+                    if str(resp.status_code) in results[
+                        api_role["id"]]["5xx_errors"]:
+                        results[api_role["id"]]["5xx_errors"][
+                            str(resp.status_code)] += 1
+                    else:
+                        results[api_role["id"]]["5xx_errors"][
+                            str(resp.status_code)] = 1
 
-                api_call_futures.append(executor.submit(
-                    call_api_with_api_key,
+        # Submit API call tasks to the executor
+        for i in range(len(api_key_list) * len(apis_to_call)):
+            threads.append(threading.Thread(
+                target=call_api_with_api_key,
+                name="thread_{0}".format(i),
+                args=(
                     api_key_list[i % len(api_key_list)],
-                    apis_to_call[i % num_api_calls][0],
-                    apis_to_call[i % num_api_calls][1]
-                ))
-                if wait_time:
-                    time.sleep(wait_time)
+                    apis_to_call[i % len(apis_to_call)][0],
+                    apis_to_call[i % len(apis_to_call)][1],
+                    results,)
+            ))
 
-            # Retrieve the results as they become available
-            for future in concurrent.futures.as_completed(api_call_futures):
-                results.append(future.result())
-
-        failed_api_calls = list()
-        successfull_api_calls = list()
+        for thread in threads:
+            thread.start()
+            if wait_time:
+                time.sleep(wait_time)
+        for thread in threads:
+            thread.join()
 
         for result in results:
-            if result.status_code is not 429:
-                successfull_api_calls.append(result)
-                if result.status_code == 403:
-                    self.log.debug("Access denied for {}"
-                                   .format(result.api_role))
-                if result.status_code == 401:
-                    self.log.debug("Authorization failed error {} for {}"
-                                   .format(result.content, result.api_role))
-            else:
-                failed_api_calls.append(result)
+            self.log.info("API call result for API ID {0} with role {"
+                          "1}".format(result, results[result]["role"]))
 
-        self.log.info("Total API calls - {}".format(len(results)))
-        self.log.info("Total Successfull API calls - {}".format(len(
-            successfull_api_calls)))
-        self.log.info("Total Failed API calls - {}".format(len(
-            failed_api_calls)))
+            if results[result]["rate_limit_hit"]:
+                self.log.info("Rate limit was hit after {0} API calls".format(
+                    results[result]["total_api_calls_made_to_hit_rate_limit"]
+                ))
 
-        return results, successfull_api_calls, failed_api_calls
+            def print_status_code_wise_results(status_code_dict):
+                for status_code in status_code_dict:
+                    self.log.info("Total API calls which returned {0} : {"
+                                  "1}".format(
+                        status_code, status_code_dict[status_code]
+                    ))
+
+            print_status_code_wise_results(results[result]["2xx_status_code"])
+            print_status_code_wise_results(results[result]["4xx_errors"])
+            print_status_code_wise_results(results[result]["5xx_errors"])
+
+        return results
 
     def validate_api_response(self, expected_resp, actual_resp):
         for key in expected_resp:
@@ -314,7 +381,12 @@ class APIBase(BaseTestCase):
         else:
             return False
 
-    def replace_last_character(self, id):
+    @staticmethod
+    def replace_last_character(id, non_hex=False):
+        if non_hex:
+            replaced_id = id[:-1] + 'g'
+            return replaced_id
+
         last_char = id[-1]
         if last_char.isdigit():
             if int(last_char) == 9:
@@ -322,7 +394,7 @@ class APIBase(BaseTestCase):
             else:
                 next_char = str(int(last_char) + 1)
         elif last_char.isalpha():
-            if last_char.lower() == 'z':
+            if last_char.lower() == 'f':
                 next_char = 'a' if last_char.islower() else 'A'
             else:
                 next_char = chr(ord(last_char) + 1)
@@ -347,6 +419,14 @@ class APIBase(BaseTestCase):
                 organizationId=org_id,
                 name=project_name,
                 description=projects[project_name]["description"])
+
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.org_ops_apis.create_project(
+                    organizationId=org_id,
+                    name=project_name,
+                    description=projects[project_name]["description"])
+
             if resp.status_code == 201:
                 projects[project_name]["id"] = resp.json()["id"]
             else:
@@ -375,8 +455,88 @@ class APIBase(BaseTestCase):
                 organizationId=org_id,
                 projectId=project_id
             )
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.org_ops_apis.delete_project(
+                    organizationId=org_id,
+                    projectId=project_id
+                )
             if resp.status_code != 204:
                 self.log.error("Error while deleting project {}".format(
                     project_id))
                 project_deletion_failed = project_deletion_failed or True
         return project_deletion_failed
+
+    def create_bucket_to_be_tested(self, org_id, proj_id, clus_id, buck_name):
+        # Wait for cluster to rebalance (if it is).
+        self.update_auth_with_api_token(self.org_owner_key['token'])
+        res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+            self.organisation_id, proj_id, clus_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, proj_id, clus_id)
+        while res.json()["currentState"] != "healthy":
+            self.log.warning("Waiting for cluster to rebalance.")
+            time.sleep(10)
+            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, proj_id, clus_id)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers["Retry-After"]))
+                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, proj_id, clus_id)
+        self.log.debug("Cluster state healthy.")
+
+        resp = self.capellaAPI.cluster_ops_apis.create_bucket(
+            org_id, proj_id, clus_id, buck_name, "couchbase", "couchstore",
+            100, "seqno", "none", 1, False, 0)
+        if resp.status_code == 429:
+            self.handle_rate_limit(int(resp.headers["Retry-After"]))
+            resp = self.capellaAPI.cluster_ops_apis.create_bucket(
+                org_id, proj_id, clus_id, buck_name, "couchbase", "couchstore",
+                100, "seqno", "none", 1, False, 0)
+        if resp.status_code == 201:
+            buck_id = resp.json()['id']
+            self.log.debug("New bucket created, ID: {}".format(buck_id))
+            return buck_id
+        else:
+            self.fail("New bucket creation failed.")
+
+    def delete_buckets(self, org_id, proj_id, clus_id, bucket_ids, token):
+        bucket_deletion_failed = False
+        self.update_auth_with_api_token(token)
+        for bucket_id in bucket_ids:
+            resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
+                org_id, proj_id, clus_id, bucket_id
+            )
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
+                    org_id, proj_id, clus_id, bucket_id
+                )
+            if resp.status_code != 204:
+                self.log.error("Error while deleting bucket {}".format(
+                    bucket_id))
+                bucket_deletion_failed = bucket_deletion_failed or True
+            else:
+                bucket_ids.remove(bucket_id)
+
+            # Wait for cluster to rebalance (if it is).
+            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, proj_id, clus_id)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers["Retry-After"]))
+                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, proj_id, clus_id)
+            while res.json()["currentState"] != "healthy":
+                self.log.warning("Waiting for cluster to rebalance.")
+                time.sleep(10)
+                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, proj_id, clus_id)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers["Retry-After"]))
+                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                        self.organisation_id, proj_id, clus_id)
+            self.log.debug("Cluster state healthy.")
+
+        return bucket_deletion_failed
