@@ -600,7 +600,7 @@ class Murphy(BaseTestCase, OPD):
             self.cluster.master.ip = task_details["masterNode"].split("@")[1]
             self.cluster.master.hostname = self.cluster.master.ip
         self.rest = RestConnection(self.cluster.master)
-        while task.state != "healthy" or \
+        while task.state != "healthy" and \
             task.state not in ["upgradeFailed",
                                "deploymentFailed",
                                "redeploymentFailed",
@@ -614,13 +614,15 @@ class Murphy(BaseTestCase, OPD):
                     if progress == -100:
                         raise ServerUnavailableException
                 self.assertTrue(result,
-                                msg="Cluster Rebalance failed")
+                                msg="Cluster rebalance failed")
                 if task.state != "healthy":
                     self.sleep(300, "Wait for CP to trigger sub-rebalance")
             except ServerUnavailableException:
                 self.log.critical("Node to get rebalance progress is not part of cluster")
                 self.refresh_cluster()
                 self.rest = RestConnection(self.cluster.master)
+        self.assertTrue(task.state == "healthy",
+                        msg="Cluster upgrade failed")
 
     def test_upgrades(self):
         self.initial_setup()
