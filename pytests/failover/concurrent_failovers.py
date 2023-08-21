@@ -333,6 +333,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         for services in services_to_fail:
             node_services = set(services.split("_"))
             for index, node in enumerate(nodes_in_cluster):
+                if node.ip == self.cluster.master.ip:
+                    continue
                 if node_services == set(node.services):
                     fo_type = self.failover_method
                     if dynamic_fo_method:
@@ -822,10 +824,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 task_type="revert_failure")
             self.task_manager.add_new_task(failover_task)
             self.task_manager.get_task_result(failover_task)
-
-        self.log.info("Rebalance out the failed nodes")
-        result = self.cluster_util.rebalance(self.cluster)
-        self.assertTrue(result, "Final rebalance failed")
+            self.log.info("Rebalance out the failed nodes")
+            result = self.cluster_util.rebalance(self.cluster)
+            self.assertTrue(result, "Final rebalance failed")
 
         # Perform collection crud + doc_ops after rebalance operation
         self.__perform_doc_ops()
@@ -929,6 +930,20 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 self.assertFalse(failover_task.result, failure_msg)
             else:
                 self.assertTrue(failover_task.result, failure_msg)
+
+            # Validate auto_failover_settings after failover
+            self.validate_failover_settings(True, self.timeout,
+                                            expected_fo_nodes, self.max_count)
+
+            # Stop background doc_ops
+            if self.load_during_fo:
+                for task in [loader_task, reader_task]:
+                    task.end_task()
+                    self.task_manager.get_task_result(task)
+
+            # Perform collection crud + doc_ops before rebalance operation
+            self.__perform_doc_ops(durability="NONE", validate_num_items=False)
+
         finally:
             # Disable auto-fo after the expected time limit
             self.rest.update_autofailover_settings(
@@ -953,25 +968,13 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 canAbortRebalance=self.can_abort_rebalance,
                 preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
-        # Validate auto_failover_settings after failover
-        self.validate_failover_settings(True, self.timeout,
-                                        expected_fo_nodes, self.max_count)
-
-        # Stop background doc_ops
-        if self.load_during_fo:
-            for task in [loader_task, reader_task]:
-                task.end_task()
-                self.task_manager.get_task_result(task)
-
-        # Perform collection crud + doc_ops before rebalance operation
-        self.__perform_doc_ops(durability="NONE", validate_num_items=False)
-
-        # Rebalance the cluster to remove failed nodes
-        result = self.cluster_util.rebalance(self.cluster)
-        self.assertTrue(result, "Rebalance failed")
+            # Rebalance the cluster to remove failed nodes
+            result = self.cluster_util.rebalance(self.cluster)
+            self.assertTrue(result, "Rebalance failed")
 
         # Validate auto_failover_settings after rebalance operation
-        self.validate_failover_settings(True, self.timeout, 0, self.max_count)
+        self.validate_failover_settings(True, self.timeout, 0,
+                                        self.max_count)
 
         # Perform collection crud + doc_ops after rebalance operation
         self.__perform_doc_ops()
