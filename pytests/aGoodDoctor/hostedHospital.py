@@ -578,13 +578,13 @@ class Murphy(BaseTestCase, OPD):
                 "server": self.input.capella.get("upgrade_server_version"),
                 "releaseID": self.input.capella.get("upgrade_release_id")
                 }
-            task = self.task.async_upgrade_capella_prov(self.cluster, config,
-                                                        timeout=24*60*60)
-            self.monitor_rebalance(task)
-            self.task_manager.get_task_result(task)
-            self.assertTrue(task.result, "Cluster Upgrade Failed...")
+            self.rebalance_task = self.task.async_upgrade_capella_prov(
+                self.cluster, config, timeout=24*60*60)
+            self.monitor_rebalance()
+            self.task_manager.get_task_result(self.rebalance_task)
+            self.assertTrue(self.rebalance_task.result, "Cluster Upgrade Failed...")
 
-    def monitor_rebalance(self, task):
+    def find_master(self):
         i = 30
         task_details = None
         while True:
@@ -596,33 +596,41 @@ class Murphy(BaseTestCase, OPD):
         while i > 0 and task_details is None:
             task_details = self.rest.ns_server_tasks("rebalance", "rebalance")
             self.sleep(10)
+            i -= 1
         if task_details and task_details["status"] == "running":
             self.cluster.master.ip = task_details["masterNode"].split("@")[1]
             self.cluster.master.hostname = self.cluster.master.ip
+            self.log.info("NEW MASTER: {}".format(self.cluster.master.ip))
+
+    def monitor_rebalance(self):
+        self.find_master()
         self.rest = RestConnection(self.cluster.master)
-        while task.state != "healthy" and \
-            task.state not in ["upgradeFailed",
-                               "deploymentFailed",
-                               "redeploymentFailed",
-                               "rebalanceFailed",
-                               "scaleFailed"]:
+        while self.rebalance_task.state not in ["healthy",
+                                                "upgradeFailed",
+                                                "deploymentFailed",
+                                                "redeploymentFailed",
+                                                "rebalanceFailed",
+                                                "scaleFailed"]:
             try:
-                result = self.rest.monitorRebalance(sleep_step=60,
-                                                    progress_count=1000)
+                result = self.rest.newMonitorRebalance(sleep_step=60,
+                                                       progress_count=1000)
                 if result is False:
-                    progress = self.rest._rebalance_progress()
+                    progress = self.rest.new_rebalance_status_and_progress()[1]
                     if progress == -100:
                         raise ServerUnavailableException
                 self.assertTrue(result,
                                 msg="Cluster rebalance failed")
-                if task.state != "healthy":
-                    self.sleep(300, "Wait for CP to trigger sub-rebalance")
+                if self.rebalance_task.state != "healthy":
+                    self.refresh_cluster()
+                    self.log.info("Rebalance task status: {}".format(self.rebalance_task.state))
+                    self.sleep(120, "Wait for CP to trigger sub-rebalance")
             except ServerUnavailableException:
                 self.log.critical("Node to get rebalance progress is not part of cluster")
                 self.refresh_cluster()
+                self.find_master()
                 self.rest = RestConnection(self.cluster.master)
-        self.assertTrue(task.state == "healthy",
-                        msg="Cluster upgrade failed")
+        self.assertTrue(self.rebalance_task.state == "healthy",
+                        msg="Cluster rebalance failed")
 
     def test_upgrades(self):
         self.initial_setup()
@@ -668,12 +676,12 @@ class Murphy(BaseTestCase, OPD):
                 ###################################################################
                 self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
                                format(self.loop))
-                rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                   config,
-                                                                   timeout=self.index_timeout)
-                self.monitor_rebalance(rebalance_task)
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                        config,
+                                                                        timeout=self.index_timeout)
+                self.monitor_rebalance()
+                self.task_manager.get_task_result(self.rebalance_task)
+                self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                 self.print_stats()
                 self.loop += 1
                 self.sleep(60, "Sleep for 60s after rebalance")
@@ -694,12 +702,12 @@ class Murphy(BaseTestCase, OPD):
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
                 config = self.rebalance_config(self.rebl_nodes)
-                rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                    config,
                                                                    timeout=self.index_timeout)
-                self.monitor_rebalance(rebalance_task)
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                self.monitor_rebalance()
+                self.task_manager.get_task_result(self.rebalance_task)
+                self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                 self.cluster_util.print_cluster_stats(self.cluster)
                 self.print_stats()
                 self.sleep(60, "Sleep for 60s after rebalance")
@@ -732,12 +740,12 @@ class Murphy(BaseTestCase, OPD):
                     config = self.rebalance_config(0)
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
-                    rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                    self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
                                                                        timeout=96*60*60)
-                    self.monitor_rebalance(rebalance_task)
-                    self.task_manager.get_task_result(rebalance_task)
-                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.monitor_rebalance()
+                    self.task_manager.get_task_result(self.rebalance_task)
+                    self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
                     #turn cluster off and back on
@@ -765,12 +773,12 @@ class Murphy(BaseTestCase, OPD):
                     config = self.rebalance_config(0)
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
-                    rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                    self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
                                                                        timeout=96*60*60)
-                    self.monitor_rebalance(rebalance_task)
-                    self.task_manager.get_task_result(rebalance_task)
-                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.monitor_rebalance()
+                    self.task_manager.get_task_result(self.rebalance_task)
+                    self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                     self.cluster_util.print_cluster_stats(self.cluster)
                     compute_change = compute_change * -1
                     #turn cluster off and back on
@@ -783,7 +791,7 @@ class Murphy(BaseTestCase, OPD):
                         self.sleep(60, "Wait after cluster is turned on")
 
             self.loop = 0
-            while self.loop <= self.iterations:
+            while self.loop < self.iterations:
                 self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "disk_compute":
                     # Rebalance 3 - Both Disk/Compute Upgrade
@@ -800,12 +808,12 @@ class Murphy(BaseTestCase, OPD):
                     config = self.rebalance_config(0)
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
-                    rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                    self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                        config,
                                                                        timeout=96*60*60)
-                    self.monitor_rebalance(rebalance_task)
-                    self.task_manager.get_task_result(rebalance_task)
-                    self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                    self.monitor_rebalance()
+                    self.task_manager.get_task_result(self.rebalance_task)
+                    self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
                     compute_change = compute_change * -1
                     self.cluster_util.print_cluster_stats(self.cluster)

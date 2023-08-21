@@ -314,12 +314,12 @@ class CapellaUtils(object):
                                                     cluster.tenant.project_id, cluster.id, specs)
             if resp.status_code != 202:
                 result = json.loads(resp.content)
-                if result["errorType"] == "ClusterModifySpecsInvalidState":
+                CapellaUtils.log.critical(result)
+                if result["errorType"] in ["ClusterModifySpecsInvalidState", "EntityNotWritable"]:
                     CapellaUtils.wait_until_done(
                         cluster.pod, cluster.tenant, cluster.id,
                         "Wait for healthy cluster state")
                 else:
-                    CapellaUtils.log.critical(result)
                     raise Exception(result)
             else:
                 break
