@@ -909,6 +909,8 @@ class SystemEventLogs(ClusterSetup):
         failure = None
         components = Event.Component.values()
         event_severity = Event.Severity.values()
+        if involve_master:
+            master_node = self.cluster.master
 
         nodes_in_cluster = deepcopy(self.cluster.nodes_in_cluster)
         if doc_loading:
@@ -927,6 +929,7 @@ class SystemEventLogs(ClusterSetup):
             # Start rebalance
             rebalance_task = self.task.async_rebalance(
                 nodes_in_cluster, nodes_in, [])
+
         elif rebalance_type == "out":
             nodes_out = list()
             if involve_master:
@@ -935,7 +938,8 @@ class SystemEventLogs(ClusterSetup):
                 # Update master node
                 self.cluster.master = self.cluster.nodes_in_cluster[0]
                 self.log.info("Updated master - %s" % self.cluster.master.ip)
-            while self.nodes_out:
+            while len(self.cluster.nodes_in_cluster) > 0 and self.nodes_out \
+                    > 0:
                 nodes_out.append(self.cluster.nodes_in_cluster.pop(-1))
                 self.nodes_out -= 1
 
@@ -952,7 +956,8 @@ class SystemEventLogs(ClusterSetup):
                 # Update master node
                 self.cluster.master = self.cluster.nodes_in_cluster[0]
                 self.log.info("Updated master - %s" % self.cluster.master.ip)
-            while self.nodes_out:
+            while len(self.cluster.nodes_in_cluster) > 0 and self.nodes_out \
+                    > 0:
                 nodes_out.append(self.cluster.nodes_in_cluster.pop(-1))
                 self.nodes_out -= 1
 
@@ -963,6 +968,7 @@ class SystemEventLogs(ClusterSetup):
             rebalance_task = self.task.async_rebalance(
                 nodes_in_cluster, nodes_in, nodes_out,
                 check_vbucket_shuffling=False)
+
         else:
             self.fail("Invalid rebalance type")
 
@@ -1000,6 +1006,13 @@ class SystemEventLogs(ClusterSetup):
 
         # Validate events
         self.__validate(self.system_events.test_start_time)
+
+        if involve_master:
+            self.cluster.nodes_in_cluster.pop(0)
+            rebalance_task = self.task.async_rebalance(
+                self.cluster.nodes_in_cluster, [master_node], [],
+                check_vbucket_shuffling=False)
+        self.task_manager.get_task_result(rebalance_task)
         if failure:
             self.fail(failure)
 
@@ -1013,6 +1026,7 @@ class SystemEventLogs(ClusterSetup):
         num_events = 100
         components = Event.Component.values()
         severities = Event.Severity.values()
+        self.nodes_out = 1
 
         self.log.info("Loading few events before rebalance operation")
         for index in range(num_events):
@@ -1026,7 +1040,7 @@ class SystemEventLogs(ClusterSetup):
             self.cluster.nodes_in_cluster, to_remove=nodes)
 
         # Update nodes_in_cluster
-        self.cluster.nodes_in_cluster = self.cluster.servers[:-self.nodes_out]
+        self.cluster.nodes_in_cluster = self.cluster.nodes_in_cluster[:-self.nodes_out]
 
         # Wait for rebalance to complete
         self.task_manager.get_task_result(rebalance_task)
@@ -1042,8 +1056,6 @@ class SystemEventLogs(ClusterSetup):
             self.cluster.nodes_in_cluster, to_add=nodes)
 
         # Update nodes_in_cluster
-        self.cluster.nodes_in_cluster += nodes
-
         # Wait for rebalance to complete
         self.task_manager.get_task_result(rebalance_task)
 
