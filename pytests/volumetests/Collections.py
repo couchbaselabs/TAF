@@ -67,7 +67,7 @@ class volume(CollectionBase):
         if self.enable_n2n_encryption:
             shell_conn = RemoteMachineShellConnection(self.cluster.master)
             cb_cli = CbCli(shell_conn)
-            cb_cli.enable_n2n_encryption()
+            cb_cli.enable_n2n_encryption(self.tls_level)
             cb_cli.set_n2n_encryption_level(level="all")
             shell_conn.disconnect()
 

@@ -124,7 +124,7 @@ class CbCli(CbCmdBase):
         if "SUCCESS: Cluster is in developer preview mode" not in str(output):
             raise Exception("Expected output not seen: %s" % output)
 
-    def enable_n2n_encryption(self):
+    def enable_n2n_encryption(self, level="all"):
         cmd = "%s node-to-node-encryption -c %s:%s -u %s -p %s --enable" \
              % (self.cbstatCmd, "localhost", self.port,
                 self.username, self.password)
@@ -133,7 +133,8 @@ class CbCli(CbCmdBase):
         if len(error) != 0:
             raise Exception(str(error))
         CbServer.n2n_encryption = True
-        CbServer.use_https = True
+        if level == "strict":
+            CbServer.use_https = True
         return output
 
     def disable_n2n_encryption(self):
@@ -156,8 +157,8 @@ class CbCli(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
-        CbServer.use_https = True
         if level == "strict":
+            CbServer.use_https = True
             trust_all_certs()
         return output
 

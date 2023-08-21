@@ -110,7 +110,7 @@ class N2nEncryptionX509(CollectionBase):
         for node in nodes:
             shell_conn = RemoteMachineShellConnection(node)
             cb_cli = CbCli(shell_conn, no_ssl_verify=True)
-            cb_cli.enable_n2n_encryption()
+            cb_cli.enable_n2n_encryption(level=level)
             cb_cli.set_n2n_encryption_level(level=level)
             shell_conn.disconnect()
 

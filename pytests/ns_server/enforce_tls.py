@@ -67,7 +67,7 @@ class EnforceTls(CollectionBase):
                           "{0} on node {1}".format(level, node))
             shell_conn = RemoteMachineShellConnection(node)
             cb_cli = CbCli(shell_conn, no_ssl_verify=True)
-            cb_cli.enable_n2n_encryption()
+            cb_cli.enable_n2n_encryption(level=level)
             cb_cli.set_n2n_encryption_level(level=level)
             shell_conn.disconnect()
 

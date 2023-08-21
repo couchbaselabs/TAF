@@ -173,7 +173,7 @@ class NodeUtils(object):
             "with node {0}".format(server))
         shell_conn = RemoteMachineShellConnection(server)
         cb_cli = CbCli(shell_conn)
-        o = cb_cli.enable_n2n_encryption()
+        o = cb_cli.enable_n2n_encryption(level=level)
         self.log.info(o)
         o = cb_cli.set_n2n_encryption_level(level=level)
         self.log.info(o)
