@@ -31,7 +31,9 @@ class CollectionsNetworkSplit(CollectionBase):
         for server in self.known_nodes:
             shell = RemoteMachineShellConnection(server)
             command = "/sbin/iptables -F"
+            command2 = "nft flush ruleset"
             shell.execute_command(command)
+            shell.execute_command(command2)
             shell.disconnect()
         self.sleep(10)
         if self.allow_unsafe:
@@ -59,14 +61,19 @@ class CollectionsNetworkSplit(CollectionBase):
         self.log.info("Blocking traffic from {0} in {1}"
                       .format(node2.ip, node1.ip))
         command = "iptables -A INPUT -s {0} -j DROP".format(node2.ip)
+        command2 = "nft add rule ip filter INPUT ip saddr %s counter drop" %\
+                   node2.ip
         shell.execute_command(command)
+        shell.execute_command(command2)
         shell.disconnect()
 
     def remove_network_split(self):
         for node in self.nodes_affected:
             shell = RemoteMachineShellConnection(node)
             command = "/sbin/iptables -F"
+            command2 = "nft flush ruleset"
             shell.execute_command(command)
+            shell.execute_command(command2)
             shell.disconnect()
 
     def pick_nodes_and_network_split(self):

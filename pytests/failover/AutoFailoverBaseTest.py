@@ -504,6 +504,7 @@ class AutoFailoverBaseTest(ClusterSetup):
                     try:
                         shell = RemoteMachineShellConnection(node)
                         o, r = shell.execute_command("/sbin/iptables -F")
+                        _, _ = shell.execute_command("nft flush ruleset")
                         self.log.debug("Output: %s, Err: %s" % (o, r))
                         shell.disconnect()
                         break

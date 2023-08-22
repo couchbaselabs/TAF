@@ -629,6 +629,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 for src_node in src_nodes:
                     shell_conn.execute_command(
                         "iptables -A INPUT -s %s -j DROP" % src_node.ip)
+                    shell_conn.execute_command(
+                        "nft add rule ip filter INPUT ip saddr %s counter "
+                        "drop " % src_node.ip)
                 shell_conn.disconnect()
 
         def get_num_nodes_to_fo(num_nodes_affected,
@@ -646,6 +649,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             for ssh_node in node_list:
                 ssh_shell = RemoteMachineShellConnection(ssh_node)
                 ssh_shell.execute_command("iptables -F")
+                ssh_shell.execute_command("nft flush ruleset")
                 ssh_shell.disconnect()
             self.sleep(5, "Wait for nodes to be reachable")
 

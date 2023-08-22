@@ -5734,7 +5734,10 @@ class AutoFailoverNodesFailureTask(Task):
         self.test_log.debug("Adding {0} into iptables rules on {1}"
                             .format(node1.ip, node2.ip))
         command = "iptables -A INPUT -s {0} -j DROP".format(node2.ip)
+        command2 = "nft add rule ip filter INPUT ip saddr %s counter drop" %\
+                   node2.ip
         shell.execute_command(command)
+        shell.execute_command(command2)
         shell.disconnect()
         self.start_time = time.time()
 
@@ -5978,7 +5981,9 @@ class NodeFailureTask(Task):
             self.shell.stop_memcached()
         elif self.failure_type == "network_split":
             for node in self.to_nodes:
+                command1 = "nft add rule ip filter INPUT ip saddr %s counter drop" % node.ip
                 command = "iptables -A INPUT -s %s -j DROP" % node.ip
+                self.shell.execute_command(command1)
                 self.shell.execute_command(command)
         elif self.failure_type == "disk_failure":
             self._fail_disk(self.target_node)

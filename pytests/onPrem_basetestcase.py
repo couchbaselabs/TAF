@@ -625,6 +625,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
+            ClusterUtils.flush_network_rules(server)
             if not server.index_path:
                 server.index_path = server.data_path
             if not server.cbas_path:

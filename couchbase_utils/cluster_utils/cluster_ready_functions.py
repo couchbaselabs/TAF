@@ -160,6 +160,17 @@ class ClusterUtils:
         self.log = logger.get("test")
 
     @staticmethod
+    def flush_network_rules(node):
+        shell = RemoteMachineShellConnection(node)
+        for command in ["iptables -F",
+                        "nft flush ruleset",
+                        "nft add table ip filter",
+                        "nft add chain ip filter INPUT '{ type filter hook "
+                        "input priority 0; }'"]:
+            shell.execute_command(command)
+        shell.disconnect()
+
+    @staticmethod
     def find_orchestrator(cluster, node=None):
         """
         Update the orchestrator of the cluster
