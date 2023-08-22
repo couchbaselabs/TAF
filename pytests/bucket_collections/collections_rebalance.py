@@ -631,9 +631,6 @@ class CollectionsRebalance(CollectionBase):
                                                     graceful=True, wait_for_pending=wait_for_pending)
                         self.assertTrue(result, "Failover of node {0} failed".
                                         format(failover_node.ip))
-                    if tasks is not None:
-                        self.wait_for_async_data_load_to_complete(tasks)
-                        tasks = None
                     wait_for_doc_load_complete()
                     tasks = (None, None)
                     self.data_load_after_failover()
@@ -1236,7 +1233,6 @@ class CollectionsRebalance(CollectionBase):
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
-            self.wait_for_async_data_load_to_complete(tasks)
             self.wait_for_async_data_load_to_complete(tasks[0])
             CollectionBase.wait_for_cont_doc_load_to_complete(self, tasks[1])
             self.data_validation_collection()
@@ -1250,7 +1246,6 @@ class CollectionsRebalance(CollectionBase):
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
-            self.wait_for_async_data_load_to_complete(tasks)
             self.wait_for_async_data_load_to_complete(tasks[0])
             CollectionBase.wait_for_cont_doc_load_to_complete(self, tasks[1])
             self.data_validation_collection()
@@ -1282,7 +1277,6 @@ class CollectionsRebalance(CollectionBase):
             if self.bulk_api_crud:
                 self.bulk_api_load(self.bucket.name)
             self.wait_for_rebalance_to_complete(operation)
-            self.wait_for_async_data_load_to_complete(tasks)
             self.wait_for_async_data_load_to_complete(tasks[0])
             CollectionBase.wait_for_cont_doc_load_to_complete(self, tasks[1])
             self.data_validation_collection()
