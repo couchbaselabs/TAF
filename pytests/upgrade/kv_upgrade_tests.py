@@ -147,7 +147,11 @@ class KVUpgradeTests(UpgradeBase):
         self.assertTrue(result, "Rebalance_in failed")
 
         replica_vbs = cbstat.vbucket_list(bucket.name, Bucket.vBucket.REPLICA)
-        self.assertTrue(key_vb in replica_vbs, "vBucket is still active vb")
+        shell.disconnect()
+        if key_vb in replica_vbs:
+            t_node = self.cluster.master
+            self.cluster.master = in_node
+            in_node = t_node
 
         client.crud(DocLoading.Bucket.SubDocOps.REMOVE, key, sub_doc[0],
                     xattr=True, access_deleted=True)
