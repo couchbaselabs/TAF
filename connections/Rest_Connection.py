@@ -314,7 +314,7 @@ class RestConnection(object):
             sleep(3, log_type="infra")
 
     def _http_request(self, api, method='GET', params='', headers=None,
-                      timeout=300):
+                      timeout=60):
         if not headers:
             headers = self._create_headers()
         if CbServer.use_https:

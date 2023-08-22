@@ -303,7 +303,7 @@ class CapellaUtils(object):
         return resp.status
 
     @staticmethod
-    def scale(cluster, specs):
+    def scale(cluster, specs, timeout=600):
         capella_api = CapellaAPI(cluster.pod.url_public,
                                  cluster.tenant.api_secret_key,
                                  cluster.tenant.api_access_key,
@@ -318,7 +318,7 @@ class CapellaUtils(object):
                 if result["errorType"] in ["ClusterModifySpecsInvalidState", "EntityNotWritable"]:
                     CapellaUtils.wait_until_done(
                         cluster.pod, cluster.tenant, cluster.id,
-                        "Wait for healthy cluster state")
+                        "Wait for healthy cluster state", timeout=timeout)
                 else:
                     raise Exception(result)
             else:

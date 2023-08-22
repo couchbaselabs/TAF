@@ -271,15 +271,20 @@ class UpgradeProvisionedCluster(Task):
         self.servers = None
         self.test_log.critical("upgrade_params: %s" % params)
         self.poll_interval = poll_interval
-        self.state = "Temp_State"
+        self.state = "healthy"
+        DedicatedUtils.upgrade(self.cluster, self.params)
+
+        count = 120
+        self.state = DedicatedUtils.get_cluster_state(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+        while self.state == "healthy" and count > 0:
+            self.state = DedicatedUtils.get_cluster_state(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+            self.sleep(5, "Wait until CP trigger the upgrade job and change status")
+            self.log.info("Current: {}, Expected: {}".format(self.state, "upgrading"))
+            count -= 1
 
     def call(self):
-        try:
-            DedicatedUtils.upgrade(self.cluster, self.params)
-            self.sleep(60, "Wait until CP trigger the upgrade job and change status")
-        except Exception as e:
-            self.result = False
-            return
         capella_api = decicatedCapellaAPI(self.cluster.pod.url_public,
                                           self.cluster.tenant.api_secret_key,
                                           self.cluster.tenant.api_access_key,
@@ -307,12 +312,12 @@ class UpgradeProvisionedCluster(Task):
                         if data.get("clusterId") == self.cluster.id:
                             step, progress = data.get("currentStep"), \
                                              data.get("completionPercentage")
-                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", state, step, progress))
+                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", self.state, step, progress))
                     time.sleep(self.poll_interval)
                 else:
                     self.log.info("Scaling the cluster completed. State == {}".
                                   format(self.state))
-                    self.sleep(300)
+                    self.sleep(120)
                     self.result = True
                     break
             except Exception as e:
@@ -348,11 +353,17 @@ class RebalanceTaskCapella(Task):
         self.servers = None
         self.test_log.critical("Scale_params: %s" % scale_params)
         self.poll_interval = poll_interval
-        self.state = "Temp_State"
+        self.state = "healthy"
+        DedicatedUtils.scale(self.cluster, self.scale_params, self.timeout)
+        count = 120
+        while self.state == "healthy" and count > 0:
+            self.state = DedicatedUtils.get_cluster_state(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+            self.sleep(5, "Wait until CP trigger the scaling job and change status")
+            self.log.info("Current: {}, Expected: {}".format(self.state, "scaling"))
+            count -= 1
 
     def call(self):
-        DedicatedUtils.scale(self.cluster, self.scale_params)
-        self.sleep(60, "Wait until CP trigger the scaling job and change status")
         self.cluster.cluster_config["specs"] = self.scale_params["specs"]
         capella_api = decicatedCapellaAPI(self.cluster.pod.url_public,
                                           self.cluster.tenant.api_secret_key,
@@ -387,7 +398,7 @@ class RebalanceTaskCapella(Task):
                 else:
                     self.log.info("Scaling the cluster completed. State == {}".
                                   format(self.state))
-                    self.sleep(300)
+                    self.sleep(120)
                     self.result = True
                     break
             except Exception as e:

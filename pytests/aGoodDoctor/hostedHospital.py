@@ -376,23 +376,32 @@ class Murphy(BaseTestCase, OPD):
         query_monitor.start()
 
     def refresh_cluster(self):
-        self.servers = DedicatedUtils.get_nodes(
-            self.cluster.pod, self.cluster.tenant, self.cluster.id)
-        nodes = list()
-        for server in self.servers:
-            temp_server = TestInputServer()
-            temp_server.ip = server.get("hostname")
-            temp_server.hostname = server.get("hostname")
-            temp_server.services = server.get("services")
-            temp_server.port = "18091"
-            temp_server.rest_username = self.cluster.username
-            temp_server.rest_password = self.cluster.password
-            temp_server.hosted_on_cloud = True
-            temp_server.memcached_port = "11207"
-            temp_server.type = "dedicated"
-            nodes.append(temp_server)
-
-        self.cluster.refresh_object(nodes)
+        # self.servers = DedicatedUtils.get_nodes(
+        #     self.cluster.pod, self.cluster.tenant, self.cluster.id)
+        # nodes = list()
+        # for server in self.servers:
+        #     temp_server = TestInputServer()
+        #     temp_server.ip = server.get("hostname")
+        #     temp_server.hostname = server.get("hostname")
+        #     temp_server.services = server.get("services")
+        #     temp_server.port = "18091"
+        #     temp_server.rest_username = self.cluster.username
+        #     temp_server.rest_password = self.cluster.password
+        #     temp_server.hosted_on_cloud = True
+        #     temp_server.memcached_port = "11207"
+        #     temp_server.type = "dedicated"
+        #     nodes.append(temp_server)
+        while True:
+            if self.cluster.nodes_in_cluster:
+                self.log.info("Cluster Nodes: {}".format(self.cluster.nodes_in_cluster))
+                try:
+                    self.cluster.refresh_object(self.cluster_util.get_nodes(
+                        random.choice(self.cluster.nodes_in_cluster)))
+                    break
+                except ServerUnavailableException:
+                    pass
+            else:
+                self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
 
     def initial_setup(self):
         self.monitor_query_status()
@@ -442,7 +451,7 @@ class Murphy(BaseTestCase, OPD):
             "load_type": ["read", "update"],
             "2iQPS": 10,
             "ftsQPS": 10,
-            "cbasQPS": 10,
+            "cbasQPS": 0,
             "collections_defn": [
                 {
                     "valType": "Hotel",
@@ -589,6 +598,7 @@ class Murphy(BaseTestCase, OPD):
         task_details = None
         while True:
             try:
+                self.refresh_cluster()
                 self.rest = RestConnection(random.choice(self.cluster.nodes_in_cluster))
                 break
             except ServerUnavailableException:
@@ -620,13 +630,13 @@ class Murphy(BaseTestCase, OPD):
                         raise ServerUnavailableException
                 self.assertTrue(result,
                                 msg="Cluster rebalance failed")
+                self.sleep(60, "To give CP a chance to update the cluster status to healthy.")
                 if self.rebalance_task.state != "healthy":
                     self.refresh_cluster()
                     self.log.info("Rebalance task status: {}".format(self.rebalance_task.state))
-                    self.sleep(120, "Wait for CP to trigger sub-rebalance")
+                    self.sleep(60, "Wait for CP to trigger sub-rebalance")
             except ServerUnavailableException:
                 self.log.critical("Node to get rebalance progress is not part of cluster")
-                self.refresh_cluster()
                 self.find_master()
                 self.rest = RestConnection(self.cluster.master)
         self.assertTrue(self.rebalance_task.state == "healthy",
@@ -727,6 +737,8 @@ class Murphy(BaseTestCase, OPD):
             disk_increment = self.input.param("increment", 10)
             compute_change = 1
             while self.loop < self.iterations:
+                self.PrintStep("Step 6.{}: Scale Disk with Loading of docs".
+                               format(self.loop))
                 self.loop += 1
                 time.sleep(5*60)
                 if self.rebalance_type == "all" or self.rebalance_type == "disk":
@@ -759,6 +771,8 @@ class Murphy(BaseTestCase, OPD):
 
             self.loop = 0
             while self.loop < self.iterations:
+                self.PrintStep("Step 7.{}: Scale Compute with Loading of docs".
+                               format(self.loop))
                 self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "compute":
                     # Rebalance 2 - Compute Upgrade
@@ -792,6 +806,8 @@ class Murphy(BaseTestCase, OPD):
 
             self.loop = 0
             while self.loop < self.iterations:
+                self.PrintStep("Step 8.{}: Scale Disk + Compute with Loading of docs".
+                               format(self.loop))
                 self.loop += 1
                 if self.rebalance_type == "all" or self.rebalance_type == "disk_compute":
                     # Rebalance 3 - Both Disk/Compute Upgrade

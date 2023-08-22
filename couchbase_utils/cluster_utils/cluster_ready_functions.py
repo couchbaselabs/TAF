@@ -111,6 +111,8 @@ class CBCluster:
 
         for server in servers:
             server.type = self.type
+            if self.type != "default":
+                server.memcached_port = "11207"
             if "Data" in server.services or "kv" in server.services:
                 self.kv_nodes.append(server)
             if "Query" in server.services or "n1ql" in server.services:
