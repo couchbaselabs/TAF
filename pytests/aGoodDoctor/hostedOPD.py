@@ -524,26 +524,7 @@ class OPD:
     def print_cluster_cpu_ram(self, cluster, step=300):
         while not self.stop_run:
             try:
-                self.refresh_cluster()
-                table = TableView(self.log.info)
-                table.set_headers(["Nodes", "Services", "CPU",
-                                   "Mem_total", "Mem_free", "Mem_Used%",
-                                   "Swap_mem_used"])
-                rest = RestConnection(cluster.master)
-                cluster_stat = rest.get_cluster_stats()
-                for cluster_node, node_stats in cluster_stat.items():
-                    row = list()
-                    row.append(cluster_node.split(':')[0])
-                    row.append(", ".join(node_stats["services"]))
-                    row.append(str(node_stats["cpu_utilization"])[0:6])
-                    row.append(humanbytes(str(node_stats["mem_total"])))
-                    row.append(humanbytes(str(node_stats["mem_free"])))
-                    row.append(100 - 1.0*node_stats["mem_free"]/node_stats["mem_total"]*100)
-                    row.append(humanbytes(str(node_stats["swap_mem_used"])) + " / "
-                               + humanbytes(str(node_stats["swap_mem_total"])))
-                    table.add_row(row)
-                table.rows.sort(key=lambda x: x[0])
-                table.display("Cluster statistics")
+                self.cluster_util.print_cluster_stats(cluster)
             except:
                 pass
             time.sleep(step)
