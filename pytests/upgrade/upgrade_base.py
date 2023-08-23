@@ -239,8 +239,6 @@ class UpgradeBase(BaseTestCase):
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]
 
-        self.buckets_to_load = []
-
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
 
@@ -521,7 +519,7 @@ class UpgradeBase(BaseTestCase):
                                       vb_verification[vb_type]))
 
         # Update master node
-        self.cluster.master = self.spare_node
+        # self.cluster.master = self.spare_node
 
         # Update spare_node to rebalanced-out node
         self.spare_node = node_to_upgrade
@@ -761,8 +759,6 @@ class UpgradeBase(BaseTestCase):
 
     def perform_collection_ops_load(self, collections_spec):
         iter = self.collection_ops_iterations
-        if len(self.buckets_to_load) == 0:
-            self.buckets_to_load = self.cluster.buckets
         spec_collection = self.bucket_util.get_crud_template_from_package(
             collections_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
@@ -776,7 +772,7 @@ class UpgradeBase(BaseTestCase):
             collection_task = self.bucket_util.run_scenario_from_spec(
                 self.task,
                 self.cluster,
-                self.buckets_to_load,
+                self.cluster.buckets,
                 spec_collection,
                 mutation_num=0,
                 batch_size=500,
@@ -790,8 +786,6 @@ class UpgradeBase(BaseTestCase):
                     self.log.info("Collection ops load done")
 
     def load_during_rebalance(self, data_spec, async_load=False):
-        if len(self.buckets_to_load) == 0:
-            self.buckets_to_load = self.cluster.buckets
 
         sub_load_spec = self.bucket_util.get_crud_template_from_package(data_spec)
         CollectionBase.over_ride_doc_loading_template_params(self,sub_load_spec)

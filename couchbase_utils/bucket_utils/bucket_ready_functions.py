@@ -5978,6 +5978,10 @@ class BucketUtils(ScopeUtils):
                                     c_dict = collection.get_dict_object()
                                     if "nonDedupedHistory" not in bucket.bucketCapabilities:
                                         c_dict.pop("history", None)
+                                    rest = RestConnection(cluster.master)
+                                    clusterCompat = rest.check_cluster_compatibility("7.6")
+                                    if not clusterCompat:
+                                        c_dict.pop("maxTTL", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
                                                                    bucket, scope_name, c_dict,
                                                                    session=session))
