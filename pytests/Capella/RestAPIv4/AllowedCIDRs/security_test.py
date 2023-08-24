@@ -162,21 +162,15 @@ class SecurityTest(BaseTestCase):
                                                                 self.cluster_id,
                                                                 cidr)
 
-            # Bug - https://couchbasecloud.atlassian.net/browse/AV-59794
-            # For now the different_project_id gives 401 response. It should give 403.
             if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 201,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
-            # Bug - It gives 401 now. Ideally it should give 403
-            elif project_id == "different_project_id":
-                self.assertEqual(resp.status_code, 401,
-                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              401))
+
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -225,7 +219,7 @@ class SecurityTest(BaseTestCase):
                     user["role"]), organizationRoles=["organizationMember"], expiry=1,
                 resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
 
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
@@ -471,15 +465,11 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
-            # Bug - It gives 401 now. Ideally it should give 403
-            elif project_id == "different_project_id":
-                self.assertEqual(resp.status_code, 401,
-                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              401))
+
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                            project_ids["different_project_id"])
@@ -526,7 +516,7 @@ class SecurityTest(BaseTestCase):
                     user["role"]), organizationRoles=["organizationMember"], expiry=1,
                 resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
 
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
@@ -622,7 +612,7 @@ class SecurityTest(BaseTestCase):
         resp = self.capellaAPI.cluster_ops_apis.fetch_allowed_CIDR_info(self.tenant_id,
                                                                         self.project_id,
                                                                         self.cluster_id,
-                                                                        self.cidr)
+                                                                        cidr)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -677,18 +667,15 @@ class SecurityTest(BaseTestCase):
                                                                        project_ids[project_id],
                                                                        self.cluster_id,
                                                                        parent_cidr)
-            # Bug - https://couchbasecloud.atlassian.net/browse/AV-59794
-            # For now the different_project_id gives 200 response. It should give 4xx.
+
             if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
             elif project_id == 'invalid_project_id':
-                # For now the different_project_id gives 401 unauthorized request. It should
-                # give 404 response or invalid path response.
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                            project_ids["different_project_id"])
@@ -701,16 +688,12 @@ class SecurityTest(BaseTestCase):
             self.log.info("Checking with role - {}".format(self.test_users[user]["role"]))
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
                 user]["mailid"], self.test_users[user]["password"], self.test_users[user]['token'])
-            cbc_api_request_headers = {
-                'Authorization': 'Bearer ' + self.test_users[user]['token'],
-                'Content-Type': 'application/json'
-            }
+
             role_response = self.capellaAPIRole.cluster_ops_apis.fetch_allowed_CIDR_info(
                                                                     self.tenant_id,
                                                                     self.project_id,
                                                                     self.cluster_id,
-                                                                    parent_cidr,
-                                                                    headers=cbc_api_request_headers)
+                                                                    parent_cidr)
             if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(role_response.status_code, 200,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
@@ -738,7 +721,7 @@ class SecurityTest(BaseTestCase):
                     user["role"]), organizationRoles=["organizationMember"], expiry=1,
                 resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
 
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
@@ -913,18 +896,14 @@ class SecurityTest(BaseTestCase):
                                                                         self.cluster_id,
                                                                         parent_cidr)
 
-            # Bug - https://couchbasecloud.atlassian.net/browse/AV-59794
-            # For now the different_project_id gives 200 response. It should give 4xx.
             if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 204,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               204))
-            elif project_id == 'invalid_project_id':
-                # For now the different_project_id gives 401 unauthorized request. It should
-                # give 404 response or invalid path response.
-                self.assertEqual(resp.status_code, 404,
+            else:
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -991,7 +970,7 @@ class SecurityTest(BaseTestCase):
                     user["role"]), organizationRoles=["organizationMember"], expiry=1,
                 resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
 
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
