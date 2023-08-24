@@ -36,7 +36,7 @@ class SecurityTest(BaseTestCase):
         self.capellaAPI.org_ops_apis.ACCESSINI = resp['accessKey']
         self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
         if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
+            self.test_users = json.loads(json.loads(self.input.capella.get("test_users")))
         else:
             self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
                                          "role": "organizationOwner"}}
@@ -139,16 +139,15 @@ class SecurityTest(BaseTestCase):
             resp = self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.tenant_id,
                                                                  project_ids[project_id],
                                                                  self.cluster_id)
-            # Bug - https://couchbasecloud.atlassian.net/browse/AV-59794
-            # For now the different_project_id gives 200 response. It should give 4xx.
-            if project_id == 'valid_project_id' or project_id == 'different_project_id':
+
+            if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -196,7 +195,7 @@ class SecurityTest(BaseTestCase):
                     user["role"]), organizationRoles=["organizationMember"], expiry=1,
                     resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
 
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
