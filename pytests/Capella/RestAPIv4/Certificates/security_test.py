@@ -36,7 +36,7 @@ class SecurityTest(BaseTestCase):
         self.capellaAPI.org_ops_apis.ACCESSINI = resp['accessKey']
         self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
         if self.input.capella.get("test_users"):
-            self.test_users = json.loads(json.loads(self.input.capella.get("test_users")))
+            self.test_users = json.loads(self.input.capella.get("test_users"))
         else:
             self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
                                          "role": "organizationOwner"}}
