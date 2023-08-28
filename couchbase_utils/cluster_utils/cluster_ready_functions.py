@@ -221,14 +221,11 @@ class ClusterUtils:
         :return: True if the cluster is enterprise edition
         """
         rest = RestConnection(cluster.master)
-        api = rest.baseUrl + "pools/default"
+        api = rest.baseUrl + "pools"
         http_res, success = rest.init_http_request(api)
-        if http_res == 'unknown pool':
-            return False
-        for node in http_res["nodes"]:
-            if "community" in node["version"].split("-")[-1:]:
-                return False
-        return True
+        if not success:
+            raise Exception("Unable to read /pools API")
+        return True if http_res["isEnterprise"] == "true" else False
 
     def get_server_profile_type(self, servers):
         """
