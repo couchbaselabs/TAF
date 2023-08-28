@@ -635,6 +635,33 @@ class RestConnection(newRC):
                                 .format(self.ip, status, content))
             raise Exception("list rebalance tokens failed")
 
+    def rotate_internal_password(self):
+        api = self.baseUrl + "node/controller/rotateInternalCredentials"
+        status, content, header = self._http_request(api, 'POST')
+        if not status:
+            self.test_log.error("Failed to rotate password: {}".format(content))
+            return False, content
+        return status, content
+
+    def get_security_settings(self):
+        api = self.baseUrl + "settings/security"
+        status, content, header = self._http_request(api, 'GET')
+        if not status:
+            self.test_log.error("Failed to get security settings: {}".format(content))
+        return status, content
+
+    def set_internal_password_rotation_interval(self, rotation_interval=1800000):
+        api = self.baseUrl + "settings/security"
+        payload = {
+            'intCredsRotationInterval': rotation_interval
+        }
+        params = urllib.urlencode(payload)
+        status, content, header = self._http_request(api, 'POST', params)
+        if not status:
+            self.test_log.error("Failed to set internal password rotation "
+                                "interval: {}".format(content))
+        return status, content
+
     def set_security_settings(self, settings):
         api = self.baseUrl + "settings/security"
         params = urllib.urlencode(settings)

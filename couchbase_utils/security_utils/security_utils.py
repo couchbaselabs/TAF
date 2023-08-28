@@ -7,9 +7,11 @@ Created on 16-Aug-2021
 from shutil import copytree
 import time
 import copy
+import json
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.security_utils.x509main import x509main
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from membase.api.rest_client import RestConnection
 
 class SecurityUtils():
 
@@ -29,6 +31,32 @@ class SecurityUtils():
         self.ssltype = ssltype
         self.encryption_type = encryption_type
         self.key_length = key_length
+
+    def rotate_password_for_internal_users(self, cluster=None):
+        self.log.info("Cluster master: {}".format(cluster.master.ip))
+        self.rest = RestConnection(cluster.master)
+        status, content = self.rest.rotate_internal_password()
+        if not status:
+            return False, content
+
+        return True, content
+
+    def get_internal_creds_rotation_interval(self, cluster=None):
+        self.rest = RestConnection(cluster.master)
+        status, content = self.rest.get_security_settings()
+        if not status:
+            return False, content
+        json_parsed = json.loads(content)
+        return status, json_parsed["intCredsRotationInterval"]
+
+    def set_internal_creds_rotation_interval(self, cluster=None,
+                                             rotation_interval=1800000):
+        self.rest = RestConnection(cluster.master)
+        status, content = self.rest.set_internal_password_rotation_interval(rotation_interval)
+        if not status:
+            return False, content
+        json_parsed = json.loads(content)
+        return status, json_parsed
 
     def upload_x509_certs(self, cluster=None, servers=None, setup_once=False):
         """
