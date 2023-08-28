@@ -147,11 +147,11 @@ NimbusMQueriesParams = [{"conversationId":"str(random.randint(0,1000000)).zfill(
 
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None,
-                              query_params=None):
+                              query_params=None, validate=True):
     """
     Executes a statement on CBAS using the REST API using REST Client
     """
-    response = execute_via_sdk(client, statement, False, client_context_id, query_params)
+    response = execute_via_sdk(client, statement, False, client_context_id, query_params, validate)
     if type(response) == str:
         response = json.loads(response)
     if "errors" in response:
@@ -159,7 +159,7 @@ def execute_statement_on_n1ql(client, statement, client_context_id=None,
     else:
         errors = None
 
-    if "results" in response:
+    if validate and "results" in response:
         results = response["results"]
     else:
         results = None
@@ -182,7 +182,7 @@ def execute_statement_on_n1ql(client, statement, client_context_id=None,
 
 def execute_via_sdk(client, statement, readonly=False,
                     client_context_id=None,
-                    query_params=None):
+                    query_params=None, validate=True):
     options = QueryOptions.queryOptions()
     options.scanConsistency(QueryScanConsistency.NOT_BOUNDED)
     options.readonly(readonly)
@@ -200,10 +200,11 @@ def execute_via_sdk(client, statement, readonly=False,
     output["status"] = result.metaData().status()
     output["metrics"] = result.metaData().metrics().get()
 
-    try:
-        output["results"] = result.rowsAsObject()
-    except:
-        output["results"] = None
+    if validate:
+        try:
+            output["results"] = result.rowsAsObject()
+        except:
+            output["results"] = None
 
     if str(output['status']) == QueryStatus.FATAL:
         msg = output['errors'][0]['msg']
@@ -391,6 +392,8 @@ class QueryLoad:
         self.timeout_failures = 0
 
     def start_query_load(self):
+        self.stop_run = False
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         th = threading.Thread(target=self._run_concurrent_queries)
         th.start()
 
@@ -429,7 +432,7 @@ class QueryLoad:
                 q_param = self.bucket.query_map[original_query][1]
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id,
-                    q_param)
+                    q_param, validate=validate_item_count)
                 self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
                 self.query_stats[original_query][1] += 1
                 if status == QueryStatus.SUCCESS:
