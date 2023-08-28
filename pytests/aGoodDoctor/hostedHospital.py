@@ -31,6 +31,7 @@ from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
 from custom_exceptions.exception import ServerUnavailableException
+from exceptions import IndexError
 
 
 class Murphy(BaseTestCase, OPD):
@@ -262,15 +263,16 @@ class Murphy(BaseTestCase, OPD):
             ql.stop_query_load()
         self.sleep(10)
         for bucket in self.cluster.buckets:
-            if self.cluster.index_nodes and bucket.loadDefn.get("2iQPS", 0) > 0:
+            services = self.input.param("services", "data")
+            if (self.cluster.index_nodes or "index" in services) and bucket.loadDefn.get("2iQPS", 0) > 0:
                 bucket.loadDefn["2iQPS"] = bucket.loadDefn["2iQPS"] + num
                 ql = [ql for ql in self.ql if ql.bucket == bucket][0]
                 ql.start_query_load()
-            if self.cluster.fts_nodes and bucket.loadDefn.get("ftsQPS", 0) > 0:
+            if (self.cluster.fts_nodes or "search" in services) and bucket.loadDefn.get("ftsQPS", 0) > 0:
                 bucket.loadDefn["ftsQPS"] = bucket.loadDefn["ftsQPS"] + num
                 ql = [ql for ql in self.ftsQL if ql.bucket == bucket][0]
                 ql.start_query_load()
-            if self.cluster.cbas_nodes and bucket.loadDefn.get("cbasQPS", 0) > 0:
+            if (self.cluster.cbas_nodes or "analytics" in services) and bucket.loadDefn.get("cbasQPS", 0) > 0:
                 bucket.loadDefn["cbasQPS"] = bucket.loadDefn["cbasQPS"] + num
                 ql = [ql for ql in self.cbasQL if ql.bucket == bucket][0]
                 ql.start_query_load()
@@ -400,6 +402,8 @@ class Murphy(BaseTestCase, OPD):
                     break
                 except ServerUnavailableException:
                     pass
+                except IndexError:
+                    pass
             else:
                 self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
 
@@ -416,7 +420,7 @@ class Murphy(BaseTestCase, OPD):
             "num_items": self.input.param("num_items", 1500000000),
             "start": 0,
             "end": self.input.param("num_items", 1500000000),
-            "ops": 100000,
+            "ops": self.input.param("ops_rate", 100000),
             "doc_size": 1024,
             "pattern": [0, 90, 10, 0, 0], # CRUDE
             "load_type": ["read", "update"],
