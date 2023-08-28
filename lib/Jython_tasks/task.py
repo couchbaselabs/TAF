@@ -685,7 +685,7 @@ class RebalanceTask(Task):
 
         # Validate the current orchestrator is selected as expected
         result = global_vars.cluster_util.\
-            validate_orchestrator_selection(self.cluster)
+            validate_orchestrator_selection(self.cluster, self.to_remove)
         if result:
             self.result = True
 

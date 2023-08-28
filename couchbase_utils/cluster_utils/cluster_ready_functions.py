@@ -276,9 +276,14 @@ class ClusterUtils:
                 nodes.append(node.ip)
         return nodes
 
-    def validate_orchestrator_selection(self, cluster):
+    def validate_orchestrator_selection(self, cluster, removed_nodes=[]):
         result = False
-        status, ns_node = self.find_orchestrator(cluster)
+        target_node = cluster.master
+        if cluster.master.ip in [node.ip for node in removed_nodes]:
+            target_node = [node for node in cluster.nodes_in_cluster
+                           if node not in removed_nodes][0]
+
+        status, ns_node = self.find_orchestrator(cluster, node=target_node)
         if not status:
             return result
         self.update_cluster_nodes_service_list(cluster, inactive_added=True)
