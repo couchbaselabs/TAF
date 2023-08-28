@@ -15,7 +15,7 @@ from threading import Thread
 
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket
-from Cb_constants import constants, CbServer
+from Cb_constants import constants, CbServer, ClusterRun
 from common_lib import sleep
 from global_vars import logger
 from testconstants import MIN_KV_QUOTA, INDEX_QUOTA, FTS_QUOTA, CBAS_QUOTA
@@ -1114,8 +1114,7 @@ class RestConnection(object):
             params['services'] = ','.join(services)
 
         # Check for cluster_run case
-        if port in range(Cb_constants.constants.port,
-                         Cb_constants.constants.port + 10):
+        if port in range(ClusterRun.port, ClusterRun.port + 10):
             # TLS disabled for CE
             if CbServer.enterprise_edition:
                 port += 10000
