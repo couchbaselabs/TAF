@@ -12,6 +12,7 @@ import socket
 import threading
 import time
 from copy import deepcopy
+from sdk_client3 import SDKClient
 import zlib
 from httplib import IncompleteRead
 
@@ -19,6 +20,8 @@ import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from _threading import Lock
 from com.couchbase.client.java.json import JsonObject
 from java.lang import Thread
+from collections import OrderedDict
+from sdk_client3 import SDKClient
 from java.util.concurrent import Callable
 from reactor.util.function import Tuples
 
@@ -33,7 +36,7 @@ from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
     CBAS_Index, CBAS_UDF
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats
-from collections_helper.collections_spec_constants import MetaConstants
+from collections_helper.collections_spec_constants import MetaConstants,MetaCrudParams
 from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
@@ -2067,6 +2070,292 @@ class Durability(Task):
                         break
                     self.read_offset += 1
 
+class ContinuousRangeScan(Task):
+
+    # creates range scan queries and expected count using data spec file key
+    # and doc count on the collections then starting range scan for the given
+    # collections using RangeScanOnCollection task
+
+    def __init__(self,  cluster, task_manager,
+                 sdk_client_pool, items, range_scan_collections,
+                 parallel_task = 8, buckets=None,
+                 include_prefix_scan = True, include_range_scan=True,
+                 skip_scopes = ['_system'], include_start_term=1,
+                 include_end_term=1, key_size=8, key="test_collections",
+                 expect_exceptions= [],
+                 runs_per_collection=1,timeout=None,
+                 expect_range_scan_failure=True):
+        super(ContinuousRangeScan, self).__init__("ContinuousRangeScan task starting")
+        self.validation_map = OrderedDict()
+        self.cluster = cluster
+        self.stop_task = False
+        self.fail_map = []
+        self.skip_scopes = skip_scopes
+        self.parallel_task = parallel_task
+        self.sdk_client_pool = sdk_client_pool
+        self.task_manager = task_manager
+        self.include_prefix_scan  = include_prefix_scan
+        self.include_range_scan = include_range_scan
+        self.num_items = items
+        self.key_size = key_size
+        self.expect_exceptions = expect_exceptions
+        self.include_start_term = include_start_term
+        self.include_end_term = include_end_term
+        self.range_scan_collections = range_scan_collections
+        self.consecutive_runs_per_collection = runs_per_collection
+        self.timeout = timeout
+        self.expect_range_scan_failure = expect_range_scan_failure
+        self.key = key
+        if buckets is None:
+            self.buckets = self.cluster.buckets
+
+    def update_validation_map(self, term, append_key=True,
+                              times_repeated = 1):
+        search_string = ""
+        for i in range(len(term)):
+            search_string += term[i]
+            append_term = ""
+            if append_key:
+                append_term = self.key + "-"
+            if append_term+search_string not in self.validation_map["prefix_scan"]:
+                self.validation_map["prefix_scan"][
+                    append_term+search_string] = times_repeated
+            else:
+                self.validation_map["prefix_scan"][
+                    append_term+search_string] += times_repeated
+
+    def create_range_scan_terms(self):
+        if "range_scan" not in self.validation_map:
+            self.validation_map["range_scan"] = dict()
+        range_info = [0, self.num_items]
+        key_tuple = (" ", " ")
+        self.validation_map["range_scan"][key_tuple] = 0
+        key_tuple = (":)", ";)")
+        self.validation_map["range_scan"][key_tuple] = 0
+        key_tuple = ("-1", "-1")
+        self.validation_map["range_scan"][key_tuple] = 0
+        for i in range(range_info[0], range_info[1]):
+            start_index = i
+            end_index = range_info[0]+(range_info[1]-i-1)
+            if start_index > end_index:
+                expected_count = 0
+            else:
+                expected_count = abs(end_index - start_index +
+                                     self.include_start_term +
+                                     self.include_end_term -1)
+            start_term = self.key + "-" + str(abs(start_index)).zfill(
+                self.key_size - len(self.key) - 1)
+            end_index = self.key + "-" + str(abs(end_index)).zfill(
+                self.key_size - len(self.key) - 1)
+            key_tuple = (start_term, end_index)
+            self.validation_map["range_scan"][key_tuple] = expected_count
+
+    def create_prefix_scan_queries(self,sub_doc_index=None):
+        if "prefix_scan" not in self.validation_map:
+            self.validation_map["prefix_scan"] = \
+                {"*": 0, " ": 0, "-1": 0, "(!!$$!!)": 0, " " + self.key: 0,
+                 "!" + self.key: 0, self.key + " ": 0}
+            self.update_validation_map(self.key, append_key=False,
+                                       times_repeated=self.num_items)
+            for i in range(self.num_items):
+                next_key = str(abs(i)).zfill(self.key_size - len(self.key) - 1)
+                self.update_validation_map(str(next_key), append_key=True)
+
+    def call(self):
+        try:
+            self.start_task()
+            self.exclude_collection = list()
+            if self.include_prefix_scan:
+                self.create_prefix_scan_queries(self.num_items)
+            if self.include_range_scan:
+                self.create_range_scan_terms()
+            self.log.debug("Collections selected for range scan %s" %
+                           self.range_scan_collections)
+            if self.sdk_client_pool is None:
+                self.log.debug("SDK pool not found creating clients" %
+                               self.range_scan_collections)
+                client_for_collection_list = list()
+                for bucket in self.buckets:
+                    for scope in bucket.scopes:
+                        if scope in self.skip_scopes:
+                            continue
+                        for collection in bucket.scopes[scope].collections:
+                            if str(collection) not in self.range_scan_collections:
+                                continue
+                            for _ in range(
+                                    self.consecutive_runs_per_collection):
+                                if self.sdk_client_pool is not None:
+                                    client_for_collection = self.sdk_client_pool.get_client_for_bucket \
+                                        (bucket, scope, collection)
+                                else:
+                                    client_for_collection = SDKClient(
+                                        [self.cluster.master],
+                                        bucket, scope, collection)
+                                client_for_collection_list.append(
+                                    client_for_collection)
+            else:
+                client_for_collection_list = self.sdk_client_pool
+            parallel_scan_task = {key: None for key in
+                                  range(self.parallel_task)}
+            run_parallel_tasks = True
+            iterator = 0
+            while run_parallel_tasks:
+                task_triggered = None
+                for task in parallel_scan_task:
+                    if (parallel_scan_task[task] is None or \
+                        parallel_scan_task[task].task_ended == True) and \
+                            iterator < len(client_for_collection_list):
+                        if parallel_scan_task[task] is not None \
+                                and parallel_scan_task[
+                            task].failure_map["failure_in_scan"]:
+                            self.fail_map.append(
+                                parallel_scan_task[task].failure_map)
+                        task_triggered = RangeScanOnCollection(
+                            clients=client_for_collection_list[iterator],
+                            scan_terms_map=self.validation_map,
+                            timeout=self.timeout, expect_exceptions=
+                            self.expect_exceptions,
+                            sampling_scan_param=self.num_items)
+                        self.task_manager.add_new_task(task_triggered)
+                        parallel_scan_task[task] = task_triggered
+                        iterator += 1
+                for task in parallel_scan_task:
+                    if parallel_scan_task[task] is not None \
+                            and parallel_scan_task[task].task_ended == False:
+                        break
+                else:
+                    break
+                self.sleep(30,
+                           "waiting before checking for iteration of range "
+                           "scan")
+                if self.stop_task:
+                    for task in parallel_scan_task:
+                        if parallel_scan_task[task] is not None:
+                            parallel_scan_task[task].stop_scan = True
+                    break
+            for task in parallel_scan_task:
+                if parallel_scan_task[task] is not None:
+                    if parallel_scan_task[task].failure_map["failure_in_scan"]:
+                        self.fail_map.append(
+                            parallel_scan_task[task].failure_map)
+                    self.task_manager.get_task_result(parallel_scan_task[task])
+
+        except Exception as error:
+            self.log.debug("Exception occured in range scan method %s" %
+                           error)
+            self.set_exception(error)
+
+class RangeScanOnCollection(Task):
+    def __init__(self, clients, scan_terms_map, timeout=60,
+                 expect_exceptions=[],sampling_scan_param=0):
+        super(RangeScanOnCollection, self).__init__("RangeScanOnCollection")
+        self.clients = clients
+        self.task_ended = False
+        self.sampling_scan_param = sampling_scan_param
+        self.stop_scan = False
+        self.scan_terms_map = scan_terms_map
+        self.result_map = dict()
+        self.timeout = timeout
+        self.expect_exceptions = expect_exceptions
+        self.failure_map = {"failure_in_scan": False,
+                            "prefix_scan": {},
+                            "range_scan": {},
+                            "sampling_scan":{},
+                            "exception": list()}
+    def call(self):
+        term_result_map  = list()
+        scan_dictionary_items = list()
+        for scan_type in self.scan_terms_map:
+            term_result_map.append(('', ''))
+            scan_dictionary_items.append(self.scan_terms_map[scan_type].items())
+        try:
+            for term_result_map in zip(*scan_dictionary_items):
+                if self.stop_scan:
+                    self.end_task()
+                    return
+                iterator = 0
+                if "prefix_scan" in self.scan_terms_map:
+                    result, bucket, collection, scope \
+                        = self.clients.prefix_range_scan(
+                        term_result_map[iterator][0], timeout=self.timeout)
+                    if str(result['exception']) != "" and str(result['exception']) \
+                            in self.expect_exceptions:
+                        continue
+                    if result['count'] != term_result_map[iterator][1]:
+                        self.log.debug("Prefix scan failed for term - {0} "
+                                       "scope - {1} collection - {2} time "
+                                       "taken - {3} expected-count - {4}"
+                                       " actual-count - {5}".format(
+                                       str(term_result_map[iterator][0]),
+                                       scope,
+                                       collection, str(result['time_taken']),
+                                       str(term_result_map[iterator][1]),
+                                       str(result['count'])))
+                        self.failure_map["failure_in_scan"] = True
+                        self.failure_map["prefix_scan"
+                        ][scope + "/" + collection + "/"
+                          + str(term_result_map[iterator][0])] \
+                            = "act:" + str(result['count']) + " exptd:" + \
+                              str(term_result_map[iterator][1])\
+                                  + " excep:"+ str(result['exception'])[35:58]
+                    iterator += 1
+                if "range_scan" in self.scan_terms_map:
+                    result, bucket, collection, scope = self.clients.range_scan(
+                        term_result_map[iterator][0][0],
+                        term_result_map[iterator][0][1], timeout=self.timeout)
+                    if result['count'] != term_result_map[iterator][1]:
+                        if str(result['exception'])!= "" and str(result[
+                            'exception'])\
+                                in self.expect_exceptions:
+                            continue
+                        self.log.debug("Range scan failed for start term - "
+                                       "{0} end term - {1}"
+                                       " scope - {2} collection - {3} time "
+                                       "taken - {4}  expected_count - {5}"
+                                       " actual_count - {6}".format(
+                            str(term_result_map[iterator][0][0]),
+                            str(term_result_map[iterator][0][1]), scope,
+                            collection, str(result['time_taken']),
+                            str(term_result_map[iterator][1]),
+                            str(result['count'])))
+                        self.failure_map["failure_in_scan"] = True
+                        self.failure_map["range_scan"
+                        ][scope + "/" + collection + "/" +
+                          str(term_result_map[iterator][0][0])+"-"+str(
+                            term_result_map[iterator][0][1])] \
+                            = "act:" + str(result['count']) + " exptd:" + \
+                              str(term_result_map[iterator][1]) +\
+                                  " excep:"+ str(result['exception'])[35:58]
+                    iterator += 1
+                limit = random.randint(1, self.sampling_scan_param)
+                seed =  random.randint(1, self.sampling_scan_param)
+                result,bucket, collection, scope  = \
+                self.clients.sampling_scan(limit, seed, timeout=self.timeout)
+                if result['count'] != limit:
+                    if str(result['exception']) != "" and str(result['exception']) \
+                            in self.expect_exceptions:
+                        continue
+                    self.log.debug("Sampling scan failed expected limit - "
+                                   "{0} received limit {1}".
+                                   format(limit,result['count']))
+                    self.failure_map["sampling_scan"
+                    ][scope + "/" + collection + "/" + str(limit) + str(
+                        seed)] \
+                      = "act:" + str(result['count']) + " exptd:" + \
+                          str(limit) + \
+                          " excep:" + str(result['exception'])[35:58]
+
+        except Exception as error:
+            self.log.debug("exception occurred while hitting range "
+                           "scan {0}".format(error))
+            self.failure_map["failure_in_scan"] = True
+            self.failure_map["exception"].append(error)
+        finally:
+            self.end_task()
+
+    def end_task(self):
+        self.clients.close()
+        self.task_ended = True
 
 class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generators,
@@ -5897,7 +6186,7 @@ class AutoFailoverNodesFailureTask(Task):
 
 class NodeFailureTask(Task):
     def __init__(self, task_manager, node, failure_type,
-                 task_type="induce_failure"):
+                 task_type="induce_failure", disk_location="/data"):
         super(NodeFailureTask, self).__init__("NodeFailureTask_%s_%s_%s"
                                               % (node.ip, failure_type,
                                                  task_type))
@@ -5907,6 +6196,7 @@ class NodeFailureTask(Task):
         self.task_type = task_type
         self.shell = None
         self.set_result(True)
+        self.disk_location = disk_location
 
     def _fail_disk(self, node):
         output, error = self.shell.unmount_partition(self.disk_location)

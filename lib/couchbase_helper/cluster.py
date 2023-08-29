@@ -3,7 +3,7 @@ from copy import deepcopy
 import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
-from Jython_tasks.task import MutateDocsFromSpecTask
+from Jython_tasks.task import MutateDocsFromSpecTask,ContinuousRangeScan
 from Jython_tasks.task import CompareIndexKVData
 from capella_utils.dedicated import CapellaUtils
 from common_lib import sleep
@@ -100,6 +100,32 @@ class ServerTasks(object):
 
         self.jython_task_manager.schedule(_task)
         return _task
+
+    def async_range_scan(self, cluster, task_manager, sdk_client_pool,
+                         range_scan_collections,
+                         items_per_collection,
+                         include_prefix_scan=True,
+                         include_range_scan=True, include_start_term=1,
+                         include_end_term=1, key_size=8, timeout=60,
+                         expect_exceptions=[], runs_per_collection=1,
+                         expect_range_scan_failure=True):
+        self.log.debug("Continuous range scan started")
+        task = jython_tasks.ContinuousRangeScan(cluster, task_manager,
+                                                sdk_client_pool,
+                                                items_per_collection,
+                                                range_scan_collections=
+                                                range_scan_collections,
+                                                include_prefix_scan=include_prefix_scan,
+                                                include_range_scan=include_range_scan,
+                                                include_start_term=include_start_term,
+                                                include_end_term=include_end_term,
+                                                key_size=key_size,
+                                                timeout=timeout,
+                                                expect_exceptions=expect_exceptions,
+                                                runs_per_collection=runs_per_collection,
+                                                expect_range_scan_failure=expect_range_scan_failure )
+        task_manager.add_new_task(task)
+        return task
 
     def async_load_gen_docs_from_spec(self, cluster, task_manager, loader_spec,
                                       sdk_client_pool,

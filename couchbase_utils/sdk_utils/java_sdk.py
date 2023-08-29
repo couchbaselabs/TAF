@@ -12,7 +12,8 @@ from com.couchbase.client.java.kv import \
     ReplaceOptions, \
     ReplicateTo, \
     TouchOptions, \
-    UpsertOptions
+    UpsertOptions, \
+    ScanOptions
 
 from java.time import Duration
 from java.time.temporal import ChronoUnit
@@ -129,6 +130,13 @@ class SDKOptions(object):
         if store_semantics is not None:
             options = options.storeSemantics(store_semantics)
         return options
+
+    @staticmethod
+    def get_scan_options(timeout=5,
+                         time_unit=SDKConstants.TimeUnit.SECONDS):
+        return SDKOptions.set_options(
+            ScanOptions.scanOptions(),
+            timeout=timeout, timeunit=time_unit)
 
     # Document operations' getOptions APIs
     @staticmethod

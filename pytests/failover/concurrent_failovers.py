@@ -118,6 +118,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         """
         Set doc_ttl for loading doc during failover operations
         """
+        doc_key_size = 8
+        if self.key_size is not None:
+            doc_key_size = self.key_size
         d_level = Bucket.DurabilityLevel.NONE
         if self.num_replicas != Bucket.ReplicaNum.THREE:
             random.seed(round(time()*1000))
@@ -150,6 +153,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION: 10,
                 MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION: 10,
                 MetaCrudParams.DocCrud.DELETE_PERCENTAGE_PER_COLLECTION: 10,
+                MetaCrudParams.DocCrud.DOC_KEY_SIZE: doc_key_size
             },
 
             # Doc_loading task options
@@ -297,6 +301,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
     def __perform_doc_ops(self, durability=None, validate_num_items=True):
         load_spec = self.__get_collection_load_spec()
+        if self.skip_collections_during_data_load is not None:
+            load_spec['skip_dict'] = self.skip_collections_during_data_load
         if durability and self.num_replicas != Bucket.ReplicaNum.THREE:
             load_spec[MetaCrudParams.DURABILITY_LEVEL] = durability
 
@@ -309,6 +315,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 self.cluster.buckets,
                 load_spec,
                 mutation_num=0,
+                async_load=(not validate_num_items),
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency)
 
@@ -505,7 +512,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         Common code to run failover tests
         """
         self.current_fo_strategy = None
-        load_data_after_fo = self.input.param("post_failover_data_load", True)
+        load_data_after_fo = self.input.param("post_failover_data_load", False)
         pause_rebalance_test = self.input.param("pause_rebalance_test", False)
         pre_fo_data_load = self.input.param("pre_fo_data_load", False)
         update_replica = self.input.param("update_replica", 0)

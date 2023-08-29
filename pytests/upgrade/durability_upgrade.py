@@ -12,6 +12,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper, BucketDurability
 from membase.api.rest_client import RestConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from bucket_utils.bucket_ready_functions import CollectionUtils
 from sdk_client3 import SDKClient, SDKClientPool
 from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
@@ -29,6 +30,12 @@ class UpgradeTests(UpgradeBase):
         self.verification_dict["ops_delete"] = 0
 
     def tearDown(self):
+        if self.range_scan_collections > 0:
+            self.range_scan_task.stop_task = True
+            self.task_manager.get_task_result(self.range_scan_task)
+            result = CollectionUtils.get_range_scan_results(
+                self.range_scan_task.fail_map, self.range_scan_task.expect_range_scan_failure, self.log)
+            self.assertTrue(result, "unexpected failures in range scans")
         super(UpgradeTests, self).tearDown()
 
     def __wait_for_persistence_and_validate(self):
@@ -191,6 +198,8 @@ class UpgradeTests(UpgradeBase):
 
     def test_upgrade(self):
         large_docs_start_num = 0
+        range_scan_started = False
+        range_scan_spare_node = self.spare_node
         iter = 0
 
         ### Upserting all docs to increase fragmentation value ###
@@ -212,7 +221,7 @@ class UpgradeTests(UpgradeBase):
                     self.loading_large_documents(large_docs_start_num)
 
                 ### Starting async subsequent data load just before the upgrade starts ###
-                ''' Skipping this step for online swap because data load for swap rebalance 
+                ''' Skipping this step for online swap because data load for swap rebalance
                     is started after the rebalance function is called '''
                 if self.upgrade_type != "online_swap":
                     sub_load_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
@@ -261,8 +270,8 @@ class UpgradeTests(UpgradeBase):
 
             self.sleep(10, "Wait for items to get reflected")
 
-            ### Performing sync write while the cluster is in mixed mode ###
-            ### Sync write is performed after the upgrade of each node ###
+            ## Performing sync write while the cluster is in mixed mode ###
+            ## Sync write is performed after the upgrade of each node ###
             sync_load_spec = self.bucket_util.get_crud_template_from_package(
                 self.sync_write_spec)
             CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
@@ -270,14 +279,17 @@ class UpgradeTests(UpgradeBase):
 
             sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
 
-            ### Collections are dropped and re-created while the cluster is mixed mode ###
+            ## Collections are dropped and re-created while the cluster is mixed mode ###
             self.log.info("Performing collection ops in mixed mode cluster setting...")
             sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
             sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
             sync_load_spec["doc_crud"][
                 MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
 
-            # Validate sync_write results after upgrade
+            #Validate sync_write results after upgrade
+            if self.key_size is not None:
+                sync_load_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_KEY_SIZE] = \
+                    self.key_size
             self.PrintStep("Sync Write task starting...")
             sync_write_task = self.bucket_util.run_scenario_from_spec(
                 self.task,
@@ -299,6 +311,13 @@ class UpgradeTests(UpgradeBase):
             iter += 1
 
             self.PrintStep("Upgrade of node {0} done".format(iter))
+
+            ### Starting Range Scans if enabled ##
+            if self.range_scan_collections > 0 and not range_scan_started:
+                self.cluster.master = range_scan_spare_node
+                range_scan_started = True
+                CollectionBase.range_scan_load_setup(self)
+
             if iter < self.nodes_init:
                 self.PrintStep("Starting the upgrade of the next node")
 
@@ -310,6 +329,7 @@ class UpgradeTests(UpgradeBase):
                 upgrades all of the nodes at once '''
             if self.upgrade_type == "full_offline":
                 break
+
 
         ### Printing cluster stats after the upgrade of the whole cluster ###
         self.cluster_util.print_cluster_stats(self.cluster)

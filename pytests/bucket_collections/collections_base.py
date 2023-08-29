@@ -7,10 +7,12 @@ from cb_tools.cbepctl import Cbepctl
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
+from sdk_client3 import SDKClient
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
+from bucket_utils.bucket_ready_functions import CollectionUtils
 from cb_tools.cbstats import Cbstats
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -29,12 +31,23 @@ class CollectionBase(ClusterSetup):
         self.log_setup_status("CollectionBase", "started")
 
         self.key = 'test_collection'.rjust(self.key_size, '0')
+        self.skip_collections_during_data_load = self.input.param("skip_col_dict", None)
         self.simulate_error = self.input.param("simulate_error", None)
         self.doc_ops = self.input.param("doc_ops", None)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
+        self.key_size = self.input.param("key_size", 8)
+        self.range_scan_timeout = self.input.param("range_scan_timeout",
+                                                      None)
+        self.expect_range_scan_exceptions = self.input.param(
+            "expect_range_scan_exceptions",
+            ["com.couchbase.client.core.error.CouchbaseException: "
+             "The range scan internal partition UUID could not be found on the server "])
         self.data_spec_name = self.input.param("data_spec_name",
                                                "initial_load")
+        self.range_scan_collections = self.input.param("range_scan_collections", None)
+        self.skip_range_scan_collection_mutation = self.input.param(
+            "skip_range_scan_collection_mutation", True)
         self.remove_default_collection = \
             self.input.param("remove_default_collection", False)
 
@@ -51,6 +64,7 @@ class CollectionBase(ClusterSetup):
         self.change_magma_quota = self.input.param("change_magma_quota", False)
         self.crud_batch_size = 100
         self.num_nodes_affected = 1
+        self.range_scan_task = None
         if self.num_replicas > 1:
             self.num_nodes_affected = 2
 
@@ -84,6 +98,13 @@ class CollectionBase(ClusterSetup):
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
+        if self.range_scan_task is not None:
+            self.range_scan_task.stop_task = True
+            self.task.jython_task_manager.get_task_result(self.range_scan_task)
+            result = CollectionUtils.get_range_scan_results(
+                self.range_scan_task.fail_map, self.range_scan_task.expect_range_scan_failure, self.log)
+            self.assertTrue(result, "unexpected failures in range scans")
+
         cbstat_obj = Cbstats(self.cluster.kv_nodes[0])
         for bucket in self.cluster.buckets:
             if bucket.bucketType != Bucket.Type.MEMCACHED:
@@ -156,6 +177,8 @@ class CollectionBase(ClusterSetup):
         CollectionBase.create_clients_for_sdk_pool(self)
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name,
                                                 validate_docs)
+        if self.range_scan_collections > 0:
+            CollectionBase.range_scan_load_setup(self)
 
     @staticmethod
     def create_sdk_clients(num_threads, master,
@@ -172,7 +195,7 @@ class CollectionBase(ClusterSetup):
         # Create clients in SDK client pool
         bucket_count = len(buckets)
         max_clients = num_threads
-        clients_per_bucket = int(ceil(max_clients / bucket_count))
+        clients_per_bucket = 5#int(ceil(max_clients / bucket_count))
 
         for bucket in buckets:
             req_clients = min(cols_in_bucket[bucket.name], clients_per_bucket)
@@ -368,6 +391,95 @@ class CollectionBase(ClusterSetup):
             CollectionBase.create_indexes_for_all_collections(test_obj,
                                                               sdk_client)
         sdk_client.close()
+
+    @staticmethod
+    def range_scan_load_setup(test_obj):
+        key_size = 8
+        sdk_list = []
+        include_prefix_scan = True
+        expect_range_scan_failure = True
+        include_range_scan = True
+        timeout = 60
+        expect_exceptions = []
+        range_scan_runs_per_collection = 1
+        if hasattr(test_obj, 'include_prefix_scan'):
+            include_prefix_scan = test_obj.include_prefix_scan
+        if hasattr(test_obj, 'include_range_scan'):
+            include_range_scan = test_obj.include_range_scan
+        if hasattr(test_obj, 'range_scan_timeout') and \
+                test_obj.range_scan_timeout is not None:
+            timeout = test_obj.range_scan_timeout
+        if hasattr(test_obj, 'expect_range_scan_exceptions') and \
+                test_obj.expect_range_scan_exceptions is not None:
+            expect_exceptions = test_obj.expect_range_scan_exceptions
+        if hasattr(test_obj, 'range_scan_runs_per_collection') and \
+                test_obj.range_scan_runs_per_collection is not None:
+            range_scan_runs_per_collection = test_obj.range_scan_runs_per_collection
+        if hasattr(test_obj, 'expect_range_scan_failure') and \
+                test_obj.expect_range_scan_failure is not None:
+            expect_range_scan_failure = test_obj.range_scan_runs_per_collection
+        if test_obj.key_size is not None:
+            key_size = test_obj.key_size
+
+        # selecting random collection to be use for parallel range scan
+        # avoiding selection of system once for the above
+        if test_obj.range_scan_collections > 0:
+            buckets_to_consider = []
+            dict_to_skip = dict()
+            for bucket in test_obj.cluster.buckets:
+                dict_to_skip = {
+                    bucket.name: {
+                        "scopes": {
+                            CbServer.system_scope: {
+                                "collections": {
+                                    CbServer.eventing_collection: {},
+                                    CbServer.query_collection: {},
+                                    CbServer.mobile_collection: {},
+                                    CbServer.regulator_collection: {}
+                                }
+                            }
+                        }
+                    }
+                }
+                if bucket.bucketType != Bucket.Type.EPHEMERAL:
+                    buckets_to_consider.append(bucket)
+            collections_selected_for_range_scan = \
+                test_obj.bucket_util.get_random_collections(
+                    buckets_to_consider, test_obj.range_scan_collections, 1000,
+                    1000, exclude_from=dict_to_skip)
+            collections_created = list()
+
+            # if skip_range_scan_collection_mutation is True in the test
+            # subsequent data load will skip range scan collection
+            # test must also reuse self.skip_collections_during_data_load for
+            # any subsequent data load
+            if test_obj.skip_range_scan_collection_mutation:
+                for bucket in collections_selected_for_range_scan:
+                    for scope in collections_selected_for_range_scan[bucket]['scopes']:
+                        for collection \
+                                in collections_selected_for_range_scan[bucket]['scopes'][scope]['collections']:
+                            for t_bucket in test_obj.cluster.buckets:
+                                if t_bucket.name == bucket:
+                                    sdk_list.append(SDKClient(
+                                        [test_obj.cluster.master],
+                                        t_bucket, scope, collection))
+                                    collections_created.append(collection)
+                test_obj.skip_collections_during_data_load = collections_selected_for_range_scan
+            doc_loading_spec = \
+                test_obj.bucket_util.get_bucket_template_from_package(
+                    test_obj.spec_name)
+            items_per_collection = doc_loading_spec[
+                MetaConstants.NUM_ITEMS_PER_COLLECTION]
+
+            # starting parallel range scans task
+            # teardown is handled in teardown method of this class
+            test_obj.range_scan_task = test_obj.task.async_range_scan(
+                test_obj.cluster, test_obj.task.jython_task_manager,
+                sdk_list, collections_created, items_per_collection,
+                key_size=key_size, include_range_scan=include_range_scan,
+                include_prefix_scan=include_prefix_scan, timeout=timeout,
+                expect_exceptions=expect_exceptions,
+                runs_per_collection=range_scan_runs_per_collection)
 
     @staticmethod
     def get_history_retention_load_spec(test_obj, doc_key="test_collections",
@@ -620,6 +732,9 @@ class CollectionBase(ClusterSetup):
                 target_spec["doc_crud"][
                     MetaCrudParams.DocCrud.RANDOMIZE_VALUE] \
                     = test_obj.randomize_value
+        if test_obj.key_size is not None:
+            target_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_KEY_SIZE] \
+                = test_obj.key_size
 
     def load_data_for_sub_doc_ops(self, verification_dict=None):
         new_data_load_template = \

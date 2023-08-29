@@ -58,6 +58,22 @@ class UpgradeBase(BaseTestCase):
         self.migrate_storage_backend = self.input.param("migrate_storage_backend", False)
         self.preferred_storage_mode = self.input.param("preferred_storage_mode",
                                                       Bucket.StorageBackend.magma)
+        self.range_scan_timeout = self.input.param("range_scan_timeout",
+                                                   None)
+        self.range_scan_collections = self.input.param("range_scan_collections", None)
+        self.rest = RestConnection(self.cluster.master)
+        self.server_index_to_fail = self.input.param("server_index_to_fail",
+                                                     None)
+        self.key_size = self.input.param("key_size", 8)
+        self.range_scan_task = self.input.param("range_scan_task", None)
+        self.expect_range_scan_exceptions = self.input.param("expect_range_scan_exceptions",
+                                                             ["com.couchbase.client.core.error.FeatureNotAvailableException: "
+                                                              "The cluster does not support the scan operation (Only supported"
+                                                              " with Couchbase Server 7.5 and later)."])
+        self.skip_range_scan_collection_mutation = self.input.param(
+            "skip_range_scan_collection_mutation", True)
+        self.range_scan_runs_per_collection = self.input.param(
+            "range_scan_runs_per_collection", 1)
         self.migration_procedure = self.input.param("migration_procedure", "swap_rebalance")
 
         #### Spec File Parameters ####

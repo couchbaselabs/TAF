@@ -333,6 +333,40 @@ class SDKClient(object):
         self.log.info("RAM FootPrint: {}".format(str(mem)))
         return mem
 
+    def sampling_scan(self, limit, seed, timeout=None):
+        options = None
+        if timeout is not None:
+            options = SDKOptions.get_scan_options(timeout=60)
+        data = SDKClient.doc_op.sampling_scan(self.collection, limit, seed,
+                                              options)
+        result = self.__translate_ranges_scan_results(data)
+        self.log.debug("sampling scan result for term %s" % (str(result)))
+        return result, self.bucket.name, self.collection_name, self.scope_name
+
+    def prefix_range_scan(self, term, timeout=None):
+        self.log.debug("prefix scan started!")
+        options = None
+        if timeout is not None:
+            options = SDKOptions.get_scan_options(timeout=timeout)
+        data = SDKClient.doc_op.prefix_scan_query(self.collection, term,
+                                                  options)
+        result = self.__translate_ranges_scan_results(data)
+        self.log.debug("prefix scan result for term %s %s" % (str(result),
+                                                              term))
+        return result, self.bucket.name, self.collection_name, self.scope_name
+
+    def range_scan(self, start_term, end_term, include_start=True,
+                   include_end=True, timeout=None):
+        options = None
+        if timeout is not None:
+            options = SDKOptions.get_scan_options(timeout=timeout)
+        data = SDKClient.doc_op.range_scan_query(self.collection,
+                                                 start_term, end_term,
+                                                 include_start,
+                                                 include_end, options)
+        result = self.__translate_ranges_scan_results(data)
+        return result, self.bucket.name, self.collection_name, self.scope_name
+
     def close(self):
         self.log.debug("Closing SDK for bucket '%s'" % self.bucket)
         if self.cluster:
@@ -385,6 +419,15 @@ class SDKClient(object):
                 " | retryReasons:" + str(req_context.retryReasons())
         except Exception:
             pass
+
+    @staticmethod
+    def __translate_ranges_scan_results(data):
+        result = dict()
+        result['time_taken'] = data['timeTaken']
+        result['count'] = int(data['count'])
+        result['exception'] = data['exception']
+        result['status'] = data['status']
+        return result
 
     @staticmethod
     def __translate_upsert_multi_results(data):

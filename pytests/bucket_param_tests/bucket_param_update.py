@@ -4,62 +4,97 @@ from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
 from membase.api.rest_client import RestConnection
 from couchbase_helper.durability_helper import DurabilityHelper
+from bucket_utils.bucket_ready_functions import CollectionUtils
+from pytests.bucket_collections.collections_base import CollectionBase
+from collections_helper.collections_spec_constants import MetaCrudParams
 from sdk_exceptions import SDKException
 
 
 class BucketParamTest(ClusterSetup):
     def setUp(self):
         super(BucketParamTest, self).setUp()
-        self.create_bucket(self.cluster)
 
         self.new_replica = self.input.param("new_replica", 1)
+        self.new_ram_quota = self.input.param("new_ram_quota", None)
+        self.update_history_retention_collection_default = self.input.param(
+            "update_history_retention_collection_default", None)
         self.src_bucket = self.bucket_util.get_all_buckets(self.cluster)
 
         # Reset active_resident_threshold to avoid further data load as DGM
         self.active_resident_threshold = 0
-        self.def_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+        self.spec_name = self.input.param("bucket_spec", None)
+        self.range_scan_timeout = self.input.param("range_scan_timeout",
+                                                   None)
+        self.range_scan_collections = self.input.param(
+            "range_scan_collections", None)
+        self.key_size = self.input.param("key_size", 8)
+        self.include_prefix_scan = self.input.param("include_prefix_scan",
+                                                    True)
+        self.include_range_scan = self.input.param("include_range_scan",
+                                                    True)
+        self.range_scan_task = self.input.param("range_scan_task", None)
+        self.skip_range_scan_collection_mutation = self.input.param("skip_range_scan_collection_mutation", True)
+        if self.spec_name is None:
+            self.create_bucket(self.cluster)
+            self.def_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
+            doc_create = doc_generator(self.key, 0, self.num_items,
+                                       key_size=self.key_size,
+                                       doc_size=self.doc_size,
+                                       doc_type=self.doc_type,
+                                       vbuckets=self.cluster.vbuckets)
 
-        doc_create = doc_generator(self.key, 0, self.num_items,
-                                   key_size=self.key_size,
-                                   doc_size=self.doc_size,
-                                   doc_type=self.doc_type,
-                                   vbuckets=self.cluster.vbuckets)
-
-        if self.atomicity:
-            task = self.task.async_load_gen_docs_atomicity(
-                self.cluster, self.cluster.buckets, doc_create,
-                "create", 0, batch_size=20, process_concurrency=8,
-                replicate_to=self.replicate_to,
-                persist_to=self.persist_to,
-                timeout_secs=self.sdk_timeout,
-                transaction_timeout=self.transaction_timeout,
-                commit=self.transaction_commit,
-                durability=self.durability_level,
-                sync=self.sync)
-            self.task.jython_task_manager.get_task_result(task)
-        else:
-            for bucket in self.cluster.buckets:
-                task = self.task.async_load_gen_docs(
-                    self.cluster, bucket, doc_create, "create", 0,
-                    persist_to=self.persist_to, replicate_to=self.replicate_to,
-                    durability=self.durability_level,
+            if self.atomicity:
+                task = self.task.async_load_gen_docs_atomicity(
+                    self.cluster, self.cluster.buckets, doc_create,
+                    "create", 0, batch_size=20, process_concurrency=8,
+                    replicate_to=self.replicate_to,
+                    persist_to=self.persist_to,
                     timeout_secs=self.sdk_timeout,
-                    batch_size=10, process_concurrency=8)
+                    transaction_timeout=self.transaction_timeout,
+                    commit=self.transaction_commit,
+                    durability=self.durability_level,
+                    sync=self.sync)
                 self.task.jython_task_manager.get_task_result(task)
+            else:
+                for bucket in self.cluster.buckets:
+                    task = self.task.async_load_gen_docs(
+                        self.cluster, bucket, doc_create, "create", 0,
+                        persist_to=self.persist_to,
+                        replicate_to=self.replicate_to,
+                        durability=self.durability_level,
+                        timeout_secs=self.sdk_timeout,
+                        batch_size=10, process_concurrency=8)
+                    self.task.jython_task_manager.get_task_result(task)
 
+            if not self.atomicity:
+                self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                             self.cluster.buckets)
+                self.bucket_util.verify_stats_all_buckets(self.cluster,
+                                                          self.num_items)
+        else:
+            self.collection_setup()
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Verify initial doc load count
-        if not self.atomicity:
-            self.bucket_util._wait_for_stats_all_buckets(self.cluster,
-                                                         self.cluster.buckets)
-            self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                      self.num_items)
         self.log.info("==========Finished Bucket_param_test setup========")
 
     def tearDown(self):
+        if self.range_scan_task is not None:
+            self.range_scan_task.stop_task = True
+            self.task.jython_task_manager.get_task_result(self.range_scan_task)
+            result = CollectionUtils.get_range_scan_results(
+                self.range_scan_task.fail_map,
+                self.range_scan_task.expect_range_scan_failure, self.log)
+            self.assertTrue(result, "unexpected failures in range scans")
         super(BucketParamTest, self).tearDown()
+
+    def collection_setup(self):
+        CollectionBase.deploy_buckets_from_spec_file(self)
+        CollectionBase.create_clients_for_sdk_pool(self)
+        CollectionBase.load_data_from_spec_file(self, "initial_load")
+        if self.range_scan_collections and self.range_scan_collections > 0:
+            CollectionBase.range_scan_load_setup(self)
 
     def load_docs_atomicity(self, doc_ops, start_doc_for_insert, doc_count,
                             doc_update, doc_create, doc_delete):
@@ -566,6 +601,43 @@ class BucketParamTest(ClusterSetup):
             bucket_helper,
             range(min(replica_count, self.nodes_init)-2, -1, -1),
             start_doc_for_insert)
+
+    def test_bucket_param_update_with_range_scan(self):
+        doc_load = self.input.param("doc_load", True)
+        validate_doc_load = self.input.param("validate_doc_load", False)
+        bucket_durability = self.input.param("bucket_durability", None)
+        task_list = []
+        if doc_load:
+            doc_loading_spec = \
+                self.bucket_util.get_crud_template_from_package(
+                    "volume_test_load")
+            doc_loading_spec[
+                MetaCrudParams.DocCrud.DOC_KEY_SIZE] = self.key_size
+            if self.skip_range_scan_collection_mutation:
+                doc_loading_spec['skip_dict'] = self.skip_collections_during_data_load
+            doc_loading_task = \
+                self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.cluster.buckets,
+                    doc_loading_spec,
+                    process_concurrency=self.process_concurrency,
+                    async_load=True)
+        bucket_helper = BucketHelper(self.cluster.master)
+        for bucket in self.cluster.buckets:
+            bucket_helper.change_bucket_props(
+                bucket, replicaNumber=self.new_replica,
+                ramQuotaMB=self.new_ram_quota,
+                history_retention_collection_default=self.update_history_retention_collection_default,
+                bucket_durability=bucket_durability)
+        rebalance = self.task.async_rebalance(self.cluster, [], [])
+        self.task.jython_task_manager.get_task_result(rebalance)
+        self.bucket_util.print_bucket_stats(self.cluster)
+        if doc_load:
+            self.task.jython_task_manager.get_task_result(doc_loading_task)
+            if validate_doc_load:
+                self.assertTrue(doc_loading_task.result,
+                                "Doc load failed")
 
     def test_MB_34947(self):
         # Update already Created docs with async_writes

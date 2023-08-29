@@ -162,7 +162,7 @@ class DocLoaderUtils(object):
                           generic_key, mutation_num=0,
                           target_vbuckets="all", type="default",
                           doc_size=256, randomize_value=False,
-                          randomize_doc_size=False):
+                          randomize_doc_size=False, key_size=8):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -219,7 +219,8 @@ class DocLoaderUtils(object):
                                      mutation_type=op_type,
                                      mutate=mutation_num,
                                      randomize_value=randomize_value,
-                                     randomize_doc_size=randomize_doc_size)
+                                     randomize_doc_size=randomize_doc_size,
+                                     key_size=key_size)
         else:
             json_generator = JsonGenerator()
             if type == "employee":
@@ -424,7 +425,8 @@ class DocLoaderUtils(object):
                                         mutation_num=mutation_num,
                                         type=c_crud_data[op_type]["doc_gen_type"],
                                         randomize_value=randomize_value,
-                                        randomize_doc_size=randomize_doc_size)
+                                        randomize_doc_size=randomize_doc_size,
+                                        key_size=doc_key_size)
                             else:
                                 c_crud_data[op_type]["xattr_test"] = \
                                     is_xattr_test
@@ -459,6 +461,7 @@ class DocLoaderUtils(object):
         # Fetch doc_size to use for doc_loading
         doc_size = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.DOC_SIZE, 256)
+        doc_key_size = input_spec["doc_crud"].get(MetaCrudParams.DocCrud.DOC_KEY_SIZE, 8)
         # Fetch randomize_value to use for doc_loading
         randomize_value = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.RANDOMIZE_VALUE, False)
@@ -526,17 +529,21 @@ class DocLoaderUtils(object):
         for op_type in spec_percent_data.keys():
             if isinstance(spec_percent_data[op_type], int):
                 spec_percent_data[op_type] = (spec_percent_data[op_type], 1)
-
+        exclude_dict = dict()
+        if 'skip_dict' in input_spec:
+            exclude_dict = input_spec['skip_dict']
         doc_crud_spec = BucketUtils.get_random_collections(
             buckets,
             num_collection_to_load,
             num_scopes_to_consider,
-            num_buckets_to_consider)
+            num_buckets_to_consider,
+            exclude_from=exclude_dict)
         sub_doc_crud_spec = BucketUtils.get_random_collections(
             buckets,
             num_collection_to_load,
             num_scopes_to_consider,
-            num_buckets_to_consider)
+            num_buckets_to_consider,
+            exclude_from=exclude_dict)
 
         create_load_gens(doc_crud_spec)
 
@@ -1175,6 +1182,35 @@ class DocLoaderUtils(object):
 
 
 class CollectionUtils(DocLoaderUtils):
+    @staticmethod
+    def get_range_scan_results(range_scan_result, expect_failure, log):
+        """ segregates range scan count fails with exception and visualise
+        them in tabular format accepts list of dict in following format
+        [failure_map = {
+            "failure_in_scan": Bool,
+            "prefix_scan": dict,
+            "sampling_scan":dict,
+            "range_scan": dict,
+            "exception": list}]
+        """
+        log.debug("range scan result %s" % str(range_scan_result))
+        if len(range_scan_result) == 0:
+            return True
+        table = TableView(log.info)
+        table.set_headers(["Type", "Scan Detail"])
+        for result in range_scan_result:
+            if len(result["prefix_scan"]) > 0:
+                table.add_row(["prefix_scan", result["prefix_scan"]])
+            if len(result["range_scan"]) > 0:
+                table.add_row(["range_scan", result["range_scan"]])
+            if len(result["sampling_scan"]) > 0:
+                table.add_row(["sampling_scan", result["sampling_scan"]])
+
+        table.display("Range scan results")
+        if expect_failure:
+            return True
+        return False
+
     @staticmethod
     def get_collection_obj(scope, collection_name):
         """
@@ -1839,10 +1875,13 @@ class BucketUtils(ScopeUtils):
         exclude_collections = list()
 
         for b_name, scope_dict in exclude_from.items():
-            for scope_name, collection_dict in scope_dict["scopes"].items():
-                for c_name in collection_dict["collections"].keys():
-                    exclude_collections.append("%s:%s:%s"
-                                               % (b_name, scope_name, c_name))
+            if "scopes" in scope_dict:
+                for scope_name, collection_dict in scope_dict["scopes"].items():
+                    if "collections" in collection_dict:
+                        for c_name in collection_dict["collections"].keys():
+                            exclude_collections.append("%s:%s:%s"
+                                                       % (b_name, scope_name,
+                                                           c_name))
 
         for bucket_name, scope_dict in selected_buckets.items():
             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
@@ -5900,7 +5939,8 @@ class BucketUtils(ScopeUtils):
                     created_scope_collection_details = dict()
                     for _ in range(scopes_num):
                         scope_name = BucketUtils.get_random_name(
-                            prefix="scope", counter_obj=scope_counter)
+                            prefix='scope',
+                            counter_obj=scope_counter)
                         ScopeUtils.create_scope(cluster.master,
                                                 bucket,
                                                 {"name": scope_name})
@@ -5912,7 +5952,7 @@ class BucketUtils(ScopeUtils):
                                 for _ in range(collection_count):
                                     collection_name = \
                                         BucketUtils.get_random_name(
-                                            prefix="collection",
+                                            prefix='collection',
                                             counter_obj=col_counter)
                                     futures[executor.submit(
                                         BucketUtils.create_collection,
@@ -6082,21 +6122,39 @@ class BucketUtils(ScopeUtils):
         # Fetch random Collections to drop
         exclude_from = copy.deepcopy(cols_to_flush)
         # Code to avoid removing collections under the scope '_system'
+        dict_to_update = dict()
         for b in buckets:
-            dict_to_update = {
-                b.name: {
-                    "scopes": {
-                        CbServer.system_scope: {
-                            "collections": {
-                                CbServer.eventing_collection: {},
-                                CbServer.query_collection: {},
-                                CbServer.mobile_collection: {},
-                                CbServer.regulator_collection: {}
-                            }
-                        }
-                    }
+            dict_to_update[b.name] = dict()
+            dict_to_update[b.name]["scopes"] = dict()
+            dict_to_update[b.name]["scopes"][CbServer.system_scope] = {
+                "collections": {
+                    CbServer.eventing_collection: {},
+                    CbServer.query_collection: {},
+                    CbServer.mobile_collection: {},
+                    CbServer.regulator_collection: {},
                 }
+
             }
+            for scope in b.scopes:
+                for collection in b.scopes[scope].collections:
+                    if 'skip_dict' in input_spec and b.name in input_spec[
+                        'skip_dict'] and 'scopes' in input_spec[
+                        'skip_dict'][b.name] and scope in input_spec[
+                        'skip_dict'][b.name]['scopes'] and 'collections' in \
+                            input_spec['skip_dict'][b.name]['scopes'][scope] \
+                            and collection in input_spec['skip_dict'][b.name][
+                                               'scopes'][scope]['collections']:
+                        if 'scopes' not in dict_to_update[b.name]:
+                            dict_to_update[b.name]['scopes'] = dict()
+                        if scope not in dict_to_update[b.name]['scopes']:
+                            dict_to_update[b.name]['scopes'][scope] = dict()
+                        if 'collections' not in dict_to_update[b.name][
+                            'scopes'][scope]:
+                            dict_to_update[b.name]['scopes'][scope]['collections'] = dict()
+                        if collection not in dict_to_update[b.name][
+                            'scopes'][scope]['collections']:
+                            dict_to_update[b.name]['scopes'][scope]['collections'][
+                                collection] = dict()
             exclude_from.update(dict_to_update)
         # If recreating dropped collections then exclude dropping default collection
         if input_spec.get(MetaCrudParams.COLLECTIONS_TO_RECREATE, 0):
@@ -6108,8 +6166,7 @@ class BucketUtils(ScopeUtils):
                     exclude_from[bucket.name]["scopes"][CbServer.default_scope] = dict()
                     exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"] = dict()
                 exclude_from[bucket.name]["scopes"][CbServer.default_scope]["collections"][
-                    CbServer.default_collection] = \
-                    dict()
+                    CbServer.default_collection] = dict()
         cols_to_drop = BucketUtils.get_random_collections(
             buckets,
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_DROP, 0),
@@ -6163,7 +6220,7 @@ class BucketUtils(ScopeUtils):
             input_spec.get(MetaCrudParams.COLLECTIONS_TO_RECREATE, 0),
             input_spec.get(MetaCrudParams.SCOPES_CONSIDERED_FOR_OPS, "all"),
             input_spec.get(MetaCrudParams.BUCKET_CONSIDERED_FOR_OPS, "all"),
-            consider_only_dropped=True)
+            consider_only_dropped=True, exclude_from=exclude_from)
         perform_collection_operation("recreate", collections_to_recreate)
         DocLoaderUtils.log.info("Done Performing scope/collection specific "
                                 "operations")
