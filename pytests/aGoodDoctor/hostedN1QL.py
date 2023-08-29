@@ -29,6 +29,7 @@ from com.couchbase.client.core.deps.io.netty.handler.codec import string
 from com.couchbase.client.java.json import JsonObject
 from com.github.javafaker import Faker
 from Cb_constants.CBServer import CbServer
+from connections.Rest_Connection import RestConnection
 
 letters = ascii_uppercase + ascii_lowercase + digits
 faker = Faker()
@@ -370,6 +371,51 @@ class DoctorN1QL():
         for index, details in self.indexes.items():
             build_query = "DROP INDEX %s on `%s`" % (index, details[4])
             self.execute_statement_on_n1ql(details[1], build_query)
+
+    def log_index_stats(self, print_duration=300):
+        st_time = time.time()
+        while not self.stop_run:
+            self.table = TableView(self.log.info)
+            self.table.set_headers(["Node",
+                                    "memory_quota",
+                                    "memory_used",
+                                    "avg_resident_percent",
+                                    "avg_drain_rate",
+                                    "total_data_size",
+                                    "total_disk_size",
+                                    "total_requests",
+                                    "total_rows_scanned",
+                                    "total_rows_returned"
+                                    ])
+            for node in self.cluster.index_nodes:
+                try:
+                    rest = RestConnection(node)
+                    resp = rest.urllib_request(rest.indexUrl + "stats")
+                    content = json.loads(resp.content)
+                    self.table.add_row([
+                        node.ip,
+                        content["mem_quota"]/1024/1024/1024,
+                        content["mem_used"]/1024/1024/1024,
+                        content["avg_rr"],
+                        content["avg_dr"],
+                        content["#data_size"]/1024/1024/1024,
+                        content["#disk_size"]/1024/1024/1024,
+                        content["#requests"],
+                        content["#rows_scanned"],
+                        content["#rows_returned"]
+                        ])
+                except Exception as e:
+                    self.log.critical(e)
+
+            if st_time + print_duration < time.time():
+                self.table.display("Index Statistics")
+                st_time = time.time()
+            time.sleep(300)
+
+    def start_index_stats(self):
+        self.stop_run = False
+        th = threading.Thread(target=self.log_index_stats)
+        th.start()
 
 
 class QueryLoad:

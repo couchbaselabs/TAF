@@ -560,6 +560,7 @@ class Murphy(BaseTestCase, OPD):
                     ql = QueryLoad(bucket)
                     ql.start_query_load()
                     self.ql.append(ql)
+            self.drIndex.start_index_stats()
 
         if self.cluster.eventing_nodes:
             self.drEventing.create_eventing_functions()
