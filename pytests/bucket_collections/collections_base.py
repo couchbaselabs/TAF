@@ -50,8 +50,7 @@ class CollectionBase(ClusterSetup):
             self.doc_ops = self.doc_ops.split(';')
 
         self.durability_helper = DurabilityHelper(
-            self.log, len(self.cluster.nodes_in_cluster),
-            self.durability_level)
+            self.log, len(self.cluster.kv_nodes), self.durability_level)
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
@@ -76,7 +75,7 @@ class CollectionBase(ClusterSetup):
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
-        cbstat_obj = Cbstats(self.cluster.master)
+        cbstat_obj = Cbstats(self.cluster.kv_nodes[0])
         for bucket in self.cluster.buckets:
             if bucket.bucketType != Bucket.Type.MEMCACHED:
                 result = cbstat_obj.all_stats(bucket.name)
