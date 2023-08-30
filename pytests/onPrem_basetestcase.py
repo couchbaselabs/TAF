@@ -1102,7 +1102,11 @@ class ClusterSetup(OnPremBaseTest):
         if self.services_init:
             services = list()
             for service in self.services_init.split("-"):
-                services.append(service.replace(":", ","))
+                # To handle rebalance-in of serviceless node
+                if str(service) == "None":
+                    services.append("")
+                else:
+                    services.append(service.replace(":", ","))
         services = services[1:] \
             if services is not None and len(services) > 1 else None
 
