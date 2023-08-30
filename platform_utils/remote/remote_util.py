@@ -1441,7 +1441,7 @@ class RemoteMachineShellConnection:
     def find_windows_info(self):
         if self.remote:
             found = self.find_file("/cygdrive/c/tmp", "windows_info.txt")
-            if isinstance(found, basestring):
+            if isinstance(found, str):
                 if self.remote:
                     try:
                         self.log.info("get windows information")
@@ -1481,6 +1481,8 @@ class RemoteMachineShellConnection:
             info["os_name"] = 2008
         elif systeminfo["OS Name"].find("2016") != -1:
             info["os_name"] = 2016
+        elif systeminfo["OS Name"].find("2019") != -1:
+                info["os_name"] = 2019
         if "System Type" in systeminfo:
             info["os_arch"] = systeminfo["System Type"].find("64") and "x86_64" or "NONE"
         info.update(systeminfo)
@@ -3394,15 +3396,14 @@ class RemoteMachineShellConnection:
                         line = file.readline()
 
                     os_distro_dict = {'ubuntu': 'Ubuntu', 'debian': 'Ubuntu', 'mint': 'Ubuntu',
-                        'amazon linux ami': 'CentOS', 'centos': 'CentOS', 'opensuse': 'openSUSE',
-                        'red': 'Red Hat', 'suse': 'SUSE', 'oracle': 'Oracle Linux', 'openshift' : 'CentOS',
-                        'almalinux': 'AlmaLinux OS', 'rocky': 'Rocky Linux'}
+                        'amazon linux 2023': 'CentOS', 'amazon linux 2': 'CentOS', 'centos': 'CentOS',
+                        'opensuse': 'openSUSE', 'red': 'Red Hat', 'suse': 'SUSE', 'oracle': 'Oracle Linux',
+                        'openshift' : 'CentOS', 'almalinux': 'AlmaLinux OS', 'rocky': 'Rocky Linux'}
                     os_shortname_dict = {'ubuntu': 'ubuntu', 'debian': 'debian', 'mint': 'ubuntu',
-                        'amazon linux ami': 'amzn2', 'centos': 'centos', 'opensuse': 'suse',
+                        'amazon linux 2023': 'al2023', 'amazon linux 2': 'amzn2', 'centos': 'centos', 'opensuse': 'suse',
                         'red': 'rhel', 'suse': 'suse', 'oracle': 'oel', 'openshift' : 'centos',
                         'almalinux': 'alma', 'rocky': 'rocky'}
-                    # self.log.debug("os_pretty_name:" + os_pretty_name)
-                    if os_pretty_name:
+                    if os_pretty_name and "Amazon Linux" not in os_pretty_name:
                         os_name = os_pretty_name.split(' ')[0].lower()
                         os_distro = os_distro_dict[os_name]
                         if os_name != 'ubuntu':
@@ -3411,8 +3412,8 @@ class RemoteMachineShellConnection:
                             os_version = os_shortname_dict[os_name] + " " + os_version
                         if os_distro:
                             is_linux_distro = True
-                    self.log.debug("os_distro: " + os_distro + ", os_version: " + os_version +
-                                   ", is_linux_distro: " + str(is_linux_distro))
+                        self.log.info("os_distro: " + os_distro + ", os_version: " + os_version +
+                                      ", is_linux_distro: " + str(is_linux_distro))
                     file.close()
                     # now remove this file
                     os.remove(filename)
@@ -3426,9 +3427,49 @@ class RemoteMachineShellConnection:
                 arch = "local"
                 ext = "local"
                 filenames = []
+            """ for Amazon Linux 2 only"""
+            for name in filenames:
+                if name.strip("\n") == 'system-release' and os_distro == "":
+                    # it's a amazon linux 2_distro . let's download this file
+                    filename = 'amazon-linux2-release-{0}'.format(uuid.uuid4())
+                    self.get_file('/etc', 'system-release', "./{}".format(filename))
+                    file = open(filename)
+                    etc_issue = ''
+                    # let's only read the first line
+                    for line in file:
+                        # for SuSE that has blank first line
+                        if line.rstrip('\n'):
+                            etc_issue = line
+                            break
+                            # strip all extra characters
+                    if etc_issue.lower().find('oracle linux') != -1:
+                        os_distro = 'Oracle Linux'
+                        for i in etc_issue:
+                            if i.isdigit():
+                                dist_version = i
+                                break
+                        os_version = "oel{}".format(dist_version)
+                        is_linux_distro = True
+                        break
+                    elif etc_issue.lower().find('amazon linux 2') != -1 or \
+                         etc_issue.lower().find('amazon linux release 2') != -1:
+                        if etc_issue.lower().find('amazon linux release 2023') != -1:
+                            os_distro = 'Amazon Linux 2023'
+                        else:
+                            os_distro = 'Amazon Linux 2'
+                        etc_issue = etc_issue.rstrip('\n').rstrip(' ').rstrip('\\l').rstrip(' ').rstrip('\\n').rstrip(
+                            ' ')
+                        os_version = etc_issue
+                        is_linux_distro = True
+                        file.close()
+                        # now remove this file
+                        os.remove(filename)
+                        self.log.info("os_distro: " + os_distro + ", os_version: " + os_version +
+                                      ", is_linux_distro: " + str(is_linux_distro))
+                        break
             """ for centos 7 only """
             for name in filenames:
-                if name.rstrip('\n') == "redhat-release" and os_distro == "":
+                if name.strip("\n") == "redhat-release" and os_distro == "":
                     filename = 'redhat-release-{0}'.format(uuid.uuid4())
                     if self.remote:
                         self.get_file('/etc', 'redhat-release', "./%s" % filename)
@@ -3500,17 +3541,18 @@ class RemoteMachineShellConnection:
             for line in text:
                 os_arch += line.rstrip()
                 # at this point we should know if its a linux or windows ditro
-            ext = {'Ubuntu'         : 'deb',
-                   'CentOS'         : 'rpm',
-                   'Red Hat'        : 'rpm',
-                   'Mac'            : 'dmg',
-                   'Debian'         : 'deb',
-                   'openSUSE'       : 'rpm',
-                   'SUSE'           : 'rpm',
-                   'Oracle Linux'   : 'rpm',
-                   'Amazon Linux 2' : 'rpm',
-                   'AlmaLinux OS'   : 'rpm',
-                   'Rocky Linux'    : 'rpm'}.get(os_distro, '')
+            ext = {'Ubuntu'             : 'deb',
+                   'CentOS'             : 'rpm',
+                   'Red Hat'            : 'rpm',
+                   'Mac'                : 'dmg',
+                   'Debian'             : 'deb',
+                   'openSUSE'           : 'rpm',
+                   'SUSE'               : 'rpm',
+                   'Oracle Linux'       : 'rpm',
+                   'Amazon Linux 2023'  : 'rpm',
+                   'Amazon Linux 2'     : 'rpm',
+                   'AlmaLinux OS'       : 'rpm',
+                   'Rocky Linux'        : 'rpm'}.get(os_distro, '')
             arch = {'i686': 'x86',
                     'i386': 'x86'}.get(os_arch, os_arch)
 
