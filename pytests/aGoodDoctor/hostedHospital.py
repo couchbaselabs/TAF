@@ -406,6 +406,7 @@ class Murphy(BaseTestCase, OPD):
                     pass
             else:
                 self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
+                self.sleep(30)
 
     def initial_setup(self):
         self.monitor_query_status()

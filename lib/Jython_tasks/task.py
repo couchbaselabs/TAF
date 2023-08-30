@@ -405,8 +405,13 @@ class RebalanceTaskCapella(Task):
                 self.log.critical(e)
                 self.result = False
                 return self.result
-        self.servers = DedicatedUtils.get_nodes(
-            self.cluster.pod, self.cluster.tenant, self.cluster.id)
+        count = 5
+        while count > 0:
+            self.servers = DedicatedUtils.get_nodes(
+                self.cluster.pod, self.cluster.tenant, self.cluster.id)
+            count -= 1
+            if self.servers:
+                break
         nodes = list()
         for server in self.servers:
             temp_server = TestInputServer()
@@ -421,7 +426,10 @@ class RebalanceTaskCapella(Task):
             temp_server.type = "dedicated"
             nodes.append(temp_server)
 
-        self.cluster.refresh_object(nodes)
+        if self.servers:
+            self.cluster.refresh_object(nodes)
+        else:
+            raise Exception("RebalanceTask: Capella API to fetch nodes failed!!")
         return self.result
 
 
