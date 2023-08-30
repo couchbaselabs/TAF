@@ -72,7 +72,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 in [DiskError.DISK_FULL, DiskError.DISK_FAILURE]:
             error_sim = DiskError(self.log, self.task_manager,
                                   self.cluster.master, target_nodes,
-                                  60, 0, False, 120,
+                                  60, 0, False, 10,
                                   disk_location="/data")
             error_sim.create(action=self.simulate_error)
         else:

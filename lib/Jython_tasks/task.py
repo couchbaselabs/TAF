@@ -5479,7 +5479,7 @@ class AutoFailoverNodesFailureTask(Task):
         self.timeout_buffer = timeout_buffer
         self.current_failure_node = self.servers_to_fail[0]
         self.max_time_to_wait_for_failover = self.timeout + \
-                                             self.timeout_buffer + 180
+                                             self.timeout_buffer
         self.disk_timeout = disk_timeout
         self.disk_location = disk_location
         self.disk_size = disk_size
@@ -6071,8 +6071,9 @@ class ConcurrentFailoverTask(Task):
 
     def wait_for_fo_attempt(self):
         start_time = time.time()
-        expect_fo_after_time = start_time + self.timeout
-        while int(time.time()) < expect_fo_after_time:
+        expect_fo_after_time = start_time + self.timeout - 0.5
+        max_fo_time_allowed = expect_fo_after_time + 2
+        while time.time() < expect_fo_after_time:
             curr_fo_settings = self.rest.get_autofailover_settings()
             if self.initial_fo_settings.count != curr_fo_settings.count:
                 self.test_log.critical("Auto failover triggered before "
@@ -6080,6 +6081,10 @@ class ConcurrentFailoverTask(Task):
                                        % (self.initial_fo_settings.count,
                                           curr_fo_settings.count))
                 self.set_result(False)
+        if time.time() > max_fo_time_allowed:
+            self.test_log_critical("Auto failover triggered outside the "
+                                   "timeout window")
+            self.set_result(False)
 
     def call(self):
         self.start_task()
@@ -6107,7 +6112,7 @@ class ConcurrentFailoverTask(Task):
 
             if self.result and self.monitor_failover:
                 self.log.info("Wait for failover to actually start running")
-                timeout = int(time.time()) + 15
+                timeout = time.time() + 5
                 task_id_changed = False
                 while not task_id_changed and int(time.time()) < timeout:
                     server_task = self.rest.ns_server_tasks(

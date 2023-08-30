@@ -325,14 +325,16 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
     def get_nodes_to_fail(self, services_to_fail, dynamic_fo_method=False):
         nodes = dict()
+        master_fo = False
         # Update the list of service-nodes mapping in the cluster object
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
         nodes_in_cluster = self.rest.get_nodes()
         for services in services_to_fail:
             node_services = set(services.split("_"))
+            # To handle serviceless node failover, force creating a set
+            if node_services == {"None"}:
+                node_services = set()
             for index, node in enumerate(nodes_in_cluster):
-                if node.ip == self.cluster.master.ip:
-                    continue
                 if node_services == set(node.services):
                     fo_type = self.failover_method
                     if dynamic_fo_method:
@@ -342,7 +344,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     nodes[node] = fo_type
                     # Remove the node to be failed to avoid double insertion
                     nodes_in_cluster.pop(index)
+                    if node.ip == self.cluster.master.ip:
+                        master_fo = True
                     break
+        if master_fo:
+            # Assign new cluster.master to handle rest connections
+            self.cluster.master = [
+                server for server in self.cluster.nodes_in_cluster
+                if nodes_in_cluster[0].ip == server.ip][0]
         return nodes
 
     def validate_failover_settings(self, enabled, timeout, count, max_count):
@@ -460,6 +469,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.assertTrue(reb_result, "Hard failover failed")
         except Exception as e:
             self.log.error("Exception occurred: %s" % str(e))
+            raise e
         finally:
             # Disable auto-fo after the expected time limit
             self.rest.update_autofailover_settings(
