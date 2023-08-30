@@ -25,6 +25,28 @@ class CbCli(CbCmdBase):
             return self.port - 10000
         return self.port
 
+    def add_node(self, server, service):
+        """
+        Add nodes to the cluster with given service
+        """
+        server = "https://{}:{}".format(server.ip, CbServer.ssl_port)
+        cluster_ip = "{}:{}".format(self.shellConn.ip, self.port)
+        no_ssl_verify_flag = ""
+        if CbServer.use_https:
+            cluster_ip = "https://{}".format(cluster_ip)
+            no_ssl_verify_flag = "--no-ssl-verify"
+        cmd = "{0} server-add -c {1} -u {2} -p {3} --server-add {4} " \
+              "--server-add-username {2} --server-add-password {3} " \
+              "--services {5} {6}" \
+              .format(self.cbstatCmd, cluster_ip,
+                      self.username, self.password,
+                      server, service,
+                      no_ssl_verify_flag)
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception(str(error))
+        return output
+
     def create_bucket(self, bucket_dict, wait=False):
         """
         Cli bucket-create command support
