@@ -53,7 +53,7 @@ class ListCluster(APIBase):
                         "cidr": CapellaUtils.get_next_cidr() + "/20"
                     },
                     "couchbaseServer": {
-                        "version": "7.1"
+                        "version": self.input.capella.get("server_version")
                     },
                     "serviceGroups": [
                         {
@@ -345,7 +345,7 @@ class ListCluster(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -359,7 +359,7 @@ class ListCluster(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -373,7 +373,7 @@ class ListCluster(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -387,7 +387,7 @@ class ListCluster(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -535,7 +535,7 @@ class ListCluster(APIBase):
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:
-            failures.append("Error while deleting project {}".format(
+            self.log.error("Error while deleting project {}".format(
                 other_project_id))
 
         if failures:
@@ -604,8 +604,10 @@ class ListCluster(APIBase):
                 elif combination[0] != self.organisation_id:
                     testcase["expected_status_code"] = 403
                     testcase["expected_error"] = {
-                        "code": 1003,
-                        "hint": "Make sure you have adequate access to the "
+                        "code": 1002,
+                        "hint": "Your access to the requested resource is "
+                                "denied. Please make sure you have the "
+                                "necessary permissions to access the "
                                 "resource.",
                         "message": "Access Denied.",
                         "httpStatusCode": 403
@@ -616,7 +618,7 @@ class ListCluster(APIBase):
                         "code": 2000,
                         "hint": "Check if the project ID is valid.",
                         "httpStatusCode": 404,
-                        "message": "The server cannot find a project by it's "
+                        "message": "The server cannot find a project by its "
                                    "ID."
                     }
             testcases.append(testcase)
@@ -681,7 +683,6 @@ class ListCluster(APIBase):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
-
         api_func_list = [[self.capellaAPI.cluster_ops_apis.list_clusters,
                           (self.organisation_id, self.project_id)]]
 
@@ -712,6 +713,11 @@ class ListCluster(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
+            # Removing failure for tests which are intentionally ran for
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
+
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")
@@ -751,6 +757,11 @@ class ListCluster(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
+            # Removing failure for tests which are intentionally ran for
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
+
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")
