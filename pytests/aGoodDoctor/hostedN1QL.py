@@ -377,15 +377,15 @@ class DoctorN1QL():
         while not self.stop_run:
             self.table = TableView(self.log.info)
             self.table.set_headers(["Node",
-                                    "memory_quota",
-                                    "memory_used",
-                                    "avg_resident_percent",
-                                    "avg_drain_rate",
-                                    "total_data_size",
-                                    "total_disk_size",
-                                    "total_requests",
-                                    "total_rows_scanned",
-                                    "total_rows_returned"
+                                    "mem_quota",
+                                    "mem_used",
+                                    "avg_rr",
+                                    "avg_dr",
+                                    "#data_size",
+                                    "#disk_size",
+                                    "#requests",
+                                    "#rows_scanned",
+                                    "#rows_returned"
                                     ])
             for node in self.cluster.index_nodes:
                 try:
@@ -394,15 +394,15 @@ class DoctorN1QL():
                     content = json.loads(resp.content)
                     self.table.add_row([
                         node.ip,
-                        content["mem_quota"]/1024/1024/1024,
-                        content["mem_used"]/1024/1024/1024,
-                        content["avg_rr"],
-                        content["avg_dr"],
-                        content["#data_size"]/1024/1024/1024,
-                        content["#disk_size"]/1024/1024/1024,
-                        content["#requests"],
-                        content["#rows_scanned"],
-                        content["#rows_returned"]
+                        content["memory_quota"]/1024/1024/1024,
+                        content["memory_used"]/1024/1024/1024,
+                        content["avg_resident_percent"],
+                        content["avg_drain_rate"],
+                        content["total_data_size"]/1024/1024/1024,
+                        content["total_disk_size"]/1024/1024/1024,
+                        content["total_requests"],
+                        content["total_rows_scanned"],
+                        content["total_rows_returned"]
                         ])
                 except Exception as e:
                     self.log.critical(e)
