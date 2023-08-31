@@ -53,9 +53,9 @@ class BaseUtil(object):
         cbas_helper.closeConn()
 
     def execute_statement_on_cbas_util(self, cluster, statement, mode=None,
-                                       timeout=120, client_context_id=None,
+                                       timeout=300, client_context_id=None,
                                        username=None, password=None,
-                                       analytics_timeout=120,
+                                       analytics_timeout=300,
                                        time_out_unit="s",
                                        scan_consistency=None, scan_wait=None):
         """
@@ -115,10 +115,10 @@ class BaseUtil(object):
             raise Exception(str(e))
 
     def execute_parameter_statement_on_cbas_util(self, cluster, statement, mode=None,
-                                                 timeout=120,
+                                                 timeout=300,
                                                  client_context_id=None,
                                                  username=None, password=None,
-                                                 analytics_timeout=120,
+                                                 analytics_timeout=300,
                                                  parameters={}):
         """
         Executes a statement on CBAS using the REST API using REST Client
@@ -355,7 +355,7 @@ class Dataverse_Util(BaseUtil):
 
     def validate_dataverse_in_metadata(
             self, cluster, dataverse_name, username=None,
-            password=None, timeout=120, analytics_timeout=120):
+            password=None, timeout=300, analytics_timeout=300):
         """
         Validates whether a dataverse is present in Metadata.Dataverse
         :param dataverse_name: str, Name of the dataverse which has to be validated.
@@ -385,7 +385,7 @@ class Dataverse_Util(BaseUtil):
                          password=None, validate_error_msg=False,
                          expected_error=None, expected_error_code=None,
                          if_not_exists=False, analytics_scope=False,
-                         timeout=120, analytics_timeout=120):
+                         timeout=300, analytics_timeout=300):
         """
         Creates dataverse.
         :param dataverse_name: str, Name of the dataverse which has to be created.
@@ -430,8 +430,8 @@ class Dataverse_Util(BaseUtil):
     def drop_dataverse(self, cluster, dataverse_name, username=None, password=None,
                        validate_error_msg=False, expected_error=None,
                        expected_error_code=None, if_exists=False,
-                       analytics_scope=False, timeout=120,
-                       analytics_timeout=120,
+                       analytics_scope=False, timeout=300,
+                       analytics_timeout=300,
                        delete_dataverse_obj=True,
                        disconnect_local_link=False):
         """
@@ -488,7 +488,7 @@ class Dataverse_Util(BaseUtil):
                                password=None,
                                validate_error_msg=False, expected_error=None,
                                expected_error_code=None, if_not_exists=False,
-                               timeout=120, analytics_timeout=120):
+                               timeout=300, analytics_timeout=300):
         """
         Creates analytics scope. This method is synthetic sugar for creating
         dataverse in analytics.
@@ -514,7 +514,7 @@ class Dataverse_Util(BaseUtil):
                              password=None,
                              validate_error_msg=False, expected_error=None,
                              expected_error_code=None, if_exists=False,
-                             timeout=120, analytics_timeout=120):
+                             timeout=300, analytics_timeout=300):
         """
         Drops the dataverse.
         :param cbas_scope_name: str, Name of the cbas_scope which has to be dropped.
@@ -601,8 +601,8 @@ class Dataverse_Util(BaseUtil):
                         cluster, dataverse.name,
                         if_not_exists=True,
                         analytics_scope=analytics_scope,
-                        timeout=cbas_spec.get("api_timeout", 120),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)
+                        timeout=cbas_spec.get("api_timeout", 300),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)
                     )
                 )
 
@@ -636,7 +636,7 @@ class Link_Util(Dataverse_Util):
 
     def validate_link_in_metadata(self, cluster, link_name, dataverse_name,
                                   link_type="Local", username=None, password=None,
-                                  is_active=False, timeout=120, analytics_timeout=120):
+                                  is_active=False, timeout=300, analytics_timeout=300):
         """
         Validates whether a link is present in Metadata.Link
         :param link_name: str, Name of the link to be validated.
@@ -679,7 +679,7 @@ class Link_Util(Dataverse_Util):
 
     def is_link_active(self, cluster, link_name, dataverse_name,
                        link_type="Local", username=None, password=None,
-                       timeout=120, analytics_timeout=120):
+                       timeout=300, analytics_timeout=300):
         """
         Validates whether a link is active or not. Valid only for
         Local and couchbase links
@@ -698,7 +698,7 @@ class Link_Util(Dataverse_Util):
     def create_link_on_cbas(self, cluster, link_name=None, username=None,
                             password=None, validate_error_msg=False,
                             expected_error=None, expected_error_code=None,
-                            timeout=120, analytics_timeout=120):
+                            timeout=300, analytics_timeout=300):
         """
         This method will fail in all the scenarios. It is only
         there to test negative scenario.
@@ -723,7 +723,7 @@ class Link_Util(Dataverse_Util):
     def create_link(self, cluster, link_properties, username=None, password=None,
                     validate_error_msg=False, expected_error=None,
                     expected_error_code=None, create_if_not_exists=False,
-                    timeout=120, analytics_timeout=120, create_dataverse=True):
+                    timeout=300, analytics_timeout=300, create_dataverse=True):
         """
         Creates Link.
         :param link_properties: dict, parameters required for creating link.
@@ -817,7 +817,7 @@ class Link_Util(Dataverse_Util):
     def drop_link(self, cluster, link_name, username=None, password=None,
                   validate_error_msg=False, expected_error=None,
                   expected_error_code=None, if_exists=False,
-                  timeout=120, analytics_timeout=120):
+                  timeout=300, analytics_timeout=300):
         """
         Drop Link.
         :param link_name: str, Name of the link to be dropped.
@@ -850,7 +850,7 @@ class Link_Util(Dataverse_Util):
                 return True
 
     def get_link_info(self, cluster, dataverse=None, link_name=None, link_type=None,
-                      username=None, password=None, timeout=120, restapi=True,
+                      username=None, password=None, timeout=300, restapi=True,
                       validate_error_msg=False, expected_error=None,
                       expected_error_code=None):
         """
@@ -892,7 +892,7 @@ class Link_Util(Dataverse_Util):
 
     def update_external_link_properties(
             self, cluster, link_properties, username=None, password=None,
-            timeout=120, validate_error_msg=False, expected_error=None,
+            timeout=300, validate_error_msg=False, expected_error=None,
             expected_error_code=None):
         """
         Update all the link properties with the new values.
@@ -935,8 +935,8 @@ class Link_Util(Dataverse_Util):
 
     def connect_link(self, cluster, link_name, validate_error_msg=False,
                      with_force=True, username=None, password=None,
-                     expected_error=None, expected_error_code=None, timeout=120,
-                     analytics_timeout=120):
+                     expected_error=None, expected_error_code=None, timeout=300,
+                     analytics_timeout=300):
         """
         Connects a Link
         :param link_name: str, Name of the link to be connected.
@@ -985,7 +985,7 @@ class Link_Util(Dataverse_Util):
 
     def disconnect_link(self, cluster, link_name, validate_error_msg=False,
                         username=None, password=None, expected_error=None,
-                        expected_error_code=None, timeout=120, analytics_timeout=120):
+                        expected_error_code=None, timeout=300, analytics_timeout=300):
         """
         Disconnects a link
         :param link_name: str, Name of the link to be disconnected.
@@ -1085,8 +1085,8 @@ class Link_Util(Dataverse_Util):
                         no_of_external_links -= 1
                 if not self.create_link(
                         cluster, link.properties, create_if_not_exists=True,
-                        timeout=cbas_spec.get("api_timeout", 120),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                        timeout=cbas_spec.get("api_timeout", 300),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
                     results.append(False)
                 else:
                     dataverse.links[link.name] = link
@@ -1222,7 +1222,7 @@ class Link_Util(Dataverse_Util):
 
     def validate_get_link_info_response(
             self, cluster, link_properties, username=None, password=None,
-            timeout=120, restapi=True):
+            timeout=300, restapi=True):
         response = self.get_link_info(
             cluster, link_properties["dataverse"], link_properties["name"],
             link_properties["type"], username=username, password=password,
@@ -1249,7 +1249,7 @@ class Dataset_Util(Link_Util):
 
     def validate_dataset_in_metadata(
             self, cluster, dataset_name, dataverse_name=None, username=None,
-            password=None, timeout=120, analytics_timeout=120, **kwargs):
+            password=None, timeout=300, analytics_timeout=300, **kwargs):
         """
         validates metadata information about a dataset with entry in Metadata.Dataset collection.
         :param dataset_name str, name of the dataset to be validated.
@@ -1304,8 +1304,8 @@ class Dataset_Util(Link_Util):
             self, cluster, dataset_name, kv_entity, dataverse_name=None,
             if_not_exists=False, compress_dataset=False, with_clause=None,
             link_name=None, where_clause=None, validate_error_msg=False,
-            username=None, password=None, expected_error=None, timeout=120,
-            analytics_timeout=120, analytics_collection=False, storage_format=None):
+            username=None, password=None, expected_error=None, timeout=300,
+            analytics_timeout=300, analytics_collection=False, storage_format=None):
         """
         Creates a dataset/analytics collection on a KV bucket.
         :param dataset_name str, fully qualified dataset name.
@@ -1386,7 +1386,7 @@ class Dataset_Util(Link_Util):
             if_not_exists=False, compress_dataset=False, with_clause=None,
             link_name=None, where_clause=None, validate_error_msg=False,
             username=None, password=None, expected_error=None,
-            timeout=120, analytics_timeout=120, storage_format=None):
+            timeout=300, analytics_timeout=300, storage_format=None):
         """
         Creates a analytics collection which is syntactic sugar for creating datasets.
         :param dataset_name str, fully qualified dataset name.
@@ -1417,14 +1417,14 @@ class Dataset_Util(Link_Util):
             timeout, analytics_timeout, True, storage_format)
 
     def create_dataset_on_external_resource_azure(
-                self, cluster, dataset_name, azure_container_name, link_name,
-                if_not_exists=False, dataverse_name=None, object_construction_def=None,
-                path_on_aws_bucket=None, file_format="json", redact_warning=None,
-                header=None, null_string=None, include=None, exclude=None,
-                validate_error_msg=False, username=None, password=None,
-                expected_error=None, expected_error_code=None,
-                timeout=120, analytics_timeout=120, create_dv=True):
-            """
+            self, cluster, dataset_name, azure_container_name, link_name,
+            if_not_exists=False, dataverse_name=None, object_construction_def=None,
+            path_on_aws_bucket=None, file_format="json", redact_warning=None,
+            header=None, null_string=None, include=None, exclude=None,
+            validate_error_msg=False, username=None, password=None,
+            expected_error=None, expected_error_code=None,
+            timeout=300, analytics_timeout=300, create_dv=True):
+        """
             Creates a dataset for an external resource like AWS S3 bucket/Azure blob.
             Note - No shadow dataset is created for this type of external datasets.
             :param dataset_name (str) : Name for the dataset to be created.
@@ -1455,59 +1455,59 @@ class Dataset_Util(Link_Util):
             :return True/False
 
             """
-            if create_dv and dataverse_name and not self.create_dataverse(
-                    cluster, dataverse_name=dataverse_name, username=username,
-                    password=password, if_not_exists=True):
-                return False
+        if create_dv and dataverse_name and not self.create_dataverse(
+                cluster, dataverse_name=dataverse_name, username=username,
+                password=password, if_not_exists=True):
+            return False
 
-            cmd = "CREATE EXTERNAL DATASET"
-            if if_not_exists:
-                cmd += " if not exists"
+        cmd = "CREATE EXTERNAL DATASET"
+        if if_not_exists:
+            cmd += " if not exists"
 
-            if dataverse_name:
-                cmd += " {0}.{1}".format(dataverse_name, dataset_name)
-            else:
-                cmd += " {0}".format(dataset_name)
+        if dataverse_name:
+            cmd += " {0}.{1}".format(dataverse_name, dataset_name)
+        else:
+            cmd += " {0}".format(dataset_name)
 
-            if object_construction_def:
-                cmd += "({0})".format(object_construction_def)
+        if object_construction_def:
+            cmd += "({0})".format(object_construction_def)
 
-            cmd += " ON `{0}` AT {1}".format(azure_container_name, link_name)
+        cmd += " ON `{0}` AT {1}".format(azure_container_name, link_name)
 
-            if path_on_aws_bucket is not None:
-                cmd += " USING \"{0}\"".format(path_on_aws_bucket)
-            with_parameters = dict()
-            with_parameters["format"] = file_format
+        if path_on_aws_bucket is not None:
+            cmd += " USING \"{0}\"".format(path_on_aws_bucket)
+        with_parameters = dict()
+        with_parameters["format"] = file_format
 
-            if redact_warning is not None:
-                with_parameters["redact-warnings"] = redact_warning
+        if redact_warning is not None:
+            with_parameters["redact-warnings"] = redact_warning
 
-            if header is not None:
-                with_parameters["header"] = header
+        if header is not None:
+            with_parameters["header"] = header
 
-            if null_string:
-                with_parameters["null"] = null_string
+        if null_string:
+            with_parameters["null"] = null_string
 
-            if include is not None:
-                with_parameters["include"] = include
+        if include is not None:
+            with_parameters["include"] = include
 
-            if exclude is not None:
-                with_parameters["exclude"] = exclude
+        if exclude is not None:
+            with_parameters["exclude"] = exclude
 
-            cmd += " WITH {0};".format(json.dumps(with_parameters))
-            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                cluster, cmd, username=username, password=password, timeout=timeout,
-                analytics_timeout=analytics_timeout)
+        cmd += " WITH {0};".format(json.dumps(with_parameters))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
 
-            if validate_error_msg:
-                return self.validate_error_in_response(status, errors,
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
                                                        expected_error,
                                                        expected_error_code)
+        else:
+            if status != "success":
+                return False
             else:
-                if status != "success":
-                    return False
-                else:
-                    return True
+                return True
 
     def create_dataset_on_external_resource(
             self, cluster, dataset_name, aws_bucket_name, link_name,
@@ -1516,7 +1516,7 @@ class Dataset_Util(Link_Util):
             header=None, null_string=None, include=None, exclude=None,
             validate_error_msg=False, username=None, password=None,
             expected_error=None, expected_error_code=None,
-            timeout=120, analytics_timeout=120, create_dv=True,
+            timeout=300, analytics_timeout=300, create_dv=True,
             parse_json_string=0, convert_decimal_to_double=0,
             timezone=""):
         """
@@ -1638,8 +1638,8 @@ class Dataset_Util(Link_Util):
     def drop_dataset(
             self, cluster, dataset_name, username=None, password=None,
             validate_error_msg=False, expected_error=None, expected_error_code=None,
-            if_exists=False, analytics_collection=False, timeout=120,
-            analytics_timeout=120):
+            if_exists=False, analytics_collection=False, timeout=300,
+            analytics_timeout=300):
         """
         Drops the dataset.
         :param dataset_name: str, dataset to be droppped
@@ -1680,7 +1680,7 @@ class Dataset_Util(Link_Util):
     def drop_analytics_collection(
             self, cluster, dataset_name, username=None, password=None,
             validate_error_msg=False, expected_error=None, expected_error_code=None,
-            if_exists=False, timeout=120, analytics_timeout=120):
+            if_exists=False, timeout=300, analytics_timeout=300):
         """
         Drop a analytics collection which is syntactic sugar for dropping datasets.
         :param dataset_name: str, dataset to be droppped
@@ -1703,7 +1703,7 @@ class Dataset_Util(Link_Util):
     def enable_analytics_from_KV(
             self, cluster, kv_entity_name, compress_dataset=False,
             validate_error_msg=False, expected_error=None, username=None,
-            password=None, timeout=120, analytics_timeout=120):
+            password=None, timeout=300, analytics_timeout=300):
         """
         Enables analytics directly from KV.
         :param kv_entity_name: string, can be fully quantified collection name
@@ -1737,7 +1737,7 @@ class Dataset_Util(Link_Util):
     def disable_analytics_from_KV(
             self, cluster, kv_entity_name, validate_error_msg=False,
             expected_error=None, username=None, password=None,
-            timeout=120, analytics_timeout=120):
+            timeout=300, analytics_timeout=300):
         """
         Disables analytics directly from KV.
         :param kv_entity_name: string, can be fully quantified collection name
@@ -2218,9 +2218,9 @@ class Dataset_Util(Link_Util):
                                             cluster, dataset_obj.full_kv_entity_name,
                                             False, False, None, None, None,
                                             timeout=cbas_spec.get(
-                                                "api_timeout", 120),
+                                                "api_timeout", 300),
                                             analytics_timeout=cbas_spec.get(
-                                                "cbas_timeout", 120)))
+                                                "cbas_timeout", 300)))
                                 else:
                                     if isinstance(dataset_obj,
                                                   CBAS_Collection):
@@ -2239,8 +2239,8 @@ class Dataset_Util(Link_Util):
                                             dataverse_name, False, False, None,
                                             dataset_obj.link_name, None, False,
                                             None, None, None,
-                                            timeout=cbas_spec.get("api_timeout", 120),
-                                            analytics_timeout=cbas_spec.get("cbas_timeout", 120),
+                                            timeout=cbas_spec.get("api_timeout", 300),
+                                            analytics_timeout=cbas_spec.get("cbas_timeout", 300),
                                             analytics_collection=analytics_collection,
                                             storage_format=storage_format))
                             else:
@@ -2269,9 +2269,9 @@ class Dataset_Util(Link_Util):
                                             "exclude"],
                                         False, None, None, None, None,
                                         timeout=cbas_spec.get(
-                                            "api_timeout", 120),
+                                            "api_timeout", 300),
                                         analytics_timeout=cbas_spec.get(
-                                            "cbas_timeout", 120)))
+                                            "cbas_timeout", 300)))
                             if results[-1]:
                                 dataverse.datasets[
                                     dataset_obj.name] = dataset_obj
@@ -2357,12 +2357,12 @@ class Dataset_Util(Link_Util):
                     results.append(
                         self.enable_analytics_from_KV(
                             cluster, dataset_obj.full_kv_entity_name, False,
-                            False, None, None, None, 120, 120))
+                            False, None, None, None, 300, 300))
                 else:
                     results.append(
                         self.enable_analytics_from_KV(
                             cluster, dataset_obj.get_fully_qualified_kv_entity_name(1),
-                            False, False, None, None, None, 120, 120))
+                            False, False, None, None, None, 300, 300))
             else:
 
                 if isinstance(dataset_obj, CBAS_Collection):
@@ -2380,14 +2380,14 @@ class Dataset_Util(Link_Util):
                             dataset_obj.full_kv_entity_name,
                             dataverse_name, False, False, None,
                             dataset_obj.link_name, None, False, None, None,
-                            None, 120, 120, analytics_collection, storage_format))
+                            None, 300, 300, analytics_collection, storage_format))
                 elif kv_name_cardinality > 1 and cbas_name_cardinality == 1:
                     results.append(
                         self.create_dataset(
                             cluster, dataset_obj.name,
                             dataset_obj.full_kv_entity_name,
                             None, False, False, None, dataset_obj.link_name,
-                            None, False, None, None, None, 120, 120,
+                            None, False, None, None, None, 300, 300,
                             analytics_collection, storage_format))
                 elif kv_name_cardinality == 1 and cbas_name_cardinality > 1:
                     results.append(
@@ -2396,7 +2396,7 @@ class Dataset_Util(Link_Util):
                             dataset_obj.get_fully_qualified_kv_entity_name(1),
                             dataverse_name, False, False, None,
                             dataset_obj.link_name, None, False, None, None,
-                            None, 120, 120, analytics_collection, storage_format))
+                            None, 300, 300, analytics_collection, storage_format))
                 else:
                     results.append(
                         self.create_dataset(
@@ -2404,7 +2404,7 @@ class Dataset_Util(Link_Util):
                             dataset_obj.get_fully_qualified_kv_entity_name(1),
                             None, False, False, None, dataset_obj.link_name,
                             None, False, None, None,
-                            None, 120, 120, analytics_collection, storage_format))
+                            None, 300, 300, analytics_collection, storage_format))
 
             if results[-1]:
                 dataverse.datasets[dataset_obj.name] = dataset_obj
@@ -2741,7 +2741,99 @@ class Dataset_Util(Link_Util):
         return result
 
 
-class Synonym_Util(Dataset_Util):
+class StandAloneCollection_Util(Dataset_Util):
+
+    def __init__(self, server_task=None):
+        """
+        :param server_task task object
+        """
+        super(StandAloneCollection_Util, self).__init__(server_task)
+
+    def copy_from_external_resource_into_standalone_collection(
+            self, cluster, collection_name, s3_bucket_name,
+            s3_external_link_name, dataverse_name=None,
+            file_to_include="*.json", file_format="json",
+            file_to_exclude=None, username=None, password=None,
+            timeout=7200, analytics_timeout=7200, validate_error_msg=False,
+            expected_error=None):
+        cmd = "copy into "
+        if dataverse_name:
+            cmd += "{0}.{1} ".format(dataverse_name, collection_name)
+        else:
+            cmd += "{0} ".format(collection_name)
+
+        cmd += "from {0} at ".format(CBASHelper.format_name(s3_bucket_name))
+        cmd += "{0} ".format(s3_external_link_name)
+        with_params = dict()
+        with_params["format"] = file_format
+        if file_to_include:
+            with_params["include"] = file_to_include
+        if file_to_exclude:
+            with_params["exclude"] = file_to_exclude
+        cmd += " with " + json.dumps(with_params) + " "
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def create_standalone_collection(
+            self, cluster, collection_name, key_field="id",
+            key_field_type="uuid", dataverse_name=None,
+            validate_error_msg=False, expected_error=None, username=None,
+            password=None, with_clause=False, compress_dataset=False,
+            storage_format=None, timeout=300, analytics_timeout=300,
+            key_autogenerated=False, select_query=False, where_clause=False):
+        if dataverse_name and not self.create_dataverse(
+                cluster, dataverse_name=dataverse_name, if_not_exists=True,
+                timeout=timeout, analytics_timeout=analytics_timeout):
+            return False
+        cmd = "create collection"
+        if dataverse_name:
+            cmd += " {0}.{1}".format(dataverse_name, collection_name)
+        else:
+            cmd += " {0}".format(collection_name)
+        cmd += " primary key({}: {})".format(key_field, key_field_type)
+        if key_autogenerated and key_field_type.lower() == "uuid":
+            cmd += " autogenerated"
+        if with_clause or compress_dataset or storage_format:
+            with_params = dict()
+
+            if compress_dataset:
+                with_params["storage-block-compression"] = {'scheme': 'snappy'}
+
+            if storage_format:
+                with_params["storage-format"] = {"format": storage_format}
+
+            cmd += " with " + json.dumps(with_params) + " "
+
+            if select_query:
+                cmd += " select ".format(select_query)
+                if where_clause:
+                    cmd += " where " + where_clause
+
+        cmd += ";"
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+
+class Synonym_Util(StandAloneCollection_Util):
 
     def __init__(self, server_task=None):
         """
@@ -2786,7 +2878,7 @@ class Synonym_Util(Dataset_Util):
     def create_analytics_synonym(
             self, cluster, synonym_full_name, cbas_entity_full_name,
             if_not_exists=False, validate_error_msg=False, expected_error=None,
-            username=None, password=None, timeout=120, analytics_timeout=120):
+            username=None, password=None, timeout=300, analytics_timeout=300):
         """
         Creates an analytics synonym on a dataset.
         :param synonym_full_name : str, Fully qualified Synonym which has to be created.
@@ -2823,7 +2915,7 @@ class Synonym_Util(Dataset_Util):
     def drop_analytics_synonym(
             self, cluster, synonym_full_name, if_exists=False,
             validate_error_msg=False, expected_error=None, username=None,
-            password=None, timeout=120, analytics_timeout=120):
+            password=None, timeout=300, analytics_timeout=300):
         """
         Drop an analytics synonym.
         :param synonym_full_name : str, Fully qualified Synonym which has to be dropped.
@@ -3017,8 +3109,8 @@ class Synonym_Util(Dataset_Util):
                         cluster, synonym.full_name, synonym.cbas_entity_full_name,
                         if_not_exists=False, validate_error_msg=False,
                         expected_error=None, username=None, password=None,
-                        timeout=cbas_spec.get("api_timeout", 120),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                        timeout=cbas_spec.get("api_timeout", 300),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
                     results.append(False)
                 else:
                     dataverse.synonyms[synonym.name] = synonym
@@ -3167,7 +3259,7 @@ class Index_Util(Synonym_Util):
     def create_cbas_index(self, cluster, index_name, indexed_fields, dataset_name,
                           analytics_index=False, validate_error_msg=False,
                           expected_error=None, username=None, password=None,
-                          timeout=120, analytics_timeout=120, if_not_exists=False):
+                          timeout=300, analytics_timeout=300, if_not_exists=False):
         """
         Create index on dataset.
         :param index_name str, name of the index to be created.
@@ -3213,7 +3305,7 @@ class Index_Util(Synonym_Util):
     def drop_cbas_index(self, cluster, index_name, dataset_name, analytics_index=False,
                         validate_error_msg=False, expected_error=None,
                         username=None, password=None,
-                        timeout=120, analytics_timeout=120, if_exists=False):
+                        timeout=300, analytics_timeout=300, if_exists=False):
         """
         Drop index on dataset.
         :param index_name str, name of the index to be created.
@@ -3360,13 +3452,13 @@ class Index_Util(Synonym_Util):
                     index.analytics_index = False
 
                 if not self.create_cbas_index(
-                    cluster, index_name=index.name,
-                    indexed_fields=index.indexed_fields,
-                    dataset_name=index.full_dataset_name,
-                    analytics_index=index.analytics_index,
-                    validate_error_msg=False, expected_error=None, username=None,
-                    password=None, timeout=cbas_spec.get("api_timeout", 120),
-                    analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                        cluster, index_name=index.name,
+                        indexed_fields=index.indexed_fields,
+                        dataset_name=index.full_dataset_name,
+                        analytics_index=index.analytics_index,
+                        validate_error_msg=False, expected_error=None, username=None,
+                        password=None, timeout=cbas_spec.get("api_timeout", 300),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
                     results.append(False)
                 else:
                     dataset.indexes[index.name] = index
@@ -3405,8 +3497,8 @@ class UDFUtil(Index_Util):
                    parameters=[], body=None, if_not_exists=False,
                    query_context=False, use_statement=False,
                    validate_error_msg=False, expected_error=None,
-                   username=None, password=None, timeout=120,
-                   analytics_timeout=120):
+                   username=None, password=None, timeout=300,
+                   analytics_timeout=300):
         """
         Create CBAS User Defined Functions
         :param name str, name of the UDF to be created.
@@ -3473,8 +3565,8 @@ class UDFUtil(Index_Util):
     def drop_udf(self, cluster, name, dataverse, parameters=[], if_exists=False,
                  use_statement=False, query_context=False,
                  validate_error_msg=False, expected_error=None,
-                 username=None, password=None, timeout=120,
-                 analytics_timeout=120):
+                 username=None, password=None, timeout=300,
+                 analytics_timeout=300):
         """
         Drop UDF.
         :param name str, name of the UDF to be created.
@@ -3662,7 +3754,7 @@ class UDFUtil(Index_Util):
     def verify_function_execution_result(
             self, cluster, func_name, func_parameters, expected_result=None,
             validate_error_msg=False, expected_error=None, username=None,
-            password=None, timeout=120, analytics_timeout=120):
+            password=None, timeout=300, analytics_timeout=300):
         cmd = "{0}({1})".format(func_name, ",".join([str(param) for param in func_parameters]))
         self.log.info("Executing function {0}".format(cmd))
         status, metrics, errors, results, \
@@ -3700,7 +3792,8 @@ class UDFUtil(Index_Util):
                         param = r["Params"]
                     udfs_created.append([dv_name, r["Name"], param])
                 break
-            sleep(10, "Wait for atleast one index to be created")
+            sleep(10, "Wait for atleast one User defined function to be "
+                      "created")
             retries -= 1
         return udfs_created
 
@@ -4280,7 +4373,7 @@ class CbasUtil(CBOUtil):
 
         return partitions
 
-    def set_log_level_on_cbas(self, cluster, log_level_dict, timeout=120,
+    def set_log_level_on_cbas(self, cluster, log_level_dict, timeout=300,
                               username=None, password=None):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         payload = ""
@@ -4295,7 +4388,7 @@ class CbasUtil(CBOUtil):
         return status, content, response
 
     def set_specific_log_level_on_cbas(
-            self, cluster, logger_name, log_level, timeout=120, username=None,
+            self, cluster, logger_name, log_level, timeout=300, username=None,
             password=None):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
@@ -4305,7 +4398,7 @@ class CbasUtil(CBOUtil):
                 password=password)
         return status, content, response
 
-    def get_log_level_on_cbas(self, cluster, timeout=120, username=None, password=None):
+    def get_log_level_on_cbas(self, cluster, timeout=300, username=None, password=None):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
             cbas_helper.operation_log_level_on_cbas(
@@ -4315,7 +4408,7 @@ class CbasUtil(CBOUtil):
             content = json.loads(content)
         return status, content, response
 
-    def get_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
+    def get_specific_cbas_log_level(self, cluster, logger_name, timeout=300,
                                     username=None, password=None):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
@@ -4324,7 +4417,7 @@ class CbasUtil(CBOUtil):
                 timeout=timeout, username=username, password=password)
         return status, content, response
 
-    def delete_all_loggers_on_cbas(self, cluster, timeout=120, username=None,
+    def delete_all_loggers_on_cbas(self, cluster, timeout=300, username=None,
                                    password=None):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
@@ -4333,7 +4426,7 @@ class CbasUtil(CBOUtil):
                 timeout=timeout, username=username, password=password)
         return status, content, response
 
-    def delete_specific_cbas_log_level(self, cluster, logger_name, timeout=120,
+    def delete_specific_cbas_log_level(self, cluster, logger_name, timeout=300,
                                        username=None, password=None):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         status, content, response = \
@@ -4481,7 +4574,7 @@ class CbasUtil(CBOUtil):
             username=username, password=password)
         return status, content, response
 
-    def get_analytics_diagnostics(self, cluster, timeout=120):
+    def get_analytics_diagnostics(self, cluster, timeout=300):
         cbas_helper = CBASHelper(cluster.cbas_cc_node)
         response = cbas_helper.get_analytics_diagnostics(timeout=timeout)
         return response
@@ -4564,8 +4657,8 @@ class CbasUtil(CBOUtil):
             for link in remote_links:
                 if not self.connect_link(
                         cluster, link.full_name,
-                        timeout=cbas_spec.get("api_timeout", 120),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 120)):
+                        timeout=cbas_spec.get("api_timeout", 300),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
                     results.append(False)
                 else:
                     results.append(True)
@@ -4636,8 +4729,8 @@ class CbasUtil(CBOUtil):
                 {"cluster": cluster, "index_name": index.name,
                  "dataset_name": index.full_dataset_name,
                  "analytics_index": index.analytics_index,
-                 "timeout": cbas_spec.get("api_timeout", 120),
-                 "analytics_timeout": cbas_spec.get("cbas_timeout", 120)}
+                 "timeout": cbas_spec.get("api_timeout", 300),
+                 "analytics_timeout": cbas_spec.get("cbas_timeout", 300)}
             )
         if any(results):
             if expected_index_drop_fail:
@@ -4649,9 +4742,9 @@ class CbasUtil(CBOUtil):
         for synonym in self.list_all_synonym_objs():
             retry_func(
                 synonym, self.drop_analytics_synonym,
-                {"cluster":cluster, "synonym_full_name": synonym.full_name,
-                 "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
-                 "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+                {"cluster": cluster, "synonym_full_name": synonym.full_name,
+                 "if_exists": True, "timeout": cbas_spec.get("api_timeout", 300),
+                 "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
         if any(results):
             if expected_synonym_drop_fail:
                 print_failures("Synonyms", results)
@@ -4670,14 +4763,14 @@ class CbasUtil(CBOUtil):
                     dataset, self.drop_dataset,
                     {"cluster": cluster, "dataset_name": dataset_name,
                      "if_exists": True, "analytics_collection": True,
-                     "timeout": cbas_spec.get("api_timeout", 120),
-                     "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+                     "timeout": cbas_spec.get("api_timeout", 300),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
             else:
                 retry_func(
                     dataset, self.drop_dataset,
                     {"cluster": cluster, "dataset_name": dataset_name,
-                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
-                     "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 300),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
         if any(results):
             if expected_dataset_drop_fail:
                 print_failures("Datasets", results)
@@ -4689,17 +4782,17 @@ class CbasUtil(CBOUtil):
         for link in self.list_all_link_objs():
             retry_func(
                 link, self.disconnect_link,
-                {"cluster":cluster, "link_name": link.full_name,
-                 "timeout": cbas_spec.get("api_timeout", 120),
-                 "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+                {"cluster": cluster, "link_name": link.full_name,
+                 "timeout": cbas_spec.get("api_timeout", 300),
+                 "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
             try:
                 results.pop()
             except:
                 retry_func(
                     link, self.drop_link,
-                    {"cluster":cluster, "link_name": link.full_name,
-                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 120),
-                     "analytics_timeout": cbas_spec.get("cbas_timeout", 120)})
+                    {"cluster": cluster, "link_name": link.full_name,
+                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 300),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
             else:
                 results.append(link.full_name)
 
@@ -4719,18 +4812,18 @@ class CbasUtil(CBOUtil):
                         {"cluster":cluster, "dataverse_name": dataverse.name,
                          "if_exists": True, "analytics_scope": True,
                          "delete_dataverse_obj": delete_dataverse_object,
-                         "timeout": cbas_spec.get("api_timeout", 120),
+                         "timeout": cbas_spec.get("api_timeout", 300),
                          "analytics_timeout": cbas_spec.get("cbas_timeout",
-                                                            120)})
+                                                            300)})
                 else:
                     retry_func(
                         dataverse, self.drop_dataverse,
                         {"cluster":cluster, "dataverse_name": dataverse.name,
                          "if_exists": True,
                          "delete_dataverse_obj": delete_dataverse_object,
-                         "timeout": cbas_spec.get("api_timeout", 120),
+                         "timeout": cbas_spec.get("api_timeout", 300),
                          "analytics_timeout": cbas_spec.get("cbas_timeout",
-                                                            120)})
+                                                            300)})
 
         if any(results):
             if expected_dataverse_drop_fail:
@@ -4786,13 +4879,13 @@ class CbasUtil(CBOUtil):
         self.task.jython_task_manager.add_new_task(links_task)
         return links_task
 
-    def cleanup_cbas(self, cluster):
+    def cleanup_cbas(self, cluster, retry=10):
         """
         Drops all Dataverses, Datasets, Indexes, UDFs, Synonyms and Links
         """
         try:
             # Drop all indexes
-            for idx in self.get_indexes(cluster):
+            for idx in self.get_indexes(cluster, retry):
                 idx = idx.split(".")
                 if not self.drop_cbas_index(cluster, idx[-1], ".".join(idx[:-1])):
                     self.log.error("Unable to drop Index {0}".format(idx))
@@ -4804,15 +4897,15 @@ class CbasUtil(CBOUtil):
                 if not self.disconnect_link(cluster, lnk):
                     self.log.error("Unable to disconnect Link {0}".format(lnk))
 
-            for syn in self.get_synonyms(cluster):
+            for syn in self.get_synonyms(cluster, retry):
                 if not self.drop_analytics_synonym(cluster, syn):
                     self.log.error("Unable to drop Synonym {0}".format(syn))
 
-            for udf in self.get_udfs(cluster):
+            for udf in self.get_udfs(cluster, retry):
                 if not self.drop_udf(cluster, udf[1], udf[0], udf[2]):
                     self.log.error("Unable to drop UDF {0}".format(udf[1]))
 
-            for ds in self.get_datasets(cluster):
+            for ds in self.get_datasets(cluster, retry):
                 if not self.drop_dataset(cluster, ds):
                     self.log.error("Unable to drop Dataset {0}".format(ds))
 
@@ -4820,7 +4913,7 @@ class CbasUtil(CBOUtil):
                 if not self.drop_link(cluster, lnk):
                     self.log.error("Unable to drop Link {0}".format(lnk))
 
-            for dv in self.get_dataverses(cluster).remove("Default"):
+            for dv in self.get_dataverses(cluster, retry).remove("Default"):
                 if not self.drop_dataverse(cluster, dv):
                     self.log.error("Unable to drop Dataverse {0}".format(dv))
         except Exception as e:
@@ -4835,7 +4928,7 @@ class CbasUtil(CBOUtil):
         from cluster settings page.
         """
         status, status_code, content, errors = CBASHelper.analytics_replica_settings(
-            self.log, node, method=method, params=param, timeout=120,
+            self.log, node, method=method, params=param, timeout=300,
             username=username, password=password)
         if validate_error_msg:
             if self.validate_error_in_response(

@@ -18,7 +18,7 @@ from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
 from bucket_utils.bucket_ready_functions import BucketUtils
 from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest
-from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
+from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster, \
     Nebula
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
@@ -396,34 +396,40 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.log.info("Initializing cluster : {0}".format(cluster_name))
         self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
 
-        # This is a temporary function to set up compute storage separation, to be removed in future
-        if self.storage_compute_separation and CbServer.cluster_profile == "serverless":
-            try:
-                self.aws_access_key = self.input.param("aws_access_key", None)
-                self.aws_secret_key = self.input.param("aws_secret_key", None)
-                self.aws_bucket_region = self.input.param("aws_bucket_region", None)
-                self.aws_session_token = self.input.param("aws_session_token", "")
-                self.aws_bucket_name = "css" + str(random.randint(1, 100000))
-                self.log.info("Creating S3 bucket")
-                self.aws_bucket_created = perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    create_bucket=True, bucket_name=self.aws_bucket_name,
-                    region=self.aws_bucket_region)
-                if not self.aws_bucket_created:
-                    self.fail("Creating S3 bucket - {0} in region {1}. Failed.".format(
+        # This check is to set up compute storage separation for
+        # analytics in serverless mode
+        if (self.storage_compute_separation and
+                CbServer.cluster_profile == "serverless"):
+            self.aws_access_key = self.input.param("aws_access_key", None)
+            self.aws_secret_key = self.input.param("aws_secret_key", None)
+            self.aws_bucket_region = self.input.param("aws_bucket_region",
+                                                      None)
+            self.aws_session_token = self.input.param("aws_session_token", "")
+            for i in range(5):
+                try:
+                    self.aws_bucket_name = "goldfish-qe-" + str(
+                        random.randint(1, 100000))
+                    self.log.info("Creating S3 bucket")
+                    self.aws_bucket_created = perform_S3_operation(
+                        aws_access_key=self.aws_access_key,
+                        aws_secret_key=self.aws_secret_key,
+                        aws_session_token=self.aws_session_token,
+                        create_bucket=True, bucket_name=self.aws_bucket_name,
+                        region=self.aws_bucket_region)
+                    break
+                except Exception as e:
+                    self.log.error("Creating S3 bucket - {0} in region {1}. "
+                                  "Failed.".format(
                         self.aws_bucket_name, self.aws_bucket_region))
-                self.log.info("Adding aws bucket credentials to analytics")
-                rest = RestConnection(self.cluster.master)
-                status = rest.set_AWS_bucket_credential_to_anlaytics(self.aws_access_key,
-                                                                     self.aws_secret_key,
-                                                                     self.aws_bucket_name,
-                                                                     self.aws_bucket_region)
-                if not status:
-                    self.fail("Failed to put aws credentials to analytics, request error")
-            except:
-                self.fail("Failed to add aws credentials for compute storage separation")
+                    self.log.error(str(e))
+            self.log.info("Adding aws bucket credentials to analytics")
+            rest = RestConnection(self.cluster.master)
+            status = rest.set_AWS_bucket_credential_to_anlaytics(
+                self.aws_access_key, self.aws_secret_key,
+                self.aws_bucket_name, self.aws_bucket_region)
+            if not status:
+                self.fail("Failed to put aws credentials to analytics, "
+                          "request error")
 
         if not services:
             master_services = self.cluster_util.get_services(
@@ -594,14 +600,29 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # delete aws bucket that was created for compute storage separation
         if self.storage_compute_separation and CbServer.cluster_profile == "serverless" \
-            and self.aws_bucket_created and \
-                not perform_S3_operation(
+                and self.aws_bucket_created:
+
+            for cluster_name, cluster in self.cb_clusters.items():
+                self.log.info("Resetting cluster nodes")
+                self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
+
+            self.log.info("Deleting all files ins AWS bucket")
+            if not perform_S3_operation(
+                    aws_access_key=self.aws_access_key,
+                    aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token,
+                    empty_bucket=True, bucket_name=self.aws_bucket_name,
+                    region=self.aws_bucket_region):
+                self.fail("Failed to empty AWS bucket")
+            self.sleep(120)
+            self.log.info("Deleting all files ins AWS bucket")
+            if not perform_S3_operation(
                     aws_access_key=self.aws_access_key,
                     aws_secret_key=self.aws_secret_key,
                     aws_session_token=self.aws_session_token,
                     delete_bucket=True, bucket_name=self.aws_bucket_name,
-                        region=self.aws_bucket_region):
-            self.log.critical("AWS bucket failed to delete")
+                    region=self.aws_bucket_region):
+                self.log.critical("AWS bucket failed to delete")
 
         self.shutdown_task_manager()
 
@@ -758,7 +779,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             core_cmd = "/" + bin_cb + "minidump-2-core " + dmp_file + " > " + core_file
             print("running: %s" % core_cmd)
             gdb_shell.execute_command(core_cmd)
-            gdb = "gdb --batch {} -c {} -ex \"bt full\" -ex quit"\
+            gdb = "gdb --batch {} -c {} -ex \"bt full\" -ex quit" \
                 .format(os.path.join(bin_cb, "memcached"), core_file)
             print("running: %s" % gdb)
             result = gdb_shell.execute_command(gdb)[0]
@@ -829,17 +850,17 @@ class OnPremBaseTest(CouchbaseBaseTest):
             dmp_files = [f.split()[-1] for f in dmp_files if ".core" not in f]
             dmp_files = [f.strip("\n") for f in dmp_files]
             if dmp_files:
-                print("#"*30)
+                print("#" * 30)
                 print("%s: %d core dump seen" % (server.ip, len(dmp_files)))
                 print("%s: Stack Trace of first crash - %s\n%s"
                       % (server.ip, dmp_files[-1],
                          get_gdb(shell, crash_dir, dmp_files[-1])))
-                print("#"*30)
+                print("#" * 30)
                 result = get_full_thread_dump(shell)
                 print(result)
-#                 print("#"*30)
-#                 run_cbanalyze_core(shell, crash_dir + dmp_files[-1].strip(".dmp") + ".core")
-#                 print("#"*30)
+                #                 print("#"*30)
+                #                 run_cbanalyze_core(shell, crash_dir + dmp_files[-1].strip(".dmp") + ".core")
+                #                 print("#"*30)
                 if self.stop_server_on_crash:
                     shell.stop_couchbase()
                 result = True

@@ -267,7 +267,7 @@ class CBASBaseTest(BaseTestCase):
                         break
 
             if "cbas" in cluster.master.services:
-                self.cbas_util.cleanup_cbas(cluster)
+                self.cbas_util.cleanup_cbas(cluster, retry=1)
 
             cluster.otpNodes = cluster.rest.node_statuses()
 
