@@ -2382,6 +2382,7 @@ class BucketUtils(ScopeUtils):
         if "buckets" not in buckets_spec:
             buckets_spec["buckets"] = dict()
 
+        # Calculate total_ram_requested by spec explicitly
         for _, bucket_spec in buckets_spec["buckets"].items():
             if Bucket.ramQuotaMB in bucket_spec:
                 total_ram_requested_explicitly += \

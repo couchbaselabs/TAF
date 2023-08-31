@@ -307,23 +307,6 @@ class CollectionBase(ClusterSetup):
                 test_obj.spec_name)
         buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = use_simple_names
 
-        if test_obj.bucket_storage == Bucket.StorageBackend.magma:
-            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.magma
-            buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.FULL_EVICTION
-
-            if Bucket.ramQuotaMB not in buckets_spec or \
-                (Bucket.ramQuotaMB in buckets_spec and buckets_spec[Bucket.ramQuotaMB] < 256):
-                buckets_spec[Bucket.ramQuotaMB] = 256
-
-        else:
-            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.couchstore
-
-            if Bucket.evictionPolicy not in buckets_spec:
-                buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.VALUE_ONLY
-
-            if Bucket.ramQuotaMB not in buckets_spec:
-                buckets_spec[Bucket.ramQuotaMB] = 100
-
         test_obj.log.info("Creating bucket from spec: %s" % test_obj.spec_name)
         # Process params to over_ride values if required
         CollectionBase.over_ride_bucket_template_params(
