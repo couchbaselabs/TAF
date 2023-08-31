@@ -14,7 +14,7 @@ spec = {
     Bucket.priority: Bucket.Priority.LOW,
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
     Bucket.maxTTL: 350,
-    Bucket.storageBackend: Bucket.StorageBackend.couchstore,
+    Bucket.storageBackend: Bucket.StorageBackend.magma,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
     "buckets": {

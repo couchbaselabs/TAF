@@ -14,6 +14,8 @@ spec = {
     MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
 
+    Bucket.storageBackend: Bucket.StorageBackend.magma,
+    Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.ramQuotaMB: 256,
     Bucket.replicaIndex: 1,
     Bucket.maxTTL: 0,
