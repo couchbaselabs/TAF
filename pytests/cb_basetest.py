@@ -67,13 +67,6 @@ class CouchbaseBaseTest(unittest.TestCase):
                              Bucket.StorageBackend.magma)
         self.bucket_eviction_policy = \
             self.input.param("bucket_eviction_policy", None)
-        
-        if self.bucket_storage == Bucket.StorageBackend.magma:
-            self.bucket_eviction_policy = Bucket.EvictionPolicy.FULL_EVICTION
-
-        if self.bucket_eviction_policy is None and \
-                    self.bucket_storage == Bucket.StorageBackend.couchstore:
-            self.bucket_eviction_policy = Bucket.EvictionPolicy.VALUE_ONLY
 
         self.scope_name = self.input.param("scope", CbServer.default_scope)
         self.collection_name = self.input.param("collection",
@@ -92,6 +85,20 @@ class CouchbaseBaseTest(unittest.TestCase):
             self.input.param("magma_key_tree_data_block_size", None)
         self.magma_seq_tree_data_block_size = \
             self.input.param("magma_seq_tree_data_block_size", None)
+
+        if self.bucket_type == Bucket.Type.EPHEMERAL:
+            # Ephemeral + Eviction Policy not set explicitly
+            if self.bucket_eviction_policy is None:
+                self.bucket_eviction_policy = Bucket.EvictionPolicy.NO_EVICTION
+        elif self.bucket_storage == Bucket.StorageBackend.magma:
+            # Magma bucket + Eviction Policy not set explicitly
+            if self.bucket_eviction_policy is None:
+                self.bucket_eviction_policy = \
+                    Bucket.EvictionPolicy.FULL_EVICTION
+        elif self.bucket_storage == Bucket.StorageBackend.couchstore:
+            # Couchstore bucket + Eviction Policy not set explicitly
+            if self.bucket_eviction_policy is None:
+                self.bucket_eviction_policy = Bucket.EvictionPolicy.VALUE_ONLY
         # End of bucket params
 
         # Doc specific params
