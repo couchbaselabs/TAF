@@ -187,20 +187,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.cluster.edition = "enterprise" \
             if CbServer.enterprise_edition else "community"
 
-        # Enable use_https and enforce_tls for 'serverless' cluster testing
-        # And set default bucket/cluster setting values to tests
-        if CbServer.cluster_profile == "serverless":
-            self.encryption_level = "strict"
-            self.use_https = True
-            self.enforce_tls = True
-
-            CbServer.use_https = True
-            trust_all_certs()
-
-            self.bucket_storage = Bucket.StorageBackend.magma
-            self.num_replicas = Bucket.ReplicaNum.TWO
-            self.server_groups = "test_zone_1:test_zone_2:test_zone_3"
-
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.cluster.master,
                                                 self.standard_buckets)
