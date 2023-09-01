@@ -3542,16 +3542,6 @@ class RemoteMachineShellConnection:
             for line in text:
                 os_arch += line.rstrip()
                 # at this point we should know if its a linux or windows ditro
-<<<<<<< HEAD
-            ext = {'Ubuntu': "deb",
-                   'CentOS': "rpm",
-                   'Red Hat': "rpm",
-                   "Mac": "zip",
-                   "Debian": "deb",
-                   "openSUSE": "rpm",
-                   "SUSE": "rpm",
-                   "Oracle Linux": "rpm"}.get(os_distro, '')
-=======
             ext = {'Ubuntu'             : 'deb',
                    'CentOS'             : 'rpm',
                    'Red Hat'            : 'rpm',
@@ -3561,10 +3551,7 @@ class RemoteMachineShellConnection:
                    'SUSE'               : 'rpm',
                    'Oracle Linux'       : 'rpm',
                    'Amazon Linux 2023'  : 'rpm',
-                   'Amazon Linux 2'     : 'rpm',
-                   'AlmaLinux OS'       : 'rpm',
-                   'Rocky Linux'        : 'rpm'}.get(os_distro, '')
->>>>>>> 2db86654 (Adding support for Amazon Linux Tests)
+                   'Amazon Linux 2'     : 'rpm'}.get(os_distro, '')
             arch = {'i686': 'x86',
                     'i386': 'x86'}.get(os_arch, os_arch)
 
