@@ -378,21 +378,6 @@ class Murphy(BaseTestCase, OPD):
         query_monitor.start()
 
     def refresh_cluster(self):
-        # self.servers = DedicatedUtils.get_nodes(
-        #     self.cluster.pod, self.cluster.tenant, self.cluster.id)
-        # nodes = list()
-        # for server in self.servers:
-        #     temp_server = TestInputServer()
-        #     temp_server.ip = server.get("hostname")
-        #     temp_server.hostname = server.get("hostname")
-        #     temp_server.services = server.get("services")
-        #     temp_server.port = "18091"
-        #     temp_server.rest_username = self.cluster.username
-        #     temp_server.rest_password = self.cluster.password
-        #     temp_server.hosted_on_cloud = True
-        #     temp_server.memcached_port = "11207"
-        #     temp_server.type = "dedicated"
-        #     nodes.append(temp_server)
         while True:
             if self.cluster.nodes_in_cluster:
                 self.log.info("Cluster Nodes: {}".format(self.cluster.nodes_in_cluster))
@@ -407,6 +392,22 @@ class Murphy(BaseTestCase, OPD):
             else:
                 self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
                 self.sleep(30)
+                self.servers = DedicatedUtils.get_nodes(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                nodes = list()
+                for server in self.servers:
+                    temp_server = TestInputServer()
+                    temp_server.ip = server.get("hostname")
+                    temp_server.hostname = server.get("hostname")
+                    temp_server.services = server.get("services")
+                    temp_server.port = "18091"
+                    temp_server.rest_username = self.cluster.username
+                    temp_server.rest_password = self.cluster.password
+                    temp_server.hosted_on_cloud = True
+                    temp_server.memcached_port = "11207"
+                    temp_server.type = "dedicated"
+                    nodes.append(temp_server)
+                self.cluster.refresh_object(nodes)
 
     def initial_setup(self):
         self.monitor_query_status()
