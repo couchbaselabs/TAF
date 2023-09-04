@@ -700,7 +700,7 @@ class RebalanceTask(Task):
         print_nodes("Cluster nodes..", self.cluster.nodes_in_cluster)
         print_nodes("KV............", self.cluster.kv_nodes)
         print_nodes("Index.........", self.cluster.index_nodes)
-        print_nodes("Query.........", self.cluster.index_nodes)
+        print_nodes("Query.........", self.cluster.query_nodes)
         print_nodes("CBAS..........", self.cluster.cbas_nodes)
         print_nodes("FTS...........", self.cluster.fts_nodes)
         print_nodes("Eventing......", self.cluster.eventing_nodes)
