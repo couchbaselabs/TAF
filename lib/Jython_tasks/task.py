@@ -705,7 +705,7 @@ class RebalanceTask(Task):
         print_nodes("FTS...........", self.cluster.fts_nodes)
         print_nodes("Eventing......", self.cluster.eventing_nodes)
         print_nodes("Backup........", self.cluster.backup_nodes)
-        print_nodes("Serviceless...", self.cluster.backup_nodes)
+        print_nodes("Serviceless...", self.cluster.serviceless_nodes)
         return self.result
 
     def add_nodes(self):
