@@ -258,8 +258,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.nebula_details = dict()
             for cluster_name, cluster in self.cb_clusters.items():
                 if not self.skip_cluster_reset:
+                    services = None
+                    if self.services_init:
+                        services = str(self.services_init.split("-")[0]) \
+                            .replace(":", ",")
                     self.initialize_cluster(
-                        cluster_name, cluster, services=None,
+                        cluster_name, cluster, services=services,
                         services_mem_quota_percent=mem_quota_percent)
 
                 # Set this unconditionally
