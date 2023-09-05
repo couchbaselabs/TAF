@@ -27,27 +27,18 @@ from copy import deepcopy
 # import srvlookup
 
 
-class Nebula:
-    def __init__(self, srv, server):
-        self.servers = dict()
-        self.endpoint = server
-        self.endpoint.type = "nebula"
-        self.endpoint.srv = srv
-        self.update_server_list()
+class Nebula(object):
 
-    def update_server_list(self):
-        self.servers = dict()
-        self.rest = RestConnection(self.endpoint)
-        _, content, _ = self.rest._http_request(self.rest.baseUrl + "pools/default/nodeServices")
-        content = json.loads(content)
-        for server in content["nodesExt"]:
-            temp = deepcopy(self.endpoint)
-            temp.ip = server["hostname"]
-            portdata = server["services"]
-            temp.port = portdata.get("mgmt") or portdata.get("mgmtSSL")
-            temp.memcached_port = portdata.get("kvSSL") or portdata.get("kv")
-            temp.memcached = temp.memcached_port
-            self.servers[str(temp.ip) + ":" + str(temp.port)] = temp
+    def __init__(self, nebula_endpoint, nebula_port):
+        self.endpoint = nebula_endpoint
+        self.port = nebula_port
+        self.cluster_portmap = dict()
+
+    def redirect_server_ports_to_nebula_ports(self, cluster_UUID, server):
+        server.port = self.cluster_portmap[cluster_UUID]["kv"]
+        server.cbas_port = self.cluster_portmap[cluster_UUID]["cbas"]
+        server.ssl_port = self.cluster_portmap[cluster_UUID]["kv_ssl"]
+        server.ssl_cbas_port = self.cluster_portmap[cluster_UUID]["cbas_ssl"]
 
 
 class CBCluster:
