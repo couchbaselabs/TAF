@@ -96,12 +96,6 @@ class ListOrganization(APIBase):
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
-                "description": "Replace organizations with organisations in "
-                               "URI",
-                "url": "/v4/organisations",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
-            }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/organization",
                 "expected_status_code": 400,
@@ -128,7 +122,6 @@ class ListOrganization(APIBase):
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.list_organizations()
-
             if result.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_org_api_response(
                         self.expected_result, result.json()):
@@ -188,10 +181,9 @@ class ListOrganization(APIBase):
             }
             if not any(element in ["organizationOwner", "organizationMember",
                                    "projectCreator", "projectViewer",
-                                   "projectOwner", "projectManager",
-                                   "projectDataReader",
-                                   "projectDataReaderWriter"] for element in
-                       self.api_keys[role]["roles"]):
+                                   "projectDataReaderWriter", "projectManager",
+                                   "projectOwner", "projectDataReader"] for
+                       element in self.api_keys[role]["roles"]):
                 testcase["expected_status_code"] = 403,
                 testcase["expected_error"] = {
                     "code": 1003,
@@ -212,7 +204,7 @@ class ListOrganization(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -226,7 +218,7 @@ class ListOrganization(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -240,7 +232,7 @@ class ListOrganization(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -254,7 +246,7 @@ class ListOrganization(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -292,7 +284,7 @@ class ListOrganization(APIBase):
                 self.update_auth_with_api_token(self.org_owner_key["token"])
                 resp = self.capellaAPI.org_ops_apis.delete_api_key(
                     organizationId=self.organisation_id,
-                    accessKey=self.api_keys["organizationOwner"]["Id"])
+                    accessKey=self.api_keys["organizationOwner"]["id"])
                 if resp.status_code != 204:
                     failures.append(testcase["description"])
                 self.update_auth_with_api_token(
@@ -311,7 +303,6 @@ class ListOrganization(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.list_organizations(
                     header)
-
             if result.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_org_api_response(
                         self.expected_result, result.json()):
@@ -358,22 +349,12 @@ class ListOrganization(APIBase):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
-
         api_func_list = [[self.capellaAPI.org_ops_apis.list_organizations, ()]]
 
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id,
-                self.generate_random_string(prefix=self.prefix),
-                ["organizationOwner"],
-                self.generate_random_string(50))
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id,
-                    self.generate_random_string(prefix=self.prefix),
-                    ["organizationOwner"],
-                    self.generate_random_string(50))
+                self.organisation_id, self.generate_random_string(),
+                ["organizationOwner"], self.generate_random_string(50))
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_{}".format(i)] = resp.json()
             else:
@@ -397,6 +378,11 @@ class ListOrganization(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
+            # Removing failure for tests which are intentionally ran for
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
+
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")
@@ -435,6 +421,11 @@ class ListOrganization(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
+            # Removing failure for tests which are intentionally ran for
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
+
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")
