@@ -585,6 +585,18 @@ class BucketHelper(RestConnection):
         status, content, _ = self._http_request(api, "PATCH", params)
         return status, content
 
+    def set_bucket_rr_guardrails(self, couch_min_rr=None, magma_min_rr=None):
+
+        api = self.baseUrl + "settings/resourceManagement/bucket/residentRatio"
+        params = {}
+        if couch_min_rr is not None:
+            params['couchstoreMinimum'] = couch_min_rr
+        if magma_min_rr is not None:
+            params['magmaMinimum'] = magma_min_rr
+        params = urllib.urlencode(params)
+        status, content, _ = self._http_request(api, "POST", params)
+        return status, content
+
     def get_auto_compaction_settings(self):
         api = self.baseUrl + "settings/autoCompaction"
         _, content, _ = self._http_request(api)
