@@ -225,7 +225,7 @@ class ClusterUtils:
         http_res, success = rest.init_http_request(api)
         if not success:
             raise Exception("Unable to read /pools API")
-        return True if http_res["isEnterprise"] == "true" else False
+        return http_res["isEnterprise"]
 
     def get_server_profile_type(self, servers):
         """

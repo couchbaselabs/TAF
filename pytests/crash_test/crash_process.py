@@ -457,7 +457,7 @@ class CrashTest(ClusterSetup):
                                                    eviction_policy=self.bucket_eviction_policy,
                                                    ram_quota=self.bucket_size,
                                                    bucket_name=b_name)
-            self.log.info("Bucket {} created".format(b_name)
+            self.log.info("Bucket {} created".format(b_name))
 
         self.bucket_util.print_bucket_stats(self.cluster)
 
