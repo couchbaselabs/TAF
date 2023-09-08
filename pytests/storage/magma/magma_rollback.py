@@ -1689,14 +1689,16 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         target_vbs_active = list()
         target_vbs_replica = list()
-        for shell in shell_conn[0:target_active_nodes]:
-            cbstats = Cbstats(shell)
-            target_vbs_active.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
+        for node in self.cluster.nodes_in_cluster[:target_active_nodes]:
+            if "kv" in node.services.lower():
+                cbstats = Cbstats(node)
+                target_vbs_active.append(
+                    cbstats.vbucket_list(self.cluster.buckets[0].name))
 
         target_vbs_active = [val for vb_lst in target_vbs_active for val in vb_lst]
         self.log.debug("target_vbs_active == {}".format(target_vbs_active))
-        for shell in shell_conn[target_active_nodes:]:
-            cbstats = Cbstats(shell)
+        for node in self.cluster.nodes_in_cluster[target_active_nodes:]:
+            cbstats = Cbstats(node)
             target_vbs_replica.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
         target_vbs_replica = [val for vb_lst in target_vbs_replica for val in vb_lst]
         self.log.info("target_vbs_active={} and target_vbs_replica={}".format(target_vbs_active, target_vbs_replica))
