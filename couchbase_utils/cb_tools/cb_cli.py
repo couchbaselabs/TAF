@@ -145,6 +145,8 @@ class CbCli(CbCmdBase):
                 option = "--history-retention-bytes"
             elif key == Bucket.historyRetentionSeconds:
                 option = "--history-retention-seconds"
+            elif key == Bucket.rank:
+                option = "--rank"
 
             if option:
                 cmd += " %s %s " % (option, value)
@@ -180,6 +182,8 @@ class CbCli(CbCmdBase):
                 cmd += " --bucket-priority " + value
             if key == Bucket.flushEnabled:
                 cmd += " --enable-flush " + str(value)
+            if key == Bucket.rank:
+                cmd += " --rank " + str(value)
 
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)

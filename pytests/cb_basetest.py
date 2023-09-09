@@ -65,6 +65,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.bucket_storage = \
             self.input.param("bucket_storage",
                              Bucket.StorageBackend.magma)
+        self.bucket_rank = self.input.param("bucket_rank", None)
         self.bucket_eviction_policy = \
             self.input.param("bucket_eviction_policy", None)
 
