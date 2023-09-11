@@ -236,7 +236,7 @@ class ClusterUtils:
             raise Exception("Profile type mismatch")
         return profiles[0]
 
-    def get_possible_orchestrotor_nodes(self, cluster):
+    def get_possible_orchestrator_nodes(self, cluster):
         nodes = list()
         min_node_weight = 999999
         services = CbServer.Services
@@ -278,15 +278,15 @@ class ClusterUtils:
         if not status:
             return result
         self.update_cluster_nodes_service_list(cluster, inactive_added=True)
-        nodes = self.get_possible_orchestrotor_nodes(cluster)
+        nodes = self.get_possible_orchestrator_nodes(cluster)
         ns_node = ns_node.split("@")[1]
+        self.log.critical("Orchestrator: {}".format(ns_node))
         if ns_node not in nodes:
-            self.log.critical("Unexpected orchestrotor: %s. "
-                              "Expected orchestrators : %s" % (ns_node, nodes))
+            self.log.critical("Unexpected orchestrator. "
+                              "Expected orchestrators: {}".format(nodes))
         else:
             result = True
             self.log.debug("Orchestartor candidates: %s" % nodes)
-            self.log.debug("Orchestrotor: %s" % ns_node)
         return result
 
     def set_rebalance_moves_per_nodes(self, cluster_node,

@@ -68,6 +68,7 @@ spec = {
         },
         "bucket1": {
             Bucket.bucketType: Bucket.Type.MEMBASE,
+            Bucket.storageBackend: Bucket.StorageBackend.couchstore,
             "privileges": [
                 "Perm2"
             ],
