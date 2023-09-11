@@ -87,7 +87,7 @@ class volume(CollectionBase):
         self.log.info("Printing bucket stats before teardown")
         self.bucket_util.print_bucket_stats(self.cluster)
         if self.collect_pcaps:
-            self.start_fetch_pcaps()
+            self.start_fetch_pcaps(is_test_failed=self.is_test_failed())
         if not self.skip_check_logs:
             self.check_logs()
 

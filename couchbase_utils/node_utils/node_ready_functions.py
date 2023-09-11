@@ -104,64 +104,18 @@ class NodeUtils(object):
         return task
 
     def _cleanup_pcaps(self, server):
-        shell = RemoteMachineShellConnection(server)
-        # Stop old instances of tcpdump if still running
-        stop_tcp_cmd = "if [[ \"$(pgrep tcpdump)\" ]]; " \
-                       "then kill -s TERM $(pgrep tcpdump); fi"
-        _, _ = shell.execute_command(stop_tcp_cmd)
-        shell.execute_command("rm -rf pcaps")
-        shell.execute_command("rm -rf " + server.ip + "_pcaps.zip")
-        shell.disconnect()
+        remote_client = RemoteMachineShellConnection(server)
+        remote_client.cleanup_pcaps()
+        remote_client.disconnect()
 
     def _collect_pcaps(self, server):
-        shell = RemoteMachineShellConnection(server)
-        # Create path for storing pcaps
-        create_path = "mkdir -p pcaps"
-        o, e = shell.execute_command(create_path)
-        shell.log_command_output(o, e)
-        # Install tcpdump command if it doesn't exist
-        o, e = shell.execute_command("yum install -y tcpdump")
-        shell.log_command_output(o, e)
-        # Install screen command if it doesn't exist
-        o, e = shell.execute_command("yum install -y screen")
-        shell.log_command_output(o, e)
-        # Execute the tcpdump command
-        tcp_cmd = "screen -dmS test bash -c \"tcpdump -C 500 -W 10 " \
-                  "-w pcaps/pack-dump-file.pcap  -i eth0 -s 0 tcp\""
-        o, e = shell.execute_command(tcp_cmd)
-        shell.log_command_output(o, e)
-        shell.disconnect()
+        remote_client = RemoteMachineShellConnection(server)
+        remote_client.collect_pcaps()
+        remote_client.disconnect()
 
     def _fetch_pcaps(self, server, log_path, test_failed):
         remote_client = RemoteMachineShellConnection(server)
-        # stop tcdump
-        stop_tcp_cmd = "if [[ \"$(pgrep tcpdump)\" ]]; " \
-                       "then kill -s TERM $(pgrep tcpdump); fi"
-        o, e = remote_client.execute_command(stop_tcp_cmd)
-        remote_client.log_command_output(o, e)
-        if test_failed:
-            # install zip unzip
-            o, e = remote_client.execute_command(
-                "yum install -y zip unzip")
-            remote_client.log_command_output(o, e)
-            # zip the pcaps folder
-            zip_cmd = "zip -r " + server.ip + "_pcaps.zip pcaps"
-            o, e = remote_client.execute_command(zip_cmd)
-            remote_client.log_command_output(o, e)
-            # transfer the zip file
-            zip_file_copied = remote_client.get_file(
-                "/root",
-                os.path.basename(server.ip + "_pcaps.zip"),
-                log_path)
-            self.log.info(
-                "%s node pcap zip copied on client : %s"
-                % (server.ip, zip_file_copied))
-            if zip_file_copied:
-                # Remove the zips
-                remote_client.execute_command("rm -rf "
-                                              + server.ip + "_pcaps.zip")
-        # Remove pcaps
-        remote_client.execute_command("rm -rf pcaps")
+        remote_client.fetch_pcaps(test_failed, log_path)
         remote_client.disconnect()
 
     def _enable_dp(self, server):

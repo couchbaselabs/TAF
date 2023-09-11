@@ -25,6 +25,7 @@ from testconstants import CB_RELEASE_BUILDS
 
 from testconstants import RPM_DIS_NAME, SYSTEMD_SERVER
 from testconstants import NR_INSTALL_LOCATION_FILE
+import scripts.install_constants as install_constants
 
 from membase.api.rest_client import RestConnection
 from com.jcraft.jsch import JSchException, JSchAuthCancelException, \
@@ -304,6 +305,109 @@ class RemoteMachineShellConnection(KeepRefs):
         elif os_type == Windows.NAME:
             command = "net stop Netman && timeout {} && net start Netman"
             output, error = self.execute_command(command.format(stop_time))
+            self.log_command_output(output, error)
+
+    def cleanup_pcaps(self):
+        self.extract_remote_info()
+        os_type = self.info.type.lower()
+
+        # Stop old instances of tcpdump if still running
+        if os_type == "unix" or os_type == "linux":
+            stop_tcp_cmd = "if [[ \"$(pgrep tcpdump)\" ]]; " \
+                        "then kill -s TERM $(pgrep tcpdump); fi"
+            output, error = self.execute_command(stop_tcp_cmd)
+            self.log_command_output(output, error)
+            output, error = self.execute_command("rm -rf pcaps")
+            self.log_command_output(output, error)
+            output, error = self.execute_command("rm -rf " + self.ip + "_pcaps.zip")
+            self.log_command_output(output, error)
+
+    def fetch_pcaps(self, test_failed, log_path):
+        self.extract_remote_info()
+        os_type = self.info.type.lower()
+        os_name = "".join(self.info.distribution_version.lower().split(" "))
+
+        if os_type == "unix" or os_type == "linux":
+            # stop tcdump
+            stop_tcp_cmd = "if [[ \"$(pgrep tcpdump)\" ]]; " \
+                        "then kill -s TERM $(pgrep tcpdump); fi"
+            output, error = self.execute_command(stop_tcp_cmd)
+            self.log_command_output(output, error)
+            # check if pcaps dir exists
+            check_cmd = "[ -d pcaps ]&&echo 1 ||echo 0"
+            output, error = self.execute_command(check_cmd)
+            self.log_command_output(output, error)
+            if output == ['0']:
+                self.log.warn("Directory pcaps is not found on {}".format(self.ip))
+                return
+            if test_failed:
+
+                zip_install_command = ""
+                if os_name in install_constants.LINUX_AMD64:
+                    zip_install_command = "apt-get install -y zip unzip"
+                elif os_name in install_constants.X86:
+                    zip_install_command = "yum install -y zip unzip"
+
+                # install zip unzip
+                output, error = self.execute_command(zip_install_command)
+                self.log_command_output(output, error)
+                # zip the pcaps folder
+                zip_cmd = "zip -r " + self.ip + "_pcaps.zip pcaps"
+                output, error = self.execute_command(zip_cmd)
+                self.log_command_output(output, error)
+                # transfer the zip file
+                zip_file_copied = self.get_file(
+                    "/root",
+                    os.path.basename(self.ip + "_pcaps.zip"),
+                    log_path)
+                self.log.info(
+                    "{} node pcap zip copied on client : {}"
+                    .format(self.ip, zip_file_copied))
+                if zip_file_copied:
+                    # Remove the zips
+                    output, error = self.execute_command("rm -rf "
+                                                         + self.ip + "_pcaps.zip")
+                    self.log_command_output(output, error)
+            # Remove pcaps
+            output, error = self.execute_command("rm -rf pcaps")
+            self.log_command_output(output, error)
+
+    def collect_pcaps(self):
+        self.extract_remote_info()
+        os_type = self.info.type.lower()
+        os_name = "".join(self.info.distribution_version.lower().split(" "))
+
+        if os_type == "unix" or os_type == "linux":
+            # Create path for storing pcaps
+            create_path = "mkdir -p pcaps"
+            output, error = self.execute_command(create_path)
+            self.log_command_output(output, error)
+
+            tcpdump_install_command = ""
+            screen_install_command = ""
+            lshw_install_command = ""
+            if os_name in install_constants.LINUX_AMD64:
+                tcpdump_install_command = "apt-get install -y tcpdump"
+                screen_install_command = "apt-get install -y screen"
+                lshw_install_command = "apt-get install -y lshw"
+            elif os_name in install_constants.X86:
+                tcpdump_install_command = "yum install -y tcpdump"
+                screen_install_command = "yum install -y screen"
+                lshw_install_command = "yum install -y lshw"
+
+            # Install tcpdump command if it doesn't exist
+            output, error = self.execute_command(tcpdump_install_command)
+            self.log_command_output(output, error)
+            # Install screen command if it doesn't exist
+            output, error = self.execute_command(screen_install_command)
+            self.log_command_output(output, error)
+            # Install lshw command if it doesn't exist
+            output, error = self.execute_command(lshw_install_command)
+            self.log_command_output(output, error)
+            # Execute the tcpdump command
+            tcp_cmd = 'screen -dmS test bash -c "tcpdump -C 500 -W 10 -w pcaps/pack-dump-file.pcap' \
+                         ' -i $(lshw -C network | grep \'logical name\'|cut -d\':\' -f2 | tr -d \'[:space:]\') -s 0 -Z root tcp"'
+            output, error = self.execute_command(tcp_cmd)
             self.log_command_output(output, error)
 
     def stop_membase(self):

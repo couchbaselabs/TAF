@@ -34,7 +34,7 @@ class volume(AutoFailoverBaseTest):
         self.log.info("Printing bucket stats before teardown")
         self.bucket_util.print_bucket_stats(self.cluster)
         if self.collect_pcaps:
-            self.start_fetch_pcaps()
+            self.start_fetch_pcaps(is_test_failed=self.is_test_failed())
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if not self.crash_warning:
             self.assertFalse(result, msg="Cb_log file validation failed")

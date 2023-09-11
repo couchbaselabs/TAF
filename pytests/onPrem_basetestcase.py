@@ -444,9 +444,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.assertTrue(status, "minimum replica setting failed to update")
             self.num_replicas = self.minimum_bucket_replica
 
-    def start_fetch_pcaps(self):
+    def start_fetch_pcaps(self, is_test_failed):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
-        is_test_failed = self.is_test_failed()
         self.node_utils.start_fetch_pcaps(self.servers, log_path,
                                           is_test_failed)
 
@@ -548,9 +547,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 x509.teardown_certs(servers=cluster.servers)
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
-        if self.collect_pcaps:
-            self.log.info("Starting Pcaps collection!!")
-            self.start_fetch_pcaps()
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if self.skip_teardown_cleanup:
             self.log.debug("Skipping tearDownEverything")
@@ -560,6 +556,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
             self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
+        
+        if self.collect_pcaps:
+            self.log.info("Starting Pcaps collection!!")
+            self.start_fetch_pcaps(is_test_failed=self.is_test_failed())
 
         # Fail test in case of sys_event_logging failure
         if (not self.is_test_failed()) and sys_event_validation_failure:
@@ -900,8 +900,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if result and force_collect and not self.stop_server_on_crash:
                 self.fetch_cb_collect_logs()
                 self.get_cbcollect_info = False
-            if (self.is_test_failed() or result) and self.collect_data:
-                self.copy_data_on_slave()
+            if (self.is_test_failed() or result):
+                if self.collect_data:
+                    self.copy_data_on_slave()
+                if self.collect_pcaps:
+                    self.log.info("Starting Pcaps collection!!")
+                    self.start_fetch_pcaps(is_test_failed=True)
 
         return result
 
