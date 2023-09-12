@@ -63,9 +63,9 @@ class VBucketAwareMemcached(object):
         self.vBucketMap = {}
         self.vBucketMapReplica = {}
         self.rest = rest
+        self.log = logger.get("test")
         self.reset(rest)
         self.collections = collections
-        self.log = logger.get("test")
 
     def reset(self, rest=None):
         if not rest:
