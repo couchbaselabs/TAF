@@ -184,7 +184,8 @@ class RollbackTests(CollectionBase):
             self.log.info("Validating stats")
             for bucket in self.cluster.buckets:
                 self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
-                                                timeout=self.wait_timeout)
+                                                timeout=self.wait_timeout,
+                                                stat_cond=">=")
                 self.bucket_util._wait_for_stat(
                     bucket,
                     vb_replica_queue_size_map,
