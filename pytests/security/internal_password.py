@@ -14,7 +14,6 @@ from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 class InternalUserPassword(ClusterSetup):
     def setUp(self):
         super(InternalUserPassword, self).setUp()
-        self.standard = self.input.param("standard", "pkcs8")
         self.security_util = SecurityUtils(self.log)
         self.spec_name = self.input.param("bucket_spec", "single_bucket.bucket_for_magma_collections")
         self.initial_data_spec = self.input.param("initial_data_spec", "initial_load")
@@ -202,7 +201,8 @@ class InternalUserPassword(ClusterSetup):
             False, 60)
         self.assertTrue(status, "Auto-failover disable failed")
         start_time = datetime.now()
-        self.cluster_util.stop_server(self.cluster, self.servers_to_fail[0])
+        for server_to_fail in self.servers_to_fail:
+            self.cluster_util.stop_server(self.cluster, server_to_fail)
         self.sleep(60, "keeping the failure")
         if self.force_rotate:
             result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
@@ -216,9 +216,10 @@ class InternalUserPassword(ClusterSetup):
         if not validate_result:
             self.fail("Did not find any password rotation logs in the specified interval")
         self.log.info("Starting the server")
-        self.cluster_util.start_server(self.cluster,
-                                        self.servers_to_fail[0])
-        self.sleep(10, "Wait after server is back up!")
+        for server_to_fail in self.servers_to_fail:
+            self.cluster_util.start_server(self.cluster,
+                                           server_to_fail)
+        self.sleep(60, "Wait after server is back up!")
 
         if self.force_rotate:
             result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
