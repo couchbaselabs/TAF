@@ -29,7 +29,7 @@ from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket, Serverless
 from Cb_constants import constants, CbServer, DocLoading, ClusterRun
 from CbasLib.CBASOperations import CBASHelper
-from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
+from CbasLib.cbas_entity import Dataverse, Dataset, Synonym, \
     CBAS_Index, CBAS_UDF
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats

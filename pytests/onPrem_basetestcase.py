@@ -278,7 +278,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
 
-                if self.nebula and CbServer.cluster_profile == "serverless":
+                if hasattr(self, 'nebula') and CbServer.cluster_profile == "serverless":
                     cluster_registration_config = self.nebula_util.generate_cluster_registration_config(
                         cluster, tls_skip_verify=True,
                         disable_proxy_nontls=True)
