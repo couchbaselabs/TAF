@@ -14,8 +14,16 @@ class Dataverse(object):
 
     def __init__(self, name="Default"):
         self.name = CBASHelper.format_name(name)
-        self.links = dict()
+
+        self.remote_links = dict()
+        self.external_links = dict()
+        self.kafka_links = dict()
+
         self.datasets = dict()
+        self.remote_datasets = dict()
+        self.external_datasets = dict()
+        self.standalone_datasets = dict()
+
         self.synonyms = dict()
         self.udfs = dict()
 
@@ -23,121 +31,134 @@ class Dataverse(object):
         return self.name
 
 
-class CBAS_Scope(Dataverse):
-    """
-    Analytics scope object, this is syntactic same as Dataverse
-    """
-
-    def __init__(self, name="Default"):
-        super(CBAS_Scope, self).__init__(name)
-
-
 class Link(object):
     """
     Link object
     """
 
-    def __init__(self, name=None, dataverse_name="Default", properties={}):
+    def __init__(self, name, dataverse_name="Default"):
         """
         :param name str, name of the link, not needed in case of a link of type Local
         :param dataverse_name str, dataverse where the link is present.
-        :param properties: dict, contains all the properties required to create a link.
-        Common for both AWS and couchbase link.
-        <Required> name : name of the link to be created.
-        <Required> scope : name of the dataverse under which the link has to be created.
-        <Required> type : s3/couchbase
-
-        For links to external couchbase cluster.
-        <Required> hostname : The hostname of the link
-        <Optional> username : The username for host authentication. Required if encryption is set to
-        "none" or "half. Optional if encryption is set to "full".
-        <Optional> password : The password for host authentication. Required if encryption is set to
-        "none" or "half. Optional if encryption is set to "full".
-        <Required> encryption : The link secure connection type ('none', 'full' or 'half')
-        <Optional> certificate : The root certificate of target cluster for authentication.
-        Required only if encryption is set to "full"
-        <Optional> clientCertificate : The user certificate for authentication.
-        Required only if encryption is set to "full" and username and password is not used.
-        <Optional> clientKey : The client key for user authentication.
-        Required only if encryption is set to "full" and username and password is not used.
-
-        For links to AWS S3
-        <Required> accessKeyId : The access key of the link
-        <Required> secretAccessKey : The secret key of the link
-        <Required> region : The region of the link
-        <Optional> serviceEndpoint : The service endpoint of the link.
-        Note - please use the exact key names as provided above in link properties dict.
         """
         self.name = CBASHelper.format_name(name)
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
-        self.properties = properties
-        self.properties["name"] = CBASHelper.unformat_name(self.name)
-        self.properties["dataverse"] = CBASHelper.unformat_name(
-            self.dataverse_name)
-        self.link_type = self.properties["type"].lower()
         self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
 
     def __str__(self):
         return self.full_name
 
 
-class Dataset(object):
-    """
-    Dataset object
-    """
+class Remote_Link(Link):
 
-    def __init__(self, name="cbas_ds", dataverse_name="Dafault",
-                 link_name=None, dataset_source="internal",
-                 dataset_properties={},
-                 bucket=None, scope=None, collection=None,
-                 enabled_from_KV=False,
-                 num_of_items=0):
+    def __init__(self, name, dataverse_name="Default", properties={}):
         """
-        :param name str, name of the dataset
-        :param dataverse_name str, dataverse where the dataset is present.
-        :param link_name str, name of the link to which dataset is associated,
-        required if dataset is being created on remote or external source.
-        :param dataset_source str, determines whether the dataset is created on couchbase buckets or
-        external data source. Valid values are internal or external.
-        :param dataset_properties dict, valid only for dataset with dataset_source as external
-        :param bucket bucket_obj KV bucket on which dataset is based.
-        :param scope str KV scope on which dataset is based.
+        :param name str, name of the link
+        :param dataverse_name str, dataverse where the link is present.
+
+        <Required> hostname : The hostname of the link
+        <Optional> username : The username for host authentication.
+        Required if encryption is set to "none" or "half. Optional if
+        encryption is set to "full".
+        <Optional> password : The password for host authentication.
+        Required if encryption is set to "none" or "half. Optional if
+        encryption is set to "full".
+        <Required> encryption : The link secure connection type
+        ('none', 'full' or 'half')
+        <Optional> certificate : The root certificate of target cluster for authentication.
+        Required only if encryption is set to "full"
+        <Optional> clientCertificate : The user certificate for authentication.
+        Required only if encryption is set to "full" and username and password is not used.
+        <Optional> clientKey : The client key for user authentication.
+        Required only if encryption is set to "full" and username and password is not used.
+        """
+        super(Remote_Link, self).__init__(name, dataverse_name)
+        self.properties = properties
+        self.properties["name"] = CBASHelper.unformat_name(self.name)
+        self.properties["dataverse"] = CBASHelper.unformat_name(
+            self.dataverse_name)
+        self.link_type = "couchbase"
+
+
+class External_Link(Link):
+
+    def __init__(self, name, dataverse_name="Default", properties={}):
+        """
+        :param name str, name of the link
+        :param dataverse_name str, dataverse where the link is present.
+
+        <Required> accessKeyId : The access key of the link
+        <Required> secretAccessKey : The secret key of the link
+        <Required> region : The region of the link
+        <Optional> serviceEndpoint : The service endpoint of the link.
+        Note - please use the exact key names as provided above in link properties dict.
+        """
+        super(External_Link, self).__init__(name, dataverse_name)
+        self.properties = properties
+        self.properties["name"] = CBASHelper.unformat_name(self.name)
+        self.properties["dataverse"] = CBASHelper.unformat_name(
+            self.dataverse_name)
+        self.link_type = self.properties["type"].lower()
+
+
+class Kafka_Link(Link):
+
+    def __init__(self, name, dataverse_name="Default", db_type="mongo",
+                 kafka_cluster_details={}, external_database_details={}):
+        """
+        :param name str, name of the link
+        :param dataverse_name str, dataverse where the link is present.
+        :param db_type <str> Type of the external database. Accepted values
+        are mongo, dynamo and cassandra
+        :param kafka_cluster_details <dict> kafka cluster info like
+        connection URI and authentication.
+        :param external_database_details <dict> connection, authentication
+        and other details required to connect to external databases like
+        mongo, dynamo or cassandra
+        """
+        super(Kafka_Link, self).__init__(name, dataverse_name)
+        self.link_type = "kafka"
+        self.db_type = db_type.lower()
+        self.kafka_cluster_details = kafka_cluster_details
+        self.external_database_details = external_database_details
+
+
+class Dataset(object):
+
+    def __init__(self, name, dataverse_name="Dafault", bucket=None,
+                 scope=None, collection=None, enabled_from_KV=False,
+                 num_of_items=0, storage_format="row"):
+        """
+        :param name <str> name of the dataset
+        :param dataverse_name <str> dataverse where the dataset is present.
+        :param bucket <bucket_obj> KV bucket on which dataset is based.
+        :param scope <str> KV scope on which dataset is based.
         If only bucket name is specified, then default scope is selected.
-        :param collection str KV collection on which dataset is based.
+        :param collection <str> KV collection on which dataset is based.
         If only bucket name is specified, then default collection in default scope is selected.
-        :param enabled_from_KV bool, specify whether the dataset was created by enabling analytics from KV.
-        :param num_of_items int, expected number of items in dataset.
+        :param enabled_from_KV <bool> specify whether the dataset was
+        created by enabling analytics from KV.
+        :param num_of_items <int> expected number of items in dataset.
+        :param storage_format <str> storage format for the dataset.
         """
         self.name = CBASHelper.format_name(name)
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
         self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
-        self.link_name = CBASHelper.format_name(link_name)
-        self.dataset_source = dataset_source
         self.indexes = dict()
-
-        if self.dataset_source == "internal":
-            self.dataset_properties = {}
-            self.enabled_from_KV = enabled_from_KV
-            self.kv_bucket = bucket
-            self.kv_scope = scope
-            self.kv_collection = collection
-            if self.kv_collection:
-                self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
-                    cardinality=3)
-            else:
-                self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
-                    cardinality=1)
-            self.num_of_items = num_of_items
-            self.storage_format = None
-
-        elif self.dataset_source == "external":
-            self.dataset_properties = dataset_properties
-            self.enabled_from_KV = False
-            self.kv_bucket = None
-            self.kv_scope = None
-            self.kv_collection = None
+        self.enabled_from_KV = enabled_from_KV
+        self.kv_bucket = bucket
+        self.kv_scope = scope
+        self.kv_collection = collection
+        if self.kv_collection:
+            self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
+                cardinality=3)
+        elif self.kv_bucket:
+            self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
+                cardinality=1)
+        else:
             self.full_kv_entity_name = None
-            self.num_of_items = 0
+        self.num_of_items = num_of_items
+        self.storage_format = storage_format
 
     def __str__(self):
         return self.full_name
@@ -154,36 +175,87 @@ class Dataset(object):
                                           self.kv_collection.name)
 
 
-class CBAS_Collection(Dataset):
-    """
-    Analytics collection object, this is syntactic same as Dataset
-    """
+class Remote_Dataset(Dataset):
 
-    def __init__(self, name="cbas_ds", dataverse_name="Dafault",
-                 link_name=None, dataset_source="internal",
-                 dataset_properties={},
+    def __init__(self, name, link_name, dataverse_name="Dafault",
                  bucket=None, scope=None, collection=None,
-                 enabled_from_KV=False,
-                 num_of_items=0):
+                 num_of_items=0, storage_format="row"):
         """
-        :param name str, name of the dataset
-        :param dataverse_name str, dataverse where the dataset is present.
-        :param link_name str, name of the link to which dataset is associated,
-        required if dataset is being created on remote or external source.
-        :param dataset_source str, determines whether the dataset is created on couchbase buckets or
-        external data source. Valid values are internal or external.
-        :param dataset_properties dict, valid only for dataset with dataset_source as external
-        :param bucket bucket_obj KV bucket on which dataset is based.
-        :param scope str KV scope on which dataset is based.
+        :param name <str> name of the dataset
+        :param link_name <str> name of the remote link to which dataset is
+        associated.
+        :param dataverse_name <str> dataverse where the dataset is present.
+        :param bucket <bucket_obj> KV bucket on which dataset is based.
+        :param scope <str> KV scope on which dataset is based.
         If only bucket name is specified, then default scope is selected.
-        :param collection str KV collection on which dataset is based.
-        If only bucket name is specified, then default collection in default scope is selected.
-        :param enabled_from_KV bool, specify whether the dataset was created by enabling analytics from KV.
+        :param collection <str> KV collection on which dataset is based.
+        If only bucket name is specified, then default collection in
+        default scope is selected.
+        :param num_of_items <int> expected number of items in dataset.
+        :param storage_format <str> storage format for the dataset.
         """
-        super(CBAS_Collection, self).__init__(
-            name, dataverse_name, link_name, dataset_source,
-            dataset_properties,
-            bucket, scope, collection, enabled_from_KV, num_of_items)
+        super(Remote_Dataset, self).__init__(
+            name, dataverse_name, bucket, scope, collection, False,
+            num_of_items, storage_format)
+
+        self.link_name = CBASHelper.format_name(link_name)
+
+
+class External_Dataset(Dataset):
+
+    def __init__(self, name, link_name, dataverse_name="Dafault",
+                 dataset_properties={}, num_of_items=0):
+        """
+        :param name <str> name of the dataset
+        :param dataverse_name <str> dataverse where the dataset is present.
+        :param link_name <str> name of the link to which dataset is associated,
+        :param dataset_properties <dict> valid only for dataset with
+        dataset_source as external
+        :param num_of_items <int> expected number of items in dataset.
+        """
+        super(External_Dataset, self).__init__(
+            name, dataverse_name, None, None, None, False,
+            num_of_items, "")
+        self.link_name = CBASHelper.format_name(link_name)
+        self.dataset_properties = dataset_properties
+
+
+class Standalone_Dataset(Dataset):
+
+    def __init__(self, name, data_source, primary_key,
+                 dataverse_name="Dafault", link_name=None,
+                 external_collection_name=None, dataset_properties={},
+                 num_of_items=0, storage_format="row"):
+        """
+        :param name <str> name of the dataset
+        :param primary_key <dict> dict of field_name:field_type to be used
+        as primary key.
+        :param dataverse_name <str> dataverse where the dataset is present.
+        :param data_source <str> Source from where data will be ingested
+        into dataset. Accepted Values - mongo, dynamo, cassandra, s3, gcp,
+        azure, shadow_dataset
+        :param link_name <str> Fully qualified name of the kafka link.
+        :param external_collection <str> Fully qualified name of the
+        collection on external databases like mongo, dynamo, cassandra etc
+        :param dataset_properties <dict> valid only for dataset with
+        dataset_source as external
+        :param num_of_items <int> expected number of items in dataset.
+        :param storage_format <str> storage format for the dataset.
+        """
+        super(Standalone_Dataset, self).__init__(
+            name, dataverse_name, None, None, None, False,
+            num_of_items, storage_format)
+
+        self.primary_key = primary_key
+        self.link_name = CBASHelper.format_name(link_name)
+        self.data_source = data_source.lower()
+
+        if self.data_source in ["s3", "azure", "gcp"]:
+            self.dataset_properties = dataset_properties
+        else:
+            self.dataset_properties = {}
+            if self.data_source in ["mongo", "dynamo", "cassandra"]:
+                self.external_collection_name = external_collection_name
 
 
 class Synonym(object):
@@ -294,3 +366,55 @@ class CBAS_UDF(object):
 
     def reset_full_name(self):
         self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
+
+
+class Kafka(object):
+    """
+    Defines the kafka cluster object.
+    """
+
+    """
+    :param url <str> Kafka cluster URI.
+    :param api_key <str> Kafka API key
+    :param api_secret <str> Kafka API secret key
+    """
+    def __init__(self, url, api_key, api_secret):
+        self.kafka_url = url
+        self.api_key = api_key
+        self.api_secret = api_secret
+
+    def get_kafka_cluster_detail_object_for_kafka_links(
+            self, auth_type="PLAIN"):
+        return {
+            "CLUSTER_URL": self.kafka_url,
+            "KAFKA_CREDENTIALS": {
+                "AUTH_MECHANISM": auth_type,
+                "AUTH_FIELDS": {
+                    "API_KEY": self.api_key,
+                    "API_SECRET": self.api_secret
+                }
+            }
+        }
+
+
+class ExternalDB(object):
+    """
+    Defines the external DB object.
+    """
+
+    """
+    :param db_type <str> Source Database can be Mongo, Dynamo
+    and Cassandra
+    :param db_uri <str> Source DB URI
+    :param **kwargs Additional parameters, will depend on source DB type.
+    """
+    def __init__(self, db_type, db_uri, **kwargs):
+        self.db_type = db_type.lower()
+        self.db_uri = db_uri
+
+    def get_source_db_detail_object_for_kafka_links(self):
+        if self.db_type == "mongo":
+            return {
+                "SOURCE": self.db_type,
+                "CONNECTION_URI": self.db_uri
+            }

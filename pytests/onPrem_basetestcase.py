@@ -34,12 +34,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Framework specific parameters (Extension from cb_basetest)
         self.skip_cluster_reset = self.input.param("skip_cluster_reset", False)
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
-        self.storage_compute_separation = self.input.param("storage_compute_separation", False)
+        self.storage_compute_separation = self.input.param(
+            "storage_compute_separation", False)
         # End of framework parameters
 
         # Cluster level info settings
         self.log_info = self.input.param("log_info", None)
-        self.minimum_bucket_replica = self.input.param("minimum_bucket_replica", None)
+        self.minimum_bucket_replica = self.input.param(
+            "minimum_bucket_replica", None)
         self.disable_max_fo_count = self.input.param("disable_max_fo_count",
                                                      'false')
         self.log_location = self.input.param("log_location", None)
@@ -275,10 +277,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 # Set this unconditionally
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
-                
+
                 if self.nebula and CbServer.cluster_profile == "serverless":
                     cluster_registration_config = self.nebula_util.generate_cluster_registration_config(
-                        cluster, tls_skip_verify=True, disable_proxy_nontls=True)
+                        cluster, tls_skip_verify=True,
+                        disable_proxy_nontls=True)
                     if not self.nebula_util.register_cluster_on_nebula(
                             cluster_registration_config):
                         self.fail("Unable to register cluster {0} on "
@@ -379,7 +382,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 try:
                     self.aws_bucket_name = "goldfish-qe-" + str(
                         random.randint(1, 100000))
-                    self.log.info("Creating S3 bucket")
+                    self.log.info(
+                        "Creating S3 bucket: {}".format(self.aws_bucket_name))
                     self.aws_bucket_created = perform_S3_operation(
                         aws_access_key=self.aws_access_key,
                         aws_secret_key=self.aws_secret_key,
@@ -389,9 +393,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     break
                 except Exception as e:
                     self.log.error("Creating S3 bucket - {0} in region {1}. "
-                                  "Failed.".format(
+                                   "Failed.".format(
                         self.aws_bucket_name, self.aws_bucket_region))
                     self.log.error(str(e))
+                finally:
+                    if i == 4:
+                        self.fail("Unable to create S3 bucket even after 5 "
+                                  "retries")
             self.log.info("Adding aws bucket credentials to analytics")
             rest = RestConnection(self.cluster.master)
             status = rest.set_AWS_bucket_credential_to_anlaytics(
@@ -569,23 +577,47 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.log.info("Resetting cluster nodes")
                 self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
 
-            self.log.info("Deleting all files ins AWS bucket")
-            if not perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    empty_bucket=True, bucket_name=self.aws_bucket_name,
-                    region=self.aws_bucket_region):
-                self.fail("Failed to empty AWS bucket")
-            self.sleep(120)
-            self.log.info("Deleting all files ins AWS bucket")
-            if not perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    delete_bucket=True, bucket_name=self.aws_bucket_name,
-                    region=self.aws_bucket_region):
-                self.log.critical("AWS bucket failed to delete")
+            self.log.info("Emptying AWS S3 bucket - {0}".format(
+                self.aws_bucket_name))
+            for i in range(5):
+                try:
+                    if perform_S3_operation(
+                            aws_access_key=self.aws_access_key,
+                            aws_secret_key=self.aws_secret_key,
+                            aws_session_token=self.aws_session_token,
+                            empty_bucket=True,
+                            bucket_name=self.aws_bucket_name,
+                            region=self.aws_bucket_region):
+                        break
+                except Exception as e:
+                    self.log.error("Unable to empty S3 bucket - {0}".format(
+                        self.aws_bucket_name))
+                    self.log.error(str(e))
+                finally:
+                    if i == 4:
+                        self.fail("Unable to empty S3 bucket even after 5 "
+                                  "retries")
+
+            self.log.info("Deleting AWS S3 bucket - {0}".format(
+                self.aws_bucket_name))
+            for i in range(5):
+                try:
+                    if perform_S3_operation(
+                            aws_access_key=self.aws_access_key,
+                            aws_secret_key=self.aws_secret_key,
+                            aws_session_token=self.aws_session_token,
+                            delete_bucket=True,
+                            bucket_name=self.aws_bucket_name,
+                            region=self.aws_bucket_region):
+                        break
+                except Exception as e:
+                    self.log.error("Unable to delete S3 bucket - {0}".format(
+                        self.aws_bucket_name))
+                    self.log.error(str(e))
+                finally:
+                    if i == 4:
+                        self.fail("Unable to delete S3 bucket even after 5 "
+                                  "retries")
 
         self.shutdown_task_manager()
 
@@ -766,9 +798,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             print("running: %s" % cmd)
             shell.execute_command(cmd)[0]
             cbanalyze_log = core_file + ".log"
-            if shell.file_exists(os.path.dirname(cbanalyze_log), os.path.basename(cbanalyze_log)):
-                log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
-                shell.get_file(os.path.dirname(cbanalyze_log), os.path.basename(cbanalyze_log), log_path)
+            if shell.file_exists(os.path.dirname(cbanalyze_log),
+                                 os.path.basename(cbanalyze_log)):
+                log_path = TestInputSingleton.input.param("logs_folder",
+                                                          "/tmp")
+                shell.get_file(os.path.dirname(cbanalyze_log),
+                               os.path.basename(cbanalyze_log), log_path)
 
         def check_logs(grep_output_list):
             """
@@ -780,10 +815,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             """
             last_line = grep_output_list[-1]
             # eg: 2021-07-12T04:03:45
-            timestamp_regex = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+            timestamp_regex = re.compile(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
             match_obj = timestamp_regex.search(last_line)
             if not match_obj:
-                self.log.critical("%s does not match any timestamp" % last_line)
+                self.log.critical(
+                    "%s does not match any timestamp" % last_line)
                 return True
             timestamp = match_obj.group()
             timestamp = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
@@ -862,7 +899,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     if 'grep_for' in file_data:
                         for grep_pattern_of_log_file in file_data['grep_for']:
                             pattern_to_grep.append(grep_pattern_of_log_file)
-                    for common_grep_pattern in y_data["common_patterns"]['grep_for']:
+                    for common_grep_pattern in y_data["common_patterns"][
+                        'grep_for']:
                         pattern_to_grep.append(common_grep_pattern)
                     for grep_pattern in pattern_to_grep:
                         grep_for_str = grep_pattern['string']
@@ -1041,6 +1079,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         s.connect(("8.8.8.8", 80))
         return s.getsockname()[0]
 
+
 class ClusterSetup(OnPremBaseTest):
     def setUp(self):
         super(ClusterSetup, self).setUp()
@@ -1090,10 +1129,12 @@ class ClusterSetup(OnPremBaseTest):
 
         if CbServer.cluster_profile == "serverless":
             # Workaround to hitting throttling on serverless config
-            RestConnection(self.cluster.master).set_internalSetting("dataThrottleLimit",
-                                                                    self.kv_throttling_limit)
-            RestConnection(self.cluster.master).set_internalSetting("dataStorageLimit",
-                                                                    self.kv_storage_limit)
+            RestConnection(self.cluster.master).set_internalSetting(
+                "dataThrottleLimit",
+                self.kv_throttling_limit)
+            RestConnection(self.cluster.master).set_internalSetting(
+                "dataStorageLimit",
+                self.kv_storage_limit)
 
         # Used to track spare nodes.
         # Test case can use this for further rebalance
