@@ -82,6 +82,7 @@ common_patterns:
     - string: 'Basic\s[a-zA-Z]\{10,\}=='
     - string: 'Menelaus-Auth-User:\['
     - string: 'BEGIN RSA PRIVATE KEY'
+    - string: 'CB_PASSWORD'
     - string: '(A3T[A-Z0-9]|AKIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|ASIA)[A-Z0-9]{16}'
     - string: ".*\\(([^\\)}]|\\n)*[.*[\\\" '\\`\\(]+tasklist[\\\" '\\`\\)]+([^\\)}]|\\n)*/v.*\\)"
     - string: ".*\\(([^\\)}]|\\n)*[.*[\\\" '\\`\\(]+ps[\\\" '\\`]+([^\\)}]|\\n)*command([^\\)}]|\\n)*\\)"

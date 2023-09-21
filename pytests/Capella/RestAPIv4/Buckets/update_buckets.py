@@ -1,5 +1,5 @@
 """
-Created on August 18, 2023
+Created on August 22, 2023
 
 @author: Vipul Bhardwaj
 """
@@ -9,9 +9,11 @@ from pytests.Capella.RestAPIv4.api_base import APIBase
 import base64
 import time
 import itertools
+from couchbase_utils.capella_utils.dedicated import CapellaUtils
+from datetime import datetime, timedelta
 
 
-class PostBucket(APIBase):
+class UpdateBucket(APIBase):
 
     def setUp(self):
         APIBase.setUp(self)
@@ -27,14 +29,14 @@ class PostBucket(APIBase):
             project_description).json()["id"]
 
         # Initialize params for cluster creation.
-        cluster_name = self.prefix + "TestBucketPost"
+        cluster_name = self.prefix + "TestBucketPut"
         self.cluster = {
             "name": cluster_name,
             "description": None,
             "cloudProvider": {
                 "type": "aws",
                 "region": "us-east-1",
-                "cidr": "10.1.2.0/23"
+                "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
                 "version": "7.1"
@@ -67,21 +69,41 @@ class PostBucket(APIBase):
                 "timezone": "GMT"
             }
         }
-        self.cluster_id = self.capellaAPI.cluster_ops_apis.create_cluster(
-            self.organisation_id, self.project_id, cluster_name,
-            self.cluster['cloudProvider'], self.cluster['couchbaseServer'],
-            self.cluster['serviceGroups'], self.cluster['availability'],
-            self.cluster['support']).json()['id']
-        self.cluster['id'] = self.cluster_id
+        start_time = time.time()
+        while time.time() - start_time < 1800:
+            res = self.capellaAPI.cluster_ops_apis.create_cluster(
+                self.organisation_id, self.project_id, cluster_name,
+                self.cluster['cloudProvider'], self.cluster['couchbaseServer'],
+                self.cluster['serviceGroups'], self.cluster['availability'],
+                self.cluster['support'])
+            if res.status_code == 202:
+                self.cluster_id = res.json()['id']
+                self.cluster['id'] = self.cluster_id
+                break
+            elif "Please ensure you are passing a unique CIDR block" in \
+                    res.json()["message"]:
+                newCIDR = CapellaUtils.get_next_cidr() + "/20"
+                self.cluster["cloudProvider"]["cidr"] = newCIDR
+        if time.time() - start_time >= 1800:
+            self.fail("Couldn't find CIDR within half an hour.")
 
         # Wait for the cluster to be deployed.
         self.log.info("Waiting for cluster to be deployed.")
+        start_time = datetime.now()
         while self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
-                self.cluster_id).json()["currentState"] == "deploying":
+                self.cluster_id).json()["currentState"] == "deploying" and \
+                start_time + timedelta(minutes=30) > datetime.now():
             time.sleep(10)
-        self.log.info("Cluster deployed successfully.")
+        if self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, self.project_id,
+                self.cluster_id).json()["currentState"] == "healthy":
+            self.log.info("Cluster deployed successfully, initialising Bucket "
+                          "creation inside the cluster.")
+        else:
+            self.fail("Failed to deploy cluster")
 
+        # Initialise bucket params and create a bucket.
         self.expected_result = {
             "name": self.generate_random_string(special_characters=False),
             "type": "couchbase",
@@ -89,7 +111,7 @@ class PostBucket(APIBase):
             "memoryAllocationInMb": 100,
             "bucketConflictResolution": "seqno",
             "durabilityLevel": "none",
-            "replicas": 1,
+            "replicas": 2,
             "flush": False,
             "timeToLiveInSeconds": 0,
             "evictionPolicy": "fullEviction",
@@ -100,20 +122,10 @@ class PostBucket(APIBase):
                 "memoryUsedInMib": None
             }
         }
-        # self.bucket_id = self.capellaAPI.cluster_ops_apis.create_bucket(
-        #     self.organisation_id, self.project_id, self.cluster_id,
-        #     self.expected_result['name'],
-        #     self.expected_result['type'],
-        #     self.expected_result['storageBackend'],
-        #     self.expected_result['memoryAllocationInMb'],
-        #     self.expected_result['bucketConflictResolution'],
-        #     self.expected_result['durabilityLevel'],
-        #     self.expected_result['replicas'],
-        #     self.expected_result['flush'],
-        #     self.expected_result['timeToLiveInSeconds']
-        # ).json()['id']
-        # self.expected_result['id'] = self.bucket_id
-        self.bucket_ids = list()
+        self.bucket_id = self.capellaAPI.cluster_ops_apis.create_bucket(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.expected_result['name'], "couchbase", "couchstore", 100,
+            "seqno", "none", 1, False, 0).json()['id']
 
     def tearDown(self):
         failures = list()
@@ -121,13 +133,15 @@ class PostBucket(APIBase):
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
 
-        # Delete the buckets that were created.
-        if self.delete_buckets(self.organisation_id, self.project_id,
-                               self.cluster_id, self.bucket_ids,
-                               self.org_owner_key["token"]):
-            self.fail("Error while deleting buckets.")
-        self.log.info("Successfully deleted buckets. Destroying "
-                      "Cluster: {}".format(self.cluster_id))
+        # Delete the bucket that was created.
+        if self.capellaAPI.cluster_ops_apis.delete_bucket(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.bucket_id).status_code != 204:
+            failures.append("Bucket deletion failed.")
+        else:
+            self.log.info("Successfully deleted bucket {}. Destroying "
+                          "cluster: {} now."
+                          .format(self.bucket_id, self.cluster_id))
 
         # Delete the cluster that was created.
         if self.capellaAPI.cluster_ops_apis.delete_cluster(
@@ -138,8 +152,9 @@ class PostBucket(APIBase):
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
-        while not self.capellaAPI.cluster_ops_apis.list_clusters(
-                self.organisation_id, self.project_id).status_code == 404:
+        while not self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, self.project_id,
+                self.cluster_id).status_code == 404:
             time.sleep(10)
         self.log.info("Cluster destroyed, destroying Project now.")
 
@@ -151,24 +166,12 @@ class PostBucket(APIBase):
         if failures:
             self.fail("Following error occurred in teardown: {}".format(
                 failures))
-        super(PostBucket, self).tearDown()
-
-    def validate_bucket_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(actual_res[key], dict):
-                self.validate_bucket_api_response(
-                    expected_res[key], actual_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
+        super(UpdateBucket, self).tearDown()
 
     def test_api_path(self):
         testcases = [
             {
-                "description": "Create valid bucket"
+                "description": "Valid bucket update."
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/buckets",
@@ -186,10 +189,10 @@ class PostBucket(APIBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{"
                        "}/buckets/bucket",
-                "expected_status_code": 405,
-                "expected_error": ""
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
-                "description": "Create bucket but with non-hex organizationID",
+                "description": "Update bucket but with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
                 "expected_status_code": 400,
@@ -203,7 +206,7 @@ class PostBucket(APIBase):
                                " to be a client error."
                 }
             }, {
-                "description": "Create bucket but with non-hex projectID",
+                "description": "Update bucket but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
                 "expected_status_code": 400,
@@ -217,7 +220,7 @@ class PostBucket(APIBase):
                                " to be a client error."
                 }
             }, {
-                "description": "Create bucket but with non-hex clusterID",
+                "description": "Update bucket but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
                 "expected_status_code": 400,
@@ -230,16 +233,28 @@ class PostBucket(APIBase):
                                "request due to something that is perceived"
                                " to be a client error."
                 }
+            }, {
+                "description": "Update bucket but with invalid bucketID",
+                "invalid_bucketID": self.replace_last_character(
+                    self.bucket_id),
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 400,
+                    "hint": "Please review your request and ensure that "
+                            "all required parameters are correctly "
+                            "provided.",
+                    "message": "BucketID is invalid.",
+                    "httpStatusCode": 400
+                }
             }
         ]
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-            self.expected_result['name'] = self.generate_random_string(
-                special_characters=False)
             org = self.organisation_id
             proj = self.project_id
             clus = self.cluster_id
+            buck = self.bucket_id
 
             if "url" in testcase:
                 self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
@@ -250,41 +265,30 @@ class PostBucket(APIBase):
                 proj = testcase["invalid_projectID"]
             elif "invalid_clusterID" in testcase:
                 clus = testcase["invalid_clusterID"]
+            elif "invalid_bucketID" in testcase:
+                buck = testcase["invalid_bucketID"]
 
-            self.log.info("Creating bucket.")
-            result = self.capellaAPI.cluster_ops_apis.create_bucket(
-                org, proj, clus, self.expected_result['name'],
-                self.expected_result['type'],
-                self.expected_result['storageBackend'],
+            self.log.info("Updating bucket.")
+            result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
+                org, proj, clus, buck,
                 self.expected_result['memoryAllocationInMb'],
-                self.expected_result['bucketConflictResolution'],
                 self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'],
-                self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds']
+                self.expected_result['replicas'], True, 10, False
             )
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_bucket(
-                    org, proj, clus, self.expected_result['name'],
-                    self.expected_result['type'],
-                    self.expected_result['storageBackend'],
+                result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
+                    org, proj, clus, buck,
                     self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['bucketConflictResolution'],
                     self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'],
-                    self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds']
+                    self.expected_result['replicas'], True, 10, False
                 )
-            if result.status_code == 201 and "expected_error" not in testcase:
-                self.expected_result['id'] = result.json()['id']
-                self.bucket_ids.append(result.json()['id'])
-
-                if not self.validate_bucket_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 201, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
+            if result.status_code == 204:
+                if "expected_error" in testcase:
+                    self.log.error(testcase["description"])
                     failures.append(testcase["description"])
+                else:
+                    self.log.debug("Updation Successful.")
             else:
                 if result.status_code >= 500:
                     self.log.critical(testcase["description"])
@@ -296,7 +300,7 @@ class PostBucket(APIBase):
                         result = result.json()
                         for key in result:
                             if result[key] != testcase["expected_error"][key]:
-                                self.log.error("Status != 201, Key validation "
+                                self.log.error("Status != 200, Key validation "
                                                "Failure : {}".format(
                                                 testcase["description"]))
                                 self.log.warning("Result : {}".format(result))
@@ -369,7 +373,7 @@ class PostBucket(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -383,7 +387,7 @@ class PostBucket(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -397,7 +401,7 @@ class PostBucket(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -411,7 +415,7 @@ class PostBucket(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -439,13 +443,11 @@ class PostBucket(APIBase):
         header = dict()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-            self.expected_result['name'] = self.generate_random_string(
-                special_characters=False)
 
             # Wait for cluster to rebalance (if it is).
             self.update_auth_with_api_token(self.org_owner_key['token'])
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, self.project_id, self.cluster_id)
+                self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers["Retry-After"]))
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
@@ -537,41 +539,27 @@ class PostBucket(APIBase):
                 header = {}
                 self.update_auth_with_api_token(testcase["token"])
 
-            result = self.capellaAPI.cluster_ops_apis.create_bucket(
+            result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_result['name'], self.expected_result['type'],
-                self.expected_result['storageBackend'],
-                self.expected_result['memoryAllocationInMb'],
-                self.expected_result['bucketConflictResolution'],
+                self.bucket_id, self.expected_result['memoryAllocationInMb'],
                 self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'],
-                self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds'], headers=header
+                self.expected_result['replicas'], True, 10, False, header
             )
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_bucket(
+                result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_result['name'], self.expected_result['type'],
-                    self.expected_result['storageBackend'],
+                    self.bucket_id,
                     self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['bucketConflictResolution'],
                     self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'],
-                    self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds']
+                    self.expected_result['replicas'], True, 10, False
                 )
-            if result.status_code == 201 and "expected_error" not in testcase:
-                self.expected_result['id'] = result.json()['id']
-                self.bucket_ids.append(result.json()['id'])
-
-                if not self.validate_bucket_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 201, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
+            if result.status_code == 204:
+                if "expected_error" in testcase:
+                    self.log.error(testcase["description"])
                     failures.append(testcase["description"])
                 else:
-                    self.log.debug("Creation Successful - No Errors.")
+                    self.log.debug("Updation Successful.")
             else:
                 if result.status_code >= 500:
                     self.log.critical(testcase["description"])
@@ -604,12 +592,6 @@ class PostBucket(APIBase):
                                     result.status_code))
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
-            if len(self.bucket_ids) >= 30:
-                self.log.warning("Bucket limit for cluster reached, flushing "
-                                 "all current buckets.")
-                self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids,
-                                    self.org_owner_key['token'])
 
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
@@ -624,9 +606,9 @@ class PostBucket(APIBase):
                 len(failures), len(testcases)))
 
     def test_query_parameters(self):
-        self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}"
-                       .format(self.organisation_id, self.project_id,
-                               self.cluster_id))
+        self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Bu"
+                       "ckID: {}".format(self.organisation_id, self.project_id,
+                                         self.cluster_id, self.bucket_id))
         organizations_id_values = [
             self.organisation_id,
             self.replace_last_character(self.organisation_id),
@@ -663,62 +645,81 @@ class PostBucket(APIBase):
             {self.cluster_id},
             None
         ]
+        bucket_id_values = [
+            self.bucket_id,
+            self.replace_last_character(self.bucket_id),
+            True,
+            123456789,
+            123456789.123456789,
+            "",
+            [self.bucket_id],
+            (self.bucket_id,),
+            {self.bucket_id},
+            None
+        ]
+
         combinations = list(itertools.product(*[
-            organizations_id_values, project_id_values, cluster_id_values]))
+            organizations_id_values, project_id_values, cluster_id_values,
+            bucket_id_values]))
 
         testcases = list()
         for combination in combinations:
             testcase = {
                 "description": "OrganizationID: {}, ProjectID: {}, "
-                               "ClusterID: {}".format(str(combination[0]),
-                                                      str(combination[1]),
-                                                      str(combination[2])),
+                               "ClusterID: {}, BucketID: {}".format(
+                                str(combination[0]), str(combination[1]),
+                                str(combination[2]), str(combination[3])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
                 "clusterID": combination[2],
+                "bucketID": combination[3]
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
-                    combination[2] == self.cluster_id):
-                if combination[1] == "" or combination[0] == "":
+                    combination[2] == self.cluster_id and
+                    combination[3] == self.bucket_id):
+                if (combination[1] == "" or combination[0] == "" or
+                        combination[2] == "" or combination[3] == ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
-                elif combination[2] == "":
-                    testcase["expected_status_code"] = 405
-                    testcase["expected_error"] = ""
-                elif any(variable in [int, bool, float, list, tuple, set,
-                                      type(None)] for variable in [
-                             type(combination[0]), type(combination[1]),
-                             type(combination[2])]):
+                elif any(variable in [
+                     int, bool, float, list, tuple, set, type(None)] for
+                              variable in [type(combination[0]),
+                                           type(combination[1]),
+                                           type(combination[2])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
-                        "hint": "Check if all the required params are "
-                                "present in the request body.",
-                        "httpStatusCode": 400,
-                        "message": "The server cannot or will not process "
-                                   "the request due to something that is "
-                                   "perceived to be a client error."
+                        "hint": "Check if all the required params are present "
+                                "in the request body.",
+                        "message": "The server cannot or will not process the "
+                                   "request due to something that is perceived"
+                                   " to be a client error.",
+                        "httpStatusCode": 400
                     }
                 elif combination[0] != self.organisation_id:
                     testcase["expected_status_code"] = 403
                     testcase["expected_error"] = {
-                        "code": 1003,
-                        "hint": "Make sure you have adequate access to the "
+                        "code": 1002,
+                        "hint": "Your access to the requested resource is "
+                                "denied. Please make sure you have the "
+                                "necessary permissions to access the "
                                 "resource.",
                         "message": "Access Denied.",
                         "httpStatusCode": 403
                     }
-                elif combination[1] != self.project_id:
-                    testcase["expected_status_code"] = 404
+                elif combination[3] != self.bucket_id and not \
+                        isinstance(combination[3], type(None)):
+                    testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
-                        "code": 2000,
-                        "hint": "Check if the project ID is valid.",
-                        "message": "The server cannot find a project by it's "
-                                   "ID.",
-                        "httpStatusCode": 404
+                        "code": 400,
+                        "hint": "Please review your request and ensure "
+                                "that all required parameters are "
+                                "correctly provided.",
+                        "message": "BucketID is invalid.",
+                        "httpStatusCode": 400
                     }
-                else:
+                elif combination[2] != self.cluster_id:
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
                         "code": 4025,
@@ -728,13 +729,42 @@ class PostBucket(APIBase):
                         "message": "Unable to fetch the cluster details.",
                         "httpStatusCode": 404
                     }
+                elif combination[1] != self.project_id:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 4031,
+                        "hint": "Please provide a valid projectId.",
+                        "httpStatusCode": 422,
+                        "message": "Unable to process the request. The "
+                                   "provided projectId {} is not valid for "
+                                   "the cluster {}."
+                        .format(combination[1], combination[2])
+                    }
+                elif isinstance(combination[3], type(None)):
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = {
+                        "code": 6008,
+                        "hint": "The requested bucket does not exist. Please "
+                                "ensure that the correct bucket ID is "
+                                "provided.",
+                        "httpStatusCode": 404,
+                        "message": "Unable to find the specified bucket."
+                    }
+                else:
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "message": "BucketID is invalid.",
+                        "httpStatusCode": 400
+                    }
             testcases.append(testcase)
 
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-            self.expected_result['name'] = self.generate_random_string(
-                special_characters=False)
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}
             else:
@@ -760,43 +790,28 @@ class PostBucket(APIBase):
                         self.cluster_id)
             self.log.debug("Cluster state healthy.")
 
-            result = self.capellaAPI.cluster_ops_apis.create_bucket(
+            result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], self.expected_result['name'],
-                self.expected_result['type'],
-                self.expected_result['storageBackend'],
+                testcase["clusterID"], testcase['bucketID'],
                 self.expected_result['memoryAllocationInMb'],
-                self.expected_result['bucketConflictResolution'],
                 self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'],
-                self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds'], **kwarg
+                self.expected_result['replicas'], True, 10, False, **kwarg
             )
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_bucket(
+                result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_result['name'],
-                    self.expected_result['type'],
-                    self.expected_result['storageBackend'],
+                    testcase["clusterID"], testcase['bucketID'],
                     self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['bucketConflictResolution'],
                     self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'],
-                    self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds'], **kwarg
+                    self.expected_result['replicas'], True, 10, False, **kwarg
                 )
-            if result.status_code == 201 and "expected_error" not in testcase:
-                self.expected_result['id'] = result.json()['id']
-                self.bucket_ids.append(result.json()['id'])
-
-                if not self.validate_bucket_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 201, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
+            if result.status_code == 204:
+                if "expected_error" in testcase:
+                    self.log.error(testcase["description"])
                     failures.append(testcase["description"])
                 else:
-                    self.log.debug("Creation Successful - No Errors.")
+                    self.log.debug("Updation Successful.")
             else:
                 if result.status_code >= 500:
                     self.log.critical(testcase["description"])
@@ -829,12 +844,6 @@ class PostBucket(APIBase):
                                     result.status_code))
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
-            if len(self.bucket_ids) >= 30:
-                self.log.warning("Bucket limit for cluster reached, flushing "
-                                 "all current buckets.")
-                self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids,
-                                    self.org_owner_key['token'])
 
         if failures:
             for fail in failures:
@@ -846,34 +855,31 @@ class PostBucket(APIBase):
         testcases = list()
 
         for key in self.expected_result:
-            if key in ["stats", "evictionPolicy"]:
+            if key in ["name", "stats", "evictionPolicy", "type",
+                       "storageBackend", "bucketConflictResolution"]:
                 continue
 
             values = [
-                "", 1, 0, 100000, -1, 123.123,
-                self.generate_random_string(special_characters=False),
+                "", 1, 0, 100000, -1, 123.123, self.generate_random_string(),
                 self.generate_random_string(500, special_characters=False),
             ]
             for value in values:
-                self.expected_result['name'] = self.generate_random_string(
-                    special_characters=False)
                 testcase = copy.deepcopy(self.expected_result)
                 testcase[key] = value
 
-                for param in ["stats", "evictionPolicy"]:
+                for param in ["name", "stats", "evictionPolicy", "type",
+                              "storageBackend", "bucketConflictResolution"]:
                     del testcase[param]
                 testcase["description"] = "Testing '{}' with value: " \
-                                          "{}".format(key, str(value))
+                                          "{}".format(key, value)
 
                 if (
-                        (key in [
-                            "name", "type", "storageBackend",
-                            "bucketConflictResolution", "durabilityLevel"]
-                            and not isinstance(value, str)) or
                         (key in ["memoryAllocationInMb",
                                  "timeToLiveInSeconds", "replicas"]
-                            and not isinstance(value, int))
-                        or (key == "flush" and not isinstance(value, bool))
+                            and not isinstance(value, int)) or
+                        (key == "durabilityLevel"
+                         and not isinstance(value, str)) or
+                        (key == "flush" and not isinstance(value, bool))
                 ):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
@@ -885,34 +891,28 @@ class PostBucket(APIBase):
                                    'field "{}".'.format(key)
                     }
                 elif (
-                 (key == 'timeToLiveInSeconds' and value in range(0, 100001))
+                 (key == 'timeToLiveInSeconds' and (value >= 0))
                  or
-                 (key == 'replicas' and value in range(1, 4))
+                 (key == 'replicas' and value in range(0, 4))
                  or
                  (key == 'flush' and isinstance(value, bool))
                  or
-                 (key == 'bucketConflictResolution'
-                  and value in ['seqno', 'lww'])
-                 or
-                 (key == 'memoryAllocationInMb' and isinstance(value, int)
-                  and value >= 100)
+                 (key == 'memoryAllocationInMb' and isinstance(
+                            value, int)
+                         and value >= 100)
                  or
                  (key == 'durabilityLevel' and value in [
                             "none", "majority", "majorityAndPersistActive",
                             "persistToMajority"])
-                 or
-                 (key == 'name' and value != "" and len(value) <= 100)
-                 or
-                 (key == 'type' and value in ["couchbase", "ephemeral"])
                 ):
                     continue
                 elif key == "durabilityLevel":
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 6005,
-                        "hint": "The provided durability level of '{{Level}}' "
-                                "is not supported. The supported levels are "
-                                "none, majority, persistToMajority, and "
+                        "hint": "The provided durability level is not "
+                                "supported. The supported levels are none, "
+                                "majority, persistToMajority, and "
                                 "majorityAndPersistActive. Please choose a "
                                 "valid durability level for the bucket.",
                         "httpStatusCode": 422,
@@ -920,19 +920,6 @@ class PostBucket(APIBase):
                                    "supported. The supported level are 'none',"
                                    " 'majority', 'persistToMajority', and "
                                    "'majorityAndPersistActive'.".format(value)
-                    }
-                elif key == "bucketConflictResolution":
-                    testcase["expected_status_code"] = 400
-                    testcase["expected_error"] = {
-                        "code": 6004,
-                        "hint": "The provided conflict resolution is not "
-                                "supported. Please choose a valid conflict "
-                                "resolution strategy for the bucket.",
-                        "httpStatusCode": 400,
-                        "message": "Unsupported conflict resolution "
-                                   "'{}'. Acceptable resolutions are "
-                                   "Sequence Number (seqno) or Last Write "
-                                   "Wins (lww).".format(value)
                     }
                 elif key == "memoryAllocationInMb" and value < 100:
                     testcase["expected_status_code"] = 422
@@ -954,12 +941,12 @@ class PostBucket(APIBase):
                             "code": 6026,
                             "hint": "The replica count provided for the "
                                     "bucket is not valid. The minimum number "
-                                    "of replicas is 1. Please increase the "
+                                    "of replicas is 0. Please increase the "
                                     "number of replicas for the bucket.",
                             "httpStatusCode": 422,
                             "message": "The replica count provided for the "
                                        "buckets is not valid. The minimum "
-                                       "number of replicas is (1)."
+                                       "number of replicas is (0)."
                         }
                     elif value > 3:
                         testcase["expected_error"] = {
@@ -973,43 +960,18 @@ class PostBucket(APIBase):
                                        "buckets is not valid. The maximum "
                                        "number of replicas is (3)."
                         }
-                elif key == "name":
-                    testcase["expected_status_code"] = 422
-                    if value == "":
-                        testcase["expected_error"] = {
-                            "code": 6011,
-                            "hint": "The bucket name is not valid. A bucket "
-                                    "name cannot be empty. Please provide a "
-                                    "valid name for the bucket.",
-                            "httpStatusCode": 422,
-                            "message": "The bucket name is not valid. A bucket"
-                                       " name can not be empty."
-                        }
-                    elif len(value) > 100:
-                        testcase["expected_error"] = {
-                            "code": 6013,
-                            "hint": "The bucket name provided is not valid. "
-                                    "The maximum length of the bucket name "
-                                    "can be 100 characters. Please provide a "
-                                    "valid name for the bucket within the "
-                                    "allowed length.",
-                            "httpStatusCode": 422,
-                            "message": "The bucket name provided is not "
-                                       "valid. The maximum length of the "
-                                       "bucket name can be (100) characters."
-                        }
-                elif key == "type":
+                elif key == "timeToLiveInSeconds":
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
-                        "code": 6016,
-                        "hint": "The provided bucket type is invalid. Bucket "
-                                "type must be one of 'couchbase' or "
-                                "'ephemeral'. Please provide a valid bucket "
-                                "type for the bucket.",
+                        "code": 8021,
+                        "hint": "Returned when a time to live unit that is "
+                                "not supported is given during bucket "
+                                "creation. This should be a non-negative "
+                                "value.",
                         "httpStatusCode": 422,
-                        "message": "The provided bucket type of '{}' is "
-                                   "invalid. Bucket type must be one of "
-                                   "'couchbase' or 'ephemeral'.".format(value)
+                        "message": "The time to live value provided is not "
+                                   "supported. It should be a non negative "
+                                   "integer."
                     }
                 else:
                     testcase["expected_status_code"] = 400
@@ -1052,39 +1014,26 @@ class PostBucket(APIBase):
                         self.cluster_id)
             self.log.debug("Cluster state healthy.")
 
-            result = self.capellaAPI.cluster_ops_apis.create_bucket(
+            result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                 self.organisation_id, self.project_id, self.cluster_id,
-                testcase["name"], testcase["type"], testcase["storageBackend"],
-                testcase["memoryAllocationInMb"],
-                testcase["bucketConflictResolution"],
+                self.bucket_id, testcase["memoryAllocationInMb"],
                 testcase["durabilityLevel"], testcase['replicas'],
-                testcase['flush'], testcase['timeToLiveInSeconds']
+                testcase['flush'], testcase['timeToLiveInSeconds'], False
             )
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_bucket(
+                result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    testcase["name"], testcase["type"],
-                    testcase["storageBackend"],
-                    testcase["memoryAllocationInMb"],
-                    testcase["bucketConflictResolution"],
+                    self.bucket_id, testcase["memoryAllocationInMb"],
                     testcase["durabilityLevel"], testcase['replicas'],
-                    testcase['flush'], testcase['timeToLiveInSeconds']
+                    testcase['flush'], testcase['timeToLiveInSeconds'], False
                 )
-            if result.status_code == 201:
-                self.expected_result['id'] = result.json()['id']
-                self.bucket_ids.append(result.json()['id'])
-
+            if result.status_code == 204:
                 if "expected_error" in testcase:
                     self.log.error(testcase["description"])
                     failures.append(testcase["description"])
-                if not self.validate_bucket_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 201, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
                 else:
-                    self.log.debug("Creation Successful - No Errors.")
+                    self.log.debug("Updation Successful.")
             else:
                 if result.status_code >= 500:
                     self.log.critical(testcase["description"])
@@ -1096,7 +1045,7 @@ class PostBucket(APIBase):
                         result = result.json()
                         for key in result:
                             if result[key] != testcase["expected_error"][key]:
-                                self.log.error("Status != 201, Key validation "
+                                self.log.error("Status != 204, Key validation "
                                                "failed for Test : {}".format(
                                                 testcase["description"]))
                                 self.log.warning("Failure : {}".format(result))
@@ -1117,12 +1066,6 @@ class PostBucket(APIBase):
                                     result.status_code))
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
-            if len(self.bucket_ids) >= 30:
-                self.log.warning("Bucket limit for cluster reached, flushing "
-                                 "all current buckets.")
-                self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids,
-                                    self.org_owner_key['token'])
 
         if failures:
             for fail in failures:
@@ -1133,16 +1076,11 @@ class PostBucket(APIBase):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.create_bucket,
+            self.capellaAPI.cluster_ops_apis.update_bucket_config,
             (self.organisation_id, self.project_id, self.cluster_id,
-             self.generate_random_string(special_characters=False),
-             self.expected_result['type'],
-             self.expected_result['storageBackend'],
-             self.expected_result['memoryAllocationInMb'],
-             self.expected_result['bucketConflictResolution'],
+             self.bucket_id, self.expected_result['memoryAllocationInMb'],
              self.expected_result['durabilityLevel'],
-             self.expected_result['replicas'], self.expected_result['flush'],
-             self.expected_result['timeToLiveInSeconds'])
+             self.expected_result['replicas'], True, 10, False)
         ]]
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
@@ -1189,16 +1127,11 @@ class PostBucket(APIBase):
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.create_bucket,
+            self.capellaAPI.cluster_ops_apis.update_bucket_config,
             (self.organisation_id, self.project_id, self.cluster_id,
-             self.generate_random_string(special_characters=False),
-             self.expected_result['type'],
-             self.expected_result['storageBackend'],
-             self.expected_result['memoryAllocationInMb'],
-             self.expected_result['bucketConflictResolution'],
+             self.bucket_id, self.expected_result['memoryAllocationInMb'],
              self.expected_result['durabilityLevel'],
-             self.expected_result['replicas'], self.expected_result['flush'],
-             self.expected_result['timeToLiveInSeconds'])
+             self.expected_result['replicas'], True, 10, False)
         ]]
         org_roles = self.input.param("org_roles", "organizationOwner")
         proj_roles = self.input.param("proj_roles", "projectDataReader")

@@ -20,17 +20,17 @@ class SecurityTest(BaseTestCase):
         resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
         resp = resp.json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
         self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
         self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
         self.capellaAPI.org_ops_apis.bearer_token = resp['token']
 
         self.capellaAPI.cluster_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['accessKey']
+        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['id']
         self.capellaAPI.cluster_ops_apis.TOKENINI = resp['token']
         self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
         self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
 
         if self.input.capella.get("test_users"):
@@ -196,17 +196,17 @@ class SecurityTest(BaseTestCase):
                                                               payload["flush"],
                                                               payload["timeToLiveInSeconds"])
 
-            # if tenant_id == "valid_tenant_id":
-            self.assertEqual(201, resp.status_code,
-                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                          201))
-            temp_str = payload["name"][:len(payload["name"])-1] + str(int(payload["name"][-1]) + 1)
-            payload["name"] = temp_str
-            # Bug - Gives 201 for different tenant id as well.
-            # else:
-            #     self.assertEqual(403, resp.status_code,
-            #                      msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-            #                                                                   403))
+            if tenant_id == "valid_tenant_id":
+                self.assertEqual(201, resp.status_code,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              201))
+                temp_str = payload["name"][:len(payload["name"])-1] + str(int(payload["name"][-1]) + 1)
+                payload["name"] = temp_str
+
+            else:
+                self.assertEqual(403, resp.status_code,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              403))
 
         # Trying out with different project ids
         self.log.info("Verifying the endpoint access with different projects")
@@ -239,17 +239,18 @@ class SecurityTest(BaseTestCase):
                                                                 payload["flush"],
                                                                 payload["timeToLiveInSeconds"])
 
-            # if project_id == 'valid_project_id':
-            self.assertEqual(resp.status_code, 201,
+            if project_id == 'valid_project_id':
+                self.assertEqual(resp.status_code, 201,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
-            temp_str = payload["name"][:len(payload["name"])-1] + str(int(payload["name"][-1]) + 1)
-            payload["name"] = temp_str
+                temp_str = payload["name"][:len(payload["name"])-1] + str(int(payload["name"][
+                                                                                  -1]) + 1)
+                payload["name"] = temp_str
             # Bug - Gives 201 for different project id and invalid project id
-            # else:
-            #     self.assertEqual(resp.status_code, 422,
-            #                      msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-            #                                                                   422))
+            else:
+                self.assertEqual(resp.status_code, 422,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -465,17 +466,17 @@ class SecurityTest(BaseTestCase):
                                                                  project_ids[project_id],
                                                                  self.cluster_id)
 
-            if project_id in ["valid_project_id", "different_project_id"]:
+            if project_id == "valid_project_id":
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(
                                      resp.status_code,
                                      200))
             # Bug - Gives 200 for different project ids
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(
                                      resp.status_code,
-                                     404))
+                                     422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -692,9 +693,7 @@ class SecurityTest(BaseTestCase):
                                                                       self.cluster_id,
                                                                       bucket_id)
 
-            # Bug - https://couchbasecloud.atlassian.net/browse/AV-59794
-            # For now the different_project_id gives 200 response. It should give 4xx.
-            if project_id in ['valid_project_id', 'different_project_id']:
+            if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
@@ -703,9 +702,9 @@ class SecurityTest(BaseTestCase):
                 payload["name"] = temp_str
 
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                            project_ids["different_project_id"])
@@ -982,7 +981,7 @@ class SecurityTest(BaseTestCase):
                                                             False)
 
             # For different_project_id it should give 4xx but instead it gives 200 for now.
-            if project_id in ['valid_project_id', 'different_project_id']:
+            if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 204,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(
                                      resp.status_code, 204))
@@ -990,9 +989,9 @@ class SecurityTest(BaseTestCase):
                 update_payload["memoryAllocationInMb"] = update_payload["memoryAllocationInMb"] + 1
 
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(
-                                     resp.status_code, 404))
+                                     resp.status_code, 422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -1247,7 +1246,7 @@ class SecurityTest(BaseTestCase):
 
             # Bug - https://couchbasecloud.atlassian.net/browse/AV-59794
             # For now the different_project_id gives 200 response. It should give 4xx.
-            if project_id in ['valid_project_id', 'different_project_id']:
+            if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 204,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               204))
@@ -1269,11 +1268,9 @@ class SecurityTest(BaseTestCase):
                 bucket_id = resp["id"]
 
             else:
-                # For now the different_project_id gives 401 unauthorized request. It should
-                # give 404 response or invalid path response.
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                            project_ids["different_project_id"])

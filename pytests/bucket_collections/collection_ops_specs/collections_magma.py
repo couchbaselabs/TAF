@@ -5,9 +5,9 @@ spec = {
     MetaCrudParams.COLLECTIONS_TO_FLUSH: 0,
     MetaCrudParams.COLLECTIONS_TO_DROP: 2,
 
-    MetaCrudParams.SCOPES_TO_DROP: 1,
+    MetaCrudParams.SCOPES_TO_DROP: 0,
     MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET: 0,
-    MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 1,
+    MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES: 0,
 
     MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET: 0,
 
@@ -15,7 +15,7 @@ spec = {
     # While scope recreated all prev collection will also be created
     # In both the collection creation case, previous maxTTL value of
     # individual collection is considered
-    MetaCrudParams.SCOPES_TO_RECREATE: 1,
+    MetaCrudParams.SCOPES_TO_RECREATE: 0,
     MetaCrudParams.COLLECTIONS_TO_RECREATE: 1,
 
     # Applies only for the above listed scope/collection operations

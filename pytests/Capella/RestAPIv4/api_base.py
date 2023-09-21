@@ -77,7 +77,7 @@ class APIBase(BaseTestCase):
         )
         if response.status_code == 201:
             response = response.json()
-            self.v2_control_plane_api_access_key = response["accessKey"]
+            self.v2_control_plane_api_access_key = response["id"]
             self.update_auth_with_api_token(response["token"])
         else:
             self.log.error("Error while creating V2 control plane API key")

@@ -8,6 +8,8 @@ from pytests.Capella.RestAPIv4.api_base import APIBase
 import base64
 import time
 import itertools
+from couchbase_utils.capella_utils.dedicated import CapellaUtils
+from datetime import datetime, timedelta
 
 
 class GetBucket(APIBase):
@@ -33,7 +35,7 @@ class GetBucket(APIBase):
             "cloudProvider": {
                 "type": "aws",
                 "region": "us-east-1",
-                "cidr": "10.1.2.0/23"
+                "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
                 "version": "7.1"
@@ -66,21 +68,39 @@ class GetBucket(APIBase):
                 "timezone": "GMT"
             }
         }
-        self.cluster_id = self.capellaAPI.cluster_ops_apis.create_cluster(
-            self.organisation_id, self.project_id, cluster_name,
-            self.cluster['cloudProvider'], self.cluster['couchbaseServer'],
-            self.cluster['serviceGroups'], self.cluster['availability'],
-            self.cluster['support']).json()['id']
-        self.cluster['id'] = self.cluster_id
+        start_time = time.time()
+        while time.time() - start_time < 1800:
+            res = self.capellaAPI.cluster_ops_apis.create_cluster(
+                self.organisation_id, self.project_id, cluster_name,
+                self.cluster['cloudProvider'], self.cluster['couchbaseServer'],
+                self.cluster['serviceGroups'], self.cluster['availability'],
+                self.cluster['support'])
+            if res.status_code == 202:
+                self.cluster_id = res.json()['id']
+                self.cluster['id'] = self.cluster_id
+                break
+            elif "Please ensure you are passing a unique CIDR block" in \
+                    res.json()["message"]:
+                newCIDR = CapellaUtils.get_next_cidr() + "/20"
+                self.cluster["cloudProvider"]["cidr"] = newCIDR
+        if time.time() - start_time >= 1800:
+            self.fail("Couldn't find CIDR within half an hour.")
 
         # Wait for the cluster to be deployed.
         self.log.info("Waiting for cluster to be deployed.")
+        start_time = datetime.now()
         while self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
-                self.cluster_id).json()["currentState"] == "deploying":
+                self.cluster_id).json()["currentState"] == "deploying" and \
+                start_time + timedelta(minutes=30) > datetime.now():
             time.sleep(10)
-        self.log.info("Cluster deployed successfully, initialising Bucket "
-                      "creation inside the cluster.")
+        if self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, self.project_id,
+                self.cluster_id).json()["currentState"] == "healthy":
+            self.log.info("Cluster deployed successfully, initialising Bucket "
+                          "creation inside the cluster.")
+        else:
+            self.fail("Failed to deploy cluster")
 
         # Initialise bucket params and create a bucket.
         self.bucket_name = self.generate_random_string(
@@ -141,8 +161,9 @@ class GetBucket(APIBase):
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
-        while not self.capellaAPI.cluster_ops_apis.list_clusters(
-                self.organisation_id, self.project_id).status_code == 404:
+        while not self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, self.project_id,
+                self.cluster_id).status_code == 404:
             time.sleep(10)
         self.log.info("Cluster destroyed, destroying Project now.")
 
@@ -366,7 +387,7 @@ class GetBucket(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -380,7 +401,7 @@ class GetBucket(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -394,7 +415,7 @@ class GetBucket(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -408,7 +429,7 @@ class GetBucket(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -663,6 +684,17 @@ class GetBucket(APIBase):
                                    " to be a client error.",
                         "httpStatusCode": 400
                     }
+                elif combination[0] != self.organisation_id:
+                    testcase["expected_status_code"] = 403
+                    testcase["expected_error"] = {
+                        "code": 1002,
+                        "hint": "Your access to the requested resource is "
+                                "denied. Please make sure you have the "
+                                "necessary permissions to access the "
+                                "resource.",
+                        "message": "Access Denied.",
+                        "httpStatusCode": 403
+                    }
                 elif combination[3] != self.bucket_id and not \
                         isinstance(combination[3], type(None)):
                     testcase["expected_status_code"] = 400
@@ -674,24 +706,6 @@ class GetBucket(APIBase):
                         "message": "BucketID is invalid.",
                         "httpStatusCode": 400
                     }
-                elif combination[0] != self.organisation_id:
-                    testcase["expected_status_code"] = 403
-                    testcase["expected_error"] = {
-                        "code": 1003,
-                        "hint": "Make sure you have adequate access to the "
-                                "resource.",
-                        "message": "Access Denied.",
-                        "httpStatusCode": 403
-                    }
-                elif combination[1] != self.project_id:
-                    testcase["expected_status_code"] = 404
-                    testcase["expected_error"] = {
-                        "code": 2000,
-                        "hint": "Check if the project ID is valid.",
-                        "message": "The server cannot find a project by it's "
-                                   "ID.",
-                        "httpStatusCode": 404
-                    }
                 elif combination[2] != self.cluster_id:
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
@@ -701,6 +715,17 @@ class GetBucket(APIBase):
                                 "correct cluster ID is provided.",
                         "message": "Unable to fetch the cluster details.",
                         "httpStatusCode": 404
+                    }
+                elif combination[1] != self.project_id:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 4031,
+                        "hint": "Please provide a valid projectId.",
+                        "httpStatusCode": 422,
+                        "message": "Unable to process the request. The "
+                                   "provided projectId {} is not valid for "
+                                   "the cluster {}."
+                        .format(combination[1], combination[2])
                     }
                 elif isinstance(combination[3], type(None)):
                     testcase["expected_status_code"] = 404
