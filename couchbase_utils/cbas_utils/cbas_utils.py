@@ -1165,7 +1165,7 @@ class RemoteLink_Util(Link_Util):
                 else:
                     dataverse = self.get_dataverse_obj("Default")
 
-            link = Link(
+            link = Remote_Link(
                 name=self.generate_name(
                     name_cardinality=1, max_length=name_length,
                     fixed_length=fixed_length),
@@ -1276,7 +1276,7 @@ class ExternalLink_Util(RemoteLink_Util):
     def create_external_link_obj(
             self, cluster, dataverse=None, link_cardinality=1,
             accessKeyId=None, secretAccessKey=None, regions=[],
-            serviceEndpoint=None, no_of_objs=1, name_length=30,
+            serviceEndpoint=None, link_type="s3", no_of_objs=1, name_length=30,
             fixed_length=False, link_perm=False):
         """
         Generates External Link objects.
@@ -1297,7 +1297,7 @@ class ExternalLink_Util(RemoteLink_Util):
                     dataverse = self.get_dataverse_obj("Default")
 
             if link_type.lower() == "s3":
-                link = Link(
+                link = External_Link(
                     name=self.generate_name(
                         name_cardinality=1, max_length=name_length,
                         fixed_length=fixed_length),
@@ -1308,7 +1308,7 @@ class ExternalLink_Util(RemoteLink_Util):
                                 "serviceEndpoint": serviceEndpoint})
             elif link_type.lower() == "azureblob":
                 if not link_perm:
-                    link = Link(
+                    link = External_Link(
                         name=self.generate_name(
                             name_cardinality=1, max_length=name_length,
                             fixed_length=fixed_length),
@@ -1319,7 +1319,7 @@ class ExternalLink_Util(RemoteLink_Util):
                                     "accountKey": secretAccessKey,
                                     })
                 else:
-                    link = Link(
+                    link = External_Link(
                         name=self.generate_name(
                             name_cardinality=1, max_length=name_length,
                             fixed_length=fixed_length),
@@ -2540,7 +2540,7 @@ class Remote_Dataset_Util(Dataset_Util):
         if storage_format == "mixed":
             storage_format = random.choice(["row", "column"])
 
-        def create_object(bucket, scope, collection):
+        def create_object(bucket, scope, collection, link):
 
             if not scope:
                 scope = bucket_util.get_scope_obj(bucket, "_default")
@@ -2605,7 +2605,7 @@ class Remote_Dataset_Util(Dataset_Util):
                     continue
 
                 if bucket_cardinality == 1:
-                    dataset_objs.append(create_object(bucket, None, None))
+                    dataset_objs.append(create_object(bucket, None, None, link))
                 else:
                     active_scopes = bucket_util.get_active_scopes(bucket)
                     for scope in active_scopes:
@@ -2618,7 +2618,7 @@ class Remote_Dataset_Util(Dataset_Util):
                             if collection.is_dropped or collection.name in exclude_collection:
                                 continue
                             dataset_objs.append(create_object(
-                                bucket, scope, collection))
+                                bucket, scope, collection, link))
         else:
             for _ in range(no_of_objs):
                 bucket = random.choice(remote_cluster.buckets)
@@ -2626,7 +2626,7 @@ class Remote_Dataset_Util(Dataset_Util):
                     bucket = random.choice(remote_cluster.buckets)
 
                 if bucket_cardinality == 1:
-                    dataset_objs.append(create_object(bucket, None, None))
+                    dataset_objs.append(create_object(bucket, None, None, link))
                 else:
                     active_scopes = bucket_util.get_active_scopes(bucket)
                     scope = random.choice(active_scopes)
@@ -2640,7 +2640,7 @@ class Remote_Dataset_Util(Dataset_Util):
                             collection.name in exclude_collection):
                         collection = random.choice(active_collections)
 
-                    dataset_objs.append(create_object(bucket, scope, collection))
+                    dataset_objs.append(create_object(bucket, scope, collection, link))
         return dataset_objs
 
     def create_remote_dataset_from_spec(self, cluster, remote_cluster,
