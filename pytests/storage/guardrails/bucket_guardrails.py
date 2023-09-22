@@ -144,7 +144,6 @@ class BucketGuardrails(GuardrailsBase):
                                                                         random_scope))
             self.bucket_util.create_collection(self.cluster.master, self.bucket,
                                                 random_scope, {"name": coll_name})
-            self.sleep(2)
             curr_collections += 1
 
         try:
@@ -152,7 +151,7 @@ class BucketGuardrails(GuardrailsBase):
             coll_name = "new_collection"
             self.bucket_util.create_collection(self.cluster.master, self.bucket,
                                                random_scope, {"name": coll_name})
-            self.log.info("Creation of a collection was successful even after"
+            self.fail("Creation of a collection was successful even after"
                           " the max collection count has exceeded")
         except:
             self.log.info("Creation of collection failed as expected")
@@ -166,6 +165,7 @@ class BucketGuardrails(GuardrailsBase):
                                                                         random_scope_col[0]))
             self.bucket_util.drop_collection(self.cluster.master, self.bucket,
                                              random_scope_col[0], random_scope_col[1])
+            scope_coll_list.remove(random_scope_col)
             self.sleep(2)
             new_coll_name = new_coll_prefix + str(i+1)
             self.bucket_util.create_collection(self.cluster.master, self.bucket,
