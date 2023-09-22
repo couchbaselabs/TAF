@@ -9,6 +9,8 @@ spec = {
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
     MetaConstants.CREATE_COLLECTIONS_USING_MANIFEST_IMPORT: True,
 
+    Bucket.storageBackend: Bucket.StorageBackend.magma,
+    Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.maxTTL: 0,
     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
 

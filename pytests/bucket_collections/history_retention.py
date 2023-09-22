@@ -1,5 +1,4 @@
 import json
-import random
 import urllib
 from copy import deepcopy
 from random import choice, sample, randint
@@ -9,8 +8,6 @@ from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading, CbServer
 from datetime import datetime, timedelta
 from basetestcase import ClusterSetup
-from cbas_utils.cbas_utils import BackupUtils
-from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from bucket_collections.collections_base import CollectionBase
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbepctl import Cbepctl
@@ -245,7 +242,7 @@ class DocHistoryRetention(ClusterSetup):
                         kv_nodes)
                 result = self.bucket_util.validate_history_start_seqno_stat(
                     stats["before_ops"], stats["after_ops"], comparison='>=')
-                if result == False:
+                if result is False:
                     self.failure = True
                     raise Exception(
                         "Expected history seq to be greater than prev")
@@ -260,14 +257,14 @@ class DocHistoryRetention(ClusterSetup):
                         kv_nodes)
                 result = self.bucket_util.validate_history_start_seqno_stat(
                     stats["before_ops"], stats["after_ops"], comparison='==')
-                if result == False:
+                if result is False:
                     self.failure = True
                     raise Exception("Expected history seq to not be equal")
         except Exception as e:
             self.log.info(e)
             for node in self.cluster.servers:
                 self.cluster_util.start_server(self.cluster, node)
-            if self.failure == True:
+            if self.failure is True:
                 raise Exception(e)
 
     def get_loader_spec(self, update_percent=0, update_itr=-1,
@@ -871,7 +868,8 @@ class DocHistoryRetention(ClusterSetup):
         buckets_spec = self.bucket_util.get_bucket_template_from_package(
                 "multi_bucket.history_retention_tests")
         # Process params to over_ride values if required
-        CollectionBase.over_ride_bucket_template_params(self, buckets_spec)
+        CollectionBase.over_ride_bucket_template_params(
+            self, Bucket.StorageBackend.magma, buckets_spec)
         self.bucket_util.create_buckets_using_json_data(self.cluster,
                                                         buckets_spec)
         self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)

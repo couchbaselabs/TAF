@@ -15,7 +15,9 @@ spec = {
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
     MetaConstants.USE_SIMPLE_NAMES: True,
 
-    Bucket.ramQuotaMB: 100,
+    Bucket.storageBackend: Bucket.StorageBackend.magma,
+    Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
+    Bucket.ramQuotaMB: 256,
     Bucket.replicaIndex: 1,
     Bucket.maxTTL: 0,
 

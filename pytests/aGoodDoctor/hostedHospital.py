@@ -31,6 +31,7 @@ from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
 from custom_exceptions.exception import ServerUnavailableException
+from exceptions import IndexError
 
 
 class Murphy(BaseTestCase, OPD):
@@ -262,15 +263,16 @@ class Murphy(BaseTestCase, OPD):
             ql.stop_query_load()
         self.sleep(10)
         for bucket in self.cluster.buckets:
-            if self.cluster.index_nodes and bucket.loadDefn.get("2iQPS", 0) > 0:
+            services = self.input.param("services", "data")
+            if (self.cluster.index_nodes or "index" in services) and bucket.loadDefn.get("2iQPS", 0) > 0:
                 bucket.loadDefn["2iQPS"] = bucket.loadDefn["2iQPS"] + num
                 ql = [ql for ql in self.ql if ql.bucket == bucket][0]
                 ql.start_query_load()
-            if self.cluster.fts_nodes and bucket.loadDefn.get("ftsQPS", 0) > 0:
+            if (self.cluster.fts_nodes or "search" in services) and bucket.loadDefn.get("ftsQPS", 0) > 0:
                 bucket.loadDefn["ftsQPS"] = bucket.loadDefn["ftsQPS"] + num
                 ql = [ql for ql in self.ftsQL if ql.bucket == bucket][0]
                 ql.start_query_load()
-            if self.cluster.cbas_nodes and bucket.loadDefn.get("cbasQPS", 0) > 0:
+            if (self.cluster.cbas_nodes or "analytics" in services) and bucket.loadDefn.get("cbasQPS", 0) > 0:
                 bucket.loadDefn["cbasQPS"] = bucket.loadDefn["cbasQPS"] + num
                 ql = [ql for ql in self.cbasQL if ql.bucket == bucket][0]
                 ql.start_query_load()
@@ -376,21 +378,6 @@ class Murphy(BaseTestCase, OPD):
         query_monitor.start()
 
     def refresh_cluster(self):
-        # self.servers = DedicatedUtils.get_nodes(
-        #     self.cluster.pod, self.cluster.tenant, self.cluster.id)
-        # nodes = list()
-        # for server in self.servers:
-        #     temp_server = TestInputServer()
-        #     temp_server.ip = server.get("hostname")
-        #     temp_server.hostname = server.get("hostname")
-        #     temp_server.services = server.get("services")
-        #     temp_server.port = "18091"
-        #     temp_server.rest_username = self.cluster.username
-        #     temp_server.rest_password = self.cluster.password
-        #     temp_server.hosted_on_cloud = True
-        #     temp_server.memcached_port = "11207"
-        #     temp_server.type = "dedicated"
-        #     nodes.append(temp_server)
         while True:
             if self.cluster.nodes_in_cluster:
                 self.log.info("Cluster Nodes: {}".format(self.cluster.nodes_in_cluster))
@@ -400,8 +387,27 @@ class Murphy(BaseTestCase, OPD):
                     break
                 except ServerUnavailableException:
                     pass
+                except IndexError:
+                    pass
             else:
                 self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
+                self.sleep(30)
+                self.servers = DedicatedUtils.get_nodes(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                nodes = list()
+                for server in self.servers:
+                    temp_server = TestInputServer()
+                    temp_server.ip = server.get("hostname")
+                    temp_server.hostname = server.get("hostname")
+                    temp_server.services = server.get("services")
+                    temp_server.port = "18091"
+                    temp_server.rest_username = self.cluster.username
+                    temp_server.rest_password = self.cluster.password
+                    temp_server.hosted_on_cloud = True
+                    temp_server.memcached_port = "11207"
+                    temp_server.type = "dedicated"
+                    nodes.append(temp_server)
+                self.cluster.refresh_object(nodes)
 
     def initial_setup(self):
         self.monitor_query_status()
@@ -416,7 +422,7 @@ class Murphy(BaseTestCase, OPD):
             "num_items": self.input.param("num_items", 1500000000),
             "start": 0,
             "end": self.input.param("num_items", 1500000000),
-            "ops": 100000,
+            "ops": self.input.param("ops_rate", 100000),
             "doc_size": 1024,
             "pattern": [0, 90, 10, 0, 0], # CRUDE
             "load_type": ["read", "update"],
@@ -556,6 +562,7 @@ class Murphy(BaseTestCase, OPD):
                     ql = QueryLoad(bucket)
                     ql.start_query_load()
                     self.ql.append(ql)
+            self.drIndex.start_index_stats()
 
         if self.cluster.eventing_nodes:
             self.drEventing.create_eventing_functions()

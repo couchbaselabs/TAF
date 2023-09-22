@@ -197,7 +197,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
 
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstats = Cbstats(shell)
+        cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
         self.log.info("Node=={} targt_vbuckets=={}".format(self.cluster.master.ip, self.target_vbucket))
 
@@ -238,17 +238,13 @@ class MagmaRollbackTests(MagmaBaseTest):
             for task in task_info:
                 self.task_manager.get_task_result(task)
 
-            shell_conns = []
+            self.target_vbs = []
+            task_info = dict()
             for node in self.cluster.nodes_in_cluster:
                 if node == self.cluster.master:
                     continue
-                shell_conns.append(RemoteMachineShellConnection(node))
-            self.target_vbs = []
-            task_info = dict()
-            for shell_conn in shell_conns:
-                cbstats = Cbstats(shell_conn)
+                cbstats = Cbstats(node)
                 self.target_vbs.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
-                shell_conn.disconnect()
 
             self.target_vbs = [vb for vb_lst in self.target_vbs for vb in vb_lst]
             self.log.info("Target vbs on non master nodes".format(self.target_vbs))
@@ -385,7 +381,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
 
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstats = Cbstats(shell)
+        cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
 
         self.gen_read = copy.deepcopy(self.gen_create)
@@ -558,7 +554,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         self.num_rollbacks = self.input.param("num_rollbacks", 10)
 
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstats = Cbstats(shell)
+        cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
 
         #######################################################################
@@ -737,13 +733,13 @@ class MagmaRollbackTests(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             shell_conn.append(RemoteMachineShellConnection(node))
 
-        cbstats = Cbstats(shell_conn[0])
+        cbstats = Cbstats(self.cluster.nodes_in_cluster[0])
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
 
         target_vbs_replicas = list()
-        for shell in shell_conn[1:]:
-            cbstats = Cbstats(shell)
+        for node in self.cluster.nodes_in_cluster[1:]:
+            cbstats = Cbstats(node)
             target_vbs_replicas.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
 
         target_vbs_replicas = [val for vb_lst in target_vbs_replicas for val in vb_lst]
@@ -1013,7 +1009,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             for x, node in enumerate(self.cluster.nodes_in_cluster):
                 #start = items
                 shell = RemoteMachineShellConnection(node)
-                cbstats = Cbstats(shell)
+                cbstats = Cbstats(node)
                 self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                            name)
                 mem_item_count = 0
@@ -1209,7 +1205,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             for x, node in enumerate(self.cluster.nodes_in_cluster):
                 #start = items
                 shell = RemoteMachineShellConnection(node)
-                cbstats = Cbstats(shell)
+                cbstats = Cbstats(node)
                 self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
                 mem_item_count = 0
@@ -1458,7 +1454,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             for x, node in enumerate(self.cluster.nodes_in_cluster):
                 start = start_items
                 shell = RemoteMachineShellConnection(node)
-                cbstats = Cbstats(shell)
+                cbstats = Cbstats(node)
                 self.target_vbucket = cbstats.vbucket_list(
                     self.cluster.buckets[0].name)
                 mem_item_count = 0
@@ -1689,14 +1685,16 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         target_vbs_active = list()
         target_vbs_replica = list()
-        for shell in shell_conn[0:target_active_nodes]:
-            cbstats = Cbstats(shell)
-            target_vbs_active.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
+        for node in self.cluster.nodes_in_cluster[:target_active_nodes]:
+            if "kv" in node.services.lower():
+                cbstats = Cbstats(node)
+                target_vbs_active.append(
+                    cbstats.vbucket_list(self.cluster.buckets[0].name))
 
         target_vbs_active = [val for vb_lst in target_vbs_active for val in vb_lst]
         self.log.debug("target_vbs_active == {}".format(target_vbs_active))
-        for shell in shell_conn[target_active_nodes:]:
-            cbstats = Cbstats(shell)
+        for node in self.cluster.nodes_in_cluster[target_active_nodes:]:
+            cbstats = Cbstats(node)
             target_vbs_replica.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
         target_vbs_replica = [val for vb_lst in target_vbs_replica for val in vb_lst]
         self.log.info("target_vbs_active={} and target_vbs_replica={}".format(target_vbs_active, target_vbs_replica))
@@ -1993,14 +1991,11 @@ class MagmaRollbackTests(MagmaBaseTest):
 
         for i in range(1, self.num_rollbacks+1):
             self.log.info("Roll back Iteration == {}".format(i))
-            shell_conn = list()
-            for node in self.cluster.nodes_in_cluster:
-                shell_conn.append(RemoteMachineShellConnection(node))
             cbstats = Cbstats(self.cluster.nodes_in_cluster[0])
             self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
             target_vbs_replicas = list()
-            for shell in shell_conn[1:]:
-                cbstats = Cbstats(shell)
+            for node in self.cluster.nodes_in_cluster[1:]:
+                cbstats = Cbstats(node)
                 target_vbs_replicas.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
             target_vbs_replicas = [val for vb_lst in target_vbs_replicas for val in vb_lst]
 
@@ -2025,6 +2020,9 @@ class MagmaRollbackTests(MagmaBaseTest):
             start = start_items
             self.log.debug("Iteration == {}, State files before stopping persistence == {}".
                            format(i, self.get_state_files(self.buckets[0])))
+            shell_conn = list()
+            for node in self.cluster.nodes_in_cluster:
+                shell_conn.append(RemoteMachineShellConnection(node))
             # Stopping persistence on Node-x
             self.log.debug("Iteration == {}, stopping persistence".format(i))
             Cbepctl(shell_conn[0]).persistence(self.cluster.buckets[0].name, "stop")

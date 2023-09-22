@@ -14,7 +14,7 @@ spec = {
     MetaConstants.NUM_ITEMS_PER_COLLECTION: 5000,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
 
-    Bucket.ramQuotaMB: 100,
+    Bucket.ramQuotaMB: 256,
     Bucket.replicaIndex: 1,
     Bucket.maxTTL: 0,
 

@@ -23,17 +23,17 @@ class SecurityTest(BaseTestCase):
         resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
         resp = resp.json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
         self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
         self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
         self.capellaAPI.org_ops_apis.bearer_token = resp['token']
 
         self.capellaAPI.cluster_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['accessKey']
+        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['id']
         self.capellaAPI.cluster_ops_apis.TOKENINI = resp['token']
         self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
         self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
         if self.input.capella.get("test_users"):
             self.test_users = json.loads(self.input.capella.get("test_users"))
@@ -221,15 +221,10 @@ class SecurityTest(BaseTestCase):
                                                                             self.project_id,
                                                                             self.cluster_id)
 
-            # Filed a bug for projectRoles: AV - 60496
-            # if role == "projectOwner" or role == "projectViewer":
             self.assertEqual(200, role_response.status_code,
                              msg="FAIL: Outcome:{}, Expected: {}".format(
                                      role_response.status_code, 200))
-            # else:
-            #     self.assertEqual(403, role_response.status_code,
-            #                  msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code,
-            #                                                              403))
+
 
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                               role))

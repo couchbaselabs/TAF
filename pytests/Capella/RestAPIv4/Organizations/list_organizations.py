@@ -56,16 +56,6 @@ class ListOrganization(APIBase):
             failures.append("Error while deleting project {}".format(
                 self.project_id))
 
-        # Delete organizationOwner API key
-        self.log.info("Deleting API key for role organization Owner")
-        resp = self.capellaAPI.org_ops_apis.delete_api_key(
-            organizationId=self.organisation_id,
-            accessKey=self.org_owner_key["Id"]
-        )
-        if resp.status_code != 204:
-            failures.append("Error while deleting api key for role "
-                            "organization Owner")
-
         if failures:
             self.fail("Following error occurred in teardown: {}".format(
                 failures))
@@ -115,7 +105,15 @@ class ListOrganization(APIBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/organization",
                 "expected_status_code": 400,
-                "expected_error": "Invalid format for parameter organizationId"
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if all the required params are "
+                            "present in the request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is "
+                               "perceived to be a client error."
+                }
             }
         ]
 
@@ -127,6 +125,9 @@ class ListOrganization(APIBase):
                     testcase["url"]
 
             result = self.capellaAPI.org_ops_apis.list_organizations()
+            if result.status_code == 429:
+                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                result = self.capellaAPI.org_ops_apis.list_organizations()
 
             if result.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_org_api_response(
@@ -134,39 +135,37 @@ class ListOrganization(APIBase):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     failures.append(testcase["description"])
-            else:
-                if result.status_code >= 500:
-                    self.log.critical(testcase["description"])
-                    self.log.warning(result.content)
-                    failures.append(testcase["description"])
-                    continue
-                if result.status_code == testcase["expected_status_code"]:
-                    try:
-                        result = result.json()
-                        for key in result:
-                            if result[key] != testcase["expected_error"][key]:
-                                self.log.error("Status != 200, Key validation "
-                                               "Failure : {}".format(
-                                                testcase["description"]))
-                                self.log.warning("Result: {}".format(result))
-                                failures.append(testcase["description"])
-                                break
-                    except (Exception, ):
-                        if str(testcase["expected_error"]) not in \
-                                result.content:
-                            self.log.error(
-                                "Response type not JSON, Failure : {}".format(
-                                    testcase["description"]))
-                            self.log.warning(result.content)
+            elif result.status_code >= 500:
+                self.log.critical(testcase["description"])
+                self.log.warning(result.content)
+                failures.append(testcase["description"])
+                continue
+            elif result.status_code == testcase["expected_status_code"]:
+                try:
+                    result = result.json()
+                    for key in result:
+                        if result[key] != testcase["expected_error"][key]:
+                            self.log.error("Status != 200, Key validation "
+                                           "Failure : {}".format(
+                                            testcase["description"]))
+                            self.log.warning("Result: {}".format(result))
                             failures.append(testcase["description"])
-                else:
-                    self.log.error("Expected HTTP status code {}, Actual "
-                                   "HTTP status code {}".format(
-                                    testcase["expected_status_code"],
-                                    result.status_code))
-                    self.log.warning("Result: {}".format(result.content))
-                    failures.append(testcase["description"])
-            self.rate_limit_failsafe()
+                            break
+                except (Exception, ):
+                    if str(testcase["expected_error"]) not in \
+                            result.content:
+                        self.log.error(
+                            "Response type not JSON, Failure : {}".format(
+                                testcase["description"]))
+                        self.log.warning(result.content)
+                        failures.append(testcase["description"])
+            else:
+                self.log.error("Expected HTTP status code {}, Actual "
+                               "HTTP status code {}".format(
+                                testcase["expected_status_code"],
+                                result.status_code))
+                self.log.warning("Result: {}".format(result.content))
+                failures.append(testcase["description"])
             self.capellaAPI.org_ops_apis.organization_endpoint = \
                 "/v4/organizations"
 
@@ -308,6 +307,10 @@ class ListOrganization(APIBase):
                 self.update_auth_with_api_token(testcase["token"])
 
             result = self.capellaAPI.org_ops_apis.list_organizations(header)
+            if result.status_code == 429:
+                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                result = self.capellaAPI.org_ops_apis.list_organizations(
+                    header)
 
             if result.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_org_api_response(
@@ -315,39 +318,37 @@ class ListOrganization(APIBase):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     failures.append(testcase["description"])
-            else:
-                if result.status_code >= 500:
-                    self.log.critical(testcase["description"])
-                    self.log.warning(result.content)
-                    failures.append(testcase["description"])
-                    continue
-                if result.status_code == testcase["expected_status_code"]:
-                    try:
-                        result = result.json()
-                        for key in result:
-                            if result[key] != testcase["expected_error"][key]:
-                                self.log.error("Status != 200, Key validation "
-                                               "Error : {}".format(
-                                                testcase["description"]))
-                                self.log.warning("Failure : {}".format(result))
-                                failures.append(testcase["description"])
-                                break
-                    except (Exception,):
-                        if str(testcase["expected_error"]) not in \
-                                result.content:
-                            self.log.error(
-                                "Response type not JSON, Failure : {}".format(
-                                    testcase["description"]))
-                            self.log.warning(result.content)
+            elif result.status_code >= 500:
+                self.log.critical(testcase["description"])
+                self.log.warning(result.content)
+                failures.append(testcase["description"])
+                continue
+            elif result.status_code == testcase["expected_status_code"]:
+                try:
+                    result = result.json()
+                    for key in result:
+                        if result[key] != testcase["expected_error"][key]:
+                            self.log.error("Status != 200, Key validation "
+                                           "Error : {}".format(
+                                            testcase["description"]))
+                            self.log.warning("Failure : {}".format(result))
                             failures.append(testcase["description"])
-                else:
-                    self.log.error("Expected HTTP status code {}, Actual "
-                                   "HTTP status code {}".format(
-                                    testcase["expected_status_code"],
-                                    result.status_code))
-                    self.log.warning("Result : {}".format(result.content))
-                    failures.append(testcase["description"])
-            self.rate_limit_failsafe()
+                            break
+                except (Exception,):
+                    if str(testcase["expected_error"]) not in \
+                            result.content:
+                        self.log.error(
+                            "Response type not JSON, Failure : {}".format(
+                                testcase["description"]))
+                        self.log.warning(result.content)
+                        failures.append(testcase["description"])
+            else:
+                self.log.error("Expected HTTP status code {}, Actual "
+                               "HTTP status code {}".format(
+                                testcase["expected_status_code"],
+                                result.status_code))
+                self.log.warning("Result : {}".format(result.content))
+                failures.append(testcase["description"])
 
         if failures:
             for fail in failures:
@@ -357,9 +358,6 @@ class ListOrganization(APIBase):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
-        self.log.debug("Letting any previous Rate Limit expire before "
-                       "current test.")
-        time.sleep(60)
 
         api_func_list = [[self.capellaAPI.org_ops_apis.list_organizations, ()]]
 
@@ -369,6 +367,13 @@ class ListOrganization(APIBase):
                 self.generate_random_string(prefix=self.prefix),
                 ["organizationOwner"],
                 self.generate_random_string(50))
+            if resp.status_code == 429:
+                self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                resp = self.capellaAPI.org_ops_apis.create_api_key(
+                    self.organisation_id,
+                    self.generate_random_string(prefix=self.prefix),
+                    ["organizationOwner"],
+                    self.generate_random_string(50))
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_{}".format(i)] = resp.json()
             else:
@@ -376,40 +381,27 @@ class ListOrganization(APIBase):
                           "organizationOwner_{}".format(i))
 
         if self.input.param("rate_limit", False):
-            start_time = time.time()
-            res, passed, failed = self.make_parallel_api_calls(
-                101 * len(self.api_keys), api_func_list, self.api_keys)
+            results = self.make_parallel_api_calls(
+                310, api_func_list, self.api_keys)
+            for result in results:
+                if ((not results[result]["rate_limit_hit"])
+                        or results[result][
+                            "total_api_calls_made_to_hit_rate_limit"] > 300):
+                    self.fail(
+                        "Rate limit was hit after {0} API calls. "
+                        "This is definitely an issue.".format(
+                            results[result][
+                                "total_api_calls_made_to_hit_rate_limit"]
+                        ))
 
-            end_time = time.time()
-            self.log.info("Time to execute 101 queries per {} roles: {}"
-                          .format(len(self.api_keys), end_time - start_time))
-            # In case of rate limit, at least 1 API call per key per
-            # minute should fail.
-            if not (len(failed) or ((end_time - start_time) > 60)):
-                self.fail("Rate limit was not triggered")
-
-            self.log.debug("Sleeping for 1 minute, for rate limit to expire.")
-            time.sleep(60)
-
-        start_time = time.time()
-        res, passed, failed = self.make_parallel_api_calls(
-            99 * len(self.api_keys), api_func_list, self.api_keys)
-        end_time = time.time()
-        self.log.info("Time to execute 99 queries per {} roles: {}"
-                      .format(len(self.api_keys), end_time - start_time))
-        if len(failed):
-            for fail_response in failed:
-                self.log.warning(fail_response.content)
-            self.fail("Some API calls failed")
-
-        self.log.debug("Letting Rate Limit expire after the current test.")
-        time.sleep(60)
+        results = self.make_parallel_api_calls(
+            99, api_func_list, self.api_keys)
+        for result in results:
+            if len(results[result]["4xx_errors"]) > 0 or len(
+                    results[result]["5xx_errors"]) > 0:
+                self.fail("Some API calls failed")
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
-        self.log.debug("Letting any previous Rate Limit expire before "
-                       "current test.")
-        time.sleep(60)
-
         api_func_list = [[self.capellaAPI.org_ops_apis.list_organizations, ()]]
 
         org_roles = self.input.param("org_roles", "organizationOwner")
@@ -427,30 +419,22 @@ class ListOrganization(APIBase):
                 self.api_keys[api_key] = api_key_dict[api_key]
 
         if self.input.param("rate_limit", False):
-            start_time = time.time()
-            res, passed, failed = self.make_parallel_api_calls(
-                101 * len(self.api_keys), api_func_list, self.api_keys)
-            end_time = time.time()
-            self.log.info("Time to execute 101 queries per {} roles: {}"
-                          .format(len(self.api_keys), end_time - start_time))
-            # In case of rate limit scenario, at least 99 requests
-            # should pass
-            if not (len(failed) or ((end_time - start_time) > 60)):
-                self.fail("Rate limit was not triggered")
+            results = self.make_parallel_api_calls(
+                310, api_func_list, self.api_keys)
+            for result in results:
+                if ((not results[result]["rate_limit_hit"])
+                        or results[result][
+                            "total_api_calls_made_to_hit_rate_limit"] > 300):
+                    self.fail(
+                        "Rate limit was hit after {0} API calls. "
+                        "This is definitely an issue.".format(
+                            results[result][
+                                "total_api_calls_made_to_hit_rate_limit"]
+                        ))
 
-            self.log.debug("Sleeping for 1 minute, for Rate Limit to expire.")
-            time.sleep(60)
-
-        start_time = time.time()
-        res, passed, failed = self.make_parallel_api_calls(
-            99 * len(self.api_keys), api_func_list, self.api_keys)
-        end_time = time.time()
-        self.log.info("Time to execute 99 queries per {} roles: {}"
-                      .format(len(self.api_keys), end_time - start_time))
-        if len(failed):
-            for fail_response in failed:
-                self.log.warning(fail_response.content)
-            self.fail("Some API calls failed")
-
-        self.log.debug("Letting Rate Limit expire after the current test.")
-        time.sleep(60)
+        results = self.make_parallel_api_calls(
+            99, api_func_list, self.api_keys)
+        for result in results:
+            if len(results[result]["4xx_errors"]) > 0 or len(
+                    results[result]["5xx_errors"]) > 0:
+                self.fail("Some API calls failed")

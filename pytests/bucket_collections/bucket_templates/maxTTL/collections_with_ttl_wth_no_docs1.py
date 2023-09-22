@@ -10,13 +10,13 @@ spec = {
 
     Bucket.bucketType: Bucket.Type.EPHEMERAL,
     Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
-    Bucket.ramQuotaMB: 100,
+    Bucket.ramQuotaMB: 256,
     Bucket.replicaIndex: 0,
     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
     Bucket.priority: Bucket.Priority.LOW,
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
     Bucket.maxTTL: 100,
-    Bucket.storageBackend: Bucket.StorageBackend.couchstore,
+    Bucket.storageBackend: Bucket.StorageBackend.magma,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
 

@@ -29,6 +29,7 @@ from com.couchbase.client.core.deps.io.netty.handler.codec import string
 from com.couchbase.client.java.json import JsonObject
 from com.github.javafaker import Faker
 from Cb_constants.CBServer import CbServer
+from connections.Rest_Connection import RestConnection
 
 letters = ascii_uppercase + ascii_lowercase + digits
 faker = Faker()
@@ -147,11 +148,11 @@ NimbusMQueriesParams = [{"conversationId":"str(random.randint(0,1000000)).zfill(
 
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None,
-                              query_params=None):
+                              query_params=None, validate=True):
     """
     Executes a statement on CBAS using the REST API using REST Client
     """
-    response = execute_via_sdk(client, statement, False, client_context_id, query_params)
+    response = execute_via_sdk(client, statement, False, client_context_id, query_params, validate)
     if type(response) == str:
         response = json.loads(response)
     if "errors" in response:
@@ -159,7 +160,7 @@ def execute_statement_on_n1ql(client, statement, client_context_id=None,
     else:
         errors = None
 
-    if "results" in response:
+    if validate and "results" in response:
         results = response["results"]
     else:
         results = None
@@ -182,7 +183,7 @@ def execute_statement_on_n1ql(client, statement, client_context_id=None,
 
 def execute_via_sdk(client, statement, readonly=False,
                     client_context_id=None,
-                    query_params=None):
+                    query_params=None, validate=True):
     options = QueryOptions.queryOptions()
     options.scanConsistency(QueryScanConsistency.NOT_BOUNDED)
     options.readonly(readonly)
@@ -200,10 +201,11 @@ def execute_via_sdk(client, statement, readonly=False,
     output["status"] = result.metaData().status()
     output["metrics"] = result.metaData().metrics().get()
 
-    try:
-        output["results"] = result.rowsAsObject()
-    except:
-        output["results"] = None
+    if validate:
+        try:
+            output["results"] = result.rowsAsObject()
+        except:
+            output["results"] = None
 
     if str(output['status']) == QueryStatus.FATAL:
         msg = output['errors'][0]['msg']
@@ -370,6 +372,51 @@ class DoctorN1QL():
             build_query = "DROP INDEX %s on `%s`" % (index, details[4])
             self.execute_statement_on_n1ql(details[1], build_query)
 
+    def log_index_stats(self, print_duration=300):
+        st_time = time.time()
+        while not self.stop_run:
+            self.table = TableView(self.log.info)
+            self.table.set_headers(["Node",
+                                    "mem_quota",
+                                    "mem_used",
+                                    "avg_rr",
+                                    "avg_dr",
+                                    "#data_size",
+                                    "#disk_size",
+                                    "#requests",
+                                    "#rows_scanned",
+                                    "#rows_returned"
+                                    ])
+            for node in self.cluster.index_nodes:
+                try:
+                    rest = RestConnection(node)
+                    resp = rest.urllib_request(rest.indexUrl + "stats")
+                    content = json.loads(resp.content)
+                    self.table.add_row([
+                        node.ip,
+                        content["memory_quota"]/1024/1024/1024,
+                        content["memory_used"]/1024/1024/1024,
+                        content["avg_resident_percent"],
+                        content["avg_drain_rate"],
+                        content["total_data_size"]/1024/1024/1024,
+                        content["total_disk_size"]/1024/1024/1024,
+                        content["total_requests"],
+                        content["total_rows_scanned"],
+                        content["total_rows_returned"]
+                        ])
+                except Exception as e:
+                    self.log.critical(e)
+
+            if st_time + print_duration < time.time():
+                self.table.display("Index Statistics")
+                st_time = time.time()
+            time.sleep(300)
+
+    def start_index_stats(self):
+        self.stop_run = False
+        th = threading.Thread(target=self.log_index_stats)
+        th.start()
+
 
 class QueryLoad:
     def __init__(self, bucket):
@@ -391,6 +438,8 @@ class QueryLoad:
         self.timeout_failures = 0
 
     def start_query_load(self):
+        self.stop_run = False
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         th = threading.Thread(target=self._run_concurrent_queries)
         th.start()
 
@@ -429,7 +478,7 @@ class QueryLoad:
                 q_param = self.bucket.query_map[original_query][1]
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id,
-                    q_param)
+                    q_param, validate=validate_item_count)
                 self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
                 self.query_stats[original_query][1] += 1
                 if status == QueryStatus.SUCCESS:

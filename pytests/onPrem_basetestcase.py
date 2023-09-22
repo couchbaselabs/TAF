@@ -187,20 +187,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.cluster.edition = "enterprise" \
             if CbServer.enterprise_edition else "community"
 
-        # Enable use_https and enforce_tls for 'serverless' cluster testing
-        # And set default bucket/cluster setting values to tests
-        if CbServer.cluster_profile == "serverless":
-            self.encryption_level = "strict"
-            self.use_https = True
-            self.enforce_tls = True
-
-            CbServer.use_https = True
-            trust_all_certs()
-
-            self.bucket_storage = Bucket.StorageBackend.magma
-            self.num_replicas = Bucket.ReplicaNum.TWO
-            self.server_groups = "test_zone_1:test_zone_2:test_zone_3"
-
         if self.standard_buckets > 10:
             self.bucket_util.change_max_buckets(self.cluster.master,
                                                 self.standard_buckets)
@@ -272,8 +258,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.nebula_details = dict()
             for cluster_name, cluster in self.cb_clusters.items():
                 if not self.skip_cluster_reset:
+                    services = None
+                    if self.services_init:
+                        services = str(self.services_init.split("-")[0]) \
+                            .replace(":", ",")
                     self.initialize_cluster(
-                        cluster_name, cluster, services=None,
+                        cluster_name, cluster, services=services,
                         services_mem_quota_percent=mem_quota_percent)
 
                 # Set this unconditionally
@@ -1112,7 +1102,11 @@ class ClusterSetup(OnPremBaseTest):
         if self.services_init:
             services = list()
             for service in self.services_init.split("-"):
-                services.append(service.replace(":", ","))
+                # To handle rebalance-in of serviceless node
+                if str(service) == "None":
+                    services.append("")
+                else:
+                    services.append(service.replace(":", ","))
         services = services[1:] \
             if services is not None and len(services) > 1 else None
 

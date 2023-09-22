@@ -17,7 +17,7 @@ spec = {
     Bucket.priority: Bucket.Priority.LOW,
     Bucket.conflictResolutionType: Bucket.ConflictResolution.SEQ_NO,
     Bucket.maxTTL: 1800,
-    Bucket.storageBackend: Bucket.StorageBackend.couchstore,
+    Bucket.storageBackend: Bucket.StorageBackend.magma,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
     Bucket.compressionMode: Bucket.CompressionMode.ACTIVE,
     "buckets": {
@@ -26,7 +26,6 @@ spec = {
             MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 1,
             MetaConstants.NUM_ITEMS_PER_COLLECTION: 13107200,
             Bucket.ramQuotaMB: 768,
-            Bucket.storageBackend: Bucket.StorageBackend.magma,
             Bucket.priority: Bucket.Priority.HIGH
         }
     }

@@ -2382,6 +2382,7 @@ class BucketUtils(ScopeUtils):
         if "buckets" not in buckets_spec:
             buckets_spec["buckets"] = dict()
 
+        # Calculate total_ram_requested by spec explicitly
         for _, bucket_spec in buckets_spec["buckets"].items():
             if Bucket.ramQuotaMB in bucket_spec:
                 total_ram_requested_explicitly += \
@@ -5977,6 +5978,10 @@ class BucketUtils(ScopeUtils):
                                     c_dict = collection.get_dict_object()
                                     if "nonDedupedHistory" not in bucket.bucketCapabilities:
                                         c_dict.pop("history", None)
+                                    rest = RestConnection(cluster.master)
+                                    clusterCompat = rest.check_cluster_compatibility("7.6")
+                                    if not clusterCompat:
+                                        c_dict.pop("maxTTL", None)
                                     futures.append(executor.submit(ScopeUtils.create_collection, cluster.master,
                                                                    bucket, scope_name, c_dict,
                                                                    session=session))

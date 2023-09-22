@@ -405,8 +405,13 @@ class RebalanceTaskCapella(Task):
                 self.log.critical(e)
                 self.result = False
                 return self.result
-        self.servers = DedicatedUtils.get_nodes(
-            self.cluster.pod, self.cluster.tenant, self.cluster.id)
+        count = 5
+        while count > 0:
+            self.servers = DedicatedUtils.get_nodes(
+                self.cluster.pod, self.cluster.tenant, self.cluster.id)
+            count -= 1
+            if self.servers:
+                break
         nodes = list()
         for server in self.servers:
             temp_server = TestInputServer()
@@ -421,7 +426,10 @@ class RebalanceTaskCapella(Task):
             temp_server.type = "dedicated"
             nodes.append(temp_server)
 
-        self.cluster.refresh_object(nodes)
+        if self.servers:
+            self.cluster.refresh_object(nodes)
+        else:
+            raise Exception("RebalanceTask: Capella API to fetch nodes failed!!")
         return self.result
 
 
@@ -685,19 +693,19 @@ class RebalanceTask(Task):
 
         # Validate the current orchestrator is selected as expected
         result = global_vars.cluster_util.\
-            validate_orchestrator_selection(self.cluster)
+            validate_orchestrator_selection(self.cluster, self.to_remove)
         if result:
             self.result = True
 
         print_nodes("Cluster nodes..", self.cluster.nodes_in_cluster)
         print_nodes("KV............", self.cluster.kv_nodes)
         print_nodes("Index.........", self.cluster.index_nodes)
-        print_nodes("Query.........", self.cluster.index_nodes)
+        print_nodes("Query.........", self.cluster.query_nodes)
         print_nodes("CBAS..........", self.cluster.cbas_nodes)
         print_nodes("FTS...........", self.cluster.fts_nodes)
         print_nodes("Eventing......", self.cluster.eventing_nodes)
         print_nodes("Backup........", self.cluster.backup_nodes)
-        print_nodes("Serviceless...", self.cluster.backup_nodes)
+        print_nodes("Serviceless...", self.cluster.serviceless_nodes)
         return self.result
 
     def add_nodes(self):

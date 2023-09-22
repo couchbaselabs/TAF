@@ -50,8 +50,7 @@ class CollectionBase(ClusterSetup):
             self.doc_ops = self.doc_ops.split(';')
 
         self.durability_helper = DurabilityHelper(
-            self.log, len(self.cluster.nodes_in_cluster),
-            self.durability_level)
+            self.log, len(self.cluster.kv_nodes), self.durability_level)
 
         # Disable auto-failover to avoid failover of nodes
         status = RestConnection(self.cluster.master) \
@@ -76,7 +75,7 @@ class CollectionBase(ClusterSetup):
         self.log_setup_status("CollectionBase", "complete")
 
     def tearDown(self):
-        cbstat_obj = Cbstats(self.cluster.master)
+        cbstat_obj = Cbstats(self.cluster.kv_nodes[0])
         for bucket in self.cluster.buckets:
             if bucket.bucketType != Bucket.Type.MEMCACHED:
                 result = cbstat_obj.all_stats(bucket.name)
@@ -308,23 +307,6 @@ class CollectionBase(ClusterSetup):
                 test_obj.spec_name)
         buckets_spec[MetaConstants.USE_SIMPLE_NAMES] = use_simple_names
 
-        if test_obj.bucket_storage == Bucket.StorageBackend.magma:
-            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.magma
-            buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.FULL_EVICTION
-
-            if Bucket.ramQuotaMB not in buckets_spec or \
-                (Bucket.ramQuotaMB in buckets_spec and buckets_spec[Bucket.ramQuotaMB] < 256):
-                buckets_spec[Bucket.ramQuotaMB] = 256
-
-        else:
-            buckets_spec[Bucket.storageBackend] = Bucket.StorageBackend.couchstore
-
-            if Bucket.evictionPolicy not in buckets_spec:
-                buckets_spec[Bucket.evictionPolicy] = Bucket.EvictionPolicy.VALUE_ONLY
-
-            if Bucket.ramQuotaMB not in buckets_spec:
-                buckets_spec[Bucket.ramQuotaMB] = 100
-
         test_obj.log.info("Creating bucket from spec: %s" % test_obj.spec_name)
         # Process params to over_ride values if required
         CollectionBase.over_ride_bucket_template_params(
@@ -418,77 +400,49 @@ class CollectionBase(ClusterSetup):
             bucket_spec[Bucket.evictionPolicy] = \
                 Bucket.EvictionPolicy.FULL_EVICTION
 
-        if CbServer.cluster_profile == "default" \
-                and bucket_storage == Bucket.StorageBackend.magma:
-            # Blindly override the following params
-            bucket_spec[Bucket.evictionPolicy] = \
-                Bucket.EvictionPolicy.FULL_EVICTION
-            for key, val in test_obj.input.test_params.items():
-                if key == "default_history_retention_for_collections":
-                    bucket_spec[Bucket.historyRetentionCollectionDefault] \
-                        = str(test_obj.bucket_collection_history_retention_default).lower()
-                elif key == "bucket_history_retention_seconds":
-                    bucket_spec[Bucket.historyRetentionSeconds] \
-                        = int(test_obj.bucket_dedup_retention_seconds)
-                elif key == "bucket_history_retention_bytes":
-                    bucket_spec[Bucket.historyRetentionBytes] \
-                        = int(test_obj.bucket_dedup_retention_bytes)
-                elif key == "magma_key_tree_data_block_size":
-                    bucket_spec[Bucket.magmaKeyTreeDataBlockSize] \
-                        = int(test_obj.magma_key_tree_data_block_size)
-                elif key == "magma_seq_tree_data_block_size":
-                    bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
-                        = int(test_obj.magma_seq_tree_data_block_size)
-                elif key == "remove_default_collection":
-                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
-                        test_obj.input.param(key)
-                elif key == "load_collections_exponentially":
-                    bucket_spec[MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY] \
-                        = test_obj.load_collections_exponentially
-        else:
-            for key, val in test_obj.input.test_params.items():
-                if key == "replicas":
-                    bucket_spec[Bucket.replicaNumber] = test_obj.num_replicas
-                elif key == "bucket_size":
-                    bucket_spec[Bucket.ramQuotaMB] = test_obj.bucket_size
-                elif key == "num_items":
-                    bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
-                        test_obj.num_items
-                elif key == "remove_default_collection":
-                    bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
-                        test_obj.input.param(key)
-                elif key == "bucket_storage":
-                    bucket_spec[Bucket.storageBackend] = \
-                        test_obj.bucket_storage
-                elif key == "bucket_eviction_policy":
-                    bucket_spec[Bucket.evictionPolicy] \
-                        = test_obj.bucket_eviction_policy
-                elif key == "compression_mode":
-                    bucket_spec[Bucket.compressionMode] = \
-                        test_obj.compression_mode
-                elif key == "flushEnabled":
-                    bucket_spec[Bucket.flushEnabled] = \
-                        int(test_obj.flush_enabled)
-                elif key == "bucket_type":
-                    bucket_spec[Bucket.bucketType] = test_obj.bucket_type
-                elif key == "default_history_retention_for_collections":
-                    bucket_spec[Bucket.historyRetentionCollectionDefault] \
-                        = str(test_obj.bucket_collection_history_retention_default).lower()
-                elif key == "bucket_history_retention_seconds":
-                    bucket_spec[Bucket.historyRetentionSeconds] \
-                        = int(test_obj.bucket_dedup_retention_seconds)
-                elif key == "bucket_history_retention_bytes":
-                    bucket_spec[Bucket.historyRetentionBytes] \
-                        = int(test_obj.bucket_dedup_retention_bytes)
-                elif key == "magma_key_tree_data_block_size":
-                    bucket_spec[Bucket.magmaKeyTreeDataBlockSize] \
-                        = int(test_obj.magma_key_tree_data_block_size)
-                elif key == "magma_seq_tree_data_block_size":
-                    bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
-                        = int(test_obj.magma_seq_tree_data_block_size)
-                elif key == "load_collections_exponentially":
-                    bucket_spec[MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY] \
-                        = test_obj.load_collections_exponentially
+        for key, val in test_obj.input.test_params.items():
+            if key == "replicas":
+                bucket_spec[Bucket.replicaNumber] = test_obj.num_replicas
+            elif key == "bucket_size":
+                bucket_spec[Bucket.ramQuotaMB] = test_obj.bucket_size
+            elif key == "num_items":
+                bucket_spec[MetaConstants.NUM_ITEMS_PER_COLLECTION] = \
+                    test_obj.num_items
+            elif key == "remove_default_collection":
+                bucket_spec[MetaConstants.REMOVE_DEFAULT_COLLECTION] = \
+                    test_obj.input.param(key)
+            elif key == "bucket_storage":
+                bucket_spec[Bucket.storageBackend] = \
+                    test_obj.bucket_storage
+            elif key == "bucket_eviction_policy":
+                bucket_spec[Bucket.evictionPolicy] \
+                    = test_obj.bucket_eviction_policy
+            elif key == "compression_mode":
+                bucket_spec[Bucket.compressionMode] = \
+                    test_obj.compression_mode
+            elif key == "flushEnabled":
+                bucket_spec[Bucket.flushEnabled] = \
+                    int(test_obj.flush_enabled)
+            elif key == "bucket_type":
+                bucket_spec[Bucket.bucketType] = test_obj.bucket_type
+            elif key == "default_history_retention_for_collections":
+                bucket_spec[Bucket.historyRetentionCollectionDefault] \
+                    = str(test_obj.bucket_collection_history_retention_default).lower()
+            elif key == "bucket_history_retention_seconds":
+                bucket_spec[Bucket.historyRetentionSeconds] \
+                    = int(test_obj.bucket_dedup_retention_seconds)
+            elif key == "bucket_history_retention_bytes":
+                bucket_spec[Bucket.historyRetentionBytes] \
+                    = int(test_obj.bucket_dedup_retention_bytes)
+            elif key == "magma_key_tree_data_block_size":
+                bucket_spec[Bucket.magmaKeyTreeDataBlockSize] \
+                    = int(test_obj.magma_key_tree_data_block_size)
+            elif key == "magma_seq_tree_data_block_size":
+                bucket_spec[Bucket.magmaSeqTreeDataBlockSize] \
+                    = int(test_obj.magma_seq_tree_data_block_size)
+            elif key == "load_collections_exponentially":
+                bucket_spec[MetaConstants.LOAD_COLLECTIONS_EXPONENTIALLY] \
+                    = test_obj.load_collections_exponentially
 
     @staticmethod
     def over_ride_doc_loading_template_params(test_obj, target_spec):

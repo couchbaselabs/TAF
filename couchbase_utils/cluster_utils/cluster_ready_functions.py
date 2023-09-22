@@ -221,14 +221,11 @@ class ClusterUtils:
         :return: True if the cluster is enterprise edition
         """
         rest = RestConnection(cluster.master)
-        api = rest.baseUrl + "pools/default"
+        api = rest.baseUrl + "pools"
         http_res, success = rest.init_http_request(api)
-        if http_res == 'unknown pool':
-            return False
-        for node in http_res["nodes"]:
-            if "community" in node["version"].split("-")[-1:]:
-                return False
-        return True
+        if not success:
+            raise Exception("Unable to read /pools API")
+        return http_res["isEnterprise"]
 
     def get_server_profile_type(self, servers):
         """
@@ -248,7 +245,7 @@ class ClusterUtils:
             raise Exception("Profile type mismatch")
         return profiles[0]
 
-    def get_possible_orchestrotor_nodes(self, cluster):
+    def get_possible_orchestrator_nodes(self, cluster):
         nodes = list()
         min_node_weight = 999999
         services = CbServer.Services
@@ -279,21 +276,26 @@ class ClusterUtils:
                 nodes.append(node.ip)
         return nodes
 
-    def validate_orchestrator_selection(self, cluster):
+    def validate_orchestrator_selection(self, cluster, removed_nodes=[]):
         result = False
-        status, ns_node = self.find_orchestrator(cluster)
+        target_node = cluster.master
+        if cluster.master.ip in [node.ip for node in removed_nodes]:
+            target_node = [node for node in cluster.nodes_in_cluster
+                           if node not in removed_nodes][0]
+
+        status, ns_node = self.find_orchestrator(cluster, node=target_node)
         if not status:
             return result
         self.update_cluster_nodes_service_list(cluster, inactive_added=True)
-        nodes = self.get_possible_orchestrotor_nodes(cluster)
+        nodes = self.get_possible_orchestrator_nodes(cluster)
         ns_node = ns_node.split("@")[1]
+        self.log.critical("Orchestrator: {}".format(ns_node))
         if ns_node not in nodes:
-            self.log.critical("Unexpected orchestrotor: %s. "
-                              "Expected orchestrators : %s" % (ns_node, nodes))
+            self.log.critical("Unexpected orchestrator. "
+                              "Expected orchestrators: {}".format(nodes))
         else:
             result = True
             self.log.debug("Orchestartor candidates: %s" % nodes)
-            self.log.debug("Orchestrotor: %s" % ns_node)
         return result
 
     def set_rebalance_moves_per_nodes(self, cluster_node,

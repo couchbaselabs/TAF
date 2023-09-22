@@ -4,8 +4,6 @@ from BucketLib.bucket import Bucket
 from cb_tools.cb_tools_base import CbCmdBase
 from Cb_constants import CbServer, ClusterRun
 
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
-
 
 class CbCli(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
@@ -24,6 +22,78 @@ class CbCli(CbCmdBase):
         elif ClusterRun.is_enabled and self.port > ClusterRun.ssl_port:
             return self.port - 10000
         return self.port
+
+    def cluster_init(self, data_ramsize, index_ramsize, fts_ramsize, services,
+                     index_storage_mode, cluster_name,
+                     cluster_username, cluster_password, cluster_port):
+        cmd = "%s cluster-init -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        if cluster_username:
+            cmd += " --cluster-username " + str(cluster_username)
+        if cluster_password:
+            cmd += " --cluster-password " + str(cluster_password)
+        if data_ramsize:
+            cmd += " --cluster-ramsize " + str(data_ramsize)
+        if index_ramsize:
+            cmd += " --cluster-index-ramsize " + str(index_ramsize)
+        if fts_ramsize:
+            cmd += " --cluster-fts-ramsize " + str(fts_ramsize)
+        if cluster_name:
+            cmd += " --cluster-name " + str(cluster_name)
+        if index_storage_mode:
+            cmd += " --index-storage-setting " + str(index_storage_mode)
+        if cluster_port:
+            cmd += " --cluster-port " + str(cluster_port)
+        if services:
+            cmd += " --services " + str(services)
+        return self._execute_cmd(cmd)
+
+    def cluster_settings(self, data_ramsize, index_ramsize, fts_ramsize,
+                         cluster_name, cluster_username,
+                         cluster_password, cluster_port):
+        cmd = "%s setting-cluster -c localhost:%s -u %s -p %s" \
+              % (self.cbstatCmd, self.__get_http_port(),
+                 self.username, self.password)
+        if cluster_username is not None:
+            cmd += " --cluster-username " + str(cluster_username)
+        if cluster_password is not None:
+            cmd += " --cluster-password " + str(cluster_password)
+        if data_ramsize:
+            cmd += " --cluster-ramsize " + str(data_ramsize)
+        if index_ramsize:
+            cmd += " --cluster-index-ramsize " + str(index_ramsize)
+        if fts_ramsize:
+            cmd += " --cluster-fts-ramsize " + str(fts_ramsize)
+        if cluster_name:
+            if cluster_name == "empty":
+                cluster_name = " "
+            cmd += " --cluster-name " + str(cluster_name)
+        if cluster_port:
+            cmd += " --cluster-port " + str(cluster_port)
+        return self._execute_cmd(cmd)
+
+    def add_node(self, server, service):
+        """
+        Add nodes to the cluster with given service
+        """
+        server = "https://{}:{}".format(server.ip, CbServer.ssl_port)
+        cluster_ip = "{}:{}".format(self.shellConn.ip, self.port)
+        no_ssl_verify_flag = ""
+        if CbServer.use_https:
+            cluster_ip = "https://{}".format(cluster_ip)
+            no_ssl_verify_flag = "--no-ssl-verify"
+        cmd = "{0} server-add -c {1} -u {2} -p {3} --server-add {4} " \
+              "--server-add-username {2} --server-add-password {3} " \
+              "--services {5} {6}" \
+              .format(self.cbstatCmd, cluster_ip,
+                      self.username, self.password,
+                      server, service,
+                      no_ssl_verify_flag)
+        output, error = self._execute_cmd(cmd)
+        if len(error) != 0:
+            raise Exception(str(error))
+        return output
 
     def create_bucket(self, bucket_dict, wait=False):
         """

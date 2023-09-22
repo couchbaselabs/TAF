@@ -19,17 +19,17 @@ class SecurityTest(BaseTestCase):
         resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
         resp = resp.json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
         self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
         self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
         self.capellaAPI.org_ops_apis.bearer_token = resp['token']
 
         self.capellaAPI.cluster_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['accessKey']
+        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['id']
         self.capellaAPI.cluster_ops_apis.TOKENINI = resp['token']
         self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
         self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
 
         if self.input.capella.get("test_users"):
@@ -133,7 +133,6 @@ class SecurityTest(BaseTestCase):
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
             else:
-                # For now the response is 403. Later change it to 404.
                 self.assertEqual(resp.status_code, 403,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               403))
@@ -327,8 +326,7 @@ class SecurityTest(BaseTestCase):
                         'comment': 'Allow my local machine IP',
                         'expiresAt': '2022-05-14T21:49:58.465Z'
                     },
-                # Bug - It shouldn't accept time in the past and should throw an error 4xx.
-                "http_response": 201 #422 AV-60022
+                "http_response": 422
             },
             {
                 "params":
@@ -435,7 +433,6 @@ class SecurityTest(BaseTestCase):
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
             else:
-                # For now the response is 403. Later change it to 404.
                 self.assertEqual(resp.status_code, 403,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               403))
@@ -460,7 +457,6 @@ class SecurityTest(BaseTestCase):
                                                                        project_ids[project_id],
                                                                        self.cluster_id)
 
-            # Bug - https://couchbasecloud.atlassian.net/browse/AV-59794
             if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
@@ -542,15 +538,9 @@ class SecurityTest(BaseTestCase):
                                                                             self.project_id,
                                                                             self.cluster_id)
 
-            # Bug : AV - 60499
-            # if role in ["projectOwner", "projectManager", "projectViewer"]:
             self.assertEqual(200, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(
                                      role_response.status_code, 200))
-            # else:
-            #     self.assertEqual(403, role_response.status_code,
-            #                     msg="FAIL: Outcome:{}, Expected: {}".format(
-            #                         role_response.status_code, 403))
 
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
@@ -672,7 +662,7 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
-            elif project_id == 'invalid_project_id':
+            else:
                 self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               422))
@@ -748,15 +738,9 @@ class SecurityTest(BaseTestCase):
                                                                     self.cluster_id,
                                                                     parent_cidr)
 
-            # Bug : AV - 60500
-            # if role in ["projectOwner", "projectManager", "projectViewer"]:
             self.assertEqual(200, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(
                                      role_response.status_code, 200))
-            # else:
-            #     self.assertEqual(403, role_response.status_code,
-            #                      msg="FAIL: Outcome:{}, Expected: {}".format(
-            #                          role_response.status_code,403))
 
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
@@ -996,7 +980,7 @@ class SecurityTest(BaseTestCase):
                                                                 self.cluster_id,
                                                                 parent_cidr)
 
-            if role == "projectOwner" or role == "projectManager":
+            if role in ["projectOwner", "projectManager"]:
                 self.assertEqual(204, role_response.status_code,
                     msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 204))
             else:
