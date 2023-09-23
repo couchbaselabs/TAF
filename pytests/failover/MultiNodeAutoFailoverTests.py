@@ -50,11 +50,13 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.enable_autofailover_and_validate()
         self.sleep(5)
         tasks, cont_load_task = self.subsequent_load_gen()
-        tasks = self.subsequent_load_gen()
         self._multi_node_failover()
         if self.spec_name is None:
-            for task in tasks:
-                self.task.jython_task_manager.get_task_result(task)
+            if isinstance(tasks, list):
+                for task in tasks:
+                    self.task.jython_task_manager.get_task_result(task)
+            else:
+                self.task.jython_task_manager.get_task_result(tasks)
         else:
             self.wait_for_async_data_load_to_complete(tasks)
         CollectionBase.wait_for_cont_doc_load_to_complete(self, cont_load_task)
