@@ -1997,8 +1997,12 @@ class Dataset_Util(KafkaLink_Util):
         dataset_spec = self.get_dataset_spec(cbas_spec)
         results = list()
 
-        if dataset_spec.get("num_of_ds_per_dv", 0) > 0:
+        num_datasets = dataset_spec.get("num_of_datasets", 0)
+
+        while num_datasets > 0:
+
             for dataverse in self.dataverses.values():
+
                 if dataset_spec.get(
                     "include_dataverses", []) and CBASHelper.unformat_name(
                         dataverse.name) not in dataset_spec["include_dataverses"]:
@@ -2009,152 +2013,156 @@ class Dataset_Util(KafkaLink_Util):
                     dataverse = None
 
                 if dataverse:
-                    for i in range(1, dataset_spec.get(
-                            "num_of_ds_per_dv", 1) + 1):
+                    if dataset_spec.get(
+                        "name_key", "random").lower() == "random":
+                        name = self.generate_name(name_cardinality=1)
+                    else:
+                        name = dataset_spec["name_key"] + "_{0}".format(
+                            str(i))
 
-                        if dataset_spec.get(
-                            "name_key", "random").lower() == "random":
-                            name = self.generate_name(name_cardinality=1)
-                        else:
-                            name = dataset_spec["name_key"] + "_{0}".format(
-                                str(i))
+                    if not dataset_spec.get("creation_methods", []):
+                        dataset_spec["creation_methods"] = [
+                            "cbas_collection", "cbas_dataset",
+                            "enable_cbas_from_kv"]
+                    creation_method = random.choice(
+                        dataset_spec["creation_methods"])
 
-                        if not dataset_spec.get("creation_methods", []):
-                            dataset_spec["creation_methods"] = [
-                                "cbas_collection", "cbas_dataset",
-                                "enable_cbas_from_kv"]
-                        creation_method = random.choice(
-                            dataset_spec["creation_methods"])
+                    if dataset_spec.get("bucket_cardinality", 0) == 0:
+                        bucket_cardinality = random.choice([1, 3])
+                    else:
+                        bucket_cardinality = dataset_spec[
+                            "bucket_cardinality"]
 
-                        if dataset_spec.get("bucket_cardinality", 0) == 0:
-                            bucket_cardinality = random.choice([1, 3])
-                        else:
-                            bucket_cardinality = dataset_spec[
-                                "bucket_cardinality"]
+                    bucket, scope, collection = self.get_kv_entity(
+                        cluster, bucket_util, bucket_cardinality,
+                        dataset_spec.get("include_buckets", []),
+                        dataset_spec.get("exclude_buckets", []),
+                        dataset_spec.get("include_scopes", []),
+                        dataset_spec.get("exclude_scopes", []),
+                        dataset_spec.get("include_collections", []),
+                        dataset_spec.get("exclude_collections", []))
 
-                        bucket, scope, collection = self.get_kv_entity(
-                            cluster, bucket_util, bucket_cardinality,
-                            dataset_spec.get("include_buckets", []),
-                            dataset_spec.get("exclude_buckets", []),
-                            dataset_spec.get("include_scopes", []),
-                            dataset_spec.get("exclude_scopes", []),
-                            dataset_spec.get("include_collections", []),
-                            dataset_spec.get("exclude_collections", []))
+                    enabled_from_KV = False
+                    if creation_method == "enable_cbas_from_kv":
+                        enabled_from_KV = True
+                        temp_scope = scope
+                        temp_collection = collection
+                        if not scope:
+                            temp_scope = bucket_util.get_scope_obj(
+                                bucket, "_default")
+                            temp_collection = bucket_util.get_collection_obj(
+                                temp_scope, "_default")
+                            # Check Synonym with name bucket name is present in Default dataverse or not
+                            cmd = "select value sy from Metadata.`Synonym` as sy where \
+                                sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\";".format(
+                                bucket.name, "Default")
 
-                        enabled_from_KV = False
-                        if creation_method == "enable_cbas_from_kv":
-                            enabled_from_KV = True
-                            temp_scope = scope
-                            temp_collection = collection
-                            if not scope:
-                                temp_scope = bucket_util.get_scope_obj(
-                                    bucket, "_default")
-                                temp_collection = bucket_util.get_collection_obj(
-                                    temp_scope, "_default")
-                                # Check Synonym with name bucket name is present in Default dataverse or not
-                                cmd = "select value sy from Metadata.`Synonym` as sy where \
-                                    sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\";".format(
-                                    bucket.name, "Default")
-
-                                status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                                    cluster, cmd)
-                                if status == "success":
-                                    if results:
-                                        enabled_from_KV = False
-                                else:
+                            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                                cluster, cmd)
+                            if status == "success":
+                                if results:
                                     enabled_from_KV = False
-
-                            temp_dataverse_name = CBASHelper.format_name(
-                                bucket.name, temp_scope.name)
-                            temp_dataverse_obj = self.get_dataverse_obj(
-                                temp_dataverse_name)
-                            if temp_dataverse_obj:
-                                if temp_dataverse_obj.datasets.get(
-                                        CBASHelper.format_name(
-                                            temp_collection.name),
-                                        None):
-                                    enabled_from_KV = False
-                            if enabled_from_KV:
-                                if not scope:
-                                    synonym_obj = Synonym(
-                                        bucket.name, temp_collection.name,
-                                        temp_dataverse_name,
-                                        dataverse_name="Default")
-                                    self.dataverses[
-                                        "Default"].synonyms[
-                                        synonym_obj.name] = synonym_obj
-                                scope = temp_scope
-                                collection = temp_collection
-                                name = collection.name
-                                dataverse = Dataverse(
-                                    temp_dataverse_name)
-                                self.dataverses[
-                                    temp_dataverse_name] = dataverse
                             else:
-                                creation_method = random.choice(
-                                    ["cbas_collection",
-                                     "cbas_dataset"])
+                                enabled_from_KV = False
 
-                        if collection:
-                            num_of_items = collection.num_items
-                        else:
-                            num_of_items = bucket_util.get_collection_obj(
-                                bucket_util.get_scope_obj(bucket, "_default"),
-                                "_default").num_items
-
-                        if dataset_spec["storage_format"] == "mixed":
-                            storage_format = random.choice(
-                                ["row", "column"])
-                        else:
-                            storage_format = dataset_spec[
-                                "storage_format"]
-
-                        dataset_obj = Dataset(
-                            name=name, dataverse_name=dataverse.name,
-                            bucket=bucket, scope=scope,
-                            collection=collection,
-                            enabled_from_KV=enabled_from_KV,
-                            num_of_items=num_of_items,
-                            storage_format=storage_format
-                        )
-
-                        dataverse_name = dataset_obj.dataverse_name
-                        if dataverse_name == "Default":
-                            dataverse_name = None
-
+                        temp_dataverse_name = CBASHelper.format_name(
+                            bucket.name, temp_scope.name)
+                        temp_dataverse_obj = self.get_dataverse_obj(
+                            temp_dataverse_name)
+                        if temp_dataverse_obj:
+                            if temp_dataverse_obj.datasets.get(
+                                    CBASHelper.format_name(
+                                        temp_collection.name),
+                                    None):
+                                enabled_from_KV = False
                         if enabled_from_KV:
-                            results.append(
-                                self.enable_analytics_from_KV(
-                                    cluster,
-                                    dataset_obj.full_kv_entity_name,
-                                    False, False, None, None, None,
-                                    timeout=cbas_spec.get(
-                                        "api_timeout", 300),
-                                    analytics_timeout=cbas_spec.get(
-                                        "cbas_timeout", 300),
-                                    storage_format=storage_format
-                                ))
+                            if not scope:
+                                synonym_obj = Synonym(
+                                    bucket.name, temp_collection.name,
+                                    temp_dataverse_name,
+                                    dataverse_name="Default")
+                                self.dataverses[
+                                    "Default"].synonyms[
+                                    synonym_obj.name] = synonym_obj
+                            scope = temp_scope
+                            collection = temp_collection
+                            name = collection.name
+                            dataverse = Dataverse(
+                                temp_dataverse_name)
+                            self.dataverses[
+                                temp_dataverse_name] = dataverse
                         else:
-                            if creation_method == "cbas_collection":
-                                analytics_collection = True
-                            else:
-                                analytics_collection = False
-                            results.append(
-                                self.create_dataset(
-                                    cluster, dataset_obj.name,
-                                    dataset_obj.full_kv_entity_name,
-                                    dataverse_name, False, False, None,
-                                    None, None, False,
-                                    None, None, None,
-                                    timeout=cbas_spec.get("api_timeout",
-                                                          300),
-                                    analytics_timeout=cbas_spec.get(
-                                        "cbas_timeout", 300),
-                                    analytics_collection=analytics_collection,
-                                    storage_format=storage_format))
-                        if results[-1]:
-                            dataverse.datasets[
-                                dataset_obj.name] = dataset_obj
+                            creation_method = random.choice(
+                                ["cbas_collection",
+                                 "cbas_dataset"])
+
+                    if collection:
+                        num_of_items = collection.num_items
+                    else:
+                        num_of_items = bucket_util.get_collection_obj(
+                            bucket_util.get_scope_obj(bucket, "_default"),
+                            "_default").num_items
+
+                    if dataset_spec["storage_format"] == "mixed":
+                        storage_format = random.choice(
+                            ["row", "column"])
+                    else:
+                        storage_format = dataset_spec[
+                            "storage_format"]
+
+                    dataset_obj = Dataset(
+                        name=name, dataverse_name=dataverse.name,
+                        bucket=bucket, scope=scope,
+                        collection=collection,
+                        enabled_from_KV=enabled_from_KV,
+                        num_of_items=num_of_items,
+                        storage_format=storage_format
+                    )
+
+                    dataverse_name = dataset_obj.dataverse_name
+                    if dataverse_name == "Default":
+                        dataverse_name = None
+
+                    if enabled_from_KV:
+                        results.append(
+                            self.enable_analytics_from_KV(
+                                cluster,
+                                dataset_obj.full_kv_entity_name,
+                                False, False, None, None, None,
+                                timeout=cbas_spec.get(
+                                    "api_timeout", 300),
+                                analytics_timeout=cbas_spec.get(
+                                    "cbas_timeout", 300),
+                                storage_format=storage_format
+                            ))
+                    else:
+                        if creation_method == "cbas_collection":
+                            analytics_collection = True
+                        else:
+                            analytics_collection = False
+                        results.append(
+                            self.create_dataset(
+                                cluster, dataset_obj.name,
+                                dataset_obj.full_kv_entity_name,
+                                dataverse_name, False, False, None,
+                                None, None, False,
+                                None, None, None,
+                                timeout=cbas_spec.get("api_timeout",
+                                                      300),
+                                analytics_timeout=cbas_spec.get(
+                                    "cbas_timeout", 300),
+                                analytics_collection=analytics_collection,
+                                storage_format=storage_format))
+                    if results[-1]:
+                        dataverse.datasets[
+                            dataset_obj.name] = dataset_obj
+                        num_datasets -= 1
+
+                if num_datasets == 0:
+                    break
+
+            if num_datasets == 0:
+                break
         return True
 
     def create_datasets_on_all_collections(
@@ -2653,19 +2661,21 @@ class Remote_Dataset_Util(Dataset_Util):
         dataset_spec = self.get_remote_dataset_spec(cbas_spec)
         results = list()
 
-        if dataset_spec.get("num_of_ds_per_dv", 0) > 0:
+        # get all remote link objects
+        remote_link_objs = set(self.list_all_link_objs("couchbase"))
+        if dataset_spec.get("include_links", []):
+            for link_name in dataset_spec["include_links"]:
+                remote_link_objs |= set([self.get_link_obj(
+                    cluster, CBASHelper.format_name(link_name))])
 
-            # get all remote link objects
-            remote_link_objs = set(self.list_all_link_objs("couchbase"))
-            if dataset_spec.get("include_links", []):
-                for link_name in dataset_spec["include_links"]:
-                    remote_link_objs |= set([self.get_link_obj(
-                        cluster, CBASHelper.format_name(link_name))])
+        if dataset_spec.get("exclude_links", []):
+            for link_name in dataset_spec["exclude_links"]:
+                remote_link_objs -= set([self.get_link_obj(
+                    cluster, CBASHelper.format_name(link_name))])
 
-            if dataset_spec.get("exclude_links", []):
-                for link_name in dataset_spec["exclude_links"]:
-                    remote_link_objs -= set([self.get_link_obj(
-                        cluster, CBASHelper.format_name(link_name))])
+        num_of_remote_datasets = dataset_spec.get("num_of_remote_datasets", 0)
+
+        while num_of_remote_datasets > 0:
 
             for dataverse in self.dataverses.values():
                 if dataset_spec.get(
@@ -2678,85 +2688,90 @@ class Remote_Dataset_Util(Dataset_Util):
                     dataverse = None
 
                 if dataverse:
-                    for i in range(1, dataset_spec.get(
-                            "num_of_ds_per_dv", 1) + 1):
 
-                        if dataset_spec.get(
-                                "name_key", "random").lower() == "random":
-                            name = self.generate_name(name_cardinality=1)
-                        else:
-                            name = dataset_spec["name_key"] + "_{0}".format(
-                                str(i))
+                    if dataset_spec.get(
+                            "name_key", "random").lower() == "random":
+                        name = self.generate_name(name_cardinality=1)
+                    else:
+                        name = dataset_spec["name_key"] + "_{0}".format(
+                            str(i))
 
-                        if not dataset_spec.get("creation_methods", []):
-                            dataset_spec["creation_methods"] = [
-                                "cbas_collection", "cbas_dataset"]
-                        creation_method = random.choice(
-                            dataset_spec["creation_methods"])
+                    if not dataset_spec.get("creation_methods", []):
+                        dataset_spec["creation_methods"] = [
+                            "cbas_collection", "cbas_dataset"]
+                    creation_method = random.choice(
+                        dataset_spec["creation_methods"])
 
-                        if dataset_spec.get("bucket_cardinality", 0) == 0:
-                            bucket_cardinality = random.choice([1, 3])
-                        else:
-                            bucket_cardinality = dataset_spec[
-                                "bucket_cardinality"]
+                    if dataset_spec.get("bucket_cardinality", 0) == 0:
+                        bucket_cardinality = random.choice([1, 3])
+                    else:
+                        bucket_cardinality = dataset_spec[
+                            "bucket_cardinality"]
 
-                        bucket, scope, collection = self.get_kv_entity(
-                            remote_cluster, bucket_util, bucket_cardinality,
-                            dataset_spec.get("include_buckets", []),
-                            dataset_spec.get("exclude_buckets", []),
-                            dataset_spec.get("include_scopes", []),
-                            dataset_spec.get("exclude_scopes", []),
-                            dataset_spec.get("include_collections", []),
-                            dataset_spec.get("exclude_collections", []))
+                    bucket, scope, collection = self.get_kv_entity(
+                        remote_cluster, bucket_util, bucket_cardinality,
+                        dataset_spec.get("include_buckets", []),
+                        dataset_spec.get("exclude_buckets", []),
+                        dataset_spec.get("include_scopes", []),
+                        dataset_spec.get("exclude_scopes", []),
+                        dataset_spec.get("include_collections", []),
+                        dataset_spec.get("exclude_collections", []))
 
 
-                        if collection:
-                            num_of_items = collection.num_items
-                        else:
-                            num_of_items = bucket_util.get_collection_obj(
-                                bucket_util.get_scope_obj(bucket, "_default"),
-                                "_default").num_items
+                    if collection:
+                        num_of_items = collection.num_items
+                    else:
+                        num_of_items = bucket_util.get_collection_obj(
+                            bucket_util.get_scope_obj(bucket, "_default"),
+                            "_default").num_items
 
-                        if dataset_spec["storage_format"] == "mixed":
-                            storage_format = random.choice(
-                                ["row", "column"])
-                        else:
-                            storage_format = dataset_spec[
-                                "storage_format"]
+                    if dataset_spec["storage_format"] == "mixed":
+                        storage_format = random.choice(
+                            ["row", "column"])
+                    else:
+                        storage_format = dataset_spec[
+                            "storage_format"]
 
-                        link_name = random.choice(
-                            remote_link_objs).full_name
+                    link_name = random.choice(
+                        remote_link_objs).full_name
 
-                        dataset_obj = Remote_Dataset(
-                            name=name, link_name=link_name,
-                            dataverse_name=dataverse.name, bucket=bucket,
-                            scope=scope, collection=collection,
-                            num_of_items=num_of_items,
-                            storage_format=storage_format
-                        )
+                    dataset_obj = Remote_Dataset(
+                        name=name, link_name=link_name,
+                        dataverse_name=dataverse.name, bucket=bucket,
+                        scope=scope, collection=collection,
+                        num_of_items=num_of_items,
+                        storage_format=storage_format
+                    )
 
-                        dataverse_name = dataset_obj.dataverse_name
-                        if dataverse_name == "Default":
-                            dataverse_name = None
+                    dataverse_name = dataset_obj.dataverse_name
+                    if dataverse_name == "Default":
+                        dataverse_name = None
 
-                        if creation_method == "cbas_collection":
-                            analytics_collection = True
-                        else:
-                            analytics_collection = False
-                        results.append(
-                            self.create_remote_dataset(
-                                cluster, dataset_obj.name,
-                                dataset_obj.full_kv_entity_name, link_name,
-                                dataverse_name, False, False, None,
-                                None, storage_format, analytics_collection,
-                                False, None, None, None,
-                                timeout=cbas_spec.get("api_timeout",
-                                                      300),
-                                analytics_timeout=cbas_spec.get(
-                                    "cbas_timeout", 300)))
-                        if results[-1]:
-                            dataverse.remote_datasets[
-                                dataset_obj.name] = dataset_obj
+                    if creation_method == "cbas_collection":
+                        analytics_collection = True
+                    else:
+                        analytics_collection = False
+                    results.append(
+                        self.create_remote_dataset(
+                            cluster, dataset_obj.name,
+                            dataset_obj.full_kv_entity_name, link_name,
+                            dataverse_name, False, False, None,
+                            None, storage_format, analytics_collection,
+                            False, None, None, None,
+                            timeout=cbas_spec.get("api_timeout",
+                                                  300),
+                            analytics_timeout=cbas_spec.get(
+                                "cbas_timeout", 300)))
+                    if results[-1]:
+                        dataverse.remote_datasets[
+                            dataset_obj.name] = dataset_obj
+                        num_of_remote_datasets -= 1
+
+                if num_of_remote_datasets == 0:
+                    break
+
+            if num_of_remote_datasets == 0:
+                break
         return True
 
     def create_remote_datasets_on_all_collections(
@@ -3058,34 +3073,36 @@ class External_Dataset_Util(Remote_Dataset_Util):
         dataset_spec = self.get_external_dataset_spec(cbas_spec)
         results = list()
 
-        if dataset_spec.get("num_of_ds_per_dv", 0) > 0:
+        # get all external link objects
+        link_types = dataset_spec.get("include_link_types", [])
+        if not link_types:
+            link_types = ["s3", "azure", "gcp"]
 
-            # get all external link objects
-            link_types = dataset_spec.get("include_link_types", [])
-            if not link_types:
-                link_types = ["s3", "azure", "gcp"]
-
-            if set(link_types) == set(
+        if set(link_types) == set(
+                dataset_spec.get("exclude_link_types", [])):
+            self.log.error("Include and exclude link type cannot be same")
+        else:
+            for link_type in set(
                     dataset_spec.get("exclude_link_types", [])):
-                self.log.error("Include and exclude link type cannot be same")
-            else:
-                for link_type in set(
-                    dataset_spec.get("exclude_link_types", [])):
-                    link_types.pop(link_types.index(link_type))
+                link_types.pop(link_types.index(link_type))
 
-            external_link_objs = list()
-            for link_type in link_types:
-                external_link_objs.extend(self.list_all_link_objs(link_type))
+        external_link_objs = list()
+        for link_type in link_types:
+            external_link_objs.extend(self.list_all_link_objs(link_type))
 
-            if dataset_spec.get("include_links", []):
-                for link_name in dataset_spec["include_links"]:
-                    external_link_objs |= set([self.get_link_obj(
-                        cluster, CBASHelper.format_name(link_name))])
+        if dataset_spec.get("include_links", []):
+            for link_name in dataset_spec["include_links"]:
+                external_link_objs |= set([self.get_link_obj(
+                    cluster, CBASHelper.format_name(link_name))])
 
-            if dataset_spec.get("exclude_links", []):
-                for link_name in dataset_spec["exclude_links"]:
-                    external_link_objs -= set([self.get_link_obj(
-                        cluster, CBASHelper.format_name(link_name))])
+        if dataset_spec.get("exclude_links", []):
+            for link_name in dataset_spec["exclude_links"]:
+                external_link_objs -= set([self.get_link_obj(
+                    cluster, CBASHelper.format_name(link_name))])
+
+        num_of_external_datasets = dataset_spec.get("num_of_external_datasets", 0)
+
+        while num_of_external_datasets:
 
             for dataverse in self.dataverses.values():
                 if dataset_spec.get(
@@ -3098,71 +3115,74 @@ class External_Dataset_Util(Remote_Dataset_Util):
                     dataverse = None
 
                 if dataverse:
-                    for i in range(1, dataset_spec.get(
-                            "num_of_ds_per_dv", 1) + 1):
-                        if dataset_spec.get(
-                                "name_key", "random").lower() == "random":
-                            name = self.generate_name(name_cardinality=1)
-                        else:
-                            name = dataset_spec["name_key"] + "_{0}".format(
-                                str(i))
+                    if dataset_spec.get(
+                            "name_key", "random").lower() == "random":
+                        name = self.generate_name(name_cardinality=1)
+                    else:
+                        name = dataset_spec["name_key"] + "_{0}".format(
+                            str(i))
 
-                        if len(external_link_objs) == 0:
-                            return False
-                        link = random.choice(external_link_objs)
-                        while True:
-                            dataset_properties = random.choice(
-                                dataset_spec.get(
-                                    "external_dataset_properties", [{}]))
-                            if link.properties[
-                                "region"] == dataset_properties.get(
-                                "region", None):
-                                break
-                        dataset_obj = External_Dataset(
-                            name=name, dataverse_name=dataverse.name,
-                            link_name=link.full_name,
-                            dataset_properties=dataset_properties)
+                    if len(external_link_objs) == 0:
+                        return False
+                    link = random.choice(external_link_objs)
+                    while True:
+                        dataset_properties = random.choice(
+                            dataset_spec.get(
+                                "external_dataset_properties", [{}]))
+                        if link.properties[
+                            "region"] == dataset_properties.get(
+                            "region", None):
+                            break
+                    dataset_obj = External_Dataset(
+                        name=name, dataverse_name=dataverse.name,
+                        link_name=link.full_name,
+                        dataset_properties=dataset_properties)
 
-                        dataverse_name = dataset_obj.dataverse_name
-                        if dataverse_name == "Default":
-                            dataverse_name = None
+                    dataverse_name = dataset_obj.dataverse_name
+                    if dataverse_name == "Default":
+                        dataverse_name = None
 
-                        results.append(
-                            self.create_dataset_on_external_resource(
-                                cluster, dataset_obj.name,
-                                dataset_obj.dataset_properties[
-                                    "external_container_name"],
-                                dataset_obj.link_name, False,
-                                dataverse_name,
-                                dataset_obj.dataset_properties[
-                                    "object_construction_def"],
-                                dataset_obj.dataset_properties[
-                                    "path_on_external_container"],
-                                dataset_obj.dataset_properties[
-                                    "file_format"],
-                                dataset_obj.dataset_properties[
-                                    "redact_warning"],
-                                dataset_obj.dataset_properties[
-                                    "header"],
-                                dataset_obj.dataset_properties[
-                                    "null_string"],
-                                dataset_obj.dataset_properties[
-                                    "include"],
-                                dataset_obj.dataset_properties[
-                                    "exclude"],
-                                dataset_obj.dataset_properties[
-                                    "parse_json_string"],
-                                dataset_obj.dataset_properties[
-                                    "convert_decimal_to_double"],
-                                dataset_obj.dataset_properties[
-                                    "timezone"],
-                                False, False, None, None, None, None,
-                                timeout=cbas_spec.get(
-                                    "api_timeout", 300),
-                                analytics_timeout=cbas_spec.get(
-                                    "cbas_timeout", 300)))
-                        dataverse.external_datasets[
-                            dataset_obj.name] = dataset_obj
+                    results.append(
+                        self.create_dataset_on_external_resource(
+                            cluster, dataset_obj.name,
+                            dataset_obj.dataset_properties[
+                                "external_container_name"],
+                            dataset_obj.link_name, False,
+                            dataverse_name,
+                            dataset_obj.dataset_properties[
+                                "object_construction_def"],
+                            dataset_obj.dataset_properties[
+                                "path_on_external_container"],
+                            dataset_obj.dataset_properties[
+                                "file_format"],
+                            dataset_obj.dataset_properties[
+                                "redact_warning"],
+                            dataset_obj.dataset_properties[
+                                "header"],
+                            dataset_obj.dataset_properties[
+                                "null_string"],
+                            dataset_obj.dataset_properties[
+                                "include"],
+                            dataset_obj.dataset_properties[
+                                "exclude"],
+                            dataset_obj.dataset_properties[
+                                "parse_json_string"],
+                            dataset_obj.dataset_properties[
+                                "convert_decimal_to_double"],
+                            dataset_obj.dataset_properties[
+                                "timezone"],
+                            False, False, None, None, None, None,
+                            timeout=cbas_spec.get(
+                                "api_timeout", 300),
+                            analytics_timeout=cbas_spec.get(
+                                "cbas_timeout", 300)))
+                    dataverse.external_datasets[
+                        dataset_obj.name] = dataset_obj
+                    num_of_external_datasets -= 1
+                if num_of_external_datasets == 0:
+                    break
+            if num_of_external_datasets == 0:
+                break
         return True
 
 
@@ -3575,7 +3595,8 @@ class StandAlone_Collection_Util(External_Dataset_Util):
         dataset_spec = self.get_dataset_spec(cbas_spec)
         results = list()
 
-        if dataset_spec.get("num_of_ds_per_dv", 0) > 0:
+        num_of_standalone_coll = dataset_spec.get("num_of_standalone_coll", 0)
+        while num_of_standalone_coll :
             for dataverse in self.dataverses.values():
                 if dataset_spec.get(
                         "include_dataverses", []) and CBASHelper.unformat_name(
@@ -3587,48 +3608,51 @@ class StandAlone_Collection_Util(External_Dataset_Util):
                     dataverse = None
 
                 if dataverse:
-                    for i in range(1, dataset_spec.get(
-                            "num_of_ds_per_dv", 1) + 1):
 
-                        if dataset_spec.get(
-                                "name_key", "random").lower() == "random":
-                            name = self.generate_name(name_cardinality=1)
-                        else:
-                            name = dataset_spec["name_key"] + "_{0}".format(
-                                str(i))
+                    if dataset_spec.get(
+                            "name_key", "random").lower() == "random":
+                        name = self.generate_name(name_cardinality=1)
+                    else:
+                        name = dataset_spec["name_key"] + "_{0}".format(
+                            str(i))
 
-                        if not dataset_spec.get("creation_methods", []):
-                            dataset_spec["creation_methods"] = [
-                                "cbas_collection", "cbas_dataset",
-                                "collection"]
-                        creation_method = random.choice(
-                            dataset_spec["creation_methods"])
+                    if not dataset_spec.get("creation_methods", []):
+                        dataset_spec["creation_methods"] = [
+                            "cbas_collection", "cbas_dataset",
+                            "collection"]
+                    creation_method = random.choice(
+                        dataset_spec["creation_methods"])
 
-                        if dataset_spec["storage_format"] == "mixed":
-                            storage_format = random.choice(
-                                ["row", "column"])
-                        else:
-                            storage_format = dataset_spec[
-                                "storage_format"]
+                    if dataset_spec["storage_format"] == "mixed":
+                        storage_format = random.choice(
+                            ["row", "column"])
+                    else:
+                        storage_format = dataset_spec[
+                            "storage_format"]
 
-                        dataset_obj = Standalone_Dataset(
-                            name, "shadow_dataset",
-                            random.choice(dataset_spec["primary_key"]),
-                            dataverse.name, None, None, {}, 0, storage_format
-                        )
+                    dataset_obj = Standalone_Dataset(
+                        name, "shadow_dataset",
+                        random.choice(dataset_spec["primary_key"]),
+                        dataverse.name, None, None, {}, 0, storage_format
+                    )
 
-                        dataverse_name = dataset_obj.dataverse_name
-                        if dataverse_name == "Default":
-                            dataverse_name = None
+                    dataverse_name = dataset_obj.dataverse_name
+                    if dataverse_name == "Default":
+                        dataverse_name = None
 
-                        results.append(
-                            self.create_standalone_collection(
-                                cluster, name, creation_method, False,
-                                dataverse_name, dataset_obj.primary_key, "",
-                                False, storage_format)
-                        )
-                        dataverse.standalone_datasets[
-                            dataset_obj.name] = dataset_obj
+                    results.append(
+                        self.create_standalone_collection(
+                            cluster, name, creation_method, False,
+                            dataverse_name, dataset_obj.primary_key, "",
+                            False, storage_format)
+                    )
+                    dataverse.standalone_datasets[
+                        dataset_obj.name] = dataset_obj
+                    num_of_standalone_coll -= 1
+                if num_of_standalone_coll == 0:
+                    break
+            if num_of_standalone_coll == 0:
+                break
         return True
 
     def create_standalone_dataset_for_external_db_from_spec(
@@ -3640,18 +3664,20 @@ class StandAlone_Collection_Util(External_Dataset_Util):
         dataset_spec = self.get_dataset_spec(cbas_spec)
         results = list()
 
-        if dataset_spec.get("num_of_ds_per_dv", 0) > 0:
+        kafka_link_objs = set(self.list_all_link_objs("kafka"))
+        if dataset_spec.get("include_links", []):
+            for link_name in dataset_spec["include_links"]:
+                kafka_link_objs |= set([self.get_link_obj(
+                    cluster, CBASHelper.format_name(link_name))])
 
-            kafka_link_objs = set(self.list_all_link_objs("kafka"))
-            if dataset_spec.get("include_links", []):
-                for link_name in dataset_spec["include_links"]:
-                    kafka_link_objs |= set([self.get_link_obj(
-                        cluster, CBASHelper.format_name(link_name))])
+        if dataset_spec.get("exclude_links", []):
+            for link_name in dataset_spec["exclude_links"]:
+                kafka_link_objs -= set([self.get_link_obj(
+                    cluster, CBASHelper.format_name(link_name))])
 
-            if dataset_spec.get("exclude_links", []):
-                for link_name in dataset_spec["exclude_links"]:
-                    kafka_link_objs -= set([self.get_link_obj(
-                        cluster, CBASHelper.format_name(link_name))])
+        num_of_ds_on_external_db = dataset_spec.get("num_of_ds_on_external_db", 0)
+
+        while num_of_ds_on_external_db:
 
             for dataverse in self.dataverses.values():
                 if dataset_spec.get(
@@ -3664,71 +3690,74 @@ class StandAlone_Collection_Util(External_Dataset_Util):
                     dataverse = None
 
                 if dataverse:
-                    for i in range(1, dataset_spec.get(
-                            "num_of_ds_per_dv", 1) + 1):
 
-                        if dataset_spec.get(
-                                "name_key", "random").lower() == "random":
-                            name = self.generate_name(name_cardinality=1)
-                        else:
-                            name = dataset_spec["name_key"] + "_{0}".format(
-                                str(i))
+                    if dataset_spec.get(
+                            "name_key", "random").lower() == "random":
+                        name = self.generate_name(name_cardinality=1)
+                    else:
+                        name = dataset_spec["name_key"] + "_{0}".format(
+                            str(i))
 
-                        if not dataset_spec.get("creation_methods", []):
-                            dataset_spec["creation_methods"] = [
-                                "cbas_collection", "cbas_dataset",
-                                "collection"]
-                        creation_method = random.choice(
-                            dataset_spec["creation_methods"])
+                    if not dataset_spec.get("creation_methods", []):
+                        dataset_spec["creation_methods"] = [
+                            "cbas_collection", "cbas_dataset",
+                            "collection"]
+                    creation_method = random.choice(
+                        dataset_spec["creation_methods"])
 
-                        if dataset_spec["storage_format"] == "mixed":
-                            storage_format = random.choice(
-                                ["row", "column"])
-                        else:
-                            storage_format = dataset_spec[
-                                "storage_format"]
+                    if dataset_spec["storage_format"] == "mixed":
+                        storage_format = random.choice(
+                            ["row", "column"])
+                    else:
+                        storage_format = dataset_spec[
+                            "storage_format"]
 
-                        link_name = random.choice(
-                            kafka_link_objs).full_name
+                    link_name = random.choice(
+                        kafka_link_objs).full_name
 
-                        if not dataset_spec["datasource"]:
-                            datasource = random.choice(["mongo", "dynamo",
-                                                        "cassandra"])
-                        else:
-                            datasource = random.choice(dataset_spec["datasource"])
+                    if not dataset_spec["datasource"]:
+                        datasource = random.choice(["mongo", "dynamo",
+                                                    "cassandra"])
+                    else:
+                        datasource = random.choice(dataset_spec["datasource"])
 
-                        if include_collections and exclude_collections and (
-                            set(include_collections) == set(exclude_collections)
-                        ):
-                            self.log.error("Both include and exclude "
-                                           "external collecitons cannot be "
-                                           "same")
-                            return False
-                        elif exclude_collections:
-                            include_collections = (set(include_collections) -
-                                                   set(exclude_collections))
+                    if include_collections and exclude_collections and (
+                        set(include_collections) == set(exclude_collections)
+                    ):
+                        self.log.error("Both include and exclude "
+                                       "external collecitons cannot be "
+                                       "same")
+                        return False
+                    elif exclude_collections:
+                        include_collections = (set(include_collections) -
+                                               set(exclude_collections))
 
-                        external_collection_name = random.choice(include_collections)
+                    external_collection_name = random.choice(include_collections)
 
-                        dataset_obj = Standalone_Dataset(
-                            name, datasource,
-                            random.choice(dataset_spec["primary_key"]),
-                            dataverse.name, link_name, external_collection_name,
-                            {}, 0, storage_format)
+                    dataset_obj = Standalone_Dataset(
+                        name, datasource,
+                        random.choice(dataset_spec["primary_key"]),
+                        dataverse.name, link_name, external_collection_name,
+                        {}, 0, storage_format)
 
-                        dataverse_name = dataset_obj.dataverse_name
-                        if dataverse_name == "Default":
-                            dataverse_name = None
+                    dataverse_name = dataset_obj.dataverse_name
+                    if dataverse_name == "Default":
+                        dataverse_name = None
 
-                        results.append(
-                            self.create_standalone_collection_using_links(
-                                cluster, name, creation_method, False,
-                                dataverse_name, dataset_obj.primary_key,
-                                link_name, external_collection_name,
-                                False, storage_format)
-                        )
-                        dataverse.standalone_datasets[
-                            dataset_obj.name] = dataset_obj
+                    results.append(
+                        self.create_standalone_collection_using_links(
+                            cluster, name, creation_method, False,
+                            dataverse_name, dataset_obj.primary_key,
+                            link_name, external_collection_name,
+                            False, storage_format)
+                    )
+                    dataverse.standalone_datasets[
+                        dataset_obj.name] = dataset_obj
+                    num_of_ds_on_external_db -= 1
+                if num_of_ds_on_external_db == 0:
+                    break
+            if num_of_ds_on_external_db == 0:
+                break
         return True
 
 

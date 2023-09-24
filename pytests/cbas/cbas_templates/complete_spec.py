@@ -7,24 +7,6 @@ spec = {
     # Accepted values are > 0
     "max_thread_count": 25,
 
-    # Accepted values are between 0 to 100, if both have same value
-    # or if the total percentage exceeds 100, then both types
-    # of links will be created in equal numbers
-    "percent_of_remote_links": 0,
-    "percent_of_external_links": 0,
-    "percent_of_kafka_links": 0,
-
-    # Accepted values are 1 or any positive int.
-    "no_of_datasets_per_dataverse": 2,
-
-    # Accepted values are between 0 to 100, if all 3 have same value
-    # or if the total percentage exceeds 100, then all 3 types
-    # of datasets will be created in equal numbers
-    "percent_of_local_datasets": 100,
-    "percent_of_remote_datasets": 0,
-    "percent_of_external_datasets": 0,
-    "percent_of_standalone_datasets": 0,
-
     # Accepted values are 0 or any positive int.
     "no_of_synonyms": 30,
 
@@ -120,7 +102,7 @@ spec = {
     },
 
     "dataset": {
-        "num_of_ds_per_dv": 0,
+        "num_of_datasets": 0,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are 0,1,3 . 0 means choose a cardinality
@@ -164,7 +146,7 @@ spec = {
     },
 
     "remote_dataset": {
-        "num_of_ds_per_dv": 0,
+        "num_of_remote_datasets": 0,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are 0,1,3 . 0 means choose a cardinality
@@ -214,7 +196,7 @@ spec = {
     },
 
     "external_dataset": {
-        "num_of_ds_per_dv": 0,
+        "num_of_external_datasets": 0,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are list of dataverse names. These are the
@@ -240,7 +222,7 @@ spec = {
     },
 
     "standalone_dataset": {
-        "num_of_ds_per_dv": 0,
+        "num_of_standalone_coll": 0,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are list of dataverse names. These are the
@@ -267,7 +249,7 @@ spec = {
     },
 
     "kafka_dataset": {
-        "num_of_ds_per_dv": 0,
+        "num_of_ds_on_external_db": 0,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are list of dataverse names. These are the
