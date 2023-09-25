@@ -104,7 +104,7 @@ class External_Link(Link):
 class Kafka_Link(Link):
 
     def __init__(self, name, dataverse_name="Default", db_type="mongo",
-                 kafka_cluster_details={}, external_database_details={}):
+                 external_database_details={}):
         """
         :param name str, name of the link
         :param dataverse_name str, dataverse where the link is present.
@@ -119,7 +119,6 @@ class Kafka_Link(Link):
         super(Kafka_Link, self).__init__(name, dataverse_name)
         self.link_type = "kafka"
         self.db_type = db_type.lower()
-        self.kafka_cluster_details = kafka_cluster_details
         self.external_database_details = external_database_details
 
 
@@ -415,6 +414,7 @@ class ExternalDB(object):
     def get_source_db_detail_object_for_kafka_links(self):
         if self.db_type == "mongo":
             return {
-                "SOURCE": self.db_type,
-                "CONNECTION_URI": self.db_uri
+                "source": "MONGODB",
+                "connectionFields": {"connectionUri": self.db_uri}
             }
+
