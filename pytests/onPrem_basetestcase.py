@@ -374,26 +374,25 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 CbServer.cluster_profile == "serverless"):
             self.aws_access_key = self.input.param("aws_access_key", None)
             self.aws_secret_key = self.input.param("aws_secret_key", None)
-            self.aws_bucket_region = self.input.param("aws_bucket_region",
-                                                      None)
+            self.sink_S3_region = self.input.param("sink_S3_region", None)
             self.aws_session_token = self.input.param("aws_session_token", "")
             for i in range(5):
                 try:
-                    self.aws_bucket_name = "goldfish-qe-" + str(
+                    self.sink_S3_bucket_name = "goldfish-qe-" + str(
                         random.randint(1, 100000))
-                    self.log.info(
-                        "Creating S3 bucket: {}".format(self.aws_bucket_name))
-                    self.aws_bucket_created = perform_S3_operation(
+                    self.log.info("Creating S3 bucket: {}".format(
+                        self.sink_S3_bucket_name))
+                    self.sink_bucket_created = perform_S3_operation(
                         aws_access_key=self.aws_access_key,
                         aws_secret_key=self.aws_secret_key,
                         aws_session_token=self.aws_session_token,
-                        create_bucket=True, bucket_name=self.aws_bucket_name,
-                        region=self.aws_bucket_region)
+                        create_bucket=True, bucket_name=self.sink_S3_bucket_name,
+                        region=self.sink_S3_region)
                     break
                 except Exception as e:
                     self.log.error("Creating S3 bucket - {0} in region {1}. "
                                    "Failed.".format(
-                        self.aws_bucket_name, self.aws_bucket_region))
+                        self.sink_S3_bucket_name, self.sink_S3_region))
                     self.log.error(str(e))
                 finally:
                     if i == 4:
@@ -403,7 +402,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             rest = RestConnection(self.cluster.master)
             status = rest.set_AWS_bucket_credential_to_anlaytics(
                 self.aws_access_key, self.aws_secret_key,
-                self.aws_bucket_name, self.aws_bucket_region)
+                self.sink_S3_bucket_name, self.sink_S3_region)
             if not status:
                 self.fail("Failed to put aws credentials to analytics, "
                           "request error")
@@ -570,14 +569,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         # delete aws bucket that was created for compute storage separation
         if self.storage_compute_separation and CbServer.cluster_profile == "serverless" \
-                and self.aws_bucket_created:
+                and self.sink_bucket_created:
 
             for cluster_name, cluster in self.cb_clusters.items():
                 self.log.info("Resetting cluster nodes")
                 self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
 
             self.log.info("Emptying AWS S3 bucket - {0}".format(
-                self.aws_bucket_name))
+                self.sink_S3_bucket_name))
             for i in range(5):
                 try:
                     if perform_S3_operation(
@@ -585,12 +584,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
                             aws_secret_key=self.aws_secret_key,
                             aws_session_token=self.aws_session_token,
                             empty_bucket=True,
-                            bucket_name=self.aws_bucket_name,
-                            region=self.aws_bucket_region):
+                            bucket_name=self.sink_S3_bucket_name,
+                            region=self.sink_S3_region):
                         break
                 except Exception as e:
                     self.log.error("Unable to empty S3 bucket - {0}".format(
-                        self.aws_bucket_name))
+                        self.sink_S3_bucket_name))
                     self.log.error(str(e))
                 finally:
                     if i == 4:
@@ -598,7 +597,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                   "retries")
 
             self.log.info("Deleting AWS S3 bucket - {0}".format(
-                self.aws_bucket_name))
+                self.sink_S3_bucket_name))
             for i in range(5):
                 try:
                     if perform_S3_operation(
@@ -606,12 +605,12 @@ class OnPremBaseTest(CouchbaseBaseTest):
                             aws_secret_key=self.aws_secret_key,
                             aws_session_token=self.aws_session_token,
                             delete_bucket=True,
-                            bucket_name=self.aws_bucket_name,
-                            region=self.aws_bucket_region):
+                            bucket_name=self.sink_S3_bucket_name,
+                            region=self.sink_S3_region):
                         break
                 except Exception as e:
                     self.log.error("Unable to delete S3 bucket - {0}".format(
-                        self.aws_bucket_name))
+                        self.sink_S3_bucket_name))
                     self.log.error(str(e))
                 finally:
                     if i == 4:

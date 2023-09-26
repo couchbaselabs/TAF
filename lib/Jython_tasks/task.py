@@ -3710,7 +3710,7 @@ class RunQueriesTask(Task):
 
     def __init__(self, cluster, queries, task_manager, helper, query_type,
                  run_infinitely=False, parallelism=1, is_prepared=True,
-                 record_results=True):
+                 record_results=True, regenerate_queries=False):
         super(RunQueriesTask, self).__init__("RunQueriesTask_started_%s"
                                              % (time.time()))
         self.cluster = cluster
@@ -3728,6 +3728,7 @@ class RunQueriesTask(Task):
         self.is_prepared = is_prepared
         self.debug_msg = self.query_type + "-DEBUG-"
         self.record_results = record_results
+        self.regenerate_queries = regenerate_queries
 
     def call(self):
         start = 0
@@ -3768,6 +3769,8 @@ class RunQueriesTask(Task):
                         end = self.parallelism
                     else:
                         break
+                if self.regenerate_queries:
+                    self.prepare_cbas_queries()
         except Exception as e:
             self.test_log.error(e)
             self.set_exception(e)

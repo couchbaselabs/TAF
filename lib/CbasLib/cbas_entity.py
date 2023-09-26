@@ -173,6 +173,9 @@ class Dataset(object):
                                           self.kv_scope.name,
                                           self.kv_collection.name)
 
+    def reset_full_name(self):
+        self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
+
 
 class Remote_Dataset(Dataset):
 
@@ -404,17 +407,33 @@ class ExternalDB(object):
     """
     :param db_type <str> Source Database can be Mongo, Dynamo
     and Cassandra
-    :param db_uri <str> Source DB URI
-    :param **kwargs Additional parameters, will depend on source DB type.
+    :param mongo_connection_uri <str> Mongo DB connection URI
+    :param dynamo_access_key <str> Access key for dynamo service
+    :param dynamo_secret_key <str> Secret key for dynamo service
+    :param dynamo_region <str> Region in which dynamo table is present 
     """
-    def __init__(self, db_type, db_uri, **kwargs):
+    def __init__(self, db_type, mongo_connection_uri=None,
+                 dynamo_access_key=None, dynamo_secret_key=None,
+                 dynamo_region=None):
         self.db_type = db_type.lower()
-        self.db_uri = db_uri
+        self.mongo_connection_uri = mongo_connection_uri
+        self.dynamo_access_key = dynamo_access_key
+        self.dynamo_secret_key = dynamo_secret_key
+        self.dynamo_region = dynamo_region
 
     def get_source_db_detail_object_for_kafka_links(self):
         if self.db_type == "mongo":
             return {
                 "source": "MONGODB",
-                "connectionFields": {"connectionUri": self.db_uri}
+                "connectionFields": {"connectionUri": self.mongo_connection_uri}
+            }
+        elif self.db_type == "dynamo":
+            return {
+                "source": "DYNAMODB",
+                "connectionFields": {
+                    "accessKeyId": self.dynamo_access_key,
+                    "secretAccessKey": self.dynamo_secret_key,
+                    "region": self.dynamo_region
+                }
             }
 

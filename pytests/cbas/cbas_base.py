@@ -2,6 +2,7 @@
 Created on 04-Jun-2021
 @author: Umang Agrawal
 '''
+import copy
 
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
@@ -94,43 +95,60 @@ class CBASBaseTest(BaseTestCase):
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
+        # This is to support static remote clusters. Multiple remote cluster
+        # IPs can be passed in format ip1:ip2
+        remote_cluster_ips = self.input.param("remote_cluster_ips", None)
+        if remote_cluster_ips:
+            remote_cluster_ips = remote_cluster_ips.split("|")
+
         """
         Since BaseTestCase will initialize at least one cluster, we need to
         initialize only total clusters required - 1.
         """
         cluster_name_format = "C%s"
         for i in range(1, self.num_of_clusters):
-            start = end
-            end += self.nodes_init[i]
-            cluster_name = cluster_name_format % str(i+1)
-            cluster = CBCluster(
-                name=cluster_name,
-                servers=self.servers[start:end])
+            cluster_name = cluster_name_format % str(i + 1)
+
+            if remote_cluster_ips:
+                remote_server = copy.deepcopy(self.servers[0])
+                remote_server.ip = remote_cluster_ips[i-1]
+                cluster = CBCluster(
+                    name=cluster_name, servers=[remote_server])
+            else:
+                start = end
+                end += self.nodes_init[i]
+                cluster = CBCluster(
+                    name=cluster_name,
+                    servers=self.servers[start:end])
+
             self.cb_clusters[cluster_name] = cluster
             cluster.nodes_in_cluster.append(cluster.master)
             cluster.kv_nodes.append(cluster.master)
 
-            self.initialize_cluster(cluster_name, cluster,
-                                    services=self.services_init[i][0])
-            cluster.master.services = self.services_init[i][0].replace(":", ",")
+            if not remote_cluster_ips:
+                # We don't need compute-storage separation on remote cluster
+                self.storage_compute_separation = False
+                self.initialize_cluster(cluster_name, cluster,
+                                        services=self.services_init[i][0])
+                cluster.master.services = self.services_init[i][0].replace(":", ",")
 
-            if "cbas" in cluster.master.services:
-                cluster.cbas_nodes.append(cluster.master)
+                if "cbas" in cluster.master.services:
+                    cluster.cbas_nodes.append(cluster.master)
 
-            if self.input.param("cluster_ip_family", ""):
-                # Enforce IPv4 or IPv6 or both
-                if cluster_ip_family[i] == "ipv4_only":
-                    status, msg = self.cluster_util.enable_disable_ip_address_family_type(
-                        cluster, True, True, False)
-                if cluster_ip_family[i] == "ipv6_only":
-                    status, msg = self.cluster_util.enable_disable_ip_address_family_type(
-                        cluster, True, False, True)
-                if cluster_ip_family[i] == "ipv4_ipv6":
-                    status, msg = self.cluster_util.enable_disable_ip_address_family_type(
-                        cluster, True, True, True)
-                if not status:
-                    self.fail(msg)
-            self.modify_cluster_settings(cluster)
+                if self.input.param("cluster_ip_family", ""):
+                    # Enforce IPv4 or IPv6 or both
+                    if cluster_ip_family[i] == "ipv4_only":
+                        status, msg = self.cluster_util.enable_disable_ip_address_family_type(
+                            cluster, True, True, False)
+                    if cluster_ip_family[i] == "ipv6_only":
+                        status, msg = self.cluster_util.enable_disable_ip_address_family_type(
+                            cluster, True, False, True)
+                    if cluster_ip_family[i] == "ipv4_ipv6":
+                        status, msg = self.cluster_util.enable_disable_ip_address_family_type(
+                            cluster, True, True, True)
+                    if not status:
+                        self.fail(msg)
+                self.modify_cluster_settings(cluster)
 
         self.available_servers = self.servers[end:]
 
@@ -266,8 +284,8 @@ class CBASBaseTest(BaseTestCase):
                         cluster.cbas_cc_node = server
                         break
 
-            if "cbas" in cluster.master.services:
-                self.cbas_util.cleanup_cbas(cluster, retry=1)
+            """if "cbas" in cluster.master.services:
+                self.cbas_util.cleanup_cbas(cluster, retry=1)"""
 
             cluster.otpNodes = cluster.rest.node_statuses()
 

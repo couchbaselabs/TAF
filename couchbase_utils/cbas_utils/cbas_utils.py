@@ -1970,11 +1970,11 @@ class Dataset_Util(KafkaLink_Util):
                 if dataset_source == "dataset":
                     dataset_objs.extend(dataverse.datasets.values())
                 elif dataset_source == "remote":
-                    dataset_objs.extend(dataverse.datasets.values())
+                    dataset_objs.extend(dataverse.remote_datasets.values())
                 elif dataset_source == "external":
-                    dataset_objs.extend(dataverse.datasets.values())
+                    dataset_objs.extend(dataverse.external_datasets.values())
                 elif dataset_source == "standalone":
-                    dataset_objs.extend(dataverse.datasets.values())
+                    dataset_objs.extend(dataverse.standalone_datasets.values())
         return dataset_objs
 
     @staticmethod
@@ -2640,7 +2640,7 @@ class Remote_Dataset_Util(Dataset_Util):
                     dataset_objs.append(create_object(bucket, scope, collection, link))
         return dataset_objs
 
-    def create_remote_dataset_from_spec(self, cluster, remote_cluster,
+    def create_remote_dataset_from_spec(self, cluster, remote_clusters,
                                         cbas_spec, bucket_util):
         """
         Creates remote datasets based on remote dataset specs.
@@ -2661,6 +2661,8 @@ class Remote_Dataset_Util(Dataset_Util):
             for link_name in dataset_spec["exclude_links"]:
                 remote_link_objs -= set([self.get_link_obj(
                     cluster, CBASHelper.format_name(link_name))])
+
+        remote_link_objs = list(remote_link_objs)
 
         num_of_remote_datasets = dataset_spec.get("num_of_remote_datasets", 0)
 
@@ -2697,6 +2699,12 @@ class Remote_Dataset_Util(Dataset_Util):
             else:
                 bucket_cardinality = dataset_spec["bucket_cardinality"]
 
+            link = random.choice(remote_link_objs)
+            remote_cluster = None
+            for tmp_cluster in remote_clusters:
+                if tmp_cluster.master.ip == link.properties["hostname"]:
+                    remote_cluster = tmp_cluster
+
             bucket, scope, collection = self.get_kv_entity(
                     remote_cluster, bucket_util, bucket_cardinality,
                     dataset_spec.get("include_buckets", []),
@@ -2720,11 +2728,8 @@ class Remote_Dataset_Util(Dataset_Util):
                 storage_format = dataset_spec[
                     "storage_format"]
 
-            link_name = random.choice(
-                remote_link_objs).full_name
-
             dataset_obj = Remote_Dataset(
-                name=name, link_name=link_name,
+                name=name, link_name=link.full_name,
                 dataverse_name=dataverse.name, bucket=bucket,
                 scope=scope, collection=collection,
                 num_of_items=num_of_items,
@@ -2742,7 +2747,7 @@ class Remote_Dataset_Util(Dataset_Util):
             results.append(
                 self.create_remote_dataset(
                     cluster, dataset_obj.name,
-                    dataset_obj.full_kv_entity_name, link_name,
+                    dataset_obj.full_kv_entity_name, link.full_name,
                     dataverse_name, False, False, None,
                     None, storage_format, analytics_collection,
                     False, None, None, None,
@@ -3049,7 +3054,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
         """
         Creates external datasets based on external dataset specs.
         """
-        self.log.info("Creating Remote Datasets based on CBAS Spec")
+        self.log.info("Creating External Datasets based on CBAS Spec")
 
         dataset_spec = self.get_external_dataset_spec(cbas_spec)
         results = list()
@@ -3113,9 +3118,8 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 dataset_properties = random.choice(
                     dataset_spec.get(
                         "external_dataset_properties", [{}]))
-                if link.properties[
-                    "region"] == dataset_properties.get(
-                    "region", None):
+                if link.properties["region"] == dataset_properties.get(
+                        "region", None):
                     break
             dataset_obj = External_Dataset(
                 name=name, dataverse_name=dataverse.name,
@@ -3176,7 +3180,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
     def copy_from_external_resource_into_standalone_collection(
             self, cluster, collection_name, aws_bucket_name,
             external_link_name, dataverse_name=None, files_to_include=[],
-            file_format="json", type_parsing_info={}, path_on_aws_bucket="",
+            file_format="json", type_parsing_info="", path_on_aws_bucket="",
             header=None, null_string=None, files_to_exclude=[],
             parse_json_string=0, convert_decimal_to_double=0,
             timezone="", validate_error_msg=False, username=None,
@@ -3237,10 +3241,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
 
         if type_parsing_info:
-            cmd += "AS ("
-            for field_name, field_type in type_parsing_info.iteritems():
-                cmd += " {0} {1},".format(field_name, field_type)
-            cmd = cmd.rstrip(",") + ") "
+            cmd += "AS ({0}) ".format(type_parsing_info)
 
         cmd += "FROM `{0}` AT {1} ".format(aws_bucket_name,
                                            CBASHelper.format_name(
@@ -3620,13 +3621,16 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             if len(data_source) > 0:
                 data_source = random.choice(data_source)
                 links = self.list_all_link_objs(link_type=data_source)
-                link = random.choice(link) if len(links) > 0 else None
+                link = random.choice(links) if len(links) > 0 else None
 
-            name = link.full_name if link else None
+            link_name = link.full_name if link else None
             dataset_obj = Standalone_Dataset(
                 name, data_source,
                 random.choice(dataset_spec["primary_key"]),
-                dataverse.name, name, None, {}, 0, storage_format
+                dataverse.name, link_name, None,
+                random.choice(
+                    dataset_spec.get("standalone_collection_properties", [{}])),
+                0, storage_format
             )
 
             dataverse_name = dataset_obj.dataverse_name
@@ -4316,70 +4320,66 @@ class Index_Util(Synonym_Util):
 
         index_spec = self.get_index_spec(cbas_spec)
 
-        if cbas_spec.get("no_of_indexes", 0) > 0:
-            results = list()
-            for i in range(1, cbas_spec["no_of_indexes"] + 1):
-                if index_spec.get("name_key", "random").lower() == "random":
-                    name = self.generate_name(name_cardinality=1)
-                else:
-                    name = index_spec["name_key"] + "_{0}".format(str(i))
+        results = list()
+        for i in range(1, index_spec["no_of_indexes"] + 1):
+            if index_spec.get("name_key", "random").lower() == "random":
+                name = self.generate_name(name_cardinality=1)
+            else:
+                name = index_spec["name_key"] + "_{0}".format(str(i))
 
-                dataverse = None
-                while not dataverse:
-                    dataverse = random.choice(self.dataverses.values())
-                    if index_spec.get("include_dataverses",
-                                      []) and CBASHelper.unformat_name(
-                        dataverse.name) not in index_spec[
-                        "include_dataverses"]:
-                        dataverse = None
-                    if index_spec.get("exclude_dataverses",
-                                      []) and CBASHelper.unformat_name(
-                        dataverse.name) in index_spec["exclude_dataverses"]:
-                        dataverse = None
-                    if len(dataverse.datasets) == 0:
-                        dataverse = None
+            datasets = self.list_all_dataset_objs()
+            dataset = None
+            while not dataset:
+                dataset = random.choice(datasets)
+                if index_spec.get("include_dataverses",
+                                  []) and CBASHelper.unformat_name(
+                    dataset.dataverse_name) not in index_spec[
+                    "include_dataverses"]:
+                    dataset = None
+                if index_spec.get("exclude_dataverses",
+                                  []) and CBASHelper.unformat_name(
+                    dataset.dataverse_name) in index_spec["exclude_dataverses"]:
+                    dataset = None
 
-                dataset = None
-                while not dataset:
-                    dataset = random.choice(dataverse.datasets.values())
-                    if index_spec.get("include_datasets",
-                                      []) and CBASHelper.unformat_name(
-                        dataset.name) not in index_spec["include_datasets"]:
-                        dataset = None
-                    if index_spec.get("exclude_datasets",
-                                      []) and CBASHelper.unformat_name(
-                        dataset.name) in index_spec["exclude_datasets"]:
-                        dataset = None
+                if index_spec.get("include_datasets",
+                                  []) and CBASHelper.unformat_name(
+                    dataset.name) not in index_spec["include_datasets"]:
+                    dataset = None
+                if index_spec.get("exclude_datasets",
+                                  []) and CBASHelper.unformat_name(
+                    dataset.name) in index_spec["exclude_datasets"]:
+                    dataset = None
 
-                index = CBAS_Index(name=name, dataset_name=dataset.name,
-                                   dataverse_name=dataverse.name,
-                                   indexed_fields=random.choice(
-                                       index_spec.get("indexed_fields", [])))
+            index = CBAS_Index(
+                name=name, dataset_name=dataset.name,
+                dataverse_name=dataset.dataverse_name,
+                indexed_fields=random.choice(
+                    index_spec.get("indexed_fields", [])))
 
-                if index_spec.get("creation_method", "all") == "all":
-                    creation_method = random.choice(["cbas_index", "index"])
-                else:
-                    creation_method = index_spec["creation_method"].lower()
-                if creation_method == "cbas_index":
-                    index.analytics_index = True
-                else:
-                    index.analytics_index = False
+            if index_spec.get("creation_method", "all") == "all":
+                creation_method = random.choice(["cbas_index", "index"])
+            else:
+                creation_method = index_spec["creation_method"].lower()
+            if creation_method == "cbas_index":
+                index.analytics_index = True
+            else:
+                index.analytics_index = False
 
-                if not self.create_cbas_index(
-                        cluster, index_name=index.name,
-                        indexed_fields=index.indexed_fields,
-                        dataset_name=index.full_dataset_name,
-                        analytics_index=index.analytics_index,
-                        validate_error_msg=False, expected_error=None, username=None,
-                        password=None, timeout=cbas_spec.get("api_timeout", 300),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
-                    results.append(False)
-                else:
-                    dataset.indexes[index.name] = index
-                    results.append(True)
+            if not self.create_cbas_index(
+                    cluster, index_name=index.name,
+                    indexed_fields=index.indexed_fields,
+                    dataset_name=index.full_dataset_name,
+                    analytics_index=index.analytics_index,
+                    validate_error_msg=False, expected_error=None,
+                    username=None, password=None,
+                    timeout=cbas_spec.get("api_timeout", 300),
+                    analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
+                results.append(False)
+            else:
+                dataset.indexes[index.name] = index
+                results.append(True)
 
-            return all(results)
-        return True
+        return all(results)
 
     def get_indexes(self, cluster, retries=10):
         indexes_created = []
@@ -5547,7 +5547,7 @@ class CbasUtil(CBOUtil):
 
     def create_cbas_infra_from_spec(
             self, cluster, cbas_spec, bucket_util,
-            wait_for_ingestion=True, remote_cluster=None,
+            wait_for_ingestion=True, remote_clusters=None,
             include_external_collections=[]):
         """
         Method creates CBAS infra based on the spec data.
@@ -5569,7 +5569,7 @@ class CbasUtil(CBOUtil):
         if not self.create_dataset_from_spec(cluster, cbas_spec, bucket_util):
             return False, "Failed at create dataset from spec"
         if not self.create_remote_dataset_from_spec(
-                cluster, remote_cluster, cbas_spec, bucket_util):
+                cluster, remote_clusters, cbas_spec, bucket_util):
             return False, "Failed at create remote dataset from spec"
         if not self.create_external_dataset_from_spec(cluster, cbas_spec):
             return False, "Failed at create external dataset from spec"
