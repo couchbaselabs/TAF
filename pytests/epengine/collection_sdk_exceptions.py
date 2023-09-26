@@ -351,7 +351,9 @@ class SDKExceptionTests(CollectionBase):
             cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
 
         doc_load_spec = dict()
         doc_load_spec[MetaCrudParams.SDK_TIMEOUT] = self.sdk_timeout
@@ -605,7 +607,9 @@ class SDKExceptionTests(CollectionBase):
                                                  vbucket_type="replica")
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.sdk_timeout

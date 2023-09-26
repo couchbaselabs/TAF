@@ -160,7 +160,9 @@ class RollbackTests(CollectionBase):
 
         target_node = choice(self.kv_nodes)
         shell = self.node_shells[target_node]["shell"]
-        error_sim = CouchbaseError(self.log, shell)
+        error_sim = CouchbaseError(self.log,
+                                   shell,
+                                   node=target_node)
         cb_stats = self.node_shells[target_node]["cbstat"]
         self.target_vbuckets = cb_stats.vbucket_list(self.bucket.name)
 

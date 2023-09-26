@@ -245,7 +245,9 @@ class CollectionDurabilityTests(CollectionBase):
         for server in kv_nodes:
             ssh_shell = RemoteMachineShellConnection(server)
             cbstats = Cbstats(server)
-            cb_err = CouchbaseError(self.log, ssh_shell)
+            cb_err = CouchbaseError(self.log,
+                                    ssh_shell,
+                                    node=server)
             target_vb_type = "replica"
             if self.durability_level \
                     == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
@@ -354,7 +356,9 @@ class CollectionDurabilityTests(CollectionBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
             # Fetch affected nodes' vb_num which are of type=replica
             active_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="active")
@@ -510,7 +514,9 @@ class CollectionDurabilityTests(CollectionBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
             # Fetch affected nodes' vb_num which are of type=replica
             active_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="active")
@@ -687,7 +693,9 @@ class CollectionDurabilityTests(CollectionBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
             # Fetch affected nodes' vb_num which are of type=replica
             active_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="active")

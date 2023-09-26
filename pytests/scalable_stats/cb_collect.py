@@ -149,7 +149,9 @@ class CbCollectInfoTests(CollectionBase):
 
         self.log.info("Nodes to stop - %s" % nodes_to_stop)
         for node in nodes_to_stop:
-            cb_error = CouchbaseError(self.log, self.node_data[node]["shell"])
+            cb_error = CouchbaseError(self.log,
+                                      self.node_data[node]["shell"],
+                                      node=node)
             self.node_data[node]["cb_error"] = cb_error
             self.node_data[node]["cb_error"].create(CouchbaseError.STOP_SERVER)
 

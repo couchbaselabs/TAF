@@ -1258,7 +1258,9 @@ class basic_ops(ClusterSetup):
         doc_val = {"field": "val"}
         bucket = self.cluster.buckets[0]
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cb_err = CouchbaseError(self.log, shell)
+        cb_err = CouchbaseError(self.log,
+                                shell,
+                                node=self.cluster.master)
 
         client_1 = SDKClient([self.cluster.master], bucket)
         client_2 = SDKClient([self.cluster.master], bucket)
@@ -1397,8 +1399,9 @@ class basic_ops(ClusterSetup):
         shell_conn[target_nodes.ip] = RemoteMachineShellConnection(
             target_nodes)
         # Perform specified action
-        error_sim[target_nodes.ip] = CouchbaseError(self.log, shell_conn[
-            target_nodes.ip])
+        error_sim[target_nodes.ip] = CouchbaseError(self.log,
+                                                    shell_conn[target_nodes.ip],
+                                                    node=target_nodes)
         error_sim[target_nodes.ip].create(CouchbaseError.KILL_MEMCACHED,
                                           bucket_name=big_bucket.name)
         self.assertTrue(
@@ -1425,7 +1428,9 @@ class basic_ops(ClusterSetup):
         self.log.info("Target node %s" % target_node.ip)
         shell = RemoteMachineShellConnection(target_node)
         cb_stat = Cbstats(target_node)
-        cb_error = CouchbaseError(self.log, shell)
+        cb_error = CouchbaseError(self.log,
+                                  shell,
+                                  node=target_node)
 
         # Load initial data set into bucket
         self.log.info("Loading %s docs into bucket" % self.num_items)
@@ -1712,7 +1717,9 @@ class basic_ops(ClusterSetup):
                                                      self.cluster.buckets)
 
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cb_err = CouchbaseError(self.log, shell)
+        cb_err = CouchbaseError(self.log,
+                                shell,
+                                node=self.cluster.master)
         cb_stats = Cbstats(shell)
 
         self.log.info("Collection stats before executing the scenario")
@@ -1807,7 +1814,9 @@ class basic_ops(ClusterSetup):
 
         cbstat = Cbstats(self.cluster.master)
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cb_err = CouchbaseError(self.log, shell)
+        cb_err = CouchbaseError(self.log,
+                                shell,
+                                node=self.cluster.master)
 
         self.log.info("Running diag_eval and restarting couchbase-server")
         shell.execute_command(diag_eval_cmd)
@@ -1972,7 +1981,9 @@ class basic_ops(ClusterSetup):
 
         self.log.info("Stopping memcached on: %s" % node_to_stop)
         ssh_conn = RemoteMachineShellConnection(node_to_stop)
-        err_sim = CouchbaseError(self.log, ssh_conn)
+        err_sim = CouchbaseError(self.log,
+                                 ssh_conn,
+                                 node=node_to_stop)
         err_sim.create(CouchbaseError.STOP_MEMCACHED)
 
         result = client.crud(DocLoading.Bucket.DocOps.CREATE,

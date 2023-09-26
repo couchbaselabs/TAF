@@ -31,7 +31,9 @@ class StatsFailureScenarios(CollectionBase):
         self.bucket_util.load_sample_bucket(self.cluster, bucket)
         target_node = self.servers[0]
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote, target_node)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=target_node)
         self.log.info("Before failure")
         self.get_all_metrics(self.components, self.parse, self.metric_name)
         try:
@@ -54,7 +56,9 @@ class StatsFailureScenarios(CollectionBase):
         self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
         target_node = self.servers[0]
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=target_node)
         self.log.info("Before failure")
         self.get_all_metrics(self.components, self.parse, self.metric_name)
         try:

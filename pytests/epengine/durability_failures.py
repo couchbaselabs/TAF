@@ -189,7 +189,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
             # Fetch affected nodes' vb_num which are of type=replica
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
@@ -368,7 +370,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(target_node)
-        error_sim = CouchbaseError(self.log, shell_conn)
+        error_sim = CouchbaseError(self.log,
+                                   shell_conn,
+                                   node=target_node)
 
         self.durability_level = \
             Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
@@ -479,7 +483,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(target_node)
-        error_sim = CouchbaseError(self.log, shell_conn)
+        error_sim = CouchbaseError(self.log,
+                                   shell_conn,
+                                   node=target_node)
         vb_info = dict()
         doc_errors = dict()
 
@@ -655,7 +661,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
             vb_info["init"] = dict()
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
             # Fetch affected nodes' vb_num which are of type=replica
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
@@ -799,7 +807,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(target_node)
-        error_sim = CouchbaseError(self.log, shell_conn)
+        error_sim = CouchbaseError(self.log,
+                                   shell_conn,
+                                   node=shell_conn)
 
         self.durability_level = \
             Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
@@ -924,7 +934,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 crud_batch_size,
                 target_vbucket=replica_vbs[server])
             success = self.bucket_util.load_durable_aborts(
-                ssh_shell, [load_gen[server]], self.cluster,
+                ssh_shell, server, [load_gen[server]], self.cluster,
                 self.bucket, self.durability_level,
                 DocLoading.Bucket.DocOps.CREATE, "all_aborts")
             if not success:
@@ -1022,7 +1032,9 @@ class TimeoutTests(DurabilityTestsBase):
             cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
 
         # Perform CRUDs with induced error scenario is active
         doc_gen["create"] = doc_generator(self.key, self.num_items,
@@ -1128,7 +1140,9 @@ class TimeoutTests(DurabilityTestsBase):
         target_node = self.get_random_node()
         shell_conn = RemoteMachineShellConnection(target_node)
         cbstat_obj = Cbstats(target_node)
-        error_sim = CouchbaseError(self.log, shell_conn)
+        error_sim = CouchbaseError(self.log,
+                                   shell_conn,
+                                   node=target_node)
         vb_info = dict()
 
         self.durability_level = \
@@ -1339,7 +1353,9 @@ class TimeoutTests(DurabilityTestsBase):
                                                  vbucket_type="replica")
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.sdk_timeout

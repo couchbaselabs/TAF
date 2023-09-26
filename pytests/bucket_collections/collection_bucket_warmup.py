@@ -49,7 +49,9 @@ class BucketWarmup(CollectionBase):
     def perform_operation_during_bucket_warmup(self, during_warmup="default"):
         # stop memcached in master node
         shell_conn = RemoteMachineShellConnection(self.cluster.master)
-        self.error_sim = CouchbaseError(self.log, shell_conn)
+        self.error_sim = CouchbaseError(self.log,
+                                        shell_conn,
+                                        node=self.cluster.master)
         self.error_sim.create(CouchbaseError.STOP_MEMCACHED)
         self.log.info("memcached stopped on master node")
 

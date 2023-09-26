@@ -1149,7 +1149,9 @@ class SystemEventLogs(ClusterSetup):
 
         self.log.info("3/3 Testing auto-failover")
         shell = RemoteMachineShellConnection(target_node)
-        cb_err = CouchbaseError(self.log, shell)
+        cb_err = CouchbaseError(self.log,
+                                shell,
+                                node=target_node)
         cb_err.create(CouchbaseError.STOP_MEMCACHED)
         self.sleep(10, "Wait for auto_failover to trigger")
         cb_err.revert(CouchbaseError.STOP_MEMCACHED)

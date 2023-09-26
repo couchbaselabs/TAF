@@ -521,7 +521,9 @@ class ExpiryMaxTTL(ClusterSetup):
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstats = Cbstats(node)
             target_vbuckets += cbstats.vbucket_list(def_bucket.name, "replica")
-            cb_error = CouchbaseError(self.log, shell_conn[node.ip])
+            cb_error = CouchbaseError(self.log,
+                                      shell_conn[node.ip],
+                                      node=node)
             cb_error.create(CouchbaseError.STOP_MEMCACHED, def_bucket.name)
 
         self.log.info("2. Initiating the doc_ops with doc TTL")
@@ -532,7 +534,9 @@ class ExpiryMaxTTL(ClusterSetup):
         # Revert Memcached error and close the shell_conn
         self.log.info("4. Resuming Memcached on target_nodes")
         for node in target_nodes:
-            cb_error = CouchbaseError(self.log, shell_conn[node.ip])
+            cb_error = CouchbaseError(self.log,
+                                      shell_conn[node.ip],
+                                      node=node)
             cb_error.revert(CouchbaseError.STOP_MEMCACHED, def_bucket.name)
             shell_conn[node.ip].disconnect()
 
