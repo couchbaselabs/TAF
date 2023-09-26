@@ -29,6 +29,7 @@ class RebalanceBaseTest(BaseTestCase):
         super(RebalanceBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
+        self.bucket_size = self.input.param("bucket_size", 256)
         self.key_size = self.input.param("key_size", 0)
         self.zone = self.input.param("zone", 1)
         self.replica_to_update = self.input.param("new_replica", None)
