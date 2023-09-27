@@ -14,7 +14,6 @@ import Cb_constants
 from SystemEventLogLib.Events import Event
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
-from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
 from bucket_utils.bucket_ready_functions import BucketUtils
 from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest
@@ -34,7 +33,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # Framework specific parameters (Extension from cb_basetest)
         self.skip_cluster_reset = self.input.param("skip_cluster_reset", False)
         self.skip_setup_cleanup = self.input.param("skip_setup_cleanup", False)
-        self.storage_compute_separation = self.input.param("storage_compute_separation", False)
         # End of framework parameters
 
         # Cluster level info settings
@@ -396,35 +394,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.log.info("Initializing cluster : {0}".format(cluster_name))
         self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
 
-        # This is a temporary function to set up compute storage separation, to be removed in future
-        if self.storage_compute_separation and CbServer.cluster_profile == "serverless":
-            try:
-                self.aws_access_key = self.input.param("aws_access_key", None)
-                self.aws_secret_key = self.input.param("aws_secret_key", None)
-                self.aws_bucket_region = self.input.param("aws_bucket_region", None)
-                self.aws_session_token = self.input.param("aws_session_token", "")
-                self.aws_bucket_name = "css" + str(random.randint(1, 100000))
-                self.log.info("Creating S3 bucket")
-                self.aws_bucket_created = perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    create_bucket=True, bucket_name=self.aws_bucket_name,
-                    region=self.aws_bucket_region)
-                if not self.aws_bucket_created:
-                    self.fail("Creating S3 bucket - {0} in region {1}. Failed.".format(
-                        self.aws_bucket_name, self.aws_bucket_region))
-                self.log.info("Adding aws bucket credentials to analytics")
-                rest = RestConnection(self.cluster.master)
-                status = rest.set_AWS_bucket_credential_to_anlaytics(self.aws_access_key,
-                                                                     self.aws_secret_key,
-                                                                     self.aws_bucket_name,
-                                                                     self.aws_bucket_region)
-                if not status:
-                    self.fail("Failed to put aws credentials to analytics, request error")
-            except:
-                self.fail("Failed to add aws credentials for compute storage separation")
-
         if not services:
             master_services = self.cluster_util.get_services(
                 cluster.servers[:1], self.services_init, start_node=0)
@@ -591,17 +560,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         elif sys_event_validation_failure:
             self.log.critical("System event log validation failed: %s"
                               % sys_event_validation_failure)
-
-        # delete aws bucket that was created for compute storage separation
-        if self.storage_compute_separation and CbServer.cluster_profile == "serverless" \
-            and self.aws_bucket_created and \
-                not perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    delete_bucket=True, bucket_name=self.aws_bucket_name,
-                        region=self.aws_bucket_region):
-            self.log.critical("AWS bucket failed to delete")
 
         self.shutdown_task_manager()
 

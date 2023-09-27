@@ -3662,41 +3662,6 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
 
-    # Calls to add aws bucket to analytics for compute storage separation, to be removed in the future.
-    def set_AWS_bucket_credential_to_anlaytics(self, aws_access_key, aws_secret_key, aws_bucket_name,
-                                               aws_bucket_region):
-        url_access_key = 'http://{}:8091/_metakv/cbas/debug/settings/blob_storage_access_key_id'.format(self.ip)
-        url_secret_key = 'http://{}:8091/_metakv/cbas/debug/settings/blob_storage_secret_access_key'.format(self.ip)
-        access_key_data = {'value': aws_access_key}
-        secret_key_data = {'value': aws_secret_key}
-        headers = {'Content-Type': "application/x-www-form-urlencoded"}
-        self.log.info("Adding aws access key")
-        status_access_key, _, _ = self._http_request(url_access_key,
-                                                     'PUT',
-                                                     urllib.urlencode(access_key_data),
-                                                     headers=headers)
-        self.log.info("Adding aws secret key")
-        status_secret_key, _, _ = self._http_request(url_secret_key,
-                                                     'PUT',
-                                                     urllib.urlencode(secret_key_data),
-                                                     headers=headers)
-        self.log.info("Adding aws bucket config to analytics")
-        url = 'http://{}:8091/settings/analytics'.format(self.ip)
-        headers = {
-            'Content-Type': "application/x-www-form-urlencoded"
-        }
-
-        data = {'blobStorageRegion': aws_bucket_region,
-                'blobStoragePrefix': '',
-                'blobStorageBucket': aws_bucket_name,
-                'blobStorageScheme': 's3'}
-        status_bucket_access, content, header = self._http_request(url, 'POST', urllib.urlencode(data),
-                                                                   headers=headers)
-
-        if not status_access_key or not status_secret_key or not status_bucket_access:
-            return False
-        return True
-
     def get_saml_settings(self):
         """
         Returns current saml settings as JSON
