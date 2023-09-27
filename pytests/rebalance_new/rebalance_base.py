@@ -279,7 +279,7 @@ class RebalanceBaseTest(BaseTestCase):
                 if self.servers[i].ip in nodes_in_cluster \
                         and self.servers[i].ip not in nodes_to_remove:
                     server_group = i % int(self.zone)
-                    nodes_in_zone[zones[server_group]].append(self.servers[i].ip)
+                    nodes_in_zone[zones[server_group]].append(self.servers[i])
             # Shuffle the nodesS
             for i in range(1, self.zone):
                 node_in_zone = list(set(nodes_in_zone[zones[i]]) -
