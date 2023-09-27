@@ -140,33 +140,33 @@ class CBASStandaloneExternalLink(CBASBaseTest):
         if not link_regions:
             link_regions = self.aws_region_list
 
-        self.cbas_util.create_link_obj(
-            self.cluster, "s3", link_cardinality=self.link_cardinality,
+        self.cbas_util.create_external_link_obj(
+            self.cluster, link_type="s3", link_cardinality=self.link_cardinality,
             accessKeyId=self.aws_access_key, secretAccessKey=self.aws_secret_key,
-            regions=link_regions, no_of_objs=self.input.param("no_of_links", 1))
+            regions=[link_regions], no_of_objs=self.input.param("no_of_links", 1))
 
         if create_links:
 
             link_objs = self.cbas_util.list_all_link_objs(link_type="s3")
 
             for link_obj in link_objs:
-                if not self.cbas_util.create_link(
+                if not self.cbas_util.create_external_link(
                         self.cluster, link_obj.properties,
                         username=self.analytics_username):
                     self.fail("link creation failed")
 
         if create_standalone_collection_objs:
-            self.collection_objs = self.cbas_util.create_standalone_obj(
-                name_cardinality=self.dataset_cardinality,
+            self.collection_objs = self.cbas_util.create_standalone_dataset_obj(
+                dataset_cardinality=self.dataset_cardinality,
                 name_length=30, fixed_length=False,
-                no_of_obj=self.input.param("no_of_standalone_collection", 1),
+                no_of_objs=self.input.param("no_of_standalone_collection", 1),
                 storage_format="column")
 
             for collection_obj in self.collection_objs:
                 if not self.cbas_util.create_standalone_collection(
                         self.cluster, collection_obj.name,
                         dataverse_name=collection_obj.dataverse_name,
-                        storage_format=collection_obj.storage_format, with_clause=True):
+                        storage_format=collection_obj.storage_format):
                     self.fail("Standalone collection creation failed")
 
         if rebalance_util:
@@ -230,7 +230,7 @@ class CBASStandaloneExternalLink(CBASBaseTest):
 
         link_obj = self.cbas_util.list_all_link_objs(link_type="s3")[0]
         link_obj.properties["region"] = "us-west-1"
-        if not self.cbas_util.create_link(
+        if not self.cbas_util.create_external_link(
                 self.cluster, link_obj.properties, username=self.analytics_username):
             self.fail("link creation failed")
 
