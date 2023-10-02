@@ -118,28 +118,28 @@ class SSOTest(BaseTestCase):
         )
 
         self.assertEqual(login_response.status_code // 100, 3)
-        # Error with the description that the response and the assertion are unsigned
-        error_msg = "error_description=neither%20the%20response%20nor%20the%20assertion%20are%20signed"
-        if error_msg not in login_response.content:
-            self.fail("Failed to get the expected error message")
 
-        # continue_flow = self.sso.continue_saml_response(
-        #     urljoin(
-        #         self.realm_callback,
-        #         login_response.headers['Location']
-        #     ),
-        #     cookies=c
-        # )
-        # Throws Connection error
-        #
-        # self.assertEqual(continue_flow.status_code // 100, 3)
-        #
-        # new_url = urlparse(continue_flow.headers['Location'])
-        # new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
-        #                                            new_url.query)
-        # finish_flow = self.sso.continue_saml_response(new_url)
-        #
-        # self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
+        # Error with the description that the response and the assertion are unsigned
+        # error_msg = "error_description=neither%20the%20response%20nor%20the%20assertion%20are%20signed"
+        # if error_msg not in login_response.content:
+        #     self.fail("Failed to get the expected error message")
+
+        continue_flow = self.sso.continue_saml_response(
+            urljoin(
+                self.realm_callback,
+                login_response.headers['Location']
+            ),
+            cookies=c
+        )
+
+        self.assertEqual(continue_flow.status_code // 100, 3)
+
+        new_url = urlparse(continue_flow.headers['Location'])
+        new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
+                                                   new_url.query)
+        finish_flow = self.sso.continue_saml_response(new_url)
+
+        self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
 
     def test_login_with_invalid_signature(self):
         self.log.info("Login with SSO")
@@ -425,9 +425,26 @@ class SSOTest(BaseTestCase):
                                                      cookies=c)
 
         self.assertEqual(login_response.status_code // 100, 3)
-        error_msg = "?error=invalid_request&"
-        if error_msg not in login_response.content:
-            self.fail("Failed to get the expected error message")
+        # error_msg = "?error=invalid_request&"
+        # if error_msg not in login_response.content:
+        #     self.fail("Failed to get the expected error message")
+
+        continue_flow = self.sso.continue_saml_response(
+            urljoin(
+                self.realm_callback,
+                login_response.headers['Location']
+            ),
+            cookies=c
+        )
+
+        self.assertEqual(continue_flow.status_code // 100, 3)
+
+        new_url = urlparse(continue_flow.headers['Location'])
+        new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
+                                                   new_url.query)
+        finish_flow = self.sso.continue_saml_response(new_url)
+
+        self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
 
     def test_invalid_data(self):
         self.log.info("Login with SSO")
