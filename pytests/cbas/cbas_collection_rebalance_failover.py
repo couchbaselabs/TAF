@@ -40,7 +40,7 @@ class CBASRebalance(CBASBaseTest):
         self.cbas_spec = self.cbas_util.get_cbas_spec(self.cbas_spec_name)
         update_spec = {
             "no_of_dataverses": self.input.param('no_of_dv', 1),
-            "no_of_datasets_per_dataverse": self.input.param('ds_per_dv', 1),
+            "no_of_datasets": self.input.param('no_of_dv', 1) * 2,
             "no_of_synonyms": self.input.param('no_of_synonyms', 1),
             "no_of_indexes": self.input.param('no_of_indexes', 1),
             "max_thread_count": self.input.param('no_of_threads', 1)}

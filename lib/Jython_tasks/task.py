@@ -30,7 +30,7 @@ from BucketLib.bucket import Bucket, Serverless
 from Cb_constants import constants, CbServer, DocLoading, ClusterRun
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import Dataverse, Dataset, Synonym, \
-    CBAS_Index, CBAS_UDF
+    CBAS_Index, CBAS_UDF, Remote_Dataset
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants
@@ -7424,6 +7424,8 @@ class CreateDatasetsTask(Task):
             for bucket in self.cluster.buckets:
                 if self.kv_name_cardinality > 1:
                     for scope in self.bucket_util.get_active_scopes(bucket):
+                        if scope.name == "_system":
+                            continue
                         for collection in \
                                 self.bucket_util.get_active_collections(
                                     bucket, scope.name):
@@ -7491,23 +7493,22 @@ class CreateDatasetsTask(Task):
                     name_cardinality=1, max_length=3, fixed_length=True)
             num_of_items = collection.num_items
 
-            if creation_method == "cbas_collection":
-                dataset_obj = CBAS_Collection(
+            if link_name:
+                dataset_obj = Remote_Dataset(
                     name=name, dataverse_name=dataverse.name,
-                    link_name=link_name,
-                    dataset_source="internal", dataset_properties={},
-                    bucket=bucket, scope=scope, collection=collection,
-                    enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
+                    link_name=link_name, bucket=bucket, scope=scope, collection=collection,
+                    num_of_items=num_of_items
+                )
             else:
                 dataset_obj = Dataset(
                     name=name, dataverse_name=dataverse.name,
-                    dataset_source="internal", dataset_properties={},
                     bucket=bucket, scope=scope, collection=collection,
                     enabled_from_KV=enabled_from_KV, num_of_items=num_of_items,
-                    link_name=link_name)
-            if not self.create_dataset(dataset_obj):
+                    )
+            analytics_collection = True if creation_method == "cbas_collection" else False
+            if not self.create_dataset(dataset_obj, analytics_collection=analytics_collection):
                 raise N1QLQueryException(
-                    "Could not create dataset " + dataset_obj.name + " on " +
+                "Could not create dataset " + dataset_obj.name + " on " +
                     dataset_obj.dataverse_name)
             self.created_datasets.append(dataset_obj)
             if dataverse.name not in self.cbas_util.dataverses.keys():
@@ -7515,7 +7516,7 @@ class CreateDatasetsTask(Task):
             self.cbas_util.dataverses[dataverse.name].datasets[
                 self.created_datasets[-1].full_name] = self.created_datasets[-1]
 
-    def create_dataset(self, dataset):
+    def create_dataset(self, dataset, analytics_collection=False):
         dataverse_name = str(dataset.dataverse_name)
         if dataverse_name == "Default":
             dataverse_name = None
@@ -7529,10 +7530,7 @@ class CreateDatasetsTask(Task):
                     self.cluster, dataset.get_fully_qualified_kv_entity_name(1),
                     False, False, None, None, None, 120, 120)
         else:
-            if isinstance(dataset, CBAS_Collection):
-                analytics_collection = True
-            elif isinstance(dataset, Dataset):
-                analytics_collection = False
+            dataset.link_name = dataset.link_name if hasattr(dataset, "link_name") else None
             if self.kv_name_cardinality > 1 and self.cbas_name_cardinality > 1:
                 return self.cbas_util.create_dataset(
                     self.cluster, dataset.name, dataset.full_kv_entity_name,

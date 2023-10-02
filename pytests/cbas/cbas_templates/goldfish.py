@@ -278,10 +278,10 @@ spec = {
         # Accepted values are list of dataverse names. These are the
         # dataverses where the synonym will not be created.
         "exclude_dataverses": [],
-        # Accepted values are list of datset names. These are the
+        # Accepted values are list of dataset names. These are the
         # datsets on which the synonym will be created.
         "include_datasets": [],
-        # Accepted values are list of datset names. These are the
+        # Accepted values are list of dataset names. These are the
         # datsets on which the synonym will not be created.
         "exclude_datasets": [],
         # Accepted values are list of synonym names. These are the
@@ -303,10 +303,10 @@ spec = {
         # Accepted values are list of dataverse names. The indexes
         # will not be created on datasets in these dataverses.
         "exclude_dataverses": [],
-        # Accepted values are list of datset names. The indexes will
+        # Accepted values are list of dataset names. The indexes will
         # only be created on these datasets.
         "include_datasets": [],
-        # Accepted values are list of datset names. The indexes will
+        # Accepted values are list of dataset names. The indexes will
         # not be created on these datasets.
         "exclude_datasets": [],
         # Accepted values are list of strings. Each string will be

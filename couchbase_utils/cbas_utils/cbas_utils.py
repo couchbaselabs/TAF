@@ -272,12 +272,15 @@ class BaseUtil(object):
         :param cbas_spec dict, original cbas spec dict
         :param updated_specs dict, keys or sub dicts to be updated
         """
-        for key, value in updated_specs.iteritems():
-            if key in cbas_spec:
-                if isinstance(value, dict):
-                    BaseUtil.update_cbas_spec(cbas_spec[key], value)
+        if isinstance(cbas_spec, dict) and isinstance(updated_specs, dict):
+            for key in cbas_spec.keys():
+                if key in updated_specs:
+                    cbas_spec[key] = updated_specs[key]
                 else:
-                    cbas_spec[key] = value
+                    BaseUtil.update_cbas_spec(cbas_spec[key], updated_specs)
+        elif isinstance(cbas_spec, list) and isinstance(updated_specs, list):
+            for i in range(min(len(cbas_spec), len(updated_specs))):
+                BaseUtil.update_cbas_spec(cbas_spec[i], updated_specs[i])
 
     def run_jobs_in_parallel(self, jobs, results, thread_count,
                              async_run=False):
