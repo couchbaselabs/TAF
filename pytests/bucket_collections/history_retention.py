@@ -702,7 +702,7 @@ class DocHistoryRetention(ClusterSetup):
             bucket = Bucket(bucket_params)
             status, _ = self.__create_bucket(bucket_params)
             self.assertTrue(status, "Bucket creation failed")
-            self.bucket_util.is_warmup_complete(self.cluster, [bucket])
+            self.bucket_util.is_warmup_complete([bucket])
             self.bucket_util.create_scope(self.cluster.master, bucket,
                                           scope_spec={"name": "scope_1"})
             self.bucket_util.create_collection(
@@ -1102,7 +1102,6 @@ class DocHistoryRetention(ClusterSetup):
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(
                 self.task, self.cluster, self.cluster.buckets, loader_spec,
-                scope=CbServer.default_scope, collection="c1",
                 mutation_num=1, batch_size=500, process_concurrency=1,
                 async_load=True)
 
@@ -1361,8 +1360,8 @@ class DocHistoryRetention(ClusterSetup):
         b1 = self.cluster.buckets[0]
         b2 = self.cluster.buckets[1]
         b3 = self.cluster.buckets[2]
-        self.cluster.buckets.pop(b2)
-        self.cluster.buckets.pop(b3)
+        self.cluster.buckets.remove(b2)
+        self.cluster.buckets.remove(b3)
         buckets = [b1, b2, b3]
         bucket_spec = {
             b1: {CbServer.default_scope: {
@@ -1552,7 +1551,7 @@ class DocHistoryRetention(ClusterSetup):
 
         self.log.info("Waiting for bucket to complete warmup")
         buckets_warmed_up = self.bucket_util.is_warmup_complete(
-            self.cluster, self.cluster.buckets, 10)
+            self.cluster.buckets, 10)
         if not buckets_warmed_up:
             self.log.critical("Few bucket(s) not warmed up")
 
@@ -1608,7 +1607,7 @@ class DocHistoryRetention(ClusterSetup):
 
         self.log.info("Waiting for bucket to complete warmup")
         buckets_warmed_up = self.bucket_util.is_warmup_complete(
-            self.cluster, self.cluster.buckets)
+            self.cluster.buckets)
         if not buckets_warmed_up:
             self.log.critical("Bucket not warmed up")
 

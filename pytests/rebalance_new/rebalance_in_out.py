@@ -768,7 +768,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         self.log.info("IN/OUT REBALANCE PHASE")
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, toBeEjectedNodes)
+            self.cluster, servs_in, toBeEjectedNodes)
         self.sleep(10, "wait for rebalance to start")
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")
