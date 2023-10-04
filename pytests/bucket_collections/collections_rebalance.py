@@ -1082,6 +1082,7 @@ class CollectionsRebalance(CollectionBase):
             self.setup_N1ql_txn()
         if self.num_zone > 1:
             self.shuffle_nodes_between_zones_and_rebalance()
+            self.cluster_util.print_cluster_stats(self.cluster)
         if rebalance_operation == "rebalance_in":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
@@ -1174,12 +1175,15 @@ class CollectionsRebalance(CollectionBase):
                         self.add_nodes_to_new_zone()
                     else:
                         self.shuffle_nodes_between_zones_and_rebalance(load_data=True)
+                        self.cluster_util.print_cluster_stats(self.cluster)
             if self.remove_zone > 0:
                 for i in range(self.remove_zone):
                     self.num_zone -= 1
                     if self.num_zone > 0:
                         self.shuffle_nodes_between_zones_and_rebalance(load_data=True)
+                        self.cluster_util.print_cluster_stats(self.cluster)
             self.shuffle_nodes_between_zones_and_rebalance()
+            self.cluster_util.print_cluster_stats(self.cluster)
         if self.data_load_stage == "after":
             self.sync_data_load()
             self.data_validation_collection()

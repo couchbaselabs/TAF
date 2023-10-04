@@ -272,8 +272,8 @@ class AutoFailoverBaseTest(ClusterSetup):
                     nodes_in_zone[zones[server_group]].append(self.cluster.servers[i])
             # Shuffle the nodesS
             for i in range(1, self.zone):
-                node_in_zone = list(set(nodes_in_zone[zones[i]]) -
-                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))
+                node_in_zone = [node.ip for node in list(set(nodes_in_zone[zones[i]]) -
+                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))]
                 moved_nodes = []
                 for otp_node in rest.node_statuses():
                     if otp_node.ip in node_in_zone:

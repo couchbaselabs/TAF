@@ -66,7 +66,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         servers_in_group = self.zones[server_group]
         server_group_nodes = []
         for server in self.servers:
-            if server.ip in servers_in_group:
+            if server in servers_in_group:
                 server_group_nodes.append(server)
         return server_group_nodes
 
@@ -74,6 +74,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.enable_autofailover_and_validate()
         self.shuffle_nodes_between_zones_and_rebalance()
         self.sleep(30,"waiting")
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.server_to_fail = self._get_server_group_nodes("Group 2")
         self.failover_expected = True
         tasks, cont_load_task = self.subsequent_load_gen()

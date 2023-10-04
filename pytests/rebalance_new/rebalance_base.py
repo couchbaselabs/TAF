@@ -315,6 +315,7 @@ class RebalanceBaseTest(BaseTestCase):
                           password=serverinfo.rest_password,
                           remoteIp=node.ip)
         self.shuffle_nodes_between_zones_and_rebalance(to_remove)
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.cluster.nodes_in_cluster = \
             list(set(self.cluster.nodes_in_cluster + to_add) - set(to_remove))
 
