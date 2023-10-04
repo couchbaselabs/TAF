@@ -236,11 +236,39 @@ class ClusterUtils:
             raise Exception("Profile type mismatch")
         return profiles[0]
 
+    # Returns the highest version, highest build and
+    # list of nodes with the highest version and build in the cluster
+    def get_higher_version_nodes(self, cluster):
+        highest_version_nodes = list()
+        highest_version = ""
+        highest_build = ""
+        pools_default_res = RestConnection(cluster.master).get_pools_default()
+        for node in pools_default_res["nodes"]:
+            version, build, type = node["version"].split("-")
+            node_ipaddr = node["hostname"].split(":")[0]
+            if version > highest_version or \
+                (version == highest_version and build > highest_build):
+                highest_version_nodes = [node_ipaddr]
+                highest_version = version
+                highest_build = build
+            elif highest_version == version and highest_build == build:
+                highest_version_nodes.append(node_ipaddr)
+        self.log.debug("Highest version : {} Highest build : {}".format(highest_version,highest_build))
+        self.log.debug("Highest version node : {}".format(highest_version_nodes))
+        highest_version_nodes = [node for node in cluster.nodes_in_cluster if node.ip in highest_version_nodes]
+        return highest_version, highest_build, highest_version_nodes
+
     def get_possible_orchestrator_nodes(self, cluster):
         nodes = list()
+
+        # Nodes with a higher cb server version can be the orchestrator
+        highest_version, highest_build, higher_version_nodes = self.get_higher_version_nodes(cluster)
+        if float(highest_version[:3]) < 7.6:
+            return [node.ip for node in higher_version_nodes]
+
         min_node_weight = 999999
         services = CbServer.Services
-        for node in cluster.nodes_in_cluster:
+        for node in higher_version_nodes:
             node_weight = 0
             if node in cluster.serviceless_nodes:
                 pass

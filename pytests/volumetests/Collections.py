@@ -460,7 +460,9 @@ class volume(CollectionBase):
     def induce_and_revert_failure(self, action):
         target_node = self.servers[-1]  # select last node
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=target_node)
         error_sim.create(action)
         self.sleep(20, "Wait before reverting the error condition")
         if action in [CouchbaseError.STOP_MEMCACHED, CouchbaseError.STOP_PROMETHEUS]:

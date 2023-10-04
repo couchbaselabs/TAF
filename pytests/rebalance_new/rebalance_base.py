@@ -29,6 +29,7 @@ class RebalanceBaseTest(BaseTestCase):
         super(RebalanceBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
+        self.bucket_size = self.input.param("bucket_size", 256)
         self.key_size = self.input.param("key_size", 0)
         self.zone = self.input.param("zone", 1)
         self.replica_to_update = self.input.param("new_replica", None)
@@ -278,7 +279,7 @@ class RebalanceBaseTest(BaseTestCase):
                 if self.servers[i].ip in nodes_in_cluster \
                         and self.servers[i].ip not in nodes_to_remove:
                     server_group = i % int(self.zone)
-                    nodes_in_zone[zones[server_group]].append(self.servers[i].ip)
+                    nodes_in_zone[zones[server_group]].append(self.servers[i])
             # Shuffle the nodesS
             for i in range(1, self.zone):
                 node_in_zone = list(set(nodes_in_zone[zones[i]]) -

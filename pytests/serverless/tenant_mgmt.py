@@ -604,7 +604,9 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                         error_sim_list = []
                         for node in target_nodes:
                             shell = RemoteMachineShellConnection(node)
-                            error_sim = CouchbaseError(self.log, shell)
+                            error_sim = CouchbaseError(self.log,
+                                                       shell,
+                                                       node=node)
                             error_sim.create(error_type)
                             error_sim_list.append(error_sim)
                         self.sleep(interval, "Error induced waiting before "

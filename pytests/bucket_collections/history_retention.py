@@ -945,7 +945,9 @@ class DocHistoryRetention(ClusterSetup):
                       % (target_node.ip, Bucket.vBucket.ACTIVE))
         for node in self.cluster.servers:
             cb_stat[node.ip] = Cbstats(self.shells[node.ip])
-        cb_err = CouchbaseError(self.log, self.shells[target_node.ip])
+        cb_err = CouchbaseError(self.log,
+                                self.shells[target_node.ip],
+                                node=target_node)
         active_vbs = cb_stat[target_node.ip].vbucket_list(
             bucket, Bucket.vBucket.ACTIVE)
         self.log.info("Creating doc_generator")
@@ -1023,7 +1025,9 @@ class DocHistoryRetention(ClusterSetup):
                       % (target_node.ip, Bucket.vBucket.REPLICA))
         for node in self.cluster.servers:
             cb_stat[node.ip] = Cbstats(self.shells[node.ip])
-        cb_err = CouchbaseError(self.log, self.shells[target_node.ip])
+        cb_err = CouchbaseError(self.log,
+                                self.shells[target_node.ip],
+                                node=target_node)
         replica_vbs = cb_stat[target_node.ip].vbucket_list(
             bucket, Bucket.vBucket.REPLICA)
         self.log.info("Creating doc_generator")
@@ -1111,7 +1115,9 @@ class DocHistoryRetention(ClusterSetup):
                     self.cluster.master, self.cluster.buckets[0])
             node = choice(self.cluster.kv_nodes)
             shell = RemoteMachineShellConnection(node)
-            err = CouchbaseError(self.log, shell)
+            err = CouchbaseError(self.log,
+                                 shell,
+                                 node=node)
             err.create(scenario)
             if scenario == CouchbaseError.STOP_MEMCACHED:
                 self.sleep(10, "Wait before resuming persistence")
@@ -1153,7 +1159,9 @@ class DocHistoryRetention(ClusterSetup):
         self.log.info("Target node: %s" % t_node.ip)
         shell = RemoteMachineShellConnection(t_node)
         cb_stat = Cbstats(t_node)
-        cb_err = CouchbaseError(self.log, shell)
+        cb_err = CouchbaseError(self.log,
+                                shell,
+                                node=t_node)
         replica_vbs = cb_stat.vbucket_list(bucket.name, Bucket.vBucket.REPLICA)
         doc_gen = doc_generator(self.key, 0, self.num_items,
                                 target_vbucket=replica_vbs)
@@ -1521,7 +1529,9 @@ class DocHistoryRetention(ClusterSetup):
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         target_shell = self.shells[self.cluster.servers[1].ip]
         cb_stat = Cbstats(target_shell)
-        cb_err = CouchbaseError(self.log, target_shell)
+        cb_err = CouchbaseError(self.log,
+                                target_shell,
+                                node=self.cluster.servers[1])
         rest = RestConnection(self.cluster.master)
         rest.update_autofailover_settings(False, 10)
         replica_vbs = cb_stat.vbucket_list(bucket, Bucket.vBucket.REPLICA)
@@ -1588,7 +1598,9 @@ class DocHistoryRetention(ClusterSetup):
         if kill_both_nodes:
             self.log.info("Killing memcached on node {}"
                           .format(self.cluster.master.ip))
-            CouchbaseError(self.log, self.shells[self.cluster.master.ip]) \
+            CouchbaseError(self.log,
+                           self.shells[self.cluster.master.ip],
+                           node=self.cluster.master) \
                 .create(CouchbaseError.KILL_MEMCACHED)
         self.log.info("Resuming memcached on node {}"
                       .format(target_shell.ip))

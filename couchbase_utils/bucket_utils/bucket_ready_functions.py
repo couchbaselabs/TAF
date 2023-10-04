@@ -3808,7 +3808,7 @@ class BucketUtils(ScopeUtils):
         self.log_doc_ops_task_failures(tasks_info)
         return tasks_info
 
-    def load_durable_aborts(self, ssh_shell, load_gens, cluster, bucket,
+    def load_durable_aborts(self, ssh_shell, server, load_gens, cluster, bucket,
                             durability_level, doc_op="create",
                             load_type="all_aborts"):
         """
@@ -3848,7 +3848,9 @@ class BucketUtils(ScopeUtils):
         result = True
         tasks = list()
         num_items = dict()
-        cb_err = CouchbaseError(self.log, ssh_shell)
+        cb_err = CouchbaseError(self.log,
+                                ssh_shell,
+                                node=server)
 
         if load_type == "initial_aborts":
             # Initial abort task

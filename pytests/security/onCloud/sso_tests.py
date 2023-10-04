@@ -198,6 +198,29 @@ class SsoTests(BaseTestCase):
     7gGbg6AL4h8RBnFW6KGuNBaNog45FO003l2F0PvK8ZxPFxkxWEsRXg/Y17hTL0PS
     tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
     """
+        self.cert_new = """-----BEGIN CERTIFICATE-----
+MIIDqDCCApCgAwIBAgIGAYSqj+p4MA0GCSqGSIb3DQEBCwUAMIGUMQswCQYDVQQGEwJVUzETMBEG
+A1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsGA1UECgwET2t0YTEU
+MBIGA1UECwwLU1NPUHJvdmlkZXIxFTATBgNVBAMMDGRldi04MjIzNTUxNDEcMBoGCSqGSIb3DQEJ
+ARYNaW5mb0Bva3RhLmNvbTAeFw0yMjExMjQxNjUzMjlaFw0zMjExMjQxNjU0MjlaMIGUMQswCQYD
+VQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsG
+A1UECgwET2t0YTEUMBIGA1UECwwLU1NPUHJvdmlkZXIxFTATBgNVBAMMDGRldi04MjIzNTUxNDEc
+MBoGCSqGSIb3DQEJARYNaW5mb0Bva3RhLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
+ggEBAM+rByaRbnTWXVMx4dI+mjJsquc79ZHXqURzYy4xPojL+49BBGhAjUUswsm2dB5Os4XbW/MW
+cwVkSXqPeB/ixYye5ofRokuHsojtcKXau6D4E61qfcwZZkXJnERdWdQ2p1Ur2817/2hAFyQg6WhO
+eJDqR4ZFJiANCzcRxSxrSnr6lFtGIq+fMQOEbJ+uiFg10P5lw2JRSHLMsmGMN/Qi8sPZbNmh/hjQ
+f2xwa0SJG9TK50mQKEefZykJxXyDvc5oNQVH+hSKg38TQ6gy8eib2s5gyVgdIUNOneHP1tXA1FWh
+JUC8+B1Qz/gBxxloFbzEyPGrUgqALn+AtAAPz/bDiyUCAwEAATANBgkqhkiG9w0BAQsFAAOCAQEA
+kpGWpt7kRIwN2Sdcp6o77LLYkTllHd7xzcNL3nole1wWqg4QQaz8lC6Q1PSpREVat/ENJK30NAxg
+XAl6My1vgZwMFA1y2fMjiuPb1YhceYBEYDp2WBe6TdBdq3qDBC4D/XQWIFsCH8gll3OGrhASYVbE
+og/k+oSgeW/KmRIu9+AswdFTg+JIoKOP9TkdnsNkbkvWECDBLDHMxRFsvWJPO/9LKw3HlBwqaT5v
+dnJ3l9X1xP327Ujr7xgdUprSFT7DPgBCKpCVmjsxq5vl0kiUykzNbmSrQGowPQi9iVMOxa/H75LP
+s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
+-----END CERTIFICATE-----
+"""
+        
+    def get_cert(self):
+        return self.cert_new
 
     def get_certificate(self):
         # This certificate is only valid until 08/30/2023
@@ -218,13 +241,18 @@ class SsoTests(BaseTestCase):
     def create_realm(self, team_id):
         body = {
             'connectionOptionsSAML': {
-                'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
-                                                          self.get_certificate())
+                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
+                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signingCertificate': "{0}".format(self.get_cert()),
+                "signatureAlgorithm": "rsa-sha256",
+                "digestAlgorithm": "sha256",
+                "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
             },
             'standard': 'SAML 2.0',
-            'vendor': 'Okta',
+            'disableGroupMapping': False,
             'defaultTeamId': team_id
         }
+
         self.log.info("Creating realm")
         realm_resp = self.sso.create_realm(self.tenant_id, body)
         self.validate_response(realm_resp, 2)
@@ -233,11 +261,15 @@ class SsoTests(BaseTestCase):
         # 1. metadataXML - valid
         body = {
             'connectionOptionsSAML': {
-                'metadataXML': IDPMetadataTemplate.format(self.get_certificate(),
-                                                          self.get_certificate())
+                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
+                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signingCertificate': "{0}".format(self.get_cert()),
+                "signatureAlgorithm": "rsa-sha256",
+                "digestAlgorithm": "sha256",
+                "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
             },
             'standard': 'SAML 2.0',
-            'vendor': 'Okta',
+            'disableGroupMapping': False,
             'defaultTeamId': self.team_id
         }
 
@@ -619,50 +651,3 @@ class SsoTests(BaseTestCase):
         self.log.info("Delete team without sufficient permissions")
         resp = self.unauth_z_sso.delete_team(self.tenant_id, team_id)
         self.validate_response(resp, 4)
-
-    def test_create_realm_only_azure_okta(self):
-        tenants = self.sso.list_teams(self.tenant_id)
-
-        # We only care about the most significant digit in this case 2xx being ok
-        # anything else being considered an error in the test.
-        self.assertEqual(tenants.status_code // 100, 2)
-
-        # Do some decoding
-        data = json.loads(tenants.content)
-        self.assertEqual(len(data['data']), 1)
-
-        # This is safe due to the above assertion.
-        team = data['data'][0]['data']
-        self.assertIsNotNone(team['id'])
-        self.log.info("Got Team ID: {}".format(team['id']))
-        team_id = team['id']
-
-        valid_vendors = ["Okta", "Azure"]
-        invalid_vendors = ["azure", "okta", "Ping", "Az1@"]
-        error_msg = "Communication vendor is invalid"
-
-        for vendor in valid_vendors:
-            body = {
-                'connectionOptionsSAML': {
-                    'metadataURL': 'example.com'  # invalid URL, used just for verifying the msg
-                },
-                'standard': 'SAML 2.0',
-                'vendor': vendor,
-                'defaultTeamId': team_id
-            }
-            realm = self.sso.create_realm(self.tenant_id, body)
-            if error_msg in realm.content:
-                self.fail("{0} is a valid vendor".format(vendor))
-
-        for vendor in invalid_vendors:
-            body = {
-                'connectionOptionsSAML': {
-                    'metadataURL': 'example.com'  # invalid URL, used just for verifying the msg
-                },
-                'standard': 'SAML 2.0',
-                'vendor': vendor,
-                'defaultTeamId': team_id
-            }
-            realm = self.sso.create_realm(self.tenant_id, body)
-            if error_msg not in realm.content:
-                self.fail("{0} is not a valid vendor".format(vendor))

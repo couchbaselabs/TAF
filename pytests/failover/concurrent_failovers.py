@@ -767,7 +767,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.log.info("Bringing back '%s' for some time" % rand_node.ip)
             new_timer = None
             shell = RemoteMachineShellConnection(rand_node)
-            cb_err = CouchbaseError(self.log, shell)
+            cb_err = CouchbaseError(self.log,
+                                    shell,
+                                    node=rand_node)
             if self.nodes_to_fail[rand_node] == CouchbaseError.STOP_MEMCACHED:
                 cb_err.revert(CouchbaseError.STOP_MEMCACHED)
                 self.sleep(10, "Wait before creating failure again")

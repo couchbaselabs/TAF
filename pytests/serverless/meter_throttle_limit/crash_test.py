@@ -15,18 +15,19 @@ class ServerlessMetering(LMT):
 
     def stop_process(self, nodes, error_to_simulate):
         remote_node = []
+        error_sim = {}
         for node_i in nodes:
             print("node_i is %s" % node_i)
             remote = RemoteMachineShellConnection(node_i)
-            error_sim = CouchbaseError(self.log, remote)
+            error_sim[node_i.ip] = CouchbaseError(self.log,
+                                                  remote,
+                                                  node=node_i)
             # Induce the error condition
             error_sim.create(error_to_simulate)
-            remote_node.append(remote)
 
         self.sleep(20, "Wait before reverting the error condition")
-        for remote in remote_node:
-            error_sim = CouchbaseError(self.log, remote)
-            error_sim.revert(error_to_simulate)
+        for ip in error_sim:
+            error_sim[ip].revert(error_to_simulate)
             remote.disconnect()
 
     def load_thread(self, start, end, target_vbucket):
@@ -127,6 +128,6 @@ class ServerlessMetering(LMT):
                 expected_num_throttled += units / self.bucket_util.get_throttle_limit(bucket)
             if wu != self.expected_wu or ru < expected_ru or num_throttled < expected_num_throttled:
                 self.fail("load after crash failed in stats "
-                          "Actual:(ru:%s, wu:%s, num_throttled:%s)," 
+                          "Actual:(ru:%s, wu:%s, num_throttled:%s),"
                           " expected:(ru:%s, wu:%s, num_throttled:%s)" %
                           (ru, wu, num_throttled, expected_ru, self.expected_wu, expected_num_throttled))

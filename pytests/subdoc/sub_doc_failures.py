@@ -77,7 +77,9 @@ class SubDocTimeouts(DurabilityTestsBase):
             cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
 
         doc_gen["insert"] = sub_doc_generator(
             self.key, self.num_items/2, self.num_items,
@@ -281,7 +283,9 @@ class SubDocTimeouts(DurabilityTestsBase):
                     self.bucket.name, vbucket_type=Bucket.vBucket.REPLICA)
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.sdk_timeout
@@ -684,7 +688,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
             cbstat_obj[node.ip] = Cbstats(node)
             vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
                 self.bucket.name)
-            error_sim[node.ip] = CouchbaseError(self.log, shell_conn[node.ip])
+            error_sim[node.ip] = CouchbaseError(self.log,
+                                                shell_conn[node.ip],
+                                                node=node)
             # Fetch affected nodes' vb_num which are of type=replica
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")

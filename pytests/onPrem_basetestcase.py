@@ -14,7 +14,6 @@ import Cb_constants
 from SystemEventLogLib.Events import Event
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
-from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
 from bucket_utils.bucket_ready_functions import BucketUtils
 from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest

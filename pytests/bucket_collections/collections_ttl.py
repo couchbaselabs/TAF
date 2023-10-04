@@ -302,11 +302,11 @@ class CollectionsTTL(CollectionBase):
             self.bucket_util.create_collection(self.cluster.master,
                                                self.bucket,
                                                "scope1",
-                                               {"name": "collection_5", "maxTTL": -1})
+                                               {"name": "collection_5", "maxTTL": -2})
         except Exception as e:
-            self.log.info("collection creation failed as expected as maxTTL was < 0")
+            self.log.info("collection creation failed as expected as maxTTL was < -1")
         else:
-            self.fail("collection creation did not fail even when maxTTL was < 0")
+            self.fail("collection creation did not fail even when maxTTL was < -1")
 
         if self.update_max_ttl:
             self.bucket_util.update_ttl_for_collections(self.cluster, self.bucket, ttl_value=self.max_allowed_ttl)
@@ -336,9 +336,9 @@ class CollectionsTTL(CollectionBase):
                                                                 self.bucket,
                                                                 "scope1",
                                                                 "collection_1",
-                                                                maxttl=-1)
+                                                                maxttl=-2)
             if status is False:
-                self.log.info("Collection maxTTL update to -1 failed as expected")
+                self.log.info("Collection maxTTL update to -2 failed as expected")
             else:
                 self.fail("Collection TTL update did not fail even when maxTTL was < 0")
 

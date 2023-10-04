@@ -250,7 +250,9 @@ class volume(BaseTestCase):
     def stop_process(self):
         target_node = self.servers[2]
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=target_node)
         error_to_simulate = "stop_memcached"
         # Induce the error condition
         error_sim.create(error_to_simulate)

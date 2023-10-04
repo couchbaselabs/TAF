@@ -978,7 +978,7 @@ class CollectionsRebalance(CollectionBase):
             for i in range(1, len(self.servers)):
                 if self.servers[i].ip in nodes_in_cluster:
                     server_group = i % int(self.num_zone)
-                    nodes_in_zone[zones[server_group]].append(self.servers[i].ip)
+                    nodes_in_zone[zones[server_group]].append(self.servers[i])
             # Shuffle the nodesS
             for i in range(1, self.num_zone):
                 node_in_zone = list(set(nodes_in_zone[zones[i]]) -

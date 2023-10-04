@@ -142,7 +142,9 @@ class CrashTest(ClusterSetup):
         def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=target_node)
         target_vbuckets = Cbstats(target_node).vbucket_list(
                 def_bucket.name, self.target_node)
         if len(target_vbuckets) == 0:
@@ -394,7 +396,9 @@ class CrashTest(ClusterSetup):
         for node in nodes_to_affect:
             shell = RemoteMachineShellConnection(node)
             node_data[node] = dict()
-            node_data[node]["cb_err"] = CouchbaseError(self.log, shell)
+            node_data[node]["cb_err"] = CouchbaseError(self.log,
+                                                       shell,
+                                                       node=node)
 
         self.log.info("Starting doc-ops")
         for index, doc_op in enumerate(self.doc_ops):
@@ -487,7 +491,9 @@ class CrashTest(ClusterSetup):
         # Killing memcached on the node
         node_to_stop = choice(self.cluster.nodes_in_cluster)
         remote = RemoteMachineShellConnection(node_to_stop)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=node_to_stop)
         error_sim.create(action=CouchbaseError.KILL_MEMCACHED)
         self.sleep(10,"Wait for memcached to be back up")
 

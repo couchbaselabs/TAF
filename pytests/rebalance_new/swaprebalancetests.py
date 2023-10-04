@@ -171,7 +171,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen], self.cluster,
+                    ssh_shell, server, [load_gen], self.cluster,
                     self.cluster.buckets[0], self.durability_level,
                     DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
@@ -194,7 +194,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen], self.cluster,
+                    ssh_shell, server, [load_gen], self.cluster,
                     self.cluster.buckets[0], self.durability_level,
                     DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
