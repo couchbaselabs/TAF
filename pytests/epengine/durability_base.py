@@ -136,7 +136,7 @@ class BucketDurabilityBase(ClusterSetup):
         # Bucket create options representation
         self.bucket_template = dict()
         self.bucket_template[Bucket.name] = "default"
-        self.bucket_template[Bucket.ramQuotaMB] = 100
+        self.bucket_template[Bucket.ramQuotaMB] = 256
         self.bucket_template[Bucket.replicaNumber] = self.num_replicas
         if self.bucket_type == Bucket.Type.MEMBASE:
             self.bucket_template[Bucket.storageBackend] = self.bucket_storage
