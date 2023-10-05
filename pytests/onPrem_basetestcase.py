@@ -483,6 +483,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                 self.cluster.master) != self.encryption_level:
                             status = False
                     if self.encryption_level == "strict":
+                        self.sleep(120, "waiting after enabling TLS")
                         status = self.cluster_util.check_if_services_obey_tls(
                             cluster.servers)
                 if status:
@@ -492,7 +493,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.sleep(10, "Retrying enforcing TLS on servers")
             else:
                 self.fail("Services did not honor enforce tls")
-            self.sleep(120, "waiting after enabling TLS")
 
     def tearDown(self):
         for container in self.docker_containers:
