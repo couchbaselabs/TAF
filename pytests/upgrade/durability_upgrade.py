@@ -512,6 +512,95 @@ class UpgradeTests(UpgradeBase):
 
         self.validate_test_failure()
 
+
+    def test_downgrade(self):
+        upgraded_nodes = []
+        count = 0
+
+        ### Sync write collection spec ###
+        sync_load_spec = self.bucket_util.get_crud_template_from_package(self.sync_write_spec)
+        CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
+        CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
+        sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
+        if self.cluster_supports_collections and self.perform_collection_ops:
+            sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
+            sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
+            sync_load_spec["doc_crud"][
+                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+
+        self.PrintStep("Starting the upgrade of nodes to {0}".format(self.upgrade_version))
+
+        while count < self.nodes_init-1:
+            node_to_upgrade = self.fetch_node_to_upgrade()
+            self.log.info("Selected node for upgrade : {0}".format(node_to_upgrade.ip))
+            upgraded_nodes.append(self.spare_node)
+
+            self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                    self.upgrade_version)
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.bucket_util.print_bucket_stats(self.cluster)
+
+            # Validate sync_write results after upgrade of each node
+            self.PrintStep("Sync Write task starting...")
+            sync_write_task = self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.cluster.buckets,
+                sync_load_spec,
+                mutation_num=0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                validate_task=True)
+
+            if sync_write_task.result is True:
+                self.log.info("SyncWrite task succeeded")
+                self.bucket_util.print_bucket_stats(self.cluster)
+            else:
+                self.log_failure("SyncWrite failed in mixed mode cluster state")
+
+            count += 1
+
+        self.PrintStep("Starting the downgrade of nodes to {0}".format(self.initial_version))
+
+        self.log.info("Nodes in {0} : {1}".format(self.upgrade_version, upgraded_nodes))
+        for node_to_downgrade in upgraded_nodes:
+            self.log.info("Selected node for downgrade : {0}".format(node_to_downgrade))
+
+            self.upgrade_function[self.upgrade_type](node_to_downgrade,
+                                                    self.initial_version)
+
+            self.cluster_util.print_cluster_stats(self.cluster)
+            self.bucket_util.print_bucket_stats(self.cluster)
+
+            # Validate sync_write results after upgrade of each node
+            self.PrintStep("Sync Write task starting...")
+            sync_write_task = self.bucket_util.run_scenario_from_spec(
+                self.task,
+                self.cluster,
+                self.cluster.buckets,
+                sync_load_spec,
+                mutation_num=0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                validate_task=True)
+
+            if sync_write_task.result is True:
+                self.log.info("SyncWrite task succeeded")
+                self.bucket_util.print_bucket_stats(self.cluster)
+            else:
+                self.log_failure("SyncWrite failed in mixed mode cluster state")
+
+        self.PrintStep("Downgrade of the cluster complete")
+
+        self.log.info("starting doc verification")
+        self.__wait_for_persistence_and_validate()
+        self.log.info("Final doc count verified")
+
+        self.upgrade_version = self.initial_version
+        self.PrintStep("Starting rebalance/failover tasks post downgrade")
+        self.tasks_post_upgrade()
+
+
     def test_bucket_durability_upgrade(self):
         update_task = None
         self.sdk_timeout = 60
@@ -1546,7 +1635,7 @@ class UpgradeTests(UpgradeBase):
             to_add=spare_node_list,
             to_remove=nodes,
             check_vbucket_shuffling=False)
-        
+
         self.load_during_rebalance(self.sub_data_spec)
 
         self.task_manager.get_task_result(swap_reb_task)
