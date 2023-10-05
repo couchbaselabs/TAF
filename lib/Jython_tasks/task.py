@@ -6132,8 +6132,11 @@ class ConcurrentFailoverTask(Task):
                 if task_id_changed:
                     status = self.rest.monitorRebalance()
                 else:
-                    status = False
-                    self.test_log.critical("Failover not started as expected")
+                    if self.expected_nodes_to_fo == 0:
+                        status = True
+                    else:
+                        status = False
+                        self.test_log.critical("Auto-Failover not started")
 
                 if status is False:
                     self.set_result(False)

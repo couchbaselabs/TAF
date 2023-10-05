@@ -522,8 +522,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.cluster.master, bucket,
                     replica_number=update_replica_number_to)
 
-            rebalance_task = self.task.async_rebalance(self.cluster.servers[
-                                                   :self.nodes_init], [], [],
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
                                                    retry_get_process_num=3000)
             self.task_manager.get_task_result(rebalance_task)
             self.find_minimum_bucket_replica()
@@ -931,11 +930,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.task_manager.get_task_result(failover_task)
 
             failure_msg = "Auto-failover task failed"
-            if expected_fo_nodes == 0:
-                # Task is expected to fail since no failover is triggered
-                self.assertFalse(failover_task.result, failure_msg)
-            else:
-                self.assertTrue(failover_task.result, failure_msg)
+
+            self.assertTrue(failover_task.result, failure_msg)
 
             # Validate auto_failover_settings after failover
             self.validate_failover_settings(True, self.timeout,

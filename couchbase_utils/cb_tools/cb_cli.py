@@ -103,8 +103,11 @@ class CbCli(CbCmdBase):
                      creation completes
         :return:
         """
+        host = "localhost"
+        if CbServer.use_https:
+            host = "https://localhost"
         cmd = "%s bucket-create -c %s:%s -u %s -p %s" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, host, self.port,
                  self.username, self.password)
         if wait:
             cmd += " --wait"

@@ -320,7 +320,7 @@ class DocHistoryRetention(ClusterSetup):
 
         def validate_hist_retention_settings():
             for node in self.cluster.nodes_in_cluster:
-                max_retry = 5
+                max_retry = 7
                 while max_retry:
                     if self.bucket_util.validate_history_retention_settings(
                             node, bucket) is True:
@@ -452,7 +452,7 @@ class DocHistoryRetention(ClusterSetup):
                                                            "true")
                 validate_hist_retention_settings()
                 self.log.info("Running doc_ops to validate the retention")
-                self.run_data_ops_on_individual_collection(bucket)
+                self.run_data_ops_on_individual_collection(bucket, check_dedup_verification)
 
                 self.log.info("Deleting the bucket")
                 self.bucket_util.delete_all_buckets(self.cluster)

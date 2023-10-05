@@ -85,7 +85,8 @@ class AutoFailoverBaseTest(ClusterSetup):
             self.bucket_util.create_default_bucket(
                 self.cluster,
                 replica=self.num_replicas,
-                bucket_type=self.bucket_type)
+                bucket_type=self.bucket_type,
+                ram_quota=self.bucket_size)
             self.sleep(5, "Wait for bucket to accept SDK connections")
 
             if self.sdk_client_pool:
