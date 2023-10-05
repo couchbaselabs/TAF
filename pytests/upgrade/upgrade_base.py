@@ -4,6 +4,7 @@ from basetestcase import BaseTestCase
 from basetestcase import BaseTestCase
 import Jython_tasks.task as jython_tasks
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
+from couchbase_helper.documentgenerator import doc_generator
 from pytests.ns_server.enforce_tls import EnforceTls
 from builds.build_query import BuildQuery
 from cb_tools.cbstats import Cbstats
@@ -209,8 +210,7 @@ class UpgradeBase(BaseTestCase):
                     node.port = CbServer.ssl_port
 
         # Create clients in SDK client pool
-        if self.sdk_client_pool is not None:
-            CollectionBase.create_clients_for_sdk_pool(self)
+        CollectionBase.create_clients_for_sdk_pool(self)
 
         if(self.dur_level == "majority"):
             for bucket in self.cluster.buckets:
@@ -238,6 +238,11 @@ class UpgradeBase(BaseTestCase):
 
         self.bucket_util.print_bucket_stats(self.cluster)
         self.spare_node = self.cluster.servers[self.nodes_init]
+
+        self.gen_load = doc_generator(self.key, 0, self.num_items,
+                                      randomize_doc_size=True,
+                                      randomize_value=True,
+                                      randomize=True)
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
@@ -584,11 +589,8 @@ class UpgradeBase(BaseTestCase):
         # Fetch active services on node_to_upgrade
         rest = self.__get_rest_node(node_to_upgrade)
         services = rest.get_nodes_services()
-        node_to_upgrade.port = CbServer.port
         services_on_target_node = services[(node_to_upgrade.ip + ":"
                                             + str(node_to_upgrade.port))]
-        if self.enable_tls and self.tls_level == "strict":
-            node_to_upgrade.port = CbServer.ssl_port
 
         if install_on_spare_node:
             # Install target version on spare node
