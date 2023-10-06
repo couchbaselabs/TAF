@@ -3376,8 +3376,7 @@ class BucketUtils(ScopeUtils):
             expected_val = 'false'
 
         for node in kv_nodes:
-            shell = RemoteMachineShellConnection(node)
-            cbstat = Cbstats(shell)
+            cbstat = Cbstats(node)
             for bucket in buckets:
                 val = cbstat.all_stats(bucket.name)["ep_dcp_oso_backfill"]
                 if val != expected_val:
