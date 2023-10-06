@@ -1301,7 +1301,7 @@ class DocHistoryRetention(ClusterSetup):
         self.sleep(60, "Wait before starting rebalance")
         self.log.info("Performing rebalance")
         reb_task = self.task.async_rebalance(
-            self.cluster.nodes_in_cluster,
+            self.cluster,
             to_add=nodes_in, to_remove=nodes_out,
             check_vbucket_shuffling=False)
 
