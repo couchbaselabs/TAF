@@ -426,23 +426,18 @@ class RemoteMachineShellConnection:
         """
         self.log.debug("%s - Restarting couchbase server" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == Windows.NAME:
+        if self.info.type.lower() == Linux.NAME:
+            if self.info.distribution_version.lower() in SYSTEMD_SERVER:
+                o, r = self.execute_command("service couchbase-server restart")
+                self.log_command_output(o, r)
+            else:
+                raise Exception("Handle service restart command")
+        elif self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("net stop couchbaseserver")
             self.log_command_output(o, r)
             o, r = self.execute_command("net start couchbaseserver")
             self.log_command_output(o, r)
-        if self.info.type.lower() == Linux.NAME:
-            fv, sv, bn = self.get_cbversion(Linux.NAME)
-            if self.info.distribution_version.lower() in SYSTEMD_SERVER:
-                # from watson, systemd is used in centos 7
-                self.log.debug("%s - this node is centos 7.x" % self.ip)
-                o, r = self.execute_command("service couchbase-server restart")
-                self.log_command_output(o, r)
-            else:
-                o, r = self.execute_command(
-                    "/etc/init.d/couchbase-server restart")
-                self.log_command_output(o, r)
-        if self.info.distribution_type.lower() == Mac.NAME:
+        elif self.info.distribution_type.lower() == Mac.NAME:
             o, r = self.execute_command(
                 "open /Applications/Couchbase Server.app")
             self.log_command_output(o, r)
@@ -4013,20 +4008,7 @@ class RemoteMachineShellConnection:
         sourceFile = file_path + init_file
         o, r = self.execute_command("mv " + backupfile + " " + sourceFile)
         self.log_command_output(o, r)
-        if self.info.type.lower() == Linux.NAME:
-            if self.info.distribution_version.lower() in SYSTEMD_SERVER:
-                """from watson, systemd is used in centos 7 """
-                self.log.info("this node is centos 7.x")
-                o, r = self.execute_command("service couchbase-server restart")
-                self.log_command_output(o, r)
-            else:
-                o, r = self.execute_command("/etc/init.d/couchbase-server restart")
-                self.log_command_output(o, r)
-        else:
-            o, r = self.execute_command("net stop couchbaseserver")
-            self.log_command_output(o, r)
-            o, r = self.execute_command("net start couchbaseserver")
-            self.log_command_output(o, r)
+        self.restart_couchbase()
 
     def set_node_name(self, name):
         """Edit couchbase-server shell script in place and set custom node name.
