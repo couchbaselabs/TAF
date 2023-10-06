@@ -3,4 +3,4 @@
 	url = https://github.com/couchbaselabs/CapellaRESTAPIs
 [submodule "lib/goldfishAPI"]
 	path = lib/goldfishAPI
-	url = https://github.com/couchbaselabs/GoldfishRESTAPIs.git
+	url = git@github.com:couchbaselabs/GoldfishRESTAPIs.git
