@@ -144,7 +144,7 @@ class RestConnection(newRC):
         return True
 
     def is_cluster_balanced(self):
-        _, content, _ = self._http_request(self.baseUrl + "/pools/default")
+        _, content, _ = self._http_request(self.baseUrl + "pools/default")
         return json.loads(content)["balanced"]
 
     def rename_node(self, hostname, username='Administrator',
@@ -672,7 +672,7 @@ class RestConnection(newRC):
         return status, content, header
 
     def set_serverless_bucket_limit(self, limit):
-        api = self.baseUrl + "/settings/serverless"
+        api = self.baseUrl + "settings/serverless"
         params = {'tenantLimit': limit}
         params = urllib.urlencode(params)
         status, content, header = self._http_request(api, 'POST', params)
@@ -3612,7 +3612,7 @@ class RestConnection(newRC):
 
             Supplying an empty dictionary clears all limits.
         """
-        target = self.baseUrl + "/pools/default/buckets/{}/scopes".format(bucket)
+        target = self.baseUrl + "pools/default/buckets/{}/scopes".format(bucket)
         status, content, _ = self._http_request(target,
                                                 'POST',
                                                 params="name={}&limits={}".format(scope, json.dumps(limits)))
