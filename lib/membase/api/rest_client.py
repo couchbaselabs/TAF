@@ -3425,7 +3425,7 @@ class RestConnection(newRC):
         api = self.baseUrl + url
         params = urllib.urlencode(body)
         headers = self._create_headers()
-        status, content, header = self._http_request(api, 'POST', headers=headers, params=params)
+        status, content, _ = self._http_request(api, 'POST', headers=headers, params=params)
 
         if not status:
             raise Exception(content)
@@ -3435,7 +3435,7 @@ class RestConnection(newRC):
         url = "settings/rebalance"
         api = self.baseUrl + url
         headers = self._create_headers()
-        status, content, header = self._http_request(api, 'GET', headers=headers)
+        status, content, _ = self._http_request(api, 'GET', headers=headers)
 
         if not status:
             raise Exception(content)
@@ -3447,40 +3447,37 @@ class RestConnection(newRC):
         api = self.baseUrl + url
         params = urllib.urlencode(body)
         headers = self._create_headers()
-        status, content, header = self._http_request(api, 'POST', headers=headers, params=params)
+        status, content, _ = self._http_request(api, 'POST', headers=headers, params=params)
 
         if not status:
             raise Exception(content)
         return content
 
     def get_retry_rebalance_settings(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "settings/retryRebalance"
         api = self.baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'GET', headers=headers)
+        headers = self.get_headers_for_content_type_json()
+        status, content, _ = self._http_request(api, 'GET', headers=headers)
 
         if not status:
             raise Exception(content)
         return content
 
     def get_pending_rebalance_info(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "pools/default/pendingRetryRebalance"
         api = self.baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'GET', headers=headers)
+        headers = self.get_headers_for_content_type_json()
+        status, content, _ = self._http_request(api, 'GET', headers=headers)
 
         if not status:
             raise Exception(content)
         return content
 
     def cancel_pending_rebalance(self, id):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "controller/cancelRebalanceRetry/" + str(id)
         api = self.baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'POST', headers=headers)
+        headers = self._create_headers()
+        status, content, _ = self._http_request(api, 'POST', headers=headers)
 
         if not status:
             raise Exception(content)
