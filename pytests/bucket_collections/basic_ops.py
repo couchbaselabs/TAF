@@ -167,22 +167,23 @@ class BasicOps(CollectionBase):
                                                      self.cluster.buckets)
         # Prints bucket stats after doc_ops
         self.bucket_util.print_bucket_stats(self.cluster)
+        expected_collection_count = 0
+        for s_name, scope in self.bucket.scopes.items():
+            for _, col in scope.collections.items():
+                if not col.is_dropped:
+                    expected_collection_count += 1
         # Validate drop collection using cbstats
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cbstats = Cbstats(node)
             c_data = cbstats.get_collections(self.bucket)
-            expected_collection_count = \
-                len(self.bucket_util.get_active_collections(
-                    self.bucket,
-                    CbServer.default_scope,
-                    only_names=True))
             if c_data["count"] != expected_collection_count:
                 self.log_failure("%s - Expected collection count is '%s'. "
                                  "Actual: %s"
                                  % (node.ip,
                                     expected_collection_count,
                                     c_data["count"]))
-            if "_default" in c_data["_default"]:
+            if CbServer.default_scope in c_data \
+                    and CbServer.default_collection in c_data["_default"]:
                 self.log_failure("%s: _default collection exists in cbstats"
                                  % node.ip)
 
@@ -280,10 +281,15 @@ class BasicOps(CollectionBase):
             BucketUtils.create_scopes(self.cluster, self.bucket, num_scopes)
 
         # Validate drop collection using cbstats
+        expected_collection_count = 0
+        for s_name, scope in self.bucket.scopes.items():
+            for _, col in scope.collections.items():
+                if not col.is_dropped:
+                    expected_collection_count += 1
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cbstats = Cbstats(node)
             c_data = cbstats.get_collections(self.bucket)
-            if c_data["count"] != 1:
+            if c_data["count"] != expected_collection_count:
                 self.log_failure("%s - Expected scope count is '1'."
                                  "Actual: %s" % (node.ip, c_data["count"]))
             if "_default" not in c_data:
