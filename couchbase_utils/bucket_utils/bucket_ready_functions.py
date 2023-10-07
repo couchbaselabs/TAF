@@ -4962,9 +4962,8 @@ class BucketUtils(ScopeUtils):
             all_server_stats.append((server, server_stats))
         if not stats_received:
             raise StatsUnavailableException()
-        sum = 0
-        max_vbuckets = int(cbstat.get_stats_memc(bucket.name, "all",
-                                                 "ep_max_vbuckets"))
+        curr_items = 0
+        max_vbuckets = int(cbstat.all_stats(bucket.name)["ep_max_vbuckets"])
         master_stats = bucket_helper.get_bucket_stats(bucket)
         if "vb_active_num" in master_stats:
             self.log.debug('vb_active_num from master: {0}'
@@ -4975,7 +4974,7 @@ class BucketUtils(ScopeUtils):
         for server, single_stats in all_server_stats:
             if not single_stats or "curr_items" not in single_stats:
                 continue
-            sum += single_stats["curr_items"]
+            curr_items += single_stats["curr_items"]
             self.log.debug("curr_items from {0}:{1} - {2}"
                            .format(server.ip, server.port,
                                    single_stats["curr_items"]))
@@ -5007,8 +5006,8 @@ class BucketUtils(ScopeUtils):
         self.log.debug(msg.format(vbucket_active_sum, vbucket_pending_sum,
                                   vbucket_replica_sum))
         msg = 'sum: {0} and sum * (replica_factor + 1) ({1}) : {2}'
-        self.log.debug(msg.format(sum, replica_factor + 1,
-                                  (sum * (replica_factor + 1))))
+        self.log.debug(msg.format(curr_items, replica_factor + 1,
+                                  (curr_items * (replica_factor + 1))))
         if "curr_items_tot" in master_stats:
             self.log.debug('curr_items_tot from master: {0}'
                            .format(master_stats["curr_items_tot"]))
@@ -5022,10 +5021,10 @@ class BucketUtils(ScopeUtils):
         if replica_factor >= num_nodes:
             self.log.warn("Number of zones/nodes is less than replica requires")
             expected_replica_vbucket = max_vbuckets * (num_nodes - 1)
-            delta = (sum * num_nodes) - master_stats["curr_items_tot"]
+            delta = (curr_items * num_nodes) - master_stats["curr_items_tot"]
         else:
             expected_replica_vbucket = (max_vbuckets * replica_factor)
-            delta = sum * (replica_factor + 1) - master_stats["curr_items_tot"]
+            delta = curr_items * (replica_factor + 1) - master_stats["curr_items_tot"]
         if vbucket_active_sum != max_vbuckets:
             raise Exception("vbucket_active_sum actual {0} and expected {1}"
                             .format(vbucket_active_sum, max_vbuckets))
@@ -5040,10 +5039,10 @@ class BucketUtils(ScopeUtils):
         delta = abs(delta)
 
         if delta > 0:
-            if sum == 0:
+            if curr_items == 0:
                 missing_percentage = 0
             else:
-                missing_percentage = delta * 1.0 / (sum * (replica_factor + 1))
+                missing_percentage = delta * 1.0 / (curr_items * (replica_factor + 1))
             self.log.debug("Nodes stats are: {0}"
                            .format([node.ip for node in nodes]))
         else:
