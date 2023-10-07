@@ -46,6 +46,7 @@ from com.couchbase.client.java.kv import GetAllReplicasOptions
 from com.couchbase.client.java.query import QueryOptions
 from java.time import Duration
 from java.nio.charset import StandardCharsets
+from java.lang import Exception as Java_base_exception
 from java.lang import RuntimeException
 from java.lang import System, String
 from java.util import \
@@ -309,11 +310,15 @@ class SDKClient(object):
                 WaitUntilReadyOptions.waitUntilReadyOptions() \
                 .serviceTypes(ServiceType.KV)
             # Temp work around until JCBC-1983 is fixed
-            # adding delay here to avoid loading failures for collections
-            time.sleep(10)
-            # self.bucketObj.waitUntilReady(
-            #     SDKOptions.get_duration(300, SDKConstants.TimeUnit.SECONDS),
-            #     wait_until_ready_options)
+            # This will wait for 10secs and throw suppressed exception
+            try:
+                self.bucketObj.waitUntilReady(
+                    SDKOptions.get_duration(10, SDKConstants.TimeUnit.SECONDS),
+                    wait_until_ready_options)
+            except Java_base_exception as e:
+                self.log.critical(e)
+                pass
+
             self.select_collection(self.scope_name,
                                    self.collection_name)
 
