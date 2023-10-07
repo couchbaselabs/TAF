@@ -853,10 +853,10 @@ class ConfigPurging(CollectionBase):
         # Remove the target node
         if remove_node_method == "rebalance_out":
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[0:self.nodes_init], [], [target_node])
+                self.cluster, [], [target_node])
         elif remove_node_method == "swap_rebalance":
             rebalance_task = self.task.async_rebalance(
-                self.cluster.servers[0:self.nodes_init],
+                self.cluster,
                 [self.cluster.servers[self.nodes_init]], [target_node])
         elif remove_node_method == "failover":
             rebalance_task = self.task.async_failover(
