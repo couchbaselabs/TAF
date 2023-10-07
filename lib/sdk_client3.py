@@ -301,23 +301,21 @@ class SDKClient(object):
                         cluster_options)
                 break
             except ConfigException as e:
-                self.log.error("Exception during cluster connection: %s"
-                               % e)
+                self.log.error("Exception during cluster connection: %s" % e)
                 i += 1
         if self.bucket is not None:
             self.bucketObj = self.cluster.bucket(self.bucket.name)
             wait_until_ready_options = \
                 WaitUntilReadyOptions.waitUntilReadyOptions() \
                 .serviceTypes(ServiceType.KV)
-            # Temp work around until JCBC-1983 is fixed
-            # This will wait for 10secs and throw suppressed exception
             try:
                 self.bucketObj.waitUntilReady(
                     SDKOptions.get_duration(10, SDKConstants.TimeUnit.SECONDS),
                     wait_until_ready_options)
             except Java_base_exception as e:
+                # JCBC-1983: Suppress the exception just by logging it
+                # We might have got 10 seconds sleep for the connection to work
                 self.log.critical(e)
-                pass
 
             self.select_collection(self.scope_name,
                                    self.collection_name)
