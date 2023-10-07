@@ -2021,7 +2021,7 @@ class RestConnection(newRC):
             return metakv_key_count, metakv_dicts
 
     def stop_rebalance(self, wait_timeout=10):
-        api = self.baseUrl + '/controller/stopRebalance'
+        api = self.baseUrl + 'controller/stopRebalance'
         status, content, header = self._http_request(api, 'POST')
         if status:
             for i in xrange(wait_timeout):
@@ -2071,7 +2071,7 @@ class RestConnection(newRC):
             return status
 
     def set_jre_path(self, jre_path=None, set=True):
-        api = self.baseUrl + '/nodes/self/controller/settings'
+        api = self.baseUrl + 'nodes/self/controller/settings'
         from urllib3._collections import HTTPHeaderDict
         data = HTTPHeaderDict()
         paths = {}
