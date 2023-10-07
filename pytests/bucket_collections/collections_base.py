@@ -548,7 +548,6 @@ class CollectionBase(ClusterSetup):
         if CbServer.cluster_profile == "serverless":
             bucket_spec[Bucket.ramQuotaMB] = 256
             bucket_spec[Bucket.replicaNumber] = Bucket.ReplicaNum.TWO
-            bucket_storage = Bucket.StorageBackend.magma
             bucket_spec[Bucket.evictionPolicy] = \
                 Bucket.EvictionPolicy.FULL_EVICTION
 

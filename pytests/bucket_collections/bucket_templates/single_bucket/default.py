@@ -12,7 +12,7 @@ spec = {
 
     Bucket.bucketType: Bucket.Type.MEMBASE,
     Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
-    # Bucket.ramQuotaMB: 256,
+    Bucket.ramQuotaMB: 256,
     Bucket.replicaIndex: 1,
     Bucket.flushEnabled: Bucket.FlushBucket.DISABLED,
     Bucket.priority: Bucket.Priority.LOW,
