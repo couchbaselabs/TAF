@@ -1454,7 +1454,7 @@ class RestConnection(newRC):
     def execute_statement_on_cbas(self, statement, mode, pretty=True,
                                   timeout=70, client_context_id=None):
         self.cbas_base_url = "{0}://{1}:{2}".format(self.protocol, self.ip, self.cbas_port)
-        api = self.cbas_base_url + "/analytics/service"
+        api = self.cbas_base_url + "analytics/service"
         headers = self._create_capi_headers()
 
         params = {'statement': statement, 'pretty': pretty, 'client_context_id': client_context_id}
@@ -2797,7 +2797,7 @@ class RestConnection(newRC):
 
     def query_tool_stats(self):
         self.test_log.info('Query n1ql stats')
-        api = self.query_baseUrl + "/admin/stats"
+        api = self.query_baseUrl + "admin/stats"
         status, content, header = self._http_request(api, 'GET')
         self.test_log.debug(content)
         try:
@@ -3588,7 +3588,7 @@ class RestConnection(newRC):
         Get all (default + uploaded) trusted CA certs information
         """
         status, content, header = self._http_request(self.baseUrl
-                                                     + "/pools/default/trustedCAs", 'GET')
+                                                     + "pools/default/trustedCAs", 'GET')
         return status, content
 
     def delete_trusted_CA(self, ca_id):
@@ -3597,7 +3597,7 @@ class RestConnection(newRC):
         Deletes a trusted CA from the cluster, given its ID
         """
         status, content, response = self._http_request(self.baseUrl
-                                                       + "/pools/default/trustedCAs/"
+                                                       + "pools/default/trustedCAs/"
                                                        + str(ca_id),
                                                        'DELETE')
         return status, content, response
