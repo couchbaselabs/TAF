@@ -507,20 +507,22 @@ class CrashTest(ClusterSetup):
             for node in self.cluster.nodes_in_cluster:
                 cbstats_obj = Cbstats(node)
                 vbucket_stats = cbstats_obj.vbucket_details(bucket_name=bucket.name)
-                ht_mem_used_replica_stat = cbstats_obj.get_stats_memc(
-                    bucket_name=bucket.name, stat_name="memory", key="ht_mem_used_replica")
+                mem_stats = cbstats_obj.all_stats(bucket.name, "memory")
+                ht_mem_used_replica_stat = mem_stats["ht_mem_used_replica"]
                 vbucket_mem_used = 0
                 for vbucket in vbucket_stats:
                     if vbucket_stats[vbucket]["type"] == "replica":
                         vbucket_mem_used += vbucket_stats[vbucket]["ht_cache_size"]
 
-                self.assertEqual(int(vbucket_mem_used),int(ht_mem_used_replica_stat),
-                                 "Sum ht_cache_size stat for all replica vBuckets "
-                                 "(cbstats vbucket-details) and "
-                                 "ht_mem_used_replica (cbstats memory) "
-                                 "are not the same {}!={} on node {}"
-                                 .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
-                self.log.info("Sum ht_cache_size stat for all replica vBuckets "
-                              "(cbstats vbucket-details) = {} and "
-                              "ht_mem_used_replica (cbstats memory) = {} are equal on node {}"
-                              .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
+                self.assertEqual(
+                    int(vbucket_mem_used), int(ht_mem_used_replica_stat),
+                    "Sum ht_cache_size stat for all replica vBuckets "
+                    "(cbstats vbucket-details) and "
+                    "ht_mem_used_replica (cbstats memory) "
+                    "are not the same {}!={} on node {}"
+                    .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
+                self.log.info(
+                    "Sum ht_cache_size stat for all replica vBuckets "
+                    "(cbstats vbucket-details) = {} and ht_mem_used_replica "
+                    "(cbstats memory) = {} are equal on node {}"
+                    .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
