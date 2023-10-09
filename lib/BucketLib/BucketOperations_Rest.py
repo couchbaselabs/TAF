@@ -568,7 +568,7 @@ class BucketHelper(RestConnection):
     def set_collection_history(self, bucket_name, scope, collection,
                                history="false"):
         api = self.baseUrl \
-            + "/pools/default/buckets/%s/scopes/%s/collections/%s" \
+            + "pools/default/buckets/%s/scopes/%s/collections/%s" \
             % (bucket_name, scope, collection)
         params = {"history": history}
         params = urllib.urlencode(params)
@@ -578,7 +578,7 @@ class BucketHelper(RestConnection):
     def set_collection_maxttl(self, bucket_name, scope, collection,
                                maxTTL):
         api = self.baseUrl \
-            + "/pools/default/buckets/%s/scopes/%s/collections/%s" \
+            + "pools/default/buckets/%s/scopes/%s/collections/%s" \
             % (bucket_name, scope, collection)
         params = {"maxTTL": maxTTL}
         params = urllib.urlencode(params)
