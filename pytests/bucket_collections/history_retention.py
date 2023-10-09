@@ -129,8 +129,8 @@ class DocHistoryRetention(ClusterSetup):
         populate_stats(bucket, stat_data["after_ops"])
         history = False
         if bucket.scopes[scope].collections[collection].history == "true" \
-                and (bucket.historyRetentionSeconds != 0
-                     or bucket.historyRetentionBytes != 0):
+                and (int(bucket.historyRetentionSeconds) != 0
+                     or int(bucket.historyRetentionBytes) != 0):
             history = True
         self.log.info("%s:%s:%s, History: %s"
                       % (bucket.name, scope, collection, history))
