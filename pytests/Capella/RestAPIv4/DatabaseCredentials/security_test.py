@@ -56,13 +56,13 @@ class SecurityTest(BaseTestCase):
         resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
         resp = resp.json()
 
-        self.capellaAPI.org_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
         self.capellaAPI.org_ops_apis.bearer_token = resp['token']
 
         # self.capellaAPI.cluster_ops_apis.ACCESS = resp['Id']
         self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
 
-        self.access_key_ini = resp['accessKey']
+        self.access_key_ini = resp['id']
         self.bearer_token_ini = resp['token']
 
         self.project_id = self.tenant.project_id
@@ -547,6 +547,8 @@ class SecurityTest(BaseTestCase):
                                               clusterId=self.cluster_id,
                                               userId=db_cred['id'])
         self.assertEqual(resp.status_code, 200)
+        resp = resp.json()
+        self.assertTrue(len(resp['access']) > 0)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.fetch_database_user_info,
                                               organizationId=self.invalid_id,
@@ -1061,8 +1063,8 @@ class SecurityTest(BaseTestCase):
 
         content = resp.json()
 
-        self.append_to_api_keys(content['Id'], self.tenant_id)
-        self.set_access_keys(content['Id'], content['token'])
+        self.append_to_api_keys(content['id'], self.tenant_id)
+        self.set_access_keys(content['id'], content['token'])
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         # self.assertEqual(resp.status_code, 403)       # getting 404 instead, what should be the status code for this?
@@ -1075,7 +1077,7 @@ class SecurityTest(BaseTestCase):
                                               description="description", expiry=0.001)
 
         content = resp.json()
-        self.set_access_keys(content['Id'], content['token'])
+        self.set_access_keys(content['id'], content['token'])
 
         self.log.info("Sleep for 90 seconds for api-key to get expired.")
         time.sleep(90)
@@ -1109,10 +1111,10 @@ class SecurityTest(BaseTestCase):
 
                 content = resp.json()
                 self.assertEqual(resp.status_code, 201)
-                self.append_to_api_keys(content['Id'], self.tenant_id)
+                self.append_to_api_keys(content['id'], self.tenant_id)
 
                 api_keys_list.append({
-                    'accessKey': content["Id"],
+                    'accessKey': content["id"],
                     'token': content['token'],
                     'organizationRole': user,
                     'projectId': self.project_id,
@@ -1128,10 +1130,10 @@ class SecurityTest(BaseTestCase):
 
                 content = resp.json()
                 self.assertEqual(resp.status_code, 201)
-                self.append_to_api_keys(content['Id'], self.tenant_id)
+                self.append_to_api_keys(content['id'], self.tenant_id)
 
                 api_keys_list.append({
-                    'accessKey': content["Id"],
+                    'accessKey': content["id"],
                     'token': content['token'],
                     'organizationRole': user,
                     'projectId': self.secondary_project_id,
@@ -1147,10 +1149,10 @@ class SecurityTest(BaseTestCase):
 
                 content = resp.json()
                 self.assertEqual(resp.status_code, 201)
-                self.append_to_api_keys(content['Id'], self.tenant_id)
+                self.append_to_api_keys(content['id'], self.tenant_id)
 
                 api_keys_list.append({
-                    'accessKey': content["Id"],
+                    'accessKey': content["id"],
                     'token': content['token'],
                     'organizationRole': user,
                     'projectId': self.project_id,
