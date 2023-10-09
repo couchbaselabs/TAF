@@ -282,7 +282,7 @@ class RestConnection(newRC):
         return json, meta
 
     def run_view(self, bucket, view, name):
-        api = self.capi_baseUrl + '/%s/_design/%s/_view/%s' % (bucket, view, name)
+        api = self.capi_baseUrl + '%s/_design/%s/_view/%s' % (bucket, view, name)
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         if not status:
@@ -354,7 +354,7 @@ class RestConnection(newRC):
 
     def get_couch_doc(self, doc_id, bucket="default", timeout=120):
         """ use couchBase uri to retrieve document from a bucket """
-        api = self.capi_baseUrl + '/%s/%s' % (bucket, doc_id)
+        api = self.capi_baseUrl + '%s/%s' % (bucket, doc_id)
         status, content, header = self._http_request(api, headers=self._create_capi_headers(),
                                                      timeout=timeout)
         if not status:
@@ -362,16 +362,16 @@ class RestConnection(newRC):
         return json.loads(content)
 
     def _create_design_doc(self, bucket, name, function):
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         status, content, header = self._http_request(
             api, 'PUT', function, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def _get_design_doc(self, bucket, name):
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '/%s/_design/%s' % (bucket.name, name)
+            api = self.capi_baseUrl + '%s/_design/%s' % (bucket.name, name)
 
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
@@ -391,19 +391,19 @@ class RestConnection(newRC):
         status, design_doc, meta = self._get_design_doc(bucket, name)
         if not status:
             raise Exception("unable to find for deletion design document")
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '/%s/_design/%s' % (bucket.name, name)
+            api = self.capi_baseUrl + '%s/_design/%s' % (bucket.name, name)
         status, content, header = self._http_request(api, 'DELETE',
                                                      headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def spatial_compaction(self, bucket, design_name):
-        api = self.capi_baseUrl + '/%s/_design/%s/_spatial/_compact' % (bucket, design_name)
+        api = self.capi_baseUrl + '%s/_design/%s/_spatial/_compact' % (bucket, design_name)
         if isinstance(bucket, Bucket):
             api = self.capi_baseUrl + \
-                  '/%s/_design/%s/_spatial/_compact' % (bucket.name, design_name)
+                  '%s/_design/%s/_spatial/_compact' % (bucket.name, design_name)
 
         status, content, header = self._http_request(api, 'POST',
                                                      headers=self._create_capi_headers())
@@ -3076,7 +3076,7 @@ class RestConnection(newRC):
         return status, content, header
 
     def configure_ldap_settings(self, settings):
-        api = self.baseUrl + '/settings/ldap'
+        api = self.baseUrl + 'settings/ldap'
         params = urllib.urlencode(settings)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content, header
@@ -3637,7 +3637,7 @@ class RestConnection(newRC):
     def set_document(self, bucket, doc_id, doc_value):
         """ Post a document value """
         target = self.baseUrl + \
-                 "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
+                 "pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
         docval = json.dumps(doc_value, separators=(',', ':'))
         status, _, _ = self._http_request(target,
                                           'POST',
@@ -3647,14 +3647,14 @@ class RestConnection(newRC):
     def get_document(self, bucket, doc_id):
         """ Get a document value """
         target = self.baseUrl + \
-                 "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
+                 "pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
         status, content, _ = self._http_request(target,
                                                 'GET')
         return status, content
 
     def set_node_capacity(self, node_capacity_dict):
         self.test_log.debug('Setting node capacities: {}'.format(node_capacity_dict))
-        api = self.baseUrl + '/settings/serverless/node'
+        api = self.baseUrl + 'settings/serverless/node'
         params = urllib.urlencode(node_capacity_dict)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
@@ -3663,7 +3663,7 @@ class RestConnection(newRC):
         """
         Returns current saml settings as JSON
         """
-        api = self.baseUrl + '/settings/saml'
+        api = self.baseUrl + 'settings/saml'
         status, content, header = self._http_request(api, 'GET')
         return status, content, header
 
@@ -3680,7 +3680,7 @@ class RestConnection(newRC):
         """
         Removes all the settings. That's basically a reset to default
         """
-        api = self.baseUrl + '/settings/saml'
+        api = self.baseUrl + 'settings/saml'
         status, content, header = self._http_request(api, 'DELETE')
         return status, content, header
 
