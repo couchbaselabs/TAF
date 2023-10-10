@@ -700,11 +700,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_2),
                                                   service_count[1],
                                                   service_count[0])
+            self.cluster.master = node_split_1[0]
         else:
             num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_1),
                                                   service_count[0],
                                                   service_count[1])
+            self.cluster.master = node_split_2[0]
 
+        self.rest = RestConnection(self.cluster.master)
         self.log.info("N/w split between -> [%s] || [%s]. Expect %s fo_events"
                       % ([n.ip for n in node_split_1],
                          [n.ip for n in node_split_2],
