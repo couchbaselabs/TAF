@@ -281,10 +281,11 @@ class UpgradeTests(UpgradeBase):
 
             ## Collections are dropped and re-created while the cluster is mixed mode ###
             self.log.info("Performing collection ops in mixed mode cluster setting...")
-            sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
-            sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
-            sync_load_spec["doc_crud"][
-                MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+            if self.guardrail_type != "collection_guardrail":
+                sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
+                sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
+                sync_load_spec["doc_crud"][
+                    MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
 
             #Validate sync_write results after upgrade
             if self.key_size is not None:
@@ -339,6 +340,11 @@ class UpgradeTests(UpgradeBase):
         self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
         self.servers = self.cluster_util.get_kv_nodes(self.cluster)
 
+        if self.test_guardrail_migration or self.test_guardrail_upgrade:
+            self.rr_guardrail_limits = {"couchstore": 10, "magma": 1}
+            self.bucket_size_guardrail_limits = {"couchstore": 1.6, "magma": 16}
+            self.check_and_set_guardrail_limits()
+
         # Adding _system scope and collections under it to the local bucket object since 
         # these are added once the cluster is upgraded to 7.6
         if float(self.upgrade_version[:3]) >= 7.6:
@@ -354,63 +360,80 @@ class UpgradeTests(UpgradeBase):
         if self.migrate_storage_backend:
             self.PrintStep("Migration of the storageBackend to {0}".format(
                                                     self.preferred_storage_mode))
+            if self.preferred_storage_mode == Bucket.StorageBackend.couchstore:
+                self.disable_history_on_buckets()
             for bucket in self.cluster.buckets:
-                self.bucket_util.update_bucket_property(self.cluster.master,
+                try:
+                    self.bucket_util.update_bucket_property(self.cluster.master,
                                                         bucket,
                                                         storageBackend=self.preferred_storage_mode)
+                    if self.test_guardrail_migration and self.breach_guardrail:
+                        self.fail("Migration was allowed even when it would breach guardrail limits")
+                except Exception as e:
+                    self.log.info("Exception = {}. Updating of storageBackend failed".format(e))
+                    err_msg = "Storage mode migration is not allowed"
+                    exp = err_msg in str(e)
+                    if self.test_guardrail_migration and self.breach_guardrail:
+                        self.assertTrue(exp, "Wrong error message")
+                    if self.test_guardrail_migration and not self.breach_guardrail:
+                        self.fail("Migration was restricted even when it wouldn't breach guardrail limits")
             self.bucket_util.get_all_buckets(self.cluster)
 
-            for bucket in self.cluster.buckets:
-                self.verify_storage_key_for_migration(bucket, self.bucket_storage)
-
-            ### Swap Rebalance/Failover recovery of all nodes post upgrade for migration ###
-            if self.migration_procedure == "failover_recovery":
-                self.failover_recovery_all_nodes()
-            elif self.migration_procedure == "swap_rebalance_all":
-                self.swap_rebalance_all_nodes()
-            elif self.migration_procedure == "swap_rebalance":
-                self.swap_rebalance_all_nodes_iteratively()
-            elif self.migration_procedure == "randomize_method":
-                self.log.info("Installing the version {0} on the spare node".format(
-                                                                self.upgrade_version))
-                self.install_version_on_node([self.spare_node], self.upgrade_version)
-                migration_methods = ["swap_rebalance", "failover_recovery"]
-                nodes_to_migrate = self.cluster.nodes_in_cluster
-                random_index = random.randint(0,1)
-                for node in nodes_to_migrate:
-                    self.migrate_node_random(node, migration_methods[random_index % 2])
-                    random_index += 1
-            elif self.migration_procedure == "swap_rebalance_batch":
-                self.log.info("Installing the version {0} on the spare node".format(
-                                                                self.upgrade_version))
-                self.install_version_on_node([self.spare_node], self.upgrade_version)
-                nodes_to_migrate = self.cluster.nodes_in_cluster
-                self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
-                self.spare_nodes.append(self.spare_node)
-                batch_size = 2
-                start_index = 0
-                while start_index < len(nodes_to_migrate):
-                    nodes = nodes_to_migrate[start_index:start_index+batch_size]
-                    self.swap_rebalance_batch_migrate(nodes)
-                    start_index += batch_size
-                self.spare_node = self.spare_nodes[0]
-
-            self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
-            self.servers = self.cluster_util.get_kv_nodes(self.cluster)
-            self.bucket_util.get_all_buckets(self.cluster)
-            self.bucket_util.print_bucket_stats(self.cluster)
-
-            if self.preferred_storage_mode == Bucket.StorageBackend.magma:
-                self.magma_upgrade = True
+            if self.test_guardrail_migration and self.breach_guardrail:
+                self.log.info("Migration is restricted because of guardrail limits")
             else:
-                self.magma_upgrade = False
+                for bucket in self.cluster.buckets:
+                    self.verify_storage_key_for_migration(bucket, self.bucket_storage)
+
+                ### Swap Rebalance/Failover recovery of all nodes post upgrade for migration ###
+                if self.migration_procedure == "failover_recovery":
+                    self.failover_recovery_all_nodes()
+                elif self.migration_procedure == "swap_rebalance_all":
+                    self.swap_rebalance_all_nodes()
+                elif self.migration_procedure == "swap_rebalance":
+                    self.swap_rebalance_all_nodes_iteratively()
+                elif self.migration_procedure == "randomize_method":
+                    self.log.info("Installing the version {0} on the spare node".format(
+                                                                    self.upgrade_version))
+                    self.install_version_on_node([self.spare_node], self.upgrade_version)
+                    migration_methods = ["swap_rebalance", "failover_recovery"]
+                    nodes_to_migrate = self.cluster.nodes_in_cluster
+                    random_index = random.randint(0,1)
+                    for node in nodes_to_migrate:
+                        self.migrate_node_random(node, migration_methods[random_index % 2])
+                        random_index += 1
+                elif self.migration_procedure == "swap_rebalance_batch":
+                    self.log.info("Installing the version {0} on the spare node".format(
+                                                                    self.upgrade_version))
+                    self.install_version_on_node([self.spare_node], self.upgrade_version)
+                    nodes_to_migrate = self.cluster.nodes_in_cluster
+                    self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
+                    self.spare_nodes.append(self.spare_node)
+                    batch_size = 2
+                    start_index = 0
+                    while start_index < len(nodes_to_migrate):
+                        nodes = nodes_to_migrate[start_index:start_index+batch_size]
+                        self.swap_rebalance_batch_migrate(nodes)
+                        start_index += batch_size
+                    self.spare_node = self.spare_nodes[0]
+
+                self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
+                self.servers = self.cluster_util.get_kv_nodes(self.cluster)
+                self.bucket_util.get_all_buckets(self.cluster)
+                self.bucket_util.print_bucket_stats(self.cluster)
+
+                if self.preferred_storage_mode == Bucket.StorageBackend.magma:
+                    self.magma_upgrade = True
+                else:
+                    self.magma_upgrade = False
+
+        if self.test_guardrail_migration or self.test_guardrail_upgrade:
+            self.post_upgrade_migration_guardrail_validation()
 
         ### Enabling CDC ###
         if self.magma_upgrade:
             self.vb_dict_list1 = {}
-            for bucket in self.cluster.buckets:
-                if bucket.storageBackend == Bucket.StorageBackend.magma:
-                    self.enable_cdc_and_get_vb_details(bucket)
+            self.enable_cdc_and_get_vb_details()
 
         if self.load_large_docs and self.upgrade_with_data_load:
             self.sleep(30, "Wait for items to get reflected")
@@ -422,7 +445,8 @@ class UpgradeTests(UpgradeBase):
         self.log.info("Final doc count verified")
 
         # Play with collection if upgrade was successful
-        if not self.test_failure:
+        if not self.test_failure and not self.test_guardrail_upgrade and \
+                        not self.test_guardrail_migration:
             self.__play_with_collection()
 
         ### Verifying start sequence numbers ###
@@ -438,7 +462,8 @@ class UpgradeTests(UpgradeBase):
             self.edit_history_for_collections_existing_bucket()
 
         ### Creation of a new bucket post upgrade ###
-        self.create_new_bucket_post_upgrade_and_load_data()
+        if self.guardrail_type != "bucket_guardrail":
+            self.create_new_bucket_post_upgrade_and_load_data()
 
         ### Rebalance/failover tasks after the whole cluster is upgraded ###
         if self.rebalance_op != "None":
@@ -447,6 +472,7 @@ class UpgradeTests(UpgradeBase):
 
         # Perform final collection/doc_count validation
         self.validate_test_failure()
+        self.PrintStep("Test Complete")
 
     def test_upgrade_from_ce_to_ee(self):
         iter = 0
@@ -1069,19 +1095,22 @@ class UpgradeTests(UpgradeBase):
         self.cluster.buckets[0].scopes[CbServer.default_scope].collections[
             CbServer.default_collection].num_items += large_doc_count
 
-    def enable_cdc_and_get_vb_details(self, bucket):
-        self.PrintStep("Enabling CDC")
-
-        self.bucket_util.update_bucket_property(self.cluster.master,
-                                                bucket,
-                                                history_retention_seconds=86400,
-                                                history_retention_bytes=96000000000)
-        self.log.info("CDC Enabled - History parameters set")
+    def enable_cdc_and_get_vb_details(self):
+        for bucket in self.cluster.buckets:
+            if bucket.storageBackend == Bucket.StorageBackend.magma:
+                self.PrintStep("Enabling CDC")
+                self.bucket_util.update_bucket_property(self.cluster.master,
+                                                        bucket,
+                                                        history_retention_seconds=86400,
+                                                        history_retention_bytes=96000000000)
+                self.log.info("CDC Enabled for bucket: {}".format(bucket.name))
         self.sleep(60, "Wait for History params to get reflected")
 
-        self.vb_dict = self.bucket_util.get_vb_details_for_bucket(bucket,
-                                                             self.cluster.nodes_in_cluster)
-        self.vb_dict_list1[bucket.name] = self.vb_dict
+        for bucket in self.cluster.buckets:
+            if bucket.storageBackend == Bucket.StorageBackend.magma:
+                self.vb_dict = self.bucket_util.get_vb_details_for_bucket(bucket,
+                                                            self.cluster.nodes_in_cluster)
+                self.vb_dict_list1[bucket.name] = self.vb_dict
 
     def verify_history_start_sequence_numbers(self, bucket):
         self.log.info("Verifying history start sequence numbers")
@@ -1274,51 +1303,27 @@ class UpgradeTests(UpgradeBase):
                     self.cluster_util.print_cluster_stats(self.cluster)
 
             elif(reb_task == "replica_update"):
-                rest = RestConnection(self.cluster.master)
-                services = rest.get_nodes_services()
-                services_on_master = services[(self.cluster.master.ip + ":"
-                                               + str(self.cluster.master.port))]
-
-                rest.add_node(self.creds.rest_username,
-                        self.creds.rest_password,
-                        self.spare_node.ip,
-                        self.spare_node.port,
-                        services=services_on_master)
-                otp_nodes = [node.id for node in rest.node_statuses()]
-                self.log.info("Rebalance starting...")
                 self.log.info("Rebalancing-in the node {0}".format(self.spare_node.ip))
-                rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
-                rebalance_result = rest.monitorRebalance()
-
-                if(rebalance_result):
-                    self.log.info("Rebalance-in of the node successful")
-                else:
-                    self.log.info("Rebalance-in failed")
-
+                rebalance_task = self.task.async_rebalance(self.cluster, to_add=[self.spare_node],
+                                            to_remove=[], services=[CbServer.Services.KV])
+                self.task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance-in failed")
                 self.cluster_util.print_cluster_stats(self.cluster)
 
                 for bucket in self.cluster.buckets:
                     if(bucket.name == "bucket-0"):
                         bucket_update = bucket
-
-                self.log.info("Updating replica count from 2 to 3 for {0}".format(bucket_update.name))
-
+                curr_replicas = bucket_update.replicaNumber
+                self.log.info("Updating replica count to {0} for {1}".format(curr_replicas+1,
+                                                                            bucket_update.name))
                 self.bucket_util.update_bucket_property(self.cluster.master,
                                                         bucket_update,
-                                                        replica_number=3)
-
+                                                        replica_number=curr_replicas+1)
                 self.bucket_util.print_bucket_stats(self.cluster)
-                otp_nodes = [node.id for node in rest.node_statuses()]
-
-                rest.rebalance(otpNodes=otp_nodes, ejectedNodes= [])
-                reb_result = rest.monitorRebalance()
-
-                if(reb_result):
-                    self.log.info("Rebalance after replica update successful")
-                else:
-                    self.log.info("Rebalance after replica update failed")
-
-                self.cluster_util.print_cluster_stats(self.cluster)
+                
+                reb_task = self.task.async_rebalance(self.cluster, [], [])
+                self.task_manager.get_task_result(reb_task)
+                self.assertTrue(reb_task.result, "Rebalance after replica update failed")
 
             if rebalance_data_load is not None:
                 self.task_manager.get_task_result(rebalance_data_load)
@@ -1665,3 +1670,144 @@ class UpgradeTests(UpgradeBase):
                 self.validate_mixed_storage_during_migration(node)
         else:
             self.log.info("Batch Swap rebalance failed")
+
+    def post_upgrade_migration_guardrail_validation(self):
+        self.log.info("Performing post upgrade/migration guardrail validation")
+        self.bucket = self.cluster.buckets[0]
+
+        if self.test_guardrail_migration:
+            if self.guardrail_type == "resident_ratio":
+                self.log.info("RR guardrail limits = {}".format(self.rr_guardrail_limits))
+                val = self.rr_guardrail_limits[self.bucket.storageBackend]
+                rr_val = self.check_resident_ratio(self.cluster)
+                rr_val_bucket = rr_val[self.bucket.name]
+                if min(rr_val_bucket) < val:
+                    self.breach_guardrail = True
+                else:
+                    self.breach_guardrail = False
+
+            elif self.guardrail_type == "bucket_size":
+                self.log.info("Bucket size guardrail limits = {}".format(self.bucket_size_guardrail_limits))
+                val = self.bucket_size_guardrail_limits[self.bucket.storageBackend]
+                bucket_sizes = self.check_bucket_data_size_per_node(self.cluster)
+                bucket_val = bucket_sizes[self.bucket.name]
+                if max(bucket_val) > val:
+                    self.breach_guardrail = True
+                else:
+                    self.breach_guardrail = False
+
+        if self.guardrail_type == "resident_ratio":
+            error_code = 'BUCKET_RESIDENT_RATIO_TOO_LOW'
+        elif self.guardrail_type == "bucket_size":
+            error_code = 'BUCKET_DATA_SIZE_TOO_BIG'
+
+        elif self.guardrail_type == "collection_guardrail":
+            self.log.info("Trying to create a new collection which exceeds max collection limit")
+            try:
+                coll_obj = {"name":"new_col"}
+                self.bucket_util.create_collection(self.cluster.master,
+                                                   self.bucket,
+                                                   scope_name=CbServer.default_scope,
+                                                   collection_spec=coll_obj)
+            except Exception as e:
+                self.log.info("Exception = {}. Creation of collection failed as expected".format(e))
+            else:
+                self.fail("Collection creation did not fail even though it has breached guardrail limits")
+
+        elif self.guardrail_type == "bucket_guardrail":
+            self.log.info("Current bucket count = {}".format(len(self.cluster.buckets)))
+            self.log.info("Trying to create a new bucket which would exceed the bucket count")
+            try:
+                self.bucket_util.create_default_bucket(
+                    self.cluster, bucket_type=self.bucket_type,
+                    ram_quota=256, replica=1, storage=Bucket.StorageBackend.magma,
+                    eviction_policy=self.bucket_eviction_policy,
+                    bucket_name="bucket_new")
+            except Exception as e:
+                self.log.info("Exception = {}. Creation of bucket failed as expected".format(e))
+            else:
+                self.fail("Bucket guardrail didn't prevent the creation of a new bucket")
+
+        for bucket in self.cluster.buckets:
+            result = self.insert_new_docs_sdk(num_docs=10, bucket=bucket)
+            for res in result:
+                if self.breach_guardrail:
+                    exp = res["status"] == False and error_code in res["error"]
+                    self.assertTrue(exp, "Mutations were not blocked")
+                else:
+                    exp = res["status"] == True
+                    self.assertTrue(exp, "Mutations were blocked")
+                    bucket.scopes[CbServer.default_scope].collections[
+                        CbServer.default_collection].num_items += 1
+
+    def check_and_set_guardrail_limits(self):
+        if self.guardrail_type == "resident_ratio":
+            self.bucket = self.cluster.buckets[0]
+            current_rr = self.check_resident_ratio(self.cluster)
+            bucket_rr = current_rr[self.bucket.name]
+            self.log.info("Current resident ratio of bucket: {0} = {1}".format(self.bucket.name,
+                                                                               bucket_rr))
+            if self.breach_guardrail:
+                guardrail_val = max(bucket_rr) + 5
+            else:
+                guardrail_val = max(min(bucket_rr) - 10, 1)
+
+            if self.test_guardrail_migration:
+                if self.preferred_storage_mode == Bucket.StorageBackend.couchstore:
+                    status, content = BucketHelper(self.cluster.master).\
+                                        set_bucket_rr_guardrails(couch_min_rr=guardrail_val)
+                else:
+                    status, content = BucketHelper(self.cluster.master).\
+                                        set_bucket_rr_guardrails(magma_min_rr=guardrail_val)
+                self.rr_guardrail_limits[self.preferred_storage_mode] = guardrail_val
+            elif self.test_guardrail_upgrade:
+                if self.bucket_storage == Bucket.StorageBackend.couchstore:
+                    status, content = BucketHelper(self.cluster.master).\
+                                        set_bucket_rr_guardrails(couch_min_rr=guardrail_val)
+                else:
+                    status, content = BucketHelper(self.cluster.master).\
+                                        set_bucket_rr_guardrails(magma_min_rr=guardrail_val)
+                self.rr_guardrail_limits[self.bucket_storage] = guardrail_val
+            if status:
+                self.log.info("Bucket RR Guardrails set {}".format(content))
+                self.sleep(30, "Wait for 30 seconds after setting guardrail")
+
+        elif self.guardrail_type == "bucket_size":
+            current_bucket_sizes = self.check_bucket_data_size_per_node(self.cluster)
+            bucket_size = current_bucket_sizes[self.bucket.name]
+            self.log.info("Current size of bucket: {0} = {1}".format(self.bucket.name,
+                                                                     bucket_size))
+            if self.breach_guardrail:
+                guardrail_val = min(bucket_size) / float(2)
+            else:
+                guardrail_val = max(bucket_size) + 0.01
+            if self.test_guardrail_migration:
+                if self.preferred_storage_mode == Bucket.StorageBackend.couchstore:
+                    status, content = BucketHelper(self.cluster.master).\
+                                    set_max_data_per_bucket_guardrails(couch_max_data=guardrail_val)
+                else:
+                    status, content = BucketHelper(self.cluster.master).\
+                                    set_max_data_per_bucket_guardrails(magma_max_data=guardrail_val)
+                self.bucket_size_guardrail_limits[self.preferred_storage_mode] = guardrail_val
+            elif self.test_guardrail_upgrade:
+                if self.bucket_storage == Bucket.StorageBackend.couchstore:
+                    status, content = BucketHelper(self.cluster.master).\
+                                    set_max_data_per_bucket_guardrails(couch_max_data=guardrail_val)
+                else:
+                    status, content = BucketHelper(self.cluster.master).\
+                                    set_max_data_per_bucket_guardrails(magma_max_data=guardrail_val)
+                self.bucket_size_guardrail_limits[self.bucket_storage] = guardrail_val
+            if status:
+                self.log.info("Bucket max data Guardrails set {}".format(content))
+                self.sleep(30, "Wait for 30 seconds after setting guardrail")
+
+    def disable_history_on_buckets(self):
+        self.log.info("Disabling history before migrating to CouchStore")
+        for bucket in self.cluster.buckets:
+            if bucket.storageBackend == Bucket.StorageBackend.magma:
+                self.bucket_util.update_bucket_property(self.cluster.master, bucket,
+                                            history_retention_collection_default="false")
+                for scope in bucket.scopes:
+                    for coll in bucket.scopes[scope].collections:
+                        self.bucket_util.set_history_retention_for_collection(self.cluster.master,
+                                                                    bucket, scope, coll, "false")

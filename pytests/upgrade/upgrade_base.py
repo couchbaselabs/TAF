@@ -11,6 +11,7 @@ from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from scripts.old_install import InstallerJob
+from sdk_client3 import SDKClient
 from testconstants import CB_RELEASE_BUILDS, CB_REPO, CB_VERSION_NAME
 from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.durability_helper import BucketDurability
@@ -75,6 +76,12 @@ class UpgradeBase(BaseTestCase):
         self.range_scan_runs_per_collection = self.input.param(
             "range_scan_runs_per_collection", 1)
         self.migration_procedure = self.input.param("migration_procedure", "swap_rebalance")
+        self.test_guardrail_migration = self.input.param("test_guardrail_migration", False)
+        self.test_guardrail_upgrade = self.input.param("test_guardrail_upgrade", False)
+        self.guardrail_type = self.input.param("guardrail_type", "resident_ratio")
+        self.breach_guardrail = self.input.param("breach_guardrail", False)
+
+        self.cluster_profile = self.input.param("cluster_profile", None)
 
         #### Spec File Parameters ####
 
@@ -349,6 +356,8 @@ class UpgradeBase(BaseTestCase):
         install_params['init_nodes'] = False
         install_params['debug_logs'] = False
         install_params['type'] = build_type
+        if self.cluster_profile == "provisioned" and float(version[:3]) >= 7.6:
+            install_params["cluster_profile"] = "provisioned"
         self.installer_job.parallel_install(nodes, install_params)
 
         if self.disk_location_data != testconstants.COUCHBASE_DATA_PATH or \
@@ -831,6 +840,81 @@ class UpgradeBase(BaseTestCase):
             process_concurrency=4)
 
         return data_load_task
+
+    def check_resident_ratio(self, cluster):
+        """
+        This function returns a dictionary which contains resident ratios
+        of all the buckets in the cluster across all nodes.
+        key = bucket name
+        value = list of resident ratios of the bucket on different nodes
+        Ex:  bucket_rr = {'default': [100, 100], 'bucket-1': [45.8, 50.1]}
+        """
+        bucket_rr = dict()
+        for server in cluster.kv_nodes:
+            kv_ep_max_size = dict()
+            _, res = RestConnection(server).query_prometheus("kv_ep_max_size")
+            for item in res["data"]["result"]:
+                bucket_name = item["metric"]["bucket"]
+                kv_ep_max_size[bucket_name] = float(item["value"][1])
+
+            _, res = RestConnection(server).query_prometheus("kv_logical_data_size_bytes")
+            for item in res["data"]["result"]:
+                if item["metric"]["state"] == "active":
+                    bucket_name = item["metric"]["bucket"]
+                    logical_data_bytes = float(item["value"][1])
+                    resident_ratio = (kv_ep_max_size[bucket_name] / logical_data_bytes) * 100
+                    resident_ratio = min(resident_ratio, 100)
+                    if bucket_name not in bucket_rr:
+                        bucket_rr[bucket_name] = [resident_ratio]
+                    else:
+                        bucket_rr[bucket_name].append(resident_ratio)
+
+        return bucket_rr
+
+    def check_bucket_data_size_per_node(self, cluster):
+
+        bucket_data_size = dict()
+
+        for server in cluster.kv_nodes:
+            _, res = RestConnection(server).query_prometheus("kv_logical_data_size_bytes")
+
+            for item in res["data"]["result"]:
+                if item["metric"]["state"] == "active":
+                    bucket_name = item["metric"]["bucket"]
+                    logical_data_bytes = float(item["value"][1])
+                    logical_data_bytes_in_tb = logical_data_bytes / float(1000000000000)
+
+                    if bucket_name not in bucket_data_size:
+                        bucket_data_size[bucket_name] = [logical_data_bytes_in_tb]
+                    else:
+                        bucket_data_size[bucket_name].append(logical_data_bytes_in_tb)
+
+        return bucket_data_size
+
+    def insert_new_docs_sdk(self, num_docs, bucket, doc_key="new_docs"):
+        result = []
+        self.document_keys = []
+        self.log.info("Creating SDK client for inserting new docs")
+        self.sdk_client = SDKClient([self.cluster.master],
+                                    bucket,
+                                    scope=CbServer.default_scope,
+                                    collection=CbServer.default_collection)
+        new_docs = doc_generator(key=doc_key, start=0,
+                                end=num_docs,
+                                doc_size=1024,
+                                doc_type=self.doc_type,
+                                vbuckets=self.cluster.vbuckets,
+                                key_size=self.key_size,
+                                randomize_value=True)
+        self.log.info("Inserting {0} documents into bucket: {1}".format(num_docs, bucket))
+        for i in range(num_docs):
+            key_obj, val_obj = new_docs.next()
+            self.document_keys.append(key_obj)
+            res = self.sdk_client.insert(key_obj, val_obj)
+            result.append(res)
+
+        self.sdk_client.close()
+        return result
 
     def PrintStep(self, msg=None):
         print "\n"

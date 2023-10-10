@@ -67,6 +67,16 @@ DEFAULT_CLI_PATH = {
     "WINDOWS_SERVER": DEFAULT_INSTALL_DIR["WINDOWS_SERVER"]
                       + "/bin/couchbase-cli"}
 
+RM_CONF_PROFILE_FILE = {
+    "LINUX_DISTROS": "rm -f /etc/couchbase.d/config_profile"
+}
+
+CREATE_PROVISIONED_PROFILE_FILE = {
+    "LINUX_DISTROS": "mkdir -p /etc/couchbase.d ; "
+                     "echo provisioned > /etc/couchbase.d/config_profile ; "
+                     "chmod ugo+r /etc/couchbase.d/"
+}
+
 WGET_CMD = "cd {0}; wget -Nq {1}"
 CURL_CMD = "curl {0} -o {1} -z {1} -s -m 30"
 CB_ENTERPRISE = "couchbase-server-enterprise"
