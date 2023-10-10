@@ -325,7 +325,9 @@ class ClusterUtils:
         status, ns_node = self.find_orchestrator(cluster, node=target_node)
         if not status:
             return result
-        self.update_cluster_nodes_service_list(cluster, inactive_added=True)
+        self.update_cluster_nodes_service_list(cluster,
+                                               inactive_added=True,
+                                               inactive_failed=True)
         nodes = self.get_possible_orchestrator_nodes(cluster)
         ns_node = ns_node.split("@")[1]
         self.log.critical("Orchestrator: {}".format(ns_node))
@@ -783,7 +785,8 @@ class ClusterUtils:
                 remote_client.disable_firewall()
                 remote_client.disconnect()
 
-    def update_cluster_nodes_service_list(self, cluster, inactive_added=False):
+    def update_cluster_nodes_service_list(self, cluster, inactive_added=False,
+                                          inactive_failed=False):
         def append_nodes_to_list(nodes, list_to_append):
             for t_node in nodes:
                 t_node = t_node.split(":")
@@ -796,7 +799,8 @@ class ClusterUtils:
                         break
 
         service_map = self.get_services_map(cluster,
-                                            inactive_added=inactive_added)
+                                            inactive_added=inactive_added,
+                                            inactive_failed=inactive_failed)
         cluster.kv_nodes = list()
         cluster.fts_nodes = list()
         cluster.cbas_nodes = list()
@@ -886,10 +890,11 @@ class ClusterUtils:
                 return node_list[0]
 
     @staticmethod
-    def get_services_map(cluster, inactive_added=False):
+    def get_services_map(cluster, inactive_added=False, inactive_failed=False):
         services_map = dict()
         rest = RestConnection(cluster.master)
-        tem_map = rest.get_nodes_services(inactive_added=inactive_added)
+        tem_map = rest.get_nodes_services(inactive_added=inactive_added,
+                                          inactive_failed=inactive_failed)
         for key, val in tem_map.items():
             if not val:
                 # None means service-less node
