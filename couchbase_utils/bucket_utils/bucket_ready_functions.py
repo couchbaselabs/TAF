@@ -4840,6 +4840,23 @@ class BucketUtils(ScopeUtils):
                                                           item))
         return bucket_list
 
+    def fetch_rank_map(self, cluster, cluster_node=None,
+                       fetch_latest_buckets=False):
+        rank_map = {}
+        if cluster_node or fetch_latest_buckets:
+            if cluster_node is None:
+                cluster_node = cluster.master
+            rest = BucketHelper(cluster_node)
+            json_parsed = rest.get_buckets_json()
+            for item in json_parsed:
+                if Bucket.rank in item:
+                    rank_map[item[Bucket.name]] = item[Bucket.rank]
+                else:
+                    rank_map[item[Bucket.name]] = None
+        else:
+            rank_map = {bucket.name : bucket.rank for bucket in cluster.buckets}
+        return rank_map
+
     @staticmethod
     def get_fragmentation_kv(cluster, bucket=None, server=None):
         if bucket is None:
