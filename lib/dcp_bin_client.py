@@ -8,6 +8,10 @@ import time
 
 MAX_SEQNO = 0xFFFFFFFFFFFFFFFF
 
+CMD_DCP_NOOP = 0x5c
+CMD_DCP_ACK = 0x5d
+CMD_CONTROL = 0x5e
+
 
 class DcpClient(MemcachedClient):
     """ DcpClient implements dcp protocol using mc_bin_client as base
