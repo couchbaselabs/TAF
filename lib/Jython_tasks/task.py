@@ -6028,7 +6028,7 @@ class ConcurrentFailoverTask(Task):
     def __init__(self, task_manager, master, servers_to_fail,
                  disk_location=None, disk_size=200,
                  expected_fo_nodes=1, monitor_failover=True,
-                 task_type="induce_failure"):
+                 task_type="induce_failure", grace_timeout=5):
         """
         :param servers_to_fail: Dict of nodes to fail mapped with their
                                 corresponding failure method.
@@ -6046,7 +6046,7 @@ class ConcurrentFailoverTask(Task):
         self.master = master
         self.servers_to_fail = servers_to_fail
         self.timeout = self.initial_fo_settings.timeout
-        self.grace_period_for_fo = 5
+        self.grace_timeout = grace_timeout
 
         # Takes either of induce_failure / revert_failure
         self.task_type = task_type
@@ -6093,8 +6093,12 @@ class ConcurrentFailoverTask(Task):
 
     def call(self):
         self.start_task()
-
+        status, current_orchestrator = \
+            global_vars.cluster_util.get_orchestrator_node(
+            self.master)
         for node, failure_info in self.servers_to_fail.items():
+            if current_orchestrator == node.ip:
+                self.grace_timeout += 15
             self.sub_tasks.append(
                 NodeFailureTask(self.task_manager, node, failure_info,
                                 task_type=self.task_type))
@@ -6117,7 +6121,7 @@ class ConcurrentFailoverTask(Task):
 
             if self.result and self.monitor_failover:
                 self.log.info("Wait for failover to actually start running")
-                timeout = time.time() + 5
+                timeout = time.time() + self.grace_timeout
                 task_id_changed = False
                 while not task_id_changed and int(time.time()) < timeout:
                     server_task = self.rest.ns_server_tasks(

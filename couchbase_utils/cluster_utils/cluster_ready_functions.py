@@ -171,6 +171,27 @@ class ClusterUtils:
         shell.disconnect()
 
     @staticmethod
+    def get_orchestrator_node(node):
+        orchestrator_node = None
+        status = None
+        retry_index = 0
+        max_retry = 10
+        rest = RestConnection(node)
+        while retry_index < max_retry:
+            status, content = rest.get_terse_cluster_info()
+            json_content = json.loads(content)
+            orchestrator_node = json_content["orchestrator"]
+            if orchestrator_node == "undefined":
+                sleep(2, message="orchestrator='undefined'", log_type="test")
+                retry_index += 1
+            else:
+                break
+        orchestrator_node = \
+            orchestrator_node.split("@")[1] \
+                .replace("\\", '').replace("'", "")
+        return status, orchestrator_node
+
+    @staticmethod
     def find_orchestrator(cluster, node=None):
         """
         Update the orchestrator of the cluster
@@ -178,25 +199,8 @@ class ClusterUtils:
         :param node: Any node that is still part of the cluster
         :return:
         """
-        retry_index = 0
-        max_retry = 12
-        orchestrator_node = None
-        status = None
         node = cluster.master if node is None else node
-
-        rest = RestConnection(node)
-        while retry_index < max_retry:
-            status, content = rest.get_terse_cluster_info()
-            json_content = json.loads(content)
-            orchestrator_node = json_content["orchestrator"]
-            if orchestrator_node == "undefined":
-                sleep(1, message="orchestrator='undefined'", log_type="test")
-            else:
-                break
-        orchestrator_node = \
-            orchestrator_node.split("@")[1] \
-            .replace("\\", '').replace("'", "")
-
+        status, orchestrator_node = ClusterUtils.get_orchestrator_node(node)
         cluster.master = [server for server in cluster.servers
                           if server.ip == orchestrator_node][0]
         # Type cast to str - match the previous dial/eval return value

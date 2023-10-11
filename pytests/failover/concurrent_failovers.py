@@ -182,7 +182,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Service / Data loss check
             if service == CbServer.Services.KV:
                 if self.min_bucket_replica > 0 \
-                        and node_count[CbServer.Services.KV] > 2:
+                        and node_count[CbServer.Services.KV] > 1:
                     is_safe = True
             # elif service == CbServer.Services.INDEX:
             #     if node_count[CbServer.Services.INDEX] > 1:
