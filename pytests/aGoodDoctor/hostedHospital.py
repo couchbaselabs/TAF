@@ -708,7 +708,6 @@ class Murphy(BaseTestCase, OPD):
                     self.task_manager.get_task_result(self.rebalance_task)
                     self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                     self.print_stats()
-                    self.loop += 1
                     self.sleep(60, "Sleep for 60s after rebalance")
                 # turn cluster off and back on
                 if self.turn_cluster_off:
@@ -719,6 +718,7 @@ class Murphy(BaseTestCase, OPD):
                     self.assertTrue(cluster_on_result, "Failed to turn on cluster")
                     self.sleep(60, "Wait after cluster is turned on")
                 self.restart_query_load(num=10)
+                self.loop += 1
 
             self.loop = 0
             self.rebl_nodes = -self.rebl_nodes
@@ -735,7 +735,6 @@ class Murphy(BaseTestCase, OPD):
                     self.task_manager.get_task_result(self.rebalance_task)
                     self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                     self.print_stats()
-                    self.loop += 1
                     self.sleep(60, "Sleep for 60s after rebalance")
                 # turn cluster off and back on
                 if self.turn_cluster_off:
@@ -745,7 +744,6 @@ class Murphy(BaseTestCase, OPD):
                     cluster_on_result = self.drClusterOnOff.turn_on_cluster()
                     self.assertTrue(cluster_on_result, "Failed to turn on cluster")
                     self.sleep(60, "Wait after cluster is turned on")
-
                 self.loop += 1
 
         if v_scaling or vh_scaling:
