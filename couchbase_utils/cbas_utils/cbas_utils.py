@@ -2877,7 +2877,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             parse_json_string=0, convert_decimal_to_double=0, timezone="",
             create_dv=True, validate_error_msg=False, username=None,
             password=None, expected_error=None, expected_error_code=None,
-            timeout=300, analytics_timeout=300):
+            timeout=300, analytics_timeout=300, embed_filter_values=True):
         """
         Creates a dataset for an external resource like AWS S3 bucket /
         Azure container / GCP buckets.
@@ -2982,6 +2982,8 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 else:
                     with_parameters["decimal-to-double"] = False
 
+        with_parameters["embed-filter-values"] = embed_filter_values
+
         cmd += " WITH {0};".format(json.dumps(with_parameters))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
@@ -3004,7 +3006,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             redact_warning=None, header=None, null_string=None,
             include=None, exclude=None, name_length=30, fixed_length=False,
             no_of_objs=1, parse_json_string=0, convert_decimal_to_double=0,
-            timezone=""):
+            timezone="", embed_filter_values=True):
         """
         Creates a Dataset object for external datasets.
         :param external_container_names: <dict> {"external_container_name":"region"}
@@ -3043,8 +3045,9 @@ class External_Dataset_Util(Remote_Dataset_Util):
 
             dataset.dataset_properties["external_container_name"] = external_container
             dataset.dataset_properties["object_construction_def"] = object_construction_def
-            dataset.dataset_properties["paths_on_external_container"] = random.choice(
-                paths_on_external_container)
+            if paths_on_external_container is not None:
+                dataset.dataset_properties["path_on_external_container"] = random.choice(
+                    json.loads(paths_on_external_container))
             dataset.dataset_properties["file_format"] = file_format
             dataset.dataset_properties["redact_warning"] = redact_warning
             dataset.dataset_properties["header"] = header
@@ -3054,6 +3057,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             dataset.dataset_properties["parse_json_string"] = parse_json_string
             dataset.dataset_properties["convert_decimal_to_double"] = convert_decimal_to_double
             dataset.dataset_properties["timezone"] = timezone
+            dataset.dataset_properties["embed_filter_values"] = embed_filter_values
 
             dataverse.external_datasets[dataset.name] = dataset
 
@@ -4938,9 +4942,9 @@ class CbasUtil(CBOUtil):
             shell = RemoteMachineShellConnection(server)
 
         """
-        This check is requires as the mode param being used while running 
-        analytical query is not a released feature. Currently handle 
-        returned by the query is in incorrect format, where http protocol is 
+        This check is requires as the mode param being used while running
+        analytical query is not a released feature. Currently handle
+        returned by the query is in incorrect format, where http protocol is
         being returned with ssl port
         """
         if "18095" in handle:
