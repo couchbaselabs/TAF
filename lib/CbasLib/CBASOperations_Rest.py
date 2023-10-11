@@ -7,7 +7,6 @@ Created on Sep 25, 2017
 import json
 import urllib
 import requests
-import numbers
 
 from Cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
@@ -75,31 +74,6 @@ class CBASHelper(RestConnection):
             self.log.error("/analytics/service status:{0}, content:{1}"
                            .format(status, content))
             raise Exception("Analytics Service API failed")
-
-    def get_json(self, content="", json_data=None):
-        if not json_data:
-            json_data = json.loads(content)
-
-        def _convert_json(parsed_json):
-            new_json = None
-            if isinstance(parsed_json, list):
-                new_json = []
-                for item in parsed_json:
-                    new_json.append(_convert_json(item))
-            elif isinstance(parsed_json, dict):
-                new_json = {}
-                for key, value in parsed_json.items():
-                    key = str(key)
-                    new_json[key] = _convert_json(value)
-            elif isinstance(parsed_json, unicode):
-                new_json = str(parsed_json)
-            elif isinstance(parsed_json,
-                            (int, float, long, numbers.Real, numbers.Integral,
-                             str)):
-                new_json = parsed_json
-            return new_json
-
-        return _convert_json(json_data)
 
     def execute_parameter_statement_on_cbas(self, statement, mode, pretty=True,
                                             timeout=70, client_context_id=None,

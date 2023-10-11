@@ -24,6 +24,7 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from security_config import trust_all_certs
 from nebula_utils.nebula_utils import NebulaUtils
+from awsLib.s3_data_helper import perform_S3_operation
 
 
 class OnPremBaseTest(CouchbaseBaseTest):

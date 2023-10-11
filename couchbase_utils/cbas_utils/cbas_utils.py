@@ -39,20 +39,20 @@ from Cb_constants import CbServer
 
 class BaseUtil(object):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
         self.log = logger.get("test")
         self.task = server_task
+        self.run_query_using_sdk = run_query_using_sdk
 
-    def createConn(self, cluster, bucket, username=None, password=None):
-        cbas_helper = CBASHelper(cluster.cbas_cc_node)
-        cbas_helper.createConn(bucket, username, password)
-
-    def closeConn(self, cluster):
-        cbas_helper = CBASHelper(cluster.cbas_cc_node)
-        cbas_helper.closeConn()
+    def get_cbas_helper_object(self, cluster):
+        if self.run_query_using_sdk:
+            from CbasLib.CBASOperations_JavaSDK import CBASHelper as SDK_CBASHelper
+            return SDK_CBASHelper(cluster)
+        else:
+            return CBASHelper(cluster.cbas_cc_node)
 
     def execute_statement_on_cbas_util(
             self, cluster, statement, mode=None, timeout=300,
@@ -72,7 +72,7 @@ class BaseUtil(object):
         :param scan_consistency str
         :param scan_wait str
         """
-        cbas_helper = CBASHelper(cluster.cbas_cc_node)
+        cbas_helper = self.get_cbas_helper_object(cluster)
         pretty = "true"
         try:
             self.log.debug("Running query on cbas: %s" % statement)
@@ -130,7 +130,7 @@ class BaseUtil(object):
         :param analytics_timeout int, timeout for analytics workbench
         :param parameters dict,
         """
-        cbas_helper = CBASHelper(cluster.cbas_cc_node)
+        cbas_helper = self.get_cbas_helper_object(cluster)
         pretty = "true"
         try:
             self.log.debug("Running query on cbas: %s" % statement)
@@ -346,11 +346,11 @@ class BaseUtil(object):
 
 class Dataverse_Util(BaseUtil):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(Dataverse_Util, self).__init__(server_task)
+        super(Dataverse_Util, self).__init__(server_task, run_query_using_sdk)
         # Initiate dataverses dict with Dataverse object for Default dataverse
         self.dataverses = dict()
         default_dataverse_obj = Dataverse()
@@ -627,11 +627,11 @@ class Dataverse_Util(BaseUtil):
 
 class Link_Util(Dataverse_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(Link_Util, self).__init__(server_task)
+        super(Link_Util, self).__init__(server_task, run_query_using_sdk)
 
     def validate_link_in_metadata(
             self, cluster, link_name, dataverse_name, link_type="Local",
@@ -1048,11 +1048,12 @@ class Link_Util(Dataverse_Util):
 
 class RemoteLink_Util(Link_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(RemoteLink_Util, self).__init__(server_task)
+        super(RemoteLink_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
     def create_remote_link(
             self, cluster, link_properties, username=None, password=None,
@@ -1187,11 +1188,12 @@ class RemoteLink_Util(Link_Util):
 
 class ExternalLink_Util(RemoteLink_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(ExternalLink_Util, self).__init__(server_task)
+        super(ExternalLink_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
     def create_external_link(
             self, cluster, link_properties, username=None, password=None,
@@ -1337,11 +1339,11 @@ class ExternalLink_Util(RemoteLink_Util):
 
 class KafkaLink_Util(ExternalLink_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(KafkaLink_Util, self).__init__(server_task)
+        super(KafkaLink_Util, self).__init__(server_task, run_query_using_sdk)
 
     def create_kafka_link(
             self, cluster, link_name, external_db_details,
@@ -1486,11 +1488,12 @@ class KafkaLink_Util(ExternalLink_Util):
 
 class Dataset_Util(KafkaLink_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(Dataset_Util, self).__init__(server_task)
+        super(Dataset_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
     def validate_dataset_in_metadata(
             self, cluster, dataset_name, dataverse_name=None, username=None,
@@ -2436,7 +2439,6 @@ class Dataset_Util(KafkaLink_Util):
                         "_default").num_items
 
     def get_datasets(self, cluster, retries=10, fields=[]):
-        cbas_helper = CBASHelper(cluster.cbas_cc_node)
         datasets_created = []
         datasets_query = "select value regexp_replace(ds.DataverseName,\"/\",\".\") || " \
                          "\".\" || ds.DatasetName from Metadata.`Dataset` as ds " \
@@ -2451,7 +2453,7 @@ class Dataset_Util(KafkaLink_Util):
                 analytics_timeout=300)
             if status.encode('utf-8') == 'success' and results:
                 if fields:
-                    results = cbas_helper.get_json(json_data=results)
+                    results = CBASHelper.get_json(json_data=results)
                     for result in results:
                         ds = result['d']
                         datasets_created.append(
@@ -2473,11 +2475,12 @@ class Dataset_Util(KafkaLink_Util):
 
 class Remote_Dataset_Util(Dataset_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(Remote_Dataset_Util, self).__init__(server_task)
+        super(Remote_Dataset_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
     def create_remote_dataset(
             self, cluster, dataset_name, kv_entity, link_name,
@@ -2850,11 +2853,12 @@ class Remote_Dataset_Util(Dataset_Util):
 
 class External_Dataset_Util(Remote_Dataset_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(External_Dataset_Util, self).__init__(server_task)
+        super(External_Dataset_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
     @staticmethod
     def get_external_dataset_spec(cbas_spec):
@@ -3174,11 +3178,12 @@ class External_Dataset_Util(Remote_Dataset_Util):
 
 class StandAlone_Collection_Util(External_Dataset_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(StandAlone_Collection_Util, self).__init__(server_task)
+        super(StandAlone_Collection_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
     def copy_from_external_resource_into_standalone_collection(
             self, cluster, collection_name, aws_bucket_name,
@@ -3756,11 +3761,12 @@ class StandAlone_Collection_Util(External_Dataset_Util):
 
 class Synonym_Util(StandAlone_Collection_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(Synonym_Util, self).__init__(server_task)
+        super(Synonym_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
     def validate_synonym_in_metadata(
             self, cluster, synonym_name, synonym_dataverse_name, cbas_entity_name,
@@ -4085,11 +4091,12 @@ class Synonym_Util(StandAlone_Collection_Util):
 
 class Index_Util(Synonym_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(Index_Util, self).__init__(server_task)
+        super(Index_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
     def verify_index_created(self, cluster, index_name, dataset_name, indexed_fields):
         """
@@ -4404,11 +4411,11 @@ class Index_Util(Synonym_Util):
 
 class UDFUtil(Index_Util):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(UDFUtil, self).__init__(server_task)
+        super(UDFUtil, self).__init__(server_task, run_query_using_sdk)
 
     def create_udf(self, cluster, name, dataverse=None, or_replace=False,
                    parameters=[], body=None, if_not_exists=False,
@@ -4717,11 +4724,11 @@ class UDFUtil(Index_Util):
 
 class CBOUtil(UDFUtil):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(CBOUtil, self).__init__(server_task)
+        super(CBOUtil, self).__init__(server_task, run_query_using_sdk)
 
     """
     Method creates samples on collection specified.
@@ -4776,11 +4783,11 @@ class CBOUtil(UDFUtil):
 
 class CbasUtil(CBOUtil):
 
-    def __init__(self, server_task=None):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
         """
-        super(CbasUtil, self).__init__(server_task)
+        super(CbasUtil, self).__init__(server_task, run_query_using_sdk)
 
         self.travel_sample_inventory_views = {
             "airline_view": 149,
@@ -6707,7 +6714,7 @@ class BackupUtils(object):
         status, content, response = cbas_helper.backup_cbas(
             username=username, password=password, bucket=bucket,
             include=include, exclude=exclude, level=level)
-        return status, cbas_helper.get_json(content), response
+        return status, CBASHelper.get_json(content), response
 
     def rest_restore_cbas(self, cluster, username=None, password=None, bucket="",
                           include=[], exclude=[], remap="", level="cluster",
@@ -6717,4 +6724,4 @@ class BackupUtils(object):
             username=username, password=password, bucket=bucket,
             include=include, exclude=exclude, remap=remap,
             level=level, backup=backup)
-        return status, cbas_helper.get_json(content), response
+        return status, CBASHelper.get_json(content), response

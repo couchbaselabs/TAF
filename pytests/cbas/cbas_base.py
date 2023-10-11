@@ -19,6 +19,7 @@ from BucketLib.bucket import Bucket
 from security_utils.security_utils import SecurityUtils
 from BucketLib.BucketOperations import BucketHelper
 from tpch_utils.tpch_utils import TPCHUtil
+from sdk_client3 import SDKClientPool
 
 
 class CBASBaseTest(BaseTestCase):
@@ -49,6 +50,8 @@ class CBASBaseTest(BaseTestCase):
                 "ipv4_only": False, "ipv6_only": False})
 
         super(CBASBaseTest, self).setUp()
+
+        self.use_sdk_for_cbas = self.input.param("use_sdk_for_cbas", False)
 
         """
         Cluster node services. Parameter value format
@@ -193,7 +196,7 @@ class CBASBaseTest(BaseTestCase):
             "cbas_memory_quota_percent", 100))
         self.bucket_size = self.input.param("bucket_size", 256)
 
-        self.cbas_util = CbasUtil(self.task)
+        self.cbas_util = CbasUtil(self.task, self.use_sdk_for_cbas)
 
         self.tpch_util = TPCHUtil(self)
 
@@ -288,6 +291,11 @@ class CBASBaseTest(BaseTestCase):
                 self.cbas_util.cleanup_cbas(cluster, retry=1)"""
 
             cluster.otpNodes = cluster.rest.node_statuses()
+
+            if self.use_sdk_for_cbas:
+                cluster.sdk_client_pool = SDKClientPool()
+                cluster.sdk_client_pool.create_cluster_clients(
+                    cluster, cluster.nodes_in_cluster)
 
             # Wait for analytics service to be up.
             if hasattr(cluster, "cbas_cc_node"):
