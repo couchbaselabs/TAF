@@ -277,22 +277,6 @@ class CBASBaseTest(BaseTestCase):
                     self.fail("Analytics service did not come up even after 10\
                                  mins of wait after initialisation")
 
-                if self.input.param("service_storage_format", None) :
-                    status, content, _ = self.cbas_util.fetch_service_parameter_configuration_on_cbas(self.cluster)
-
-                    if self.input.param("service_storage_format", None) != content["storageFormat"]:
-                        status, content, _ = self.cbas_util.update_service_parameter_configuration_on_cbas(
-                            cluster, {"storageFormat": self.input.param("service_storage_format")})
-                        if not status:
-                            self.log.error(str(content))
-                            self.fail("Error while setting storage format for analytics datasets")
-                        status, content, _ = self.cbas_util.restart_analytics_cluster_uri(self.cluster)
-                        if not status:
-                            self.log.error(str(content))
-                            self.fail("Error while restarting analytics cluster.")
-                        if not self.cbas_util.wait_for_cbas_to_recover(self.cluster):
-                            self.fail("Analytics service failed to recover from restart")
-
             if self.input.param("n2n_encryption", False):
 
                 self.security_util = SecurityUtils(self.log)
