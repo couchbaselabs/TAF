@@ -923,6 +923,20 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         super(DiskAutoFailoverBasetest, self).tearDown()
 
     def enable_disk_autofailover(self):
+        if self.disk_timeout < 5:
+            shell = RemoteMachineShellConnection(self.orchestrator)
+            curl_addr = "localhost:%s" % self.orchestrator.port
+            if CbServer.use_https:
+                curl_addr = " -k https://%s" % curl_addr
+
+            shell.execute_command(
+                "curl %s/diag/eval -u %s:%s -d 'ns_config:set("
+                "{menelaus_web_auto_failover,"
+                " min_data_disk_issues_timeperiod}, 1).'"
+                % (curl_addr,
+                   self.orchestrator.rest_username,
+                   self.orchestrator.rest_password))
+            shell.disconnect()
         status = self.rest.update_autofailover_settings(
             True, self.timeout, enable_disk_failure=True,
             disk_timeout=self.disk_timeout)

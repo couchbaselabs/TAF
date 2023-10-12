@@ -69,10 +69,10 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
 
     def test_disk_autofailover_rest_api(self):
         disk_timeouts = self.input.param("disk_failover_timeouts",
-                                         "5,10,30,60,120")
+                                         "1,5,10,30,60,120,3600")
         disk_timeouts = disk_timeouts.split(",")
         for disk_timeout in disk_timeouts:
-            self.disk_timeout = disk_timeout
+            self.disk_timeout = int(disk_timeout)
             self.enable_disk_autofailover_and_validate()
             self.sleep(10)
             self.disable_disk_autofailover_and_validate()
