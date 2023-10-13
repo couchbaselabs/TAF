@@ -485,7 +485,8 @@ class RebalanceTask(Task):
         for r_node in self.rest.get_nodes(inactive_added=True,
                                           inactive_failed=True):
             for server in self.cluster.servers:
-                if r_node.ip == server.ip and r_node.port == server.port:
+                if r_node.ip == server.ip and int(r_node.port) == \
+                        int(server.port):
                     if r_node.clusterMembership not in valid_membership:
                         continue
                     if ClusterRun.is_enabled:

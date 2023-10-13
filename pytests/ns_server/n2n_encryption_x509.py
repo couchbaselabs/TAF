@@ -12,6 +12,8 @@ class N2nEncryptionX509(CollectionBase):
     def setUp(self):
         super(N2nEncryptionX509, self).setUp()
         CbServer.use_https = False  # set it to False initially
+        for server in self.cluster.servers:
+            self.set_ports_for_server(server, "non_ssl")
         self.log.info("Setting use_https to False")
 
         self.x509enable = self.input.param("x509enable", True)
@@ -190,10 +192,21 @@ class N2nEncryptionX509(CollectionBase):
             if self.x509enable:
                 if CbServer.use_https:
                     CbServer.use_https = False
+                for server in self.cluster.servers:
+                    self.set_ports_for_server(server, "non_ssl")
                 self.upload_x509_certs(servers=add_nodes)
             if level in ["strict", "control", "all"]:
                 self.set_n2n_encryption_level_on_nodes(nodes=[self.cluster.master],
                                                        level=level)
+            if level == "disable":
+                CbServer.use_https = False
+                for server in self.cluster.servers:
+                    self.set_ports_for_server(server, "non_ssl")
+            else:
+                CbServer.use_https = True
+                for server in self.cluster.servers:
+                    self.set_ports_for_server(server, "ssl")
+
             self.log.info("Performing rebalance operation with x509: {0}, n2nencryption: {1}".
                           format(self.x509enable, level))
 
