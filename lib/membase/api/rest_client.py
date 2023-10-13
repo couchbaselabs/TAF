@@ -3292,12 +3292,26 @@ class RestConnection(newRC):
     user_id=userid of user to act on'''
 
     def delete_user_roles(self, user_id):
-        url = "/settings/rbac/users/" + user_id
+        url = "settings/rbac/users/" + user_id
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'DELETE')
         if not status:
             raise Exception(content)
         return json.loads(content)
+
+    def add_external_user(self, username, roles):
+        """
+        Add an external user and assign roles
+        An external user can either be an SSO user or an LDAP user
+        """
+        url = "settings/rbac/users/external/" + username
+        api = self.baseUrl + url
+        payload = urllib.urlencode({"roles": roles})
+        status, content, header = self._http_request(api, 'PUT', payload)
+        if not status:
+            raise Exception(content)
+        return status, content, header
+
 
     '''
     Return list of permission with True/False if user has permission or not
