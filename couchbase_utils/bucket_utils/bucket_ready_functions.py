@@ -3007,6 +3007,7 @@ class BucketUtils(ScopeUtils):
             compressionMode=compression_mode,
             bucket_durability=bucket_durability, bucketWidth=bucket_width,
             bucketWeight=bucket_weight,
+            bucket_rank=bucket_rank,
             history_retention_collection_default=history_retention_collection_default,
             history_retention_seconds=history_retention_seconds,
             history_retention_bytes=history_retention_bytes,
