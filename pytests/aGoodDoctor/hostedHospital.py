@@ -581,6 +581,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.mutation_perc = self.input.param("mutation_perc", 100)
         for bucket in self.cluster.buckets:
+            self.original_ops = bucket.loadDefn["ops"]
             bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
             self.generate_docs(bucket=bucket)
         self.tasks = self.perform_load(wait_for_load=False)

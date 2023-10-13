@@ -396,7 +396,7 @@ class OPD:
                                                   cmd.get("dl", 0),
                                                   cmd.get("ex", 0),
                                                   cmd.get("workers", pc),
-                                                  cmd.get("ops", bucket.loadDefn.get("ops")),
+                                                  cmd.get("ops", self.original_ops),
                                                   cmd.get("loadType", None),
                                                   cmd.get("keyType", self.key_type),
                                                   cmd.get("valueType", valType),
