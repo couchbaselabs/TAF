@@ -11,7 +11,7 @@ import os.path
 import re
 import threading
 import datetime
-from random import sample, choice
+from random import sample, choice, randint
 from time import time
 
 import requests
@@ -2444,6 +2444,10 @@ class BucketUtils(ScopeUtils):
             for param_name, param_value in bucket_defaults.items():
                 buckets_spec["buckets"][bucket_name][param_name] = param_value
 
+            if Bucket.rank not in bucket_defaults:
+                buckets_spec["buckets"][bucket_name][Bucket.rank] = \
+                    randint(0, 1000)
+
             # Expand scopes further within created bucket definition
             BucketUtils.expand_scope_spec(buckets_spec, bucket_name)
             bucket_obj_index += 1
@@ -2578,6 +2582,7 @@ class BucketUtils(ScopeUtils):
                 self.specs_for_serverless(buckets_spec)
             buckets_spec = BucketUtils.expand_buckets_spec(
                 rest_conn, buckets_spec)
+
             for bucket_name, bucket_spec in buckets_spec.items():
                 if bucket_spec[MetaConstants.BUCKET_TAR_SRC]:
                     load_data_from_existing_tar = True
@@ -2757,11 +2762,12 @@ class BucketUtils(ScopeUtils):
         if len(buckets) == 0:
             table.add_row(["No buckets"])
         else:
-            table.set_headers(["Bucket", "Type", "Storage", "Replicas",
-                               "Durability", "TTL", "Items", "Vbuckets",
-                               "RAM Quota", "RAM Used", "Disk Used", "ARR"])
+            table.set_headers(
+                ["Bucket", "Type / Storage", "Replicas", "Rank", "Vbuckets",
+                 "Durability", "TTL", "Items",
+                 "RAM Quota / Used", "Disk Used", "ARR"])
             if CbServer.cluster_profile == "serverless":
-                table.headers += ["Width/Weight"]
+                table.headers += ["Width / Weight"]
             for bucket in buckets:
                 num_vbuckets = resident_ratio = storage_backend = "-"
                 if bucket.bucketType == Bucket.Type.MEMBASE:
@@ -2773,12 +2779,13 @@ class BucketUtils(ScopeUtils):
                         resident_ratio = 100
                     num_vbuckets = str(bucket.num_vbuckets)
                 bucket_data = [
-                    bucket.name, bucket.bucketType, storage_backend,
-                    str(bucket.replicaNumber), str(bucket.durability_level),
+                    bucket.name,
+                    "{} / {}".format(bucket.bucketType, storage_backend),
+                    str(bucket.replicaNumber), str(bucket.rank), num_vbuckets,
+                    str(bucket.durability_level),
                     str(bucket.maxTTL), str(bucket.stats.itemCount),
-                    num_vbuckets,
-                    humanbytes(str(bucket.stats.ram)),
-                    humanbytes(str(bucket.stats.memUsed)),
+                    "{} / {}".format(humanbytes(str(bucket.stats.ram)),
+                                     humanbytes(str(bucket.stats.memUsed))),
                     humanbytes(str(bucket.stats.diskUsed)),
                     resident_ratio]
                 if CbServer.cluster_profile == "serverless":
@@ -4837,6 +4844,9 @@ class BucketUtils(ScopeUtils):
             if Bucket.conflictResolutionType in parsed:
                 bucket.conflictResolutionType = \
                     parsed[Bucket.conflictResolutionType]
+
+            if Bucket.rank in parsed:
+                bucket.rank = parsed[Bucket.rank]
 
         # Sanitise the value to the expected value for cb buckets
         if bucket.bucketType == 'membase':
