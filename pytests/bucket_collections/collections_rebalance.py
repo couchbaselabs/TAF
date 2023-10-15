@@ -1140,7 +1140,7 @@ class CollectionsRebalance(CollectionBase):
                                                  tasks=tasks)
         elif rebalance_operation == "forced_hard_failover_rebalance_out":
             failover_nodes = self.get_failover_nodes()
-            rebalance = self.forced_failover_operation(self.cluster,
+            rebalance = self.forced_failover_operation(known_nodes=self.cluster.servers[:self.nodes_init],
                                                        failover_nodes=failover_nodes)
         # Updating collection maxTTL value during rebalance
         if self.update_max_ttl:
