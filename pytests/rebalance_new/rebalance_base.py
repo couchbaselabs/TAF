@@ -2,7 +2,6 @@ import json
 import os
 from math import ceil
 
-from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from bucket_collections.collections_base import CollectionBase
@@ -257,10 +256,11 @@ class RebalanceBaseTest(BaseTestCase):
         """
         if not to_remove:
             to_remove = []
-        serverinfo = self.servers[0]
-        rest = RestConnection(serverinfo)
+        rest = RestConnection(self.servers[0])
+        nodes = rest.get_nodes(inactive_added=True)
         zones = ["Group 1"]
-        nodes_in_zone = {"Group 1": [serverinfo.ip]}
+        nodes_in_zone = {"Group 1": [node for node in nodes
+                                     if node.ip == self.servers[0].ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
         if int(self.zone) > 1:
@@ -279,11 +279,14 @@ class RebalanceBaseTest(BaseTestCase):
                 if self.servers[i].ip in nodes_in_cluster \
                         and self.servers[i].ip not in nodes_to_remove:
                     server_group = i % int(self.zone)
-                    nodes_in_zone[zones[server_group]].append(self.servers[i])
+                    nodes_in_zone[zones[server_group]].append(
+                        [node for node in nodes
+                         if node.ip == self.servers[i].ip][0])
             # Shuffle the nodesS
             for i in range(1, self.zone):
-                node_in_zone = list(set(nodes_in_zone[zones[i]]) -
-                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))
+                node_in_zone = list(
+                    set(nodes_in_zone[zones[i]])
+                    - set([node for node in rest.get_nodes_in_zone(zones[i])]))
                 rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
         otpnodes = [node.id for node in rest.node_statuses()]
         nodes_to_remove = [node.id for node in rest.node_statuses()

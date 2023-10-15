@@ -3083,7 +3083,7 @@ class BucketUtils(ScopeUtils):
                 verified = True
                 for bucket in cluster.buckets:
                     verified &= self.wait_till_total_numbers_match(
-                        master, bucket, timeout_in_seconds=(timeout or 500),
+                        cluster, bucket, timeout_in_seconds=(timeout or 500),
                         num_zone=num_zone)
                 if not verified:
                     msg = "Lost items!!! Replication was completed " \
@@ -4892,7 +4892,7 @@ class BucketUtils(ScopeUtils):
         bucket.stats.ram = parsed['quota']['ram']
         return bucket
 
-    def wait_till_total_numbers_match(self, master, bucket,
+    def wait_till_total_numbers_match(self, cluster, bucket,
                                       timeout_in_seconds=120,
                                       num_zone=1):
         self.log.debug('Waiting for sum_of_curr_items == total_items')
@@ -4900,7 +4900,7 @@ class BucketUtils(ScopeUtils):
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
             try:
-                if self.verify_items_count(master, bucket, num_zone=num_zone):
+                if self.verify_items_count(cluster, bucket, num_zone=num_zone):
                     verified = True
                     break
                 else:
@@ -4909,7 +4909,7 @@ class BucketUtils(ScopeUtils):
                 self.log.error("Unable to retrieve stats for any node!")
                 break
         if not verified:
-            rest = RestConnection(master)
+            rest = RestConnection(cluster.master)
             RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
         return verified
 
@@ -4942,20 +4942,56 @@ class BucketUtils(ScopeUtils):
                     raise Exception("Active and replica vbucket list"
                                     "are overlapped")
 
-    def verify_items_count(self, master, bucket, num_attempt=3, timeout=2,
+    def get_actual_replica(self, cluster, bucket, num_zone):
+        servers = self.cluster_util.get_kv_nodes(cluster)
+        available_replicas = bucket.replicaNumber
+        if num_zone > 1:
+            """
+            replica number will be either replica number or one less than the zone number
+            or min number of nodes in the zone
+            zone =2: 
+                1 node each, replica set =1, actual =1
+                1 node each, replica set >1, actual = 1
+                2 nodes each, replica set =2, actual =2
+                2 nodes each, replica set =3, actual =2
+                3 nodes each, replica set =3, actual =3
+                group1: 2 nodes, group 1: 1 node, replica_set >1, actual = 1
+                group1: 3 nodes, group 1: 2 node, replica_set >=2, actual = 2
+                group1: 4 nodes, group 1: 5 node, replica_set =3, actual = 3
+
+            zone =3:
+                1 node each, replica_set=2, actual =2
+                2 nodes each, relica_set =3, actual =3
+                3 nodes each,repica_set = 3, actaul = 3
+                num_node_in_each_group: [1, 2, 1], replica_set=3, actual = 2
+                num_node_in_each_group: [2, 2, 1], replica_set=3, actual = 3
+                num_node_in_each_group: [3, 2, 1], replica_set=3, actual = 3
+                num_node_in_each_group: [3, 3, 1], replica_set=3, actual = 3
+            """
+            if bucket.replicaNumber >= num_zone:
+                available_replicas = self.get_min_nodes_in_zone(cluster)
+                if available_replicas > bucket.replicaNumber:
+                    available_replicas = bucket.replicaNumber
+            self.log.info(
+                "available_replicas considered {0}".format(available_replicas))
+        elif len(servers) <= bucket.replicaNumber:
+            available_replicas = len(servers) - 1
+        return available_replicas
+
+    def verify_items_count(self, cluster, bucket, num_attempt=3, timeout=2,
                            num_zone=1):
         # get the #of buckets from rest
-        rest = RestConnection(master)
-        replica_factor = bucket.replicaNumber
+        rest = RestConnection(cluster.master)
         vbucket_active_sum = 0
         vbucket_replica_sum = 0
         vbucket_pending_sum = 0
         all_server_stats = []
         stats_received = True
         nodes = rest.get_nodes()
-        cbstat = Cbstats(master)
-        bucket_helper = BucketHelper(master)
-        active_vbucket_differ_count = len(rest.get_nodes())
+        cbstat = Cbstats(cluster.master)
+        bucket_helper = BucketHelper(cluster.master)
+        active_vbucket_differ_count = len(nodes)
+        replica_factor = self.get_actual_replica(cluster, bucket, num_zone)
         for server in nodes:
             # get the stats
             server_stats = bucket_helper.get_bucket_stats_for_node(
@@ -5019,23 +5055,16 @@ class BucketUtils(ScopeUtils):
         else:
             raise Exception("Bucket {0} stats doesnt contain 'curr_items_tot':"
                             .format(bucket))
-        if num_zone > 1:
-            num_nodes = num_zone
-        else:
-            num_nodes = len(nodes)
-        if replica_factor >= num_nodes:
-            self.log.warn("Number of zones/nodes is less than replica requires")
-            expected_replica_vbucket = max_vbuckets * (num_nodes - 1)
-            delta = (curr_items * num_nodes) - master_stats["curr_items_tot"]
-        else:
-            expected_replica_vbucket = (max_vbuckets * replica_factor)
-            delta = curr_items * (replica_factor + 1) - master_stats["curr_items_tot"]
+
+        expected_replica_vbucket = max_vbuckets * replica_factor
+        delta = curr_items * (replica_factor + 1) - master_stats["curr_items_tot"]
         if vbucket_active_sum != max_vbuckets:
             raise Exception("vbucket_active_sum actual {0} and expected {1}"
                             .format(vbucket_active_sum, max_vbuckets))
         elif vbucket_replica_sum != expected_replica_vbucket:
             raise Exception("vbucket_replica_sum actual {0} and expected {1}"
-                            .format(vbucket_replica_sum, expected_replica_vbucket))
+                            .format(vbucket_replica_sum,
+                                    expected_replica_vbucket))
         else:
             self.log.debug('vbucket_active_sum: {0}'
                            'vbucket_replica_sum: {1}'

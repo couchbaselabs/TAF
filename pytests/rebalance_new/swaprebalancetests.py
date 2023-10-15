@@ -101,7 +101,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         timeout = 600
         for bucket in self.cluster.buckets:
             verified = self.bucket_util.wait_till_total_numbers_match(
-                master, bucket, timeout_in_seconds=timeout)
+                self.cluster, bucket, timeout_in_seconds=timeout)
             test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
                                       .format(timeout))
 

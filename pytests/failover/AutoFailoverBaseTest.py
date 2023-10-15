@@ -248,10 +248,11 @@ class AutoFailoverBaseTest(ClusterSetup):
         """
         if not to_remove:
             to_remove = []
-        serverinfo = self.orchestrator
-        rest = RestConnection(serverinfo)
+        rest = RestConnection(self.orchestrator)
+        nodes = rest.get_nodes(inactive_added=True)
         zones = ["Group 1"]
-        nodes_in_zone = {"Group 1": [serverinfo.ip]}
+        nodes_in_zone = {"Group 1": [node for node in nodes
+                                     if node.ip == self.orchestrator.ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
         if int(self.zone) > 1:
@@ -270,7 +271,9 @@ class AutoFailoverBaseTest(ClusterSetup):
                 if self.cluster.servers[i].ip in nodes_in_cluster \
                         and self.cluster.servers[i].ip not in nodes_to_remove:
                     server_group = i % int(self.zone)
-                    nodes_in_zone[zones[server_group]].append(self.cluster.servers[i])
+                    nodes_in_zone[zones[server_group]].append(
+                        [node for node in nodes
+                         if node.ip == self.cluster.servers[i].ip][0])
             # Shuffle the nodesS
             for i in range(1, self.zone):
                 node_in_zone = [node.ip for node in list(set(nodes_in_zone[zones[i]]) -

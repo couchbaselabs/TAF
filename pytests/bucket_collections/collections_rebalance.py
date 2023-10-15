@@ -959,10 +959,11 @@ class CollectionsRebalance(CollectionBase):
         Nodes are divided into groups iteratively. i.e: 1st node in Group 1,
         2nd in Group 2, 3rd in Group 1 & so on, when zone=2
         """
-        serverinfo = self.servers[0]
-        rest = RestConnection(serverinfo)
+        rest = RestConnection(self.servers[0])
+        nodes = rest.get_nodes(inactive_added=True)
         zones = ["Group 1"]
-        nodes_in_zone = {"Group 1": [serverinfo.ip]}
+        nodes_in_zone = {"Group 1": [node for node in nodes
+                                     if node.ip == self.servers[0].ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
         if int(self.num_zone) > 1:
@@ -979,7 +980,9 @@ class CollectionsRebalance(CollectionBase):
             for i in range(1, len(self.servers)):
                 if self.servers[i].ip in nodes_in_cluster:
                     server_group = i % int(self.num_zone)
-                    nodes_in_zone[zones[server_group]].append(self.servers[i])
+                    nodes_in_zone[zones[server_group]].append(
+                        [node for node in nodes
+                         if node.ip == self.servers[i].ip][0])
             # Shuffle the nodesS
             for i in range(1, self.num_zone):
                 node_in_zone = list(set(nodes_in_zone[zones[i]]) -
