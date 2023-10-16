@@ -1101,7 +1101,7 @@ class ClusterSetup(OnPremBaseTest):
             "ram_quota": self.bucket_size,
             "replica": self.num_replicas,
             "maxTTL": self.bucket_ttl,
-            "rank": self.bucket_rank,
+            "bucket_rank": self.bucket_rank,
             "compression_mode": self.compression_mode,
             "wait_for_warmup": True,
             "conflict_resolution": Bucket.ConflictResolution.SEQ_NO,
