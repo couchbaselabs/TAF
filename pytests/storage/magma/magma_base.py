@@ -261,7 +261,7 @@ class MagmaBaseTest(StorageBase):
 #                             "Indexer failed. KV:{}, Final:{}".
 #                             format(kv_items, final_count))
 
-    def get_magma_stats(self, bucket, servers=None):
+    def get_magma_stats(self, bucket, servers=None, field_to_grep=None):
         magma_stats_for_all_servers = dict()
         servers = servers or self.cluster.nodes_in_cluster
         if type(servers) is not list:
@@ -269,7 +269,7 @@ class MagmaBaseTest(StorageBase):
         for server in servers:
             result = dict()
             cbstat_obj = Cbstats(server)
-            result = cbstat_obj.magma_stats(bucket.name)
+            result = cbstat_obj.magma_stats(bucket.name, field_to_grep=field_to_grep)
             magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 
@@ -304,9 +304,17 @@ class MagmaBaseTest(StorageBase):
                 self.log.debug("%s - core(s): %s" % (server.ip, output))
                 for i in range(min(int(output), 64)):
                     grep_field = "rw_{}:magma".format(i)
-                    _res = self.get_magma_stats(
-                        bucket, [server])
-                    fragmentation_values.append(json.loads(_res[server.ip][grep_field])["Fragmentation"])
+                    if server.type == "default":
+                        _res = self.get_magma_stats(
+                            bucket, [server], field_to_grep=grep_field)
+                        fragmentation_values.append(
+                            float(_res[server.ip][grep_field][
+                                "Fragmentation"]))
+                    else:
+                        _res = self.get_magma_stats(
+                            bucket, [server])
+                        fragmentation_values.append(json.loads(_res[server.ip][grep_field])["Fragmentation"])
+
                     stats.append(_res)
                 result.update({server.ip: fragmentation_values})
             res = list()
