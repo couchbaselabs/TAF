@@ -1,6 +1,7 @@
 from random import choice
 
 from BucketLib.bucket import Bucket
+from Cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
@@ -88,7 +89,7 @@ class KvOsoBackfillTests(CollectionBase):
                 for c_name, col in scope.collections.items():
                     i_name = '{0}_{1}_{2}_index'.format(bucket.name, s_name,
                                                         c_name)
-                    query = "SELECT state FROM system:indexes WHERE " \
+                    query = "SELECT state FROM system:all_indexes WHERE " \
                             "name='{}'".format(i_name)
                     retry = 300
                     while retry > 0:
@@ -106,6 +107,11 @@ class KvOsoBackfillTests(CollectionBase):
             items_indexed = True
             for bucket in self.cluster.buckets:
                 for s_name, scope in bucket.scopes.items():
+                    if s_name == CbServer.system_scope:
+                        # System query collection can have auto-generated docs
+                        # due to the queries we run here. So skipping this
+                        continue
+
                     for c_name, col in scope.collections.items():
                         query = "SELECT count(*) as num_items from " \
                                 "`{0}`.`{1}`.`{2}`"\
