@@ -80,8 +80,7 @@ class KvOsoBackfillTests(CollectionBase):
                 cb_err.revert(self.simulate_error)
                 if index != err_itrs-1:
                     self.sleep(5)
-                self.bucket_util.is_warmup_complete(self.cluster,
-                                                    self.cluster.buckets)
+                self.bucket_util.is_warmup_complete(self.cluster.buckets)
 
         self.log.info("Waiting for index build to complete")
         for bucket in self.cluster.buckets:
