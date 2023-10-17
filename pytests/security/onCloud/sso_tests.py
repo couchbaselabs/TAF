@@ -8,6 +8,7 @@ from pytests.basetestcase import BaseTestCase
 from pytests.security.onCloud.sso_utils import SsoUtils
 from java.security import KeyPairGenerator, KeyFactory
 from java.security.spec import PKCS8EncodedKeySpec, RSAPublicKeySpec
+from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 
 IDPMetadataTemplate = """
 <?xml version="1.0"?>
@@ -81,15 +82,38 @@ class SsoTests(BaseTestCase):
 
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
 
-        self.user_unauthz = self.input.capella.get("user_unauthz")
-        self.passwd_unauthz = self.input.capella.get("passwd_unauthz")
-
         self.sso = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
         self.unauth_z_sso = SsoUtils(self.url, self.secret_key, self.access_key, self.user_unauthz,
                                      self.passwd_unauthz)
         self._generate_key_pair()
         self._generate_ssigned_cert()
         self.get_team_id()
+        self.user_unauthz =""
+        self.passwd_unauthz = ""
+        setup_capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                       self.user, self.passwd)
+
+        usrname = self.user.split('@')
+        username = usrname[0] + "+1" + "@" + usrname[1]
+        create_user_resp = setup_capella_api.create_user(self.tenant_id,
+                                                         "Test_User_1",
+                                                         username,
+                                                         "Password@123",
+                                                         ["organizationMember"])
+        if create_user_resp.status_code == 200:
+            self.user_unauthz = create_user_resp.json()["data"]["email"]
+            self.passwd_unauthz = "Password@123"
+
+        elif create_user_resp.status_code == 422:
+            msg = "is already in use. Please sign-in."
+            if msg in create_user_resp.json()["message"]:
+                self.log.info("User already created")
+            else:
+                self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+        else:
+            self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
 
     def tearDown(self):
         resp = self.sso.list_realms(self.tenant_id)
