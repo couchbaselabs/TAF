@@ -6,7 +6,7 @@ import requests
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from pytests.basetestcase import BaseTestCase
 from urlparse import urljoin, urlparse
-from .sso_utils import SSOComponents
+from .sso_utils import SSOComponents, SsoUtils
 from .saml_response import SAMLResponse
 from .saml_signatory import SAMLSignatory
 
@@ -36,6 +36,14 @@ class SSOTest(BaseTestCase):
         )
 
         self.sso = SSOComponents(self.capi, "https://" + self.url)
+        self.sso_u = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
+
+        resp = self.sso_u.list_realms(self.tenant_id)
+        if json.loads(resp.content)["data"]:
+            self.log.info("Destroying the realm")
+            realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+            resp = self.sso.delete_realm(self.tenant_id, realm_id)
+            self.assertEqual(resp.status_code // 100, 2)
 
         self.setup_sso()
 
