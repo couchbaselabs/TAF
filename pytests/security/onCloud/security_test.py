@@ -43,11 +43,40 @@ class SecurityTest(BaseTestCase):
         self.project_id = self.tenant.project_id
         self.cluster_id = self.cluster.id
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
-                                         "role": "organizationOwner"}}
+        self.test_users = {}
+        roles = ["organizationOwner", "projectCreator", "cloudManager", "organizationMember"]
+        setup_capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                       self.user, self.passwd)
+
+        num = 1
+        for role in roles:
+            usrname = self.user.split('@')
+            username = usrname[0] + "+" + str(num) + "@" + usrname[1]
+            create_user_resp = setup_capella_api.create_user(self.tenant_id,
+                                                             "Test_User_"  + str(num),
+                                                             username,
+                                                             "Password@123",
+                                                             [role])
+            if create_user_resp.status_code == 200:
+                self.test_users["User" + str(num)] = {
+                            "name": create_user_resp.json()["data"]["name"],
+                            "mailid": create_user_resp.json()["data"]["email"],
+                            "role": role,
+                            "password": "Password@123",
+                            "userid": create_user_resp.json()["data"]["id"]
+                        }
+
+            elif create_user_resp.status_code == 422:
+                msg = "is already in use. Please sign-in."
+                if msg in create_user_resp.json()["message"]:
+                    continue
+                else:
+                    self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+            else:
+                self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+            num = num + 1
 
     def tearDown(self):
         super(SecurityTest, self).tearDown()
