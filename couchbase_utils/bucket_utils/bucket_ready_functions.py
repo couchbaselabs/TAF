@@ -4838,6 +4838,9 @@ class BucketUtils(ScopeUtils):
             if Bucket.durabilityMinLevel in parsed:
                 bucket.durability_level = parsed[Bucket.durabilityMinLevel]
 
+            if Bucket.rank in parsed:
+                bucket.rank = parsed[Bucket.rank]
+
             if Bucket.compressionMode in parsed:
                 bucket.compressionMode = parsed[Bucket.compressionMode]
 
