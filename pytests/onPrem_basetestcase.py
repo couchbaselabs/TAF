@@ -391,9 +391,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
     def initialize_cluster(self, cluster_name, cluster, services=None,
                            services_mem_quota_percent=None):
-        self.log.info("Initializing cluster : {0}".format(cluster_name))
-        self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
+        self.node_utils.reset_cluster_nodes(cluster)
+        self.cluster_util.wait_for_ns_servers_or_assert(cluster.servers)
+        self.sleep(5, "Wait for nodes to become ready after reset")
 
+        self.log.info("Initializing cluster : {0}".format(cluster_name))
         if not services:
             master_services = self.cluster_util.get_services(
                 cluster.servers[:1], self.services_init, start_node=0)

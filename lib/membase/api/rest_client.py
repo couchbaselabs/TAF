@@ -948,6 +948,13 @@ class RestConnection(newRC):
                 self.test_log.error('Eject_node error: {0}'.format(content))
         return True
 
+    def reset_node(self):
+        api = self.baseUrl + "controller/hardResetNode"
+        headers = self._create_headers()
+        status, _, _ = self._http_request(api, "POST", headers=headers)
+        if not status:
+            raise Exception("Failed during hard resetting '%s'" % self.ip)
+
     def force_eject_node(self):
         self.diag_eval("gen_server:cast(ns_cluster, leave).")
         self.check_delay_restart_coucbase_server()
