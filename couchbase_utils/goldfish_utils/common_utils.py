@@ -10,6 +10,7 @@ import time
 from global_vars import logger
 from goldfishAPI.GoldfishAPIs.ServerlessAnalytics.ServerlessAnalytics import GoldfishAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
+from TestInput import TestInputServer
 
 
 class Users:
@@ -68,23 +69,27 @@ class Project:
 class GoldfishCluster:
 
     def __init__(self, org_id, project_id, cluster_name=None, cluster_id=None,
-                 cluster_endpoint=None, db_users=list(), type="goldfish"):
+                 cluster_endpoint=None, nebula_sdk_port=16001,
+                 nebula_rest_port=18001, db_users=list(), type="goldfish"):
         self.org_id = org_id
         self.project_id = project_id
+
         if cluster_name:
             self.name = cluster_name
         else:
             self.name = "GFcluster{0}".format(random.randint(1, 100000))
-        self.cluster_id = cluster_id
 
+        self.cluster_id = cluster_id
         self.endpoint = cluster_endpoint
 
-        self.ip = None
+        self.master = TestInputServer()
+        self.master.ip = self.endpoint
+        self.master.nebula_sdk_port = nebula_sdk_port
+        self.master.nebula_rest_port = nebula_rest_port
+        self.master.type = type
+
         self.db_users = db_users
         self.type = type
-
-    def set_cluster_ip_for_sdk_or_rest(self, port):
-        self.ip = self.endpoint + ":" + str(port)
 
 
 class DBUser:

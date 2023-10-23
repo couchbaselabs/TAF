@@ -300,7 +300,10 @@ class SDKClient(object):
             else:
                 self.scheme = "couchbase"
             if not ClusterRun.is_enabled:
-                self.hosts.append(server.ip)
+                if server.type == "goldfish":
+                    self.hosts.append(server.ip + str(server.nebula_sdk_port))
+                else:
+                    self.hosts.append(server.ip)
         strt = time.time()
         self.__create_conn()
         if bucket is not None:

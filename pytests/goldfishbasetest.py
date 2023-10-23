@@ -22,12 +22,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
     def setUp(self):
         super(OnCloudBaseTest, self).setUp()
 
-        for server in self.input.servers:
-            server.type = "goldfish"
-        # End of framework parameters
-
         # Cluster level info settings
-        self.servers = list()
         self.capella = self.input.capella
 
         self.wait_timeout = self.input.param("wait_timeout", 1800)
@@ -35,9 +30,9 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         trust_all_certs()
 
         # initialize pod object
-        url = self.input.capella.get("pod")
+        url = self.capella.get("pod")
         self.pod = Pod(
-            "https://%s" % url, self.input.capella.get("token", None))
+            "https://%s" % url, self.capella.get("token", None))
 
         self.log_setup_status(self.__class__.__name__, "started")
 
@@ -46,26 +41,27 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.rest_password = \
             TestInputSingleton.input.membase_settings.rest_password
 
-        self.nebula_sdk_proxy_port = self.input.capella.get(
+        # Nebula ports
+        self.nebula_sdk_proxy_port = self.capella.get(
             "nebula_sdk_proxy_port", 16001)
-        self.nebula_rest_proxy_port = self.input.capella.get(
+        self.nebula_rest_proxy_port = self.capella.get(
             "nebula_rest_proxy_port", 18001)
 
         # Create control plane users
         self.users = list()
         # Since first user is passed in ini file.
         self.users.append(Users(
-            self.input.capella.get("tenant_id"),
-            self.input.capella.get("capella_user").split("@")[0],
-            self.input.capella.get("capella_user"),
-            self.input.capella.get("capella_pwd")
+            self.capella.get("tenant_id"),
+            self.capella.get("capella_user").split("@")[0],
+            self.capella.get("capella_user"),
+            self.capella.get("capella_pwd")
         ))
         super_user = self.users[0]
 
         self.goldfish_utils = GoldfishUtils(self.log)
 
         for i in range(1, self.input.param("num_users", 1)):
-            user = Users(self.input.capella.get("tenant_id"))
+            user = Users(self.capella.get("tenant_id"))
             result = (
                 self.goldfish_utils.create_org_user_without_email_verification(
                     self.pod, super_user, user))
@@ -116,7 +112,12 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     for i in range(self.input.param(
                             "num_goldfish_clusters_per_project", 1)):
                         cluster = GoldfishCluster(
-                            project.org_id, project.project_id)
+                            org_id=project.org_id, project_id=project.project_id,
+                            cluster_name=None, cluster_id=None,
+                            cluster_endpoint=None,
+                            nebula_sdk_port=self.nebula_sdk_proxy_port,
+                            nebula_rest_port=self.nebula_rest_proxy_port,
+                            db_users=list(), type="goldfish")
                         cluster_config = (
                             self.goldfish_utils.generate_goldfish_cluster_configuration(
                             cluster.name))
@@ -157,7 +158,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     result.append("Fetching cluster details for {0} "
                                   "failed".format(cluster.name))
                 cluster.endpoint = resp["config"]["endpoint"]
-                cluster.set_cluster_ip_for_sdk_or_rest(self.nebula_sdk_proxy_port)
+                cluster.master.ip = cluster.endpoint
 
             fetch_cluster_conn_str_threads = list()
             fetch_cluster_conn_str_thread_results = list()
@@ -260,7 +261,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     name="delete_project_thread",
                     args=(user, project, delete_project_results,)
                 ))
-            if user.email != self.input.capella.get("capella_user"):
+            if user.email != self.capella.get("capella_user"):
                 delete_users_threads.append(Thread(
                     target=delete_user,
                     name="delete_user_thread",
@@ -301,9 +302,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         """
         cluster.sdk_client_pool = SDKClientPool()
         for db_user in cluster.db_users:
-            cluster.port = self.nebula_sdk_proxy_port
             cluster.sdk_client_pool.create_cluster_clients(
-                cluster=cluster, servers=[cluster], req_clients=1,
+                cluster=cluster, servers=[cluster.master], req_clients=1,
                 username=db_user.username, password=db_user.password)
 
     def list_all_projects(self):

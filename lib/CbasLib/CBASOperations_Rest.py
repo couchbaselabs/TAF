@@ -16,9 +16,14 @@ from membase.api import httplib2
 class CBASHelper(RestConnection):
     def __init__(self, cbas_node):
         super(CBASHelper, self).__init__(cbas_node)
-        self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
-        if CbServer.use_https:
-            self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
+        if cbas_node.type == "goldfish":
+            self.cbas_base_url = "https://{0}:{1}".format(
+                self.ip, cbas_node.nebula_rest_port)
+        else:
+            self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
+            if CbServer.use_https:
+                self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
+
 
     def createConn(self, bucket, username, password):
         pass
