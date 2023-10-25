@@ -785,7 +785,7 @@ class SDKClient(object):
         return result
 
     def read(self, key, timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
-             sdk_retry_strategy=None):
+             sdk_retry_strategy=None, populate_value=True):
         result = {
             "key": key,
             "value": None,
@@ -798,11 +798,9 @@ class SDKClient(object):
             sdk_retry_strategy=sdk_retry_strategy)
         try:
             get_result = self.collection.get(key, read_options)
-            self.log.debug("Found document: cas=%s, content=%s"
-                           % (str(get_result.cas()),
-                              str(get_result.contentAsObject())))
             result["status"] = True
-            result["value"] = str(get_result.contentAsObject())
+            if populate_value:
+                result["value"] = str(get_result.contentAsObject())
             result["cas"] = get_result.cas()
         except DocumentNotFoundException as e:
             result.update({"key": key, "value": None,

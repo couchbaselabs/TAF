@@ -1,7 +1,9 @@
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 import copy
+
+from membase.api.rest_client import RestConnection
 
 
 class CollectionsTTL(CollectionBase):
@@ -341,6 +343,78 @@ class CollectionsTTL(CollectionBase):
                 self.log.info("Collection maxTTL update to -2 failed as expected")
             else:
                 self.fail("Collection TTL update did not fail even when maxTTL was < 0")
+
+    def test_doc_preserve_ttl_on_rest(self):
+        """
+        MB-58693
+        """
+        bucket = self.cluster.buckets[0]
+        self.log.info("Creating custom scope and collections")
+        self.bucket_util.create_scope(self.cluster.master, bucket,
+                                      {"name": "s1"})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c1"})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c2", "maxTTL": 0})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c3", "maxTTL": 60})
+
+        scope_col_list = [
+            (CbServer.default_scope, CbServer.default_collection),
+            ("s1", "c1"),
+            ("s1", "c2"),
+            ("s1", "c3")]
+
+        rest = RestConnection(self.cluster.master)
+        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+
+        for scope, col in scope_col_list:
+            self.log.info("Loading docs in to {}:{}".format(scope, col))
+            client.select_collection(scope, col)
+            result = client.crud(DocLoading.Bucket.DocOps.CREATE, "key_1", {})
+            self.assertTrue(result["status"], "Create 'key_1' failed")
+            for key in ["key_2", "key_3"]:
+                result = client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},
+                                     exp=40)
+                self.assertTrue(result["status"],
+                                "Create {} with ttl=40 failed".format(key))
+
+        self.sleep(30, "Wait before upserting docs using REST")
+        for scope, col in scope_col_list:
+            self.log.info("Loading docs in to {}:{}".format(scope, col))
+            client.select_collection(scope, col)
+            # Retains default TTL values (ttl=0)
+            self.assertTrue(rest.upsert_doc(bucket, "key_1", scope, col),
+                            "Rest upsert failed")
+            # Overrides TTL value for docs (TTL N -> 0)
+            self.assertTrue(rest.upsert_doc(bucket, "key_2", scope, col),
+                            "Rest upsert failed")
+            # TTL is preserved wrt the doc
+            self.assertTrue(rest.upsert_doc(bucket, "key_3", scope, col,
+                                            preserve_ttl="true"),
+                            "Rest upsert failed")
+
+        self.sleep(20, "Wait for docs to go past initial ttl time")
+        for scope, col in scope_col_list:
+            self.log.info("Validating docs in {}:{}".format(scope, col))
+            client.select_collection(scope, col)
+
+            # Default TTL doc validation
+            res = client.read("key_1", populate_value=False)
+            self.assertTrue(res["status"], "Read 'key_1' failed: %s" % res)
+
+            # TTL doc with preserveTTL set to false, so the TTL got reset
+            res = client.read("key_2", populate_value=False)
+            self.assertTrue(res["status"], "Read 'key_2' failed: %s" % res)
+
+            # Doc with preserveTTL, so the doc expired with old TTL value
+            res = client.read("key_3")
+            self.assertFalse(res["status"], "Read 'key_3' succeeded: %s" % res)
+
+        self.log.info("Releasing SDK client")
+        client.select_collection(CbServer.default_scope,
+                                 CbServer.default_collection)
+        self.sdk_client_pool.release_client(client)
 
     def test_collections_ttl_delete_recreate_collections(self):
         self.bucket = self.cluster.buckets[0]
