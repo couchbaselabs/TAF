@@ -90,7 +90,8 @@ class CBASBaseTest(BaseTestCase):
         start = 0
         end = self.nodes_init[0]
         cluster = self.cb_clusters[self.cb_clusters.keys()[0]]
-        cluster.servers = self.servers[start:end]
+        # Instead of cluster.servers , use cluster.nodes_in_cluster
+        cluster.nodes_in_cluster = self.servers[start:end]
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
@@ -172,7 +173,7 @@ class CBASBaseTest(BaseTestCase):
             'set_default_cbas_memory', False)
 
         self.cbas_memory_quota_percent = int(self.input.param(
-            "cbas_memory_quota_percent", 100))
+            "cbas_memory_quota_percent", 80))
         self.bucket_size = self.input.param("bucket_size", 256)
 
         self.cbas_util = CbasUtil(self.task)
@@ -203,7 +204,7 @@ class CBASBaseTest(BaseTestCase):
                     self.service_mem_dict[service][2] = service_mem_in_cluster
 
             j = 1
-            for server in cluster.servers:
+            for server in cluster.nodes_in_cluster:
                 if server.ip != cluster.master.ip:
                     server.services = self.services_init[i][j].replace(":", ",")
                     j += 1
@@ -240,10 +241,10 @@ class CBASBaseTest(BaseTestCase):
                         self.set_memory_for_services(
                             cluster, server, server.services)
 
-            if cluster.servers[1:]:
+            if cluster.nodes_in_cluster[1:]:
                 self.task.rebalance(
-                    cluster, cluster.servers[1:], [],
-                    services=[server.services for server in cluster.servers[1:]])
+                    cluster, cluster.nodes_in_cluster[1:], [],
+                    services=[server.services for server in cluster.nodes_in_cluster[1:]])
 
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None
