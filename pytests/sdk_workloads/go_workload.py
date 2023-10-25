@@ -2,7 +2,8 @@ import requests
 import json
 import time
 import logging
-from basetestcase import BaseTestCase
+import unittest
+from TestInput import TestInputSingleton
 
 headers = {
   "Content-Type": "application/json"
@@ -17,6 +18,7 @@ def generate_unique_string():
 
 IDENTIFIER_TOKEN = generate_unique_string()
 
+
 def clear_test_information(base_url, identifier_token):
     json_data_request = {
         'identifierToken': identifier_token,
@@ -28,6 +30,7 @@ def clear_test_information(base_url, identifier_token):
     if not response_data["error"]:
         logging.info(response_data)
     return
+
 
 def read_doc(bucket, domain, scope, collection, start, end, doc_size = 1024, body={}):
     url = domain + "/bulk-read"
@@ -146,14 +149,17 @@ def waitUntilTaskFinish(result_seed,  domain, operation):
         time.sleep(10)
 
 
-class GoDocLoader(BaseTestCase):
+class GoDocLoader(unittest.TestCase):
     def setUp(self):
-        super(GoDocLoader, self).setUp()
+        # super(GoDocLoader, self).setUp()
+        self.input = TestInputSingleton.input
         self.duration = self.input.capella.get("duration", 1)
         self.bucket_list = self.input.capella.get("bucket_list", [])
         self.connection_string = self.input.capella.get("connection_string", "")
         self.num_items = self.input.param("num_items", 10)
         self.indentifier_token = generate_unique_string()
+        self.rest_username = self.input.capella.get("cluster_username", "Administrator")
+        self.rest_password = self.input.capella.get("cluster_password", "password")
         self.body = self.create_body()
         self.convert_bucket_list()
         self.sirius_url = self.input.capella.get("sirius_url", "http://0.0.0.0:4000")
@@ -179,7 +185,6 @@ class GoDocLoader(BaseTestCase):
         def log_results(seed_list, operation):
             for seed in seed_list:
                 response = waitUntilTaskFinish(seed, self.sirius_url, operation)
-                error = json.loads(response.content)['error']
                 success = json.loads(response.content)['data']['success']
                 failure = json.loads(response.content)['data']['failure']
                 if operation != 'query':
@@ -248,4 +253,3 @@ class GoDocLoader(BaseTestCase):
             mutate_doc_thread(self.bucket_list, "delete")
             clear_test_information(self.sirius_url, self.indentifier_token)
             build_index = False
-            count = count - 1

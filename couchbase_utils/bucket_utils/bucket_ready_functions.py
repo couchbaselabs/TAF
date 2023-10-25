@@ -11,7 +11,7 @@ import os.path
 import re
 import threading
 import datetime
-from random import sample, choice
+from random import sample, choice, randint
 from time import time
 
 import requests
@@ -2141,6 +2141,7 @@ class BucketUtils(ScopeUtils):
             compression_mode="off", wait_for_warmup=True,
             conflict_resolution=Bucket.ConflictResolution.SEQ_NO,
             replica_index=1,
+            bucket_rank=None,
             storage=Bucket.StorageBackend.magma,
             eviction_policy=None,
             flush_enabled=Bucket.FlushBucket.DISABLED,
@@ -2181,6 +2182,7 @@ class BucketUtils(ScopeUtils):
              Bucket.conflictResolutionType: conflict_resolution,
              Bucket.replicaIndex: replica_index,
              Bucket.storageBackend: storage,
+             Bucket.rank: bucket_rank,
              Bucket.evictionPolicy: eviction_policy,
              Bucket.flushEnabled: flush_enabled,
              Bucket.durabilityMinLevel: bucket_durability,
@@ -2445,6 +2447,10 @@ class BucketUtils(ScopeUtils):
             for param_name, param_value in bucket_defaults.items():
                 buckets_spec["buckets"][bucket_name][param_name] = param_value
 
+            if Bucket.rank not in bucket_defaults:
+                buckets_spec["buckets"][bucket_name][Bucket.rank] = \
+                    randint(0, 1000)
+
             # Expand scopes further within created bucket definition
             BucketUtils.expand_scope_spec(buckets_spec, bucket_name)
             bucket_obj_index += 1
@@ -2579,6 +2585,7 @@ class BucketUtils(ScopeUtils):
                 self.specs_for_serverless(buckets_spec)
             buckets_spec = BucketUtils.expand_buckets_spec(
                 rest_conn, buckets_spec)
+
             for bucket_name, bucket_spec in buckets_spec.items():
                 if bucket_spec[MetaConstants.BUCKET_TAR_SRC]:
                     load_data_from_existing_tar = True
@@ -2758,11 +2765,12 @@ class BucketUtils(ScopeUtils):
         if len(buckets) == 0:
             table.add_row(["No buckets"])
         else:
-            table.set_headers(["Bucket", "Type", "Storage", "Replicas",
-                               "Durability", "TTL", "Items", "Vbuckets",
-                               "RAM Quota", "RAM Used", "Disk Used", "ARR"])
+            table.set_headers(
+                ["Bucket", "Type / Storage", "Replicas", "Rank", "Vbuckets",
+                 "Durability", "TTL", "Items",
+                 "RAM Quota / Used", "Disk Used", "ARR"])
             if CbServer.cluster_profile == "serverless":
-                table.headers += ["Width/Weight"]
+                table.headers += ["Width / Weight"]
             for bucket in buckets:
                 num_vbuckets = resident_ratio = storage_backend = "-"
                 if bucket.bucketType == Bucket.Type.MEMBASE:
@@ -2774,12 +2782,13 @@ class BucketUtils(ScopeUtils):
                         resident_ratio = 100
                     num_vbuckets = str(bucket.num_vbuckets)
                 bucket_data = [
-                    bucket.name, bucket.bucketType, storage_backend,
-                    str(bucket.replicaNumber), str(bucket.durability_level),
+                    bucket.name,
+                    "{} / {}".format(bucket.bucketType, storage_backend),
+                    str(bucket.replicaNumber), str(bucket.rank), num_vbuckets,
+                    str(bucket.durability_level),
                     str(bucket.maxTTL), str(bucket.stats.itemCount),
-                    num_vbuckets,
-                    humanbytes(str(bucket.stats.ram)),
-                    humanbytes(str(bucket.stats.memUsed)),
+                    "{} / {}".format(humanbytes(str(bucket.stats.ram)),
+                                     humanbytes(str(bucket.stats.memUsed))),
                     humanbytes(str(bucket.stats.diskUsed)),
                     resident_ratio]
                 if CbServer.cluster_profile == "serverless":
@@ -2877,6 +2886,7 @@ class BucketUtils(ScopeUtils):
             compression_mode=Bucket.CompressionMode.ACTIVE,
             bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
             ram_quota=None,
+            bucket_rank=None,
             bucket_name=None,
             purge_interval=1,
             autoCompactionDefined="false",
@@ -2921,6 +2931,7 @@ class BucketUtils(ScopeUtils):
                         Bucket.evictionPolicy: eviction_policy,
                         Bucket.flushEnabled: flush_enabled,
                         Bucket.maxTTL: maxttl,
+                        Bucket.rank: bucket_rank,
                         Bucket.storageBackend: key,
                         Bucket.compressionMode: compression_mode,
                         Bucket.durabilityMinLevel: bucket_durability,
@@ -2991,14 +3002,14 @@ class BucketUtils(ScopeUtils):
                                replica_number=None, replica_index=None,
                                flush_enabled=None, time_synchronization=None,
                                max_ttl=None, compression_mode=None,
+                               storageBackend=None, bucket_rank=None,
                                bucket_durability=None, bucket_width=None,
                                bucket_weight=None,
                                history_retention_collection_default=None,
                                history_retention_bytes=None,
                                history_retention_seconds=None,
                                magma_key_tree_data_block_size=None,
-                               magma_seq_tree_data_block_size=None,
-                               storageBackend=None):
+                               magma_seq_tree_data_block_size=None):
         return BucketHelper(cluster_node).change_bucket_props(
             bucket, ramQuotaMB=ram_quota_mb, replicaNumber=replica_number,
             replicaIndex=replica_index, flushEnabled=flush_enabled,
@@ -3006,6 +3017,7 @@ class BucketUtils(ScopeUtils):
             compressionMode=compression_mode,
             bucket_durability=bucket_durability, bucketWidth=bucket_width,
             bucketWeight=bucket_weight,
+            bucket_rank=bucket_rank,
             history_retention_collection_default=history_retention_collection_default,
             history_retention_seconds=history_retention_seconds,
             history_retention_bytes=history_retention_bytes,
@@ -3081,7 +3093,7 @@ class BucketUtils(ScopeUtils):
                 verified = True
                 for bucket in cluster.buckets:
                     verified &= self.wait_till_total_numbers_match(
-                        master, bucket, timeout_in_seconds=(timeout or 500),
+                        cluster, bucket, timeout_in_seconds=(timeout or 500),
                         num_zone=num_zone)
                 if not verified:
                     msg = "Lost items!!! Replication was completed " \
@@ -3366,6 +3378,27 @@ class BucketUtils(ScopeUtils):
                     if val_as_per_test != val_as_per_stat:
                         result = False
                         self.log.critical(log_msg)
+        return result
+
+    def validate_oso_dcp_backfill_value(self, kv_nodes, buckets,
+                                        expected_val="auto"):
+        result = True
+        if expected_val is None:
+            expected_val = "auto"
+        elif expected_val == 1:
+            expected_val = 'true'
+        elif expected_val == 0:
+            expected_val = 'false'
+
+        for node in kv_nodes:
+            cbstat = Cbstats(node)
+            for bucket in buckets:
+                val = cbstat.all_stats(bucket.name)["ep_dcp_oso_backfill"]
+                if val != expected_val:
+                    result = False
+                    self.log.critical("Bucket {}, oso_dcp_backfill mismatch."
+                                      "Expected {}, Actual: {}"
+                                      .format(bucket.name, expected_val, val))
         return result
 
     def wait_for_collection_creation_to_complete(self, cluster, timeout=60):
@@ -3857,7 +3890,7 @@ class BucketUtils(ScopeUtils):
         self.log_doc_ops_task_failures(tasks_info)
         return tasks_info
 
-    def load_durable_aborts(self, ssh_shell, load_gens, cluster, bucket,
+    def load_durable_aborts(self, ssh_shell, server, load_gens, cluster, bucket,
                             durability_level, doc_op="create",
                             load_type="all_aborts"):
         """
@@ -3897,7 +3930,9 @@ class BucketUtils(ScopeUtils):
         result = True
         tasks = list()
         num_items = dict()
-        cb_err = CouchbaseError(self.log, ssh_shell)
+        cb_err = CouchbaseError(self.log,
+                                ssh_shell,
+                                node=server)
 
         if load_type == "initial_aborts":
             # Initial abort task
@@ -4852,12 +4887,18 @@ class BucketUtils(ScopeUtils):
             if Bucket.durabilityMinLevel in parsed:
                 bucket.durability_level = parsed[Bucket.durabilityMinLevel]
 
+            if Bucket.rank in parsed:
+                bucket.rank = parsed[Bucket.rank]
+
             if Bucket.compressionMode in parsed:
                 bucket.compressionMode = parsed[Bucket.compressionMode]
 
             if Bucket.conflictResolutionType in parsed:
                 bucket.conflictResolutionType = \
                     parsed[Bucket.conflictResolutionType]
+
+            if Bucket.rank in parsed:
+                bucket.rank = parsed[Bucket.rank]
 
         # Sanitise the value to the expected value for cb buckets
         if bucket.bucketType == 'membase':
@@ -4913,7 +4954,7 @@ class BucketUtils(ScopeUtils):
         bucket.stats.ram = parsed['quota']['ram']
         return bucket
 
-    def wait_till_total_numbers_match(self, master, bucket,
+    def wait_till_total_numbers_match(self, cluster, bucket,
                                       timeout_in_seconds=120,
                                       num_zone=1):
         self.log.debug('Waiting for sum_of_curr_items == total_items')
@@ -4921,7 +4962,7 @@ class BucketUtils(ScopeUtils):
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
             try:
-                if self.verify_items_count(master, bucket, num_zone=num_zone):
+                if self.verify_items_count(cluster, bucket, num_zone=num_zone):
                     verified = True
                     break
                 else:
@@ -4930,7 +4971,7 @@ class BucketUtils(ScopeUtils):
                 self.log.error("Unable to retrieve stats for any node!")
                 break
         if not verified:
-            rest = RestConnection(master)
+            rest = RestConnection(cluster.master)
             RebalanceHelper.print_taps_from_all_nodes(rest, bucket)
         return verified
 
@@ -4963,20 +5004,56 @@ class BucketUtils(ScopeUtils):
                     raise Exception("Active and replica vbucket list"
                                     "are overlapped")
 
-    def verify_items_count(self, master, bucket, num_attempt=3, timeout=2,
+    def get_actual_replica(self, cluster, bucket, num_zone):
+        servers = self.cluster_util.get_kv_nodes(cluster)
+        available_replicas = bucket.replicaNumber
+        if num_zone > 1:
+            """
+            replica number will be either replica number or one less than the zone number
+            or min number of nodes in the zone
+            zone =2: 
+                1 node each, replica set =1, actual =1
+                1 node each, replica set >1, actual = 1
+                2 nodes each, replica set =2, actual =2
+                2 nodes each, replica set =3, actual =2
+                3 nodes each, replica set =3, actual =3
+                group1: 2 nodes, group 1: 1 node, replica_set >1, actual = 1
+                group1: 3 nodes, group 1: 2 node, replica_set >=2, actual = 2
+                group1: 4 nodes, group 1: 5 node, replica_set =3, actual = 3
+
+            zone =3:
+                1 node each, replica_set=2, actual =2
+                2 nodes each, relica_set =3, actual =3
+                3 nodes each,repica_set = 3, actaul = 3
+                num_node_in_each_group: [1, 2, 1], replica_set=3, actual = 2
+                num_node_in_each_group: [2, 2, 1], replica_set=3, actual = 3
+                num_node_in_each_group: [3, 2, 1], replica_set=3, actual = 3
+                num_node_in_each_group: [3, 3, 1], replica_set=3, actual = 3
+            """
+            if bucket.replicaNumber >= num_zone:
+                available_replicas = self.get_min_nodes_in_zone(cluster)
+                if available_replicas > bucket.replicaNumber:
+                    available_replicas = bucket.replicaNumber
+            self.log.info(
+                "available_replicas considered {0}".format(available_replicas))
+        elif len(servers) <= bucket.replicaNumber:
+            available_replicas = len(servers) - 1
+        return available_replicas
+
+    def verify_items_count(self, cluster, bucket, num_attempt=3, timeout=2,
                            num_zone=1):
         # get the #of buckets from rest
-        rest = RestConnection(master)
-        replica_factor = bucket.replicaNumber
+        rest = RestConnection(cluster.master)
         vbucket_active_sum = 0
         vbucket_replica_sum = 0
         vbucket_pending_sum = 0
         all_server_stats = []
         stats_received = True
         nodes = rest.get_nodes()
-        cbstat = Cbstats(master)
-        bucket_helper = BucketHelper(master)
-        active_vbucket_differ_count = len(rest.get_nodes())
+        cbstat = Cbstats(cluster.master)
+        bucket_helper = BucketHelper(cluster.master)
+        active_vbucket_differ_count = len(nodes)
+        replica_factor = self.get_actual_replica(cluster, bucket, num_zone)
         for server in nodes:
             # get the stats
             server_stats = bucket_helper.get_bucket_stats_for_node(
@@ -4988,9 +5065,8 @@ class BucketUtils(ScopeUtils):
             all_server_stats.append((server, server_stats))
         if not stats_received:
             raise StatsUnavailableException()
-        sum = 0
-        max_vbuckets = int(cbstat.get_stats_memc(bucket.name, "all",
-                                                 "ep_max_vbuckets"))
+        curr_items = 0
+        max_vbuckets = int(cbstat.all_stats(bucket.name)["ep_max_vbuckets"])
         master_stats = bucket_helper.get_bucket_stats(bucket)
         if "vb_active_num" in master_stats:
             self.log.debug('vb_active_num from master: {0}'
@@ -5001,7 +5077,7 @@ class BucketUtils(ScopeUtils):
         for server, single_stats in all_server_stats:
             if not single_stats or "curr_items" not in single_stats:
                 continue
-            sum += single_stats["curr_items"]
+            curr_items += single_stats["curr_items"]
             self.log.debug("curr_items from {0}:{1} - {2}"
                            .format(server.ip, server.port,
                                    single_stats["curr_items"]))
@@ -5033,31 +5109,24 @@ class BucketUtils(ScopeUtils):
         self.log.debug(msg.format(vbucket_active_sum, vbucket_pending_sum,
                                   vbucket_replica_sum))
         msg = 'sum: {0} and sum * (replica_factor + 1) ({1}) : {2}'
-        self.log.debug(msg.format(sum, replica_factor + 1,
-                                  (sum * (replica_factor + 1))))
+        self.log.debug(msg.format(curr_items, replica_factor + 1,
+                                  (curr_items * (replica_factor + 1))))
         if "curr_items_tot" in master_stats:
             self.log.debug('curr_items_tot from master: {0}'
                            .format(master_stats["curr_items_tot"]))
         else:
             raise Exception("Bucket {0} stats doesnt contain 'curr_items_tot':"
                             .format(bucket))
-        if num_zone > 1:
-            num_nodes = num_zone
-        else:
-            num_nodes = len(nodes)
-        if replica_factor >= num_nodes:
-            self.log.warn("Number of zones/nodes is less than replica requires")
-            expected_replica_vbucket = max_vbuckets * (num_nodes - 1)
-            delta = (sum * num_nodes) - master_stats["curr_items_tot"]
-        else:
-            expected_replica_vbucket = (max_vbuckets * replica_factor)
-            delta = sum * (replica_factor + 1) - master_stats["curr_items_tot"]
+
+        expected_replica_vbucket = max_vbuckets * replica_factor
+        delta = curr_items * (replica_factor + 1) - master_stats["curr_items_tot"]
         if vbucket_active_sum != max_vbuckets:
             raise Exception("vbucket_active_sum actual {0} and expected {1}"
                             .format(vbucket_active_sum, max_vbuckets))
         elif vbucket_replica_sum != expected_replica_vbucket:
             raise Exception("vbucket_replica_sum actual {0} and expected {1}"
-                            .format(vbucket_replica_sum, expected_replica_vbucket))
+                            .format(vbucket_replica_sum,
+                                    expected_replica_vbucket))
         else:
             self.log.debug('vbucket_active_sum: {0}'
                            'vbucket_replica_sum: {1}'
@@ -5066,10 +5135,10 @@ class BucketUtils(ScopeUtils):
         delta = abs(delta)
 
         if delta > 0:
-            if sum == 0:
+            if curr_items == 0:
                 missing_percentage = 0
             else:
-                missing_percentage = delta * 1.0 / (sum * (replica_factor + 1))
+                missing_percentage = delta * 1.0 / (curr_items * (replica_factor + 1))
             self.log.debug("Nodes stats are: {0}"
                            .format([node.ip for node in nodes]))
         else:
@@ -6477,8 +6546,7 @@ class BucketUtils(ScopeUtils):
                                                 configured_size_per_vb):
         result = True
         for node in bucket_nodes:
-            shell = RemoteMachineShellConnection(node)
-            cbstat = Cbstats(shell)
+            cbstat = Cbstats(node)
             disk_info = cbstat.disk_info_detail(bucket.name)
             for vb_num, stat in disk_info.items():
                 if stat["history_disk_size"] > configured_size_per_vb:

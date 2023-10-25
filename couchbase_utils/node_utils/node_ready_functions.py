@@ -61,21 +61,10 @@ class NodeUtils(object):
         for task in tasks:
             self.jython_task_manager.get_task_result(task)
 
-    def reset_cluster_nodes(self, cluster_util, cluster, async_run=False):
-        tasks = list()
-        try:
-            for node in cluster.servers:
-                task = jython_tasks.FunctionCallTask(
-                    self.__reset_node, (cluster_util, cluster, node))
-                self.jython_task_manager.schedule(task)
-                tasks.append(task)
-        except Exception as ex:
-            self.log.critical(ex)
-
-        if not async_run:
-            for task in tasks:
-                self.jython_task_manager.get_task_result(task)
-        return tasks
+    def reset_cluster_nodes(self, cluster):
+        self.log.info("Resetting cluster_nodes")
+        for node in cluster.servers:
+            RestConnection(node).reset_node()
 
     def async_enable_dp(self, server):
         task = jython_tasks.FunctionCallTask(self._enable_dp, [server])

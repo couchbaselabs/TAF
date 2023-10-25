@@ -167,6 +167,29 @@ dSy803llcD39heRATXhhsC57xLiRATQMqToi0O2DWbSf5g+tNEVtgf/4r8F5a0bH
 7gGbg6AL4h8RBnFW6KGuNBaNog45FO003l2F0PvK8ZxPFxkxWEsRXg/Y17hTL0PS
 tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
 """
+        self.cert_new = """-----BEGIN CERTIFICATE-----
+MIIDqDCCApCgAwIBAgIGAYSqj+p4MA0GCSqGSIb3DQEBCwUAMIGUMQswCQYDVQQGEwJVUzETMBEG
+A1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsGA1UECgwET2t0YTEU
+MBIGA1UECwwLU1NPUHJvdmlkZXIxFTATBgNVBAMMDGRldi04MjIzNTUxNDEcMBoGCSqGSIb3DQEJ
+ARYNaW5mb0Bva3RhLmNvbTAeFw0yMjExMjQxNjUzMjlaFw0zMjExMjQxNjU0MjlaMIGUMQswCQYD
+VQQGEwJVUzETMBEGA1UECAwKQ2FsaWZvcm5pYTEWMBQGA1UEBwwNU2FuIEZyYW5jaXNjbzENMAsG
+A1UECgwET2t0YTEUMBIGA1UECwwLU1NPUHJvdmlkZXIxFTATBgNVBAMMDGRldi04MjIzNTUxNDEc
+MBoGCSqGSIb3DQEJARYNaW5mb0Bva3RhLmNvbTCCASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoC
+ggEBAM+rByaRbnTWXVMx4dI+mjJsquc79ZHXqURzYy4xPojL+49BBGhAjUUswsm2dB5Os4XbW/MW
+cwVkSXqPeB/ixYye5ofRokuHsojtcKXau6D4E61qfcwZZkXJnERdWdQ2p1Ur2817/2hAFyQg6WhO
+eJDqR4ZFJiANCzcRxSxrSnr6lFtGIq+fMQOEbJ+uiFg10P5lw2JRSHLMsmGMN/Qi8sPZbNmh/hjQ
+f2xwa0SJG9TK50mQKEefZykJxXyDvc5oNQVH+hSKg38TQ6gy8eib2s5gyVgdIUNOneHP1tXA1FWh
+JUC8+B1Qz/gBxxloFbzEyPGrUgqALn+AtAAPz/bDiyUCAwEAATANBgkqhkiG9w0BAQsFAAOCAQEA
+kpGWpt7kRIwN2Sdcp6o77LLYkTllHd7xzcNL3nole1wWqg4QQaz8lC6Q1PSpREVat/ENJK30NAxg
+XAl6My1vgZwMFA1y2fMjiuPb1YhceYBEYDp2WBe6TdBdq3qDBC4D/XQWIFsCH8gll3OGrhASYVbE
+og/k+oSgeW/KmRIu9+AswdFTg+JIoKOP9TkdnsNkbkvWECDBLDHMxRFsvWJPO/9LKw3HlBwqaT5v
+dnJ3l9X1xP327Ujr7xgdUprSFT7DPgBCKpCVmjsxq5vl0kiUykzNbmSrQGowPQi9iVMOxa/H75LP
+s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
+-----END CERTIFICATE-----
+"""
+
+    def get_cert(self):
+        return self.cert_new
 
     def get_public(self):
         return base64.b64encode(self.public.getEncoded())
@@ -191,10 +214,15 @@ tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
         url = "{}/v2/organizations/{}/realms".format(self.internal_url, tenant_id)
         request_body = {
             'connectionOptionsSAML': {
-                'metadataXML': IDPMetadataTemplate.format(self.get_certificate(), self.get_certificate())
+                'signInEndpoint': "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2"
+                                  "/exk7dwu0sfh6bR27M5d7/sso/saml",
+                'signingCertificate': "{0}".format(self.get_cert()),
+                "signatureAlgorithm": "rsa-sha256",
+                "digestAlgorithm": "sha256",
+                "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
             },
             'standard': 'SAML 2.0',
-            'vendor': 'Okta',
+            'disableGroupMapping': False,
             'defaultTeamId': team_id
         }
 

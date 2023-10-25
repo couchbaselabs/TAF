@@ -91,6 +91,7 @@ class BucketHelper(RestConnection):
                 bucket.vbActiveNumNonResident = \
                     parsed["basicStats"]["vbActiveNumNonResident"]
             bucket.maxTTL = parsed.get("maxTTL")
+            bucket.rank = parsed.get("rank")
         return bucket
 
     def get_buckets_json(self):
@@ -427,6 +428,11 @@ class BucketHelper(RestConnection):
             # Add purgeInterval only for Ephemeral case
             init_params['purgeInterval'] = bucket_params.get('purge_interval')
 
+        # Setting bucket ranking only if it is not 'None'
+        bucket_rank = bucket_params.get('rank', None)
+        if bucket_rank is not None:
+            init_params[Bucket.rank] = bucket_rank
+
         params = urllib.urlencode(init_params)
         self.log.info("Creating '%s' bucket %s"
                       % (init_params['bucketType'], init_params['name']))
@@ -499,13 +505,13 @@ class BucketHelper(RestConnection):
                             replicaIndex=None, flushEnabled=None,
                             timeSynchronization=None, maxTTL=None,
                             compressionMode=None, bucket_durability=None,
+                            bucket_rank=None, storageBackend=None,
                             bucketWidth=None, bucketWeight=None,
                             history_retention_collection_default=None,
                             history_retention_bytes=None,
                             history_retention_seconds=None,
                             magma_key_tree_data_block_size=None,
-                            magma_seq_tree_data_block_size=None,
-                            storageBackend=None):
+                            magma_seq_tree_data_block_size=None):
 
         api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
@@ -514,6 +520,8 @@ class BucketHelper(RestConnection):
             params_dict["ramQuotaMB"] = ramQuotaMB
         if replicaNumber is not None:
             params_dict["replicaNumber"] = replicaNumber
+        if bucket_rank is not None:
+            params_dict[Bucket.rank] = bucket_rank
         # if proxyPort:
         #     params_dict["proxyPort"] = proxyPort
         if replicaIndex:
@@ -568,7 +576,7 @@ class BucketHelper(RestConnection):
     def set_collection_history(self, bucket_name, scope, collection,
                                history="false"):
         api = self.baseUrl \
-            + "/pools/default/buckets/%s/scopes/%s/collections/%s" \
+            + "pools/default/buckets/%s/scopes/%s/collections/%s" \
             % (bucket_name, scope, collection)
         params = {"history": history}
         params = urllib.urlencode(params)
@@ -578,7 +586,7 @@ class BucketHelper(RestConnection):
     def set_collection_maxttl(self, bucket_name, scope, collection,
                                maxTTL):
         api = self.baseUrl \
-            + "/pools/default/buckets/%s/scopes/%s/collections/%s" \
+            + "pools/default/buckets/%s/scopes/%s/collections/%s" \
             % (bucket_name, scope, collection)
         params = {"maxTTL": maxTTL}
         params = urllib.urlencode(params)

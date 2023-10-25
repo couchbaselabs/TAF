@@ -389,8 +389,11 @@ class volume(BaseTestCase):
                 cluster_kv_nodes.remove(cluster.master)
             except:
                 pass
-            remote = RemoteMachineShellConnection(random.choice(cluster_kv_nodes))
-            error_sim = CouchbaseError(self.log, remote)
+            target_node = random.choice(cluster_kv_nodes)
+            remote = RemoteMachineShellConnection(target_node)
+            error_sim = CouchbaseError(self.log,
+                                       remote,
+                                       node=target_node)
             error_to_simulate = "stop_memcached"
             # Induce the error condition
             error_sim.create(error_to_simulate)

@@ -17,6 +17,7 @@ file_name_patterns:
           - 'Unable to open file err=No space left on device'
           - 'Invalid packet header detected'
           - 'Error occured during memtable flush'
+          - 'msg:Unable to open file  error:No such file or directory. Closest non-empty parent directory:/'
       - string: ' ERROR '
         exclude_patterns:
           - 'XERROR'
@@ -59,6 +60,7 @@ file_name_patterns:
           - 'status:ReadOnly: Rollback unsupported in read only mode'
           - 'Unable to open file err=No space left on device'
           - 'Error occured during memtable flush'
+          - 'msg:Unable to open file  error:No such file or directory. Closest non-empty parent directory:/'
 
   - file: 'indexer.log*'
     grep_for:

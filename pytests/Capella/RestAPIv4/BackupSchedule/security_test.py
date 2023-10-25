@@ -83,7 +83,7 @@ class SecurityTest(BaseTestCase):
         )
         if response.status_code == 201:
             response = response.json()
-            self.v2_control_plane_api_access_key = response["accessKey"]
+            self.v2_control_plane_api_access_key = response["id"]
             self.update_auth_with_api_token(response["token"])
         else:
             self.log.error("Error while creating V2 control plane API key")
@@ -131,10 +131,12 @@ class SecurityTest(BaseTestCase):
                                                                        "weekly", "sunday", 10,
                                                                        4, "90days", False)
             if tenant_id == "valid_tenant_id":
-                self.assertEqual(resp.status_code, 201,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+                self.assertEqual(resp.status_code, 202,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 202))
+                resp = self.capellaAPI.cluster_ops_apis.delete_backup_schedule(self.tenant_id, self.project_id,
+                                                                               self.cluster_id, self.bucket_id)
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 403,
                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
 
         # Verify the endpoint with different projects
@@ -157,16 +159,16 @@ class SecurityTest(BaseTestCase):
                                                                        4, "90days", False)
 
             if project_id == "valid_project_id":
-                self.assertEqual(resp.status_code, 201,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+                self.assertEqual(resp.status_code, 202,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 202))
                 resp = self.capellaAPI.cluster_ops_apis.delete_backup_schedule(self.tenant_id, project_ids[project_id],
                                                                                self.cluster_id, self.bucket_id)
             elif project_id == "different_project_id":
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 422,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 422))
             else:
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 422,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -186,9 +188,9 @@ class SecurityTest(BaseTestCase):
                                                                                         "weekly", "sunday", 10,
                                                                                         4, "90days", False)
             if self.test_users[user]["role"] == "organizationOwner":
-                self.assertEqual(role_response.status_code, 201,
+                self.assertEqual(role_response.status_code, 202,
                              msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                 role_response.status_code, 201))
+                                 role_response.status_code, 202))
                 resp = self.capellaAPI.cluster_ops_apis.delete_backup_schedule(self.tenant_id, self.project_id,
                                                                                self.cluster_id, self.bucket_id)
                 self.assertEqual(resp.status_code, 202,
@@ -215,28 +217,8 @@ class SecurityTest(BaseTestCase):
                     role), organizationRoles=["organizationMember"], expiry=1,
                     resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
-
-            self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
-            dic = {"update_info" : [{
-                    "op": "add",
-                    "path": "/resources/{}".format(self.project_id),
-                    "value": {
-                      "id": self.project_id,
-                      "type": "project",
-                      "roles": [role]
-                    }
-                }]
-            }
-            add_proj_resp = self.capellaAPI.org_ops_apis.update_user(
-                self.tenant_id, user['userid'], dic["update_info"])
-
-            self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
-                                             user["password"], "")
-            self.capellaAPI.org_ops_apis.update_user(self.tenant_id,
-                                                     user['userid'],
-                                                     dic["update_info"])
 
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
                                              user["password"], user['token'])
@@ -247,9 +229,9 @@ class SecurityTest(BaseTestCase):
                                                                                         4, "90days", False)
 
 
-            if role == "projectOwner":
-                self.assertEqual(201, role_response.status_code,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 201))
+            if role == "projectOwner" or role == "projectManager":
+                self.assertEqual(202, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 202))
                 resp = self.capellaAPI.cluster_ops_apis.delete_backup_schedule(self.tenant_id, self.project_id,
                                                                                self.cluster_id, self.bucket_id)
                 self.assertEqual(resp.status_code, 202,
@@ -258,18 +240,6 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(403, role_response.status_code,
                                     msg="FAIL: Outcome:{}, Expected: {}, Role: {}".format(role_response.status_code, 403,
                                                                                           role))
-
-                self.log.info("Removing user from project {} with role as {}".format(self.project_id,
-                                                                                    role))
-            update_info = [{
-                "op": "remove",
-                "path": "/resources/{}".format(self.project_id)
-            }]
-            remove_proj_resp = self.capellaAPI.org_ops_apis.update_user(
-                self.tenant_id, user['userid'], update_info)
-            self.assertEqual(200, remove_proj_resp.status_code,
-                             msg="FAIL: Outcome:{}, Expected: {}".format(
-                                 remove_proj_resp.status_code, 200))
 
             resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
             self.assertEqual(204, resp.status_code,
@@ -282,7 +252,7 @@ class SecurityTest(BaseTestCase):
                                                                        self.cluster_id, self.bucket_id,
                                                                        "weekly", "sunday", 10,
                                                                        4, "90days", False)
-        if resp.status_code != 201:
+        if resp.status_code != 202:
             self.fail("Failed to create backup schedule: {}".format(resp.content))
 
         self.log.info("Verifying status code for updating backup schedule")
@@ -322,11 +292,11 @@ class SecurityTest(BaseTestCase):
                                                                        "weekly", "monday", 11,
                                                                        4, "90days", False)
             if tenant_id == "valid_tenant_id":
-                self.assertEqual(resp.status_code, 200,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+                self.assertEqual(resp.status_code, 204,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
             else:
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 403,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 403))
 
         # Verify the endpoint with different projects
         self.log.info("Verifying the endpoint access with different projects")
@@ -360,14 +330,14 @@ class SecurityTest(BaseTestCase):
                                                                        4, "90days", False)
 
             if project_id == "valid_project_id":
-                self.assertEqual(resp.status_code, 200,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+                self.assertEqual(resp.status_code, 204,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
             elif project_id == "different_project_id":
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 422,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 422))
             else:
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 422,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -387,9 +357,9 @@ class SecurityTest(BaseTestCase):
                                                                                         "weekly", "monday", 11,
                                                                                         4, "90days", False)
             if self.test_users[user]["role"] == "organizationOwner":
-                self.assertEqual(role_response.status_code, 200,
+                self.assertEqual(role_response.status_code, 204,
                              msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                 role_response.status_code, 200))
+                                 role_response.status_code, 204))
             else:
                 self.assertEqual(role_response.status_code, 403,
                              msg='FAIL: Outcome:{}, Expected:{}'.format(
@@ -413,21 +383,8 @@ class SecurityTest(BaseTestCase):
                     role), organizationRoles=["organizationMember"], expiry=1,
                     resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
-
-            dic = {"update_info" : [{
-                    "op": "add",
-                    "path": "/resources/{}".format(self.project_id),
-                    "value": {
-                      "id": self.project_id,
-                      "type": "project",
-                      "roles": [role]
-                    }
-                }]
-            }
-            add_proj_resp = self.capellaAPI.org_ops_apis.update_user(
-                self.tenant_id, user['userid'], dic["update_info"])
 
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
                                              user["password"], user['token'])
@@ -438,25 +395,13 @@ class SecurityTest(BaseTestCase):
                                                                                         4, "90days", False)
 
 
-            if role == "projectOwner":
-                self.assertEqual(200, role_response.status_code,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 200))
+            if role == "projectOwner" or role == "projectManager":
+                self.assertEqual(204, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 204))
             else:
                 self.assertEqual(403, role_response.status_code,
                                     msg="FAIL: Outcome:{}, Expected: {}, Role: {}".format(role_response.status_code, 403,
                                                                                           role))
-
-                self.log.info("Removing user from project {} with role as {}".format(self.project_id,
-                                                                                    role))
-            update_info = [{
-                "op": "remove",
-                "path": "/resources/{}".format(self.project_id)
-            }]
-            remove_proj_resp = self.capellaAPI.org_ops_apis.update_user(
-                self.tenant_id, user['userid'], update_info)
-            self.assertEqual(200, remove_proj_resp.status_code,
-                             msg="FAIL: Outcome:{}, Expected: {}".format(
-                                 remove_proj_resp.status_code, 200))
             resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
             self.assertEqual(204, resp.status_code,
                              msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
@@ -468,7 +413,7 @@ class SecurityTest(BaseTestCase):
                                                                        self.cluster_id, self.bucket_id,
                                                                        "weekly", "sunday", 10,
                                                                        4, "90days", False)
-        if resp.status_code != 201:
+        if resp.status_code != 202:
             self.fail("Failed to create backup schedule: {}".format(resp.content))
 
         self.log.info("Verifying the endpoint authentication for different test cases")
@@ -501,10 +446,10 @@ class SecurityTest(BaseTestCase):
                                                                     self.cluster_id, self.bucket_id)
             if tenant_id == "valid_tenant_id":
                 self.assertEqual(resp.status_code, 200,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 200))
             else:
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 403,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 403))
 
         # Verify the endpoint with different projects
         self.log.info("Verifying the endpoint access with different projects")
@@ -525,13 +470,13 @@ class SecurityTest(BaseTestCase):
 
             if project_id == "valid_project_id":
                 self.assertEqual(resp.status_code, 200,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 200))
             elif project_id == "different_project_id":
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 422,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 422))
             else:
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 422,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -577,21 +522,8 @@ class SecurityTest(BaseTestCase):
                     role), organizationRoles=["organizationMember"], expiry=1,
                     resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
-
-            dic = {"update_info" : [{
-                    "op": "add",
-                    "path": "/resources/{}".format(self.project_id),
-                    "value": {
-                      "id": self.project_id,
-                      "type": "project",
-                      "roles": [role]
-                    }
-                }]
-            }
-            add_proj_resp = self.capellaAPI.org_ops_apis.update_user(
-                self.tenant_id, user['userid'], dic["update_info"])
 
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
                                              user["password"], user['token'])
@@ -602,7 +534,7 @@ class SecurityTest(BaseTestCase):
                                                                                      self.bucket_id)
 
 
-            if role == "projectOwner":
+            if role == "projectOwner" or role == "projectManager":
                 self.assertEqual(200, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 200))
             else:
@@ -610,17 +542,6 @@ class SecurityTest(BaseTestCase):
                                     msg="FAIL: Outcome:{}, Expected: {}, Role: {}".format(role_response.status_code, 403,
                                                                                           role))
 
-                self.log.info("Removing user from project {} with role as {}".format(self.project_id,
-                                                                                    role))
-            update_info = [{
-                "op": "remove",
-                "path": "/resources/{}".format(self.project_id)
-            }]
-            remove_proj_resp = self.capellaAPI.org_ops_apis.update_user(
-                self.tenant_id, user['userid'], update_info)
-            self.assertEqual(200, remove_proj_resp.status_code,
-                             msg="FAIL: Outcome:{}, Expected: {}".format(
-                                 remove_proj_resp.status_code, 200))
             resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
             self.assertEqual(204, resp.status_code,
                              msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
@@ -632,7 +553,7 @@ class SecurityTest(BaseTestCase):
                                                                        self.cluster_id, self.bucket_id,
                                                                        "weekly", "sunday", 10,
                                                                        4, "90days", False)
-        if resp.status_code != 201:
+        if resp.status_code != 202:
             self.fail("Failed to create backup schedule: {}".format(resp.content))
 
         self.log.info("Verifying status code for updating backup schedule")
@@ -667,10 +588,17 @@ class SecurityTest(BaseTestCase):
                                                                     self.cluster_id, self.bucket_id)
             if tenant_id == "valid_tenant_id":
                 self.assertEqual(resp.status_code, 202,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 202))
+                self.log.info("Creating a backup schedule")
+                resp = self.capellaAPI.cluster_ops_apis.create_backup_schedule(self.tenant_id, self.project_id,
+                                                                            self.cluster_id, self.bucket_id,
+                                                                            "weekly", "sunday", 10,
+                                                                            4, "90days", False)
+                if resp.status_code != 202:
+                    self.fail("Failed to create backup schedule: {}".format(resp.content))
             else:
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 403,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 403))
 
         # Verify the endpoint with different projects
         self.log.info("Verifying the endpoint access with different projects")
@@ -691,13 +619,20 @@ class SecurityTest(BaseTestCase):
 
             if project_id == "valid_project_id":
                 self.assertEqual(resp.status_code, 202,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 202))
+                self.log.info("Creating a backup schedule")
+                resp = self.capellaAPI.cluster_ops_apis.create_backup_schedule(self.tenant_id, self.project_id,
+                                                                            self.cluster_id, self.bucket_id,
+                                                                            "weekly", "sunday", 10,
+                                                                            4, "90days", False)
+                if resp.status_code != 202:
+                    self.fail("Failed to create backup schedule: {}".format(resp.content))
             elif project_id == "different_project_id":
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 422,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 422))
             else:
-                self.assertEqual(resp.status_code, 404,
-                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 404))
+                self.assertEqual(resp.status_code, 422,
+                            msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 422))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -724,7 +659,7 @@ class SecurityTest(BaseTestCase):
                                                                        self.cluster_id, self.bucket_id,
                                                                        "weekly", "sunday", 10,
                                                                        4, "90days", False)
-                if resp.status_code != 201:
+                if resp.status_code != 202:
                     self.fail("Failed to create backup schedule: {}".format(resp.content))
             else:
                 self.assertEqual(role_response.status_code, 403,
@@ -749,21 +684,8 @@ class SecurityTest(BaseTestCase):
                     role), organizationRoles=["organizationMember"], expiry=1,
                     resources=resources)
             resp = resp.json()
-            api_key_id = resp['Id']
+            api_key_id = resp['id']
             user['token'] = resp['token']
-
-            dic = {"update_info" : [{
-                    "op": "add",
-                    "path": "/resources/{}".format(self.project_id),
-                    "value": {
-                      "id": self.project_id,
-                      "type": "project",
-                      "roles": [role]
-                    }
-                }]
-            }
-            add_proj_resp = self.capellaAPI.org_ops_apis.update_user(
-                self.tenant_id, user['userid'], dic["update_info"])
 
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
                                              user["password"], user['token'])
@@ -774,14 +696,14 @@ class SecurityTest(BaseTestCase):
                                                                                      self.bucket_id)
 
 
-            if role == "projectOwner":
+            if role == "projectOwner" or role == "projectManager":
                 self.assertEqual(202, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 202))
                 resp = self.capellaAPI.cluster_ops_apis.create_backup_schedule(self.tenant_id, self.project_id,
                                                                        self.cluster_id, self.bucket_id,
                                                                        "weekly", "sunday", 10,
                                                                        4, "90days", False)
-                if resp.status_code != 201:
+                if resp.status_code != 202:
                     self.fail("Failed to create backup schedule: {}".format(resp.content))
             else:
                 self.assertEqual(403, role_response.status_code,
@@ -790,15 +712,6 @@ class SecurityTest(BaseTestCase):
 
                 self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                     role))
-            update_info = [{
-                "op": "remove",
-                "path": "/resources/{}".format(self.project_id)
-            }]
-            remove_proj_resp = self.capellaAPI.org_ops_apis.update_user(
-                self.tenant_id, user['userid'], update_info)
-            self.assertEqual(200, remove_proj_resp.status_code,
-                             msg="FAIL: Outcome:{}, Expected: {}".format(
-                                 remove_proj_resp.status_code, 200))
             resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
             self.assertEqual(204, resp.status_code,
                              msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))

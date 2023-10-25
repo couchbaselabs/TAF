@@ -257,7 +257,7 @@ class MagmaCrashTests(MagmaBaseTest):
         for node in self.cluster.nodes_in_cluster:
             if "kv" in node.services:
                 self.assertTrue(self.bucket_util._wait_warmup_completed(
-                    [node], self.cluster.buckets[0],
+                    self.cluster.buckets[0], [node],
                     wait_time=self.wait_timeout * 5))
 
     def test_crash_during_ops_new(self):

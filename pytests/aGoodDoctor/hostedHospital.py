@@ -165,7 +165,7 @@ class Murphy(BaseTestCase, OPD):
             bucket.clients = self.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
         self.sleep(1, "Wait for SDK client pool to warmup")
 
-    def rebalance_config(self, num):
+    def rebalance_config(self, rebl_service_group=None, num=0):
         provider = self.input.param("provider", "aws").lower()
 
         _type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
@@ -177,7 +177,7 @@ class Murphy(BaseTestCase, OPD):
         for service_group in services.split("-"):
             _services = sorted(service_group.split(":"))
             service = _services[0]
-            if service_group in rebl_services:
+            if service_group in rebl_services and service_group == rebl_service_group:
                 self.num_nodes[service] = self.num_nodes[service] + num
             spec = {
                 "count": self.num_nodes[service],
@@ -581,6 +581,7 @@ class Murphy(BaseTestCase, OPD):
 
         self.mutation_perc = self.input.param("mutation_perc", 100)
         for bucket in self.cluster.buckets:
+            self.original_ops = bucket.loadDefn["ops"]
             bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
             self.generate_docs(bucket=bucket)
         self.tasks = self.perform_load(wait_for_load=False)
@@ -622,12 +623,15 @@ class Murphy(BaseTestCase, OPD):
     def monitor_rebalance(self):
         self.find_master()
         self.rest = RestConnection(self.cluster.master)
+        state = DedicatedUtils.get_cluster_state(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
         while self.rebalance_task.state not in ["healthy",
                                                 "upgradeFailed",
                                                 "deploymentFailed",
                                                 "redeploymentFailed",
                                                 "rebalanceFailed",
-                                                "scaleFailed"]:
+                                                "scaleFailed"] and \
+            state != "healthy":
             try:
                 result = self.rest.newMonitorRebalance(sleep_step=60,
                                                        progress_count=1000)
@@ -638,7 +642,9 @@ class Murphy(BaseTestCase, OPD):
                 self.assertTrue(result,
                                 msg="Cluster rebalance failed")
                 self.sleep(60, "To give CP a chance to update the cluster status to healthy.")
-                if self.rebalance_task.state != "healthy":
+                state = DedicatedUtils.get_cluster_state(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                if state != "healthy":
                     self.refresh_cluster()
                     self.log.info("Rebalance task status: {}".format(self.rebalance_task.state))
                     self.sleep(60, "Wait for CP to trigger sub-rebalance")
@@ -646,7 +652,9 @@ class Murphy(BaseTestCase, OPD):
                 self.log.critical("Node to get rebalance progress is not part of cluster")
                 self.find_master()
                 self.rest = RestConnection(self.cluster.master)
-        self.assertTrue(self.rebalance_task.state == "healthy",
+        state = DedicatedUtils.get_cluster_state(
+                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+        self.assertTrue(state == "healthy",
                         msg="Cluster rebalance failed")
 
     def test_upgrades(self):
@@ -683,26 +691,26 @@ class Murphy(BaseTestCase, OPD):
         if provider == "aws":
             computeList = AWS.compute
 
+        self.services = self.input.param("services", "data").split("-")
         if h_scaling or vh_scaling:
             self.loop = 0
             self.rebl_nodes = self.input.param("horizontal_scale", 3)
             self.max_rebl_nodes = self.input.param("max_rebl_nodes", 27)
             while self.loop < self.iterations:
-                config = self.rebalance_config(self.rebl_nodes)
-
                 ###################################################################
                 self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
                                format(self.loop))
-                self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                        config,
-                                                                        timeout=self.index_timeout)
-                self.monitor_rebalance()
-                self.task_manager.get_task_result(self.rebalance_task)
-                self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
-                self.print_stats()
-                self.loop += 1
-                self.sleep(60, "Sleep for 60s after rebalance")
-                #turn cluster off and back on
+                for service in self.services:
+                    config = self.rebalance_config(service, self.rebl_nodes)
+                    self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                            config,
+                                                                            timeout=self.index_timeout)
+                    self.monitor_rebalance()
+                    self.task_manager.get_task_result(self.rebalance_task)
+                    self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
+                    self.print_stats()
+                    self.sleep(60, "Sleep for 60s after rebalance")
+                # turn cluster off and back on
                 if self.turn_cluster_off:
                     cluster_off_result = self.drClusterOnOff.turn_off_cluster()
                     self.assertTrue(cluster_off_result, "Failed to turn off cluster")
@@ -711,6 +719,7 @@ class Murphy(BaseTestCase, OPD):
                     self.assertTrue(cluster_on_result, "Failed to turn on cluster")
                     self.sleep(60, "Wait after cluster is turned on")
                 self.restart_query_load(num=10)
+                self.loop += 1
 
             self.loop = 0
             self.rebl_nodes = -self.rebl_nodes
@@ -718,17 +727,17 @@ class Murphy(BaseTestCase, OPD):
                 self.restart_query_load(num=-10)
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
-                config = self.rebalance_config(self.rebl_nodes)
-                self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                   config,
-                                                                   timeout=self.index_timeout)
-                self.monitor_rebalance()
-                self.task_manager.get_task_result(self.rebalance_task)
-                self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
-                self.cluster_util.print_cluster_stats(self.cluster)
-                self.print_stats()
-                self.sleep(60, "Sleep for 60s after rebalance")
-                #turn cluster off and back on
+                for service in self.services:
+                    config = self.rebalance_config(service, self.rebl_nodes)
+                    self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                            config,
+                                                                            timeout=self.index_timeout)
+                    self.monitor_rebalance()
+                    self.task_manager.get_task_result(self.rebalance_task)
+                    self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
+                    self.print_stats()
+                    self.sleep(60, "Sleep for 60s after rebalance")
+                # turn cluster off and back on
                 if self.turn_cluster_off:
                     cluster_off_result = self.drClusterOnOff.turn_off_cluster()
                     self.assertTrue(cluster_off_result, "Failed to turn off cluster")
@@ -736,7 +745,6 @@ class Murphy(BaseTestCase, OPD):
                     cluster_on_result = self.drClusterOnOff.turn_on_cluster()
                     self.assertTrue(cluster_on_result, "Failed to turn on cluster")
                     self.sleep(60, "Wait after cluster is turned on")
-
                 self.loop += 1
 
         if v_scaling or vh_scaling:
@@ -756,7 +764,7 @@ class Murphy(BaseTestCase, OPD):
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
                             self.disk[service] = self.disk[service] + disk_increment
-                    config = self.rebalance_config(0)
+                    config = self.rebalance_config()
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
@@ -791,7 +799,7 @@ class Murphy(BaseTestCase, OPD):
                         comp = computeList.index(self.compute[service])
                         comp = comp + compute_change if len(computeList) > comp + compute_change else comp
                         self.compute[service] = computeList[comp]
-                    config = self.rebalance_config(0)
+                    config = self.rebalance_config()
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
@@ -828,7 +836,7 @@ class Murphy(BaseTestCase, OPD):
                         comp = computeList.index(self.compute[service])
                         comp = comp + compute_change if len(computeList) > comp + compute_change else comp
                         self.compute[service] = computeList[comp]
-                    config = self.rebalance_config(0)
+                    config = self.rebalance_config()
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
                     self.rebalance_task = self.task.async_rebalance_capella(self.cluster,

@@ -85,7 +85,8 @@ class AutoFailoverBaseTest(ClusterSetup):
             self.bucket_util.create_default_bucket(
                 self.cluster,
                 replica=self.num_replicas,
-                bucket_type=self.bucket_type)
+                bucket_type=self.bucket_type,
+                ram_quota=self.bucket_size)
             self.sleep(5, "Wait for bucket to accept SDK connections")
 
             if self.sdk_client_pool:
@@ -247,10 +248,11 @@ class AutoFailoverBaseTest(ClusterSetup):
         """
         if not to_remove:
             to_remove = []
-        serverinfo = self.orchestrator
-        rest = RestConnection(serverinfo)
+        rest = RestConnection(self.orchestrator)
+        nodes = rest.get_nodes(inactive_added=True)
         zones = ["Group 1"]
-        nodes_in_zone = {"Group 1": [serverinfo.ip]}
+        nodes_in_zone = {"Group 1": [node for node in nodes
+                                     if node.ip == self.orchestrator.ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
         if int(self.zone) > 1:
@@ -269,11 +271,13 @@ class AutoFailoverBaseTest(ClusterSetup):
                 if self.cluster.servers[i].ip in nodes_in_cluster \
                         and self.cluster.servers[i].ip not in nodes_to_remove:
                     server_group = i % int(self.zone)
-                    nodes_in_zone[zones[server_group]].append(self.cluster.servers[i].ip)
+                    nodes_in_zone[zones[server_group]].append(
+                        [node for node in nodes
+                         if node.ip == self.cluster.servers[i].ip][0])
             # Shuffle the nodesS
             for i in range(1, self.zone):
-                node_in_zone = list(set(nodes_in_zone[zones[i]]) -
-                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))
+                node_in_zone = [node.ip for node in list(set(nodes_in_zone[zones[i]]) -
+                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))]
                 moved_nodes = []
                 for otp_node in rest.node_statuses():
                     if otp_node.ip in node_in_zone:
@@ -504,6 +508,7 @@ class AutoFailoverBaseTest(ClusterSetup):
                     try:
                         shell = RemoteMachineShellConnection(node)
                         o, r = shell.execute_command("/sbin/iptables -F")
+                        _, _ = shell.execute_command("nft flush ruleset")
                         self.log.debug("Output: %s, Err: %s" % (o, r))
                         shell.disconnect()
                         break
@@ -594,6 +599,12 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.max_count = self.input.param("maxCount", 1)
         self.failover_action = self.input.param("failover_action",
                                                 "stop_server")
+
+        if self.failover_action in ["restart_machine", "restart_network",
+                                    "network_split"]:
+            self.get_cbcollect_info = False
+            self.fail("CBQE-8008: Disabling network failure tests")
+
         self.failover_orchestrator = self.input.param("failover_orchestrator",
                                                       False)
         self.multiple_node_failure = self.input.param("multiple_nodes_failure",
@@ -880,7 +891,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         RestConnection(self.cluster.master).set_internalSetting("magmaMinMemoryQuota", 256)
         if self.spec_name is None:
             if self.read_loadgen:
-                self.bucket_size = 100
+                self.bucket_size = self.input.param("bucket_size", 256)
             self.bucket_util.create_default_bucket(self.cluster,
                                                    ram_quota=self.bucket_size,
                                                    replica=self.num_replicas)
@@ -912,6 +923,20 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         super(DiskAutoFailoverBasetest, self).tearDown()
 
     def enable_disk_autofailover(self):
+        if self.disk_timeout < 5:
+            shell = RemoteMachineShellConnection(self.orchestrator)
+            curl_addr = "localhost:%s" % self.orchestrator.port
+            if CbServer.use_https:
+                curl_addr = " -k https://%s" % curl_addr
+
+            shell.execute_command(
+                "curl %s/diag/eval -u %s:%s -d 'ns_config:set("
+                "{menelaus_web_auto_failover,"
+                " min_data_disk_issues_timeperiod}, 1).'"
+                % (curl_addr,
+                   self.orchestrator.rest_username,
+                   self.orchestrator.rest_password))
+            shell.disconnect()
         status = self.rest.update_autofailover_settings(
             True, self.timeout, enable_disk_failure=True,
             disk_timeout=self.disk_timeout)

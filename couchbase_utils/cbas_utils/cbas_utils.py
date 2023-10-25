@@ -4786,13 +4786,13 @@ class CbasUtil(CBOUtil):
         self.task.jython_task_manager.add_new_task(links_task)
         return links_task
 
-    def cleanup_cbas(self, cluster):
+    def cleanup_cbas(self, cluster, retry=10):
         """
         Drops all Dataverses, Datasets, Indexes, UDFs, Synonyms and Links
         """
         try:
             # Drop all indexes
-            for idx in self.get_indexes(cluster):
+            for idx in self.get_indexes(cluster, retry):
                 idx = idx.split(".")
                 if not self.drop_cbas_index(cluster, idx[-1], ".".join(idx[:-1])):
                     self.log.error("Unable to drop Index {0}".format(idx))
@@ -4804,15 +4804,15 @@ class CbasUtil(CBOUtil):
                 if not self.disconnect_link(cluster, lnk):
                     self.log.error("Unable to disconnect Link {0}".format(lnk))
 
-            for syn in self.get_synonyms(cluster):
+            for syn in self.get_synonyms(cluster, retry):
                 if not self.drop_analytics_synonym(cluster, syn):
                     self.log.error("Unable to drop Synonym {0}".format(syn))
 
-            for udf in self.get_udfs(cluster):
+            for udf in self.get_udfs(cluster, retry):
                 if not self.drop_udf(cluster, udf[1], udf[0], udf[2]):
                     self.log.error("Unable to drop UDF {0}".format(udf[1]))
 
-            for ds in self.get_datasets(cluster):
+            for ds in self.get_datasets(cluster, retry):
                 if not self.drop_dataset(cluster, ds):
                     self.log.error("Unable to drop Dataset {0}".format(ds))
 
@@ -4820,7 +4820,7 @@ class CbasUtil(CBOUtil):
                 if not self.drop_link(cluster, lnk):
                     self.log.error("Unable to drop Link {0}".format(lnk))
 
-            for dv in self.get_dataverses(cluster).remove("Default"):
+            for dv in self.get_dataverses(cluster, retry).remove("Default"):
                 if not self.drop_dataverse(cluster, dv):
                     self.log.error("Unable to drop Dataverse {0}".format(dv))
         except Exception as e:

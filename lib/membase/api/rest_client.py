@@ -144,7 +144,7 @@ class RestConnection(newRC):
         return True
 
     def is_cluster_balanced(self):
-        _, content, _ = self._http_request(self.baseUrl + "/pools/default")
+        _, content, _ = self._http_request(self.baseUrl + "pools/default")
         return json.loads(content)["balanced"]
 
     def rename_node(self, hostname, username='Administrator',
@@ -282,7 +282,7 @@ class RestConnection(newRC):
         return json, meta
 
     def run_view(self, bucket, view, name):
-        api = self.capi_baseUrl + '/%s/_design/%s/_view/%s' % (bucket, view, name)
+        api = self.capi_baseUrl + '%s/_design/%s/_view/%s' % (bucket, view, name)
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         if not status:
@@ -354,7 +354,7 @@ class RestConnection(newRC):
 
     def get_couch_doc(self, doc_id, bucket="default", timeout=120):
         """ use couchBase uri to retrieve document from a bucket """
-        api = self.capi_baseUrl + '/%s/%s' % (bucket, doc_id)
+        api = self.capi_baseUrl + '%s/%s' % (bucket, doc_id)
         status, content, header = self._http_request(api, headers=self._create_capi_headers(),
                                                      timeout=timeout)
         if not status:
@@ -362,16 +362,16 @@ class RestConnection(newRC):
         return json.loads(content)
 
     def _create_design_doc(self, bucket, name, function):
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         status, content, header = self._http_request(
             api, 'PUT', function, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def _get_design_doc(self, bucket, name):
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '/%s/_design/%s' % (bucket.name, name)
+            api = self.capi_baseUrl + '%s/_design/%s' % (bucket.name, name)
 
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
@@ -391,19 +391,19 @@ class RestConnection(newRC):
         status, design_doc, meta = self._get_design_doc(bucket, name)
         if not status:
             raise Exception("unable to find for deletion design document")
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '/%s/_design/%s' % (bucket.name, name)
+            api = self.capi_baseUrl + '%s/_design/%s' % (bucket.name, name)
         status, content, header = self._http_request(api, 'DELETE',
                                                      headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def spatial_compaction(self, bucket, design_name):
-        api = self.capi_baseUrl + '/%s/_design/%s/_spatial/_compact' % (bucket, design_name)
+        api = self.capi_baseUrl + '%s/_design/%s/_spatial/_compact' % (bucket, design_name)
         if isinstance(bucket, Bucket):
             api = self.capi_baseUrl + \
-                  '/%s/_design/%s/_spatial/_compact' % (bucket.name, design_name)
+                  '%s/_design/%s/_spatial/_compact' % (bucket.name, design_name)
 
         status, content, header = self._http_request(api, 'POST',
                                                      headers=self._create_capi_headers())
@@ -672,7 +672,7 @@ class RestConnection(newRC):
         return status, content, header
 
     def set_serverless_bucket_limit(self, limit):
-        api = self.baseUrl + "/settings/serverless"
+        api = self.baseUrl + "settings/serverless"
         params = {'tenantLimit': limit}
         params = urllib.urlencode(params)
         status, content, header = self._http_request(api, 'POST', params)
@@ -947,6 +947,13 @@ class RestConnection(newRC):
                 # TODO : raise an exception here
                 self.test_log.error('Eject_node error: {0}'.format(content))
         return True
+
+    def reset_node(self):
+        api = self.baseUrl + "controller/hardResetNode"
+        headers = self._create_headers()
+        status, _, _ = self._http_request(api, "POST", headers=headers)
+        if not status:
+            raise Exception("Failed during hard resetting '%s'" % self.ip)
 
     def force_eject_node(self):
         self.diag_eval("gen_server:cast(ns_cluster, leave).")
@@ -1454,7 +1461,7 @@ class RestConnection(newRC):
     def execute_statement_on_cbas(self, statement, mode, pretty=True,
                                   timeout=70, client_context_id=None):
         self.cbas_base_url = "{0}://{1}:{2}".format(self.protocol, self.ip, self.cbas_port)
-        api = self.cbas_base_url + "/analytics/service"
+        api = self.cbas_base_url + "analytics/service"
         headers = self._create_capi_headers()
 
         params = {'statement': statement, 'pretty': pretty, 'client_context_id': client_context_id}
@@ -1756,7 +1763,7 @@ class RestConnection(newRC):
                 stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats'].get('swap_total')
                 stat_dict[node_stat['hostname']]['active_item_count'] = 0
                 stat_dict[node_stat['hostname']]['replica_item_count'] = 0
-                if node_stat['version'][:5] >= '7.5.0':
+                if node_stat['version'][:5] >= '7.5.0' and 'serverGroup' in node_stat:
                     stat_dict[node_stat['hostname']]['serverGroup'] = \
                         node_stat['serverGroup']
                 if 'curr_items' in node_stat['interestingStats']:
@@ -2021,7 +2028,7 @@ class RestConnection(newRC):
             return metakv_key_count, metakv_dicts
 
     def stop_rebalance(self, wait_timeout=10):
-        api = self.baseUrl + '/controller/stopRebalance'
+        api = self.baseUrl + 'controller/stopRebalance'
         status, content, header = self._http_request(api, 'POST')
         if status:
             for i in xrange(wait_timeout):
@@ -2040,7 +2047,7 @@ class RestConnection(newRC):
         return status
 
     def set_data_path(self, data_path=None, index_path=None, cbas_path=[]):
-        end_point = '/nodes/self/controller/settings'
+        end_point = 'nodes/self/controller/settings'
         api = self.baseUrl + end_point
         set_path = False
         from urllib3._collections import HTTPHeaderDict
@@ -2071,7 +2078,7 @@ class RestConnection(newRC):
             return status
 
     def set_jre_path(self, jre_path=None, set=True):
-        api = self.baseUrl + '/nodes/self/controller/settings'
+        api = self.baseUrl + 'nodes/self/controller/settings'
         from urllib3._collections import HTTPHeaderDict
         data = HTTPHeaderDict()
         paths = {}
@@ -2797,7 +2804,7 @@ class RestConnection(newRC):
 
     def query_tool_stats(self):
         self.test_log.info('Query n1ql stats')
-        api = self.query_baseUrl + "/admin/stats"
+        api = self.query_baseUrl + "admin/stats"
         status, content, header = self._http_request(api, 'GET')
         self.test_log.debug(content)
         try:
@@ -3076,7 +3083,7 @@ class RestConnection(newRC):
         return status, content, header
 
     def configure_ldap_settings(self, settings):
-        api = self.baseUrl + '/settings/ldap'
+        api = self.baseUrl + 'settings/ldap'
         params = urllib.urlencode(settings)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content, header
@@ -3292,12 +3299,26 @@ class RestConnection(newRC):
     user_id=userid of user to act on'''
 
     def delete_user_roles(self, user_id):
-        url = "/settings/rbac/users/" + user_id
+        url = "settings/rbac/users/" + user_id
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'DELETE')
         if not status:
             raise Exception(content)
         return json.loads(content)
+
+    def add_external_user(self, username, roles):
+        """
+        Add an external user and assign roles
+        An external user can either be an SSO user or an LDAP user
+        """
+        url = "settings/rbac/users/external/" + username
+        api = self.baseUrl + url
+        payload = urllib.urlencode({"roles": roles})
+        status, content, header = self._http_request(api, 'PUT', payload)
+        if not status:
+            raise Exception(content)
+        return status, content, header
+
 
     '''
     Return list of permission with True/False if user has permission or not
@@ -3425,7 +3446,7 @@ class RestConnection(newRC):
         api = self.baseUrl + url
         params = urllib.urlencode(body)
         headers = self._create_headers()
-        status, content, header = self._http_request(api, 'POST', headers=headers, params=params)
+        status, content, _ = self._http_request(api, 'POST', headers=headers, params=params)
 
         if not status:
             raise Exception(content)
@@ -3435,7 +3456,7 @@ class RestConnection(newRC):
         url = "settings/rebalance"
         api = self.baseUrl + url
         headers = self._create_headers()
-        status, content, header = self._http_request(api, 'GET', headers=headers)
+        status, content, _ = self._http_request(api, 'GET', headers=headers)
 
         if not status:
             raise Exception(content)
@@ -3447,40 +3468,37 @@ class RestConnection(newRC):
         api = self.baseUrl + url
         params = urllib.urlencode(body)
         headers = self._create_headers()
-        status, content, header = self._http_request(api, 'POST', headers=headers, params=params)
+        status, content, _ = self._http_request(api, 'POST', headers=headers, params=params)
 
         if not status:
             raise Exception(content)
         return content
 
     def get_retry_rebalance_settings(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "settings/retryRebalance"
         api = self.baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'GET', headers=headers)
+        headers = self.get_headers_for_content_type_json()
+        status, content, _ = self._http_request(api, 'GET', headers=headers)
 
         if not status:
             raise Exception(content)
         return content
 
     def get_pending_rebalance_info(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "pools/default/pendingRetryRebalance"
         api = self.baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'GET', headers=headers)
+        headers = self.get_headers_for_content_type_json()
+        status, content, _ = self._http_request(api, 'GET', headers=headers)
 
         if not status:
             raise Exception(content)
         return content
 
     def cancel_pending_rebalance(self, id):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
         url = "controller/cancelRebalanceRetry/" + str(id)
         api = self.baseUrl + url
-        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
-        status, content, header = self._http_request(api, 'POST', headers=headers)
+        headers = self._create_headers()
+        status, content, _ = self._http_request(api, 'POST', headers=headers)
 
         if not status:
             raise Exception(content)
@@ -3591,7 +3609,7 @@ class RestConnection(newRC):
         Get all (default + uploaded) trusted CA certs information
         """
         status, content, header = self._http_request(self.baseUrl
-                                                     + "/pools/default/trustedCAs", 'GET')
+                                                     + "pools/default/trustedCAs", 'GET')
         return status, content
 
     def delete_trusted_CA(self, ca_id):
@@ -3600,7 +3618,7 @@ class RestConnection(newRC):
         Deletes a trusted CA from the cluster, given its ID
         """
         status, content, response = self._http_request(self.baseUrl
-                                                       + "/pools/default/trustedCAs/"
+                                                       + "pools/default/trustedCAs/"
                                                        + str(ca_id),
                                                        'DELETE')
         return status, content, response
@@ -3615,7 +3633,7 @@ class RestConnection(newRC):
 
             Supplying an empty dictionary clears all limits.
         """
-        target = self.baseUrl + "/pools/default/buckets/{}/scopes".format(bucket)
+        target = self.baseUrl + "pools/default/buckets/{}/scopes".format(bucket)
         status, content, _ = self._http_request(target,
                                                 'POST',
                                                 params="name={}&limits={}".format(scope, json.dumps(limits)))
@@ -3640,7 +3658,7 @@ class RestConnection(newRC):
     def set_document(self, bucket, doc_id, doc_value):
         """ Post a document value """
         target = self.baseUrl + \
-                 "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
+                 "pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
         docval = json.dumps(doc_value, separators=(',', ':'))
         status, _, _ = self._http_request(target,
                                           'POST',
@@ -3650,58 +3668,23 @@ class RestConnection(newRC):
     def get_document(self, bucket, doc_id):
         """ Get a document value """
         target = self.baseUrl + \
-                 "/pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
+                 "pools/default/buckets/{}/docs/{}".format(bucket, doc_id)
         status, content, _ = self._http_request(target,
                                                 'GET')
         return status, content
 
     def set_node_capacity(self, node_capacity_dict):
         self.test_log.debug('Setting node capacities: {}'.format(node_capacity_dict))
-        api = self.baseUrl + '/settings/serverless/node'
+        api = self.baseUrl + 'settings/serverless/node'
         params = urllib.urlencode(node_capacity_dict)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content
-
-    # Calls to add aws bucket to analytics for compute storage separation, to be removed in the future.
-    def set_AWS_bucket_credential_to_anlaytics(self, aws_access_key, aws_secret_key, aws_bucket_name,
-                                               aws_bucket_region):
-        url_access_key = 'http://{}:8091/_metakv/cbas/debug/settings/blob_storage_access_key_id'.format(self.ip)
-        url_secret_key = 'http://{}:8091/_metakv/cbas/debug/settings/blob_storage_secret_access_key'.format(self.ip)
-        access_key_data = {'value': aws_access_key}
-        secret_key_data = {'value': aws_secret_key}
-        headers = {'Content-Type': "application/x-www-form-urlencoded"}
-        self.log.info("Adding aws access key")
-        status_access_key, _, _ = self._http_request(url_access_key,
-                                                     'PUT',
-                                                     urllib.urlencode(access_key_data),
-                                                     headers=headers)
-        self.log.info("Adding aws secret key")
-        status_secret_key, _, _ = self._http_request(url_secret_key,
-                                                     'PUT',
-                                                     urllib.urlencode(secret_key_data),
-                                                     headers=headers)
-        self.log.info("Adding aws bucket config to analytics")
-        url = 'http://{}:8091/settings/analytics'.format(self.ip)
-        headers = {
-            'Content-Type': "application/x-www-form-urlencoded"
-        }
-
-        data = {'blobStorageRegion': aws_bucket_region,
-                'blobStoragePrefix': '',
-                'blobStorageBucket': aws_bucket_name,
-                'blobStorageScheme': 's3'}
-        status_bucket_access, content, header = self._http_request(url, 'POST', urllib.urlencode(data),
-                                                                   headers=headers)
-
-        if not status_access_key or not status_secret_key or not status_bucket_access:
-            return False
-        return True
 
     def get_saml_settings(self):
         """
         Returns current saml settings as JSON
         """
-        api = self.baseUrl + '/settings/saml'
+        api = self.baseUrl + 'settings/saml'
         status, content, header = self._http_request(api, 'GET')
         return status, content, header
 
@@ -3718,7 +3701,7 @@ class RestConnection(newRC):
         """
         Removes all the settings. That's basically a reset to default
         """
-        api = self.baseUrl + '/settings/saml'
+        api = self.baseUrl + 'settings/saml'
         status, content, header = self._http_request(api, 'DELETE')
         return status, content, header
 

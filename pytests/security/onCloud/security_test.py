@@ -43,11 +43,41 @@ class SecurityTest(BaseTestCase):
         self.project_id = self.tenant.project_id
         self.cluster_id = self.cluster.id
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
-                                         "role": "organizationOwner"}}
+        self.test_users = {}
+        roles = ["organizationOwner", "projectCreator", "cloudManager", "organizationMember"]
+        setup_capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
+                                       self.user, self.passwd)
+
+        num = 1
+        for role in roles:
+            usrname = self.user.split('@')
+            username = usrname[0] + "+" + str(num) + "@" + usrname[1]
+            name = "Test_User_"  + str(num)
+            create_user_resp = setup_capella_api.create_user(self.tenant_id,
+                                                             name,
+                                                             username,
+                                                             "Password@123",
+                                                             [role])
+            if create_user_resp.status_code == 200:
+                self.test_users["User" + str(num)] = {
+                    "name": create_user_resp.json()["data"]["name"],
+                    "mailid": create_user_resp.json()["data"]["email"],
+                    "role": role,
+                    "password": "Password@123",
+                    "userid": create_user_resp.json()["data"]["id"]
+                }
+
+            elif create_user_resp.status_code == 422:
+                msg = "is already in use. Please sign-in."
+                if msg in create_user_resp.json()["message"]:
+                    continue
+                else:
+                    self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+            else:
+                self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+            num = num + 1
 
     def tearDown(self):
         super(SecurityTest, self).tearDown()
@@ -169,8 +199,8 @@ class SecurityTest(BaseTestCase):
 
     def test_retrieve_cluster_details(self):
         self.log.info("Verifying status code for retrieving cluster details")
-        expected_response_code = {"organizationOwner": 200, "projectCreator": 403,
-                                  "cloudManager": 403, "organizationMember": 403}
+        expected_response_code = {"organizationOwner": 200, "projectCreator": 404,
+                                  "cloudManager": 404, "organizationMember": 404}
         for user in self.test_users:
             self.log.info("Verifying status code for Role: {0}"
                           .format(self.test_users[user]["role"]))

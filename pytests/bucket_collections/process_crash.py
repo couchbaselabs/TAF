@@ -265,7 +265,9 @@ class CrashTest(CollectionBase):
 
         # Create a error scenario
         shell = RemoteMachineShellConnection(node_to_crash)
-        cb_error = CouchbaseError(self.log, shell)
+        cb_error = CouchbaseError(self.log,
+                                  shell,
+                                  node=node_to_crash)
         cbstat_obj = Cbstats(node_to_crash)
         active_vbs = cbstat_obj.vbucket_list(self.bucket.name,
                                              vbucket_type="active")
@@ -378,7 +380,9 @@ class CrashTest(CollectionBase):
         # Create a error scenario
         self.log.info("Selected scenario for test '%s'" % crash_type)
         shell = RemoteMachineShellConnection(node_to_crash)
-        cb_error = CouchbaseError(self.log, shell)
+        cb_error = CouchbaseError(self.log,
+                                  shell,
+                                  node=node_to_crash)
         cbstat_obj = Cbstats(node_to_crash)
         active_vbs = cbstat_obj.vbucket_list(self.bucket.name,
                                              vbucket_type="active")
@@ -434,7 +438,9 @@ class CrashTest(CollectionBase):
         error_to_simulate = self.input.param("simulate_error", None)
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=target_node)
         target_vbuckets = Cbstats(target_node).vbucket_list(
                 self.bucket.name, target_node)
 

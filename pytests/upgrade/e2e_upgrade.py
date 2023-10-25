@@ -182,7 +182,7 @@ class E2EUpgrade(UpgradeBase, BaseSecondaryIndexingTests):
                 expected_num_indexed["durable_add_aborts"] += crud_batch_size
 
             task_success = self.bucket_util.load_durable_aborts(
-                ssh_shell, load_gen["ADD"][server], self.cluster, def_bucket,
+                ssh_shell, server, load_gen["ADD"][server], self.cluster, def_bucket,
                 self.durability_level, DocLoading.Bucket.DocOps.CREATE,
                 self.sync_write_abort_pattern)
             if not task_success:
@@ -215,7 +215,7 @@ class E2EUpgrade(UpgradeBase, BaseSecondaryIndexingTests):
             verification_dict["sync_write_aborted_count"] += \
                 crud_batch_size
             task_success = self.bucket_util.load_durable_aborts(
-                ssh_shell, load_gen["SET"][server], self.cluster, def_bucket,
+                ssh_shell, server, load_gen["SET"][server], self.cluster, def_bucket,
                 self.durability_level, DocLoading.Bucket.DocOps.UPDATE,
                 self.sync_write_abort_pattern)
             if not task_success:

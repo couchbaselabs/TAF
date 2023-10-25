@@ -1599,16 +1599,20 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
 
         # Reset it back to start index
         doc_gen["doc_crud"].reset()
+        target_node = None
 
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cbstat_obj = Cbstats(node)
             replica_vbs = cbstat_obj.vbucket_list(self.cluster.buckets[0],
                                                   "replica")
             if target_vb in replica_vbs:
-                shell = RemoteMachineShellConnection(node)
+                target_node = node
                 break
 
-        error_sim = CouchbaseError(self.log, shell)
+        shell = RemoteMachineShellConnection(target_node)
+        error_sim = CouchbaseError(self.log,
+                                   shell,
+                                   node=target_node)
 
         for op_type in [DocLoading.Bucket.DocOps.CREATE,
                         DocLoading.Bucket.DocOps.UPDATE,
@@ -1703,16 +1707,19 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         doc_gen = dict()
         doc_key = doc_generator(self.doc_id, 0, 1).next()[0]
         target_vb = self.bucket_util.get_vbucket_num_for_key(doc_key)
+        target_node =  None
 
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cbstat_obj = Cbstats(node)
             replica_vbs = cbstat_obj.vbucket_list(self.cluster.buckets[0],
                                                   "replica")
             if target_vb in replica_vbs:
-                shell = RemoteMachineShellConnection(node)
+                target_node = node
                 break
-
-        error_sim = CouchbaseError(self.log, shell)
+        shell = RemoteMachineShellConnection(target_node)
+        error_sim = CouchbaseError(self.log,
+                                   shell,
+                                   node=target_node)
 
         self.client.crud(DocLoading.Bucket.DocOps.CREATE, doc_key, "{}",
                          timeout=3, time_unit=SDKConstants.TimeUnit.SECONDS)

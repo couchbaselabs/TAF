@@ -72,7 +72,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 in [DiskError.DISK_FULL, DiskError.DISK_FAILURE]:
             error_sim = DiskError(self.log, self.task_manager,
                                   self.cluster.master, target_nodes,
-                                  60, 0, False, 120,
+                                  60, 0, False, 10,
                                   disk_location="/data")
             error_sim.create(action=self.simulate_error)
         else:
@@ -80,7 +80,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 # Perform specified action
                 error_sim[node.ip] = CouchbaseError(self.log,
                                                     shell_conn[node.ip],
-                                                    node)
+                                                    node=node)
                 error_sim[node.ip].create(self.simulate_error,
                                           bucket_name=self.bucket.name)
 
@@ -323,7 +323,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
 
             # Perform specified action
             error_sim[node.ip] = CouchbaseError(self.log,
-                                                shell_conn[node.ip])
+                                                shell_conn[node.ip],
+                                                node=node)
             error_sim[node.ip].create(self.simulate_error,
                                       bucket_name=self.bucket.name)
 

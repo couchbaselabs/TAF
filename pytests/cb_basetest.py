@@ -65,6 +65,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.bucket_storage = \
             self.input.param("bucket_storage",
                              Bucket.StorageBackend.magma)
+        self.bucket_rank = self.input.param("bucket_rank", None)
         self.bucket_eviction_policy = \
             self.input.param("bucket_eviction_policy", None)
 
@@ -75,6 +76,7 @@ class CouchbaseBaseTest(unittest.TestCase):
                                                       1)
         self.bucket_durability_level = \
             BucketDurability[self.bucket_durability_level]
+        self.oso_dcp_backfill = self.input.param("oso_dcp_backfill", None)
         self.bucket_collection_history_retention_default = \
             self.input.param("default_history_retention_for_collections", None)
         self.bucket_dedup_retention_seconds = \

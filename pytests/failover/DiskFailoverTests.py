@@ -69,10 +69,10 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
 
     def test_disk_autofailover_rest_api(self):
         disk_timeouts = self.input.param("disk_failover_timeouts",
-                                         "5,10,30,60,120")
+                                         "1,5,10,30,60,120,3600")
         disk_timeouts = disk_timeouts.split(",")
         for disk_timeout in disk_timeouts:
-            self.disk_timeout = disk_timeout
+            self.disk_timeout = int(disk_timeout)
             self.enable_disk_autofailover_and_validate()
             self.sleep(10)
             self.disable_disk_autofailover_and_validate()
@@ -151,7 +151,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
-        rebalance_task = self.cluster.async_rebalance(self.servers,
+        rebalance_task = self.cluster.async_rebalance(self.cluster,
                                                       self.servers_to_add,
                                                       self.servers_to_remove)
         self.sleep(5)
@@ -196,7 +196,7 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
                 self.cluster.master, self.initial_load_gen, "read", 0))
         else:
             task = self.data_load_from_spec(async_load=True)
-        rebalance_success = self.task.rebalance(self.servers,
+        rebalance_success = self.task.rebalance(self.cluster,
                                                 self.servers_to_add,
                                                 self.servers_to_remove,
                                                 retry_get_process_num=self.retry_get_process_num)

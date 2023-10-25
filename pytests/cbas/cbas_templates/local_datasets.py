@@ -96,7 +96,7 @@ spec = {
         # row - Dataset storage will be row format
         # column - Dataset storage will be column format
         # mixed - Dataset storage will be row + column format
-        "storage_format" : "mixed"
+        "storage_format" : None
         },
 
     "synonym" : {

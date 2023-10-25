@@ -1,4 +1,5 @@
 import time
+from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
@@ -958,10 +959,11 @@ class CollectionsRebalance(CollectionBase):
         Nodes are divided into groups iteratively. i.e: 1st node in Group 1,
         2nd in Group 2, 3rd in Group 1 & so on, when zone=2
         """
-        serverinfo = self.servers[0]
-        rest = RestConnection(serverinfo)
+        rest = RestConnection(self.servers[0])
+        nodes = rest.get_nodes(inactive_added=True)
         zones = ["Group 1"]
-        nodes_in_zone = {"Group 1": [serverinfo.ip]}
+        nodes_in_zone = {"Group 1": [node for node in nodes
+                                     if node.ip == self.servers[0].ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
         if int(self.num_zone) > 1:
@@ -978,7 +980,9 @@ class CollectionsRebalance(CollectionBase):
             for i in range(1, len(self.servers)):
                 if self.servers[i].ip in nodes_in_cluster:
                     server_group = i % int(self.num_zone)
-                    nodes_in_zone[zones[server_group]].append(self.servers[i].ip)
+                    nodes_in_zone[zones[server_group]].append(
+                        [node for node in nodes
+                         if node.ip == self.servers[i].ip][0])
             # Shuffle the nodesS
             for i in range(1, self.num_zone):
                 node_in_zone = list(set(nodes_in_zone[zones[i]]) -
@@ -1070,6 +1074,7 @@ class CollectionsRebalance(CollectionBase):
     def load_collections_with_rebalance(self, rebalance_operation):
         tasks = (None, None)
         rebalance = None
+
         self.log.info("Doing collection data load {0} {1}".format(self.data_load_stage, rebalance_operation))
         if self.data_load_stage == "before":
             if self.data_load_type == "async":
@@ -1082,6 +1087,7 @@ class CollectionsRebalance(CollectionBase):
             self.setup_N1ql_txn()
         if self.num_zone > 1:
             self.shuffle_nodes_between_zones_and_rebalance()
+            self.cluster_util.print_cluster_stats(self.cluster)
         if rebalance_operation == "rebalance_in":
             rebalance = self.rebalance_operation(rebalance_operation="rebalance_in",
                                                  known_nodes=self.cluster.servers[:self.nodes_init],
@@ -1134,7 +1140,7 @@ class CollectionsRebalance(CollectionBase):
                                                  tasks=tasks)
         elif rebalance_operation == "forced_hard_failover_rebalance_out":
             failover_nodes = self.get_failover_nodes()
-            rebalance = self.forced_failover_operation(self.cluster,
+            rebalance = self.forced_failover_operation(known_nodes=self.cluster.servers[:self.nodes_init],
                                                        failover_nodes=failover_nodes)
         # Updating collection maxTTL value during rebalance
         if self.update_max_ttl:
@@ -1174,12 +1180,15 @@ class CollectionsRebalance(CollectionBase):
                         self.add_nodes_to_new_zone()
                     else:
                         self.shuffle_nodes_between_zones_and_rebalance(load_data=True)
+                        self.cluster_util.print_cluster_stats(self.cluster)
             if self.remove_zone > 0:
                 for i in range(self.remove_zone):
                     self.num_zone -= 1
                     if self.num_zone > 0:
                         self.shuffle_nodes_between_zones_and_rebalance(load_data=True)
+                        self.cluster_util.print_cluster_stats(self.cluster)
             self.shuffle_nodes_between_zones_and_rebalance()
+            self.cluster_util.print_cluster_stats(self.cluster)
         if self.data_load_stage == "after":
             self.sync_data_load()
             self.data_validation_collection()
@@ -1187,6 +1196,8 @@ class CollectionsRebalance(CollectionBase):
             self.validate_N1qltxn_data()
         if self.continous_update_replica:
             self.update_replica_and_validate_vbuckets()
+        if self.input.param("test_oso_backfill", False):
+            CollectionBase.recreate_indexes_on_each_collection(self, 1)
 
     def test_data_load_collections_with_rebalance_in(self):
         self.load_collections_with_rebalance(rebalance_operation="rebalance_in")

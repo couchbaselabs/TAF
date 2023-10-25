@@ -30,6 +30,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         # Shuffle the nodes if zone > 1 is specified.
         if self.zone > 1:
             self.shuffle_nodes_between_zones_and_rebalance()
+            self.cluster_util.print_cluster_stats(self.cluster)
         gen = self.get_doc_generator(0, self.num_items)
         if self.atomicity:
             self._load_all_buckets_atomicty(gen, "rebalance_only_update")
@@ -167,6 +168,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         self.sleep(30)
         try:
             self.shuffle_nodes_between_zones_and_rebalance(servs_out)
+            self.cluster_util.print_cluster_stats(self.cluster)
         except Exception, e:
             if "deltaRecoveryNotPossible" not in e.__str__():
                 self.fail("Rebalance did not fail. Rebalance has to fail since no delta recovery should be possible"
@@ -238,6 +240,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         # Mark Node for failover
         self.rest.fail_over(chosen[0].id, graceful=fail_over)
         self.shuffle_nodes_between_zones_and_rebalance(servs_out)
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.cluster.nodes_in_cluster = result_nodes
         if not self.atomicity:
             self.bucket_util.verify_cluster_stats(
@@ -635,7 +638,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         self.log.info("IN/OUT REBALANCE PHASE")
         rebalance_task = self.task.async_rebalance(self.cluster,
-                                                   servs_in, 
+                                                   servs_in,
                                                    toBeEjectedNodes)
 
         # CRUDs while rebalance is running in parallel
@@ -765,7 +768,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
 
         self.log.info("IN/OUT REBALANCE PHASE")
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, toBeEjectedNodes)
+            self.cluster, servs_in, toBeEjectedNodes)
         self.sleep(10, "wait for rebalance to start")
         self.task.jython_task_manager.get_task_result(rebalance_task)
         self.assertTrue(rebalance_task.result, "Rebalance Failed")

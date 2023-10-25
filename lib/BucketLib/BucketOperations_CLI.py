@@ -6,6 +6,7 @@ Created on Sep 27, 2017
 from cb_tools.cb_cli import CbCli
 from remote.remote_util import RemoteMachineShellConnection
 from BucketOperations_Rest import BucketHelper as BucketHelperRest
+from bucket import Bucket
 
 
 class BucketHelper(BucketHelperRest):
@@ -45,6 +46,7 @@ class BucketHelper(BucketHelperRest):
     def change_bucket_props(self, bucket, ramQuotaMB=None,
                             replicaNumber=None, proxyPort=None,
                             replicaIndex=None, flushEnabled=None,
+                            bucket_rank=None,
                             timeSynchronization=None, maxTTL=None,
                             compressionMode=None, bucket_durability=None,
                             bucketWidth=None, bucketWeight=None):
@@ -54,6 +56,8 @@ class BucketHelper(BucketHelperRest):
             bucket_params["ramQuotaMB"] = ramQuotaMB
         if replicaNumber is not None:
             bucket_params["replicaNumber"] = replicaNumber
+        if bucket_rank is not None:
+            bucket_params[Bucket.rank] = bucket_rank
         if replicaIndex:
             bucket_params["replicaIndex"] = replicaIndex
         if flushEnabled:

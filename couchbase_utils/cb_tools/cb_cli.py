@@ -103,8 +103,11 @@ class CbCli(CbCmdBase):
                      creation completes
         :return:
         """
+        host = "localhost"
+        if CbServer.use_https:
+            host = "https://localhost"
         cmd = "%s bucket-create -c %s:%s -u %s -p %s" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, host, self.port,
                  self.username, self.password)
         if wait:
             cmd += " --wait"
@@ -142,6 +145,8 @@ class CbCli(CbCmdBase):
                 option = "--history-retention-bytes"
             elif key == Bucket.historyRetentionSeconds:
                 option = "--history-retention-seconds"
+            elif key == Bucket.rank:
+                option = "--rank"
 
             if option:
                 cmd += " %s %s " % (option, value)
@@ -177,6 +182,8 @@ class CbCli(CbCmdBase):
                 cmd += " --bucket-priority " + value
             if key == Bucket.flushEnabled:
                 cmd += " --enable-flush " + str(value)
+            if key == Bucket.rank:
+                cmd += " --rank " + str(value)
 
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)

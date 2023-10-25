@@ -16,7 +16,7 @@ class basic_ops(ClusterSetup):
         super(basic_ops, self).setUp()
 
         if self.default_bucket:
-            self.bucket_size = 100
+            self.bucket_size = self.input.param("bucket_size", 256)
             self.create_bucket(self.cluster)
 
         self.sleep(10, "Wait for bucket to become ready for ops")

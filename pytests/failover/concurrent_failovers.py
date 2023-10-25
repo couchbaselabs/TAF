@@ -182,7 +182,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Service / Data loss check
             if service == CbServer.Services.KV:
                 if self.min_bucket_replica > 0 \
-                        and node_count[CbServer.Services.KV] > 2:
+                        and node_count[CbServer.Services.KV] > 1:
                     is_safe = True
             # elif service == CbServer.Services.INDEX:
             #     if node_count[CbServer.Services.INDEX] > 1:
@@ -325,14 +325,16 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
     def get_nodes_to_fail(self, services_to_fail, dynamic_fo_method=False):
         nodes = dict()
+        master_fo = False
         # Update the list of service-nodes mapping in the cluster object
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
         nodes_in_cluster = self.rest.get_nodes()
         for services in services_to_fail:
             node_services = set(services.split("_"))
+            # To handle serviceless node failover, force creating a set
+            if node_services == {"None"}:
+                node_services = set()
             for index, node in enumerate(nodes_in_cluster):
-                if node.ip == self.cluster.master.ip:
-                    continue
                 if node_services == set(node.services):
                     fo_type = self.failover_method
                     if dynamic_fo_method:
@@ -342,7 +344,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     nodes[node] = fo_type
                     # Remove the node to be failed to avoid double insertion
                     nodes_in_cluster.pop(index)
+                    if node.ip == self.cluster.master.ip:
+                        master_fo = True
                     break
+        if master_fo:
+            # Assign new cluster.master to handle rest connections
+            self.cluster.master = [
+                server for server in self.cluster.nodes_in_cluster
+                if nodes_in_cluster[0].ip == server.ip][0]
         return nodes
 
     def validate_failover_settings(self, enabled, timeout, count, max_count):
@@ -460,6 +469,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.assertTrue(reb_result, "Hard failover failed")
         except Exception as e:
             self.log.error("Exception occurred: %s" % str(e))
+            raise e
         finally:
             # Disable auto-fo after the expected time limit
             self.rest.update_autofailover_settings(
@@ -512,8 +522,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.cluster.master, bucket,
                     replica_number=update_replica_number_to)
 
-            rebalance_task = self.task.async_rebalance(self.cluster.servers[
-                                                   :self.nodes_init], [], [],
+            rebalance_task = self.task.async_rebalance(self.cluster, [], [],
                                                    retry_get_process_num=3000)
             self.task_manager.get_task_result(rebalance_task)
             self.find_minimum_bucket_replica()
@@ -619,6 +628,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 for src_node in src_nodes:
                     shell_conn.execute_command(
                         "iptables -A INPUT -s %s -j DROP" % src_node.ip)
+                    shell_conn.execute_command(
+                        "nft add rule ip filter INPUT ip saddr %s counter "
+                        "drop " % src_node.ip)
                 shell_conn.disconnect()
 
         def get_num_nodes_to_fo(num_nodes_affected,
@@ -636,6 +648,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             for ssh_node in node_list:
                 ssh_shell = RemoteMachineShellConnection(ssh_node)
                 ssh_shell.execute_command("iptables -F")
+                ssh_shell.execute_command("nft flush ruleset")
                 ssh_shell.disconnect()
             self.sleep(5, "Wait for nodes to be reachable")
 
@@ -686,11 +699,14 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_2),
                                                   service_count[1],
                                                   service_count[0])
+            self.cluster.master = node_split_1[0]
         else:
             num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_1),
                                                   service_count[0],
                                                   service_count[1])
+            self.cluster.master = node_split_2[0]
 
+        self.rest = RestConnection(self.cluster.master)
         self.log.info("N/w split between -> [%s] || [%s]. Expect %s fo_events"
                       % ([n.ip for n in node_split_1],
                          [n.ip for n in node_split_2],
@@ -767,7 +783,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.log.info("Bringing back '%s' for some time" % rand_node.ip)
             new_timer = None
             shell = RemoteMachineShellConnection(rand_node)
-            cb_err = CouchbaseError(self.log, shell)
+            cb_err = CouchbaseError(self.log,
+                                    shell,
+                                    node=rand_node)
             if self.nodes_to_fail[rand_node] == CouchbaseError.STOP_MEMCACHED:
                 cb_err.revert(CouchbaseError.STOP_MEMCACHED)
                 self.sleep(10, "Wait before creating failure again")
@@ -912,11 +930,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.task_manager.get_task_result(failover_task)
 
             failure_msg = "Auto-failover task failed"
-            if expected_fo_nodes == 0:
-                # Task is expected to fail since no failover is triggered
-                self.assertFalse(failover_task.result, failure_msg)
-            else:
-                self.assertTrue(failover_task.result, failure_msg)
+
+            self.assertTrue(failover_task.result, failure_msg)
 
             # Validate auto_failover_settings after failover
             self.validate_failover_settings(True, self.timeout,

@@ -101,7 +101,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         timeout = 600
         for bucket in self.cluster.buckets:
             verified = self.bucket_util.wait_till_total_numbers_match(
-                master, bucket, timeout_in_seconds=timeout)
+                self.cluster, bucket, timeout_in_seconds=timeout)
             test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
                                       .format(timeout))
 
@@ -171,7 +171,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen], self.cluster,
+                    ssh_shell, server, [load_gen], self.cluster,
                     self.cluster.buckets[0], self.durability_level,
                     DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
@@ -194,7 +194,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
-                    ssh_shell, [load_gen], self.cluster,
+                    ssh_shell, server, [load_gen], self.cluster,
                     self.cluster.buckets[0], self.durability_level,
                     DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:

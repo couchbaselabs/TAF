@@ -193,7 +193,7 @@ class Bucket_DGM_Tests(ClusterSetup):
         node_data = dict()
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         for node in kv_nodes:
-            cbstat = Cbstats(RemoteMachineShellConnection(node))
+            cbstat = Cbstats(node)
             node_data[node] = dict()
             node_data[node]["cbstat"] = cbstat
             node_data[node]["active"] = cbstat.vbucket_list(bucket.name,

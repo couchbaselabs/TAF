@@ -46,6 +46,7 @@ from com.couchbase.client.java.kv import GetAllReplicasOptions
 from com.couchbase.client.java.query import QueryOptions
 from java.time import Duration
 from java.nio.charset import StandardCharsets
+from java.lang import Exception as Java_base_exception
 from java.lang import RuntimeException
 from java.lang import System, String
 from java.util import \
@@ -300,20 +301,22 @@ class SDKClient(object):
                         cluster_options)
                 break
             except ConfigException as e:
-                self.log.error("Exception during cluster connection: %s"
-                               % e)
+                self.log.error("Exception during cluster connection: %s" % e)
                 i += 1
         if self.bucket is not None:
             self.bucketObj = self.cluster.bucket(self.bucket.name)
             wait_until_ready_options = \
                 WaitUntilReadyOptions.waitUntilReadyOptions() \
                 .serviceTypes(ServiceType.KV)
-            # Temp work around until JCBC-1983 is fixed
-            # adding delay here to avoid loading failures for collections
-            time.sleep(10)
-            # self.bucketObj.waitUntilReady(
-            #     SDKOptions.get_duration(300, SDKConstants.TimeUnit.SECONDS),
-            #     wait_until_ready_options)
+            try:
+                self.bucketObj.waitUntilReady(
+                    SDKOptions.get_duration(10, SDKConstants.TimeUnit.SECONDS),
+                    wait_until_ready_options)
+            except Java_base_exception as e:
+                # JCBC-1983: Suppress the exception just by logging it
+                # We might have got 10 seconds sleep for the connection to work
+                self.log.critical(e)
+
             self.select_collection(self.scope_name,
                                    self.collection_name)
 

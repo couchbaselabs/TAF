@@ -6,7 +6,7 @@ import requests
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from pytests.basetestcase import BaseTestCase
 from urlparse import urljoin, urlparse
-from .sso_utils import SSOComponents
+from .sso_utils import SSOComponents, SsoUtils
 from .saml_response import SAMLResponse
 from .saml_signatory import SAMLSignatory
 
@@ -36,6 +36,14 @@ class SSOTest(BaseTestCase):
         )
 
         self.sso = SSOComponents(self.capi, "https://" + self.url)
+        self.sso_u = SsoUtils(self.url, self.secret_key, self.access_key, self.user, self.passwd)
+
+        resp = self.sso_u.list_realms(self.tenant_id)
+        if json.loads(resp.content)["data"]:
+            self.log.info("Destroying the realm")
+            realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+            resp = self.sso.delete_realm(self.tenant_id, realm_id)
+            self.assertEqual(resp.status_code // 100, 2)
 
         self.setup_sso()
 
@@ -118,28 +126,28 @@ class SSOTest(BaseTestCase):
         )
 
         self.assertEqual(login_response.status_code // 100, 3)
-        # Error with the description that the response and the assertion are unsigned
-        error_msg = "error_description=neither%20the%20response%20nor%20the%20assertion%20are%20signed"
-        if error_msg not in login_response.content:
-            self.fail("Failed to get the expected error message")
 
-        # continue_flow = self.sso.continue_saml_response(
-        #     urljoin(
-        #         self.realm_callback,
-        #         login_response.headers['Location']
-        #     ),
-        #     cookies=c
-        # )
-        # Throws Connection error
-        #
-        # self.assertEqual(continue_flow.status_code // 100, 3)
-        #
-        # new_url = urlparse(continue_flow.headers['Location'])
-        # new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
-        #                                            new_url.query)
-        # finish_flow = self.sso.continue_saml_response(new_url)
-        #
-        # self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
+        # Error with the description that the response and the assertion are unsigned
+        # error_msg = "error_description=neither%20the%20response%20nor%20the%20assertion%20are%20signed"
+        # if error_msg not in login_response.content:
+        #     self.fail("Failed to get the expected error message")
+
+        continue_flow = self.sso.continue_saml_response(
+            urljoin(
+                self.realm_callback,
+                login_response.headers['Location']
+            ),
+            cookies=c
+        )
+
+        self.assertEqual(continue_flow.status_code // 100, 3)
+
+        new_url = urlparse(continue_flow.headers['Location'])
+        new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
+                                                   new_url.query)
+        finish_flow = self.sso.continue_saml_response(new_url)
+
+        self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
 
     def test_login_with_invalid_signature(self):
         self.log.info("Login with SSO")
@@ -261,16 +269,31 @@ class SSOTest(BaseTestCase):
         self.log.info(s.to_string())
         response = s.to_base64()
 
-        try:
-            response = self.sso.send_saml_response(self.realm_callback, response,
-                                                   saml_request_dict["RelayState"],
-                                                   cookies=c)
-        except requests.ConnectionError as er:
-            self.log.info(er)
-            pass
-        else:
-            self.log.info("Got Response: {0} {1}".format(response.status_code, response.content))
-            self.fail("Oversize payload should have been ignored by auth0")
+        # try:
+        #     response = self.sso.send_saml_response(self.realm_callback, response,
+        #                                            saml_request_dict["RelayState"],
+        #                                            cookies=c)
+        # except requests.ConnectionError as er:
+        #     self.log.info(er)
+        #     pass
+        # else:
+        #     self.log.info("Got Response: {0} {1}".format(response.status_code, response.content))
+        #     self.fail("Oversize payload should have been ignored by auth0")
+        response = self.sso.send_saml_response(self.realm_callback, response,
+                                               saml_request_dict["RelayState"],
+                                               cookies=c)
+
+        self.assertEqual(response.status_code // 100, 3)
+
+        new_url = urlparse(response.headers['Location'])
+        new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
+                                                   new_url.query)
+        finish_flow = self.sso.continue_saml_response(new_url)
+
+        self.log.info(finish_flow.headers)
+        self.log.info(finish_flow.content)
+
+        self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
 
     def test_high_quantity_saml_to_auth0(self):
         no_of_iters = self.input.param("no_of_iters", 10000)
@@ -425,9 +448,26 @@ class SSOTest(BaseTestCase):
                                                      cookies=c)
 
         self.assertEqual(login_response.status_code // 100, 3)
-        error_msg = "?error=invalid_request&"
-        if error_msg not in login_response.content:
-            self.fail("Failed to get the expected error message")
+        # error_msg = "?error=invalid_request&"
+        # if error_msg not in login_response.content:
+        #     self.fail("Failed to get the expected error message")
+
+        continue_flow = self.sso.continue_saml_response(
+            urljoin(
+                self.realm_callback,
+                login_response.headers['Location']
+            ),
+            cookies=c
+        )
+
+        self.assertEqual(continue_flow.status_code // 100, 3)
+
+        new_url = urlparse(continue_flow.headers['Location'])
+        new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
+                                                   new_url.query)
+        finish_flow = self.sso.continue_saml_response(new_url)
+
+        self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
 
     def test_invalid_data(self):
         self.log.info("Login with SSO")

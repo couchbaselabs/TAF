@@ -1,9 +1,11 @@
 import json
+import time
+import random
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
-
 class SecurityTest(BaseTestCase):
+    cidr = "10.0.0.0"
     def setUp(self):
         BaseTestCase.setUp(self)
         self.url = self.input.capella.get("pod")
@@ -13,18 +15,23 @@ class SecurityTest(BaseTestCase):
         self.project_id = self.tenant.project_id
         self.cluster_id = self.cluster.id
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd)
-        self.commonCapellaAPI = self.capellaAPI.cluster_ops_apis
+        self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
+        self.commonCapellaAPI = self.capellaAPI.org_ops_apis
         resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
         resp = resp.json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
+        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
         self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
+        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
         self.capellaAPI.cluster_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['accessKey']
+        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['id']
+        self.capellaAPI.cluster_ops_apis.TOKENINI = resp['token']
         self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['accessKey']
+        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
+        self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
+
         if self.input.capella.get("test_users"):
             self.test_users = json.loads(self.input.capella.get("test_users"))
         else:
@@ -36,19 +43,182 @@ class SecurityTest(BaseTestCase):
                 organizationRoles=[self.test_users[user]["role"]],
                 expiry=1)
             resp = resp.json()
-            self.test_users[user]["accessKey"] = resp['accessKey']
-            self.test_users[user]["secretKey"] = resp['secretKey']
+            self.test_users[user]["token"] = resp['token']
+        self.app_service_ids = []
+        self.test_cluster_ids = []
 
     def tearDown(self):
         super(SecurityTest, self).tearDown()
 
+    def tear_app_services(self):
+        #Deleting the app services created
+        num = 0
+        for item in self.app_service_ids:
+            status = self.get_app_service_status(self.tenant_id,
+                                                 self.project_id,
+                                                 item[0],
+                                                 item[1])
+            if status == "healthy":
+                resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                          self.project_id,
+                                                                          item[0],
+                                                                          item[1])
+                self.assertEqual(202, resp.status_code,
+                                 msg='FAIL, Outcome: {}, Expected: {} Failed to delete the '
+                                     'cluster'.format(resp.status_code, 202))
+                num = num + 1
+            else:
+                self.fail("Failed to delete the app service")
+        self.sleep(300, "Waiting for the app services to be deleted")
+
+    def delete_clusters(self):
+        self.log.info("Deleting the clusters created for the test")
+        for cluster_id in self.test_cluster_ids:
+            resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
+                                                                   self.project_id,
+                                                                   cluster_id)
+            self.assertEqual(202, resp.status_code,
+                             msg='FAIL, Outcome: {}, Expected: {} Failed to delete the '
+                                 'cluster'.format(resp.status_code, 202))
+
     def reset_api_keys(self):
         self.capellaAPI.cluster_ops_apis.SECRET = self.capellaAPI.cluster_ops_apis.SECRETINI
         self.capellaAPI.cluster_ops_apis.ACCESS = self.capellaAPI.cluster_ops_apis.ACCESSINI
+        self.capellaAPI.cluster_ops_apis.bearer_token = self.capellaAPI.cluster_ops_apis.TOKENINI
         self.capellaAPI.org_ops_apis.SECRET = self.capellaAPI.org_ops_apis.SECRETINI
         self.capellaAPI.org_ops_apis.ACCESS = self.capellaAPI.org_ops_apis.ACCESSINI
+        self.capellaAPI.org_ops_apis.bearer_token = self.capellaAPI.org_ops_apis.TOKENINI
 
-    def test_post_create_app_service(self):
+    def generate_random_cidr(self):
+        return '.'.join(
+            str(random.randint(0, 255)) for _ in range(4)
+        ) + '/23'
+
+    @staticmethod
+    def get_next_cidr():
+        addr = SecurityTest.cidr.split(".")
+        if int(addr[1]) < 255:
+            addr[1] = str(int(addr[1]) + 1)
+        elif int(addr[2]) < 255:
+            addr[2] = str(int(addr[2]) + 1)
+        SecurityTest.cidr = ".".join(addr)
+        return SecurityTest.cidr
+
+    def get_app_service_status(self, tenant_id, project_id, cluster_id, app_service_id):
+        status = 'pending'
+        while status != 'healthy':
+            self.sleep(15, "Waiting for app services to be in ready state")
+            resp = self.capellaAPI.cluster_ops_apis.get_appservice(tenant_id, project_id,
+                                                                   cluster_id, app_service_id)
+            status = resp.json()['currentState']
+        return status
+
+    def deploy_clusters(self, num_clusters=1):
+        self.log.info("Deploying clusters for the test")
+        cluster_ids = []
+        payload = {
+            "name": "AWS-Test-Cluster-V4-Koushal-",
+            "description": "My first test aws cluster for multiple services.",
+            "cloudProvider": {
+                "type": "aws",
+                "region": "us-east-1",
+                "cidr": "10.7.22.0/23"
+            },
+            "couchbaseServer": {
+                "version": "7.1"
+            },
+            "serviceGroups": [
+                {
+                    "node": {
+                        "compute": {
+                            "cpu": 4,
+                            "ram": 16
+                        },
+                        "disk": {
+                            "storage": 50,
+                            "type": "gp3",
+                            "iops": 3000
+                        }
+                    },
+                    "numOfNodes": 3,
+                    "services": [
+                        "data",
+                        "query",
+                        "index",
+                        "search"
+                    ]
+                },
+                {
+                    "node": {
+                        "compute": {
+                            "cpu": 4,
+                            "ram": 32
+                        },
+                        "disk": {
+                            "storage": 50,
+                            "type": "io2",
+                            "iops": 3005
+                        }
+                    },
+                    "numOfNodes": 2,
+                    "services": [
+                        "analytics"
+                    ]
+                }
+            ],
+            "availability": {
+                "type": "multi"
+            },
+            "support": {
+                "plan": "developer pro",
+                "timezone": "PT"
+            }
+        }
+        for num in range(num_clusters):
+            self.log.info("Deploying cluster no. {} for the test".format(num))
+            payload["name"] = payload["name"] + str(num)
+            end_time = time.time() + 1800
+            while time.time() < end_time:
+                subnet = SecurityTest.get_next_cidr() + "/20"
+                payload["cloudProvider"]["cidr"] = subnet
+                self.log.info("Trying out with cidr {}".format(subnet))
+                resp = self.capellaAPI.cluster_ops_apis.create_cluster(
+                    self.tenant_id, self.project_id, payload["name"],
+                    payload["cloudProvider"], payload["couchbaseServer"],
+                    payload["serviceGroups"], payload["availability"], payload["support"])
+                temp_resp = resp.json()
+                if resp.status_code == 202:
+                    cluster_ids.append(temp_resp["id"])
+                    self.assertEqual(202, resp.status_code,
+                                     msg='FAIL, Outcome: {}, Expected: {} Failed to delete the '
+                                         'cluster'.format(resp.status_code, 202))
+                    break
+                elif "Please ensure you are passing a unique CIDR block and try again" \
+                        in temp_resp["message"]:
+                    continue
+                else:
+                    self.assertFalse(resp.status_code, "Failed to create a cluster with error "
+                                                       "as {}".format(resp.content))
+        for cluster_id in cluster_ids:
+            status = self.get_cluster_status(cluster_id)
+            self.assertEqual(status, "healthy",
+                             msg="FAIL, Outcome: {}, Expected: {}".format(status, "healthy"))
+        return cluster_ids
+
+    def get_cluster_status(self, cluster_id):
+        status = "Unknown"
+        while status != 'healthy':
+            self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
+                       .format(status))
+            cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                                                                                self.tenant_id,
+                                                                                self.project_id,
+                                                                                cluster_id)
+            cluster_ready_resp = cluster_ready_resp.json()
+            status = cluster_ready_resp["currentState"]
+        return status
+
+    def test_post_create_appservice(self):
         self.log.info("     I. POST Create App Service")
         """
         /v4/organizations/{organizationId}/projects/{projectId}/clusters/{clusterId}/appservices
@@ -64,56 +234,20 @@ class SecurityTest(BaseTestCase):
             "version": "3.0"
         }
         """
+        # Deploying cluster for the test
+        self.test_cluster_ids = self.deploy_clusters(6)
+
         self.log.info("Verifying status code for creating an app service")
         self.log.info("Verifying the endpoint authentication with different test cases")
-
         self.log.info("     1. Empty AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = ""
-        resp = self.capellaAPI.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   "App_service_security")
-        self.assertEqual(401, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_api_keys()
-
-        self.log.info("     2. Empty SecretKey")
-        self.capellaAPI.cluster_ops_apis.SECRET = ""
-        resp = self.capellaAPI.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   "App_service_security")
-        self.assertEqual(401, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_api_keys()
-
-        self.log.info("     3. Invalid AccessKey")
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   "App_service_security")
-        self.assertEqual(401, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_api_keys()
-
-        self.log.info("     4. Invalid SecretKey")
-        self.capellaAPI.cluster_ops_apis.SECRET = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   "App_service_security")
-        self.assertEqual(401, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_api_keys()
-
-        self.log.info("    5. Cross Combination of Valid AccessKey and SecretKey")
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.test_users["User1"]["accessKey"]
-        self.capellaAPI.cluster_ops_apis.SECRET = self.test_users["User2"]["secretKey"]
-        resp = self.capellaAPI.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   "App_service_security")
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.cluster_id,
+                                                                  "App_service_security",
+                                                                  "Testing App Service",
+                                                                  2, 2, 4, "3.0")
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -125,23 +259,19 @@ class SecurityTest(BaseTestCase):
             'invalid_tenant_id': self.invalid_id
         }
         for tenant_id in tenant_ids:
-            resp = self.capellaAPI.cluster_ops_apis.create_app_service(tenant_ids[tenant_id],
-                                                                       self.project_id,
-                                                                       self.cluster_id,
-                                                                       "App_service_security")
+            resp = self.capellaAPI.cluster_ops_apis.create_appservice(tenant_ids[tenant_id],
+                                                      self.project_id,
+                                                      self.test_cluster_ids[0],
+                                                      "App_service_security",
+                                                      "Testing App Service",
+                                                      2, 2, 4, "3.0")
             if tenant_id == 'valid_tenant_id':
                 self.assertEqual(resp.status_code, 201,
-                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              201))
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,201))
+
                 temp_app_service_id = resp.json()["id"]
-                self.log.info("Deleting app service")
-                resp = self.capellaAPI.org_ops_apis.delete_app_service(tenant_ids[tenant_id],
-                                                                       self.project_id,
-                                                                       self.cluster_id,
-                                                                       temp_app_service_id)
-                self.assertEqual(204, resp.status_code,
-                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
-                                                                              204))
+                self.app_service_ids.append(temp_app_service_id)
+
             else:
                 self.assertEqual(resp.status_code, 403,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
@@ -159,27 +289,24 @@ class SecurityTest(BaseTestCase):
             'invalid_project_id': self.invalid_id
         }
         for project_id in project_ids:
-            resp = self.capellaAPI.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                       project_ids[project_id],
-                                                                       self.cluster_id,
-                                                                       "App_service_security")
-            if project_id == 'valid_project_id' or project_id == 'different_project_id':
+            resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
+                                                                     project_ids[project_id],
+                                                                     self.test_cluster_ids[1],
+                                                                     "App_service_security",
+                                                                     "Testing App Service",
+                                                                     2, 2, 4, "3.0")
+            if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 201,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
+
                 temp_app_service_id = resp.json()["id"]
-                self.log.info("Deleting app service")
-                resp = self.capellaAPI.org_ops_apis.delete_app_service(self.tenant_id,
-                                                                       project_ids[project_id],
-                                                                       self.cluster_id,
-                                                                       temp_app_service_id)
-                self.assertEqual(204, resp.status_code,
-                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
-                                                                              204))
+                self.app_service_ids.append(temp_app_service_id)
+
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                            project_ids["different_project_id"])
@@ -189,57 +316,51 @@ class SecurityTest(BaseTestCase):
         # Verifying the create app service endpoint with different cluster ids
         self.log.info("Verifying with different cluster ids")
         cluster_ids = {
-            'valid_cluster_id': self.cluster_id,
+            'valid_cluster_id': self.test_cluster_ids[2],
             'invalid_cluster_id': self.invalid_id
         }
         for cluster_id in cluster_ids:
-            resp = self.capellaAPI.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                       self.project_id,
-                                                                       cluster_ids[cluster_id],
-                                                                       "App_service_security")
-            if cluster_id == 'valid_tenant_id':
+            resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
+                                                                     self.project_id,
+                                                                     cluster_ids[cluster_id],
+                                                                     "App_service_security",
+                                                                     "Testing App Service",
+                                                                     2, 2, 4, "3.0")
+            if cluster_id == 'valid_cluster_id':
                 self.assertEqual(resp.status_code, 201,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
-                temp_app_service_id = resp.json()["id"]
-                self.log.info("Deleting app service")
-                resp = self.capellaAPI.org_ops_apis.delete_app_service(self.tenant_id,
-                                                                       self.project_id,
-                                                                       cluster_ids[cluster_id],
-                                                                       temp_app_service_id)
-                self.assertEqual(204, resp.status_code,
-                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
-                                                                              204))
-            else:
-                self.assertEqual(resp.status_code, 403,
-                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              403))
 
+                temp_app_service_id = resp.json()["id"]
+                self.app_service_ids.append(temp_app_service_id)
+
+            else:
+                self.assertEqual(resp.status_code, 404,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              404))
         # Testing for organization RBAC roles
         self.log.info("Verifying endpoint for different roles under organization - RBAC")
         for user in self.test_users:
             self.log.info("Checking with role - {}".format(self.test_users[user]["role"]))
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
-                user]["mailid"], self.test_users[user]["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = self.test_users[user]["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = self.test_users[user]["accessKey"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                                    self.project_id,
-                                                                                    self.cluster_id,
-                                                                                    "App_service_security")
+                user]["mailid"], self.test_users[user]["password"], self.test_users[user]["token"])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.create_appservice(self.tenant_id,
+                                                                 self.project_id,
+                                                                 self.test_cluster_ids[3],
+                                                                 "App_service_security",
+                                                                 "Testing App Service",
+                                                                 2, 2, 4, "3.0")
+
             if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(role_response.status_code, 201,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
                                      role_response.status_code, 201))
+
                 temp_app_service_id = role_response.json()["id"]
-                self.log.info("Deleting app service")
-                resp = self.capellaAPI.org_ops_apis.delete_app_service(self.tenant_id,
-                                                                       self.project_id,
-                                                                       self.cluster_id,
-                                                                       temp_app_service_id)
-                self.assertEqual(204, resp.status_code,
-                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
-                                                                              204))
+                self.app_service_ids.append(temp_app_service_id)
+
             else:
                 self.assertEqual(role_response.status_code, 403,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
@@ -250,7 +371,23 @@ class SecurityTest(BaseTestCase):
         project_roles = ["projectOwner", "projectViewer", "projectManager",
                          "projectDataReaderWriter", "projectDataReader"]
         user = self.test_users["User3"]
+        num = 4
         for role in project_roles:
+            self.log.info("Creating apiKeys for role {}".format(role))
+            resources = [
+                {
+                    "id": self.project_id,
+                    "roles": [role]
+                }
+            ]
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.tenant_id, 'API Key for role {}'.format(
+                    user["role"]), organizationRoles=["organizationMember"], expiry=1,
+                resources=resources)
+            resp = resp.json()
+            api_key_id = resp['id']
+            user['token'] = resp['token']
+
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
             dic = {"update_info": [{
                 "op": "add",
@@ -260,20 +397,36 @@ class SecurityTest(BaseTestCase):
                     "type": "project",
                     "roles": [role]
                 }
-            }]
+                }]
             }
-            self.capellaAPI.org_ops_apis.update_user(self.tenant_id, user['userid'],
+            self.capellaAPI.org_ops_apis.update_user(self.tenant_id,
+                                                     user['userid'],
                                                      dic["update_info"])
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
-                                             user["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = user["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = user["accessKey"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                                    self.project_id,
-                                                                                    self.cluster_id,
-                                                                                    "App_service_security")
-            self.assertEqual(403, role_response.status_code,
-                             msg="FAIL: Outcome:{}, Expected: {}".format(role_response, 403))
+                                             user["password"], user["token"])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.create_appservice(
+                                                                 self.tenant_id,
+                                                                 self.project_id,
+                                                                 self.test_cluster_ids[num],
+                                                                 "App_service_security",
+                                                                 "Testing App Service",
+                                                                 2, 2, 4, "3.0")
+            if role in ['projectOwner', 'projectManager']:
+                self.assertEqual(201, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 201))
+                num = num + 1
+                num = num % 6
+                temp_app_service_id = role_response.json()["id"]
+                self.app_service_ids.append(temp_app_service_id)
+
+            else:
+                self.assertEqual(403, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 403))
+
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
             update_info = [{
@@ -282,50 +435,54 @@ class SecurityTest(BaseTestCase):
             }]
             remove_proj_resp = self.capellaAPI.org_ops_apis.update_user(
                 self.tenant_id, user['userid'], update_info)
+
             self.assertEqual(200, remove_proj_resp.status_code,
                              msg="FAIL: Outcome:{}, Expected: {}".format(
                                  remove_proj_resp.status_code, 200))
 
-    def test_get_list_app_services(self):
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
+            self.assertEqual(204, resp.status_code,
+                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
+
+        self.tear_app_services()
+        self.delete_clusters()
+
+    def test_get_list_appservices(self):
         self.log.info("     II. GET List App Services")
         """
         /v4/organizations/{organizationId}/appservices
         """
         self.log.info("Verifying status code for listing all app services")
-        self.log.info("Verifying the endpoint authentication with different test cases")
 
+        self.log.info("Verifying the endpoint authentication with different test cases")
         self.log.info("     1. Empty AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = ""
-        resp = self.capellaAPI.cluster_ops_apis.list_app_services(self.tenant_id)
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.list_appservices(self.tenant_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     2. Empty SecretKey")
         self.capellaAPI.cluster_ops_apis.SECRET = ""
-        resp = self.capellaAPI.cluster_ops_apis.list_app_services(self.tenant_id)
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.list_appservices(self.tenant_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     3. Invalid AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.list_app_services(self.tenant_id)
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.list_appservices(self.tenant_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     4. Invalid SecretKey")
         self.capellaAPI.cluster_ops_apis.SECRET = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.list_app_services(self.tenant_id)
-        self.assertEqual(401, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_api_keys()
-
-        self.log.info("    5. Cross Combination of Valid AccessKey and SecretKey")
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.test_users["User1"]["accessKey"]
-        self.capellaAPI.cluster_ops_apis.SECRET = self.test_users["User2"]["secretKey"]
-        resp = self.capellaAPI.cluster_ops_apis.list_app_services(self.tenant_id)
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.list_appservices(self.tenant_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -337,7 +494,8 @@ class SecurityTest(BaseTestCase):
             'invalid_tenant_id': self.invalid_id
         }
         for tenant_id in tenant_ids:
-            resp = self.capellaAPI.cluster_ops_apis.list_app_services(self.tenant_id)
+            resp = self.capellaAPI.cluster_ops_apis.list_appservices(tenant_ids[tenant_id])
+
             if tenant_id == 'valid_tenant_id':
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
@@ -351,11 +509,12 @@ class SecurityTest(BaseTestCase):
         self.log.info("Verifying endpoint for different roles under organization - RBAC")
         for user in self.test_users:
             self.log.info("Checking with role - {}".format(self.test_users[user]["role"]))
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
-                user]["mailid"], self.test_users[user]["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = self.test_users[user]["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = self.test_users[user]["accessKey"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.list_app_services(self.tenant_id)
+                user]["mailid"], self.test_users[user]["password"], self.test_users[user]["token"])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.list_appservices(self.tenant_id)
+
             if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(role_response.status_code, 200,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
@@ -371,7 +530,23 @@ class SecurityTest(BaseTestCase):
                          "projectDataReaderWriter", "projectDataReader"]
         user = self.test_users["User3"]
         for role in project_roles:
+            self.log.info("Creating apiKeys for role {}".format(role))
+            resources = [
+                {
+                    "id": self.project_id,
+                    "roles": [role]
+                }
+            ]
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.tenant_id, 'API Key for role {}'.format(
+                    user["role"]), organizationRoles=["organizationMember"], expiry=1,
+                resources=resources)
+            resp = resp.json()
+            api_key_id = resp['id']
+            user['token'] = resp['token']
+
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
+
             dic = {"update_info": [{
                 "op": "add",
                 "path": "/resources/{}".format(self.project_id),
@@ -380,17 +555,19 @@ class SecurityTest(BaseTestCase):
                     "type": "project",
                     "roles": [role]
                 }
-            }]
+                }]
             }
+
             self.capellaAPI.org_ops_apis.update_user(self.tenant_id, user['userid'],
                                                      dic["update_info"])
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
-                                             user["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = user["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = user["accessKey"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.list_app_services(self.tenant_id)
-            self.assertEqual(403, role_response.status_code,
-                             msg="FAIL: Outcome:{}, Expected: {}".format(role_response, 403))
+                                             user["password"], user['token'])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.list_appservices(self.tenant_id)
+            self.assertEqual(200, role_response.status_code,
+                             msg="FAIL: Outcome:{}, Expected: {}".format(
+                             role_response.status_code, 200))
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
             update_info = [{
@@ -403,28 +580,35 @@ class SecurityTest(BaseTestCase):
                              msg="FAIL: Outcome:{}, Expected: {}".format(
                                  remove_proj_resp.status_code, 200))
 
-    def test_get_get_app_service(self):
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
+            self.assertEqual(204, resp.status_code,
+                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
+
+    def test_get_get_appservice(self):
         self.log.info("     III. GET Get App Service")
         """
         /v4/organizations/{organizationId}/projects/{projectId}/clusters/{clusterId}/appservices/{appServiceId}
         """
-        self.log.info("Creating an app service")
-        resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                       self.project_id,
-                                                                       self.cluster_id,
-                                                                       "App_service_security")
-        self.assertEqual(resp.status_code, 201,
-                         msg='FAIL: Outcome:{}, Expected:{}'.format(
-                             resp.status_code, 201))
-        app_service_id = resp.json()["id"]
-
         self.log.info("Verifying status code for retrieving information of a particular app "
                       "service")
-        self.log.info("Verifying the endpoint authentication with different test cases")
 
+        self.log.info("Creating an app service")
+        resp = self.capellaAPI.cluster_ops_apis.create_appservice(
+                                                                 self.tenant_id,
+                                                                 self.project_id,
+                                                                 self.cluster_id,
+                                                                 "App_service_security",
+                                                                 "Testing App Service",
+                                                                 2, 2, 4, "3.0")
+        self.assertEqual(resp.status_code, 201,
+                         msg='FAIL: Outcome:{}, Expected:{}'.format(resp.status_code, 201))
+        app_service_id = resp.json()["id"]
+
+        self.log.info("Verifying the endpoint authentication with different test cases")
         self.log.info("     1. Empty AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = ""
-        resp = self.capellaAPI.cluster_ops_apis.get_app_service(self.tenant_id,
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                 self.project_id,
                                                                 self.cluster_id,
                                                                 app_service_id)
@@ -434,7 +618,8 @@ class SecurityTest(BaseTestCase):
 
         self.log.info("     2. Empty SecretKey")
         self.capellaAPI.cluster_ops_apis.SECRET = ""
-        resp = self.capellaAPI.cluster_ops_apis.get_app_service(self.tenant_id,
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                 self.project_id,
                                                                 self.cluster_id,
                                                                 app_service_id)
@@ -444,7 +629,8 @@ class SecurityTest(BaseTestCase):
 
         self.log.info("     3. Invalid AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.get_app_service(self.tenant_id,
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                 self.project_id,
                                                                 self.cluster_id,
                                                                 app_service_id)
@@ -454,18 +640,8 @@ class SecurityTest(BaseTestCase):
 
         self.log.info("     4. Invalid SecretKey")
         self.capellaAPI.cluster_ops_apis.SECRET = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.get_app_service(self.tenant_id,
-                                                                self.project_id,
-                                                                self.cluster_id,
-                                                                app_service_id)
-        self.assertEqual(401, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_api_keys()
-
-        self.log.info("    5. Cross Combination of Valid AccessKey and SecretKey")
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.test_users["User1"]["accessKey"]
-        self.capellaAPI.cluster_ops_apis.SECRET = self.test_users["User2"]["secretKey"]
-        resp = self.capellaAPI.cluster_ops_apis.get_app_service(self.tenant_id,
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                 self.project_id,
                                                                 self.cluster_id,
                                                                 app_service_id)
@@ -480,7 +656,7 @@ class SecurityTest(BaseTestCase):
             'invalid_tenant_id': self.invalid_id
         }
         for tenant_id in tenant_ids:
-            resp = self.capellaAPI.cluster_ops_apis.get_app_service(tenant_ids[tenant_id],
+            resp = self.capellaAPI.cluster_ops_apis.get_appservice(tenant_ids[tenant_id],
                                                                     self.project_id,
                                                                     self.cluster_id,
                                                                     app_service_id)
@@ -492,10 +668,11 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(resp.status_code, 403,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               403))
-
         # Verify the endpoint with different projects
         self.log.info("Verifying the endpoint access with different projects")
+
         self.log.info("Creating a project")
+
         resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id, "Project_security")
         self.assertEqual(201, resp.status_code,
                          msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code, 201))
@@ -506,18 +683,19 @@ class SecurityTest(BaseTestCase):
             'invalid_project_id': self.invalid_id
         }
         for project_id in project_ids:
-            resp = self.capellaAPI.cluster_ops_apis.get_app_service(self.tenant_id,
+            resp = self.capellaAPI.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                     project_ids[project_id],
                                                                     self.cluster_id,
                                                                     app_service_id)
-            if project_id == 'valid_project_id' or project_id == 'different_project_id':
+            if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
+
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                            project_ids["different_project_id"])
@@ -531,7 +709,7 @@ class SecurityTest(BaseTestCase):
             'invalid_cluster_id': self.invalid_id
         }
         for cluster_id in cluster_ids:
-            resp = self.capellaAPI.cluster_ops_apis.get_app_service(self.tenant_id,
+            resp = self.capellaAPI.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                     self.project_id,
                                                                     cluster_ids[cluster_id],
                                                                     app_service_id)
@@ -540,9 +718,9 @@ class SecurityTest(BaseTestCase):
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
             else:
-                self.assertEqual(resp.status_code, 403,
+                self.assertEqual(resp.status_code, 404,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              403))
+                                                                              404))
 
         # Verifying the get app service endpoint with different app service ids
         self.log.info("Verifying with different app service ids")
@@ -551,28 +729,28 @@ class SecurityTest(BaseTestCase):
             'invalid_app_service_id': self.invalid_id
         }
         for a_s_id in app_service_ids:
-            resp = self.capellaAPI.cluster_ops_apis.get_app_service(self.tenant_id,
+            resp = self.capellaAPI.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                     self.project_id,
                                                                     self.cluster_id,
                                                                     app_service_ids[a_s_id])
             if a_s_id == 'valid_app_service_id':
-                self.assertEqual(resp.status_code, 204,
+                self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              204))
+                                                                              200))
             else:
-                self.assertEqual(resp.status_code, 403,
+                self.assertEqual(resp.status_code, 404,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              403))
+                                                                              404))
 
         # Testing for organization RBAC roles
         self.log.info("Verifying endpoint for different roles under organization - RBAC")
         for user in self.test_users:
             self.log.info("Checking with role - {}".format(self.test_users[user]["role"]))
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
-                user]["mailid"], self.test_users[user]["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = self.test_users[user]["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = self.test_users[user]["accessKey"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.get_app_service(self.tenant_id,
+                user]["mailid"], self.test_users[user]["password"], self.test_users[user]["token"])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                                  self.project_id,
                                                                                  self.cluster_id,
                                                                                  app_service_id)
@@ -584,39 +762,51 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(role_response.status_code, 403,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
                                      role_response.status_code, 403))
+
         # Testing for Project Level RBAC roles
         self.log.info("Verifying endpoint for different roles under project - RBAC")
         project_roles = ["projectOwner", "projectViewer", "projectManager",
                          "projectDataReaderWriter", "projectDataReader"]
         user = self.test_users["User3"]
         for role in project_roles:
-            self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
-            dic = {"update_info": [{
-                "op": "add",
-                "path": "/resources/{}".format(self.project_id),
-                "value": {
+            self.log.info("Creating apiKeys for role {}".format(role))
+            resources = [
+                {
                     "id": self.project_id,
-                    "type": "project",
                     "roles": [role]
                 }
-            }]
+            ]
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.tenant_id, 'API Key for role {}'.format(
+                    user["role"]), organizationRoles=["organizationMember"], expiry=1,
+                resources=resources)
+            resp = resp.json()
+            api_key_id = resp['id']
+            user['token'] = resp['token']
+
+            self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
+            dic = {"update_info": [{
+                    "op": "add",
+                    "path": "/resources/{}".format(self.project_id),
+                    "value": {
+                        "id": self.project_id,
+                        "type": "project",
+                        "roles": [role]
+                    }
+                }]
             }
             self.capellaAPI.org_ops_apis.update_user(self.tenant_id, user['userid'],
                                                      dic["update_info"])
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
-                                             user["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = user["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = user["accessKey"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.get_app_service(self.tenant_id,
+                                             user["password"], user["token"])
+            role_response = self.capellaAPIRole.cluster_ops_apis.get_appservice(self.tenant_id,
                                                                                  self.project_id,
                                                                                  self.cluster_id,
                                                                                  app_service_id)
-            if role == "projectOwner":
-                self.assertEqual(200, role_response,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response, 200))
-            else:
-                self.assertEqual(403, role_response.status_code,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response, 403))
+            self.assertEqual(200, role_response.status_code,
+                             msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code,
+                                                                         200))
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
             update_info = [{
@@ -629,16 +819,22 @@ class SecurityTest(BaseTestCase):
                              msg="FAIL: Outcome:{}, Expected: {}".format(
                                  remove_proj_resp.status_code, 200))
 
-        self.log.info("Deleting app service")
-        resp = self.capellaAPI.org_ops_apis.delete_app_service(self.tenant_id,
-                                                               self.project_id,
-                                                               self.cluster_id,
-                                                               app_service_id)
-        self.assertEqual(204, resp.status_code,
-                         msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
-                                                                      204))
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
+            self.assertEqual(204, resp.status_code,
+                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
 
-    def test_put_update_app_service(self):
+        status = self.get_app_service_status(self.tenant_id, self.project_id, self.cluster_id,
+                                             app_service_id)
+        if status == "healthy":
+            self.log.info("Deleting app service")
+            resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                   self.project_id,
+                                                                   self.cluster_id,
+                                                                   app_service_id)
+            self.assertEqual(202, resp.status_code,
+                             msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                          202))
+    def test_put_update_appservices(self):
         self.log.info("     IV. PUT Update App Service")
         """
         /v4/organizations/{organizationId}/projects/{projectId}/clusters/{clusterId}/appservices/{appServiceId}
@@ -651,72 +847,78 @@ class SecurityTest(BaseTestCase):
             }
         }
         """
-
-        self.log.info("Creating an app service")
-        resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                       self.project_id,
-                                                                       self.cluster_id,
-                                                                       "App_service_security")
-        self.assertEqual(resp.status_code, 201,
-                         msg='FAIL: Outcome:{}, Expected:{}'.format(
-                             resp.status_code, 201))
-        app_service_id = resp.json()["id"]
-
         self.log.info("Verifying status code for updating specs of a particular app service")
-        self.log.info("Verifying the endpoint authentication with different test cases")
 
+        # Deploying cluster for the test
+        self.test_cluster_ids = self.deploy_clusters(7)
+        for test_cluster_id in self.test_cluster_ids:
+            self.log.info("Creating an app service")
+            resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
+                                                                      self.project_id,
+                                                                      test_cluster_id,
+                                                                      "App_service_security",
+                                                                      "Testing App Service",
+                                                                      2, 2, 4, "3.0")
+            self.assertEqual(resp.status_code, 201,
+                             msg='FAIL: Outcome:{}, Expected:{}'.format(
+                                 resp.status_code, 201))
+            app_service_id = resp.json()["id"]
+            self.app_service_ids.append([test_cluster_id, app_service_id])
+        for item in self.app_service_ids:
+            status = self.get_app_service_status(self.tenant_id,
+                                                 self.project_id,
+                                                 item[0],
+                                                 item[1])
+            if status != "healthy":
+                self.fail("Failed to create app service for a cluster")
+
+        num = 0
+
+        self.log.info("Verifying the endpoint authentication with different test cases")
         self.log.info("     1. Empty AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = ""
-        resp = self.capellaAPI.cluster_ops_apis.update_app_service(self.tenant_id,
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.update_appservices(self.tenant_id,
                                                                    self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id,
-                                                                   2)
+                                                                   self.app_service_ids[num][0],
+                                                                   self.app_service_ids[num][1],
+                                                                   3, 4, 8)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     2. Empty SecretKey")
         self.capellaAPI.cluster_ops_apis.SECRET = ""
-        resp = self.capellaAPI.cluster_ops_apis.update_app_service(self.tenant_id,
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.update_appservices(self.tenant_id,
                                                                    self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id,
-                                                                   2)
+                                                                   self.app_service_ids[num][0],
+                                                                   self.app_service_ids[num][1],
+                                                                   3, 4, 8)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     3. Invalid AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.update_app_service(self.tenant_id,
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.update_appservices(self.tenant_id,
                                                                    self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id,
-                                                                   2)
+                                                                   self.app_service_ids[num][0],
+                                                                   self.app_service_ids[num][1],
+                                                                   3, 4, 8)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     4. Invalid SecretKey")
         self.capellaAPI.cluster_ops_apis.SECRET = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.update_app_service(self.tenant_id,
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.update_appservices(self.tenant_id,
                                                                    self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id,
-                                                                   2)
-        self.assertEqual(401, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_api_keys()
-
-        self.log.info("    5. Cross Combination of Valid AccessKey and SecretKey")
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.test_users["User1"]["accessKey"]
-        self.capellaAPI.cluster_ops_apis.SECRET = self.test_users["User2"]["secretKey"]
-        resp = self.capellaAPI.cluster_ops_apis.update_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id,
-                                                                   2)
+                                                                   self.app_service_ids[num][0],
+                                                                   self.app_service_ids[num][1],
+                                                                   3, 4, 8)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -728,21 +930,24 @@ class SecurityTest(BaseTestCase):
             'invalid_tenant_id': self.invalid_id
         }
         for tenant_id in tenant_ids:
-            resp = self.capellaAPI.cluster_ops_apis.update_app_service(tenant_ids[tenant_id],
+            resp = self.capellaAPI.cluster_ops_apis.update_appservices(tenant_ids[tenant_id],
                                                                        self.project_id,
-                                                                       self.cluster_id,
-                                                                       app_service_id,
-                                                                       2)
+                                                                       self.app_service_ids[num][0],
+                                                                       self.app_service_ids[num][1],
+                                                                       3, 4, 8)
             if tenant_id == 'valid_tenant_id':
                 self.assertEqual(resp.status_code, 204,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               204))
+                num = num + 1
             else:
                 self.assertEqual(resp.status_code, 403,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               403))
+
         # Verify the endpoint with different projects
         self.log.info("Verifying the endpoint access with different projects")
+
         self.log.info("Creating a project")
         resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id, "Project_security")
         self.assertEqual(201, resp.status_code,
@@ -754,19 +959,21 @@ class SecurityTest(BaseTestCase):
             'invalid_project_id': self.invalid_id
         }
         for project_id in project_ids:
-            resp = self.capellaAPI.cluster_ops_apis.update_app_service(self.tenant_id,
+            resp = self.capellaAPI.cluster_ops_apis.update_appservices(self.tenant_id,
                                                                        project_ids[project_id],
-                                                                       self.cluster_id,
-                                                                       app_service_id,
-                                                                       2)
-            if project_id == 'valid_project_id' or project_id == 'different_project_id':
+                                                                       self.app_service_ids[num][0],
+                                                                       self.app_service_ids[num][1],
+                                                                       3, 4, 8)
+            if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 204,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               204))
+                num = num + 1
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
+
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                            project_ids["different_project_id"])
@@ -776,73 +983,93 @@ class SecurityTest(BaseTestCase):
         # Verifying the update app service endpoint with different cluster ids
         self.log.info("Verifying with different cluster ids")
         cluster_ids = {
-            'valid_cluster_id': self.cluster_id,
+            'valid_cluster_id': self.app_service_ids[num][0],
             'invalid_cluster_id': self.invalid_id
         }
         for cluster_id in cluster_ids:
-            resp = self.capellaAPI.cluster_ops_apis.update_app_service(self.tenant_id,
+            resp = self.capellaAPI.cluster_ops_apis.update_appservices(self.tenant_id,
                                                                        self.project_id,
                                                                        cluster_ids[cluster_id],
-                                                                       app_service_id,
-                                                                       2)
-            if cluster_id == 'valid_tenant_id':
+                                                                       self.app_service_ids[num][1],
+                                                                       3, 4, 8)
+            if cluster_id == 'valid_cluster_id':
                 self.assertEqual(resp.status_code, 204,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               204))
             else:
-                self.assertEqual(resp.status_code, 403,
+                self.assertEqual(resp.status_code, 404,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              403))
+                                                                              404))
+        num = num + 1
 
         # Verifying the update project endpoint with different app service ids
         self.log.info("Verifying with different app service ids")
         app_service_ids = {
-            'valid_app_service_id': app_service_id,
+            'valid_app_service_id': self.app_service_ids[num][1],
             'invalid_app_service_id': self.invalid_id
         }
         for a_s_id in app_service_ids:
-            resp = self.capellaAPI.cluster_ops_apis.update_app_service(self.tenant_id,
+            resp = self.capellaAPI.cluster_ops_apis.update_appservices(self.tenant_id,
                                                                        self.project_id,
-                                                                       self.cluster_id,
+                                                                       self.app_service_ids[num][0],
                                                                        app_service_ids[a_s_id],
-                                                                       2)
+                                                                       3, 4, 8)
             if a_s_id == 'valid_app_service_id':
                 self.assertEqual(resp.status_code, 204,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               204))
             else:
-                self.assertEqual(resp.status_code, 403,
+                self.assertEqual(resp.status_code, 404,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              403))
+                                                                              404))
+
+        num = num + 1
 
         # Testing for organization RBAC roles
         self.log.info("Verifying endpoint for different roles under organization - RBAC")
         for user in self.test_users:
             self.log.info("Checking with role - {}".format(self.test_users[user]["role"]))
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
-                user]["mailid"], self.test_users[user]["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = self.test_users[user]["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = self.test_users[user]["accessKey"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.update_app_service(self.tenant_id,
-                                                                                    self.project_id,
-                                                                                    self.cluster_id,
-                                                                                    app_service_id,
-                                                                                    2)
+                user]["mailid"], self.test_users[user]["password"], self.test_users[user]["token"])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.update_appservices(
+                                                                    self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.app_service_ids[num][0],
+                                                                    self.app_service_ids[num][1],
+                                                                    3, 4, 8)
+
             if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(role_response.status_code, 204,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
                                      role_response.status_code, 204))
+                num = num + 1
             else:
                 self.assertEqual(role_response.status_code, 403,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
                                      role_response.status_code, 403))
-
         # Testing for Project Level RBAC roles
         self.log.info("Verifying endpoint for different roles under project - RBAC")
         project_roles = ["projectOwner", "projectViewer", "projectManager",
                          "projectDataReaderWriter", "projectDataReader"]
         user = self.test_users["User3"]
         for role in project_roles:
+            self.log.info("Creating apiKeys for role {}".format(role))
+            resources = [
+                {
+                    "id": self.project_id,
+                    "roles": [role]
+                }
+            ]
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.tenant_id, 'API Key for role {}'.format(
+                    user["role"]), organizationRoles=["organizationMember"], expiry=1,
+                resources=resources)
+            resp = resp.json()
+            api_key_id = resp['id']
+            user['token'] = resp['token']
+
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
             dic = {"update_info": [{
                 "op": "add",
@@ -856,21 +1083,26 @@ class SecurityTest(BaseTestCase):
             }
             self.capellaAPI.org_ops_apis.update_user(self.tenant_id, user['userid'],
                                                      dic["update_info"])
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
-                                             user["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = user["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = user["accessKey"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.update_app_service(self.tenant_id,
-                                                                                    self.project_id,
-                                                                                    self.cluster_id,
-                                                                                    app_service_id,
-                                                                                    2)
-            if role == "projectOwner":
-                self.assertEqual(204, role_response,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response, 204))
+                                             user["password"], user["token"])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.update_appservices(
+                                                                    self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.app_service_ids[num][0],
+                                                                    self.app_service_ids[num][1],
+                                                                    3, 4, 8)
+
+            if role in ["projectOwner", "projectManager"]:
+                self.assertEqual(204, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 204))
+                num = num + 1
             else:
                 self.assertEqual(403, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(role_response, 403))
+
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
             update_info = [{
@@ -883,81 +1115,88 @@ class SecurityTest(BaseTestCase):
                              msg="FAIL: Outcome:{}, Expected: {}".format(
                                  remove_proj_resp.status_code, 200))
 
-        self.log.info("Deleting app service")
-        resp = self.capellaAPI.org_ops_apis.delete_app_service(self.tenant_id,
-                                                               self.project_id,
-                                                               self.cluster_id,
-                                                               app_service_id)
-        self.assertEqual(204, resp.status_code,
-                         msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
-                                                                      204))
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
+            self.assertEqual(204, resp.status_code,
+                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
 
-    def test_del_delete_app_service(self):
+        self.tear_app_services()
+        self.delete_clusters()
+
+    def test_del_delete_appservice(self):
         self.log.info("     V. DEL Delete App Service")
         """
         /v4/organizations/{organizationId}/projects/{projectId}/clusters/{clusterId}/appservices/{appServiceId}
         """
-
-        self.log.info("Creating an app service")
-        resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                       self.project_id,
-                                                                       self.cluster_id,
-                                                                       "App_service_security")
-        self.assertEqual(resp.status_code, 201,
-                         msg='FAIL: Outcome:{}, Expected:{}'.format(
-                             resp.status_code, 201))
-        app_service_id = resp.json()["id"]
-
         self.log.info("Verifying status code for deleting an app service")
-        self.log.info("Verifying the endpoint authentication with different test cases")
 
+        # Deploying cluster for the test
+        self.test_cluster_ids = self.deploy_clusters(7)
+        for test_cluster_id in self.test_cluster_ids:
+            self.log.info("Creating an app service")
+            resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
+                                                                      self.project_id,
+                                                                      test_cluster_id,
+                                                                      "App_service_security",
+                                                                      "Testing App Service",
+                                                                      2, 2, 4, "3.0")
+            self.assertEqual(resp.status_code, 201,
+                             msg='FAIL: Outcome:{}, Expected:{}'.format(
+                                 resp.status_code, 201))
+            app_service_id = resp.json()["id"]
+            self.app_service_ids.append([test_cluster_id, app_service_id])
+        for item in self.app_service_ids:
+            status = self.get_app_service_status(self.tenant_id,
+                                                 self.project_id,
+                                                 item[0],
+                                                 item[1])
+            if status != "healthy":
+                self.fail("Failed to create app service for a cluster")
+
+        num = 0
+
+        self.log.info("Verifying the endpoint authentication with different test cases")
         self.log.info("     1. Empty AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = ""
-        resp = self.capellaAPI.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id)
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.app_service_ids[num][0],
+                                                                  self.app_service_ids[num][1])
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     2. Empty SecretKey")
         self.capellaAPI.cluster_ops_apis.SECRET = ""
-        resp = self.capellaAPI.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id)
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.app_service_ids[num][0],
+                                                                  self.app_service_ids[num][1]
+                                                                  )
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     3. Invalid AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id)
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.app_service_ids[num][0],
+                                                                  self.app_service_ids[num][1]
+                                                                  )
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
 
         self.log.info("     4. Invalid SecretKey")
         self.capellaAPI.cluster_ops_apis.SECRET = self.invalid_id
-        resp = self.capellaAPI.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id)
-        self.assertEqual(401, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_api_keys()
-
-        self.log.info("    5. Cross Combination of Valid AccessKey and SecretKey")
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.test_users["User1"]["accessKey"]
-        self.capellaAPI.cluster_ops_apis.SECRET = self.test_users["User2"]["secretKey"]
-        resp = self.capellaAPI.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                   self.project_id,
-                                                                   self.cluster_id,
-                                                                   app_service_id)
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.app_service_ids[num][0],
+                                                                  self.app_service_ids[num][1])
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -969,24 +1208,15 @@ class SecurityTest(BaseTestCase):
             'invalid_tenant_id': self.invalid_id
         }
         for tenant_id in tenant_ids:
-            resp = self.capellaAPI.cluster_ops_apis.delete_app_service(tenant_ids[tenant_id],
-                                                                       self.project_id,
-                                                                       self.cluster_id,
-                                                                       app_service_id)
+            resp = self.capellaAPI.cluster_ops_apis.delete_appservice(tenant_ids[tenant_id],
+                                                                      self.project_id,
+                                                                      self.app_service_ids[num][0],
+                                                                      self.app_service_ids[num][1])
             if tenant_id == 'valid_tenant_id':
-                self.assertEqual(resp.status_code, 200,
+                self.assertEqual(resp.status_code, 202,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              200))
-                self.log.info("Creating an app service")
-                resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                               self.project_id,
-                                                                               self.cluster_id,
-                                                                               "App_service_security")
-                self.assertEqual(resp.status_code, 201,
-                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                     resp.status_code, 201))
-                app_service_id = resp.json()["id"]
-
+                                                                              202))
+                num = num + 1
             else:
                 self.assertEqual(resp.status_code, 403,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
@@ -994,6 +1224,7 @@ class SecurityTest(BaseTestCase):
 
         # Verify the endpoint with different projects
         self.log.info("Verifying the endpoint access with different projects")
+
         self.log.info("Creating a project")
         resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id, "Project_security")
         self.assertEqual(201, resp.status_code,
@@ -1005,27 +1236,20 @@ class SecurityTest(BaseTestCase):
             'invalid_project_id': self.invalid_id
         }
         for project_id in project_ids:
-            resp = self.capellaAPI.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                       project_ids[project_id],
-                                                                       self.cluster_id,
-                                                                       app_service_id)
-            if project_id == 'valid_project_id' or project_id == 'different_project_id':
-                self.assertEqual(resp.status_code, 200,
+            resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                      project_ids[project_id],
+                                                                      self.app_service_ids[num][0],
+                                                                      self.app_service_ids[num][1])
+            if project_id == 'valid_project_id':
+                self.assertEqual(resp.status_code, 202,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              200))
-                self.log.info("Creating an app service")
-                resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                               self.project_id,
-                                                                               self.cluster_id,
-                                                                               "App_service_security")
-                self.assertEqual(resp.status_code, 201,
-                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                     resp.status_code, 201))
-                app_service_id = resp.json()["id"]
+                                                                              202))
+                num = num + 1
             else:
-                self.assertEqual(resp.status_code, 404,
+                self.assertEqual(resp.status_code, 422,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
+                                                                              422))
+
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                            project_ids["different_project_id"])
@@ -1035,92 +1259,63 @@ class SecurityTest(BaseTestCase):
         # Verifying the app service endpoint with different cluster ids
         self.log.info("Verifying with different cluster ids")
         cluster_ids = {
-            'valid_cluster_id': self.cluster_id,
+            'valid_cluster_id': self.app_service_ids[num][0],
             'invalid_cluster_id': self.invalid_id
         }
         for cluster_id in cluster_ids:
-            resp = self.capellaAPI.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                       self.project_id,
-                                                                       cluster_ids[cluster_id],
-                                                                       app_service_id)
+            resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                      self.project_id,
+                                                                      cluster_ids[cluster_id],
+                                                                      self.app_service_ids[num][1])
             if cluster_id == 'valid_cluster_id':
-                self.assertEqual(resp.status_code, 200,
+                self.assertEqual(resp.status_code, 202,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              200))
-                self.log.info("Creating an app service")
-                resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                               self.project_id,
-                                                                               self.cluster_id,
-                                                                               "App_service_security")
-                self.assertEqual(resp.status_code, 201,
-                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                     resp.status_code, 201))
-                app_service_id = resp.json()["id"]
+                                                                              202))
+                num = num + 1
             else:
-                self.assertEqual(resp.status_code, 403,
+                self.assertEqual(resp.status_code, 404,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              403))
+                                                                              404))
 
         # Verifying delete endpoint with different app service ids
         self.log.info("Verifying with different app service ids")
         app_service_ids = {
-            'valid_app_service_id': app_service_id,
+            'valid_app_service_id': self.app_service_ids[num][1],
             'invalid_app_service_id': self.invalid_id
         }
         for a_s_id in app_service_ids:
-            resp = self.capellaAPI.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                       self.project_id,
-                                                                       self.cluster_id,
-                                                                       app_service_ids[a_s_id])
+            resp = self.capellaAPI.cluster_ops_apis.delete_appservice(self.tenant_id,
+                                                                      self.project_id,
+                                                                      self.app_service_ids[num][0],
+                                                                      app_service_ids[a_s_id])
             if a_s_id == 'valid_app_service_id':
-                self.assertEqual(resp.status_code, 204,
+                self.assertEqual(resp.status_code, 202,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              204))
-                self.log.info("Creating an app service")
-                resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                               self.project_id,
-                                                                               self.cluster_id,
-                                                                               "App_service_security")
-                self.assertEqual(resp.status_code, 201,
-                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                     resp.status_code, 201))
-                app_service_id = resp.json()["id"]
+                                                                              202))
+                num = num + 1
             else:
-                self.assertEqual(resp.status_code, 403,
+                self.assertEqual(resp.status_code, 404,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              403))
+                                                                              404))
 
         # Testing for organization RBAC roles
         self.log.info("Verifying endpoint for different roles under organization - RBAC")
         for user in self.test_users:
             self.log.info("Checking with role - {}".format(self.test_users[user]["role"]))
-            self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
-                user]["mailid"], self.test_users[user]["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = self.test_users[user]["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = self.test_users[user]["accessKey"]
-            self.log.info("Creating a project")
-            resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id, "Project_security")
-            self.assertEqual(201, resp.status_code,
-                             msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code, 201))
-            temp_proj_id = resp.json()["id"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                                    temp_proj_id,
-                                                                                    self.cluster_id,
-                                                                                    app_service_id)
-            if self.test_users[user]["role"] == "organizationOwner":
-                self.assertEqual(role_response.status_code, 204,
-                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                     role_response.status_code, 204))
-                self.log.info("Creating an app service")
-                resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                               self.project_id,
-                                                                               self.cluster_id,
-                                                                               "App_service_security")
-                self.assertEqual(resp.status_code, 201,
-                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                     resp.status_code, 201))
-                app_service_id = resp.json()["id"]
 
+            self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
+                user]["mailid"], self.test_users[user]["password"], self.test_users[user]["token"])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.delete_appservice(
+                                                                    self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.app_service_ids[num][0],
+                                                                    self.app_service_ids[num][1])
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(role_response.status_code, 202,
+                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
+                                     role_response.status_code, 202))
+                num = num + 1
             else:
                 self.assertEqual(role_response.status_code, 403,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
@@ -1128,10 +1323,25 @@ class SecurityTest(BaseTestCase):
 
         # Testing for Project Level RBAC roles
         self.log.info("Verifying endpoint for different roles under project - RBAC")
-        project_roles = ["projectOwner", "projectViewer", "projectManager",
-                         "projectDataReaderWriter", "projectDataReader"]
+        project_roles = ["projectViewer", "projectDataReaderWriter",
+                          "projectDataReader", "projectOwner", "projectManager"]
         user = self.test_users["User3"]
         for role in project_roles:
+            self.log.info("Creating apiKeys for role {}".format(role))
+            resources = [
+                {
+                    "id": self.project_id,
+                    "roles": [role]
+                }
+            ]
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.tenant_id, 'API Key for role {}'.format(
+                    user["role"]), organizationRoles=["organizationMember"], expiry=1,
+                resources=resources)
+            resp = resp.json()
+            api_key_id = resp['id']
+            user['token'] = resp['token']
+
             self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
             dic = {"update_info": [{
                 "op": "add",
@@ -1145,34 +1355,26 @@ class SecurityTest(BaseTestCase):
             }
             self.capellaAPI.org_ops_apis.update_user(self.tenant_id, user['userid'],
                                                      dic["update_info"])
+
             self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
-                                             user["password"])
-            self.capellaAPIRole.cluster_ops_apis.SECRET = user["secretKey"]
-            self.capellaAPIRole.cluster_ops_apis.ACCESS = user["accessKey"]
-            self.log.info("Creating a project")
-            resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id, "Project_security")
-            self.assertEqual(201, resp.status_code,
-                             msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code, 201))
-            temp_proj_id = resp.json()["id"]
-            role_response = self.capellaAPIRole.cluster_ops_apis.delete_app_service(self.tenant_id,
-                                                                                    temp_proj_id,
-                                                                                    self.cluster_id,
-                                                                                    app_service_id)
-            if role == "projectOwner":
-                self.assertEqual(204, role_response,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response, 204))
-                self.log.info("Creating an app service")
-                resp = self.capellaAPIRole.cluster_ops_apis.create_app_service(self.tenant_id,
-                                                                               self.project_id,
-                                                                               self.cluster_id,
-                                                                               "App_service_security")
-                self.assertEqual(resp.status_code, 201,
-                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
-                                     resp.status_code, 201))
-                app_service_id = resp.json()["id"]
+                                             user["password"], user["token"])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.delete_appservice(
+                                                                    self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.app_service_ids[num][0],
+                                                                    self.app_service_ids[num][1])
+
+            if role in ["projectOwner", "projectManager"]:
+                self.assertEqual(202, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 202))
+                num = (num + 1) %  7
             else:
                 self.assertEqual(403, role_response.status_code,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response, 403))
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 403))
+
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
             update_info = [{
@@ -1185,11 +1387,8 @@ class SecurityTest(BaseTestCase):
                              msg="FAIL: Outcome:{}, Expected: {}".format(
                                  remove_proj_resp.status_code, 200))
 
-        self.log.info("Deleting app service")
-        resp = self.capellaAPI.org_ops_apis.delete_app_service(self.tenant_id,
-                                                               self.project_id,
-                                                               self.cluster_id,
-                                                               app_service_id)
-        self.assertEqual(204, resp.status_code,
-                         msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
-                                                                      204))
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
+            self.assertEqual(204, resp.status_code,
+                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
+
+        self.delete_clusters()

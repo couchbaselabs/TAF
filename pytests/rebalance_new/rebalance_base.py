@@ -2,7 +2,6 @@ import json
 import os
 from math import ceil
 
-from BucketLib.BucketOperations import BucketHelper
 from Cb_constants import CbServer
 from basetestcase import BaseTestCase
 from bucket_collections.collections_base import CollectionBase
@@ -26,6 +25,7 @@ class RebalanceBaseTest(BaseTestCase):
         super(RebalanceBaseTest, self).setUp()
         self.rest = RestConnection(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
+        self.bucket_size = self.input.param("bucket_size", 256)
         self.key_size = self.input.param("key_size", 0)
         self.zone = self.input.param("zone", 1)
         self.replica_to_update = self.input.param("new_replica", None)
@@ -253,10 +253,11 @@ class RebalanceBaseTest(BaseTestCase):
         """
         if not to_remove:
             to_remove = []
-        serverinfo = self.servers[0]
-        rest = RestConnection(serverinfo)
+        rest = RestConnection(self.servers[0])
+        nodes = rest.get_nodes(inactive_added=True)
         zones = ["Group 1"]
-        nodes_in_zone = {"Group 1": [serverinfo.ip]}
+        nodes_in_zone = {"Group 1": [node for node in nodes
+                                     if node.ip == self.servers[0].ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
         if int(self.zone) > 1:
@@ -275,11 +276,14 @@ class RebalanceBaseTest(BaseTestCase):
                 if self.servers[i].ip in nodes_in_cluster \
                         and self.servers[i].ip not in nodes_to_remove:
                     server_group = i % int(self.zone)
-                    nodes_in_zone[zones[server_group]].append(self.servers[i].ip)
+                    nodes_in_zone[zones[server_group]].append(
+                        [node for node in nodes
+                         if node.ip == self.servers[i].ip][0])
             # Shuffle the nodesS
             for i in range(1, self.zone):
-                node_in_zone = list(set(nodes_in_zone[zones[i]]) -
-                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))
+                node_in_zone = list(
+                    set(nodes_in_zone[zones[i]])
+                    - set([node for node in rest.get_nodes_in_zone(zones[i])]))
                 rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
         otpnodes = [node.id for node in rest.node_statuses()]
         nodes_to_remove = [node.id for node in rest.node_statuses()
@@ -311,6 +315,7 @@ class RebalanceBaseTest(BaseTestCase):
                           password=serverinfo.rest_password,
                           remoteIp=node.ip)
         self.shuffle_nodes_between_zones_and_rebalance(to_remove)
+        self.cluster_util.print_cluster_stats(self.cluster)
         self.cluster.nodes_in_cluster = \
             list(set(self.cluster.nodes_in_cluster + to_add) - set(to_remove))
 

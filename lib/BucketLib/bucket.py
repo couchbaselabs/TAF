@@ -139,6 +139,7 @@ class Bucket(object):
     replicaNumber = "replicaNumber"
     evictionPolicy = "evictionPolicy"
     priority = "priority"
+    rank = "rank"
     flushEnabled = "flushEnabled"
     conflictResolutionType = "conflictResolutionType"
     storageBackend = "storageBackend"
@@ -233,6 +234,7 @@ class Bucket(object):
         self.replicaIndex = new_params.get(Bucket.replicaIndex, 1)
         self.storageBackend = new_params.get(Bucket.storageBackend,
                                              Bucket.StorageBackend.magma)
+        self.rank = new_params.get(Bucket.rank, 0)
         self.priority = new_params.get(Bucket.priority, Bucket.Priority.LOW)
         self.uuid = None
         self.conflictResolutionType = \

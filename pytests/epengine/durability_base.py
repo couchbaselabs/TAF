@@ -136,7 +136,7 @@ class BucketDurabilityBase(ClusterSetup):
         # Bucket create options representation
         self.bucket_template = dict()
         self.bucket_template[Bucket.name] = "default"
-        self.bucket_template[Bucket.ramQuotaMB] = 100
+        self.bucket_template[Bucket.ramQuotaMB] = 256
         self.bucket_template[Bucket.replicaNumber] = self.num_replicas
         if self.bucket_type == Bucket.Type.MEMBASE:
             self.bucket_template[Bucket.storageBackend] = self.bucket_storage
@@ -267,7 +267,7 @@ class BucketDurabilityBase(ClusterSetup):
                 target_vbucket=self.vbs_in_node[random_node][target_vb_type])
             error_sim = CouchbaseError(self.log,
                                        self.vbs_in_node[random_node]["shell"],
-                                       random_node)
+                                       node=random_node)
 
             doc_load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, op_type,

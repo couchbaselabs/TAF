@@ -171,8 +171,11 @@ class CasBaseTest(ClusterSetup):
                     self.sleep(120, "Node %s is being stopped" % server.ip)
                     shell = RemoteMachineShellConnection(server)
                     command = "/sbin/iptables -F"
+                    command2 = "nft flush ruleset"
                     o, r = shell.execute_command(command)
+                    o2, r2 = shell.execute_command(command2)
                     shell.log_command_output(o, r)
+                    shell.log_command_output(o2, r2)
                     shell.disconnect()
                     self.log.info("Node {0} backup".format(server.ip))
         finally:

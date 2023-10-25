@@ -1262,7 +1262,9 @@ class basic_ops(ClusterSetup):
         doc_val = {"field": "val"}
         bucket = self.cluster.buckets[0]
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cb_err = CouchbaseError(self.log, shell)
+        cb_err = CouchbaseError(self.log,
+                                shell,
+                                node=self.cluster.master)
 
         client_1 = SDKClient([self.cluster.master], bucket)
         client_2 = SDKClient([self.cluster.master], bucket)
@@ -1401,8 +1403,9 @@ class basic_ops(ClusterSetup):
         shell_conn[target_nodes.ip] = RemoteMachineShellConnection(
             target_nodes)
         # Perform specified action
-        error_sim[target_nodes.ip] = CouchbaseError(self.log, shell_conn[
-            target_nodes.ip])
+        error_sim[target_nodes.ip] = CouchbaseError(self.log,
+                                                    shell_conn[target_nodes.ip],
+                                                    node=target_nodes)
         error_sim[target_nodes.ip].create(CouchbaseError.KILL_MEMCACHED,
                                           bucket_name=big_bucket.name)
         self.assertTrue(
@@ -1429,7 +1432,9 @@ class basic_ops(ClusterSetup):
         self.log.info("Target node %s" % target_node.ip)
         shell = RemoteMachineShellConnection(target_node)
         cb_stat = Cbstats(target_node)
-        cb_error = CouchbaseError(self.log, shell)
+        cb_error = CouchbaseError(self.log,
+                                  shell,
+                                  node=target_node)
 
         # Load initial data set into bucket
         self.log.info("Loading %s docs into bucket" % self.num_items)
@@ -1716,8 +1721,10 @@ class basic_ops(ClusterSetup):
                                                      self.cluster.buckets)
 
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cb_err = CouchbaseError(self.log, shell)
-        cb_stats = Cbstats(shell)
+        cb_err = CouchbaseError(self.log,
+                                shell,
+                                node=self.cluster.master)
+        cb_stats = Cbstats(self.cluster.master)
 
         self.log.info("Collection stats before executing the scenario")
         stats = cb_stats.all_stats(bucket.name)
@@ -1811,7 +1818,9 @@ class basic_ops(ClusterSetup):
 
         cbstat = Cbstats(self.cluster.master)
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cb_err = CouchbaseError(self.log, shell)
+        cb_err = CouchbaseError(self.log,
+                                shell,
+                                node=self.cluster.master)
 
         self.log.info("Running diag_eval and restarting couchbase-server")
         shell.execute_command(diag_eval_cmd)
@@ -1976,7 +1985,9 @@ class basic_ops(ClusterSetup):
 
         self.log.info("Stopping memcached on: %s" % node_to_stop)
         ssh_conn = RemoteMachineShellConnection(node_to_stop)
-        err_sim = CouchbaseError(self.log, ssh_conn)
+        err_sim = CouchbaseError(self.log,
+                                 ssh_conn,
+                                 node=node_to_stop)
         err_sim.create(CouchbaseError.STOP_MEMCACHED)
 
         result = client.crud(DocLoading.Bucket.DocOps.CREATE,
@@ -2067,7 +2078,7 @@ class basic_ops(ClusterSetup):
 
         for node in kv_nodes:
             shell = RemoteMachineShellConnection(node)
-            cb_stat= Cbstats(shell)
+            cb_stat= Cbstats(node)
             all_stats = cb_stat.all_stats(bucket.name)
             num_moved = int(all_stats["ep_defragmenter_num_moved"])
             num_visited = int(all_stats["ep_defragmenter_num_visited"])
@@ -2092,7 +2103,7 @@ class basic_ops(ClusterSetup):
                                                      self.cluster.buckets)
         for node in kv_nodes:
             shell = RemoteMachineShellConnection(node)
-            cb_stat= Cbstats(shell)
+            cb_stat= Cbstats(node)
             all_stats = cb_stat.all_stats(bucket.name)
             num_moved = int(all_stats["ep_defragmenter_num_moved"])
             num_visited = int(all_stats["ep_defragmenter_num_visited"])
@@ -2199,7 +2210,7 @@ class basic_ops(ClusterSetup):
 
         def set_and_validate_dcp_oso_backfill(t_node, backfill_val):
             shell = RemoteMachineShellConnection(t_node)
-            cbstats = Cbstats(shell)
+            cbstats = Cbstats(t_node)
             if backfill_val in ["enabled", "disabled"]:
                 cbepctl = Cbepctl(shell)
                 cbepctl.set(bucket.name, "dcp_param", "dcp_oso_backfill",
@@ -2283,6 +2294,34 @@ class basic_ops(ClusterSetup):
             self.assertEqual(t_val, c_dict["c1"],
                              "Mismatch in index stat {} :: {} != {}"
                              .format(field, t_val, self.num_items))
+
+    def test_expel_non_meta_items_from_checkpoint(self):
+        """
+        Ref: MB-39344
+        """
+        cp_mem_ratio = self.input.param("checkpoint_mem_ratio", "0.1")
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbepctl = Cbepctl(shell)
+
+        self.log.info("Loading data into all vbuckets")
+        shell.execute_command(
+            "/opt/couchbase/bin/cbc-pillowfight -u Administrator -P password "
+            "-U couchbase://localhost/%s -I 10 -m 20000000 -M 20000000 -c 2"
+            % self.cluster.buckets[0])
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster,
+                                                     self.cluster.buckets)
+
+        self.log.info("Setting checkpoint_memory_ratio=%s" % cp_mem_ratio)
+        cbepctl.set(self.cluster.buckets[0].name, "checkpoint_param",
+                    "checkpoint_memory_ratio", str(cp_mem_ratio))
+        shell.disconnect()
+
+        self.sleep(10, "WAIT")
+        self.log.info("Rebalance-in %s nodes" % self.num_replicas)
+        result = self.task.rebalance(
+            [self.cluster.master],
+            self.cluster.servers[1:1+self.num_replicas], [])
+        self.assertTrue(result, "Rebalance failed")
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.

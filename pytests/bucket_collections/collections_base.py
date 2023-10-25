@@ -3,6 +3,7 @@ from random import sample
 
 from Cb_constants import DocLoading, CbServer
 from basetestcase import ClusterSetup
+from cb_tools.cbepctl import Cbepctl
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
@@ -11,7 +12,14 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbstats import Cbstats
+from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+
+from com.couchbase.client.core.error import \
+    IndexFailureException,\
+    IndexNotFoundException, \
+    InternalServerFailureException
+
 from java.lang import Exception as Java_base_exception
 
 
@@ -66,6 +74,7 @@ class CollectionBase(ClusterSetup):
         try:
             self.collection_setup()
             CollectionBase.setup_collection_history_settings(self)
+            CollectionBase.setup_indexing_for_dcp_oso_backfill(self)
         except Java_base_exception as exception:
             self.handle_setup_exception(exception)
         except Exception as exception:
@@ -133,6 +142,7 @@ class CollectionBase(ClusterSetup):
 
         validate_docs = False if self.spec_name in ttl_buckets else True
 
+        CollectionBase.enable_dcp_oso_backfill(self)
         CollectionBase.create_clients_for_sdk_pool(self)
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name,
                                                 validate_docs)
@@ -206,6 +216,148 @@ class CollectionBase(ClusterSetup):
         CollectionBase.mutate_history_retention_data(
             test_obj, doc_key="test_collections", update_percent=1,
             update_itrs=update_itr)
+    @staticmethod
+    def create_indexes_for_all_collections(test_obj, sdk_client,
+                                           validate_item_count=False):
+        b_util = test_obj.bucket_util
+        test_obj.log.critical("Testing oso_backfill by creating indexes")
+        for bucket in test_obj.cluster.buckets:
+            test_obj.log.info("Creating indexes for collections in bucket {}"
+                              .format(bucket.name))
+            for scope in b_util.get_active_scopes(bucket):
+                for col in b_util.get_active_collections(bucket, scope.name):
+                    query = 'create index `{0}_{1}_{2}_index` on ' \
+                            '`{0}`.`{1}`.`{2}`(name) WITH ' \
+                            '{{ "defer_build": true, "num_replica": 1 }};' \
+                        .format(bucket.name, scope.name, col.name)
+                    test_obj.log.debug("Creating index {}".format(query))
+                    sdk_client.cluster.query(query)
+
+            test_obj.log.info("Building deferred indexes")
+            index_names = list()
+            for scope in b_util.get_active_scopes(bucket):
+                for col in b_util.get_active_collections(bucket, scope.name):
+                    i_name = "{0}_{1}_{2}_index"\
+                        .format(bucket.name, scope.name, col.name)
+                    query = "BUILD INDEX on `{0}`.`{1}`.`{2}`" \
+                            "(`{0}_{1}_{2}_index`) USING GSI" \
+                        .format(bucket.name, scope.name, col.name)
+                    try:
+                        sdk_client.cluster.query(query)
+                    except InternalServerFailureException as e:
+                        if "Build Already In Progress" in str(e):
+                            pass
+                    index_names.append(i_name)
+
+            test_obj.log.info("Waiting for index build to complete")
+            for i_name in index_names:
+                query = "SELECT state FROM system:indexes WHERE name='{}'" \
+                    .format(i_name)
+                retry = 90
+                while retry > 0:
+                    state = sdk_client.cluster.query(query) \
+                        .rowsAsObject()[0].get("state")
+                    if state == "online":
+                        test_obj.log.debug("Index {} online".format(i_name))
+                        break
+                    test_obj.sleep(30)
+                else:
+                    test_obj.fail("{} - creation timed out".format(i_name))
+
+            if validate_item_count:
+                test_obj.log.info("Validating num_items using created indexes")
+                for scope in b_util.get_active_scopes(bucket):
+                    for col in b_util.get_active_collections(bucket,
+                                                             scope.name):
+                        query = "SELECT count(*) as num_items from " \
+                                "`{0}`.`{1}`.`{2}`" \
+                            .format(bucket.name, scope.name, col.name)
+                        doc_count = sdk_client.cluster.query(query) \
+                            .rowsAsObject()[0].getNumber("num_items")
+                        if doc_count != col.num_items:
+                            test_obj.fail(
+                                "Doc count mismatch. Exp {} != {} actual"
+                                .format(col.num_items, doc_count))
+
+    @staticmethod
+    def enable_dcp_oso_backfill(test_obj):
+        set_oso_config_using = test_obj.input.param("set_oso_config_using",
+                                                    "diag_eval")
+        if test_obj.oso_dcp_backfill is not None:
+            test_obj.cluster_util.update_cluster_nodes_service_list(
+                test_obj.cluster)
+            test_obj.log.critical("Setting oso_dcp_backfill={}"
+                                  .format(test_obj.oso_dcp_backfill))
+            if set_oso_config_using == "cbepctl":
+                for node in test_obj.cluster.kv_nodes:
+                    shell = RemoteMachineShellConnection(node)
+                    cbepctl = Cbepctl(shell)
+                    for bucket in test_obj.cluster.buckets:
+                        test_obj.log.debug(
+                            "{} - Setting oso_dcp_backfill={}"
+                            .format(node.ip, test_obj.oso_dcp_backfill))
+                        cbepctl.set(bucket.name, "dcp_param",
+                                    "dcp_oso_backfill",
+                                    test_obj.oso_dcp_backfill)
+            elif set_oso_config_using == "diag_eval":
+                test_obj.log.info("Setting oso_dcp_backfill={} using diag_eval"
+                                  .format(test_obj.oso_dcp_backfill))
+                master_shell = RemoteMachineShellConnection(
+                    test_obj.cluster.master)
+                master_shell.enable_diag_eval_on_non_local_hosts()
+                master_shell.disconnect()
+                for bucket in test_obj.cluster.buckets:
+                    code = 'ns_bucket:update_bucket_props("%s", ' \
+                           '[{extra_config_string, "dcp_oso_backfill=%s"}])' \
+                           % (bucket.name, test_obj.oso_dcp_backfill)
+                    RestConnection(test_obj.cluster.master).diag_eval(code)
+                for node in test_obj.cluster.kv_nodes:
+                    shell = RemoteMachineShellConnection(node)
+                    shell.restart_couchbase()
+                for node in test_obj.cluster.kv_nodes:
+                    RestConnection(node).is_ns_server_running(300)
+            else:
+                test_obj.fail("Invalid value '{}'" % set_oso_config_using)
+
+        test_obj.assertTrue(
+            test_obj.bucket_util.validate_oso_dcp_backfill_value(
+                test_obj.cluster.kv_nodes, test_obj.cluster.buckets,
+                test_obj.oso_dcp_backfill),
+            "oso_dcp_backfill value mismatch")
+
+    @staticmethod
+    def setup_indexing_for_dcp_oso_backfill(test_obj):
+        if test_obj.input.param("test_oso_backfill", False):
+            sdk_client = SDKClient([test_obj.cluster.master], None)
+            CollectionBase.create_indexes_for_all_collections(
+                test_obj, sdk_client, validate_item_count=True)
+            sdk_client.close()
+
+    @staticmethod
+    def recreate_indexes_on_each_collection(test_obj, iterations):
+        """
+        This code is used by oso_dcp_backfill tests
+        Refer: CBQE-7927
+        """
+        b_util = test_obj.bucket_util
+        sdk_client = SDKClient([test_obj.cluster.master], None)
+        for itr in range(1, iterations+1):
+            test_obj.log.info("Itr::{}. Dropping existing indexes")
+            for bucket in test_obj.cluster.buckets:
+                for scope in b_util.get_active_scopes(bucket):
+                    for col in b_util.get_active_collections(bucket,
+                                                             scope.name):
+                        query = "DROP INDEX `{0}_{1}_{2}_index` " \
+                                "on `{0}`.`{1}`.`{2}` USING GSI" \
+                            .format(bucket.name, scope.name, col.name)
+                        try:
+                            sdk_client.cluster.query(query)
+                        except (IndexFailureException,
+                                IndexNotFoundException) as e:
+                            test_obj.log.warning(e)
+            CollectionBase.create_indexes_for_all_collections(test_obj,
+                                                              sdk_client)
+        sdk_client.close()
 
     @staticmethod
     def get_history_retention_load_spec(test_obj, doc_key="test_collections",
@@ -396,7 +548,6 @@ class CollectionBase(ClusterSetup):
         if CbServer.cluster_profile == "serverless":
             bucket_spec[Bucket.ramQuotaMB] = 256
             bucket_spec[Bucket.replicaNumber] = Bucket.ReplicaNum.TWO
-            bucket_storage = Bucket.StorageBackend.magma
             bucket_spec[Bucket.evictionPolicy] = \
                 Bucket.EvictionPolicy.FULL_EVICTION
 

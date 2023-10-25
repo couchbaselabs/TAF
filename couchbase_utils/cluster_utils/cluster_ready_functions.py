@@ -160,6 +160,38 @@ class ClusterUtils:
         self.log = logger.get("test")
 
     @staticmethod
+    def flush_network_rules(node):
+        shell = RemoteMachineShellConnection(node)
+        for command in ["iptables -F",
+                        "nft flush ruleset",
+                        "nft add table ip filter",
+                        "nft add chain ip filter INPUT '{ type filter hook "
+                        "input priority 0; }'"]:
+            shell.execute_command(command)
+        shell.disconnect()
+
+    @staticmethod
+    def get_orchestrator_node(node):
+        orchestrator_node = None
+        status = None
+        retry_index = 0
+        max_retry = 10
+        rest = RestConnection(node)
+        while retry_index < max_retry:
+            status, content = rest.get_terse_cluster_info()
+            json_content = json.loads(content)
+            orchestrator_node = json_content["orchestrator"]
+            if orchestrator_node == "undefined":
+                sleep(2, message="orchestrator='undefined'", log_type="test")
+                retry_index += 1
+            else:
+                break
+        orchestrator_node = \
+            orchestrator_node.split("@")[1] \
+                .replace("\\", '').replace("'", "")
+        return status, orchestrator_node
+
+    @staticmethod
     def find_orchestrator(cluster, node=None):
         """
         Update the orchestrator of the cluster
@@ -167,25 +199,8 @@ class ClusterUtils:
         :param node: Any node that is still part of the cluster
         :return:
         """
-        retry_index = 0
-        max_retry = 12
-        orchestrator_node = None
-        status = None
         node = cluster.master if node is None else node
-
-        rest = RestConnection(node)
-        while retry_index < max_retry:
-            status, content = rest.get_terse_cluster_info()
-            json_content = json.loads(content)
-            orchestrator_node = json_content["orchestrator"]
-            if orchestrator_node == "undefined":
-                sleep(1, message="orchestrator='undefined'", log_type="test")
-            else:
-                break
-        orchestrator_node = \
-            orchestrator_node.split("@")[1] \
-            .replace("\\", '').replace("'", "")
-
+        status, orchestrator_node = ClusterUtils.get_orchestrator_node(node)
         cluster.master = [server for server in cluster.servers
                           if server.ip == orchestrator_node][0]
         # Type cast to str - match the previous dial/eval return value
@@ -245,11 +260,39 @@ class ClusterUtils:
             raise Exception("Profile type mismatch")
         return profiles[0]
 
+    # Returns the highest version, highest build and
+    # list of nodes with the highest version and build in the cluster
+    def get_higher_version_nodes(self, cluster):
+        highest_version_nodes = list()
+        highest_version = ""
+        highest_build = ""
+        pools_default_res = RestConnection(cluster.master).get_pools_default()
+        for node in pools_default_res["nodes"]:
+            version, build, type = node["version"].split("-")
+            node_ipaddr = node["hostname"].split(":")[0]
+            if version > highest_version or \
+                (version == highest_version and build > highest_build):
+                highest_version_nodes = [node_ipaddr]
+                highest_version = version
+                highest_build = build
+            elif highest_version == version and highest_build == build:
+                highest_version_nodes.append(node_ipaddr)
+        self.log.debug("Highest version : {} Highest build : {}".format(highest_version,highest_build))
+        self.log.debug("Highest version node : {}".format(highest_version_nodes))
+        highest_version_nodes = [node for node in cluster.nodes_in_cluster if node.ip in highest_version_nodes]
+        return highest_version, highest_build, highest_version_nodes
+
     def get_possible_orchestrator_nodes(self, cluster):
         nodes = list()
+
+        # Nodes with a higher cb server version can be the orchestrator
+        highest_version, highest_build, higher_version_nodes = self.get_higher_version_nodes(cluster)
+        if float(highest_version[:3]) < 7.6:
+            return [node.ip for node in higher_version_nodes]
+
         min_node_weight = 999999
         services = CbServer.Services
-        for node in cluster.nodes_in_cluster:
+        for node in higher_version_nodes:
             node_weight = 0
             if node in cluster.serviceless_nodes:
                 pass
@@ -286,7 +329,9 @@ class ClusterUtils:
         status, ns_node = self.find_orchestrator(cluster, node=target_node)
         if not status:
             return result
-        self.update_cluster_nodes_service_list(cluster, inactive_added=True)
+        self.update_cluster_nodes_service_list(cluster,
+                                               inactive_added=True,
+                                               inactive_failed=True)
         nodes = self.get_possible_orchestrator_nodes(cluster)
         ns_node = ns_node.split("@")[1]
         self.log.critical("Orchestrator: {}".format(ns_node))
@@ -744,7 +789,8 @@ class ClusterUtils:
                 remote_client.disable_firewall()
                 remote_client.disconnect()
 
-    def update_cluster_nodes_service_list(self, cluster, inactive_added=False):
+    def update_cluster_nodes_service_list(self, cluster, inactive_added=False,
+                                          inactive_failed=False):
         def append_nodes_to_list(nodes, list_to_append):
             for t_node in nodes:
                 t_node = t_node.split(":")
@@ -757,7 +803,8 @@ class ClusterUtils:
                         break
 
         service_map = self.get_services_map(cluster,
-                                            inactive_added=inactive_added)
+                                            inactive_added=inactive_added,
+                                            inactive_failed=inactive_failed)
         cluster.kv_nodes = list()
         cluster.fts_nodes = list()
         cluster.cbas_nodes = list()
@@ -847,10 +894,11 @@ class ClusterUtils:
                 return node_list[0]
 
     @staticmethod
-    def get_services_map(cluster, inactive_added=False):
+    def get_services_map(cluster, inactive_added=False, inactive_failed=False):
         services_map = dict()
         rest = RestConnection(cluster.master)
-        tem_map = rest.get_nodes_services(inactive_added=inactive_added)
+        tem_map = rest.get_nodes_services(inactive_added=inactive_added,
+                                          inactive_failed=inactive_failed)
         for key, val in tem_map.items():
             if not val:
                 # None means service-less node

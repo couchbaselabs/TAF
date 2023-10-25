@@ -426,23 +426,18 @@ class RemoteMachineShellConnection:
         """
         self.log.debug("%s - Restarting couchbase server" % self.ip)
         self.extract_remote_info()
-        if self.info.type.lower() == Windows.NAME:
+        if self.info.type.lower() == Linux.NAME:
+            if self.info.distribution_version.lower() in SYSTEMD_SERVER:
+                o, r = self.execute_command("service couchbase-server restart")
+                self.log_command_output(o, r)
+            else:
+                raise Exception("Handle service restart command")
+        elif self.info.type.lower() == Windows.NAME:
             o, r = self.execute_command("net stop couchbaseserver")
             self.log_command_output(o, r)
             o, r = self.execute_command("net start couchbaseserver")
             self.log_command_output(o, r)
-        if self.info.type.lower() == Linux.NAME:
-            fv, sv, bn = self.get_cbversion(Linux.NAME)
-            if self.info.distribution_version.lower() in SYSTEMD_SERVER:
-                # from watson, systemd is used in centos 7
-                self.log.debug("%s - this node is centos 7.x" % self.ip)
-                o, r = self.execute_command("service couchbase-server restart")
-                self.log_command_output(o, r)
-            else:
-                o, r = self.execute_command(
-                    "/etc/init.d/couchbase-server restart")
-                self.log_command_output(o, r)
-        if self.info.distribution_type.lower() == Mac.NAME:
+        elif self.info.distribution_type.lower() == Mac.NAME:
             o, r = self.execute_command(
                 "open /Applications/Couchbase Server.app")
             self.log_command_output(o, r)
@@ -873,6 +868,7 @@ class RemoteMachineShellConnection:
         else:
             command_1 = "/sbin/iptables -F"
             command_2 = "/sbin/iptables -t nat -F"
+            command_3 = "nft flush ruleset"
             if self.nonroot:
                 self.log.debug("Nonroot user, skipping firewall cmds")
                 return
@@ -880,7 +876,8 @@ class RemoteMachineShellConnection:
             self.log_command_output(output, error)
             output, error = self.execute_command(command_2)
             self.log_command_output(output, error)
-
+            output, error = self.execute_command(command_3)
+            self.log_command_output(output, error)
     #             self.connect_with_user(user=self.username)
 
     def download_binary(self, url, deliverable_type, filename, latest_url=None,
@@ -3767,10 +3764,13 @@ class RemoteMachineShellConnection:
                 else:
                     # Disable firewall on these nodes
                     o, r = self.execute_command("iptables -F")
+                    _, _ = self.execute_command("nft flush ruleset")
                     self.log_command_output(o, r)
                     o, r = self.execute_command("/sbin/iptables --list")
+                    o2, r2 = self.execute_command("nft list ruleset")
                     self.log_command_output(o, r)
-                if not o:
+                    self.log_command_output(o2, r2)
+                if not (o or o2):
                     raise Exception("Node not yet reachable")
                 break
             except JSchException:
@@ -3781,6 +3781,7 @@ class RemoteMachineShellConnection:
                       log_type="infra")
 
         _, _ = self.execute_command("iptables -F")
+        _, _ = self.execute_command("nft flush ruleset")
         # wait till server is ready after warmup
         if server:
             cluster_util.wait_for_ns_servers_or_assert(
@@ -4007,20 +4008,7 @@ class RemoteMachineShellConnection:
         sourceFile = file_path + init_file
         o, r = self.execute_command("mv " + backupfile + " " + sourceFile)
         self.log_command_output(o, r)
-        if self.info.type.lower() == Linux.NAME:
-            if self.info.distribution_version.lower() in SYSTEMD_SERVER:
-                """from watson, systemd is used in centos 7 """
-                self.log.info("this node is centos 7.x")
-                o, r = self.execute_command("service couchbase-server restart")
-                self.log_command_output(o, r)
-            else:
-                o, r = self.execute_command("/etc/init.d/couchbase-server restart")
-                self.log_command_output(o, r)
-        else:
-            o, r = self.execute_command("net stop couchbaseserver")
-            self.log_command_output(o, r)
-            o, r = self.execute_command("net start couchbaseserver")
-            self.log_command_output(o, r)
+        self.restart_couchbase()
 
     def set_node_name(self, name):
         """Edit couchbase-server shell script in place and set custom node name.

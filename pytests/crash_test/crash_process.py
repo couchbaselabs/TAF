@@ -141,7 +141,9 @@ class CrashTest(ClusterSetup):
         def_bucket = self.cluster.buckets[0]
         target_node = self.getTargetNode()
         remote = RemoteMachineShellConnection(target_node)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=target_node)
         target_vbuckets = Cbstats(target_node).vbucket_list(
                 def_bucket.name, self.target_node)
         if len(target_vbuckets) == 0:
@@ -393,7 +395,9 @@ class CrashTest(ClusterSetup):
         for node in nodes_to_affect:
             shell = RemoteMachineShellConnection(node)
             node_data[node] = dict()
-            node_data[node]["cb_err"] = CouchbaseError(self.log, shell)
+            node_data[node]["cb_err"] = CouchbaseError(self.log,
+                                                       shell,
+                                                       node=node)
 
         self.log.info("Starting doc-ops")
         for index, doc_op in enumerate(self.doc_ops):
@@ -486,7 +490,9 @@ class CrashTest(ClusterSetup):
         # Killing memcached on the node
         node_to_stop = choice(self.cluster.nodes_in_cluster)
         remote = RemoteMachineShellConnection(node_to_stop)
-        error_sim = CouchbaseError(self.log, remote)
+        error_sim = CouchbaseError(self.log,
+                                   remote,
+                                   node=node_to_stop)
         error_sim.create(action=CouchbaseError.KILL_MEMCACHED)
         self.sleep(10,"Wait for memcached to be back up")
 
@@ -500,20 +506,22 @@ class CrashTest(ClusterSetup):
             for node in self.cluster.nodes_in_cluster:
                 cbstats_obj = Cbstats(node)
                 vbucket_stats = cbstats_obj.vbucket_details(bucket_name=bucket.name)
-                ht_mem_used_replica_stat = cbstats_obj.get_stats_memc(
-                    bucket_name=bucket.name, stat_name="memory", key="ht_mem_used_replica")
+                mem_stats = cbstats_obj.all_stats(bucket.name, "memory")
+                ht_mem_used_replica_stat = mem_stats["ht_mem_used_replica"]
                 vbucket_mem_used = 0
                 for vbucket in vbucket_stats:
                     if vbucket_stats[vbucket]["type"] == "replica":
                         vbucket_mem_used += vbucket_stats[vbucket]["ht_cache_size"]
 
-                self.assertEqual(int(vbucket_mem_used),int(ht_mem_used_replica_stat),
-                                 "Sum ht_cache_size stat for all replica vBuckets "
-                                 "(cbstats vbucket-details) and "
-                                 "ht_mem_used_replica (cbstats memory) "
-                                 "are not the same {}!={} on node {}"
-                                 .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
-                self.log.info("Sum ht_cache_size stat for all replica vBuckets "
-                              "(cbstats vbucket-details) = {} and "
-                              "ht_mem_used_replica (cbstats memory) = {} are equal on node {}"
-                              .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
+                self.assertEqual(
+                    int(vbucket_mem_used), int(ht_mem_used_replica_stat),
+                    "Sum ht_cache_size stat for all replica vBuckets "
+                    "(cbstats vbucket-details) and "
+                    "ht_mem_used_replica (cbstats memory) "
+                    "are not the same {}!={} on node {}"
+                    .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
+                self.log.info(
+                    "Sum ht_cache_size stat for all replica vBuckets "
+                    "(cbstats vbucket-details) = {} and ht_mem_used_replica "
+                    "(cbstats memory) = {} are equal on node {}"
+                    .format(vbucket_mem_used, ht_mem_used_replica_stat, node.ip))
