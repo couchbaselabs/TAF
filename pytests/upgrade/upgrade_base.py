@@ -1,6 +1,6 @@
 import re
 from Cb_constants import CbServer
-from basetestcase import BaseTestCase
+from Jython_tasks.task import FunctionCallTask
 from basetestcase import BaseTestCase
 import Jython_tasks.task as jython_tasks
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
@@ -151,7 +151,8 @@ class UpgradeBase(BaseTestCase):
                 if not self.skip_cluster_reset:
                     self.initialize_cluster(
                         cluster_name, cluster, services=None,
-                        services_mem_quota_percent=mem_quota_percent)
+                        services_mem_quota_percent=mem_quota_percent,
+                        use_rest_reset=False)
                 else:
                     self.quota = ""
                 # Set this unconditionally
