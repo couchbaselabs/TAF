@@ -235,11 +235,16 @@ class EnforceTls(CollectionBase):
 
         self.disable_n2n_encryption_cli_on_nodes(nodes=self.cluster.servers)
         CbServer.use_https = False
+        for node in self.cluster.servers:
+            self.set_ports_for_server(node)
         rest = RestConnection(self.cluster.master)
         status, content = rest.set_min_tls_version(version='tlsv1.2')
         if not status:
             self.fail("Setting tls min version to 1.2 failed with content {0}".format(content))
         self.enable_tls_encryption_cli_on_nodes(nodes=[self.cluster.master])
+        CbServer.use_https = True
+        for node in self.cluster.servers:
+            self.set_ports_for_server(node, "ssl")
         self.validate_tls_min_version(node=self.cluster.master, version="1.2", expect="pass")
 
         self.x509 = x509main(host=self.cluster.master)

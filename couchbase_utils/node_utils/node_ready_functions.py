@@ -66,6 +66,23 @@ class NodeUtils(object):
         for node in cluster.servers:
             RestConnection(node).reset_node()
 
+    def reset_nodes_lt_7_6(self, cluster_util, cluster):
+        """
+        This is the old reset node code to use for upgrade tests
+        """
+        tasks = list()
+        try:
+            for node in cluster.servers:
+                task = jython_tasks.FunctionCallTask(
+                    self.__reset_node, (cluster_util, cluster, node))
+                self.jython_task_manager.schedule(task)
+                tasks.append(task)
+        except Exception as ex:
+            self.log.critical(ex)
+        for task in tasks:
+            self.jython_task_manager.get_task_result(task)
+        return tasks
+
     def async_enable_dp(self, server):
         task = jython_tasks.FunctionCallTask(self._enable_dp, [server])
         self.jython_task_manager.schedule(task)

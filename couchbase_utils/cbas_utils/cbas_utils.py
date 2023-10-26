@@ -4974,7 +4974,7 @@ class CbasUtil(CBOUtil):
         partition_paths = self.get_partition_storage_paths(cluster)
         paths = list()
         for partition_id in partition_paths:
-            for node in cluster.servers:
+            for node in cluster.nodes_in_cluster:
                 if node.ip == partition_paths[partition_id]["node"]:
                     break
             shell = RemoteMachineShellConnection(node)
@@ -4997,7 +4997,7 @@ class CbasUtil(CBOUtil):
 
     def get_cbas_nodes(self, cluster, cluster_util, servers=None):
         if servers is None:
-            servers = cluster.servers
+            servers = cluster.nodes_in_cluster
         cbas_servers = cluster_util.get_nodes_from_services_map(
             cluster, service_type=CbServer.Services.CBAS,
             get_all_nodes=True, servers=servers)
@@ -5127,7 +5127,7 @@ class KillProcessesInLoopTask(Task):
             for _ in range(self.cbas_kill_count + self.memcached_kill_count):
                 if self.cbas_kill_count > 0:
                     output = self.cbas_util.kill_cbas_process(
-                        self.cluster, self.cluster.servers)
+                        self.cluster, self.cluster.nodes_in_cluster)
                     self.cbas_kill_count -= 1
                     self.log.info(str(output))
                 if self.memcached_kill_count > 0:
@@ -5221,7 +5221,7 @@ class CBASRebalanceUtil(object):
         nodes_in_cluster = [server for server in cluster.nodes_in_cluster if
                             server not in servs_out]
         cluster.nodes_in_cluster = nodes_in_cluster
-        cluster.servers = nodes_in_cluster
+        # cluster.servers = nodes_in_cluster
 
         return rebalance_task, available_servers
 
