@@ -260,7 +260,7 @@ class CollectionBase(ClusterSetup):
             for scope in b_util.get_active_scopes(bucket):
                 for col in b_util.get_active_collections(bucket, scope.name):
                     query = 'create index `{0}_{1}_{2}_index` on ' \
-                            '`{0}`.`{1}`.`{2}`(name) WITH ' \
+                            '`{0}`.`{1}`.`{2}`(`name` include missing) WITH ' \
                             '{{ "defer_build": true, "num_replica": 1 }};' \
                         .format(bucket.name, scope.name, col.name)
                     test_obj.log.debug("Creating index {}".format(query))

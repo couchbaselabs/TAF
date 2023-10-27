@@ -13,6 +13,7 @@ from BucketLib.bucket import Bucket
 import testconstants
 from upgrade_lib.couchbase import upgrade_chains
 from upgrade_lib.upgrade_helper import CbServerUpgrade
+import threading
 
 
 class UpgradeBase(BaseTestCase):
@@ -84,6 +85,13 @@ class UpgradeBase(BaseTestCase):
         self.magma_upgrade = self.input.param("magma_upgrade", False)
         self.perform_collection_ops = self.input.param("perform_collection_ops", False)
         self.collection_ops_iterations = self.input.param("collection_ops_iterations", 1)
+
+        self.include_indexing_query = self.input.param("include_indexing_query", False)
+        self.redistribute_indexes = self.input.param("redistribute_indexes", True)
+        self.enable_shard_affinity = self.input.param("enable_shard_affinity", True)
+        self.create_partitioned_indexes = self.input.param("create_partitioned_indexes", True)
+        self.index_quota_mem = self.input.param("index_quota_mem", 512)
+        self.kv_quota_mem = self.input.param("kv_quota_mem", 6000)
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -262,6 +270,12 @@ class UpgradeBase(BaseTestCase):
                                       randomize_doc_size=True,
                                       randomize_value=True,
                                       randomize=True)
+        if self.include_indexing_query:
+            self.log.info("Setting kv mem quota to {} MB".format(self.kv_quota_mem))
+            self.log.info("Setting index mem quota to {} MB".format(self.index_quota_mem))
+            RestConnection(self.cluster.master).set_service_mem_quota(
+                {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem,
+                CbServer.Settings.INDEX_MEM_QUOTA: self.index_quota_mem})
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
@@ -459,9 +473,13 @@ class UpgradeBase(BaseTestCase):
             check_vbucket_shuffling=False,
             services=[",".join(services_on_target_node)],
         )
+        self.sleep(10)
 
         if self.upgrade_with_data_load:
-            self.load_during_rebalance(self.sub_data_spec)
+            update_task = self.load_during_rebalance(self.sub_data_spec, async_load=True)
+            if self.include_indexing_query:
+                self.run_queries_during_rebalance(node_to_upgrade)
+            self.task_manager.get_task_result(update_task)
 
         self.perform_collection_ops_load(self.collection_spec)
         self.task_manager.get_task_result(rebalance_passed)
@@ -847,6 +865,88 @@ class UpgradeBase(BaseTestCase):
 
         self.sdk_client.close()
         return result
+
+    def run_queries_during_rebalance(self, upgrade_node):
+        bucket = self.cluster.buckets[0]
+        thread_array = []
+        query_node = None
+        global success_query_count
+        success_query_count = 0
+        total_queries = 0
+        global failed_queries
+        failed_queries = dict()
+
+        for node in self.cluster.query_nodes:
+            if node.ip != upgrade_node.ip:
+                query_node = node
+                break
+
+        self.query_client = RestConnection(query_node)
+
+        def run_query_thread(query, query_client, iter=30):
+            count = 0
+            local_success_count = 0
+
+            while count < iter:
+                result = query_client.query_tool(query)
+                if result["status"] == "success":
+                    local_success_count += 1
+                else:
+                    global failed_queries
+                    if query not in failed_queries:
+                        failed_queries[query] = [result]
+                    else:
+                        failed_queries[query].append(result)
+                count += 1
+
+            global success_query_count
+            success_query_count += local_success_count
+
+        self.log.info("Running queries during rebalance...")
+        for scope in self.bucket_util.get_active_scopes(bucket):
+            for col in self.bucket_util.get_active_collections(bucket, scope.name):
+                index_name = "{0}_{1}_{2}_index".format(bucket.name, scope.name, col.name)
+                if index_name in self.indexes:
+                    query = "SELECT name from `{0}`.`{1}`.`{2}` USE INDEX(`{3}`) limit 1000".format(
+                                            bucket.name, scope.name, col.name, index_name)
+                    self.log.info("Query = {}".format(query))
+                    total_queries += 750
+                    t = threading.Thread(target=run_query_thread, args=[query, self.query_client, 750])
+                    t.start()
+                    thread_array.append(t)
+
+                mutation_index_name = "{0}_{1}_{2}_sec_mutation_index".format(bucket.name,
+                                                                    scope.name, col.name)
+                if mutation_index_name in self.indexes:
+                    query = "SELECT mutation_type, count(*) from `{0}`.`{1}`.`{2}` USE INDEX(`{3}`)" \
+                        " group by mutation_type limit 10000".format(bucket.name, scope.name, col.name,
+                                                                   mutation_index_name)
+                    self.log.info("Query = {}".format(query))
+                    total_queries += 250
+                    t = threading.Thread(target=run_query_thread, args=[query, self.query_client, 250])
+                    t.start()
+                    thread_array.append(t)
+
+        complex_queries = ['select name from `bucket-0`.`myscope`.`mycoll` where age between 30 and 50 limit 10;',
+           'select age, count(*) from `bucket-0`.`myscope`.`mycoll` where marital = "M" group by age order by age limit 10;',
+           'select v.name, animal from `bucket-0`.`myscope`.`mycoll` as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
+           'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM `bucket-0`.`myscope`.`mycoll` as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 10;',
+           'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from `bucket-0`.`myscope`.`mycoll` WHERE gender is not MISSING limit 10;']
+
+        for complex_query in complex_queries:
+            self.log.info("Complexy query = {}".format(complex_query))
+            total_queries += 200
+            t = threading.Thread(target=run_query_thread, args=[complex_query, self.query_client, 200])
+            t.start()
+            thread_array.append(t)
+
+        for th in thread_array:
+            th.join()
+
+        self.log.info("Number of successful queries during rebalance = {}".format(success_query_count))
+        self.log.info("Number of failed queries = {}".format(total_queries - success_query_count))
+        self.log.info("Failed queries = {}".format(failed_queries))
+
 
     def PrintStep(self, msg=None):
         print "\n"

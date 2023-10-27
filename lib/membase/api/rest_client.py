@@ -601,19 +601,23 @@ class RestConnection(newRC):
     def set_indexer_params(self, redistributeIndexes='false', numReplica=0, enablePageBloomFilter='false',
                            indexerThreads=0,
                            memorySnapshotInterval=200, stableSnapshotInterval=5000, maxRollbackPoints=2,
-                           logLevel="info", storageMode='plasma'):
+                           logLevel="info", storageMode='plasma', enableShardAffinity=None):
 
         api = self.baseUrl + 'settings/indexes'
-        params = urllib.urlencode({'redistributeIndexes': redistributeIndexes,
-                                   'numReplica': numReplica,
-                                   'enablePageBloomFilter': enablePageBloomFilter,
-                                   'indexerThreads': indexerThreads,
-                                   'memorySnapshotInterval': memorySnapshotInterval,
-                                   'stableSnapshotInterval': stableSnapshotInterval,
-                                   'maxRollbackPoints': maxRollbackPoints,
-                                   'logLevel': logLevel,
-                                   'storageMode': storageMode
-                                   })
+        param_dict = {
+            'redistributeIndexes': redistributeIndexes,
+            'numReplica': numReplica,
+            'enablePageBloomFilter': enablePageBloomFilter,
+            'indexerThreads': indexerThreads,
+            'memorySnapshotInterval': memorySnapshotInterval,
+            'stableSnapshotInterval': stableSnapshotInterval,
+            'maxRollbackPoints': maxRollbackPoints,
+            'logLevel': logLevel,
+            'storageMode': storageMode
+        }
+        if enableShardAffinity is not None:
+            param_dict['enableShardAffinity'] = enableShardAffinity
+        params = urllib.urlencode(param_dict)
         # self.test_log.debug('settings/indexes params: {0}'.format(params))
         status, content, header = self._http_request(api, 'POST', params)
         # status, content, header = self._http_request(api, 'POST', params)

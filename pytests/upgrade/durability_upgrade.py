@@ -19,6 +19,7 @@ from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
 from bucket_collections.collections_base import CollectionBase
 from BucketLib.BucketOperations import BucketHelper
+from gsiLib.gsiHelper import GsiHelper
 
 class UpgradeTests(UpgradeBase):
     def setUp(self):
@@ -29,6 +30,7 @@ class UpgradeTests(UpgradeBase):
         self.verification_dict = dict()
         self.verification_dict["ops_create"] = self.num_items
         self.verification_dict["ops_delete"] = 0
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
 
     def tearDown(self):
         if self.range_scan_collections > 0:
@@ -207,15 +209,29 @@ class UpgradeTests(UpgradeBase):
             self.PrintStep("Upserting docs to increase fragmentation value")
             self.upsert_docs_to_increase_frag_val()
 
+        if self.include_indexing_query:
+            self.create_indexes_pre_upgrade()
+
         self.PrintStep("Upgrade begins...")
         for upgrade_version in self.upgrade_chain:
             itr = 0
+            bucket = self.cluster.buckets[0]
             self.upgrade_version = upgrade_version
             ### Fetching the first node to upgrade ###
             node_to_upgrade = self.fetch_node_to_upgrade()
 
             ### Each node in the cluster is upgraded iteratively ###
             while node_to_upgrade is not None:
+
+                if self.include_indexing_query:
+                    self.indexes = set()
+                    sdk_client = SDKClient([self.cluster.index_nodes[0]], None)
+                    query = 'SELECT name FROM system:indexes;'
+                    result = sdk_client.cluster.query(query).rowsAsObject()
+                    for idx in result:
+                        self.indexes.add(idx.get("name"))
+                    sdk_client.close()
+
                 if self.upgrade_with_data_load:
                     ### Loading docs with size > 1MB ###
                     if self.load_large_docs:
@@ -281,10 +297,17 @@ class UpgradeTests(UpgradeBase):
 
                 ## Collections are dropped and re-created while the cluster is mixed mode ###
                 self.log.info("Performing collection ops in mixed mode cluster setting...")
-                sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
-                sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
-                sync_load_spec["doc_crud"][
-                    MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+                if self.guardrail_type != "collection_guardrail" and not self.include_indexing_query:
+                    sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
+                    sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
+                    sync_load_spec["doc_crud"][
+                        MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
+                
+                if self.include_indexing_query and itr < self.nodes_init-1:
+                    sync_load_spec[MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET] =  1
+                    sync_load_spec[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 1
+                    sync_load_spec["doc_crud"][
+                        MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 100000
 
                 #Validate sync_write results after upgrade
                 if self.key_size is not None:
@@ -304,7 +327,28 @@ class UpgradeTests(UpgradeBase):
                 if sync_write_task.result is False:
                     self.log_failure("SyncWrite failed during upgrade")
 
-                self.PrintStep("Upgrade of node {0} done".format(itr))
+                self.PrintStep("Upgrade of node {0} done".format(itr+1))
+
+                if self.include_indexing_query:
+                    self.log.info("Creating indexes for new collections")
+                    bucket = self.cluster.buckets[0]
+                    for scope in self.bucket_util.get_active_scopes(bucket):
+                        if scope.name in ["_system", "myscope"] :
+                            continue
+                        for col in self.bucket_util.get_active_collections(bucket, scope.name):
+                            index_name = "{0}_{1}_{2}_index".format(bucket.name, scope.name, col.name)
+                            if index_name not in self.indexes:
+                                self.log.info("Creating secondary index {}".format(index_name))
+                                query = 'CREATE INDEX `{0}` ON `{1}`.`{2}`.`{3}`(`{4}` include missing)'.format(
+                                            index_name, bucket.name, scope.name, col.name, "name")
+                                query += ' WITH { "num_replica":1 };'
+                                client_query = RestConnection(self.cluster.query_nodes[0])
+                                result = client_query.query_tool(query)
+                                self.log.info("Result for creation of index {0} = {1}".format(index_name,
+                                                                                    result['status']))
+                                if result['status'] == 'success':
+                                    self.index_count += 1
+                                    self.indexes.add(index_name)
 
                 ### Starting Range Scans if enabled ##
                 if self.range_scan_collections > 0 and not range_scan_started:
@@ -434,13 +478,17 @@ class UpgradeTests(UpgradeBase):
             self.cluster.buckets[0].scopes[CbServer.default_scope].collections[
                 CbServer.default_collection].num_items += 1000 * self.nodes_init
 
+        if self.include_indexing_query:
+            self.cluster.buckets[0].scopes["myscope"].collections[
+                    "mycoll"].num_items += self.items_inserted
+
         self.log.info("starting doc verification")
         self.__wait_for_persistence_and_validate()
         self.log.info("Final doc count verified")
 
         # Play with collection if upgrade was successful
         if not self.test_failure and not self.test_guardrail_upgrade and \
-                        not self.test_guardrail_migration:
+            not self.test_guardrail_migration and not self.include_indexing_query:
             self.__play_with_collection()
 
         ### Verifying start sequence numbers ###
@@ -458,6 +506,18 @@ class UpgradeTests(UpgradeBase):
         ### Creation of a new bucket post upgrade ###
         if self.guardrail_type != "bucket_guardrail":
             self.create_new_bucket_post_upgrade_and_load_data()
+
+        if self.include_indexing_query and self.enable_shard_affinity:
+            rest = RestConnection(self.cluster.index_nodes[0])
+            self.log.info("Enabling file based index rebalance")
+            rest.set_indexer_params(redistributeIndexes='true',
+                                    enableShardAffinity='true')
+            self.log.info("Building a few more indexes...")
+            self.create_secondary_indexes(partitioned=True, replica=False,
+                                          index_suffix='new_part_index',
+                                          field='mutation_type')
+            self.test_index_file_based_rebalance()
+            self.validate_index_count_and_status()
 
         ### Rebalance/failover tasks after the whole cluster is upgraded ###
         if self.rebalance_op != "None":
@@ -1004,7 +1064,7 @@ class UpgradeTests(UpgradeBase):
         server_frag = dict()
         field_to_grep = "rw_0:magma"
 
-        for server in self.cluster.nodes_in_cluster:
+        for server in self.cluster.kv_nodes:
             cb_obj = Cbstats(server)
             frag_res = cb_obj.magma_stats(self.cluster.buckets[0].name, field_to_grep,
                                             "kvstore")
@@ -1040,7 +1100,7 @@ class UpgradeTests(UpgradeBase):
             frag_dict = dict()
             server_frag = dict()
 
-            for server in self.cluster.nodes_in_cluster:
+            for server in self.cluster.kv_nodes:
                 cb_obj = Cbstats(server)
                 frag_res = cb_obj.magma_stats(self.cluster.buckets[0].name,
                                               field_to_grep, "kvstore")
@@ -1805,3 +1865,264 @@ class UpgradeTests(UpgradeBase):
                     for coll in bucket.scopes[scope].collections:
                         self.bucket_util.set_history_retention_for_collection(self.cluster.master,
                                                                     bucket, scope, coll, "false")
+
+    def create_primary_indexes(self):
+        bucket = self.cluster.buckets[0]
+        self.query_client = RestConnection(self.cluster.query_nodes[0])
+        self.log.info("Creating primary indexes..")
+        for scope in self.bucket_util.get_active_scopes(bucket):
+            for col in self.bucket_util.get_active_collections(bucket, scope.name):
+                primary_index_query = "CREATE PRIMARY INDEX ON `{0}`.`{1}`.`{2}`".format(
+                    bucket.name, scope.name, col.name)
+                result = self.query_client.query_tool(primary_index_query)
+                self.log.info("Result for creation of index = {0}".format(result['status']))
+                if result['status'] == 'success':
+                    self.index_count += 1
+
+    def create_primary_partitioned_indexes(self):
+        bucket = self.cluster.buckets[0]
+        self.query_client = RestConnection(self.cluster.query_nodes[0])
+        self.log.info("Creating primary partitioned indexes..")
+        for col in self.bucket_util.get_active_collections(bucket, "_default"):
+            part_idx_name = '{0}_{1}_{2}_part_index'.format(bucket.name, "_default",
+                                                                col.name)
+            self.log.info("Creating partitioned index {}".format(part_idx_name))
+            primary_index_query = 'CREATE PRIMARY INDEX `{0}` ON `{1}`.`{2}`.`{3}`'.format(
+                part_idx_name, bucket.name, "_default", col.name)
+            primary_index_query += ' PARTITION BY HASH(META().id) WITH {"num_partition": 8};'
+            result = self.query_client.query_tool(primary_index_query)
+            self.log.info("Result for creation of index {0} = {1}".format(part_idx_name,
+                                                                    result['status']))
+            if result['status'] == 'success':
+                self.index_count += 1
+
+    def create_secondary_indexes(self, partitioned=False, replica=True,
+                                index_suffix='sec_index', field='name'):
+        bucket = self.cluster.buckets[0]
+        self.query_client = RestConnection(self.cluster.query_nodes[0])
+        self.log.info("Creating secondary indexes..")
+        for scope in self.bucket_util.get_active_scopes(bucket):
+            if scope.name == "_system":
+                continue
+            for col in self.bucket_util.get_active_collections(bucket, scope.name):
+                idx_name = '{0}_{1}_{2}_'.format(bucket.name, scope.name, col.name)
+                idx_name += index_suffix
+                self.log.info("Creating secondary index {}".format(idx_name))
+                query = 'CREATE INDEX `{0}` ON `{1}`.`{2}`.`{3}`(`{4}` include missing)'.format(
+                            idx_name, bucket.name, scope.name, col.name, field)
+                if partitioned:
+                    query += ' PARTITION BY HASH(META().id) WITH {"num_partition": 8};'
+                if replica:
+                    query += ' WITH { "num_replica":1 };'
+                result = self.query_client.query_tool(query)
+                self.log.info("Result for creation of index {0} = {1}".format(idx_name,
+                                                                    result['status']))
+                if result['status'] == 'success':
+                    self.index_count += 1
+                break
+
+    def test_index_file_based_rebalance(self):
+
+        self.PrintStep("Testing index file based rebalance")
+
+        extra_node = self.cluster.servers[-1]
+        nodes_to_add = [self.spare_node] + [extra_node]
+
+        self.log.info("Installing latest version on the spare node")
+        self.upgrade_helper.install_version_on_nodes([self.spare_node],
+                                            self.upgrade_version,
+                                            cluster_profile=self.cluster_profile)
+        index_nodes = self.cluster.index_nodes
+
+        self.log.info("Swap rebalance of index nodes")
+        swap_rebalance_result = self.task.rebalance(
+                self.cluster,
+                to_add=nodes_to_add,
+                to_remove=index_nodes,
+                check_vbucket_shuffling=False,
+                services=["index,n1ql"]*len(index_nodes))
+        self.assertTrue(swap_rebalance_result, "Swap rebalance failed")
+        self.log.info("Swap rebalance of index nodes was successful")
+        self.spare_node = index_nodes[0]
+
+        self.log.info("Rebalancing-in index node {}".format(self.spare_node.ip))
+        rebalance_in_result = self.task.rebalance(
+                self.cluster,
+                to_add=[self.spare_node],
+                to_remove=[],
+                check_vbucket_shuffling=False,
+                services=["index,n1ql"])
+        self.assertTrue(rebalance_in_result, "Rebalance-in failed")
+        self.log.info("Rebalance-in of index node successful")
+
+    def validate_index_count_and_status(self):
+
+        self.indexer_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
+
+        self.log.info("Validating index count")
+        sdk_client = SDKClient([self.cluster.index_nodes[0]], None)
+        query = 'SELECT name FROM system:indexes;'
+        result = sdk_client.cluster.query(query).rowsAsObject()
+        idx_count = 0
+        for idx in result:
+            idx_count += 1
+        sdk_client.close()
+
+        self.log.info("Actual index count = {}".format(idx_count))
+        self.log.info("Expected index count = {}".format(self.index_count))
+
+        self.assertTrue(self.index_count == idx_count,
+                        "Index count does not match")
+        self.log.info("Indexes count verified")
+
+        index_host_dict = dict()
+        self.log.info("Validating that indexes are present on all nodes")
+        result = self.indexer_rest.get_index_status()
+
+        for res in result["status"]:
+            nodes = res["hosts"]
+            for node in nodes:
+                if node not in index_host_dict:
+                    index_host_dict[node] = 1
+                else:
+                    index_host_dict[node] += 1
+
+        self.log.info("Indexes hosted on each indexer node = {}".format(index_host_dict))
+
+        err_msg = 'Indexes are not present on all nodes'
+        self.assertTrue(len(index_host_dict) == len(self.cluster.index_nodes), err_msg)
+        self.log.info("Indexes are hosted on all nodes")
+
+        self.log.info("Verifying that alternate shard IDs have been created for all indexes")
+        for res in result["status"]:
+            idx_name = res["name"]
+            exp = len(res["alternateShardIds"]) >= 1
+            error_msg = "Alternate shard ID not present for {}".format(idx_name)
+            self.assertTrue(exp, error_msg)
+        self.log.info("Alternate shard IDs present for all indexes")
+
+
+    def insert_json_docs_sdk(self, num_items):
+
+        bucket = self.cluster.buckets[0]
+        global success_insert_count
+        success_insert_count = 0
+        data_load_threads = []
+        self.log.info("Creating a new scope and a new collection")
+        self.bucket_util.create_scope(self.cluster.master, bucket,
+                                      {"name": "myscope"})
+        self.bucket_util.create_collection(self.cluster.master, bucket,
+                                        "myscope", {"name": "mycoll"})
+
+        def insert_docs(server, bucket, num_docs, key_prefix):
+            sdk_client_for_load = SDKClient([server], bucket,
+                                        scope="myscope", collection="mycoll")
+            hair = ['Burgundy', 'English vermillion', 'Battleship grey', 'Blizzard blue']
+            local_item_count = 0
+            for j in range(num_docs):
+                age_random = random.randint(1,100)
+                height_random = random.randint(1,100)
+                weight_random = random.randint(1,100)
+                hair_random = random.choice(hair)
+                doc = {
+                    "name": "XJohn",
+                    "age": age_random,
+                    "animals": ["Electric lime", "Electric purple"],
+                    "attributes": {
+                        "hair": hair_random,
+                        "dimensions": {
+                        "height": height_random,
+                        "weight": weight_random
+                        },
+                        "hobbies": [{
+                        "type": random.choice(["Sports", "Music"]),
+                        "name": "Jewelry",
+                        "details": {
+                            "location": {
+                            "lat": 37.51093566196537,
+                            "lon": 46.31837025664398
+                            }
+                        }
+                        }]
+                    },
+                    "gender": random.choice(["M", "F"]),
+                    "marital": random.choice(["W", "D", "M"]),
+                    "mutated": 0,
+                    "body": "efibuhebfljqkwndhbilhdeijhdlihdeilhiuwedfiewbfilbeifleifiwb" \
+                            "iewufbhuiebfikbehiuwsibgiuqbvdhjwvbdjhwvdbjhwvqbhsjbqjsbsjhb"
+                    }
+                key = key_prefix + "_" + str(j)
+                res = sdk_client_for_load.insert(key, doc)
+                if res["status"] == True:
+                    local_item_count += 1
+            global success_insert_count
+            success_insert_count += local_item_count
+            sdk_client_for_load.close()
+
+        thread_count = 10
+        items_per_thread = int(num_items // thread_count)
+        self.log.info("Inserting {} items into the new collection".format(num_items))
+        for i in range(thread_count):
+            key = "json_doc" + str(i+1)
+            t = Thread(target=insert_docs, args=[self.cluster.master, bucket,
+                                                 items_per_thread, key])
+            t.start()
+            data_load_threads.append(t)
+
+        for th in data_load_threads:
+            th.join()
+        return success_insert_count
+
+    def create_new_indexes_for_new_docs(self):
+
+        indexes = ['create index `new_index1` on `bucket-0`.`myscope`.`mycoll`(age) where age between 30 and 50;',
+           'create index `new_index2` on`bucket-0`.`myscope`.`mycoll`(marital,age);',
+           'create index `new_index3` on `bucket-0`.`myscope`.`mycoll`(ALL `animals`,`attributes`.`hair`,`name`) where attributes.hair = "Burgundy";',
+           'CREATE INDEX `new_index4` ON `bucket-0`.`myscope`.`mycoll`(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy";',
+           'create index `new_index5` on `bucket-0`.`myscope`.`mycoll`(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`);']
+
+        idx_prefix = "new_index"
+        count = 0
+        self.log.info("Creating indexes for the new collection")
+        for idx_query in indexes:
+            idx_name = idx_prefix + str(count)
+            self.log.info("Index query = {}".format(idx_query))
+            result = self.query_client.query_tool(idx_query)
+            self.log.info("Result for creation of {0} = {1}".format(idx_name, result))
+            if result['status'] == 'success':
+                self.index_count += 1
+            count += 1
+
+    def create_indexes_pre_upgrade(self):
+        self.PrintStep("Performing indexing specific steps before upgrade")
+        self.index_count = 0
+        total_coll_in_bucket = \
+            self.spec_bucket[MetaConstants.NUM_SCOPES_PER_BUCKET] * \
+                self.spec_bucket[MetaConstants.NUM_COLLECTIONS_PER_SCOPE]
+        index_query_node = self.cluster.index_nodes[0]
+        rest = RestConnection(index_query_node)
+        self.log.info("Setting indexer params")
+        if self.redistribute_indexes:
+            rest.set_indexer_params(redistributeIndexes='true')
+        sdk_client = SDKClient([index_query_node], None)
+        self.create_primary_indexes()
+        if self.create_partitioned_indexes:
+            self.create_primary_partitioned_indexes()
+            self.log.info("Creating partitioned indexes...")
+            self.create_secondary_indexes(partitioned=True, replica=False,
+                                            index_suffix='sec_part_index',
+                                            field='name')
+            self.log.info("Creating secondary indexes on the field 'body' ")
+            self.create_secondary_indexes(index_suffix='sec_body_index',
+                                            field='body')
+            self.log.info("Creating secondary indexes on the field 'mutation_type' ")
+            self.create_secondary_indexes(index_suffix='sec_mutation_index',
+                                            field='mutation_type')
+        CollectionBase.create_indexes_for_all_collections(self, sdk_client)
+        self.index_count += total_coll_in_bucket
+        new_collection_docs = 1000000
+        self.items_inserted = self.insert_json_docs_sdk(new_collection_docs)
+        self.log.info("{} items were successfully inserted".format(self.items_inserted))
+        self.create_new_indexes_for_new_docs()
+        self.log.info("Initial index count = {}".format(self.index_count))
+        sdk_client.close()
