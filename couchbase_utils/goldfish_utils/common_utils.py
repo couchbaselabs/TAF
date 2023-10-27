@@ -84,9 +84,12 @@ class GoldfishCluster:
 
         self.master = TestInputServer()
         self.master.ip = self.endpoint
+        self.master.port = nebula_rest_port
         self.master.nebula_sdk_port = nebula_sdk_port
         self.master.nebula_rest_port = nebula_rest_port
         self.master.type = type
+
+        self.cbas_cc_node = self.master
 
         self.db_users = db_users
         self.type = type

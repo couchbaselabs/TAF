@@ -106,19 +106,22 @@ class RestConnection(object):
             if hasattr(serverInfo, 'hostname') and serverInfo.hostname \
                     and serverInfo.hostname.find(self.ip) == -1:
                 self.hostname = serverInfo.hostname
-            if hasattr(serverInfo, 'services'):
-                self.services = serverInfo.services
+        try:
+            self.type = serverInfo.type
+        except:
+            self.type = "default"
         if CbServer.use_https:
             if ClusterRun.is_enabled:
                 if int(self.port) < ClusterRun.ssl_port:
                     self.port = int(self.port) + 10000
             else:
-                self.port = CbServer.ssl_port
-                index_port = CbServer.ssl_index_port
-                query_port = CbServer.ssl_n1ql_port
-                fts_port = CbServer.ssl_fts_port
-                eventing_port = CbServer.ssl_eventing_port
-                backup_port = CbServer.ssl_backup_port
+                if self.type != "goldfish":
+                    self.port = CbServer.ssl_port
+                    index_port = CbServer.ssl_index_port
+                    query_port = CbServer.ssl_n1ql_port
+                    fts_port = CbServer.ssl_fts_port
+                    eventing_port = CbServer.ssl_eventing_port
+                    backup_port = CbServer.ssl_backup_port
         self.input = TestInputSingleton.input
         if self.input is not None:
             """ from watson, services param order and format:
@@ -140,33 +143,30 @@ class RestConnection(object):
         self.ftsUrl = generic_url.format(url_host, fts_port)
         self.eventing_baseUrl = generic_url.format(url_host, eventing_port)
         self.backup_url = generic_url.format(url_host, backup_port)
-        try:
-            self.type = serverInfo.type
-        except:
-            self.type = "default"
-        if self.type != "default" or self.type == "nebula":
-            nodes_self_url = self.baseUrl + "pools/default"
-        else:
-            nodes_self_url = self.baseUrl + 'nodes/self'
-        # for Node is unknown to this cluster error
-        node_unknown_msg = "Node is unknown to this cluster"
-        unexpected_server_err_msg = "Unexpected server error, request logged"
-        for iteration in xrange(5):
-            http_res, success = \
-                self.init_http_request(nodes_self_url, timeout)
-            if not success and type(http_res) == unicode \
-                    and (http_res.find(node_unknown_msg) > -1
-                         or http_res.find(unexpected_server_err_msg) > -1):
-                self.log.error("Error {0}, 5 seconds sleep before retry"
-                               .format(http_res))
-                sleep(5, log_type="infra")
-                if iteration == 2:
-                    self.log.error("Node {0}:{1} is in a broken state!"
-                                   .format(self.ip, self.port))
-                    raise ServerUnavailableException(self.ip)
-                continue
+        if self.type != "goldfish":
+            if self.type != "default" or self.type == "nebula":
+                nodes_self_url = self.baseUrl + "pools/default"
             else:
-                break
+                nodes_self_url = self.baseUrl + 'nodes/self'
+            # for Node is unknown to this cluster error
+            node_unknown_msg = "Node is unknown to this cluster"
+            unexpected_server_err_msg = "Unexpected server error, request logged"
+            for iteration in xrange(5):
+                http_res, success = \
+                    self.init_http_request(nodes_self_url, timeout)
+                if not success and type(http_res) == unicode \
+                        and (http_res.find(node_unknown_msg) > -1
+                             or http_res.find(unexpected_server_err_msg) > -1):
+                    self.log.error("Error {0}, 5 seconds sleep before retry"
+                                   .format(http_res))
+                    sleep(5, log_type="infra")
+                    if iteration == 2:
+                        self.log.error("Node {0}:{1} is in a broken state!"
+                                       .format(self.ip, self.port))
+                        raise ServerUnavailableException(self.ip)
+                    continue
+                else:
+                    break
 
     def init_http_request(self, api, timeout=300):
         content = None

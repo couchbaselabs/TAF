@@ -250,7 +250,7 @@ class Standalone_Dataset(Dataset):
 
         self.primary_key = primary_key
         self.link_name = CBASHelper.format_name(link_name)
-        self.data_source = data_source.lower()
+        self.data_source = data_source.lower() if data_source else None
 
         if self.data_source in ["s3", "azure", "gcp"]:
             self.dataset_properties = dataset_properties

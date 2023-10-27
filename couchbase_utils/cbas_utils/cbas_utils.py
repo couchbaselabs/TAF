@@ -266,6 +266,16 @@ class BaseUtil(object):
         return copy.deepcopy(spec_package.spec)
 
     @staticmethod
+    def get_goldfish_spec(module_name):
+        """
+        Fetches the goldfish_specs from spec file mentioned.
+        :param module_name str, name of the module from where the specs have to be fetched
+        """
+        spec_package = importlib.import_module(
+            'pytests.Goldfish.templates.' + module_name)
+        return copy.deepcopy(spec_package.spec)
+
+    @staticmethod
     def update_cbas_spec(cbas_spec, updated_specs):
         """
         Updates new dataverse spec in the overall cbas spec.
@@ -714,7 +724,7 @@ class Link_Util(Dataverse_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
-        cbas_helper = CBASHelper(cluster.cbas_cc_node)
+        cbas_helper = self.get_cbas_helper_object(cluster)
 
         exists = False
         if create_if_not_exists:
@@ -724,36 +734,41 @@ class Link_Util(Dataverse_Util):
 
         if not exists:
             # If dataverse does not exits
-            if create_dataverse and not self.create_dataverse(
-                    cluster, CBASHelper.format_name(
-                        link_properties["dataverse"]),
-                    if_not_exists=True, timeout=timeout,
-                    analytics_timeout=analytics_timeout):
+            if (create_dataverse and link_properties["dataverse"] !=
+                    "Default" and not self.create_dataverse(
+                        cluster, CBASHelper.format_name(
+                            link_properties["dataverse"]),
+                        if_not_exists=True, timeout=timeout,
+                        analytics_timeout=analytics_timeout)):
                 return False
 
-            link_prop = copy.deepcopy(link_properties)
-            params = dict()
-            uri = ""
-            if "dataverse" in link_prop:
-                uri += "/{0}".format(urllib.quote_plus(CBASHelper.metadata_format(
-                    link_prop["dataverse"]), safe=""))
-                del link_prop["dataverse"]
+            if self.run_query_using_sdk:
+                status, content, errors = cbas_helper.analytics_link_operations(
+                    "create", link_properties)
+            else:
+                link_prop = copy.deepcopy(link_properties)
+                params = dict()
+                uri = ""
+                if "dataverse" in link_prop:
+                    uri += "/{0}".format(urllib.quote_plus(CBASHelper.metadata_format(
+                        link_prop["dataverse"]), safe=""))
+                    del link_prop["dataverse"]
 
-            if "name" in link_prop:
-                uri += "/{0}".format(urllib.quote_plus(
-                    CBASHelper.unformat_name(link_prop["name"]), safe=""))
-                del link_prop["name"]
+                if "name" in link_prop:
+                    uri += "/{0}".format(urllib.quote_plus(
+                        CBASHelper.unformat_name(link_prop["name"]), safe=""))
+                    del link_prop["name"]
 
-            for key, value in link_prop.iteritems():
-                if value:
-                    if isinstance(value, unicode):
-                        params[key] = str(value)
-                    else:
-                        params[key] = value
-            params = urllib.urlencode(params)
-            status, status_code, content, errors = cbas_helper.analytics_link_operations(
-                method="POST", uri=uri, params=params, timeout=timeout,
-                username=username, password=password)
+                for key, value in link_prop.iteritems():
+                    if value:
+                        if isinstance(value, unicode):
+                            params[key] = str(value)
+                        else:
+                            params[key] = value
+                params = urllib.urlencode(params)
+                status, status_code, content, errors = cbas_helper.analytics_link_operations(
+                    method="POST", uri=uri, params=params, timeout=timeout,
+                    username=username, password=password)
             if validate_error_msg:
                 return self.validate_error_in_response(
                     status, errors, expected_error, expected_error_code)
@@ -1225,10 +1240,10 @@ class ExternalLink_Util(RemoteLink_Util):
             "Creating link - {0}.{1} in region {2}".format(
                 link_properties["dataverse"], link_properties["name"],
                 link_properties["region"]))
-        return self.create_link(cluster, link_properties, username, password,
-                                validate_error_msg, expected_error,
-                                expected_error_code, create_if_not_exists,
-                                timeout, analytics_timeout, create_dataverse)
+        return self.create_link(
+            cluster, link_properties, username, password, validate_error_msg,
+            expected_error, expected_error_code, create_if_not_exists,
+            timeout, analytics_timeout, create_dataverse)
 
     @staticmethod
     def get_external_link_spec(cbas_spec):
@@ -3762,6 +3777,76 @@ class StandAlone_Collection_Util(External_Dataset_Util):
                 dataset_obj.name] = dataset_obj
         return True
 
+    def insert_into_standalone_collection(
+            self, cluster, collection_name, docs_to_insert,
+            dataverse_name=None, username=None, password=None,
+            analytics_timeout=300, timeout=300):
+        cmd = "INSERT INTO "
+        if dataverse_name:
+            cmd += "{0}.{1} ".format(
+                CBASHelper.format_name(dataverse_name),
+                CBASHelper.format_name(collection_name))
+        else:
+            cmd += "{0} ".format(CBASHelper.format_name(collection_name))
+
+        cmd += "({0});".format(docs_to_insert)
+        self.log.info("Inserting into: {0}.{1}".format(
+            CBASHelper.format_name(dataverse_name),
+            CBASHelper.format_name(collection_name)))
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password,
+            timeout=timeout, analytics_timeout=analytics_timeout)
+        if status != "success":
+            self.log.error(str(errors))
+            return False
+        else:
+            return True
+
+    def upsert_into_standalone_collection(
+            self, cluster, collection_name, docs_to_upsert, dataverse_name=None,
+            username=None, password=None, analytics_timeout=300, timeout=300):
+
+        cmd = "UPSERT INTO "
+        if dataverse_name:
+            cmd += "{0}.{1} ".format(
+                CBASHelper.format_name(dataverse_name),
+                CBASHelper.format_name(collection_name))
+        else:
+            cmd += "{0} ".format(CBASHelper.format_name(collection_name))
+
+        cmd += "({0});".format(docs_to_upsert)
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password,
+            timeout=timeout, analytics_timeout=analytics_timeout)
+        if status != "success":
+            self.log.error(str(errors))
+            return False
+        else:
+            return True
+
+    def delete_from_standalone_collection(
+            self, cluster, collection_name, doc_selection_clause,
+            dataverse_name=None, username=None,
+            password=None, analytics_timeout=300, timeout=300):
+        cmd = "DELETE FROM "
+        if dataverse_name:
+            cmd += "{0}.{1} ".format(
+                CBASHelper.format_name(dataverse_name),
+                CBASHelper.format_name(collection_name))
+        else:
+            cmd += "{0} ".format(CBASHelper.format_name(collection_name))
+
+        cmd += "WHERE {0}".format(doc_selection_clause)
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password,
+            timeout=timeout, analytics_timeout=analytics_timeout)
+        if status != "success":
+            self.log.error(str(errors))
+            return False
+        else:
+            return True
+
 
 class Synonym_Util(StandAlone_Collection_Util):
 
@@ -3987,11 +4072,11 @@ class Synonym_Util(StandAlone_Collection_Util):
 
         synonym_spec = self.get_synonym_spec(cbas_spec)
 
-        if cbas_spec.get("no_of_synonyms", 0) > 0:
+        if synonym_spec.get("no_of_synonyms", 0) > 0:
 
             results = list()
             all_cbas_entities = self.list_all_dataset_objs() + self.list_all_synonym_objs()
-            for i in range(1, cbas_spec["no_of_synonyms"] + 1):
+            for i in range(1, synonym_spec["no_of_synonyms"] + 1):
                 if synonym_spec.get("name_key", "random").lower() == "random":
                     name = self.generate_name(name_cardinality=1)
                 else:
@@ -5708,19 +5793,12 @@ class CbasUtil(CBOUtil):
             if dataset.dataverse_name == "Default":
                 dataset_name = dataset.name
 
-            if isinstance(dataset, CBAS_Collection):
-                retry_func(
-                    dataset, self.drop_dataset,
-                    {"cluster": cluster, "dataset_name": dataset_name,
-                     "if_exists": True, "analytics_collection": True,
-                     "timeout": cbas_spec.get("api_timeout", 300),
-                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
-            else:
-                retry_func(
-                    dataset, self.drop_dataset,
-                    {"cluster": cluster, "dataset_name": dataset_name,
-                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 300),
-                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
+            retry_func(
+                dataset, self.drop_dataset,
+                {"cluster": cluster, "dataset_name": dataset_name,
+                 "if_exists": True, "timeout": cbas_spec.get("api_timeout", 300),
+                 "analytics_timeout": cbas_spec.get("cbas_timeout", 300),
+                 "analytics_collection": random.choice([True, False])})
         if any(results):
             if expected_dataset_drop_fail:
                 print_failures("Datasets", results)
@@ -5756,24 +5834,15 @@ class CbasUtil(CBOUtil):
         self.log.info("Dropping all the Dataverses")
         for dataverse in self.dataverses.values():
             if dataverse.name != "Default":
-                if isinstance(dataverse, CBAS_Scope):
-                    retry_func(
-                        dataverse, self.drop_dataverse,
-                        {"cluster": cluster, "dataverse_name": dataverse.name,
-                         "if_exists": True, "analytics_scope": True,
-                         "delete_dataverse_obj": delete_dataverse_object,
-                         "timeout": cbas_spec.get("api_timeout", 300),
-                         "analytics_timeout": cbas_spec.get("cbas_timeout",
-                                                            300)})
-                else:
-                    retry_func(
-                        dataverse, self.drop_dataverse,
-                        {"cluster": cluster, "dataverse_name": dataverse.name,
-                         "if_exists": True,
-                         "delete_dataverse_obj": delete_dataverse_object,
-                         "timeout": cbas_spec.get("api_timeout", 300),
-                         "analytics_timeout": cbas_spec.get("cbas_timeout",
-                                                            300)})
+                retry_func(
+                    dataverse, self.drop_dataverse,
+                    {"cluster": cluster, "dataverse_name": dataverse.name,
+                     "if_exists": True,
+                     "analytics_scope": random.choice([True, False]),
+                     "delete_dataverse_obj": delete_dataverse_object,
+                     "timeout": cbas_spec.get("api_timeout", 300),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout",
+                                                        300)})
 
         if any(results):
             if expected_dataverse_drop_fail:

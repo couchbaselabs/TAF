@@ -8,7 +8,7 @@ from TestInput import TestInputSingleton, TestInputServer
 from cbas_utils.cbas_utils import CbasUtil
 
 
-class CBASBaseTest(BaseTestCase):
+class GoldFishBaseTest(BaseTestCase):
 
     def setUp(self):
         """
@@ -18,7 +18,7 @@ class CBASBaseTest(BaseTestCase):
         if not hasattr(self, "input"):
             self.input = TestInputSingleton.input
 
-        super(CBASBaseTest, self).setUp()
+        super(GoldFishBaseTest, self).setUp()
 
         if self._testMethodDoc:
             self.log.info("Starting Test: %s - %s"
@@ -29,7 +29,7 @@ class CBASBaseTest(BaseTestCase):
         self.use_sdk_for_cbas = self.input.param("use_sdk_for_cbas", False)
 
         if self.use_sdk_for_cbas:
-            for cluster in self.list_all_clusters:
+            for cluster in self.list_all_clusters():
                 self.init_sdk_pool_object(cluster)
 
         # This is to support static remote clusters. Multiple remote cluster
@@ -51,7 +51,7 @@ class CBASBaseTest(BaseTestCase):
         self.retry_time = self.input.param("retry_time", 300)
         self.num_retries = self.input.param("num_retries", 1)
 
-        self.cbas_spec_name = self.input.param("cbas_spec", None)
+        self.gf_spec_name = self.input.param("gf_spec_name", None)
 
         self.cbas_util = CbasUtil(self.task, self.use_sdk_for_cbas)
 
@@ -59,4 +59,4 @@ class CBASBaseTest(BaseTestCase):
                       .format(self.case_number, self._testMethodName))
 
     def tearDown(self):
-        super(CBASBaseTest, self).tearDown()
+        super(GoldFishBaseTest, self).tearDown()
