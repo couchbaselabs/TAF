@@ -13,7 +13,6 @@ from couchbase_helper.durability_helper import DurabilityHelper, BucketDurabilit
 from membase.api.rest_client import RestConnection
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient, SDKClientPool
-from sdk_exceptions import SDKException
 from StatsLib.StatsOperations import StatsHelper
 from upgrade.upgrade_base import UpgradeBase
 from bucket_collections.collections_base import CollectionBase
@@ -328,7 +327,7 @@ class UpgradeTests(UpgradeBase):
                 bucket.scopes[CbServer.system_scope] = scope
                 for c_name in [CbServer.query_collection,
                             CbServer.mobile_collection]:
-                    collection = Collection({"name": c_name})
+                    collection = Collection({"name": c_name, "maxTTL": 0})
                     bucket.scopes[CbServer.system_scope].collections[c_name] = collection
 
         ### Migration of the storageBackend ###

@@ -80,7 +80,7 @@ class Collection(object):
     def __init__(self, collection_spec=dict()):
         self.name = collection_spec.get("name")
         self.num_items = collection_spec.get("num_items", 0)
-        self.maxTTL = collection_spec.get("maxTTL", 0)
+        self.maxTTL = collection_spec.get("maxTTL", -1)
         self.history = collection_spec.get("history", "false")
 
         # Meta data for test case validation
@@ -113,7 +113,7 @@ class Collection(object):
     @staticmethod
     def recreated(collection_obj, collection_spec):
         collection_obj.num_items = collection_spec.get("num_items", 0)
-        collection_obj.maxTTL = collection_spec.get("maxTTL", 0)
+        collection_obj.maxTTL = collection_spec.get("maxTTL", -1)
         collection_obj.history = collection_spec.get("history", "false")
 
         # Update meta fields
@@ -310,14 +310,14 @@ class Bucket(object):
         self.scopes[CbServer.system_scope] = scope
         for c_name in [CbServer.query_collection,
                        CbServer.mobile_collection]:
-            collection = Collection({"name": c_name})
+            collection = Collection({"name": c_name, "maxTTL": 0})
             scope.collections[c_name] = collection
 
         # Only if Serverless profile is enabled on the cluster
         if CbServer.cluster_profile == "serverless":
             for c_name in [CbServer.eventing_collection,
                            CbServer.transaction_collection]:
-                collection = Collection({"name": c_name})
+                collection = Collection({"name": c_name, "maxTTL": 0})
                 scope.collections[c_name] = collection
 
     def __str__(self):

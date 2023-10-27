@@ -3439,6 +3439,27 @@ class RestConnection(newRC):
             raise Exception("unable to get random document/key for bucket %s" % (bucket))
         return json_parsed
 
+    def upsert_doc(self, bucket, key,
+                   scope=None, collection=None,
+                   exp=None, preserve_ttl=None):
+        if collection is None:
+            api = self.baseUrl + 'pools/default/buckets/{}/docs/{}'\
+                .format(bucket, key)
+        else:
+            api = self.baseUrl + 'pools/default/buckets/{}/scopes/{}/collections/{}/docs/{}'\
+                .format(bucket, scope, collection, key)
+        params = dict()
+        if exp is not None:
+            params["expiry"] = exp
+        if preserve_ttl is not None:
+            params["preserveTTL"] = preserve_ttl
+
+        params = urllib.urlencode(params)
+        status, _ , _ = self._http_request(
+            api, RestConnection.POST, params=params,
+            headers=self._create_headers())
+        return status
+
     # These methods are added change rebalance settings like rebalanceMovesPerNode
     # See https://docs.couchbase.com/server/current/rest-api/rest-limit-rebalance-moves.html for more details
     def set_rebalance_settings(self, body):

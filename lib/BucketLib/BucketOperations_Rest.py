@@ -605,6 +605,27 @@ class BucketHelper(RestConnection):
         status, content, _ = self._http_request(api, "POST", params)
         return status, content
 
+    def set_max_data_per_bucket_guardrails(self, couch_max_data=None, magma_max_data=None):
+
+        api = self.baseUrl + "settings/resourceManagement/bucket/dataSizePerNode"
+        params = {}
+        if couch_max_data is not None:
+            params['couchstoreMaximum'] = couch_max_data
+        if magma_max_data is not None:
+            params['magmaMaximum'] = magma_max_data
+        params = urllib.urlencode(params)
+        status, content, _ = self._http_request(api, "POST", params)
+        return status, content
+
+    def set_max_disk_usage_guardrails(self, max_disk_usage):
+
+        api = self.baseUrl + "settings/resourceManagement/diskUsage"
+        params = {}
+        params['maximum'] = max_disk_usage
+        params = urllib.urlencode(params)
+        status, content, _ = self._http_request(api, "POST", params)
+        return status, content
+
     def get_auto_compaction_settings(self):
         api = self.baseUrl + "settings/autoCompaction"
         _, content, _ = self._http_request(api)
