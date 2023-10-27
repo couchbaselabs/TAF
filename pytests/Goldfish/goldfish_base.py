@@ -27,10 +27,14 @@ class GoldFishBaseTest(BaseTestCase):
             self.log.info("Starting Test: %s" % self._testMethodName)
 
         self.use_sdk_for_cbas = self.input.param("use_sdk_for_cbas", False)
+        self.sdk_clients_per_user = self.input.param("sdk_clients_per_user", 1)
 
         if self.use_sdk_for_cbas:
             for cluster in self.list_all_clusters():
-                self.init_sdk_pool_object(cluster)
+                for db_user in cluster.db_users:
+                    self.init_sdk_pool_object(
+                        cluster, self.sdk_clients_per_user,
+                        db_user.username, db_user.password)
 
         # This is to support static remote clusters. Multiple remote cluster
         # IPs can be passed in format ip1:ip2

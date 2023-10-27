@@ -245,7 +245,7 @@ class BaseUtil(object):
                               "from", "like", "or", "and", "to", "if", "else",
                               "as", "with", "on", "where", "is", "all", "end",
                               "div", "into", "let", "asc", "desc", "key",
-                              "any", "run", "set", "use"}
+                              "any", "run", "set", "use", "type"}
             if len(set(generated_name.lower().split(".")) & reserved_words) > 0:
                 return BaseUtil.generate_name(
                     name_cardinality, max_length, fixed_length, name_key, seed)
@@ -2173,7 +2173,7 @@ class Dataset_Util(KafkaLink_Util):
             if results[-1]:
                 dataverse.datasets[
                     dataset_obj.name] = dataset_obj
-        return True
+        return all(results)
 
     def create_datasets_on_all_collections(
             self, cluster, bucket_util, cbas_name_cardinality=1,
@@ -2779,7 +2779,7 @@ class Remote_Dataset_Util(Dataset_Util):
             if results[-1]:
                 dataverse.remote_datasets[
                     dataset_obj.name] = dataset_obj
-        return True
+        return all(results)
 
     def create_remote_datasets_on_all_collections(
             self, cluster, remote_cluster, bucket_util,
@@ -3192,7 +3192,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
                         "cbas_timeout", 300)))
             dataverse.external_datasets[
                 dataset_obj.name] = dataset_obj
-        return True
+        return all(results)
 
 
 class StandAlone_Collection_Util(External_Dataset_Util):
@@ -3672,7 +3672,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             )
             dataverse.standalone_datasets[
                 dataset_obj.name] = dataset_obj
-        return True
+        return all(results)
 
     def create_standalone_dataset_for_external_db_from_spec(
             self, cluster, cbas_spec, include_collections,
@@ -3775,7 +3775,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             )
             dataverse.standalone_datasets[
                 dataset_obj.name] = dataset_obj
-        return True
+        return all(results)
 
     def insert_into_standalone_collection(
             self, cluster, collection_name, docs_to_insert,
@@ -4411,7 +4411,7 @@ class Index_Util(Synonym_Util):
         Fetches link specific specs from spec file mentioned.
         :param cbas_spec dict, cbas spec dictonary.
         """
-        return cbas_spec["index"]
+        return cbas_spec.get("index", {})
 
     def create_index_from_spec(self, cluster, cbas_spec):
         self.log.info(
@@ -4420,7 +4420,7 @@ class Index_Util(Synonym_Util):
         index_spec = self.get_index_spec(cbas_spec)
 
         results = list()
-        for i in range(1, index_spec["no_of_indexes"] + 1):
+        for i in range(1, index_spec.get("no_of_indexes", 0) + 1):
             if index_spec.get("name_key", "random").lower() == "random":
                 name = self.generate_name(name_cardinality=1)
             else:
