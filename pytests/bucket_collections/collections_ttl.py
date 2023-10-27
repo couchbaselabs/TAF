@@ -1,3 +1,4 @@
+from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 from Cb_constants import CbServer, DocLoading
@@ -410,6 +411,102 @@ class CollectionsTTL(CollectionBase):
             # Doc with preserveTTL, so the doc expired with old TTL value
             res = client.read("key_3")
             self.assertFalse(res["status"], "Read 'key_3' succeeded: %s" % res)
+
+        self.log.info("Releasing SDK client")
+        client.select_collection(CbServer.default_scope,
+                                 CbServer.default_collection)
+        self.sdk_client_pool.release_client(client)
+
+    def test_collections_inherit_bucket_ttl(self):
+        """
+        MB-57924
+        """
+        def load_docs_into_each_collection():
+            for t_scope, t_col in scope_col_list:
+                self.log.info("Loading doc into {}:{}".format(t_scope, t_col))
+                client.select_collection(t_scope, t_col)
+                r = client.upsert(key, {}, durability=self.durability_level)
+                self.log.debug("Upsert %s:%s :: %s" % (t_scope, t_col, r["cas"]))
+                self.assertTrue(r["status"], "Insert failed")
+        def validate_expired_docs(cols_with_expired_doc):
+            for t_scope, t_col in scope_col_list:
+                client.select_collection(t_scope, t_col)
+                col_name = "{}:{}".format(t_scope, t_col)
+                r = client.read(key)
+                self.log.debug("Validate %s:%s :: %s" % (t_scope, t_col, r["cas"]))
+                if t_col in cols_with_expired_doc:
+                    self.assertFalse(r["status"],
+                                     "{}: Read succeeded".format(col_name))
+                else:
+                    self.assertTrue(r["status"],
+                                    "{}: Read failed".format(col_name))
+        bucket = self.cluster.buckets[0]
+        self.log.info("Creating custom scope and collections")
+        self.bucket_util.create_scope(self.cluster.master, bucket,
+                                      {"name": "s1"})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c1"})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c2", "maxTTL": 0})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c3", "maxTTL": 60})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c4", "maxTTL": -1})
+        scope_col_list = [
+            (CbServer.default_scope, CbServer.default_collection),
+            ("s1", "c1"),
+            ("s1", "c2"),
+            ("s1", "c3"),
+            ("s1", "c4")]
+
+        key = "test_doc"
+        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+
+        self.log.info("Load and validate with bucket_ttl=0 and collection TTL")
+        load_docs_into_each_collection()
+        self.sleep(65, "Wait for doc to expire")
+        self.log.info("Reading docs to validate doc status")
+        validate_expired_docs(["c3"])
+
+        self.log.info("Load and validate with bucket_ttl=10 + collection TTL")
+        self.bucket_util.update_bucket_property(self.cluster.master,
+                                                bucket, max_ttl=10)
+        self.sleep(5, "Wait for ttl to get reflected")
+        load_docs_into_each_collection()
+        self.sleep(15, "Wait for doc to expire")
+        self.log.info("Reading docs to validate doc status")
+        validate_expired_docs(["_default", "c1", "c4"])
+        self.sleep(50, "Wait for doc to expire on collection with TTL")
+        validate_expired_docs(["_default", "c1", "c3", "c4"])
+
+        self.log.info("Dropping custom created collections")
+        for scope, col in scope_col_list[1:]:
+            self.bucket_util.drop_collection(self.cluster.master, bucket,
+                                             scope, col)
+
+        self.log.info("Updating bucket ttl=20")
+        self.bucket_util.update_bucket_property(self.cluster.master,
+                                                bucket, max_ttl=20)
+        self.sleep(5, "Wait for ttl to get reflected")
+
+        self.log.info("Recreate dropped collections")
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c1"})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c2", "maxTTL": 0})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c3", "maxTTL": 60})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c4", "maxTTL": -1})
+
+        self.log.info("Validate doc expiry with bucket_ttl=20 + col TTL")
+        load_docs_into_each_collection()
+        self.sleep(15, "Wait before no expiry will be triggered and validate")
+        validate_expired_docs(list())
+        self.sleep(10, "Wait for bucket ttl to get trigger")
+        validate_expired_docs(["_default", "c1", "c4"])
+        self.sleep(40, "Wait for doc to expire on collection with TTL")
+        validate_expired_docs(["_default", "c1", "c3", "c4"])
 
         self.log.info("Releasing SDK client")
         client.select_collection(CbServer.default_scope,
