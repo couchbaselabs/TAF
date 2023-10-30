@@ -223,6 +223,22 @@ class GoldfishUtils:
         resp = json.loads(resp.content)
         return resp["id"]
 
+    def scale_goldfish_cluster(self, pod, user, cluster, nodes):
+        gf_api = GoldfishAPI(pod.url_public, user.api_secret_key,
+                             user.api_access_key, user.email, user.password)
+        gf_instance_info = self.get_cluster_info(pod, user, cluster)
+        resp = gf_api.update_goldfish_instance(
+            cluster.org_id, cluster.project_id, cluster.cluster_id,
+            gf_instance_info["name"], gf_instance_info["description"],
+            nodes)
+        self.log.info(resp)
+        self.log.info(resp.status_code)
+        if resp.status_code != 202:
+            self.log.error("Unable to scale goldfish cluster {0}".format(
+                cluster.name))
+            return None
+        return resp
+
     def get_cluster_info(self, pod, user, cluster):
         gf_api = GoldfishAPI(pod.url_public, user.api_secret_key,
             user.api_access_key, user.email, user.password)
@@ -273,3 +289,21 @@ class GoldfishUtils:
             return False
         elif not state:
             return True
+
+    def wait_for_cluster_scaling_operation_to_complete(
+            self, pod, user, cluster, timeout=3600):
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            state = self.get_cluster_info(pod, user, cluster)["state"]
+            if state == "scaling":
+                self.log.info("Cluster is still scaling. Waiting for 10s.")
+                time.sleep(10)
+            else:
+                break
+        if state == "healthy":
+            return True
+        else:
+            self.log.error("Cluster {0} failed to scale even after {"
+                            "1} seconds. Current cluster state - {2}".format(
+                cluster.name, timeout, state))
+            return False
