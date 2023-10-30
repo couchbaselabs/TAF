@@ -347,7 +347,7 @@ class CBAS_UDF(object):
         self.synonym_dependencies = list()
         for entity in referenced_entities:
             if isinstance(entity, Dataset) or isinstance(
-                entity, CBAS_Collection):
+                    entity, CBAS_Collection):
                 self.dataset_dependencies.append([
                     CBASHelper.unformat_name(entity.dataverse_name),
                     CBASHelper.unformat_name(entity.name)])
@@ -380,6 +380,7 @@ class Kafka(object):
     :param api_key <str> Kafka API key
     :param api_secret <str> Kafka API secret key
     """
+
     def __init__(self, url, api_key, api_secret):
         self.kafka_url = url
         self.api_key = api_key
@@ -412,14 +413,21 @@ class ExternalDB(object):
     :param dynamo_secret_key <str> Secret key for dynamo service
     :param dynamo_region <str> Region in which dynamo table is present 
     """
+
     def __init__(self, db_type, mongo_connection_uri=None,
                  dynamo_access_key=None, dynamo_secret_key=None,
-                 dynamo_region=None):
+                 dynamo_region=None, rds_hostname=None, rds_username=None,
+                 rds_password=None, rds_port=None, rds_server_id=None):
         self.db_type = db_type.lower()
         self.mongo_connection_uri = mongo_connection_uri
         self.dynamo_access_key = dynamo_access_key
         self.dynamo_secret_key = dynamo_secret_key
         self.dynamo_region = dynamo_region
+        self.rds_hostname = rds_hostname
+        self.rds_username = rds_username
+        self.rds_password = rds_password
+        self.rds_port = rds_port
+        self.rds_server_id = rds_server_id
 
     def get_source_db_detail_object_for_kafka_links(self):
         if self.db_type == "mongo":
@@ -436,4 +444,12 @@ class ExternalDB(object):
                     "region": self.dynamo_region
                 }
             }
-
+        elif self.db_type == "rds":
+            return {
+                "source": "MYSQLDB",
+                "connectionFields": {
+                    "databaseHostname": self.rds_hostname, "databasePort": self.rds_port,
+                    "databaseUser": self.rds_username, "databasePassword": self.rds_password,
+                    "databaseServerId": self.rds_server_id
+                }
+            }

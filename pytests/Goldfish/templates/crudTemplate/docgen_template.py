@@ -24,11 +24,9 @@ class Review:
     """
 
     def __init__(self):
-        start_date = datetime(2020, 1, 1)
-        end_date = datetime(2023, 12, 31)
-        self.date = start_date + timedelta(days=random.randint(0, (end_date - start_date).days))
+        self.year = random.randint(2012, 2100)
         self.author = ''.join(
-            random.choice(string.ascii_letters + string.whitespace) for _ in range(random.randint(10, 20)))
+            random.choice(string.ascii_letters + ' ') for _ in range(random.randint(10, 20)))
         self.rating = Rating()
 
 
@@ -38,7 +36,7 @@ class Hotel:
     """
 
     def __init__(self):
-        self.characters_with_spaces = string.ascii_letters + string.digits + string.whitespace
+        self.characters_with_spaces = string.ascii_letters + string.digits + ' '
         self.characters_without_spaces = string.ascii_letters + string.digits
         self.document_size = None
         self.country = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(10, 100)))
@@ -46,18 +44,18 @@ class Hotel:
         self.free_parking = int(random.choice([True, False]))
         self.city = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(5, 20)))
         self.type = "Hotel"
-        self.url = "www." + ''.join(
-            random.choice(self.characters_without_spaces) for _ in range(random.randint(10, 100))) + ".com"
+        username = ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(10, 100)))
+        domain = ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(5, 10)))
+        self.url = "www.{0}.{1}.com".format(username, domain)
         self.reviews = []
-        self.phone = int(''.join([str(random.randint(0, 9)) for _ in range(10)]))
+        self.phone = random.randint(100, 9999)
         self.price = random.choice([1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0,
                                     7000.0, 8000.0, 9000.0, 10000.0])
         self.avg_ratings = random.uniform(0, 10)
         self.free_breakfast = int(random.choice([True, False]))
         self.name = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(5, 20)))
         self.public_likes = []
-        self.email = ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(10, 100)))
-        + "@" + ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(5, 10))) + ".com"
+        self.email = "{0}@{1}.com".format(username, domain)
         self.mutated = 0.0
         self.padding = ""
 
@@ -85,9 +83,12 @@ class Hotel:
         Generates document os a given size in bytes.
         :param document_size:
         """
-        self.reviews = []
         self.document_size = document_size
-        self.generate_public_likes()
+        try:
+            self.generate_public_likes()
+        except Exception as err:
+            error = str(err)
+
         while True:
             new_review = self.generate_review()
             document = json.dumps(self.__dict__, default=lambda x: x.__dict__,

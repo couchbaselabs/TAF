@@ -41,6 +41,7 @@ from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import ExternalDB
 from Goldfish.goldfish_base import GoldFishBaseTest
 from cbas_utils.cbas_utils import StandaloneCollectionLoader
+from cbas_utils.cbas_utils import CbasUtil, External_Dataset, Standalone_Dataset
 
 
 class GoldfishE2E(GoldFishBaseTest):
@@ -61,6 +62,11 @@ class GoldfishE2E(GoldFishBaseTest):
         self.dynamo_access_key_id = self.input.param("dynamo_access_key_id", None)
         self.dynamo_security_access_key = self.input.param("dynamo_security_access_key", None)
         self.dynamo_regions = self.input.param("dynamo_regions", None)
+        self.rds_hostname = self.input.param("rds_hostname", None)
+        self.rds_port = self.input.param("rds_port", None)
+        self.rds_username = self.input.param("rds_username", None)
+        self.rds_password = self.input.param("rds_password", None)
+        self.rds_server_id = self.input.param("rds_server_id", None)
         self.num_of_CRUD_on_datasets = self.input.param("num_of_CRUD_on_datasets", 5)
         self.num_iterations = self.input.param("num_iterations", 1)
 
@@ -80,6 +86,10 @@ class GoldfishE2E(GoldFishBaseTest):
         if self.run_concurrent_query:
             self.start_query_task()
 
+        self.doc_count_per_format = {
+            "json": 7400000, "parquet": 7300000,
+            "csv": 7400000, "tsv": 7400000}
+
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
 
@@ -90,7 +100,7 @@ class GoldfishE2E(GoldFishBaseTest):
         if self.run_concurrent_query:
             self.stop_query_task()
 
-        # super(GoldfishE2E, self).tearDown()
+        super(GoldfishE2E, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage="Teardown")
 
@@ -149,6 +159,15 @@ class GoldfishE2E(GoldFishBaseTest):
                 cbas_spec["kafka_link"]["external_database_details"]["dynamo"].append(
                     dynamo_obj.get_source_db_detail_object_for_kafka_links())
                 cbas_spec["kafka_link"]["database_type"].append("dynamo")
+
+        if self.rds_port and self.rds_hostname and self.rds_password and self.rds_username and self.rds_server_id:
+            cbas_spec["kafka_link"]["external_database_details"]["rds"] = list()
+            rds_obj = ExternalDB(db_type="rds", rds_port=self.rds_port, rds_hostname=self.rds_hostname,
+                                 rds_password=self.rds_password, rds_username=self.rds_username,
+                                 rds_server_id=self.rds_server_id)
+            cbas_spec["kafka_link"]["external_database_details"]["rds"].append(
+                rds_obj.get_source_db_detail_object_for_kafka_links())
+            cbas_spec["kafka_link"]["database_type"].append("rds")
 
     def update_external_dataset_spec(self, cbas_spec):
         """
@@ -242,7 +261,7 @@ class GoldfishE2E(GoldFishBaseTest):
         """
         Update the kafka datasourece in template
         """
-        cbas_spec["kafka_dataset"]["data_source"] = ["mongo", "dynamo"]
+        cbas_spec["kafka_dataset"]["data_source"] = ["mongo", "dynamo", "rds"]
 
     def run_random_queries_on_dataset(self, cluster, query_list, collection_name, dataverse_name,
                                       time_for_query_in_mins):
@@ -256,7 +275,7 @@ class GoldfishE2E(GoldFishBaseTest):
                 CBASHelper.format_name(collection_name))
             query = random.choice(query_list).format(collection_full_name)
             self.log.info("Running: {0}".format(query))
-            status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
+            status, metrics, errors, results, _ = cluster.cbas_util.execute_statement_on_cbas_util(
                 cluster, query, username=None, password=None, timeout=300,
                 analytics_timeout=300)
             if status != "success":
@@ -264,13 +283,13 @@ class GoldfishE2E(GoldFishBaseTest):
             if time.time() - start_time > time_for_query_in_mins * 60:
                 break
 
-    def start_thread_processes(self, cluster, jobs_queue, start=True):
+    def start_thread_processes(self, cluster, jobs_queue, start=True, aysnc_run=True):
         """
         Start and stop the thread processes
         """
         if start:
-            self.cbas_util.run_jobs_in_parallel(
-                jobs_queue, cluster.results, self.sdk_clients_per_user, async_run=True)
+            cluster.cbas_util.run_jobs_in_parallel(
+                jobs_queue, cluster.results, self.sdk_clients_per_user, async_run=aysnc_run)
         if not start:
             jobs_queue.join()
 
@@ -282,28 +301,28 @@ class GoldfishE2E(GoldFishBaseTest):
                       "Select * from {0} Limit 10;",
                       "SELECT AVG(rating) AS averageRating FROM {0};"]
 
-        standalone_collections = self.cbas_util.list_all_dataset_objs(
+        standalone_collections = cluster.cbas_util.list_all_dataset_objs(
             "standalone")
         for standalone_collection in standalone_collections:
-            cluster.query_jobs.put((
+            cluster.jobs.put((
                 self.run_random_queries_on_dataset,
                 {"cluster": cluster, "query_list": query_list, "collection_name": standalone_collection.name,
-                 "dataverse_name": standalone_collection.dataverse_name, "time_for_query_in_mins": 360}
+                 "dataverse_name": standalone_collection.dataverse_name, "time_for_query_in_mins": 1}
             ))
 
-    def perform_copy_and_crud_on_standalone_collection(self, cluster, document_size=10000, no_of_docs=100000):
+    def perform_copy_and_crud_on_standalone_collection(self, cluster, document_size=10000, no_of_docs=100):
         """
         Ingest data from external datasources like S3, GCP and Azure into
         standalone collection.
         Perform crud on standalone collection
         """
-        standalone_loader = StandaloneCollectionLoader(self.cbas_util)
-        standalone_collections = self.cbas_util.list_all_dataset_objs(
+        standalone_loader = StandaloneCollectionLoader(cluster.cbas_util, self.use_sdk_for_cbas)
+        standalone_collections = cluster.cbas_util.list_all_dataset_objs(
             "standalone")
         for standalone_collection in standalone_collections:
             if standalone_collection.data_source in ["s3", "azure", "gcp"]:
-                cluster.copy_to_standalone_collection_jobs.put((
-                    self.cbas_util.copy_from_external_resource_into_standalone_collection,
+                cluster.jobs.put((
+                    cluster.cbas_util.copy_from_external_resource_into_standalone_collection,
                     {"cluster": cluster, "collection_name": standalone_collection.name,
                      "aws_bucket_name": standalone_collection.dataset_properties["external_container_name"],
                      "external_link_name": standalone_collection.link_name,
@@ -320,7 +339,7 @@ class GoldfishE2E(GoldFishBaseTest):
                      "timezone": standalone_collection.dataset_properties["timezone"]}
                 ))
             elif standalone_collection.data_source is None:
-                cluster.copy_to_standalone_collection_jobs.put((
+                cluster.jobs.put((
                     standalone_loader.load_doc_to_standalone_collection,
                     {'cluster': cluster, 'collection_name': standalone_collection.name,
                      'dataverse_name': standalone_collection.dataverse_name, 'no_of_docs': no_of_docs,
@@ -332,10 +351,33 @@ class GoldfishE2E(GoldFishBaseTest):
         Validate the initial load for different type of collections from different sources.
         Sources include s3, mongo, dynamo, rds, and remote links
         """
-        datasets = cluster.cbas_util.list_all_dataset_objs()
-        for dataset in datasets:
-            pass
+        for dataset in cluster.cbas_util.list_all_dataset_objs("external"):
+            item_count = cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
+                                                            timeout=3600, analytics_timeout=3600)
+            if item_count[0] != self.doc_count_per_format[dataset.dataset_properties["file_format"]]:
+                self.log.error("Doc count mismatch for external collection: {}".format(dataset.full_name))
 
+        for dataset in cluster.cbas_util.list_all_dataset_objs("standalone"):
+            if dataset.data_source is None:
+                data_count = cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
+                                                            timeout=3600, analytics_timeout=3600)[0]
+                if data_count == 0:
+                    self.log.error("Doc count mismatch for external collection: {}".format(dataset.full_name))
+                else:
+                    self.log.info("No of CRUD Docs in {0}: {1}".format(dataset.full_name, data_count))
+            elif dataset.data_source is 's3':
+                item_count = cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
+                                                                             timeout=3600, analytics_timeout=3600)
+                if item_count[0] != self.doc_count_per_format[dataset.dataset_properties["file_format"]]:
+                    self.log.error("Doc count mismatch for external collection: {}".format(dataset.full_name))
+
+            elif dataset.data_source in ['dynamo', 'mongo', 'rds']:
+                data_count =  cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
+                                                                   timeout=3600, analytics_timeout=3600)[0]
+                if data_count == 0:
+                    self.log.error("Doc count mismatch for external collection: {}".format(dataset.full_name))
+                else:
+                    self.log.info("Docs in kafka dataset {0}: {1}".format(dataset.full_name, data_count))
     def update_goldfish_spec(self):
         """
         Update the goldfish spec.
@@ -353,21 +395,20 @@ class GoldfishE2E(GoldFishBaseTest):
         """
         Process and create entities based on cbas_spec template
         """
-        status, msg = self.cbas_util.create_cbas_infra_from_spec(cluster, self.gf_spec,
-                                                                 self.bucket_util, False,
-                                                                 remote_clusters=self.to_clusters,
-                                                                 include_collections=self.include_external_collections)
+        cluster.cbas_util = CbasUtil(self.task, self.use_sdk_for_cbas)
+        status, msg = cluster.cbas_util.create_cbas_infra_from_spec(cluster, self.gf_spec,
+                                                                    self.bucket_util, False,
+                                                                    remote_clusters=self.to_clusters,
+                                                                    include_collections=self.include_external_collections)
         if not status:
             self.log.error(msg)
-            self.fail("Error while creating infra from CBAS spec")
+            self.log.error("All infra are not created. Check logs for error")
 
-        cluster.copy_to_standalone_collection_jobs = Queue()
-        cluster.query_jobs = Queue()
+        cluster.jobs = Queue()
         cluster.results = []
         self.perform_copy_and_crud_on_standalone_collection(cluster)
         self.run_queries_on_standalone_collections(cluster)
-        self.start_thread_processes(cluster, cluster.copy_to_standalone_collection_jobs)
-        self.start_thread_processes(cluster, cluster.query_jobs)
+        self.start_thread_processes(cluster, cluster.jobs)
 
     def run_goldfishE2E(self):
         """
@@ -384,13 +425,13 @@ class GoldfishE2E(GoldFishBaseTest):
         # intial cluster is 3 nodes loading 100 GB data in total per cluster
         # wait for the data loading in various standalone collections
         for cluster in self.clusters:
-            self.start_thread_processes(cluster, cluster.copy_to_standalone_collection_jobs, start=False)
+            self.start_thread_processes(cluster, cluster.jobs, start=False)
 
         # validate the data in various dataset(standalone, external and remote collection)
         for cluster in self.clusters:
             self.check_dataset_for_completion(cluster)
 
-        # scale the instance from 3 node to 5 compute units
+        # scale the instance from 3 to 5 compute units
         # scaling code to come from Sujay
 
         # start kafka docloader, copy to s3 and crud on standalone collection to increase the volume from 100GB to 1TB
@@ -402,7 +443,7 @@ class GoldfishE2E(GoldFishBaseTest):
         # scale down the instance from 5 to 3 compute unit
         # scaling code to come from Sujay
 
-        # perform crud on collections to create and delete standalone, external and remote collections.
+        # perform crud on collections to create and delete standalone, external and kafka collections for 2 hrs.
 
         # scale the instance from 3 node to 8 compute units
         # scaling code to come from Sujay

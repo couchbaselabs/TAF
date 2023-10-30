@@ -684,7 +684,7 @@ class Link_Util(Dataverse_Util):
         if status == "success":
             if results:
                 if is_active:
-                    if ((link_type).lower() != "s3" or (link_type).lower() != "azureblob") and results[0]["IsActive"]:
+                    if (link_type.lower() != "s3" or (link_type).lower() != "azureblob") and results[0]["IsActive"]:
                         return True
                     else:
                         return False
@@ -1368,6 +1368,33 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         super(KafkaLink_Util, self).__init__(server_task, run_query_using_sdk)
 
+    def wait_for_kafka_links(self, cluster, timeout=900):
+        kafka_links = set(self.list_all_link_objs("kafka"))
+        start_time = time.time()
+        connection_flag = False
+        while (time.time() - start_time) < timeout and len(kafka_links) > 0:
+            self.log.info("Waiting for KAFKA links to get connected")
+            results = []
+            for links in kafka_links:
+                link_info = self.get_link_info(cluster, links.dataverse_name, links.name, links.link_type)
+                if (type(link_info) is not None) and len(link_info) > 0 and "linkState" in link_info[0] and link_info[0]["linkState"] == "CONNECTED":
+                    results.append(True)
+                else:
+                    results.append(False)
+            if all(results):
+                self.log.info("All Kafka links successfully connected")
+                connection_flag = True
+                break;
+            else:
+                time.sleep(90)
+
+        if not connection_flag:
+            for links in kafka_links:
+                link_info = self.get_link_info(cluster, links.dataverse_name, links.name, links.link_type)
+                if (type(link_info) is None) or len(link_info) == 0 or "linkState" not in link_info[0] or link_info[0]["linkState"] != "CONNECTED":
+                    if len(link_info) == 0 or "linkState" not in link_info[0]:
+                        self.log.error("Failed to get link info for link: {0}".format(links.name))
+                    self.log.error("Failed to connected link: {0}, type: {1}, after 15 mins".format(links.full_name, links.db_type))
     def get_link_status(self, cluster, dataverse_name, link_name, username="Administrator", password="password"):
         """
         Return the status of a kafka link
@@ -1474,7 +1501,7 @@ class KafkaLink_Util(ExternalLink_Util):
             if len(link_spec.get("database_type")) > 0:
                 db_type = link_spec["database_type"][i % len(link_spec["database_type"])]
             else:
-                db_type = random.choice(["mongo", "dynamo", "cassandra"])
+                db_type = random.choice(["mongo", "dynamo", "rds"])
 
             external_db_details = random.choice(link_spec[
                                                     "external_database_details"][db_type])
@@ -3222,8 +3249,13 @@ class External_Dataset_Util(Remote_Dataset_Util):
 
 
 class StandaloneCollectionLoader(External_Dataset_Util):
-    def __init__(self, cbas_util):
-        self.cbas_util = cbas_util
+
+    def __init__(self, server_task=None, run_query_using_sdk=True):
+        """
+        :param server_task task object
+        """
+        super(StandaloneCollectionLoader, self).__init__(
+            server_task, run_query_using_sdk)
 
     def convert_unicode_to_string(self, data):
         """
@@ -3245,12 +3277,15 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         """
         Generate docs of specific size
         """
-        hotel = Hotel()
-        hotel.generate_document(document_size)
-        doc = json.loads(json.dumps(hotel, default=lambda o: o.__dict__, ensure_ascii=False))
-        del hotel
-        doc = self.convert_unicode_to_string(doc)
-        return doc
+        try:
+            hotel = Hotel()
+            hotel.generate_document(document_size)
+            doc = json.loads(json.dumps(hotel, default=lambda o: o.__dict__, ensure_ascii=False))
+            del hotel
+            doc = self.convert_unicode_to_string(doc)
+            return doc
+        except Exception as err:
+            self.log.error(str(err))
 
     def load_doc_to_standalone_collection(self, cluster, collection_name, dataverse_name, no_of_docs,
                                           document_size=256000, batch_size=25, max_concurrent_batches=10):
@@ -3292,7 +3327,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 CBASHelper.format_name(collection_name))
         else:
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
-            cmd += "({0});".format(doc_to_insert)
+        cmd += "({0});".format(doc_to_insert)
         self.log.info("Inserting into: {0}.{1}".format(CBASHelper.format_name(dataverse_name),
                                                        CBASHelper.format_name(collection_name)))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
@@ -3427,7 +3462,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
 class StandAlone_Collection_Util(External_Dataset_Util):
 
-    def __init__(self, server_task=None, run_query_using_sdk=False):
+    def __init__(self, server_task=None, run_query_using_sdk=True):
         """
         :param server_task task object
         """
@@ -5882,6 +5917,7 @@ class CbasUtil(CBOUtil):
             metadata, bucket_name, username=username, password=password)
         return response.json()
 
+
     def create_cbas_infra_from_spec(
             self, cluster, cbas_spec, bucket_util,
             wait_for_ingestion=True, remote_clusters=None,
@@ -5936,15 +5972,11 @@ class CbasUtil(CBOUtil):
                     results.append(False)
                 else:
                     results.append(True)
-        kafka_links = set(self.list_all_link_objs("kafka"))
-        start_time = time.time()
-        while (time.time() - start_time) < 900 and len(kafka_links) > 0:
-            # for links in kafka_links:
-            #     self.get_link_status(cluster, links.dataverse_name, links.name)
-            time.sleep(600)
+
         if not all(results):
             return False, "Failed at connect_link"
 
+        self.wait_for_kafka_links(cluster)
         results = []
 
         if wait_for_ingestion:
