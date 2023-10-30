@@ -11,12 +11,13 @@ from com.couchbase.client.core.error import (
     PlanningFailureException,UnambiguousTimeoutException, TimeoutException,
     DatasetExistsException, IndexExistsException, CompilationFailureException,
     InvalidArgumentException, AuthenticationFailureException,
-    LinkExistsException)
+    LinkExistsException, DataverseNotFoundException)
 
 from com.couchbase.client.java.manager.analytics import (
-    AnalyticsIndexManager, CreateLinkAnalyticsOptions)
+    AnalyticsIndexManager, CreateLinkAnalyticsOptions, GetLinksAnalyticsOptions)
 from com.couchbase.client.java.manager.analytics.link import (
-    AnalyticsLink, S3ExternalAnalyticsLink, CouchbaseRemoteAnalyticsLink)
+    AnalyticsLink, S3ExternalAnalyticsLink, CouchbaseRemoteAnalyticsLink,
+    AnalyticsLinkType, RawExternalAnalyticsLink)
 from com.couchbase.client.java.manager.analytics.link.CouchbaseRemoteAnalyticsLink import EncryptionLevel
 
 from java.time import Duration
@@ -181,8 +182,7 @@ class CBASHelper(object):
             self.log.error(str(err))
             return None
 
-    def analytics_link_operations(self, operation="fetch", link_properties={},
-                                  timeout=300):
+    def create_link(self, link_properties={}, timeout=300):
         status = False
         errors = {"msg": "", "code": ""}
         content = None
@@ -197,39 +197,84 @@ class CBASHelper(object):
         client = self.sdk_client_pool.get_cluster_client(self.cluster)
         manager = AnalyticsIndexManager(client.cluster)
 
-        if operation == "create":
-            try:
-                link_options = CreateLinkAnalyticsOptions.createLinkAnalyticsOptions()
-                link_options.timeout(Duration.ofSeconds(timeout))
-                manager.createLink(link_obj, link_options)
-                status = True
-                errors = []
-            except InvalidArgumentException as err:
-                self.log.error(str(err))
-                status = False
-                errors["msg"] = "Some link arguements are invalid"
-                errors = [errors]
-            except AuthenticationFailureException as err:
-                self.log.error(str(err))
-                status = False
-                errors["msg"] = "Authentication failure while creating link"
-                errors = [errors]
-            except LinkExistsException as err:
-                self.log.error(str(err))
-                status = False
-                errors["msg"] = "Link {0}.{1} already exists".format(
-                    link_properties["dataverse"], link_properties["name"])
-                errors = [errors]
-            except CouchbaseException as err:
-                self.log.error(str(err))
-                status = False
-                errors["msg"] = str(err)
-                errors = [errors]
-            except Exception as err:
-                self.log.error(str(err))
-                status = False
-                errors["msg"] = str(err)
-                errors = [errors]
-            finally:
-                self.sdk_client_pool.release_cluster_client(self.cluster, client)
-                return status, content, errors
+        try:
+            link_options = CreateLinkAnalyticsOptions.createLinkAnalyticsOptions()
+            link_options.timeout(Duration.ofSeconds(timeout))
+            manager.createLink(link_obj, link_options)
+            status = True
+            errors = []
+        except InvalidArgumentException as err:
+            self.log.error(str(err))
+            status = False
+            errors["msg"] = "Some link arguements are invalid"
+            errors = [errors]
+        except AuthenticationFailureException as err:
+            self.log.error(str(err))
+            status = False
+            errors["msg"] = "Authentication failure while creating link"
+            errors = [errors]
+        except LinkExistsException as err:
+            self.log.error(str(err))
+            status = False
+            errors["msg"] = "Link {0}.{1} already exists".format(
+                link_properties["dataverse"], link_properties["name"])
+            errors = [errors]
+        except CouchbaseException as err:
+            self.log.error(str(err))
+            status = False
+            errors["msg"] = str(err)
+            errors = [errors]
+        except Exception as err:
+            self.log.error(str(err))
+            status = False
+            errors["msg"] = str(err)
+            errors = [errors]
+        finally:
+            self.sdk_client_pool.release_cluster_client(self.cluster, client)
+            return status, content, errors
+
+    def get_link_info(self, dataverse_name=None, link_name=None,
+                      link_type=None):
+        status = False
+        errors = {"msg": "", "code": ""}
+        content = []
+
+        client = self.sdk_client_pool.get_cluster_client(self.cluster)
+        manager = AnalyticsIndexManager(client.cluster)
+
+        try:
+            get_link_options = (
+                GetLinksAnalyticsOptions.getLinksAnalyticsOptions())
+            if dataverse_name:
+                get_link_options.dataverseName(dataverse_name)
+            if link_name:
+                get_link_options.name(link_name)
+            if link_type:
+                get_link_options.linkType(AnalyticsLinkType.of(link_type))
+            result = manager.getLinks(get_link_options)
+            for link in result:
+                if isinstance(link, S3ExternalAnalyticsLink) or isinstance(
+                        link, CouchbaseRemoteAnalyticsLink):
+                    content.append(dict(link.toMap()))
+                elif isinstance(link, RawExternalAnalyticsLink):
+                    content.append(json.loads(link.json()))
+            status = True
+            errors = []
+        except DataverseNotFoundException as err:
+            self.log.error(str(err))
+            status = False
+            errors["msg"] = "Dataverse {0} does not exists".format(dataverse_name)
+            errors = [errors]
+        except CouchbaseException as err:
+            self.log.error(str(err))
+            status = False
+            errors["msg"] = str(err)
+            errors = [errors]
+        except Exception as err:
+            self.log.error(str(err))
+            status = False
+            errors["msg"] = str(err)
+            errors = [errors]
+        finally:
+            self.sdk_client_pool.release_cluster_client(self.cluster, client)
+            return status, content, errors

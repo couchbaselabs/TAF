@@ -743,8 +743,7 @@ class Link_Util(Dataverse_Util):
                 return False
 
             if self.run_query_using_sdk:
-                status, content, errors = cbas_helper.analytics_link_operations(
-                    "create", link_properties)
+                status, content, errors = cbas_helper.create_link(link_properties)
             else:
                 link_prop = copy.deepcopy(link_properties)
                 params = dict()
@@ -812,7 +811,7 @@ class Link_Util(Dataverse_Util):
                 return True
 
     def get_link_info(self, cluster, dataverse=None, link_name=None, link_type=None,
-                      username=None, password=None, timeout=300, restapi=True,
+                      username=None, password=None, timeout=300,
                       validate_error_msg=False, expected_error=None,
                       expected_error_code=None):
         """
@@ -827,11 +826,12 @@ class Link_Util(Dataverse_Util):
         :param username : used for authentication while calling API.
         :param password : used for authentication while calling API.
         :param timeout : timeout for API response
-        :param restapi : True, if you want to create link using rest API. False, if you
-        want to create link using DDL.
         """
-        cbas_helper = CBASHelper(cluster.cbas_cc_node)
-        if restapi:
+        cbas_helper = self.get_cbas_helper_object(cluster)
+        if self.run_query_using_sdk:
+            status, content, errors = cbas_helper.get_link_info(
+                dataverse, link_name, link_type)
+        else:
             params = dict()
             uri = ""
             if dataverse:
@@ -846,11 +846,11 @@ class Link_Util(Dataverse_Util):
             status, status_code, content, errors = cbas_helper.analytics_link_operations(
                 method="GET", uri=uri, params=params, timeout=timeout,
                 username=username, password=password)
-            if validate_error_msg:
-                return self.validate_error_in_response(
-                    status, errors, expected_error, expected_error_code)
-            if status:
-                return content
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        if status:
+            return content
 
     def alter_link_properties(
             self, cluster, link_properties, username=None, password=None,
@@ -1044,11 +1044,11 @@ class Link_Util(Dataverse_Util):
 
     def validate_get_link_info_response(
             self, cluster, link_properties, username=None, password=None,
-            timeout=300, restapi=True):
+            timeout=300):
         response = self.get_link_info(
             cluster, link_properties["dataverse"], link_properties["name"],
             link_properties["type"], username=username, password=password,
-            timeout=timeout, restapi=restapi)
+            timeout=timeout)
         if "secretAccessKey" in link_properties:
             link_properties["secretAccessKey"] = "<redacted sensitive entry>"
         entry_present = False
