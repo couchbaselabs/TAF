@@ -507,19 +507,11 @@ class volume(CollectionBase):
         Stop servers on nodes that were failed over and removed, and wipe config dir
         """
         for node in remove_nodes:
-            self.log.info("Wiping node config and restarting server on {0}"
-                          .format(node))
-            rest = RestConnection(node)
-            data_path = rest.get_data_path()
-            shell = RemoteMachineShellConnection(node)
-            shell.stop_couchbase()
-            self.sleep(10)
-            shell.cleanup_data_config(data_path)
-            shell.start_server()
-            self.sleep(10)
-            if not rest.is_ns_server_running():
+            RestConnection(node).reset_node()
+        for node in remove_nodes:
+            if not RestConnection(node).is_ns_server_running(
+                    timeout_in_seconds=120):
                 self.log.error("ns_server {0} is not running.".format(node.ip))
-            shell.disconnect()
 
     def rebalance(self, nodes_in=0, nodes_out=0):
         servs_in = random.sample(self.available_servers, nodes_in)

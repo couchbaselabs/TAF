@@ -645,18 +645,13 @@ class AutoFailoverBaseTest(ClusterSetup):
     def reset_cluster(self):
         try:
             for node in self.cluster.servers:
-                shell = RemoteMachineShellConnection(node)
-                # Start node
+                # Reset node
                 rest = RestConnection(node)
-                data_path = rest.get_data_path()
-                # Stop node
-                shell.stop_server()
-                # Delete Path
-                shell.cleanup_data_config(data_path)
-                shell.start_server()
+                rest.reset_node()
 
                 # If Ipv6 update dist_cfg file post server restart
                 # to change distribution to IPv6
+                shell = RemoteMachineShellConnection(node)
                 if '.com' in node.ip or ':' in node.ip:
                     self.log.info("Updating dist_cfg for IPv6 Machines")
                     shell.update_dist_type()
