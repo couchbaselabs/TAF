@@ -3365,7 +3365,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             pk = ""
             for field_name, field_type in primary_key.iteritems():
                 pk += "{0}: {1}, ".format(field_name, field_type)
-            pk = pk.rstrip(pk[-1:-2])
+            pk = pk.rstrip(pk[-1:-3:-1])
         else:
             pk = "`id` : UUID"
 

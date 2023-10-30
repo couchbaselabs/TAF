@@ -34,9 +34,9 @@ class CBASHelper(object):
         self.log = logger.get("infra")
 
     def execute_statement_on_cbas(
-            self, statement, mode, pretty=True, timeout=70,
+            self, statement, mode, pretty=True, timeout=300,
             client_context_id=None, username=None, password=None,
-            analytics_timeout=120, time_out_unit="s",
+            analytics_timeout=300, time_out_unit="s",
             scan_consistency=None, scan_wait=None):
 
         client = self.sdk_client_pool.get_cluster_client(self.cluster)
@@ -59,7 +59,7 @@ class CBASHelper(object):
             options.raw("mode", mode)
 
         options.raw("pretty", pretty)
-        options.raw("timeout", str(analytics_timeout) + time_out_unit)
+        #options.raw("timeout", str(analytics_timeout) + time_out_unit)
 
         output = {}
         try:
@@ -78,6 +78,8 @@ class CBASHelper(object):
         except CouchbaseException as err:
             output["errors"] = self.parse_error(err)["errors"]
             output["status"] = AnalyticsStatus.FATAL
+        except Exception as err:
+            self.log.error(str(err))
 
         finally:
             self.sdk_client_pool.release_cluster_client(self.cluster, client)
@@ -111,7 +113,7 @@ class CBASHelper(object):
             options.raw("mode", mode)
 
         options.raw("pretty", pretty)
-        options.raw("timeout", str(analytics_timeout) + "s")
+        #options.raw("timeout", str(analytics_timeout) + "s")
 
         for param in parameters:
             options.raw(param, parameters[param])
@@ -133,6 +135,8 @@ class CBASHelper(object):
         except CouchbaseException as err:
             output["errors"] = self.parse_error(err)["errors"]
             output["status"] = AnalyticsStatus.FATAL
+        except Exception as err:
+            self.log.error(str(err))
 
         finally:
             self.sdk_client_pool.release_cluster_client(self.cluster, client)
@@ -217,6 +221,11 @@ class CBASHelper(object):
                     link_properties["dataverse"], link_properties["name"])
                 errors = [errors]
             except CouchbaseException as err:
+                self.log.error(str(err))
+                status = False
+                errors["msg"] = str(err)
+                errors = [errors]
+            except Exception as err:
                 self.log.error(str(err))
                 status = False
                 errors["msg"] = str(err)

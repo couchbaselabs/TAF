@@ -295,16 +295,16 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             for thread in thread_list:
                 thread.join()
 
-    def init_sdk_pool_object(self, cluster):
+    def init_sdk_pool_object(self, cluster, num_clients=1,
+                             username="Administrator", password="password"):
         """
         Overriding the method from CouchbaseBaseTest class
         :return:
         """
         cluster.sdk_client_pool = SDKClientPool()
-        for db_user in cluster.db_users:
-            cluster.sdk_client_pool.create_cluster_clients(
-                cluster=cluster, servers=[cluster.master], req_clients=1,
-                username=db_user.username, password=db_user.password)
+        cluster.sdk_client_pool.create_cluster_clients(
+            cluster=cluster, servers=[cluster.master], req_clients=num_clients,
+            username=username, password=password)
 
     def list_all_projects(self):
         projects = list()

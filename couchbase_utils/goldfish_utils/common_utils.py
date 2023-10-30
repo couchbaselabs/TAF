@@ -97,7 +97,7 @@ class GoldfishCluster:
 
 class DBUser:
 
-    def __init__(self, username="Administrator", password = "password"):
+    def __init__(self, username="Administrator", password="password"):
         self.username = username
         self.password = password
         self.permission = list()
