@@ -668,8 +668,8 @@ class Link_Util(Dataverse_Util):
         :param analytics_timeout int, analytics query timeout
         """
         self.log.debug("Validating link entry in Metadata")
-        cmd = "select value lnk from Metadata.`Link` as lnk where\
-         lnk.DataverseName = \"{0}\" and lnk.Name = \"{1}\"".format(
+        cmd = ("select value lnk from Metadata.`Link` as lnk where "
+               "lnk.DataverseName = \"{0}\" and lnk.Name = \"{1}\"").format(
             CBASHelper.metadata_format(dataverse_name),
             CBASHelper.unformat_name(link_name))
 
@@ -6085,11 +6085,12 @@ class CbasUtil(CBOUtil):
 
         self.log.info("Disconnecting and Dropping all the Links")
         for link in self.list_all_link_objs():
-            retry_func(
-                link, self.disconnect_link,
-                {"cluster": cluster, "link_name": link.full_name,
-                 "timeout": cbas_spec.get("api_timeout", 300),
-                 "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
+            if link.link_type != "s3":
+                retry_func(
+                    link, self.disconnect_link,
+                    {"cluster": cluster, "link_name": link.full_name,
+                     "timeout": cbas_spec.get("api_timeout", 300),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
             try:
                 results.pop()
             except:

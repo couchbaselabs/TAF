@@ -77,10 +77,12 @@ class CBASHelper(object):
             output["errors"] = self.parse_error(err)["errors"]
             output["status"] = AnalyticsStatus.FATAL
         except CouchbaseException as err:
-            output["errors"] = self.parse_error(err)["errors"]
+            output["errors"] = str(err.message)
             output["status"] = AnalyticsStatus.FATAL
         except Exception as err:
             self.log.error(str(err))
+            output["errors"] = str(err.message)
+            output["status"] = AnalyticsStatus.FATAL
 
         finally:
             self.sdk_client_pool.release_cluster_client(self.cluster, client)

@@ -307,3 +307,15 @@ class GoldfishUtils:
                             "1} seconds. Current cluster state - {2}".format(
                 cluster.name, timeout, state))
             return False
+
+    def create_db_user_api_keys(self, pod, user, cluster):
+        gf_api = GoldfishAPI(pod.url_public, user.api_secret_key,
+                             user.api_access_key, user.email, user.password)
+        resp = gf_api.create_api_keys(
+            cluster.org_id, cluster.project_id, cluster.cluster_id)
+        if resp.status_code != 201:
+            self.log.error(
+                "Unable to create API keys for goldfish cluster {0} with ID "
+                "{1}".format(cluster.name, cluster.cluster_id))
+            return None
+        return json.loads(resp.content)
