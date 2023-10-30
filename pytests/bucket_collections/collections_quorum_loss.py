@@ -177,6 +177,7 @@ class CollectionsQuorumLoss(CollectionBase):
             elif self.failover_action == "kill_erlang":
                 self.cluster_util.stop_server(self.cluster, node)
                 self.cluster_util.start_server(self.cluster, node)
+        self.sleep(10, "Wait after removing failure")
 
     def shuffle_nodes_between_two_zones(self):
         """
@@ -314,7 +315,6 @@ class CollectionsQuorumLoss(CollectionBase):
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
-            self.sleep(20, "wait after removing failure")
 
         self.wipe_config_on_removed_nodes()
         tasks, cont_load_task = self.data_load(async_load=True)
@@ -383,7 +383,6 @@ class CollectionsQuorumLoss(CollectionBase):
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
-            self.sleep(20, "wait after removing failure")
 
         self.wipe_config_on_removed_nodes()
         tasks, cont_load_task = self.data_load(async_load=True)
@@ -441,7 +440,6 @@ class CollectionsQuorumLoss(CollectionBase):
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
-            self.sleep(20, "wait after removing failure")
 
         self.wipe_config_on_removed_nodes(failover_nodes)
         tasks, cont_load_task = self.data_load(async_load=True)
@@ -507,7 +505,6 @@ class CollectionsQuorumLoss(CollectionBase):
             self.num_node_failures = int(math.ceil(len(self.nodes_in_cluster) / 2.0))
 
         self.custom_remove_failure()
-        self.sleep(20, "wait after removing failure")
         self.wipe_config_on_removed_nodes()
 
         tasks, cont_load_task = self.data_load(async_load=True)
@@ -566,7 +563,6 @@ class CollectionsQuorumLoss(CollectionBase):
         self.task.rebalance(self.cluster, [], [],
                             retry_get_process_num=self.retry_get_process_num)
         self.custom_remove_failure()
-        self.sleep(20, "wait after removing failure")
 
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
