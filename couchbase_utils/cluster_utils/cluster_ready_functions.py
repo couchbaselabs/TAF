@@ -1191,7 +1191,7 @@ class ClusterUtils:
                         remoteIp=server.ip, port=constants.port,
                         services=server.services.split(",")))
 
-            self.rebalance(cluster.master, wait_for_completion)
+            self.rebalance(cluster, wait_for_completion)
         else:
             self.log.warning("No Nodes provided to add in cluster")
 
