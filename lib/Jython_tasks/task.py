@@ -6423,11 +6423,11 @@ class ConcurrentFailoverTask(Task):
                         self.prev_rebalance_status_id = server_task["statusId"]
                         self.log.debug("New failover status id: %s"
                                        % server_task["statusId"])
-
                 if task_id_changed:
                     status = self.rest.monitorRebalance()
                 else:
-                    if self.expected_nodes_to_fo == 0:
+                    curr_fo_settings = self.rest.get_autofailover_settings()
+                    if self.expected_nodes_to_fo == curr_fo_settings.count:
                         status = True
                     else:
                         status = False

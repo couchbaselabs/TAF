@@ -658,7 +658,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
             if cluster.master != server:
                 continue
-
             init_port = port or server.port or '8091'
             assigned_services = services
             init_tasks.append(
@@ -1095,6 +1094,10 @@ class ClusterSetup(OnPremBaseTest):
                 # in BaseTest if failure happens during setup() stage
                 if self.get_cbcollect_info:
                     self.fetch_cb_collect_logs()
+                CbServer.use_https = False
+                CbServer.n2n_encryption = False
+                for server in self.input.servers:
+                    self.set_ports_for_server(server, "non_ssl")
                 self.fail("Initial rebalance failed")
 
         if CbServer.cluster_profile == "serverless":

@@ -837,6 +837,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 task_type="revert_failure")
             self.task_manager.add_new_task(failover_task)
             self.task_manager.get_task_result(failover_task)
+            self.sleep(15, "wait post failure revert")
             self.log.info("Rebalance out the failed nodes")
             result = self.cluster_util.rebalance(self.cluster)
             self.assertTrue(result, "Final rebalance failed")
@@ -1020,7 +1021,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             iterator += 2
             group = "Group " + str(iterator)
             self.rest.add_zone(group)
-            nodes = [server.ip for server in self.cluster.servers[
+            nodes = [server for server in self.cluster.servers[
                                              iterator:iterator + 2]]
             self.rest.shuffle_nodes_in_zones(nodes, "Group 1", group)
 
