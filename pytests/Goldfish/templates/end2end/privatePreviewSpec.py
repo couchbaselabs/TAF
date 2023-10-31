@@ -10,7 +10,7 @@ spec = {
     "dataverse": {
         # Accepted values are 0 or any positive int. 0 and 1 means no
         # dataverse will be created and Default dataverse will be used.
-        "no_of_dataverses": 0,
+        "no_of_dataverses": 3,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are 0,1,2 . 0 means choose a cardinality
@@ -22,7 +22,7 @@ spec = {
 
     "remote_link": {
         # Accepted values are 0 or any positive int.
-        "no_of_remote_links": 0,
+        "no_of_remote_links": 1,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted value is list of property dicts.
@@ -38,7 +38,7 @@ spec = {
 
     "external_link": {
         # Accepted values are 0 or any positive int.
-        "no_of_external_links": 2,
+        "no_of_external_links": 1,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted value is list of property dicts.
@@ -54,24 +54,12 @@ spec = {
 
     "kafka_link": {
         # Accepted values are 0 or any positive int.
-        "no_of_kafka_links": 2,
+        "no_of_kafka_links": 3,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are "mongo", "dynamo", "cassandra"
         "database_type": [],
         # External database connection details
-
-        #{ "mongo": [{ "link_type": "KAFKA",
-        #        "source_details": {
-        #            "sourceDetails": {"source": "MONGODB",
-        #                              "connectionFields": {"connectionUri": "mongo_connection_url"}}
-        #        }}],
-        #   "dynamo": [{
-        #        "source":"DYNAMODB",
-        #        "connectionFields": { "accessKeyId": "accessKeyId",
-        #        "secretAccessKey": "secretAccessKey", "region": "region" }
-        #    }]
-        #}
         "external_database_details": {},
         # Accepted values are list of dataverse names. These are the
         # dataverses where the link will be created.
@@ -126,7 +114,7 @@ spec = {
     },
 
     "remote_dataset": {
-        "num_of_remote_datasets": 0,
+        "num_of_remote_datasets": 1,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are 0,1,3 . 0 means choose a cardinality
@@ -176,7 +164,7 @@ spec = {
     },
 
     "external_dataset": {
-        "num_of_external_datasets": 2,
+        "num_of_external_datasets": 1,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are list of dataverse names. These are the
@@ -202,7 +190,7 @@ spec = {
     },
 
     "standalone_dataset": {
-        "num_of_standalone_coll": 3,
+        "num_of_standalone_coll": 2,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are list of dataverse names. These are the
@@ -232,7 +220,7 @@ spec = {
     },
 
     "kafka_dataset": {
-        "num_of_ds_on_external_db": 2,
+        "num_of_ds_on_external_db": 3,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are list of dataverse names. These are the
@@ -276,7 +264,7 @@ spec = {
 
     "synonym": {
         # Accepted values are 0 or any positive int.
-        "no_of_synonyms": 0,
+        "no_of_synonyms": 1,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are list of dataverse names. These are the
@@ -301,7 +289,7 @@ spec = {
 
     "index": {
         # Accepted values are 0 or any positive int.
-        "no_of_indexes": 0,
+        "no_of_indexes": 2,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted values are list of dataverse names. The indexes
@@ -324,4 +312,8 @@ spec = {
         # Accepted values are all, cbas_index or index
         "creation_method": "all"
     },
+
+    "api_timeout": 300,
+
+    "cbas_timeout": 300,
 }

@@ -236,7 +236,7 @@ class GoldfishUtils:
         if resp.status_code != 202:
             self.log.error("Unable to scale goldfish cluster {0}".format(
                 cluster.name))
-            return None
+            return False
         return resp
 
     def get_cluster_info(self, pod, user, cluster):

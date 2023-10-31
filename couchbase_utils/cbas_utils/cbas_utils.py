@@ -116,6 +116,7 @@ class BaseUtil(object):
             return response["status"], metrics, errors, results, handle
 
         except Exception as e:
+            self.log.error("Query: {} failed due to: {}".format(statement, str(e)))
             raise Exception(str(e))
 
     def execute_parameter_statement_on_cbas_util(
@@ -366,6 +367,7 @@ class Dataverse_Util(BaseUtil):
         super(Dataverse_Util, self).__init__(server_task, run_query_using_sdk)
         # Initiate dataverses dict with Dataverse object for Default dataverse
         self.dataverses = dict()
+        self.crud_dataverses = dict()
         default_dataverse_obj = Dataverse()
         self.dataverses[default_dataverse_obj.name] = default_dataverse_obj
 
@@ -560,6 +562,9 @@ class Dataverse_Util(BaseUtil):
         """
         return self.dataverses.get(dataverse_name, None)
 
+    def get_crud_dataverse_obj(self, dataverse_name):
+        return self.crud_dataverses.get(dataverse_name, None)
+
     @staticmethod
     def get_dataverse_spec(cbas_spec):
         """
@@ -567,6 +572,33 @@ class Dataverse_Util(BaseUtil):
         :param cbas_spec dict, cbas spec dictonary.
         """
         return cbas_spec.get("dataverse", {})
+
+    def create_crud_dataverses(self, cluster, no_of_dataverses, timeout=300):
+        """
+        Create dataverses to perform create crud on collections
+        """
+        analytics_scope = False
+        for i in range(0, no_of_dataverses):
+            name = self.generate_name(name_cardinality=1)
+            creation_method = random.choice(["dataverse", "analytics_scope"])
+            if creation_method == "dataverse":
+                analytics_scope = False
+            elif creation_method == "analytics_scope":
+                analytics_scope = True
+
+            dataverse = Dataverse(name)
+            if not self.create_dataverse(
+                    cluster, dataverse.name,
+                    if_not_exists=True,
+                    analytics_scope=analytics_scope,
+                    timeout=timeout,
+                    analytics_timeout=timeout
+                ):
+                self.log.error("Failed to create dataverse: {}".format(name))
+            else:
+                del self.dataverses[dataverse.name]
+                if not self.get_crud_dataverse_obj(dataverse.name):
+                    self.crud_dataverses[dataverse.name] = dataverse
 
     def create_dataverse_from_spec(self, cluster, cbas_spec):
         self.log.info("Creating dataverses based on CBAS Spec")
@@ -612,17 +644,13 @@ class Dataverse_Util(BaseUtil):
                     analytics_scope = True
 
                 dataverse = Dataverse(name)
-
-                results.append(
-                    self.create_dataverse(
+                results.append(self.create_dataverse(
                         cluster, dataverse.name,
                         if_not_exists=True,
                         analytics_scope=analytics_scope,
                         timeout=cbas_spec.get("api_timeout", 300),
                         analytics_timeout=cbas_spec.get("cbas_timeout", 300)
-                    )
-                )
-
+                    ))
             return all(results)
         return True
 
@@ -779,6 +807,8 @@ class Link_Util(Dataverse_Util):
             if validate_error_msg:
                 return self.validate_error_in_response(
                     status, errors, expected_error, expected_error_code)
+            if errors:
+                self.log.error(str(errors))
             return status
         else:
             return exists
@@ -1369,7 +1399,7 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         super(KafkaLink_Util, self).__init__(server_task, run_query_using_sdk)
 
-    def wait_for_kafka_links(self, cluster, state="CONNECTED", timeout=900):
+    def wait_for_kafka_links(self, cluster, state="CONNECTED", timeout=1200):
         kafka_links = set(self.list_all_link_objs("kafka"))
         end_time = time.time() + timeout
         while len(kafka_links) > 0 and time.time() < end_time:
@@ -1399,7 +1429,7 @@ class KafkaLink_Util(ExternalLink_Util):
         Return the status of a kafka link
         """
         url = "http://{0}:8091/_p/cbas/analytics/link/{1}/{2}".format(cluster.endpoint,
-                                                                    dataverse_name, link_name)
+                                                                      dataverse_name, link_name)
         username = username
         password = password
         response = requests.get(url, auth=(username, password))
@@ -2024,6 +2054,28 @@ class Dataset_Util(KafkaLink_Util):
                             dataverse_obj.standalone_datasets)
 
         return all_dataset_objs.get(dataset_name, None)
+
+    def list_all_crud_dataset_objs(self, dataset_source=None):
+        """
+        List all the datasets created during collection crud operation
+        """
+        dataset_objs = list()
+        for dataverse in self.crud_dataverses.values():
+            if not dataset_source:
+                dataset_objs.extend(dataverse.datasets.values())
+                dataset_objs.extend(dataverse.remote_datasets.values())
+                dataset_objs.extend(dataverse.external_datasets.values())
+                dataset_objs.extend(dataverse.standalone_datasets.values())
+            else:
+                if dataset_source == "dataset":
+                    dataset_objs.extend(dataverse.datasets.values())
+                elif dataset_source == "remote":
+                    dataset_objs.extend(dataverse.remote_datasets.values())
+                elif dataset_source == "external":
+                    dataset_objs.extend(dataverse.external_datasets.values())
+                elif dataset_source == "standalone":
+                    dataset_objs.extend(dataverse.standalone_datasets.values())
+        return dataset_objs
 
     def list_all_dataset_objs(self, dataset_source=None):
         """
@@ -2713,7 +2765,7 @@ class Remote_Dataset_Util(Dataset_Util):
         return dataset_objs
 
     def create_remote_dataset_from_spec(self, cluster, remote_clusters,
-                                        cbas_spec, bucket_util):
+                                        cbas_spec, bucket_util, include_collection=None):
         """
         Creates remote datasets based on remote dataset specs.
         """
@@ -2773,25 +2825,33 @@ class Remote_Dataset_Util(Dataset_Util):
 
             link = remote_link_objs[i % len(remote_link_objs)]
             remote_cluster = None
-            for tmp_cluster in remote_clusters:
-                if tmp_cluster.master.ip == link.properties["hostname"]:
-                    remote_cluster = tmp_cluster
+            if remote_clusters is None:
+                my_collection = (random.choice(include_collection["remote"])).split('.')
+                bucket = my_collection[0]
+                scope = my_collection[1]
+                collection = my_collection[2]
 
-            bucket, scope, collection = self.get_kv_entity(
-                remote_cluster, bucket_util, bucket_cardinality,
-                dataset_spec.get("include_buckets", []),
-                dataset_spec.get("exclude_buckets", []),
-                dataset_spec.get("include_scopes", []),
-                dataset_spec.get("exclude_scopes", []),
-                dataset_spec.get("include_collections", []),
-                dataset_spec.get("exclude_collections", []))
-
-            if collection:
-                num_of_items = collection.num_items
             else:
-                num_of_items = bucket_util.get_collection_obj(
-                    bucket_util.get_scope_obj(bucket, "_default"),
-                    "_default").num_items
+
+                for tmp_cluster in remote_clusters:
+                    if tmp_cluster.master.ip == link.properties["hostname"]:
+                        remote_cluster = tmp_cluster
+
+                bucket, scope, collection = self.get_kv_entity(
+                    remote_cluster, bucket_util, bucket_cardinality,
+                    dataset_spec.get("include_buckets", []),
+                    dataset_spec.get("exclude_buckets", []),
+                    dataset_spec.get("include_scopes", []),
+                    dataset_spec.get("exclude_scopes", []),
+                    dataset_spec.get("include_collections", []),
+                    dataset_spec.get("exclude_collections", []))
+
+                if collection:
+                    num_of_items = collection.num_items
+                else:
+                    num_of_items = bucket_util.get_collection_obj(
+                        bucket_util.get_scope_obj(bucket, "_default"),
+                        "_default").num_items
 
             if dataset_spec["storage_format"] == "mixed":
                 storage_format = random.choice(
@@ -3288,30 +3348,37 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self.log.error(str(err))
 
     def load_doc_to_standalone_collection(self, cluster, collection_name, dataverse_name, no_of_docs,
-                                          document_size=256000, batch_size=25, max_concurrent_batches=10):
+                                          document_size=256000, batch_size=25, max_concurrent_batches=3):
         """
-        load documents to standalone collection
+        Load documents to a standalone collection.
         """
         start = time.time()
-        document = list()
+        document = []
+
+        def insert_batch(docs):
+            try:
+                self.insert_into_standalone_collection(cluster, collection_name, docs, dataverse_name)
+            except Exception as err:
+                self.log.error(str(err))
+
         with concurrent.futures.ThreadPoolExecutor(max_concurrent_batches) as executor:
-            futures = []
             for i in range(0, no_of_docs, batch_size):
                 batch_start = i
                 batch_end = min(i + batch_size, no_of_docs)
-                futures.extend(executor.submit(self.generate_docs, document_size)
-                               for _ in range(batch_start, batch_end))
-            for future in concurrent.futures.as_completed(futures):
-                try:
-                    document.append(future.result())
-                    if len(document) == 10:
-                        self.insert_into_standalone_collection(cluster, collection_name, document, dataverse_name)
-                        document = list()
-                except Exception as err:
-                    self.log.error(str(err))
+                futures = executor.map(self.generate_docs, [document_size] * (batch_end - batch_start))
+                batch_docs = list(futures)
+                document.extend(batch_docs)
+
+                if len(document) >= 100:
+                    insert_batch(document)
+                document = []
+
+        if document:
+            insert_batch(document)
+
         end = time.time()
         time_spent = end - start
-        self.log.info("Took {0} to insert docs".format(time_spent))
+        self.log.info("Took {0} seconds to insert {1} docs".format(time_spent, no_of_docs))
 
     def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None, username=None,
                                           password=None, analytics_timeout=300, timeout=300):
@@ -3415,9 +3482,8 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 return random.choice(results)["id"]
 
     def crud_on_standalone_collection(self, cluster, collection_name, dataverse_name=None, target_num_docs=100000,
-                                      username=None, password=None, time_for_crud_in_mins=None, analytics_timeout=300,
-                                      timeout=300, num_buffer=500, insert_percentage=0.7, upsert_percentage=0.1,
-                                      delete_percentage=0.2):
+                                      username=None, password=None, time_for_crud_in_mins=None, num_buffer=500,
+                                      insert_percentage=0.7, upsert_percentage=0.1):
         """
         Perform crud on standlaone collection
         """
@@ -3923,6 +3989,8 @@ class StandAlone_Collection_Util(External_Dataset_Util):
                 else:
                     links = self.list_all_link_objs(link_type=data_source)
                     link = random.choice(links) if len(links) > 0 else None
+                    if link is None:
+                        data_source = None
 
             link_name = link.full_name if link else None
             dataset_obj = Standalone_Dataset(
@@ -3944,8 +4012,9 @@ class StandAlone_Collection_Util(External_Dataset_Util):
                     dataverse_name, dataset_obj.primary_key, "",
                     False, storage_format)
             )
-            dataverse.standalone_datasets[
-                dataset_obj.name] = dataset_obj
+            if results[-1]:
+                dataverse.standalone_datasets[
+                    dataset_obj.name] = dataset_obj
         return all(results)
 
     def create_standalone_dataset_for_external_db_from_spec(
@@ -4045,15 +4114,17 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             if dataverse_name == "Default":
                 dataverse_name = None
 
-            results.append(
-                self.create_standalone_collection_using_links(
+            if not self.create_standalone_collection_using_links(
                     cluster, name, creation_method, False,
                     dataverse_name, dataset_obj.primary_key,
                     link_name, external_collection_name,
-                    False, storage_format)
-            )
-            dataverse.standalone_datasets[
-                dataset_obj.name] = dataset_obj
+                    False, storage_format):
+                self.log.error("Failed to create dataset {}".format(name))
+                results.append(False)
+            else:
+                dataverse.standalone_datasets[
+                    dataset_obj.name] = dataset_obj
+                results.append(True)
         return all(results)
 
     def insert_into_standalone_collection(
@@ -5924,6 +5995,28 @@ class CbasUtil(CBOUtil):
         response = cbas_helper.restore_cbas_metadata(
             metadata, bucket_name, username=username, password=password)
         return response.json()
+
+    def connect_links(self, cluster, cbas_spec):
+        """
+        Connect all links present
+        """
+        # Connect link only when remote links or kafka links are present,
+        # Local link is connected by default and external links are not
+        # required to be connected.
+        results = list()
+        links = (self.list_all_link_objs("couchbase") +
+                 self.list_all_link_objs("kafka"))
+        if len(links) > 0:
+            self.log.info("Connecting all remote and kafka Links")
+            for link in links:
+                if not self.connect_link(
+                        cluster, link.full_name,
+                        timeout=cbas_spec.get("api_timeout", 300),
+                        analytics_timeout=cbas_spec.get("cbas_timeout",
+                                                        300)):
+                    self.log.error("Failed to connect link {0}".format(link.full_name))
+                else:
+                    self.log.info("Successfully connected link {0}".format(link.full_name))
 
     def create_cbas_infra_from_spec(
             self, cluster, cbas_spec, bucket_util,

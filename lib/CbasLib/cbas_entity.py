@@ -148,14 +148,19 @@ class Dataset(object):
         self.kv_bucket = bucket
         self.kv_scope = scope
         self.kv_collection = collection
-        if self.kv_collection:
-            self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
-                cardinality=3)
-        elif self.kv_bucket:
-            self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
-                cardinality=1)
+        if isinstance(self.kv_bucket, str):
+            self.full_kv_entity_name = CBASHelper.format_name(self.kv_bucket,
+                                          self.kv_scope,
+                                          self.kv_collection)
         else:
-            self.full_kv_entity_name = None
+            if self.kv_collection:
+                self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
+                    cardinality=3)
+            elif self.kv_bucket:
+                self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
+                    cardinality=1)
+            else:
+                self.full_kv_entity_name = None
         self.num_of_items = num_of_items
         self.storage_format = storage_format
 
@@ -256,7 +261,7 @@ class Standalone_Dataset(Dataset):
             self.dataset_properties = dataset_properties
         else:
             self.dataset_properties = {}
-            if self.data_source in ["mongo", "dynamo", "cassandra"]:
+            if self.data_source in ["mongo", "dynamo", "rds"]:
                 self.external_collection_name = external_collection_name
 
 

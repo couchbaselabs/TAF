@@ -179,6 +179,20 @@ class CBASHelper(object):
                 errors["msg"] = error
         return errors
 
+    def create_remote_link_obj(self, link_properties):
+        try:
+            remote_link_obj = CouchbaseRemoteAnalyticsLink(link_properties["name"], link_properties["dataverse"])
+            remote_link_obj.encryption(EncryptionLevel.FULL if link_properties["encryption"] == "full" else EncryptionLevel.FULL)
+            remote_link_obj.hostname(link_properties["hostname"])
+            remote_link_obj.username(link_properties["username"])
+            remote_link_obj.password(link_properties["password"])
+            remote_link_obj.certificate(link_properties["certificate"])
+            self.log.debug("Remote Link SDK object - {0}".format(remote_link_obj.toMap()))
+            return remote_link_obj
+        except Exception as err:
+            self.log.error(str(err))
+            return None
+
     def create_s3_link_obj(self, link_properties):
         try:
             s3_link_obj = S3ExternalAnalyticsLink(
@@ -207,7 +221,12 @@ class CBASHelper(object):
                 return status, content, [{
                     "msg": "S3ExternalAnalyticsLink object creation failed",
                     "code": ""}]
-
+        else:
+            link_obj = self.create_remote_link_obj(link_properties)
+            if not link_obj:
+                return status, content, [{
+                    "msg": "RemoteLinkObject object creation failed",
+                    "code": ""}]
         client = self.sdk_client_pool.get_cluster_client(self.cluster)
         manager = AnalyticsIndexManager(client.cluster)
 
