@@ -55,7 +55,7 @@ class SystemEventLogs(UpgradeBase):
             nodes_in_cluster = \
                 RestConnection(self.cluster.master).get_nodes()
             if node_to_upgrade is None \
-                    or self.cluster_supports_system_event_logs:
+                    or "system_event_logs" in self.cluster_features:
                 # Cluster fully upgraded / already supports system event logs
                 self.log.info("Creating events for validation")
                 self.system_events.set_test_start_time()

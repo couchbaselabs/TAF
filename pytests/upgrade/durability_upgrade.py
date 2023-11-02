@@ -165,9 +165,8 @@ class UpgradeTests(UpgradeBase):
             to_remove=[rebalance_out_node])
         self.assertTrue(rebalanace_out, "re-balance out failed")
         new_node_to_add = self.cluster.servers[self.nodes_init]
-        self.install_version_on_node(
-            [self.cluster.servers[self.nodes_init]],
-            self.upgrade_version)
+        self.upgrade_helper.install_version_on_nodes(
+            [self.cluster.servers[self.nodes_init]], self.upgrade_version)
         rebalance_in = self.task.rebalance(
             self.cluster_util.get_nodes(self.cluster.master), to_add=[
                 rebalance_out_node, new_node_to_add], to_remove=[])
@@ -200,7 +199,6 @@ class UpgradeTests(UpgradeBase):
         large_docs_start_num = 0
         range_scan_started = False
         range_scan_spare_node = self.spare_node
-        iter = 0
 
         ### Upserting all docs to increase fragmentation value ###
         ### Compaction operation is called once frag val hits 50% ###
@@ -208,129 +206,120 @@ class UpgradeTests(UpgradeBase):
             self.PrintStep("Upserting docs to increase fragmentation value")
             self.upsert_docs_to_increase_frag_val()
 
-        ### Fetching the first node to upgrade ###
-        node_to_upgrade = self.fetch_node_to_upgrade()
-
         self.PrintStep("Upgrade begins...")
-        ### Each node in the cluster is upgraded iteratively ###
-        while node_to_upgrade is not None:
+        for upgrade_version in self.upgrade_chain:
+            itr = 0
+            self.upgrade_version = upgrade_version
+            ### Fetching the first node to upgrade ###
+            node_to_upgrade = self.fetch_node_to_upgrade()
 
-            if self.upgrade_with_data_load:
-                ### Loading docs with size > 1MB ###
+            ### Each node in the cluster is upgraded iteratively ###
+            while node_to_upgrade is not None:
+                if self.upgrade_with_data_load:
+                    ### Loading docs with size > 1MB ###
+                    if self.load_large_docs:
+                        self.loading_large_documents(large_docs_start_num)
+
+                    ### Starting async subsequent data load just before the upgrade starts ###
+                    ''' Skipping this step for online swap because data load for swap rebalance
+                        is started after the rebalance function is called '''
+                    if self.upgrade_type != "online_swap":
+                        sub_load_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
+                        CollectionBase.over_ride_doc_loading_template_params(self, sub_load_spec)
+                        CollectionBase.set_retry_exceptions(
+                            sub_load_spec, self.durability_level)
+
+                        if self.alternate_load is True:
+                            sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 10
+                            sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 10
+
+                        update_task = self.bucket_util.run_scenario_from_spec(
+                            self.task,
+                            self.cluster,
+                            self.cluster.buckets,
+                            sub_load_spec,
+                            mutation_num=0,
+                            async_load=True,
+                            batch_size=500,
+                            process_concurrency=4)
+
+                ### The upgrade procedure starts ###
+                self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
+
+                ### Based on the type of upgrade, the upgrade function is called ###
+                if self.upgrade_type in ["failover_delta_recovery",
+                                         "failover_full_recovery"]:
+                    self.upgrade_function[self.upgrade_type](node_to_upgrade)
+                elif self.upgrade_type == "full_offline":
+                    self.upgrade_function[self.upgrade_type](self.cluster.nodes_in_cluster, self.upgrade_version)
+                else:
+                    self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                             self.upgrade_version)
+
+                # Upgrade of node
+                self.cluster_util.print_cluster_stats(self.cluster)
+
+                ### Stopping the data load ###
+                if self.upgrade_with_data_load and self.upgrade_type != "online_swap":
+                    update_task.stop_indefinite_doc_loading_tasks()
+                    self.task_manager.get_task_result(update_task)
+
                 if self.load_large_docs:
-                    self.loading_large_documents(large_docs_start_num)
+                    large_docs_start_num += 1000
 
-                ### Starting async subsequent data load just before the upgrade starts ###
-                ''' Skipping this step for online swap because data load for swap rebalance
-                    is started after the rebalance function is called '''
-                if self.upgrade_type != "online_swap":
-                    sub_load_spec = self.bucket_util.get_crud_template_from_package(self.sub_data_spec)
-                    CollectionBase.over_ride_doc_loading_template_params(self, sub_load_spec)
-                    CollectionBase.set_retry_exceptions(
-                        sub_load_spec, self.durability_level)
+                self.sleep(10, "Wait for items to get reflected")
 
-                    if self.alternate_load is True:
-                        sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.READ_PERCENTAGE_PER_COLLECTION] = 10
-                        sub_load_spec["doc_crud"][MetaCrudParams.DocCrud.UPDATE_PERCENTAGE_PER_COLLECTION] = 10
+                ## Performing sync write while the cluster is in mixed mode ###
+                ## Sync write is performed after the upgrade of each node ###
+                sync_load_spec = self.bucket_util.get_crud_template_from_package(
+                    self.sync_write_spec)
+                CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
+                CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
 
-                    update_task = self.bucket_util.run_scenario_from_spec(
-                        self.task,
-                        self.cluster,
-                        self.cluster.buckets,
-                        sub_load_spec,
-                        mutation_num=0,
-                        async_load=True,
-                        batch_size=500,
-                        process_concurrency=4)
+                sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
 
-            ### The upgrade procedure starts ###
-            self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
-
-            ### Based on the type of upgrade, the upgrade function is called ###
-            if self.upgrade_type in ["failover_delta_recovery",
-                                     "failover_full_recovery"]:
-                self.upgrade_function[self.upgrade_type](node_to_upgrade)
-            elif(self.upgrade_type == "full_offline"):
-                self.upgrade_function[self.upgrade_type](self.cluster.nodes_in_cluster, self.upgrade_version)
-            else:
-                self.upgrade_function[self.upgrade_type](node_to_upgrade,
-                                                         self.upgrade_version)
-
-            ### Upgrade of one node complete ###
-
-            self.cluster_util.print_cluster_stats(self.cluster)
-
-            ### Stopping the data load ###
-            if self.upgrade_with_data_load and self.upgrade_type != "online_swap":
-                update_task.stop_indefinite_doc_loading_tasks()
-                self.task_manager.get_task_result(update_task)
-
-            if self.load_large_docs:
-                large_docs_start_num += 1000
-
-            self.sleep(10, "Wait for items to get reflected")
-
-            ## Performing sync write while the cluster is in mixed mode ###
-            ## Sync write is performed after the upgrade of each node ###
-            sync_load_spec = self.bucket_util.get_crud_template_from_package(
-                self.sync_write_spec)
-            CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
-            CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
-
-            sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
-
-            ## Collections are dropped and re-created while the cluster is mixed mode ###
-            self.log.info("Performing collection ops in mixed mode cluster setting...")
-            if self.guardrail_type != "collection_guardrail":
+                ## Collections are dropped and re-created while the cluster is mixed mode ###
+                self.log.info("Performing collection ops in mixed mode cluster setting...")
                 sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
                 sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
                 sync_load_spec["doc_crud"][
                     MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
 
-            #Validate sync_write results after upgrade
-            if self.key_size is not None:
-                sync_load_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_KEY_SIZE] = \
-                    self.key_size
-            self.PrintStep("Sync Write task starting...")
-            sync_write_task = self.bucket_util.run_scenario_from_spec(
-                self.task,
-                self.cluster,
-                self.cluster.buckets,
-                sync_load_spec,
-                mutation_num=0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                validate_task=True)
+                #Validate sync_write results after upgrade
+                if self.key_size is not None:
+                    sync_load_spec["doc_crud"][MetaCrudParams.DocCrud.DOC_KEY_SIZE] = \
+                        self.key_size
+                self.PrintStep("Sync Write task starting...")
+                sync_write_task = self.bucket_util.run_scenario_from_spec(
+                    self.task,
+                    self.cluster,
+                    self.cluster.buckets,
+                    sync_load_spec,
+                    mutation_num=0,
+                    batch_size=self.batch_size,
+                    process_concurrency=self.process_concurrency,
+                    validate_task=True)
 
-            if sync_write_task.result is True:
-                self.log.info("SyncWrite task succeeded")
-            else:
-                self.log_failure("SyncWrite failed during upgrade")
+                if sync_write_task.result is False:
+                    self.log_failure("SyncWrite failed during upgrade")
 
-            ### Fetching the next node to upgrade ###
-            node_to_upgrade = self.fetch_node_to_upgrade()
-            iter += 1
+                self.PrintStep("Upgrade of node {0} done".format(itr))
 
-            self.PrintStep("Upgrade of node {0} done".format(iter))
+                ### Starting Range Scans if enabled ##
+                if self.range_scan_collections > 0 and not range_scan_started:
+                    self.cluster.master = range_scan_spare_node
+                    range_scan_started = True
+                    CollectionBase.range_scan_load_setup(self)
 
-            ### Starting Range Scans if enabled ##
-            if self.range_scan_collections > 0 and not range_scan_started:
-                self.cluster.master = range_scan_spare_node
-                range_scan_started = True
-                CollectionBase.range_scan_load_setup(self)
-
-            if iter < self.nodes_init:
-                self.PrintStep("Starting the upgrade of the next node")
-
-            # Halt further upgrade if test has failed during current upgrade
-            if self.test_failure is not None:
-                break
-
-            ''' Break out of the while loop, because full_offline upgrade procedure
-                upgrades all of the nodes at once '''
-            if self.upgrade_type == "full_offline":
-                break
-
+                # Halt further upgrade if test has failed during current upgrade
+                if self.test_failure is not None:
+                    break
+                ### Fetching the next node to upgrade ###
+                node_to_upgrade = self.fetch_node_to_upgrade()
+                itr += 1
+            self.cluster_features = \
+                self.upgrade_helper.get_supported_features(upgrade_version)
+            self.set_feature_specific_params()
 
         ### Printing cluster stats after the upgrade of the whole cluster ###
         self.cluster_util.print_cluster_stats(self.cluster)
@@ -395,7 +384,8 @@ class UpgradeTests(UpgradeBase):
                 elif self.migration_procedure == "randomize_method":
                     self.log.info("Installing the version {0} on the spare node".format(
                                                                     self.upgrade_version))
-                    self.install_version_on_node([self.spare_node], self.upgrade_version)
+                    self.upgrade_helper.install_version_on_nodes(
+                        [self.spare_node], self.upgrade_version)
                     migration_methods = ["swap_rebalance", "failover_recovery"]
                     nodes_to_migrate = self.cluster.nodes_in_cluster
                     random_index = random.randint(0,1)
@@ -405,7 +395,8 @@ class UpgradeTests(UpgradeBase):
                 elif self.migration_procedure == "swap_rebalance_batch":
                     self.log.info("Installing the version {0} on the spare node".format(
                                                                     self.upgrade_version))
-                    self.install_version_on_node([self.spare_node], self.upgrade_version)
+                    self.upgrade_helper.install_version_on_nodes(
+                        [self.spare_node], self.upgrade_version)
                     nodes_to_migrate = self.cluster.nodes_in_cluster
                     self.spare_nodes = self.cluster.servers[self.nodes_init+1:]
                     self.spare_nodes.append(self.spare_node)
@@ -475,7 +466,7 @@ class UpgradeTests(UpgradeBase):
         self.PrintStep("Test Complete")
 
     def test_upgrade_from_ce_to_ee(self):
-        iter = 0
+        itr = 0
         large_docs_start_num = 0
         self.PrintStep("Upgrade begins...")
         node_to_upgrade = self.fetch_node_to_upgrade()
@@ -490,8 +481,8 @@ class UpgradeTests(UpgradeBase):
 
             self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                     self.upgrade_version)
-            iter += 1
-            self.PrintStep("Upgrade of node {0} done".format(iter))
+            itr += 1
+            self.PrintStep("Upgrade of node {0} done".format(itr))
             self.cluster_util.print_cluster_stats(self.cluster)
 
             ### Performing sync write while the cluster is in mixed mode ###
@@ -501,7 +492,8 @@ class UpgradeTests(UpgradeBase):
             sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
 
             ### Collections are dropped and re-created while the cluster is mixed mode ###
-            if self.cluster_supports_collections and self.perform_collection_ops:
+            if "collections" in self.cluster_features \
+                    and self.perform_collection_ops:
                 self.log.info("Performing collection ops in mixed mode cluster setting...")
                 sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
                 sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
@@ -531,7 +523,7 @@ class UpgradeTests(UpgradeBase):
                 large_docs_start_num += 1000
 
             CbServer.enterprise_edition = True
-            if iter < self.nodes_init:
+            if itr < self.nodes_init:
                 self.PrintStep("Starting the upgrade of the next node")
 
             # Halt further upgrade if test has failed during current upgrade
@@ -557,7 +549,6 @@ class UpgradeTests(UpgradeBase):
 
         self.validate_test_failure()
 
-
     def test_downgrade(self):
         upgraded_nodes = []
         count = 0
@@ -567,7 +558,8 @@ class UpgradeTests(UpgradeBase):
         CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
         CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
         sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
-        if self.cluster_supports_collections and self.perform_collection_ops:
+        if "collections" in self.cluster_features \
+                and self.perform_collection_ops:
             sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
             sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
             sync_load_spec["doc_crud"][
@@ -644,7 +636,6 @@ class UpgradeTests(UpgradeBase):
         self.upgrade_version = self.initial_version
         self.PrintStep("Starting rebalance/failover tasks post downgrade")
         self.tasks_post_upgrade()
-
 
     def test_bucket_durability_upgrade(self):
         update_task = None
@@ -1164,8 +1155,8 @@ class UpgradeTests(UpgradeBase):
                                                                  async_load=True)
 
             if reb_task == "rebalance_in":
-                self.install_version_on_node([self.spare_node],
-                                             self.upgrade_version)
+                self.upgrade_helper.install_version_on_nodes(
+                    [self.spare_node], self.upgrade_version)
 
                 rest = RestConnection(self.cluster.master)
                 services = rest.get_nodes_services()
@@ -1204,12 +1195,13 @@ class UpgradeTests(UpgradeBase):
                 rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[eject_node.id])
                 rebalance_passed = rest.monitorRebalance()
 
-                if(rebalance_passed):
+                if rebalance_passed:
                     self.log.info("Rebalance-out of the node successful")
                     self.cluster_util.print_cluster_stats(self.cluster)
 
-            elif(reb_task == "swap_rebalance"):
-                self.install_version_on_node([self.spare_node], self.upgrade_version)
+            elif reb_task == "swap_rebalance":
+                self.upgrade_helper.install_version_on_nodes(
+                    [self.spare_node], self.upgrade_version)
 
                 rest = RestConnection(self.cluster.master)
                 cluster_nodes = rest.node_statuses()
@@ -1435,7 +1427,8 @@ class UpgradeTests(UpgradeBase):
 
         self.log.info("Installing the version {0} on the spare node".format(
                                                         self.upgrade_version))
-        self.install_version_on_node([self.spare_node], self.upgrade_version)
+        self.upgrade_helper.install_version_on_nodes(
+            [self.spare_node], self.upgrade_version)
 
         nodes_to_replace = self.cluster.nodes_in_cluster
 
@@ -1455,9 +1448,7 @@ class UpgradeTests(UpgradeBase):
             self.log.info("Starting data load during rebalance...")
             self.load_during_rebalance(self.sub_data_spec)
 
-        if self.perform_collection_ops:
-            self.perform_collection_ops_load(self.collection_spec)
-
+        self.perform_collection_ops_load(self.collection_spec)
         self.task_manager.get_task_result(rebalance_passed)
         if rebalance_passed.result is True:
             self.log.info("Swap Rebalance successful")
@@ -1473,7 +1464,8 @@ class UpgradeTests(UpgradeBase):
         self.PrintStep("Swap rebalance of all nodes iteratively")
         self.log.info("Installing the version {0} on the spare node".format(
                                                     self.upgrade_version))
-        self.install_version_on_node([self.spare_node], self.upgrade_version)
+        self.upgrade_helper.install_version_on_nodes(
+            [self.spare_node], self.upgrade_version)
 
         cluster_nodes = self.cluster.nodes_in_cluster
 

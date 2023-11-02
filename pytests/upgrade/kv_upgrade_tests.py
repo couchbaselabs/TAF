@@ -65,12 +65,14 @@ class KVUpgradeTests(UpgradeBase):
 
         node_to_upgrades = self.cluster.nodes_in_cluster[-self.nodes_upgrade:]
 
-        for node_to_upgrade in node_to_upgrades:
-            self.failover_recovery(node_to_upgrade=node_to_upgrade,
-                                   recovery_type=self.recovery_type,
-                                   graceful=self.graceful)
-            self.cluster_util.print_cluster_stats(self.cluster)
-            self.bucket_util.print_bucket_stats(self.cluster)
+        for upgrade_version in self.upgrade_chain:
+            self.upgrade_version = upgrade_version
+            for node_to_upgrade in node_to_upgrades:
+                self.failover_recovery(node_to_upgrade=node_to_upgrade,
+                                       recovery_type=self.recovery_type,
+                                       graceful=self.graceful)
+                self.cluster_util.print_cluster_stats(self.cluster)
+                self.bucket_util.print_bucket_stats(self.cluster)
 
     def test_db_dump_with_empty_body_and_empty_xattr(self):
         """
@@ -81,7 +83,7 @@ class KVUpgradeTests(UpgradeBase):
         Ref: MB-51373
         """
         # Install Couchbase server on target_nodes
-        self.install_version_on_node(
+        self.upgrade_helper.install_version_on_nodes(
             self.cluster.servers[self.nodes_init:],
             self.upgrade_version)
 
@@ -95,8 +97,8 @@ class KVUpgradeTests(UpgradeBase):
 
         # Install the initial version on the 2nd node as well
         # This was not done initially
-        self.install_version_on_node(self.cluster.servers[1:2],
-                                     self.initial_version)
+        self.upgrade_helper.install_version_on_nodes(
+            self.cluster.servers[1:2], self.initial_version)
 
         client = SDKClient([self.cluster.master], bucket)
 
@@ -176,8 +178,8 @@ class KVUpgradeTests(UpgradeBase):
                                                      self.upgrade_version)
         elif upgrade_cluster == "remote":
             self.log.info("Upgrading node: %s" % self.cluster.servers[1].ip)
-            self.install_version_on_node(self.cluster.servers[1:2],
-                                         self.initial_version)
+            self.upgrade_helper.install_version_on_nodes(
+                self.cluster.servers[1:2], self.initial_version)
 
         self.log.info("Starting XDCR replication")
         xdcr_cluster = CBCluster("C2", servers=[in_node])

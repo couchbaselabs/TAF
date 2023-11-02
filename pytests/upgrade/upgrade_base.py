@@ -1,43 +1,28 @@
-import re
 from Cb_constants import CbServer
-from Jython_tasks.task import FunctionCallTask
 from basetestcase import BaseTestCase
 import Jython_tasks.task as jython_tasks
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from pytests.ns_server.enforce_tls import EnforceTls
-from builds.build_query import BuildQuery
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from scripts.old_install import InstallerJob
 from sdk_client3 import SDKClient
-from testconstants import CB_RELEASE_BUILDS, CB_REPO, CB_VERSION_NAME
 from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.durability_helper import BucketDurability
 from BucketLib.bucket import Bucket
 import testconstants
+from upgrade_lib.couchbase import upgrade_chains
+from upgrade_lib.upgrade_helper import CbServerUpgrade
 
 
 class UpgradeBase(BaseTestCase):
     def setUp(self):
         super(UpgradeBase, self).setUp()
         self.log.info("=== UpgradeBase setUp started ===")
-        self.released_versions = ["2.0.0-1976-rel", "2.0.1", "2.5.0", "2.5.1",
-                                  "2.5.2", "3.0.0", "3.0.1",
-                                  "3.0.1-1444", "3.0.2", "3.0.2-1603", "3.0.3",
-                                  "3.1.0", "3.1.0-1776", "3.1.1", "3.1.1-1807",
-                                  "3.1.2", "3.1.2-1815", "3.1.3", "3.1.3-1823",
-                                  "4.0.0", "4.0.0-4051", "4.1.0", "4.1.0-5005",
-                                  "4.5.0", "4.5.0-2601", "4.5.1", "4.5.1-2817",
-                                  "4.6.0", "4.6.0-3573", '4.6.2', "4.6.2-3905"]
 
         self.creds = self.input.membase_settings
         self.key = "update_docs"
-        self.initial_version = self.input.param("initial_version",
-                                                "6.0.1-2037")
-        self.upgrade_version = self.input.param("upgrade_version",
-                                                "6.5.0-3939")
         self.disk_location_data = self.input.param("data_location",
                                                    testconstants.COUCHBASE_DATA_PATH)
         self.disk_location_index = self.input.param("index_location",
@@ -105,15 +90,8 @@ class UpgradeBase(BaseTestCase):
         self.product = "couchbase-server"
         self.community_upgrade = self.input.param("community_upgrade", False)
 
-        if self.initial_version == "same_version":
-            self.initial_version = self.upgrade_version
-
-        t_version = float(self.initial_version[:3])
-        self.cluster_supports_sync_write = (t_version >= 6.5)
-        self.cluster_supports_collections = (t_version >= 7.0)
-        self.cluster_supports_system_event_logs = (t_version >= 7.1)
-
-        self.installer_job = InstallerJob()
+        self.upgrade_helper = CbServerUpgrade(self.log, self.product)
+        self._populate_upgrade_chain()
 
         # Dict to map upgrade_type to action functions
         self.upgrade_function = dict()
@@ -141,9 +119,17 @@ class UpgradeBase(BaseTestCase):
 
         self.PrintStep("Installing initial version {0} on servers"
                        .format(self.initial_version))
-        self.install_version_on_node(
-            self.cluster.servers[0:self.nodes_init],
-            self.initial_version, build_type)
+        self.upgrade_helper.install_version_on_nodes(
+            nodes=self.cluster.servers[0:self.nodes_init],
+            version=self.initial_version,
+            vbuckets=self.cluster.vbuckets,
+            build_type=build_type,
+            cluster_profile=self.cluster_profile)
+        for node in self.cluster.servers[0:self.nodes_init]:
+            self.assertTrue(
+                RestConnection(node).is_ns_server_running(30),
+                "{} - Server REST endpoint unreachable after 30 seconds"
+                .format(node.ip))
 
         if self.disk_location_data == testconstants.COUCHBASE_DATA_PATH and \
                 self.disk_location_index == testconstants.COUCHBASE_DATA_PATH:
@@ -177,9 +163,6 @@ class UpgradeBase(BaseTestCase):
                         services_mem_quota_percent=mem_quota_percent)
                 else:
                     self.quota = ""
-                # Set this unconditionally
-                RestConnection(cluster.master).set_internalSetting(
-                    "magmaMinMemoryQuota", 256)
             else:
                 self.quota = ""
 
@@ -210,14 +193,15 @@ class UpgradeBase(BaseTestCase):
             self.cluster.servers[0:self.nodes_init])
         self.cluster_util.print_cluster_stats(self.cluster)
 
+        self.cluster_features = \
+            self.upgrade_helper.get_supported_features(self.initial_version)
+        self.set_feature_specific_params()
+
         # Disable auto-failover to avoid failover of nodes
         if not self.community_upgrade:
             status = RestConnection(self.cluster.master) \
                 .update_autofailover_settings(False, 120, False)
             self.assertTrue(status, msg="Failure during disabling auto-failover")
-
-            RestConnection(self.cluster.master).set_internalSetting(
-                    "magmaMinMemoryQuota", 256)
 
         # Creating buckets from spec file
         CollectionBase.deploy_buckets_from_spec_file(self)
@@ -244,9 +228,9 @@ class UpgradeBase(BaseTestCase):
         # Create clients in SDK client pool
         CollectionBase.create_clients_for_sdk_pool(self)
 
-        if(self.dur_level == "majority"):
+        if self.dur_level == "majority":
             for bucket in self.cluster.buckets:
-                if(bucket.name == "bucket-1"):
+                if bucket.name == "bucket-1":
                     self.bucket_util.update_bucket_property(self.cluster.master,
                                     bucket,
                                     bucket_durability=BucketDurability[Bucket.DurabilityLevel.MAJORITY])
@@ -258,7 +242,7 @@ class UpgradeBase(BaseTestCase):
         self.log.info("Initial doc generation completed")
 
         # Verify initial doc load count
-        if self.cluster_supports_collections:
+        if "collections" in self.cluster_features:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
         else:
@@ -278,6 +262,28 @@ class UpgradeBase(BaseTestCase):
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
+
+    def _populate_upgrade_chain(self):
+        chain_to_test = self.input.param("upgrade_chain", None)
+        upgrade_version = self.input.param("upgrade_version",
+                                           "8.0.0-1000")
+        if chain_to_test is None:
+            self.initial_version = self.input.param("initial_version",
+                                                    "6.0.0-1000")
+            if self.initial_version == "same_version":
+                self.initial_version = upgrade_version
+            self.upgrade_chain = [self.initial_version]
+        else:
+            self.upgrade_chain = upgrade_chains[chain_to_test]
+            self.initial_version = self.upgrade_chain[0]
+
+        self.upgrade_chain.append(upgrade_version)
+        self.upgrade_version = self.upgrade_chain[0]
+
+    def set_feature_specific_params(self):
+        if "magma" in self.cluster_features:
+            RestConnection(self.cluster.master).set_internalSetting(
+                "magmaMinMemoryQuota", 256)
 
     def enable_verify_tls(self, master_node, level=None):
         if not level:
@@ -339,36 +345,6 @@ class UpgradeBase(BaseTestCase):
 
         return cluster_node
 
-    def install_version_on_node(self, nodes, version, build_type="enterprise"):
-        """
-        Installs required Couchbase-server version on the target nodes.
-
-        :param nodes: List of nodes to install the cb 'version'
-        :param version: Version to install on target 'nodes'
-        :return:
-        """
-        install_params = dict()
-        install_params['num_nodes'] = len(nodes)
-        install_params['product'] = "cb"
-        install_params['version'] = version
-        install_params['vbuckets'] = [self.cluster.vbuckets]
-        install_params['init_nodes'] = False
-        install_params['debug_logs'] = False
-        install_params['type'] = build_type
-        if self.cluster_profile == "provisioned" and float(version[:3]) >= 7.6:
-            install_params["cluster_profile"] = "provisioned"
-        self.installer_job.parallel_install(nodes, install_params)
-
-        if self.disk_location_data != testconstants.COUCHBASE_DATA_PATH or \
-                self.disk_location_index != testconstants.COUCHBASE_DATA_PATH:
-            master_services = self.cluster_util.get_services(
-                self.cluster.servers[:1], self.services_init, start_node=0)
-            for node in nodes:
-                self._initialize_node_with_new_data_location(
-                    node, self.disk_location_data, self.disk_location_index,
-                    master_services)
-        self.sleep(30, "Waiting for node to warm up")
-
     def __getTestServerObj(self, node_obj):
         for node in self.cluster.servers:
             if node.ip == node_obj.ip:
@@ -403,47 +379,6 @@ class UpgradeBase(BaseTestCase):
 
         return RestConnection(self.__getTestServerObj(target_node))
 
-    def __get_build(self, version, remote, is_amazon=False, info=None):
-        if info is None:
-            info = remote.extract_remote_info()
-        build_repo = CB_REPO
-        if version[:5] in CB_RELEASE_BUILDS.keys():
-            if version[:3] in CB_VERSION_NAME:
-                build_repo = CB_REPO + CB_VERSION_NAME[version[:3]] + "/"
-        builds, changes = BuildQuery().get_all_builds(
-            version=version,
-            timeout=self.wait_timeout * 5,
-            deliverable_type=info.deliverable_type,
-            architecture_type=info.architecture_type,
-            edition_type="couchbase-server-enterprise",
-            repo=build_repo,
-            distribution_version=info.distribution_version.lower())
-
-        if re.match(r'[1-9].[0-9].[0-9]-[0-9]+$', version):
-            version = version + "-rel"
-        if version[:5] in self.released_versions:
-            appropriate_build = BuildQuery(). \
-                find_couchbase_release_build(
-                    '%s-enterprise' % self.product,
-                    info.deliverable_type,
-                    info.architecture_type,
-                    version.strip(),
-                    is_amazon=is_amazon,
-                    os_version=info.distribution_version)
-        else:
-            appropriate_build = BuildQuery(). \
-                find_build(builds,
-                           '%s-enterprise' % self.product,
-                           info.deliverable_type,
-                           info.architecture_type,
-                           version.strip())
-
-        if appropriate_build is None:
-            self.log.info("Builds are: %s \n. Remote is %s, %s. Result is: %s"
-                          % (builds, remote.ip, remote.username, version))
-            raise Exception("Build %s not found" % version)
-        return appropriate_build
-
     def failover_recovery(self, node_to_upgrade, recovery_type, graceful=True):
         rest = self.__get_rest_node(node_to_upgrade)
         otp_node = self.__get_otp_node(rest, node_to_upgrade)
@@ -462,8 +397,8 @@ class UpgradeBase(BaseTestCase):
             return
 
         shell = RemoteMachineShellConnection(node_to_upgrade)
-        appropriate_build = self.__get_build(self.upgrade_version,
-                                             shell)
+        appropriate_build = self.upgrade_helper.get_build(
+            self.upgrade_version, shell)
         self.assertTrue(appropriate_build.url,
                         msg="Unable to find build %s" % self.upgrade_version)
         self.assertTrue(shell.download_build(appropriate_build),
@@ -488,9 +423,7 @@ class UpgradeBase(BaseTestCase):
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
 
-        if self.cluster_supports_collections and self.perform_collection_ops:
-            self.perform_collection_ops_load(self.collection_spec)
-
+        self.perform_collection_ops_load(self.collection_spec)
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
             self.log_failure("Graceful failover rebalance failed")
@@ -516,7 +449,14 @@ class UpgradeBase(BaseTestCase):
                     cbstats.vbucket_list(self.bucket.name, vb_type)
         if install_on_spare_node:
             # Install target version on spare node
-            self.install_version_on_node([self.spare_node], version)
+            self.upgrade_helper.install_version_on_nodes(
+                nodes=[self.spare_node], version=version,
+                vbuckets=self.cluster.vbuckets,
+                cluster_profile=self.cluster_profile)
+            self.assertTrue(
+                RestConnection(self.spare_node).is_ns_server_running(30),
+                "{} - REST endpoint unreachable after 30 seconds"
+                .format(self.spare_node.ip))
 
         # Perform swap rebalance for node_to_upgrade <-> spare_node
         self.log.info("Swap Rebalance starting...")
@@ -530,11 +470,10 @@ class UpgradeBase(BaseTestCase):
 
         if self.upgrade_with_data_load:
             self.load_during_rebalance(self.sub_data_spec)
-        if self.cluster_supports_collections and self.perform_collection_ops:
-            self.perform_collection_ops_load(self.collection_spec)
 
+        self.perform_collection_ops_load(self.collection_spec)
         self.task_manager.get_task_result(rebalance_passed)
-        if(rebalance_passed.result is True):
+        if rebalance_passed.result is True:
             self.log.info("Swap Rebalance passed")
         else:
             self.log.info("Swap Rebalance failed")
@@ -589,7 +528,8 @@ class UpgradeBase(BaseTestCase):
 
         # Install target version on spare node
         if install_on_spare_node:
-            self.install_version_on_node([self.spare_node], version)
+            self.upgrade_helper.install_version_on_nodes(
+                [self.spare_node], version)
 
         # Rebalance-in spare node into the cluster
         rest.add_node(self.creds.rest_username,
@@ -629,7 +569,8 @@ class UpgradeBase(BaseTestCase):
 
         if install_on_spare_node:
             # Install target version on spare node
-            self.install_version_on_node([self.spare_node], version)
+            self.upgrade_helper.install_version_on_nodes(
+                [self.spare_node], version)
 
         # Rebalance-in spare node into the cluster
         rest.add_node(self.creds.rest_username,
@@ -640,9 +581,7 @@ class UpgradeBase(BaseTestCase):
         otp_nodes = [node.id for node in rest.node_statuses()]
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
 
-        if self.cluster_supports_collections and self.perform_collection_ops:
-            self.perform_collection_ops_load(self.collection_spec)
-
+        self.perform_collection_ops_load(self.collection_spec)
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-in failed during upgrade of {0}"
@@ -657,9 +596,7 @@ class UpgradeBase(BaseTestCase):
         otp_nodes = [node.id for node in rest.node_statuses()]
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[eject_otp_node.id])
 
-        if self.cluster_supports_collections and self.perform_collection_ops:
-            self.perform_collection_ops_load(self.collection_spec)
-
+        self.perform_collection_ops_load(self.collection_spec)
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-out failed during upgrade of {0}"
@@ -692,7 +629,8 @@ class UpgradeBase(BaseTestCase):
             return
 
         # Install the required version on the node
-        self.install_version_on_node([node_to_upgrade], version)
+        self.upgrade_helper.install_version_on_nodes(
+            [node_to_upgrade], version)
 
         # Rebalance-in the target_node again
         rest.add_node(self.creds.rest_username,
@@ -717,7 +655,7 @@ class UpgradeBase(BaseTestCase):
     def offline(self, node_to_upgrade, version, rebalance_required=True):
         rest = RestConnection(node_to_upgrade)
         shell = RemoteMachineShellConnection(node_to_upgrade)
-        appropriate_build = self.__get_build(version, shell)
+        appropriate_build = self.upgrade_helper.get_build(version, shell)
         self.assertTrue(appropriate_build.url,
                         msg="Unable to find build %s" % version)
         self.assertTrue(shell.download_build(appropriate_build),
@@ -757,7 +695,7 @@ class UpgradeBase(BaseTestCase):
             rest = RestConnection(node)
             shell = RemoteMachineShellConnection(node)
 
-            appropriate_build = self.__get_build(version, shell)
+            appropriate_build = self.upgrade_helper.get_build(version, shell)
             self.assertTrue(appropriate_build.url,
                             msg="Unable to find build %s" % version)
             self.assertTrue(shell.download_build(appropriate_build),
@@ -769,7 +707,7 @@ class UpgradeBase(BaseTestCase):
                 forcefully=self.is_downgrade)
             shell.disconnect()
 
-            if(upgrade_success):
+            if upgrade_success:
                 self.log.info("Upgrade of {0} completed".format(node))
 
             self.log.info("Wait for ns_server to accept connections")
@@ -787,7 +725,7 @@ class UpgradeBase(BaseTestCase):
             self.log.info("Cluster not balanced. Rebalance starting...")
             otp_nodes = [node.id for node in rest.node_statuses()]
             rebalance_task = rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
-            if(rebalance_task):
+            if rebalance_task:
                 self.log.info("Rebalance successful")
             else:
                 self.log.info("Rebalance failed")
@@ -795,6 +733,9 @@ class UpgradeBase(BaseTestCase):
             self.cluster_util.print_cluster_stats(self.cluster)
 
     def perform_collection_ops_load(self, collections_spec):
+        if "collections" not in self.cluster_features \
+                or self.perform_collection_ops is False:
+            return
         iter = self.collection_ops_iterations
         spec_collection = self.bucket_util.get_crud_template_from_package(
             collections_spec)

@@ -9,9 +9,9 @@ class LuksUpgrade(UpgradeBase):
         super(LuksUpgrade, self).setUp()
 
         # Install Couchbase server on LUKS nodes
-        self.install_version_on_node(
+        self.upgrade_helper.install_version_on_nodes(
             self.cluster.servers[self.nodes_init:],
-            self.upgrade_version)
+            self.upgrade_version[0])
 
     def tearDown(self):
         super(LuksUpgrade, self).tearDown()
@@ -19,10 +19,6 @@ class LuksUpgrade(UpgradeBase):
     def test_upgrade_to_luks_cluster(self):
         create_batch_size = 20000
         update_task = None
-
-        t_durability_level = ""
-        if self.cluster_supports_sync_write:
-            t_durability_level = Bucket.DurabilityLevel.PERSIST_TO_MAJORITY
 
         if self.upgrade_with_data_load:
             self.log.info("Starting async doc updates")
@@ -32,7 +28,7 @@ class LuksUpgrade(UpgradeBase):
                 process_concurrency=1,
                 persist_to=1,
                 replicate_to=1,
-                durability=t_durability_level,
+                durability=Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
                 timeout_secs=30)
 
         create_gen = doc_generator(self.key, self.num_items,
@@ -46,7 +42,7 @@ class LuksUpgrade(UpgradeBase):
             self.spare_node = self.cluster.servers[index+self.nodes_init]
             self.upgrade_function[self.upgrade_type](
                 self.cluster.servers[index],
-                self.upgrade_version,
+                self.upgrade_version[0],
                 install_on_spare_node=False)
             self.cluster_util.print_cluster_stats(self.cluster)
 
@@ -90,7 +86,7 @@ class LuksUpgrade(UpgradeBase):
                 if index == total_nodes_to_upgrade-1:
                     if sync_write_task.fail.keys():
                         self.log_failure("Failures after cluster upgrade")
-                elif self.cluster_supports_sync_write:
+                else:
                     if sync_write_task.fail:
                         self.log.error("SyncWrite failed: %s"
                                        % sync_write_task.fail)
@@ -101,7 +97,7 @@ class LuksUpgrade(UpgradeBase):
                             self.key,
                             self.num_items,
                             self.num_items + create_batch_size)
-                elif len(sync_write_task.fail.keys()) != create_batch_size:
+                if len(sync_write_task.fail.keys()) != create_batch_size:
                     self.log_failure(
                         "SyncWrite succeeded with mixed mode cluster")
                 else:
