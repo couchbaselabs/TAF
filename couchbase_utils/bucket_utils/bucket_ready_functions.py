@@ -1995,7 +1995,7 @@ class BucketUtils(ScopeUtils):
             self.log.debug("Wait for memcached to accept cbstats "
                            "or any other bucket request connections")
             sleep(2)
-            warmed_up = self._wait_warmup_completed(bucket, wait_time=60)
+            warmed_up = self._wait_warmup_completed(bucket, wait_time=300)
             if not warmed_up:
                 task.result = False
                 raise_exception = "Bucket not warmed up"
