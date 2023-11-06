@@ -77,11 +77,11 @@ class CBASHelper(object):
             output["errors"] = self.parse_error(err)["errors"]
             output["status"] = AnalyticsStatus.FATAL
         except CouchbaseException as err:
-            output["errors"] = str(err.message)
+            output["errors"] = self.parse_error(err)["errors"]
             output["status"] = AnalyticsStatus.FATAL
         except Exception as err:
             self.log.error(str(err))
-            output["errors"] = str(err.message)
+            output["errors"] = self.parse_error(err)["errors"]
             output["status"] = AnalyticsStatus.FATAL
 
         finally:
@@ -140,6 +140,8 @@ class CBASHelper(object):
             output["status"] = AnalyticsStatus.FATAL
         except Exception as err:
             self.log.error(str(err))
+            output["errors"] = self.parse_error(err)["errors"]
+            output["status"] = AnalyticsStatus.FATAL
 
         finally:
             self.sdk_client_pool.release_cluster_client(self.cluster, client)
@@ -164,8 +166,13 @@ class CBASHelper(object):
                 output["status"] = value.toString().lower()
 
     def parse_error(self, error):
+        errors = {"msg": "", "code": ""}
         match = re.search(r"({.*?}.*)", error.getMessage())
-        return json.loads(match.group(1))
+        if not match:
+            errors = json.loads(match.group(1))
+        else:
+            errors["msg"] = error
+        return errors
 
     def create_s3_link_obj(self, link_properties):
         try:
