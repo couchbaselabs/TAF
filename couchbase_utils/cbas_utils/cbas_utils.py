@@ -1368,33 +1368,30 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         super(KafkaLink_Util, self).__init__(server_task, run_query_using_sdk)
 
-    def wait_for_kafka_links(self, cluster, timeout=900):
+    def wait_for_kafka_links(self, cluster, state="CONNECTED", timeout=900):
         kafka_links = set(self.list_all_link_objs("kafka"))
-        start_time = time.time()
-        connection_flag = False
-        while (time.time() - start_time) < timeout and len(kafka_links) > 0:
+        end_time = time.time() + timeout
+        while len(kafka_links) > 0 and time.time() < end_time:
             self.log.info("Waiting for KAFKA links to get connected")
-            results = []
-            for links in kafka_links:
-                link_info = self.get_link_info(cluster, links.dataverse_name, links.name, links.link_type)
-                if (type(link_info) is not None) and len(link_info) > 0 and "linkState" in link_info[0] and link_info[0]["linkState"] == "CONNECTED":
-                    results.append(True)
-                else:
-                    results.append(False)
-            if all(results):
-                self.log.info("All Kafka links successfully connected")
-                connection_flag = True
-                break;
-            else:
-                time.sleep(90)
+            links_in_desired_state = []
+            for link in kafka_links:
+                link_info = self.get_link_info(cluster, link.dataverse_name,
+                                               link.name, link.link_type)
+                if ((type(link_info) is not None) and len(link_info) > 0 and
+                        "linkState" in link_info[0] and link_info[0][
+                            "linkState"] == state):
+                    links_in_desired_state.append(link)
+            while links_in_desired_state:
+                kafka_links.remove(links_in_desired_state.pop())
+            time.sleep(60)
 
-        if not connection_flag:
-            for links in kafka_links:
-                link_info = self.get_link_info(cluster, links.dataverse_name, links.name, links.link_type)
-                if (type(link_info) is None) or len(link_info) == 0 or "linkState" not in link_info[0] or link_info[0]["linkState"] != "CONNECTED":
-                    if len(link_info) == 0 or "linkState" not in link_info[0]:
-                        self.log.error("Failed to get link info for link: {0}".format(links.name))
-                    self.log.error("Failed to connected link: {0}, type: {1}, after 15 mins".format(links.full_name, links.db_type))
+        if kafka_links:
+            for link in kafka_links:
+                self.log.error("Link {} was not in {} state even after {} "
+                               "seconds".format(link.full_name, state, timeout))
+            return False
+        return True
+
     def get_link_status(self, cluster, dataverse_name, link_name, username="Administrator", password="password"):
         """
         Return the status of a kafka link
@@ -1439,7 +1436,8 @@ class KafkaLink_Util(ExternalLink_Util):
 
         if dataverse_name:
             cmd = "CREATE LINK {0}.{1} TYPE KAFKA WITH ".format(
-                CBASHelper.format_name(dataverse_name), CBASHelper.format_name(link_name))
+                CBASHelper.format_name(dataverse_name),
+                CBASHelper.format_name(link_name))
         else:
             cmd = "CREATE LINK {0} TYPE KAFKA WITH ".format(
                 CBASHelper.format_name(link_name))
@@ -3524,7 +3522,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
         :param analytics_timeout int, analytics query timeout
         :return True/False
         """
-        cmd = "COPY INTO "
+        cmd = "COPY "
         if dataverse_name:
             cmd += "{0}.{1} ".format(
                 CBASHelper.format_name(dataverse_name),
@@ -3947,8 +3945,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
         return all(results)
 
     def create_standalone_dataset_for_external_db_from_spec(
-            self, cluster, cbas_spec, include_collections,
-            exclude_collections=[]):
+            self, cluster, cbas_spec):
         self.log.info("Creating Standalone Datasets for external database "
                       "based on CBAS Spec")
 
@@ -4010,22 +4007,28 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             eligible_links = [link for link in kafka_link_objs if link.db_type == datasource]
             link_name = (random.choice(eligible_links)).full_name
 
-            if include_collections[datasource] and exclude_collections and (
-                    set(include_collections[datasource]) == set(exclude_collections)
-            ):
+            if (dataset_spec["include_external_collections"][datasource] and
+                    dataset_spec["exclude_external_collections"][datasource]
+                    and (set(dataset_spec["include_external_collections"][
+                                 datasource]) == set(
+                        dataset_spec["exclude_external_collections"][
+                            datasource]))):
                 self.log.error("Both include and exclude "
                                "external collections cannot be "
                                "same")
                 return False
-            elif exclude_collections:
-                include_collections = (set(include_collections[datasource]) -
-                                       set(exclude_collections))
+            elif dataset_spec["exclude_external_collections"][datasource]:
+                dataset_spec["include_external_collections"][datasource] = (
+                        set(dataset_spec["include_external_collections"][
+                                datasource]) - set(
+                    dataset_spec["exclude_external_collections"][datasource]))
 
-            if include_collections[datasource] and len(include_collections[datasource]) > 0:
-                external_collection_name = random.choice(include_collections[datasource])
+            if dataset_spec["include_external_collections"][datasource] and len(
+                    dataset_spec["include_external_collections"][datasource]) > 0:
+                external_collection_name = random.choice(
+                    dataset_spec["include_external_collections"][datasource])
             else:
                 return False
-                external_collection_name = None
 
             dataset_obj = Standalone_Dataset(
                 name, datasource,
@@ -5917,11 +5920,10 @@ class CbasUtil(CBOUtil):
             metadata, bucket_name, username=username, password=password)
         return response.json()
 
-
     def create_cbas_infra_from_spec(
             self, cluster, cbas_spec, bucket_util,
             wait_for_ingestion=True, remote_clusters=None,
-            include_collections=[]):
+            connect_link_before_creating_ds=False):
         """
         Method creates CBAS infra based on the spec data.
         :param cluster
@@ -5929,8 +5931,31 @@ class CbasUtil(CBOUtil):
         :param bucket_util bucket_util_obj, bucket util object of local cluster.
         :param remote_clusters bucket_util_obj, bucket util object of remote cluster.
         :param wait_for_ingestion bool
-        :param include_collections
         """
+        def connect_links():
+            # Connect link only when remote links or kafka links are present,
+            # Local link is connected by default and external links are not
+            # required to be connected.
+            results = list()
+            links = (self.list_all_link_objs("couchbase") +
+                     self.list_all_link_objs("kafka"))
+            if len(links) > 0:
+                self.log.info("Connecting all remote and kafka Links")
+                for link in links:
+                    if not self.connect_link(
+                            cluster, link.full_name,
+                            timeout=cbas_spec.get("api_timeout", 300),
+                            analytics_timeout=cbas_spec.get("cbas_timeout",
+                                                            300)):
+                        results.append(False)
+                    else:
+                        results.append(True)
+
+            if not all(results):
+                return False, "Failed at connect_link"
+
+            self.wait_for_kafka_links(cluster)
+
         if not self.create_dataverse_from_spec(cluster, cbas_spec):
             return False, "Failed at create dataverse"
 
@@ -5940,6 +5965,9 @@ class CbasUtil(CBOUtil):
             return False, "Failed at create external link from spec"
         if not self.create_kafka_link_from_spec(cluster, cbas_spec):
             return False, "Failed at create kafka link from spec"
+
+        if connect_link_before_creating_ds:
+            connect_links()
 
         if not self.create_dataset_from_spec(cluster, cbas_spec, bucket_util):
             return False, "Failed at create dataset from spec"
@@ -5951,32 +5979,12 @@ class CbasUtil(CBOUtil):
         if not self.create_standalone_dataset_from_spec(cluster, cbas_spec):
             return False, "Failed at create standalone collection from spec"
         if not self.create_standalone_dataset_for_external_db_from_spec(
-                cluster, cbas_spec, include_collections):
+                cluster, cbas_spec):
             return False, "Failed at create standalone collection from spec"
 
+        connect_links()
+
         jobs = Queue()
-        results = list()
-
-        # Connect link only when remote links or kafka links are present,
-        # Local link is connected by default and external links are not
-        # required to be connected.
-        links = (self.list_all_link_objs("couchbase") +
-                 self.list_all_link_objs("kafka"))
-        if len(links) > 0:
-            self.log.info("Connecting all remote and kafka Links")
-            for link in links:
-                if not self.connect_link(
-                        cluster, link.full_name,
-                        timeout=cbas_spec.get("api_timeout", 300),
-                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
-                    results.append(False)
-                else:
-                    results.append(True)
-
-        if not all(results):
-            return False, "Failed at connect_link"
-
-        self.wait_for_kafka_links(cluster)
         results = []
 
         if wait_for_ingestion:

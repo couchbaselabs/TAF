@@ -317,5 +317,7 @@ class GoldfishUtils:
             self.log.error(
                 "Unable to create API keys for goldfish cluster {0} with ID "
                 "{1}".format(cluster.name, cluster.cluster_id))
+            if resp.text:
+                self.log.error("Following error recieved {}".format(resp.text))
             return None
         return json.loads(resp.content)

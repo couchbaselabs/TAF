@@ -41,6 +41,9 @@ class S3LinksDatasets(GoldFishBaseTest):
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
+        if not self.cbas_util.delete_cbas_infra_created_from_spec(
+                self.cluster, self.gf_spec):
+            self.fail("Error while deleting cbas entities")
         super(S3LinksDatasets, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage="Teardown")
@@ -108,6 +111,19 @@ class S3LinksDatasets(GoldFishBaseTest):
                           "1}".format(
                     self.doc_count_per_format[file_format], result[0]))
 
-        if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.cluster, self.gf_spec):
-            self.fail("Error while deleting cbas entities")
+        results = []
+        query = "select * from {} limit 1000"
+        for dataset in self.cbas_util.list_all_dataset_objs("external"):
+            jobs.put((
+                self.cbas_util.execute_statement_on_cbas_util,
+                {"cluster": self.cluster,
+                 "statement": query.format(dataset.full_name)}))
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+        for result in results:
+            if result[0] != "success":
+                self.fail("Query execution failed with error - {}".format(
+                    result[2]))
+            elif len(result[3]) != 1000:
+                self.fail("Doc count mismatch. Expected - 1000, Actual - {"
+                          "0}".format(len(result[3])))
