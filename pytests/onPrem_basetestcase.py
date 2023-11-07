@@ -231,8 +231,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 mem_quota_percent = None
 
             # Rotate the internal user's password at the specified interval
-            SecurityUtils.set_internal_creds_rotation_interval(self.cluster.master,
-                                                               self.int_pwd_rotn)
+            self.security_util = SecurityUtils(self.log)
+            self.security_util.set_internal_creds_rotation_interval(self.cluster, self.int_pwd_rotn)
 
             if self.skip_setup_cleanup:
                 # Update current server/service map and buckets for the cluster
