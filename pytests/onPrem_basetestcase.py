@@ -19,6 +19,7 @@ from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Nebula
+from couchbase_utils.security_utils.security_utils import SecurityUtils
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -126,6 +127,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
         global_vars.cluster_util = self.cluster_util
         global_vars.bucket_util = self.bucket_util
 
+        # Sets internal password rotation time interval
+        self.int_pwd_rotn = self.input.param("int_pwd_rotn", 1800000)
+
         # Populate memcached_port in case of cluster_run
         if int(self.input.servers[0].port) == ClusterRun.port:
             # This flag will be used globally to decide port_mapping stuff
@@ -225,6 +229,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
             if not mem_quota_percent:
                 mem_quota_percent = None
+
+            # Rotate the internal user's password at the specified interval
+            SecurityUtils.set_internal_creds_rotation_interval(self.cluster.master,
+                                                               self.int_pwd_rotn)
 
             if self.skip_setup_cleanup:
                 # Update current server/service map and buckets for the cluster
