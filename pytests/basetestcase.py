@@ -292,19 +292,19 @@ class BaseTestCase(unittest.TestCase):
             self.task_manager.get_task_result(task)
 
         self.log_setup_status(self.__class__.__name__, "started")
-        cluster_name_format = "C%s"
+        cluster_name_format = "C{}"
         default_cluster_index = counter_index = 1
         if len(self.input.clusters) > 1:
             # Multi cluster setup
             for _, nodes in self.input.clusters.iteritems():
-                cluster_name = cluster_name_format % counter_index
+                cluster_name = cluster_name_format.format(counter_index)
                 tem_cluster = CBCluster(name=cluster_name, servers=nodes,
                                         vbuckets=self.vbuckets)
                 self.cb_clusters[cluster_name] = tem_cluster
                 counter_index += 1
         else:
             # Single cluster
-            cluster_name = cluster_name_format % counter_index
+            cluster_name = cluster_name_format.format(counter_index)
             self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
                                                        servers=self.servers,
                                                        vbuckets=self.vbuckets)
@@ -315,7 +315,7 @@ class BaseTestCase(unittest.TestCase):
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
-                                        % default_cluster_index]
+                                        .format(default_cluster_index)]
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
 

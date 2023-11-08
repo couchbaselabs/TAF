@@ -1709,8 +1709,8 @@ class BucketUtils(ScopeUtils):
         for server in cluster.servers:
             buckets = self.get_all_buckets(cluster, cluster_node=server)
             for bucket in buckets:
-                self.log.debug("%s - Remove bucket %s"
-                               % (server.ip, bucket.name))
+                self.log.debug("{} - Remove bucket {}".
+                               format(server.ip, bucket.name))
                 try:
                     status = self.delete_bucket(cluster, bucket)
                 except Exception as e:

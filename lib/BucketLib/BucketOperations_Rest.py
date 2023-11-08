@@ -269,8 +269,8 @@ class BucketHelper(RestConnection):
         return json.loads(content)
 
     def delete_bucket(self, bucket='default'):
-        api = '%s%s%s' % (self.baseUrl, 'pools/default/buckets/',
-                          urllib.quote_plus("%s" % bucket))
+        api = '{}{}{}'.format(self.baseUrl, 'pools/default/buckets/',
+                              urllib.quote_plus("{}".format(bucket)))
         status, _, header = self._http_request(api, 'DELETE')
         if "status" in header:
             status_code = header['status']

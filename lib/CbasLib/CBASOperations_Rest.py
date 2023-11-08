@@ -183,13 +183,15 @@ class CBASHelper(RestConnection):
         if is_prepared:
             if named_prepare and encoded_plan:
                 http = httplib2.Http()
-                if len(servers)>1:
-                    url = "http://%s:%s/query/service" % (servers[1].ip, port)
+                if len(servers) > 1:
+                    url = "http://{}:{}/query/service".format(servers[1].ip,
+                                                              port)
                 else:
-                    url = "http://%s:%s/query/service" % (self.ip, port)
+                    url = "http://{}:{}/query/service".format(self.ip, port)
 
                 headers = {'Content-type': 'application/json'}
-                body = {'prepared': named_prepare, 'encoded_plan':encoded_plan}
+                body = {'prepared': named_prepare,
+                        'encoded_plan': encoded_plan}
 
                 response, content = http.request(
                     url, 'POST', headers=headers, body=json.dumps(body))
@@ -198,7 +200,7 @@ class CBASHelper(RestConnection):
 
             elif named_prepare and not encoded_plan:
                 params = 'prepared=' + urllib.quote(prepared, '~()')
-                params = 'prepared="%s"'% named_prepare
+                params = 'prepared="{}"'.format(named_prepare)
             else:
                 prepared = json.dumps(query)
                 prepared = str(prepared.encode('utf-8'))
@@ -207,10 +209,10 @@ class CBASHelper(RestConnection):
                 headers = self._create_headers_with_auth(
                     query_params['creds'][0]['user'].encode('utf-8'),
                     query_params['creds'][0]['pass'].encode('utf-8'))
-            api = "%s/analytics/service?%s" % (self.cbas_base_url, params)
-            self.log.info("%s" % api)
+            api = "{}/analytics/service?{}".format(self.cbas_base_url, params)
+            self.log.info("{}".format(api))
         else:
-            params = {key : query}
+            params = {key: query}
             if 'creds' in query_params and query_params['creds']:
                 headers = self._create_headers_with_auth(
                     query_params['creds'][0]['user'].encode('utf-8'),
@@ -220,7 +222,7 @@ class CBASHelper(RestConnection):
             params = urllib.urlencode(params)
             if verbose:
                 self.log.info('Query params: {0}'.format(params))
-            api = "%s/analytics/service?%s" % (self.cbas_base_url, params)
+            api = "{}/analytics/service?{}".format(self.cbas_base_url, params)
         status, content, reponse = self._http_request(
             api, 'POST', timeout=timeout, headers=headers)
         try:
