@@ -1384,7 +1384,8 @@ class KafkaLink_Util(ExternalLink_Util):
                     links_in_desired_state.append(link)
             while links_in_desired_state:
                 kafka_links.remove(links_in_desired_state.pop())
-            time.sleep(60)
+            if kafka_links:
+                time.sleep(60)
 
         if kafka_links:
             for link in kafka_links:
