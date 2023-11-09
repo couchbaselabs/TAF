@@ -52,6 +52,8 @@ dependencies {
 	compile group: 'com.github.javafaker', name: 'javafaker', version: '0.15'
 	
 	implementation 'dnsjava:dnsjava:3.5.1'
+
+    implementation 'org.mongodb:mongodb-driver-sync:4.11.0'
 }
 
 task copyDeps(type: Copy) {

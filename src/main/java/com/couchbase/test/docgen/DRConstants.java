@@ -1,4 +1,4 @@
-package couchbase.test.docgen;
+package com.couchbase.test.docgen;
 
 public class DRConstants {
     public static String create_s = "create_s";

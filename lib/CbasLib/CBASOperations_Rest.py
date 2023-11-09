@@ -20,6 +20,8 @@ class CBASHelper(RestConnection):
         self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
         if CbServer.use_https:
             self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
+        if cbas_node.type == "columnar":
+            self.cbas_base_url = "https://{0}:{1}".format(self.ip, cbas_node.cbas_port)
 
     def createConn(self, bucket, username, password):
         pass

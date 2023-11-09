@@ -3,8 +3,6 @@ package com.couchbase.test.docgen;
 import java.util.HashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
-import couchbase.test.docgen.DRConstants;
-
 public class DocRange {
     public long create_s = 0;
     public long create_e = 0;
@@ -27,13 +25,13 @@ public class DocRange {
     public long replace_s = 0;
     public long replace_e = 0;
 
-    AtomicLong createItr;
-    AtomicLong readItr;
-    AtomicLong updateItr;
-    AtomicLong deleteItr;
-    AtomicLong expiryItr;
-    AtomicLong touchItr;
-    AtomicLong replaceItr;
+    public AtomicLong createItr;
+    public AtomicLong readItr;
+    public AtomicLong updateItr;
+    public AtomicLong deleteItr;
+    public AtomicLong expiryItr;
+    public AtomicLong touchItr;
+    public AtomicLong replaceItr;
 
     public DocRange(HashMap<String, Number> ranges) {
         super();

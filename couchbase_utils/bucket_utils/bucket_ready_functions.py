@@ -81,7 +81,7 @@ from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.sdk import Server
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.sdk import SDKClientPool
-from couchbase.test.docgen import DRConstants
+from com.couchbase.test.docgen import DRConstants
 
 from java.util import HashMap
 

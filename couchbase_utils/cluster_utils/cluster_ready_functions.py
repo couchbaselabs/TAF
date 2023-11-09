@@ -29,6 +29,14 @@ from copy import deepcopy
 # import srvlookup
 
 
+class GoldfishNebula:
+    def __init__(self, srv, server):
+        self.servers = dict()
+        self.endpoint = server
+        self.endpoint.type = "columnar"
+        self.endpoint.srv = srv
+
+
 class Nebula:
     def __init__(self, srv, server):
         self.servers = dict()

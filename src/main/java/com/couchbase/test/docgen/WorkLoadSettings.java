@@ -6,7 +6,7 @@ import java.util.List;
 import reactor.util.function.Tuple2;
 
 import com.couchbase.client.core.msg.kv.DurabilityLevel;
-import couchbase.test.docgen.DRConstants;
+import com.couchbase.test.docgen.DRConstants;
 
 import com.couchbase.client.java.kv.PersistTo;
 import com.couchbase.client.java.kv.ReplicateTo;

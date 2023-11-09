@@ -144,6 +144,9 @@ class RestConnection(object):
             self.type = serverInfo.type
         except:
             self.type = "default"
+
+        if self.type == "columnar":
+            return
         if self.type != "default" or self.type == "nebula":
             nodes_self_url = self.baseUrl + "pools/default"
         else:
