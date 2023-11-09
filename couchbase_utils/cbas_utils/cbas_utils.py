@@ -838,7 +838,8 @@ class Link_Util(Dataverse_Util):
         cbas_helper = self.get_cbas_helper_object(cluster)
         if self.run_query_using_sdk:
             status, content, errors = cbas_helper.get_link_info(
-                dataverse, link_name, link_type)
+                CBASHelper.metadata_format(dataverse),
+                CBASHelper.metadata_format(link_name), link_type)
         else:
             params = dict()
             uri = ""
@@ -1372,7 +1373,7 @@ class KafkaLink_Util(ExternalLink_Util):
         kafka_links = set(self.list_all_link_objs("kafka"))
         end_time = time.time() + timeout
         while len(kafka_links) > 0 and time.time() < end_time:
-            self.log.info("Waiting for KAFKA links to get connected")
+            self.log.info("Waiting for KAFKA links to be {}".format(state))
             links_in_desired_state = []
             for link in kafka_links:
                 link_info = self.get_link_info(cluster, link.dataverse_name,
@@ -3653,7 +3654,8 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             cmd += " with " + json.dumps(with_params) + " "
 
         if link_name and external_collection:
-            cmd += " ON {0} AT {1}".format(external_collection, link_name)
+            cmd += " ON {0} AT {1}".format(
+                CBASHelper.format_name(external_collection), link_name)
 
         cmd += ";"
         return cmd
@@ -4007,8 +4009,9 @@ class StandAlone_Collection_Util(External_Dataset_Util):
             eligible_links = [link for link in kafka_link_objs if link.db_type == datasource]
             link_name = (random.choice(eligible_links)).full_name
 
-            if (dataset_spec["include_external_collections"][datasource] and
-                    dataset_spec["exclude_external_collections"][datasource]
+            if (dataset_spec["include_external_collections"].get(
+                    datasource, {}) and dataset_spec[
+                "exclude_external_collections"].get(datasource, {})
                     and (set(dataset_spec["include_external_collections"][
                                  datasource]) == set(
                         dataset_spec["exclude_external_collections"][
@@ -4017,7 +4020,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
                                "external collections cannot be "
                                "same")
                 return False
-            elif dataset_spec["exclude_external_collections"][datasource]:
+            elif dataset_spec["exclude_external_collections"].get(datasource, {}):
                 dataset_spec["include_external_collections"][datasource] = (
                         set(dataset_spec["include_external_collections"][
                                 datasource]) - set(
@@ -5954,7 +5957,9 @@ class CbasUtil(CBOUtil):
             if not all(results):
                 return False, "Failed at connect_link"
 
-            self.wait_for_kafka_links(cluster)
+            if not self.wait_for_kafka_links(cluster):
+                return False, "Failed at connect_link"
+            return True, ""
 
         if not self.create_dataverse_from_spec(cluster, cbas_spec):
             return False, "Failed at create dataverse"
@@ -5967,7 +5972,9 @@ class CbasUtil(CBOUtil):
             return False, "Failed at create kafka link from spec"
 
         if connect_link_before_creating_ds:
-            connect_links()
+            status, error = connect_links()
+            if not status:
+                return status, error
 
         if not self.create_dataset_from_spec(cluster, cbas_spec, bucket_util):
             return False, "Failed at create dataset from spec"
@@ -5982,7 +5989,10 @@ class CbasUtil(CBOUtil):
                 cluster, cbas_spec):
             return False, "Failed at create standalone collection from spec"
 
-        connect_links()
+        if not connect_link_before_creating_ds:
+            status, error = connect_links()
+            if not status:
+                return status, error
 
         jobs = Queue()
         results = []
@@ -6058,6 +6068,7 @@ class CbasUtil(CBOUtil):
                 results = []
             else:
                 return False
+
         self.log.info("Dropping all the synonyms")
         for synonym in self.list_all_synonym_objs():
             retry_func(
@@ -6071,6 +6082,20 @@ class CbasUtil(CBOUtil):
                 results = []
             else:
                 return False
+
+        self.log.info("Disconnecting all the Links")
+        for link in self.list_all_link_objs():
+            if link.link_type != "s3":
+                retry_func(
+                    link, self.disconnect_link,
+                    {"cluster": cluster, "link_name": link.full_name,
+                     "timeout": cbas_spec.get("api_timeout", 300),
+                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
+        if not self.wait_for_kafka_links(cluster, "DISCONNECTED"):
+            self.log.error("Kafka links did not get disconnected")
+        if any(results):
+            return False
+
         self.log.info("Dropping all the Datasets")
         for dataset in self.list_all_dataset_objs():
             dataset_name = dataset.full_name
@@ -6091,24 +6116,13 @@ class CbasUtil(CBOUtil):
             else:
                 return False
 
-        self.log.info("Disconnecting and Dropping all the Links")
+        self.log.info("Dropping all the Links")
         for link in self.list_all_link_objs():
-            if link.link_type != "s3":
-                retry_func(
-                    link, self.disconnect_link,
-                    {"cluster": cluster, "link_name": link.full_name,
-                     "timeout": cbas_spec.get("api_timeout", 300),
-                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
-            try:
-                results.pop()
-            except:
-                retry_func(
-                    link, self.drop_link,
-                    {"cluster": cluster, "link_name": link.full_name,
-                     "if_exists": True, "timeout": cbas_spec.get("api_timeout", 300),
-                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
-            else:
-                results.append(link.full_name)
+            retry_func(
+                link, self.drop_link,
+                {"cluster": cluster, "link_name": link.full_name,
+                 "if_exists": True, "timeout": cbas_spec.get("api_timeout", 300),
+                 "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
 
         if any(results):
             if expected_link_drop_fail:

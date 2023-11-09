@@ -74,20 +74,20 @@ class CBASHelper(object):
                 output["results"] = None
 
         except CompilationFailureException as err:
-            output["errors"] = self.parse_error(err)["errors"]
+            output["errors"] = self.parse_error(err)
             output["status"] = AnalyticsStatus.FATAL
         except CouchbaseException as err:
-            output["errors"] = self.parse_error(err)["errors"]
+            output["errors"] = self.parse_error(err)
             output["status"] = AnalyticsStatus.FATAL
         except Exception as err:
             self.log.error(str(err))
-            output["errors"] = self.parse_error(err)["errors"]
+            output["errors"] = self.parse_error(err)
             output["status"] = AnalyticsStatus.FATAL
 
         finally:
             self.sdk_client_pool.release_cluster_client(self.cluster, client)
             if output['status'] == AnalyticsStatus.FATAL:
-                msg = output['errors'][0]['message']
+                msg = output['errors']['msg']
                 if "Job requirement" in msg and "exceeds capacity" in msg:
                     raise Exception("Capacity cannot meet job requirement")
             elif output['status'] == AnalyticsStatus.SUCCESS:
@@ -133,20 +133,20 @@ class CBASHelper(object):
                 output["results"] = None
 
         except CompilationFailureException as err:
-            output["errors"] = self.parse_error(err)["errors"]
+            output["errors"] = self.parse_error(err)
             output["status"] = AnalyticsStatus.FATAL
         except CouchbaseException as err:
-            output["errors"] = self.parse_error(err)["errors"]
+            output["errors"] = self.parse_error(err)
             output["status"] = AnalyticsStatus.FATAL
         except Exception as err:
             self.log.error(str(err))
-            output["errors"] = self.parse_error(err)["errors"]
+            output["errors"] = self.parse_error(err)
             output["status"] = AnalyticsStatus.FATAL
 
         finally:
             self.sdk_client_pool.release_cluster_client(self.cluster, client)
             if output['status'] == AnalyticsStatus.FATAL:
-                msg = output['errors'][0]['message']
+                msg = output['errors']['msg']
                 if "Job requirement" in msg and "exceeds capacity" in msg:
                     raise Exception("Capacity cannot meet job requirement")
             elif output['status'] == AnalyticsStatus.SUCCESS:
@@ -167,11 +167,16 @@ class CBASHelper(object):
 
     def parse_error(self, error):
         errors = {"msg": "", "code": ""}
-        match = re.search(r"({.*?}.*)", error.getMessage())
-        if not match:
-            errors = json.loads(match.group(1))
-        else:
-            errors["msg"] = error
+        try:
+            result = error.context().exportAsMap()
+            result = result["errors"][0]
+            errors["msg"] = result["message"]
+            errors["code"] = result["code"]
+        except:
+            try:
+                errors["msg"] = error.getMessage()
+            except:
+                errors["msg"] = error
         return errors
 
     def create_s3_link_obj(self, link_properties):

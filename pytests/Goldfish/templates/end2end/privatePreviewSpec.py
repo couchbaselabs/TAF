@@ -265,6 +265,13 @@ spec = {
         # column - Dataset storage will be column format
         # mixed - Dataset storage will be row + column format
         "storage_format": "mixed",
+        # Collections on external database from where the data will be
+        # ingested.
+        # { "mongo": [],
+        #   "dynamo": []
+        # }
+        "include_external_collections": {},
+        "exclude_external_collections": {},
     },
 
     "synonym": {
