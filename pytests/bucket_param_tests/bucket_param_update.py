@@ -603,9 +603,13 @@ class BucketParamTest(ClusterSetup):
             start_doc_for_insert)
 
     def test_bucket_param_update_with_range_scan(self):
+        create_and_delete_bucket_with_scan_ongoing = \
+            self.input.param("create_and_delete_bucket_with_scan_ongoing", True)
         doc_load = self.input.param("doc_load", True)
         validate_doc_load = self.input.param("validate_doc_load", False)
         bucket_durability = self.input.param("bucket_durability", None)
+        delete_collections_while_scan_going_on = \
+            self.input.param("delete_collections_while_scan_going_on", False)
         task_list = []
         if doc_load:
             doc_loading_spec = \
@@ -633,11 +637,44 @@ class BucketParamTest(ClusterSetup):
         rebalance = self.task.async_rebalance(self.cluster, [], [])
         self.task.jython_task_manager.get_task_result(rebalance)
         self.bucket_util.print_bucket_stats(self.cluster)
+        if create_and_delete_bucket_with_scan_ongoing:
+            bucketName = "default-magma"
+            self.bucket_util.create_default_bucket(
+                self.cluster, bucket_type=self.bucket_type,
+                ram_quota=256, replica=1,
+                storage="magma",
+                bucket_name=bucketName)
+            bucketName = "default-couchstore"
+            self.bucket_util.create_default_bucket(
+                self.cluster, bucket_type=self.bucket_type,
+                ram_quota=256, replica=2,
+                storage="couchstore",
+                bucket_name=bucketName)
+            self.log.info("==========buckets created========")
+            bucket1 = self.bucket_util.get_bucket_obj(self.cluster.buckets,
+                                                     "default-magma")
+            bucket2 = self.bucket_util.get_bucket_obj(self.cluster.buckets,
+                                                      "default-couchstore")
+            status1 = self.bucket_util.delete_bucket(self.cluster, bucket1)
+            status2 = self.bucket_util.delete_bucket(self.cluster, bucket2)
+
+            self.assertTrue(status1, "Bucket deletion failed")
+            self.assertTrue(status2, "2nd Bucket deletion failed")
+
+            self.log.info("==========buckets deleted========")
+
         if doc_load:
             self.task.jython_task_manager.get_task_result(doc_loading_task)
             if validate_doc_load:
                 self.assertTrue(doc_loading_task.result,
                                 "Doc load failed")
+        if delete_collections_while_scan_going_on:
+            for bucket in self.cluster.buckets:
+                for scope in bucket.scopes.keys():
+                    for collection in bucket.scopes[scope].collections.keys():
+                        bucket_helper.delete_collection(
+                            bucket, bucket.scopes[scope].name,
+                            bucket.scopes[scope].collections[collection].name)
 
     def test_MB_34947(self):
         # Update already Created docs with async_writes

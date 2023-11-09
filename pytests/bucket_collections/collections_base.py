@@ -195,7 +195,7 @@ class CollectionBase(ClusterSetup):
         # Create clients in SDK client pool
         bucket_count = len(buckets)
         max_clients = num_threads
-        clients_per_bucket = 5#int(ceil(max_clients / bucket_count))
+        clients_per_bucket = int(ceil(max_clients / bucket_count))
 
         for bucket in buckets:
             req_clients = min(cols_in_bucket[bucket.name], clients_per_bucket)
@@ -453,17 +453,18 @@ class CollectionBase(ClusterSetup):
             # subsequent data load will skip range scan collection
             # test must also reuse self.skip_collections_during_data_load for
             # any subsequent data load
+            test_obj.skip_collections_during_data_load = {}
+            for bucket in collections_selected_for_range_scan:
+                for scope in collections_selected_for_range_scan[bucket]['scopes']:
+                    for collection in collections_selected_for_range_scan[
+                        bucket]['scopes'][scope]['collections']:
+                        for t_bucket in test_obj.cluster.buckets:
+                            if t_bucket.name == bucket:
+                                sdk_list.append(SDKClient(
+                                    [test_obj.cluster.master],
+                                    t_bucket, scope, collection))
+                                collections_created.append(collection)
             if test_obj.skip_range_scan_collection_mutation:
-                for bucket in collections_selected_for_range_scan:
-                    for scope in collections_selected_for_range_scan[bucket]['scopes']:
-                        for collection \
-                                in collections_selected_for_range_scan[bucket]['scopes'][scope]['collections']:
-                            for t_bucket in test_obj.cluster.buckets:
-                                if t_bucket.name == bucket:
-                                    sdk_list.append(SDKClient(
-                                        [test_obj.cluster.master],
-                                        t_bucket, scope, collection))
-                                    collections_created.append(collection)
                 test_obj.skip_collections_during_data_load = collections_selected_for_range_scan
             doc_loading_spec = \
                 test_obj.bucket_util.get_bucket_template_from_package(
