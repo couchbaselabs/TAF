@@ -21,9 +21,6 @@ class CollectionsQuorumLoss(CollectionBase):
         self.create_zones = self.input.param("create_zones", False)
         self.skip_validations = self.input.param("skip_validations", True)
         self.data_path = RestConnection(self.cluster.master).get_data_path()
-        if self.failover_action == "firewall":
-            self.get_cbcollect_info = False
-            self.fail("CBQE-8008: Disabling network failure tests")
 
     def tearDown(self):
         if self.failover_action:

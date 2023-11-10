@@ -625,12 +625,6 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.max_count = self.input.param("maxCount", 1)
         self.failover_action = self.input.param("failover_action",
                                                 "stop_server")
-
-        if self.failover_action in ["restart_machine", "restart_network",
-                                    "network_split"]:
-            self.get_cbcollect_info = False
-            self.fail("CBQE-8008: Disabling network failure tests")
-
         self.failover_orchestrator = self.input.param("failover_orchestrator",
                                                       False)
         self.multiple_node_failure = self.input.param("multiple_nodes_failure",
