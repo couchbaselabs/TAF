@@ -381,7 +381,7 @@ class basic_ops(ClusterSetup):
                                                      xattr=True)
             self.assertFalse(failed_items, "Xattr read failed")
             self.assertEqual(expected_val,
-                             str(success[doc_id]["value"][0]),
+                             type(expected_val)(success[doc_id]["value"][0]),
                              "Sub_doc value mismatch: %s != %s"
                              % (success[doc_id]["value"][0],
                                 expected_val))
