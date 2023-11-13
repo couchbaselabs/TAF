@@ -261,7 +261,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                      xattr=self.xattr)
             self.assertFalse(failed_items, "Xattr read failed")
             self.assertEqual(expected_val,
-                             str(success[self.doc_id]["value"][0]),
+                             type(expected_val)(success[self.doc_id]["value"][0]),
                              "Sub_doc value mismatch: %s != %s"
                              % (success[self.doc_id]["value"][0],
                                 expected_val))
@@ -279,7 +279,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                            "my.attr", "value")
 
         # Read full doc and validate
-        self.__read_doc_and_validate("{}")
+        self.__read_doc_and_validate({})
 
         # Using lookup_in
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
@@ -300,7 +300,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                key, val)
 
         # Read full doc and validate
-        self.__read_doc_and_validate("{}")
+        self.__read_doc_and_validate({})
 
         # Use lookup_in with 'xattrs' attribute enabled to validate the values
         for key, val in xattrs_to_insert:
@@ -354,13 +354,13 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         updated_cas_2 = result["cas"]
 
-        self.__read_doc_and_validate("{}")
+        self.__read_doc_and_validate({})
 
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
         self.assertTrue(failure)
 
-        self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
-        self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",
+        self.__read_doc_and_validate({"value_inner":2}, "my.inner")
+        self.__read_doc_and_validate({"value":1,"inner":{"value_inner":2}},
                                      "my")
         self.assertTrue(initial_cas != updated_cas_1, "CAS not updated")
         self.assertTrue(updated_cas_1 != updated_cas_2, "CAS not updated")
@@ -634,14 +634,14 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         updated_cas_2 = result["cas"]
 
         if self.xattr:
-            self.__read_doc_and_validate("{}")
+            self.__read_doc_and_validate({})
 
         # Ensure we cannot read a non-existent xattribute
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
         self.assertTrue(failure)
 
-        self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
-        self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",
+        self.__read_doc_and_validate({"value_inner":2}, "my.inner")
+        self.__read_doc_and_validate({"value":1,"inner":{"value_inner":2}},
                                      "my")
         self.assertTrue(initial_cas != updated_cas_1, "CAS not updated")
         self.assertTrue(updated_cas_1 != updated_cas_2, "CAS not updated")
