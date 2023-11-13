@@ -40,7 +40,6 @@ class BucketParams(CollectionBase):
 
     def test_update_replica_node(self):
         """ update replica, add/remove node verify docs"""
-        known_nodes = self.cluster.servers[:self.nodes_init]
         count = 0
         for new_replica in range(1, self.replica_count):
             # Change replica and perform doc loading
@@ -49,7 +48,7 @@ class BucketParams(CollectionBase):
                                                         new_replica)
             servs_in = [self.cluster.servers[count + self.nodes_init]]
             rebalance_task = self.task.async_rebalance(
-                known_nodes, servs_in, [], retry_get_process_num=self.retry_get_process_num)
+                self.cluster, servs_in, [], retry_get_process_num=self.retry_get_process_num)
             self.sleep(10, "wait for rebalance to start")
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec)
@@ -57,23 +56,21 @@ class BucketParams(CollectionBase):
             if rebalance_task.result is False:
                 self.fail("Rebalance failed with replica: %s" % new_replica)
             count = count + 1
-            known_nodes.extend(servs_in)
             self.validate_docs(self.buckets)
 
         for new_replica in range(self.replica_count - 1, 0, -1):
             self.log.info("Setting replica = %s" % new_replica)
             self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                         new_replica)
-            servs_out = [known_nodes[-1]]
+            servs_out = [self.cluster.nodes_in_cluster[-1]]
             rebalance_task = self.task.async_rebalance(
-                known_nodes, [], servs_out, retry_get_process_num=self.retry_get_process_num)
+                self.cluster, [], servs_out, retry_get_process_num=self.retry_get_process_num)
             self.sleep(10, "Wait for rebalance to start")
             self.load_docs(self.task, self.cluster, self.buckets,
                            self.doc_loading_spec)
             self.task_manager.get_task_result(rebalance_task)
             if rebalance_task.result is False:
                 self.fail("Rebalance failed with replica: %s" % new_replica)
-            known_nodes = known_nodes[:-1]
             self.validate_docs(self.buckets)
 
     def load_docs(self, task, cluster, buckets, load_spec):
