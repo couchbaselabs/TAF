@@ -3702,8 +3702,9 @@ class StandAlone_Collection_Util(External_Dataset_Util):
         """
 
         if dataverse_name and not self.create_dataverse(
-                cluster, dataverse_name=dataverse_name, if_not_exists=True,
-                timeout=timeout, analytics_timeout=analytics_timeout):
+                cluster, dataverse_name=dataverse_name, username=username,
+                password=password,if_not_exists=True, timeout=timeout,
+                analytics_timeout=analytics_timeout):
             return False
         cmd = self.generate_standalone_create_DDL(
             collection_name, dataverse_name, if_not_exists, primary_key,
