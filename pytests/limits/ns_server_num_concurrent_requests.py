@@ -120,7 +120,7 @@ class NsServerNumConcurrentRequests(UserResourceTask):
             no_of_conns = self.no_of_connections.get()
 
     def error(self):
-        return self.rest._http_request(self.rest.baseUrl + "/pools/default")[1]
+        return self.rest._http_request(self.rest.baseUrl + "pools/default")[1]
 
     def expected_error(self):
         return 'Limit(s) exceeded [num_concurrent_requests]'

@@ -53,7 +53,7 @@ class NsServerEgress(UserResourceTask):
         return sum(worker.throughput_success.get() for worker in self.workers)
 
     def error(self):
-        return self.rest._http_request(self.rest.baseUrl + "/pools/default")[1]
+        return self.rest._http_request(self.rest.baseUrl + "pools/default")[1]
 
     def expected_error(self):
         return 'Limit(s) exceeded [egress]'
