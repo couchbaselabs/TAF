@@ -56,7 +56,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             self.capella.get("capella_user"),
             self.capella.get("capella_pwd")
         ))
-        super_user = self.users[0]
+        self.super_user = self.users[0]
 
         self.goldfish_utils = GoldfishUtils(self.log)
 
@@ -64,7 +64,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             user = Users(self.capella.get("tenant_id"))
             result = (
                 self.goldfish_utils.create_org_user_without_email_verification(
-                    self.pod, super_user, user))
+                    self.pod, self.super_user, user))
             if not result:
                 raise Exception("Error while creating User {0}".format(
                     user.email))
@@ -187,8 +187,13 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                                 "following clusters- {0}".format(thread_results))
 
             # Adding db user to each cluster.
-            for cluster in self.list_all_clusters():
-                cluster.db_users.append(DBUser())
+            for user in self.users:
+                for project in user.projects:
+                    for cluster in project.clusters:
+                        resp = self.goldfish_utils.create_db_user_api_keys(
+                            self.pod, user, cluster)
+                        db_user = DBUser(resp["apikeyId"], resp["secret"])
+                        cluster.db_users.append(db_user)
 
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)

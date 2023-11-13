@@ -6034,7 +6034,7 @@ class CbasUtil(CBOUtil):
             self, cluster, cbas_spec, expected_index_drop_fail=True,
             expected_synonym_drop_fail=True, expected_dataset_drop_fail=True,
             expected_link_drop_fail=True, expected_dataverse_drop_fail=True,
-            delete_dataverse_object=True):
+            delete_dataverse_object=True, retry_link_disconnect_fail=True):
 
         results = list()
 
@@ -6093,10 +6093,25 @@ class CbasUtil(CBOUtil):
                     {"cluster": cluster, "link_name": link.full_name,
                      "timeout": cbas_spec.get("api_timeout", 300),
                      "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
+            if any(results):
+                if retry_link_disconnect_fail:
+                    if link.link_type == "kafka":
+                        self.log.info("Waiting for kafka link to get "
+                                      "connected before disconnecting")
+                        if not self.wait_for_kafka_links(cluster, "CONNECTED"):
+                            self.log.error("Kafka links did not get connected")
+                    retry_func(
+                        link, self.disconnect_link,
+                        {"cluster": cluster, "link_name": link.full_name,
+                         "timeout": cbas_spec.get("api_timeout", 300),
+                         "analytics_timeout": cbas_spec.get("cbas_timeout",
+                                                            300)})
+                    if any(results):
+                        return False
+                else:
+                    print_failures("Disconnect Links", results)
         if not self.wait_for_kafka_links(cluster, "DISCONNECTED"):
             self.log.error("Kafka links did not get disconnected")
-        if any(results):
-            return False
 
         self.log.info("Dropping all the Datasets")
         for dataset in self.list_all_dataset_objs():

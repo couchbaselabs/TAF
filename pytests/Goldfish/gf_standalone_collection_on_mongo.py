@@ -36,10 +36,16 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
             "mongo_atlas_username", None)
         mongo_atlas_password = self.input.param(
             "mongo_atlas_password", None)
+        mongo_altas_cluster_name = self.input.param(
+            "mongo_altas_cluster_name", "couchbase")
+        mongo_altas_cluster_id = self.input.param(
+            "mongo_altas_cluster_id", "2yp38b3")
+
         self.mongo_atlas_url = (
-            "mongodb+srv://{0}:{1}@couchbase.2yp38b3.mongodb.net/".format(
+            "mongodb+srv://{0}:{1}@{2}.{3}.mongodb.net/".format(
                 urllib.quote_plus(mongo_atlas_username),
-                urllib.quote_plus(mongo_atlas_password))) if (
+                urllib.quote_plus(mongo_atlas_password),
+                mongo_altas_cluster_name, mongo_altas_cluster_id)) if (
             mongo_atlas_username) else None
 
         self.mongo_on_prem_host = self.input.param("mongo_on_prem_host", None)
@@ -130,7 +136,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
         resp = self.doc_loading_APIs.start_crud_on_mongo(
             self.mongo_on_prem_host, self.mongo_db_name, self.mongo_coll_name,
             self.mongo_atlas_url, 27017, self.mongo_on_prem_username,
-            self.mongo_on_prem_password, None, 100)
+            self.mongo_on_prem_password, num_buffer=self.initial_doc_count//10)
 
         if resp.status_code != 200:
             self.log.error("Failed to start CRUD on Mongo DB")
@@ -217,7 +223,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
         resp = self.doc_loading_APIs.start_crud_on_mongo(
             self.mongo_on_prem_host, self.mongo_db_name, self.mongo_coll_name,
             self.mongo_atlas_url, 27017, self.mongo_on_prem_username,
-            self.mongo_on_prem_password, None, 100)
+            self.mongo_on_prem_password, num_buffer=self.initial_doc_count//10)
         if resp.status_code != 200:
             self.fail("Failed to start CRUD on Mongo DB")
         else:

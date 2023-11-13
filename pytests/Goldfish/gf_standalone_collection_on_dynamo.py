@@ -96,7 +96,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         resp = self.doc_loading_APIs.start_crud_on_dynamo(
             self.dynamo_access_key, self.dynamo_secret_key, "id",
             self.dynamo_table, self.dynamo_region,
-            num_buffer=10)
+            num_buffer=self.initial_doc_count//10)
 
         if resp.status_code != 200:
             self.log.error("Failed to start CRUD on Dynamo DB")
@@ -184,7 +184,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         resp = self.doc_loading_APIs.start_crud_on_dynamo(
             self.dynamo_access_key, self.dynamo_secret_key, "id",
             self.dynamo_table, self.dynamo_region,
-            num_buffer=10)
+            num_buffer=self.initial_doc_count//10)
         if resp.status_code != 200:
             self.fail("Failed to start CRUD on Dynamo DB")
         else:
