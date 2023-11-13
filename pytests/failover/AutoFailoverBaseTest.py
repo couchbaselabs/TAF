@@ -871,6 +871,20 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.disk_location = self.input.param("data_location", "/data")
         self.disk_location_size = self.input.param("data_location_size", 5120)
         self.data_location = "{0}/data".format(self.disk_location)
+        self.skip_collections_during_data_load = self.input.param(
+            "skip_col_dict", None)
+        self.range_scan_timeout = self.input.param("range_scan_timeout",
+                                                   None)
+        self.expect_range_scan_exceptions = self.input.param(
+            "expect_range_scan_exceptions",
+            ["com.couchbase.client.core.error.CouchbaseException: "
+             "The range scan internal partition UUID could not be found on the server "])
+        self.range_scan_collections = self.input.param(
+            "range_scan_collections", None)
+        self.key_size = self.input.param("key_size", 8)
+        self.range_scan_task = self.input.param("range_scan_task", None)
+        self.skip_range_scan_collection_mutation = self.input.param(
+            "skip_range_scan_collection_mutation", True)
         self.disk_timeout = self.input.param("disk_timeout", 120)
         self.read_loadgen = self.input.param("read_loadgen", False)
         self.retry_get_process_num = self.input.param("retry_get_process_num", 200)
