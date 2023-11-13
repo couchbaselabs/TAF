@@ -449,7 +449,7 @@ class CollectionsRebalance(CollectionBase):
                                 bucket, servers=[node], wait_time=1200))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(self.cluster + add_nodes, [], [],
+                        operation = self.task.async_rebalance(self.cluster, [], [],
                                                               retry_get_process_num=self.retry_get_process_num)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
