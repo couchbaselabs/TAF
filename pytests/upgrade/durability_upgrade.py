@@ -345,7 +345,7 @@ class UpgradeTests(UpgradeBase):
             self.bucket_size_guardrail_limits = {"couchstore": 1.6, "magma": 16}
             self.check_and_set_guardrail_limits()
 
-        # Adding _system scope and collections under it to the local bucket object since 
+        # Adding _system scope and collections under it to the local bucket object since
         # these are added once the cluster is upgraded to 7.6
         if float(self.upgrade_version[:3]) >= 7.6:
             for bucket in self.cluster.buckets:
@@ -1313,14 +1313,14 @@ class UpgradeTests(UpgradeBase):
                 for bucket in self.cluster.buckets:
                     if(bucket.name == "bucket-0"):
                         bucket_update = bucket
-                curr_replicas = bucket_update.replicaNumber
-                self.log.info("Updating replica count to {0} for {1}".format(curr_replicas+1,
-                                                                            bucket_update.name))
-                self.bucket_util.update_bucket_property(self.cluster.master,
-                                                        bucket_update,
-                                                        replica_number=curr_replicas+1)
+                        curr_replicas = bucket_update.replicaNumber
+                        self.log.info("Updating replica count to {0} for {1}".format(curr_replicas + 1,
+                                                                                     bucket_update.name))
+                        self.bucket_util.update_bucket_property(self.cluster.master,
+                                                                bucket_update,
+                                                                replica_number=curr_replicas+1)
                 self.bucket_util.print_bucket_stats(self.cluster)
-                
+
                 reb_task = self.task.async_rebalance(self.cluster, [], [])
                 self.task_manager.get_task_result(reb_task)
                 self.assertTrue(reb_task.result, "Rebalance after replica update failed")
