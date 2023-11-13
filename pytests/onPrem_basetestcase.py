@@ -450,6 +450,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             status, content = rest.set_minimum_bucket_replica_for_cluster(
                 self.minimum_bucket_replica)
             self.assertTrue(status, "minimum replica setting failed to update")
+            self.num_replicas = self.minimum_bucket_replica
 
     def start_fetch_pcaps(self):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
