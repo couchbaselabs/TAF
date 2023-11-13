@@ -158,12 +158,12 @@ class RestConnection(object):
         # determine the real couchApiBase for cluster_run
         # couchApiBase appeared in version 2.*
         if not http_res or http_res["version"][0:2] == "1.":
-            self.capi_baseUrl = self.baseUrl + "/couchBase"
+            self.capi_baseUrl = self.baseUrl + "couchBase"
         else:
             for iteration in xrange(5):
                 if "couchApiBase" not in http_res.keys():
                     if self.is_cluster_mixed():
-                        self.capi_baseUrl = self.baseUrl + "/couchBase"
+                        self.capi_baseUrl = self.baseUrl + "couchBase"
                         return
                     # Sleep before next retry
                     sleep(0.5)
@@ -403,7 +403,7 @@ class RestConnection(object):
         return json, meta
 
     def run_view(self, bucket, view, name):
-        api = self.capi_baseUrl + '/%s/_design/%s/_view/%s' % (bucket, view, name)
+        api = self.capi_baseUrl + '%s/_design/%s/_view/%s' % (bucket, view, name)
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         if not status:
@@ -475,7 +475,7 @@ class RestConnection(object):
 
     def get_couch_doc(self, doc_id, bucket="default", timeout=120):
         """ use couchBase uri to retrieve document from a bucket """
-        api = self.capi_baseUrl + '/%s/%s' % (bucket, doc_id)
+        api = self.capi_baseUrl + '%s/%s' % (bucket, doc_id)
         status, content, header = self._http_request(api, headers=self._create_capi_headers(),
                                                      timeout=timeout)
         if not status:
@@ -483,16 +483,16 @@ class RestConnection(object):
         return json.loads(content)
 
     def _create_design_doc(self, bucket, name, function):
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         status, content, header = self._http_request(
             api, 'PUT', function, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def _get_design_doc(self, bucket, name):
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '/%s/_design/%s' % (bucket.name, name)
+            api = self.capi_baseUrl + '%s/_design/%s' % (bucket.name, name)
 
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
@@ -512,19 +512,19 @@ class RestConnection(object):
         status, design_doc, meta = self._get_design_doc(bucket, name)
         if not status:
             raise Exception("unable to find for deletion design document")
-        api = self.capi_baseUrl + '/%s/_design/%s' % (bucket, name)
+        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '/%s/_design/%s' % (bucket.name, name)
+            api = self.capi_baseUrl + '%s/_design/%s' % (bucket.name, name)
         status, content, header = self._http_request(api, 'DELETE',
                                                      headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def spatial_compaction(self, bucket, design_name):
-        api = self.capi_baseUrl + '/%s/_design/%s/_spatial/_compact' % (bucket, design_name)
+        api = self.capi_baseUrl + '%s/_design/%s/_spatial/_compact' % (bucket, design_name)
         if isinstance(bucket, Bucket):
             api = self.capi_baseUrl + \
-                  '/%s/_design/%s/_spatial/_compact' % (bucket.name, design_name)
+                  '%s/_design/%s/_spatial/_compact' % (bucket.name, design_name)
 
         status, content, header = self._http_request(api, 'POST',
                                                      headers=self._create_capi_headers())
@@ -1163,7 +1163,7 @@ class RestConnection(object):
         otpNode = None
         self.test_log.debug('Adding remote node {0}:{1} to cluster {2}:{3}'
                             .format(remoteIp, port, self.ip, self.port))
-        api = self.baseUrl + '/node/controller/doJoinCluster'
+        api = self.baseUrl + 'node/controller/doJoinCluster'
         params = urllib.urlencode({'hostname': "{0}:{1}".format(remoteIp, port),
                                    'user': user,
                                    'password': password})
@@ -1621,7 +1621,7 @@ class RestConnection(object):
     def execute_statement_on_cbas(self, statement, mode, pretty=True,
                                   timeout=70, client_context_id=None):
         self.cbas_base_url = "{0}://{1}:{2}".format(self.protocol, self.ip, self.cbas_port)
-        api = self.cbas_base_url + "/analytics/service"
+        api = self.cbas_base_url + "analytics/service"
         headers = self._create_capi_headers()
 
         params = {'statement': statement, 'pretty': pretty, 'client_context_id': client_context_id}
@@ -2157,7 +2157,7 @@ class RestConnection(object):
             return metakv_key_count, metakv_dicts
 
     def stop_rebalance(self, wait_timeout=10):
-        api = self.baseUrl + '/controller/stopRebalance'
+        api = self.baseUrl + 'controller/stopRebalance'
         status, content, header = self._http_request(api, 'POST')
         if status:
             for i in xrange(wait_timeout):
@@ -2207,7 +2207,7 @@ class RestConnection(object):
             return status
 
     def set_jre_path(self, jre_path=None, set=True):
-        api = self.baseUrl + '/nodes/self/controller/settings'
+        api = self.baseUrl + 'nodes/self/controller/settings'
         from urllib3._collections import HTTPHeaderDict
         data = HTTPHeaderDict()
         paths = {}
@@ -2936,7 +2936,7 @@ class RestConnection(object):
 
     def query_tool_stats(self):
         self.test_log.info('Query n1ql stats')
-        api = self.query_baseUrl + "/admin/stats"
+        api = self.query_baseUrl + "admin/stats"
         status, content, header = self._http_request(api, 'GET')
         self.test_log.debug(content)
         try:
@@ -3216,7 +3216,7 @@ class RestConnection(object):
         return status, content, header
 
     def configure_ldap_settings(self, settings):
-        api = self.baseUrl + '/settings/ldap'
+        api = self.baseUrl + 'settings/ldap'
         params = urllib.urlencode(settings)
         status, content, header = self._http_request(api, 'POST', params)
         return status, content, header
@@ -3709,7 +3709,7 @@ class RestConnection(object):
         Get all (default + uploaded) trusted CA certs information
         """
         status, content, header = self._http_request(self.baseUrl
-                                                     + "/pools/default/trustedCAs", 'GET')
+                                                     + "pools/default/trustedCAs", 'GET')
         return status, content
 
     def delete_trusted_CA(self, ca_id):
@@ -3718,7 +3718,7 @@ class RestConnection(object):
         Deletes a trusted CA from the cluster, given its ID
         """
         status, content, response = self._http_request(self.baseUrl
-                                                       + "/pools/default/trustedCAs/"
+                                                       + "pools/default/trustedCAs/"
                                                        + str(ca_id),
                                                        'DELETE')
         return status, content, response
@@ -3733,7 +3733,7 @@ class RestConnection(object):
 
             Supplying an empty dictionary clears all limits.
         """
-        target = self.baseUrl + "/pools/default/buckets/{}/scopes".format(bucket)
+        target = self.baseUrl + "pools/default/buckets/{}/scopes".format(bucket)
         status, content, _ = self._http_request(target,
                                                 'POST',
                                                 params="name={}&limits={}".format(scope, json.dumps(limits)))
