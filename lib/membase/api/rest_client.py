@@ -3287,7 +3287,7 @@ class RestConnection(newRC):
     'Get list of current users and rols assigned to them'
 
     def retrieve_user_roles(self):
-        url = "/settings/rbac/users"
+        url = "settings/rbac/users"
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'GET')
         if not status:
