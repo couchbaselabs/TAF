@@ -16,7 +16,7 @@ from sdk_client3 import SDKClient
 import zlib
 from httplib import IncompleteRead
 
-import com.couchbase.test.transactions.SimpleTransaction as Transaction
+# import com.couchbase.test.transactions.SimpleTransaction as Transaction
 from _threading import Lock
 from com.couchbase.client.java.json import JsonObject
 from java.lang import Thread

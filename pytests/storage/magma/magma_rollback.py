@@ -18,8 +18,6 @@ from sdk_client3 import SDKClient
 
 from reactor.util.function import Tuples
 from com.couchbase.test.docgen import WorkLoadSettings
-from com.couchbase.test.loadgen import TransactionWorkLoadGenerate
-from com.couchbase.test.transactions import Transaction
 
 
 class MagmaRollbackTests(MagmaBaseTest):

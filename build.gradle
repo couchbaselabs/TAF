@@ -21,26 +21,14 @@ repositories {
 }
 
 dependencies {
-    def trans_version = "1.2.3"
-    def java_client = "3.4.10"
-
-    if (project.hasProperty("transaction_version")) {
-        trans_version = project.property("transaction_version")
-    }
+    def java_client = "3.4.11"
     if (project.hasProperty("client_version")) {
         java_client = project.property("client_version")
     }
 
-    println("Using Transaction_client :: " + trans_version)
-    implementation 'com.couchbase.client:couchbase-transactions:' + trans_version
-
     if (java_client != "default") {
         println("Using Java_client :: " + java_client)
-        implementation('com.couchbase.client:java-client') {
-            version {
-                strictly java_client
-            }
-        }
+        implementation 'com.couchbase.client:java-client:' + java_client
     }
     // This will transitively pull in all dependencies of transactions, including Couchbase java-client
     // compile group: 'com.couchbase.client', name: 'couchbase-transactions', version: trans_version
