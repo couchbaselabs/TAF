@@ -1591,6 +1591,57 @@ class Dataset_Util(KafkaLink_Util):
         super(Dataset_Util, self).__init__(
             server_task, run_query_using_sdk)
 
+    def copy_to_s3(self, cluster, collection_name=None, dataverse_name=None, source_definition_query=None,
+                   alias_identifier=None, destination_bucket=None, destination_link_name=None,
+                   path=None, partition_by=None, partition_alias=None, compression=None, order_by=None,
+                   max_object_per_file=None, file_format=None, username=None, password=None, timeout=300,
+                   analytics_timeout=300, validate_error_msg=None, expected_error=None):
+        cmd = "COPY "
+        if dataverse_name is not None and dataverse_name != "Default":
+            cmd = cmd + "{0}.{1} ".format(dataverse_name, collection_name)
+        elif source_definition_query:
+            cmd = cmd + "( {0} ) ".format(source_definition_query)
+        if alias_identifier:
+            cmd += "AS {0} ".format(alias_identifier)
+
+        cmd += "TO {0} AT {1} ".format(destination_bucket, destination_link_name)
+        if path and partition_alias:
+            cmd += "PATH(\"{0}\", {1}) ".format(path, partition_alias)
+        else:
+            cmd += "PATH(\"{0}\") ".format(path)
+        over = dict()
+        if partition_by and partition_alias:
+            over["PARTITION BY"] = "{0} AS {1}".format(partition_by, partition_alias)
+        if order_by:
+            over["OVER BY"] = order_by
+        with_dict = dict()
+        if compression:
+            with_dict["compression"] = compression
+        if max_object_per_file:
+            with_dict["max-objects-per-file"] = str(compression)
+        if file_format:
+            with_dict["format"] = file_format
+
+        if len(over) > 0:
+            cmd += "OVER ("
+            for key in over:
+                cmd += "{0} {1} ".format(key, over[key])
+            cmd += " ) "
+        if len(with_dict) > 0:
+            cmd += "WITH " + json.dumps(with_dict)
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(status, errors,
+                                                   expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
     def validate_dataset_in_metadata(
             self, cluster, dataset_name, dataverse_name=None, username=None,
             password=None, timeout=300, analytics_timeout=300, **kwargs):
