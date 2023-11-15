@@ -117,7 +117,7 @@ class InternalUserPassword(ClusterSetup):
         if not result:
             self.fail("Failed to rotate password: {}".format(content))
         self.log.info("Successfully rotated password: {}".format(content))
-        result, content = self.security_util.set_internal_creds_rotation_interval(self.cluster, 60000)
+        result, content = self.security_util.set_internal_creds_rotation_interval(self.cluster, 600000)
         if not result:
             self.fail("Failed to set internal password rotation interval: {}".format(content))
         self.log.info("Successfully set internal password rotation interval: {}".format(content))
@@ -125,9 +125,10 @@ class InternalUserPassword(ClusterSetup):
         if not result:
             self.fail("Failed to get security settings: {}".format(content))
         self.log.info("Cred rotations interval: {}".format(content))
+        self.sleep(30, "Wait for password rotation")
         end_time = datetime.now()
-        print(start_time)
-        print(end_time)
+        self.log.info("Start time: {}".format(start_time))
+        self.log.info("End time: {}".format(end_time))
         validate_result = self.validate_password_rotation(start_time, end_time)
         self.log.info("Validation result: {}".format(validate_result))
         if not validate_result:
@@ -154,20 +155,30 @@ class InternalUserPassword(ClusterSetup):
                                     retry_get_process_num=2000)
         self.wait_for_rebalance_to_start(rebalance_task)
         self.log.info("Rebalance start time: {}".format(rebalance_task.start_time))
-        start_time = datetime.fromtimestamp(rebalance_task.start_time)
+        # start_time = datetime.fromtimestamp(rebalance_task.start_time)
         self.sleep(5, "Wait after rebalance started")
-        if self.force_rotate:
-            result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
-            if not result:
-                self.fail("Failed to rotate password: {}".format(content))
-            self.log.info("Password rotated succesfully!")
+
+        result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
+
+        expected_err_msg = '''["System is being reconfigured. Please try later."]'''
+        actual_err_msg = content
+        self.assertTrue(expected_err_msg == actual_err_msg, \
+                        "Expected err msg: {}, Actual err msg: {}".format(expected_err_msg,
+                                                                            actual_err_msg))
 
         self.task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.fail("Failed to complete rebalance")
+        start_time = datetime.now()
+        self.sleep(60, "Wait after rebalance completes")
+        if self.force_rotate:
+            result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
+            if not result:
+                self.fail("Failed to rotate password")
+        self.sleep(30, "Wait after rotating password")
         end_time = datetime.now()
-        print(start_time)
-        print(end_time)
+        self.log.info("Start time: {}".format(start_time))
+        self.log.info("End time: {}".format(end_time))
         validate_result = self.validate_password_rotation(start_time, end_time)
         self.log.info("Validate result: {}".format(validate_result))
         if not validate_result:
