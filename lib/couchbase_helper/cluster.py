@@ -11,7 +11,7 @@ from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
 from global_vars import logger
-from sdk_client3 import SDKClient
+from sdk_client3 import SDKClient, TransactionConfig
 from BucketLib.BucketOperations import BucketHelper
 
 """An API for scheduling tasks that run against Couchbase Server
@@ -368,7 +368,8 @@ class ServerTasks(object):
                                       defer=False,
                                       scope=CbServer.default_scope,
                                       collection=CbServer.default_collection,
-                                      start_task=True):
+                                      start_task=True,
+                                      transaction_keyspace=None):
 
         bucket_list = list()
         client_list = list()
@@ -376,12 +377,18 @@ class ServerTasks(object):
         gen_end = int(generator.end)
         gen_range = max(int((generator.end - generator.start)
                             / process_concurrency), 1)
+
+        if op_type == "time_out":
+            transaction_timeout = 2
+        trans_conf = TransactionConfig(
+            durability=durability, timeout=transaction_timeout,
+            transaction_keyspace=transaction_keyspace)
         for _ in range(gen_start, gen_end, gen_range):
             temp_bucket_list = list()
             temp_client_list = list()
             for bucket in buckets:
-                client = SDKClient([cluster.master], bucket,
-                                   scope, collection)
+                client = SDKClient([cluster.master], bucket, scope, collection,
+                                   transaction_config=trans_conf)
                 temp_client_list.append(client)
                 temp_bucket_list.append(client.collection)
             bucket_list.append(temp_bucket_list)
@@ -395,10 +402,12 @@ class ServerTasks(object):
             batch_size=batch_size,
             timeout_secs=timeout_secs,
             compression=compression,
-            process_concurrency=process_concurrency, retries=retries,
+            process_concurrency=process_concurrency,
+            retries=retries,
             update_count=update_count,
-            transaction_timeout=transaction_timeout, commit=commit,
-            durability=durability, sync=sync, num_threads=num_threads,
+            commit=commit,
+            sync=sync,
+            num_threads=num_threads,
             record_fail=record_fail, defer=defer)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
