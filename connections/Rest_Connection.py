@@ -315,7 +315,6 @@ class RestConnection(object):
 
     def _http_request(self, api, method='GET', params='', headers=None,
                       timeout=60):
-        api = api.replace("//", "/")
         if not headers:
             headers = self._create_headers()
         if CbServer.use_https:
