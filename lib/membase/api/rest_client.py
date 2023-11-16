@@ -639,6 +639,7 @@ class RestConnection(object):
 
     def _http_request(self, api, method='GET', params='', headers=None,
                       timeout=300):
+        api = api.replace("//", "/")
         if not headers:
             headers = self._create_headers()
         if CbServer.use_https:
@@ -2176,7 +2177,7 @@ class RestConnection(object):
         return status
 
     def set_data_path(self, data_path=None, index_path=None, cbas_path=[]):
-        end_point = '/nodes/self/controller/settings'
+        end_point = 'nodes/self/controller/settings'
         api = self.baseUrl + end_point
         set_path = False
         from urllib3._collections import HTTPHeaderDict
