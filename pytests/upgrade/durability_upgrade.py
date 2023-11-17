@@ -825,7 +825,7 @@ class UpgradeTests(UpgradeBase):
                     transaction_timeout=self.transaction_timeout,
                     commit=commit_trans,
                     durability=self.durability_level,
-                    sync=self.sync, defer=self.defer,
+                    sync=self.sync,
                     retries=0)
                 self.task_manager.get_task_result(trans_update_task)
 
@@ -888,7 +888,7 @@ class UpgradeTests(UpgradeBase):
             transaction_timeout=self.transaction_timeout,
             commit=True,
             durability=self.durability_level,
-            sync=self.sync, defer=self.defer,
+            sync=self.sync,
             retries=0)
         self.task_manager.get_task_result(trans_task)
 

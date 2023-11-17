@@ -371,7 +371,7 @@ class IsolationDocTest(ClusterSetup):
             transaction_timeout=self.transaction_timeout,
             commit=self.transaction_commit,
             durability=self.durability_level,
-            sync=self.sync, defer=self.defer)
+            sync=self.sync)
 
         self.bucket_util._run_compaction(self.cluster, number_of_times=20)
 
@@ -419,7 +419,7 @@ class IsolationDocTest(ClusterSetup):
             transaction_timeout=self.transaction_timeout,
             commit=True,
             durability=self.durability_level,
-            sync=self.sync, defer=self.defer,
+            sync=self.sync,
             retries=0)
         self.task_manager.get_task_result(trans_task)
 
@@ -447,7 +447,7 @@ class IsolationDocTest(ClusterSetup):
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
                 durability=self.durability_level,
-                sync=self.sync, defer=self.defer,
+                sync=self.sync,
                 retries=0)
             self.task_manager.get_task_result(trans_task)
 
@@ -473,7 +473,7 @@ class IsolationDocTest(ClusterSetup):
                 transaction_timeout=self.transaction_timeout,
                 commit=False,
                 durability=self.durability_level,
-                sync=self.sync, defer=self.defer,
+                sync=self.sync,
                 retries=0)
             self.task_manager.get_task_result(trans_task)
 
@@ -522,7 +522,7 @@ class IsolationDocTest(ClusterSetup):
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
                 durability=self.durability_level,
-                sync=self.sync, defer=self.defer,
+                sync=self.sync,
                 retries=0)
             trans_task_2 = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets,
@@ -534,7 +534,7 @@ class IsolationDocTest(ClusterSetup):
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
                 durability=self.durability_level,
-                sync=self.sync, defer=self.defer,
+                sync=self.sync,
                 retries=0)
             self.task_manager.get_task_result(trans_task_1)
             self.task_manager.get_task_result(trans_task_2)
@@ -554,7 +554,7 @@ class IsolationDocTest(ClusterSetup):
             transaction_timeout=self.transaction_timeout,
             commit=True,
             durability=self.durability_level,
-            sync=self.sync, defer=self.defer,
+            sync=self.sync,
             retries=1)
         # Rollback transaction
         trans_task_2 = self.task.async_load_gen_docs_atomicity(
@@ -567,7 +567,7 @@ class IsolationDocTest(ClusterSetup):
             transaction_timeout=self.transaction_timeout,
             commit=False,
             durability=self.durability_level,
-            sync=self.sync, defer=self.defer,
+            sync=self.sync,
             retries=0)
 
         self.sleep(3, "Wait for transactions to start")

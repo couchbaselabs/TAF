@@ -6530,7 +6530,7 @@ class Atomicity(Task):
                  timeout_secs=5, compression=None,
                  process_concurrency=8, print_ops_rate=True, retries=5,
                  update_count=1, commit=True, sync=True, num_threads=5,
-                 record_fail=False, defer=False):
+                 record_fail=False):
         super(Atomicity, self).__init__("AtomicityDocLoadTask_%s_%s_%s_%s"
                                         % (op_type, generator[0].start,
                                            generator[0].end, time.time()))
@@ -6539,7 +6539,6 @@ class Atomicity(Task):
         self.cluster = cluster
         self.commit = commit
         self.record_fail = record_fail
-        self.defer = defer
         self.num_docs = num_threads
         self.exp = exp
         self.flag = flag
@@ -6612,7 +6611,7 @@ class Atomicity(Task):
             task = self.Loader(self.cluster, self.bucket[i], self.clients,
                                generators[i], self.op_type,
                                self.exp, self.num_docs, self.update_count,
-                               self.defer, self.sync, self.record_fail,
+                               self.sync, self.record_fail,
                                flag=self.flag,
                                persist_to=self.persist_to,
                                replicate_to=self.replicate_to,
@@ -6637,7 +6636,7 @@ class Atomicity(Task):
 
         def __init__(self, cluster, bucket, clients,
                      generator, op_type, exp,
-                     num_docs, update_count, defer, sync, record_fail,
+                     num_docs, update_count, sync, record_fail,
                      flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, timeout_secs=5,
                      compression=None, retries=5, instance_num=0,
@@ -6670,7 +6669,6 @@ class Atomicity(Task):
             self.instance = instance_num
             self.transaction_app = transaction_app
             self.commit = commit
-            self.defer = defer
             self.clients = clients
             self.bucket = bucket
             self.exp_unit = "seconds"
@@ -6785,32 +6783,6 @@ class Atomicity(Task):
                         # self.test_log.warning("Wait for txn to clean up")
                         # time.sleep(60)
 
-                if self.defer:
-                    self.test_log.info("Commit/rollback deffered transaction")
-                    self.retries = 5
-                    if op_type != "create":
-                        commit = self.commit
-                    for encoded in self.encoding:
-                        err = self.transaction_app.DefferedTransaction(
-                            self.clients[0][0].cluster,
-                            commit, encoded)
-                        if err:
-                            while self.retries > 0:
-                                if SDKException.DurabilityImpossibleException \
-                                        in str(err):
-                                    self.retries -= 1
-                                    self.test_log.info(
-                                        "Retrying due to D_Impossible seen during deferred-transaction")
-                                    # sleep(60)
-                                    err = self.transaction_app.DefferedTransaction(
-                                        self.clients[0][0].cluster,
-                                        self.commit, encoded)
-                                    if err:
-                                        continue
-                                    break
-                                else:
-                                    exception = err
-                                    break
                 if exception:
                     if self.record_fail:
                         self.all_keys = list()
@@ -6851,39 +6823,21 @@ class Atomicity(Task):
         def transaction_load(self, doc, commit=True, update_keys=[],
                              op_type="create"):
             err = None
-            if self.defer:
-                if op_type == "create":
-                    ret = self.transaction_app.DeferTransaction(
-                        self.clients[0][0].cluster,
-                        self.bucket, doc, update_keys, [],
-                        self.update_count)
-                elif op_type == "update":
-                    ret = self.transaction_app.DeferTransaction(
-                        self.clients[0][0].cluster,
-                        self.bucket, [], doc, [],
-                        self.update_count)
-                elif op_type == "delete":
-                    ret = self.transaction_app.DeferTransaction(
-                        self.clients[0][0].cluster,
-                        self.bucket, [], [], doc,
-                        self.update_count)
-                err = ret.getT2()
-            else:
-                if op_type == "create":
-                    err = self.transaction_app.RunTransaction(
-                        self.clients[0][0].cluster,
-                        self.bucket, doc, update_keys, [],
-                        commit, self.sync, self.update_count)
-                elif op_type == "update":
-                    err = self.transaction_app.RunTransaction(
-                        self.clients[0][0].cluster,
-                        self.bucket, [], doc, [],
-                        commit, self.sync, self.update_count)
-                elif op_type == "delete":
-                    err = self.transaction_app.RunTransaction(
-                        self.clients[0][0].cluster,
-                        self.bucket, [], [], doc,
-                        commit, self.sync, self.update_count)
+            if op_type == "create":
+                err = self.transaction_app.RunTransaction(
+                    self.clients[0][0].cluster,
+                    self.bucket, doc, update_keys, [],
+                    commit, self.sync, self.update_count)
+            elif op_type == "update":
+                err = self.transaction_app.RunTransaction(
+                    self.clients[0][0].cluster,
+                    self.bucket, [], doc, [],
+                    commit, self.sync, self.update_count)
+            elif op_type == "delete":
+                err = self.transaction_app.RunTransaction(
+                    self.clients[0][0].cluster,
+                    self.bucket, [], [], doc,
+                    commit, self.sync, self.update_count)
             if err:
                 if self.record_fail:
                     self.all_keys = list()
@@ -6896,8 +6850,6 @@ class Atomicity(Task):
                     self.transaction_load(doc, commit, update_keys, op_type)
                 # else:
                 #     exception = err
-            elif self.defer:
-                self.encoding.append(ret.getT1())
 
         def __chunks(self, l, n):
             """Yield successive n-sized chunks from l."""

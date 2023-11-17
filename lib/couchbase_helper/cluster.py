@@ -365,7 +365,6 @@ class ServerTasks(object):
                                       update_count=1, transaction_timeout=5,
                                       commit=True, durability=0, sync=True,
                                       num_threads=5, record_fail=False,
-                                      defer=False,
                                       scope=CbServer.default_scope,
                                       collection=CbServer.default_collection,
                                       start_task=True,
@@ -408,7 +407,7 @@ class ServerTasks(object):
             commit=commit,
             sync=sync,
             num_threads=num_threads,
-            record_fail=record_fail, defer=defer)
+            record_fail=record_fail)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task

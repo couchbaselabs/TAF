@@ -254,7 +254,7 @@ class RebalanceDurability(RebalanceBaseTest):
                     update_count=self.update_count,
                     transaction_timeout=self.transaction_timeout,
                     commit=True, durability=self.durability_level, sync=True,
-                    num_threads=1, record_fail=True, defer=self.defer))
+                    num_threads=1, record_fail=True))
                 self.num_items += num_of_docs_to_insert
                 def_bucket.scopes[self.scope_name] \
                     .collections[self.collection_name] \
@@ -343,7 +343,7 @@ class RebalanceDurability(RebalanceBaseTest):
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
                 commit=True, durability=self.durability_level, sync=True,
-                num_threads=1, record_fail=True, defer=self.defer))
+                num_threads=1, record_fail=True))
         else:
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_create, "create", exp=0,

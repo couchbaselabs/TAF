@@ -556,7 +556,7 @@ class CollectionsSuccessTests(CollectionBase):
             transaction_timeout=self.transaction_timeout,
             commit=self.transaction_commit,
             durability=self.durability_level,
-            sync=True, defer=self.defer,
+            sync=True,
             start_task=False)
 
         if transaction_time == "before_collection_crud":
