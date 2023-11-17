@@ -398,12 +398,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.log_setup_status("OnPremBaseTest", "finished")
 
     def initialize_cluster(self, cluster_name, cluster, services=None,
-                           services_mem_quota_percent=None,
-                           use_rest_reset=True):
-        if use_rest_reset:
-            self.node_utils.reset_cluster_nodes(cluster)
-        else:
-            self.node_utils.reset_nodes_lt_7_6(self.cluster_util, cluster)
+                           services_mem_quota_percent=None):
+        self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
         self.cluster_util.wait_for_ns_servers_or_assert(cluster.servers)
         self.sleep(5, "Wait for nodes to become ready after reset")
 

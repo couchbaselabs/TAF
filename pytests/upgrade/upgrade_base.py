@@ -174,8 +174,7 @@ class UpgradeBase(BaseTestCase):
                 if not self.skip_cluster_reset:
                     self.initialize_cluster(
                         cluster_name, cluster, services=None,
-                        services_mem_quota_percent=mem_quota_percent,
-                        use_rest_reset=False)
+                        services_mem_quota_percent=mem_quota_percent)
                 else:
                     self.quota = ""
                 # Set this unconditionally
