@@ -925,9 +925,11 @@ class GoldfishE2E(GoldFishBaseTest):
             cluster.jobs.put((
                 standalone_loader.crud_on_standalone_collection,
                 {'cluster': cluster, 'collection_name': standalone_collection.name,
-                 'dataverse_name': standalone_collection.dataverse_name, 'target_num_docs': 10000,
-                 'time_for_crud_in_mins': 120}
-            ))
+                 'dataverse_name': standalone_collection.dataverse_name,
+                 'target_num_docs': 10000, 'time_for_crud_in_mins': 120,
+                 "where_clause_for_delete_op": "alias.id in (SELECT VALUE "
+                                               "x.id FROM {0} as x limit {1})",
+                 "use_alias": True}))
             cluster.jobs.put((self.perform_collection_crud,
                               {"cluster": cluster, "time_for_crud": 5, "timeout": 120}))
             cluster.jobs.put((self.run_queries_on_collections,

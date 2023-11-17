@@ -3398,19 +3398,13 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         except Exception as err:
             self.log.error(str(err))
 
-    def load_doc_to_standalone_collection(self, cluster, collection_name, dataverse_name, no_of_docs,
-                                          document_size=256000, batch_size=25, max_concurrent_batches=3):
+    def load_doc_to_standalone_collection(
+            self, cluster, collection_name, dataverse_name, no_of_docs,
+            document_size=256000, batch_size=25, max_concurrent_batches=3):
         """
         Load documents to a standalone collection.
         """
         start = time.time()
-        document = []
-
-        def insert_batch(docs):
-            try:
-                self.insert_into_standalone_collection(cluster, collection_name, docs, dataverse_name)
-            except Exception as err:
-                self.log.error(str(err))
 
         with concurrent.futures.ThreadPoolExecutor(max_concurrent_batches) as executor:
             for i in range(0, no_of_docs, batch_size):
@@ -3418,18 +3412,27 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 batch_end = min(i + batch_size, no_of_docs)
                 futures = executor.map(self.generate_docs, [document_size] * (batch_end - batch_start))
                 batch_docs = list(futures)
-                document.extend(batch_docs)
 
-                if len(document) >= 100:
-                    insert_batch(document)
-                document = []
-
-        if document:
-            insert_batch(document)
+                retry_count = 0
+                while retry_count < 3:
+                    result = self.insert_into_standalone_collection(
+                        cluster, collection_name, batch_docs, dataverse_name)
+                    if result:
+                        break
+                    elif retry_count == 2:
+                        self.log.error("Error while inserting docs in "
+                                       "collection {}".format(
+                            CBASHelper.format_name(dataverse_name,
+                                                   collection_name)))
+                        return False
+                    else:
+                        retry_count += 1
 
         end = time.time()
         time_spent = end - start
-        self.log.info("Took {0} seconds to insert {1} docs".format(time_spent, no_of_docs))
+        self.log.info("Took {0} seconds to insert {1} docs".format(
+            time_spent, no_of_docs))
+        return True
 
     def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None, username=None,
                                           password=None, analytics_timeout=300, timeout=300):
@@ -3471,7 +3474,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 CBASHelper.format_name(collection_name))
         else:
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
-            cmd += "({0});".format(new_item)
+        cmd += "({0});".format(new_item)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
@@ -3483,9 +3486,10 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return True
 
-    def delete_from_standalone_collection(self, cluster, collection_name,
-                                          dataverse_name=None, username=None, password=None,
-                                          analytics_timeout=300, timeout=300):
+    def delete_from_standalone_collection(
+            self, cluster, collection_name, dataverse_name=None,
+            where_clause=None, use_alias=False, username=None, password=None,
+            analytics_timeout=300, timeout=300):
         """
         Query to delete from standalone collection
         """
@@ -3497,7 +3501,12 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
 
-        cmd += "WHERE quaters={0}".format(random.randint(1, 20))
+        if use_alias:
+            cmd += "as alias "
+
+        if where_clause:
+            cmd += "WHERE {}".format(where_clause)
+
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
@@ -3532,52 +3541,112 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 results = cbas_helper.get_json(json_data=results)
                 return random.choice(results)["id"]
 
-    def crud_on_standalone_collection(self, cluster, collection_name, dataverse_name=None, target_num_docs=100000,
-                                      username=None, password=None, time_for_crud_in_mins=None, num_buffer=500,
-                                      insert_percentage=0.7, upsert_percentage=0.1):
+    def crud_on_standalone_collection(
+            self, cluster, collection_name, dataverse_name=None,
+            target_num_docs=100000, time_for_crud_in_mins=1,
+            insert_percentage=10, upsert_percentage=80,
+            delete_percentage=10, where_clause_for_delete_op=None,
+            doc_size=256000, use_alias=False):
         """
         Perform crud on standlaone collection
         """
-        start_time = time.time()
+        end_time = time.time() + time_for_crud_in_mins * 60
 
-        collection_full_name = "{0}.{1}".format(CBASHelper.format_name(dataverse_name),
-                                                CBASHelper.format_name(collection_name))
+        collection_full_name = "{0}.{1}".format(
+            CBASHelper.format_name(dataverse_name),
+            CBASHelper.format_name(collection_name))
 
-        while time.time() - start_time < time_for_crud_in_mins * 60:
-            random_number = random.random()
-            if random_number < insert_percentage:
-                self.log.info("Inserting documents in collection: {0}".format(collection_full_name))
-                self.insert_into_standalone_collection(cluster, collection_name,
-                                                       self.generate_docs(random.randint(1, num_buffer)),
-                                                       dataverse_name)
-            if random_number < insert_percentage + upsert_percentage:
-                self.log.info("Upserting documents in collection: {0}".format(collection_full_name))
-                self.upsert_into_standalone_collection(cluster, collection_name,
-                                                       self.generate_docs(random.randint(1, num_buffer)),
-                                                       dataverse_name)
-            else:
-                self.log.info("Deleting documents in collection: {0}".format(collection_full_name))
-                self.delete_from_standalone_collection(cluster, collection_name, dataverse_name)
+        current_docs_count, _ = self.get_num_items_in_cbas_dataset(
+            cluster, collection_full_name)
 
-            current_docs_count = self.get_num_items_in_cbas_dataset(cluster, collection_full_name)
+        # First insert target number of docs/
+        while current_docs_count < target_num_docs:
+            if not self.load_doc_to_standalone_collection(
+                    cluster, collection_name, dataverse_name,
+                    target_num_docs, doc_size):
+                self.log.error("Error while inserting docs in "
+                               "collection {}".format(collection_full_name))
+                return False
+            current_docs_count, _ = self.get_num_items_in_cbas_dataset(
+                cluster, collection_full_name)
 
-            if target_num_docs > num_buffer and current_docs_count[0] < target_num_docs - num_buffer:
-                count = 0
-                self.log.info("Inserting documents in collection: {0}".format(collection_full_name))
-                while self.get_num_items_in_cbas_dataset(cluster, collection_full_name)[0] \
-                        < target_num_docs and count < 5:
-                    self.insert_into_standalone_collection(cluster, collection_name,
-                                                           self.generate_docs(random.randint(1, num_buffer * 2)),
-                                                           dataverse_name)
-                    count = count + 1
+        # Perform CRUD
+        while time.time() < end_time:
 
-            elif current_docs_count[0] > target_num_docs + num_buffer:
-                self.log.info("Deleting documents in collection: {0}".format(collection_full_name))
-                while self.get_num_items_in_cbas_dataset(cluster, collection_full_name)[0] > target_num_docs:
-                    self.delete_from_standalone_collection(cluster, collection_name, dataverse_name)
+            operation = None
+            weights = [insert_percentage, upsert_percentage, delete_percentage]
+            total_weight = sum(weights)
+            random_num = random.uniform(0, total_weight)
+            current_weight = 0
+
+            for op, weight in zip(["insert", "upsert", "delete"], weights):
+                current_weight += weight
+                if current_weight >= random_num:
+                    operation = op
+                    break
+
+            if operation == "delete":
+                self.log.info("Deleting documents in collection: {0}".format(
+                    collection_full_name))
+                if not self.delete_from_standalone_collection(
+                        cluster, collection_name, dataverse_name,
+                        where_clause_for_delete_op.format(
+                            collection_full_name, 5), use_alias):
+                    self.log.error(
+                        "Error while deleting docs in collection {"
+                        "}".format(collection_full_name))
+                    return False
+
+            elif operation == "insert":
+                self.log.info("Inserting documents in collection: {0}".format(
+                    collection_full_name))
+                if not self.insert_into_standalone_collection(
+                        cluster, collection_name,
+                        [self.generate_docs(doc_size)], dataverse_name):
+                    self.log.error(
+                        "Error while inserting docs in collection {"
+                        "}".format(collection_full_name))
+                    return False
+
+            elif operation == "upsert":
+                self.log.info("Upserting documents in collection: {0}".format(
+                    collection_full_name))
+                if not self.upsert_into_standalone_collection(
+                    cluster, collection_name,
+                        [self.generate_docs(doc_size)], dataverse_name):
+                    self.log.error(
+                        "Error while upserting docs in collection {"
+                        "}".format(collection_full_name))
+                    return False
+
+        current_docs_count, _ = self.get_num_items_in_cbas_dataset(
+            cluster, collection_full_name)
+
+        # Make sure final number of docs are equal to target_num_docs
+        while current_docs_count > target_num_docs:
+            num_docs_to_delete = current_docs_count - target_num_docs
+            if not self.delete_from_standalone_collection(
+                    cluster, collection_name, dataverse_name,
+                    where_clause_for_delete_op.format(
+                        collection_full_name, num_docs_to_delete), use_alias):
+                self.log.error(
+                    "Error while deleting docs in collection {"
+                    "}".format(collection_full_name))
+                return False
+            current_docs_count -= num_docs_to_delete
+
+        if current_docs_count < target_num_docs:
+            num_docs_to_insert = target_num_docs - current_docs_count
+            if not self.load_doc_to_standalone_collection(
+                    cluster, collection_name, dataverse_name,
+                    num_docs_to_insert, doc_size):
+                self.log.error("Error while inserting docs in "
+                               "collection {}".format(collection_full_name))
+                return False
+        return True
 
 
-class StandAlone_Collection_Util(External_Dataset_Util):
+class StandAlone_Collection_Util(StandaloneCollectionLoader):
 
     def __init__(self, server_task=None, run_query_using_sdk=True):
         """
@@ -3641,7 +3710,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
         :param analytics_timeout int, analytics query timeout
         :return True/False
         """
-        cmd = "COPY "
+        cmd = "COPY INTO "
         if dataverse_name:
             cmd += "{0}.{1} ".format(
                 CBASHelper.format_name(dataverse_name),
@@ -3657,7 +3726,7 @@ class StandAlone_Collection_Util(External_Dataset_Util):
                                                external_link_name))
 
         if path_on_aws_bucket:
-            cmd += "USING \"{0}\" ".format(path_on_aws_bucket)
+            cmd += "PATH \"{0}\" ".format(path_on_aws_bucket)
 
         with_parameters = dict()
         with_parameters["format"] = file_format
