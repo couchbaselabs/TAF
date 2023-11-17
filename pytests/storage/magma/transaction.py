@@ -11,7 +11,7 @@ from reactor.util.function import Tuples
 from com.couchbase.test.docgen import WorkLoadSettings, \
     DocumentGenerator, \
     DocRange
-from com.couchbase.test.loadgen import WorkLoadGenerate
+from com.couchbase.test.loadgen import TransactionWorkLoadGenerate, WorkLoadGenerate
 from com.couchbase.test.sdk import Server
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.taskmanager import TaskManager

@@ -38,6 +38,7 @@ import com.couchbase.transactions.util.TransactionMock;
 import com.couchbase.client.core.transaction.config.CoreTransactionsConfig;
 import com.couchbase.client.core.cnc.events.transaction.TransactionEvent;
 import com.couchbase.client.core.cnc.events.transaction.TransactionCleanupAttemptEvent;
+import com.couchbase.client.core.error.transaction.internal.CoreTransactionFailedException;
 
 import com.couchbase.client.java.transactions.ReactiveTransactions;
 import com.couchbase.client.java.transactions.TransactionResult;
@@ -507,7 +508,7 @@ public class SimpleTransaction {
                     }
                     // commit or rollback the docs
                     if (!commit) {
-                        // throw new Exception("Rollback trigger exception");
+                        throw new CoreTransactionFailedException(new Exception("Rollback exception"), null, "Test", "Rollback");
                     }
                 });
 
