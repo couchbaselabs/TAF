@@ -5,6 +5,7 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+
 from SecurityLib.rbac import RbacUtil
 from Cb_constants import constants, CbServer, DocLoading
 from basetestcase import ClusterSetup
@@ -18,6 +19,7 @@ from gsiLib.gsiHelper import GsiHelper
 
 from mc_bin_client import MemcachedClient, MemcachedError
 from platform_constants.os_constants import Linux
+from constants.sdk_constants.java_client import SDKConstants
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -216,7 +218,7 @@ class basic_ops(ClusterSetup):
         ignore_exceptions = list()
         retry_exceptions = list()
         supported_d_levels = self.bucket_util.get_supported_durability_levels(
-            minimum_level=Bucket.DurabilityLevel.MAJORITY)
+            minimum_level=SDKConstants.DurabilityLevel.MAJORITY)
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -1298,7 +1300,7 @@ class basic_ops(ClusterSetup):
         create_thread = Thread(
             target=client_1.crud,
             args=[DocLoading.Bucket.DocOps.CREATE, self.key, doc_val],
-            kwargs={"durability": Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+            kwargs={"durability": SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY,
                     "timeout": 15})
         create_thread.start()
         self.sleep(5, "Wait to make sure prepare is generated")
@@ -1452,7 +1454,7 @@ class basic_ops(ClusterSetup):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
 
-        self.durability_level = Bucket.DurabilityLevel.MAJORITY
+        self.durability_level = SDKConstants.DurabilityLevel.MAJORITY
         active_vbs = cb_stat.vbucket_list(bucket.name,
                                           vbucket_type="active")
         doc_gen = doc_generator(self.key, 0, 10000,
@@ -1707,7 +1709,7 @@ class basic_ops(ClusterSetup):
             DocLoading.Bucket.DocOps.UPDATE, 0,
             batch_size=self.batch_size,
             process_concurrency=10,
-            durability=Bucket.DurabilityLevel.MAJORITY,
+            durability=SDKConstants.DurabilityLevel.MAJORITY,
             timeout_secs=self.sdk_timeout,
             scope=self.scope_name,
             collection=self.collection_name,
@@ -1763,7 +1765,7 @@ class basic_ops(ClusterSetup):
                         for vb_num in range(0, self.cluster.vbuckets)])
         index = -1
         req_key_for_vb = doc_keys.keys()
-        d_level = Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
+        d_level = SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         param = "warmup_backfill_scan_chunk_duration"
         param_val = 0

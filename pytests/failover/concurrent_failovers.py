@@ -9,6 +9,7 @@ from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
+from constants.sdk_constants.java_client import SDKConstants
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -121,15 +122,15 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         doc_key_size = 8
         if self.key_size is not None:
             doc_key_size = self.key_size
-        d_level = Bucket.DurabilityLevel.NONE
+        d_level = SDKConstants.DurabilityLevel.NONE
         if self.num_replicas != Bucket.ReplicaNum.THREE:
             random.seed(round(time()*1000))
             # Since durability is not supported with replicas=3
             d_level = choice([
-                Bucket.DurabilityLevel.NONE,
-                Bucket.DurabilityLevel.MAJORITY,
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY])
+                SDKConstants.DurabilityLevel.NONE,
+                SDKConstants.DurabilityLevel.MAJORITY,
+                SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY])
         return {
             # Scope/Collection ops params
             MetaCrudParams.COLLECTIONS_TO_DROP: 3,
@@ -599,11 +600,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             for bucket in self.cluster.buckets:
                 # If we have bucket_replica=3, force use level=NONE
                 if bucket.replicaNumber == Bucket.ReplicaNum.THREE:
-                    durability_val = Bucket.DurabilityLevel.NONE
+                    durability_val = SDKConstants.DurabilityLevel.NONE
                     break
                 # If we have ephemeral bucket, force use level=MAJORITY
                 if bucket.bucketType == Bucket.Type.EPHEMERAL:
-                    durability_val = Bucket.DurabilityLevel.MAJORITY
+                    durability_val = SDKConstants.DurabilityLevel.MAJORITY
             self.__perform_doc_ops(durability=durability_val)
 
     def test_split_brain(self):

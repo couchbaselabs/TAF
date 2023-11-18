@@ -1,7 +1,6 @@
 from random import choice
 from threading import Thread, Lock
 
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
@@ -10,6 +9,7 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from constants.sdk_constants.java_client import SDKConstants
 
 from com.couchbase.test.transactions import SimpleTransaction as Transaction
 from reactor.util.function import Tuples
@@ -243,13 +243,13 @@ class OutOfOrderReturns(ClusterSetup):
         self.validate_test_failure()
 
     def __durability_level(self):
-        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
+        if self.durability_level == SDKConstants.DurabilityLevel.MAJORITY:
             return 1
         elif self.durability_level \
-                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             return 2
         elif self.durability_level \
-                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+                == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
             return 3
         else:
             return 0

@@ -1,4 +1,3 @@
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
@@ -6,6 +5,7 @@ from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator_for_edit
 from couchbase_helper.durability_helper import DurabilityHelper
 from epengine.durability_base import DurabilityTestsBase
+from constants.sdk_constants.java_client import SDKConstants
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -543,8 +543,8 @@ class BasicOps(DurabilityTestsBase):
         """
 
         if self.durability_level.upper() in [
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]:
+                SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY]:
             self.log.critical("Test not valid for persistence durability")
             return
 

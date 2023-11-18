@@ -11,6 +11,7 @@ from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from constants.sdk_constants.java_client import SDKConstants
 
 
 class CollectionDurabilityTests(CollectionBase):
@@ -43,13 +44,13 @@ class CollectionDurabilityTests(CollectionBase):
 
     def __get_random_durability_level(self):
         supported_d_levels = [d_level for d_level in self.supported_d_levels]
-        supported_d_levels.remove(Bucket.DurabilityLevel.NONE)
+        supported_d_levels.remove(SDKConstants.DurabilityLevel.NONE)
         return choice(supported_d_levels)
 
     def __get_d_level_and_error_to_simulate(self):
         self.simulate_error = CouchbaseError.STOP_PERSISTENCE
         self.durability_level = self.__get_random_durability_level()
-        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
+        if self.durability_level == SDKConstants.DurabilityLevel.MAJORITY:
             self.simulate_error = CouchbaseError.STOP_MEMCACHED
         self.log.info("Testing with durability_level=%s, simulate_error=%s"
                       % (self.durability_level, self.simulate_error))
@@ -250,7 +251,7 @@ class CollectionDurabilityTests(CollectionBase):
                                     node=server)
             target_vb_type = "replica"
             if self.durability_level \
-                    == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                    == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
                 target_vb_type = "active"
             target_vbs = cbstats.vbucket_list(self.bucket.name, target_vb_type)
             doc_load_spec = dict()
@@ -366,7 +367,7 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="replica")
 
         if self.durability_level \
-                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             target_vbs = active_vbs
             target_vbuckets = list()
             for target_node in target_nodes:
@@ -525,7 +526,7 @@ class CollectionDurabilityTests(CollectionBase):
 
         target_vbs = replica_vbs
         if self.durability_level \
-                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             target_vbs = active_vbs
             target_vbuckets = list()
             for target_node in target_nodes:
@@ -704,7 +705,7 @@ class CollectionDurabilityTests(CollectionBase):
 
         target_vbs = replica_vbs
         if self.durability_level \
-                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             target_vbs = active_vbs
             target_vbuckets = list()
             for target_node in target_nodes:
@@ -766,7 +767,7 @@ class CollectionDurabilityTests(CollectionBase):
         # This is to support both sync-write and non-sync-writes
         tem_durability = self.durability_level
         if self.with_non_sync_writes:
-            tem_durability = Bucket.DurabilityLevel.NONE
+            tem_durability = SDKConstants.DurabilityLevel.NONE
 
         # Perform specified action
         for node in target_nodes:

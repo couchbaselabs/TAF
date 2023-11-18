@@ -48,7 +48,7 @@ class CreateBucketTests(BucketDurabilityBase):
 
             output = cb_cli.create_bucket(bucket_dict, wait=True)
             if self.num_replicas == Bucket.ReplicaNum.THREE \
-                    and d_level != Bucket.DurabilityLevel.NONE:
+                    and d_level != SDKConstants.DurabilityLevel.NONE:
                 if err_for_three_replicas not in str(output):
                     self.log_failure("Bucket created with replica=3")
                 else:
@@ -107,7 +107,7 @@ class CreateBucketTests(BucketDurabilityBase):
                                                wait_for_warmup=True)
                 self.get_vbucket_type_mapping(bucket_obj.name)
                 if self.num_replicas == Bucket.ReplicaNum.THREE:
-                    if d_level != Bucket.DurabilityLevel.NONE:
+                    if d_level != SDKConstants.DurabilityLevel.NONE:
                         self.log_failure(log_failure_msg)
                 elif d_level not in self.possible_d_levels[self.bucket_type]:
                     self.log_failure("Create succeeded for %s bucket for "
@@ -152,7 +152,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
         create_desc = "Creating %s bucket with level 'None'" % self.bucket_type
 
-        b_durability = Bucket.DurabilityLevel.NONE
+        b_durability = SDKConstants.DurabilityLevel.NONE
         verification_dict = self.get_cb_stat_verification_dict()
         bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
 
@@ -185,7 +185,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         """
         for d_level in self.get_supported_durability_for_bucket():
             # Avoid creating bucket with durability=None
-            if d_level == Bucket.DurabilityLevel.NONE:
+            if d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
             step_desc = "Creating %s bucket with level '%s'" \
@@ -224,7 +224,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         sub_doc_vals = ["val_1", "val_2", "val_3", "val_4", "val_5"]
         for d_level in self.get_supported_durability_for_bucket():
             # Avoid creating bucket with durability=None
-            if d_level == Bucket.DurabilityLevel.NONE:
+            if d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
             step_desc = "Creating %s bucket with level '%s'" \
@@ -605,7 +605,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             doc_load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket_obj, doc_gen, "update",
-                durability=Bucket.DurabilityLevel.NONE,
+                durability=SDKConstants.DurabilityLevel.NONE,
                 timeout_secs=60,
                 start_task=False,
                 sdk_client_pool=self.sdk_client_pool)
@@ -632,7 +632,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                  % new_d_level)
             self.summary.add_step("Set bucket-durability=%s" % new_d_level)
 
-            if prev_d_level == Bucket.DurabilityLevel.NONE:
+            if prev_d_level == SDKConstants.DurabilityLevel.NONE:
                 if not doc_load_task.completed:
                     self.log_failure("Doc-op still pending for d_level 'NONE'")
             elif doc_load_task.completed:
@@ -849,7 +849,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
         for b_d_level in self.possible_d_levels[self.bucket_type]:
             # Skip of Bucket durability level 'None'
-            if b_d_level == Bucket.DurabilityLevel.NONE:
+            if b_d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
             verification_dict = self.get_cb_stat_verification_dict()
@@ -915,7 +915,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
                 self.summary.add_step(crud_desc)
                 old_cas = result["cas"]
-                if d_level == Bucket.DurabilityLevel.MAJORITY:
+                if d_level == SDKConstants.DurabilityLevel.MAJORITY:
                     self.sleep(1, "wait for vb stats to get updated")
             client.close()
 
@@ -923,7 +923,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         key, value = doc_gen.next()
 
         for d_level in self.possible_d_levels[self.bucket_type]:
-            if d_level == Bucket.DurabilityLevel.NONE:
+            if d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
             create_desc = "Create bucket with durability %s" % d_level
@@ -960,7 +960,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         """
 
         for d_level in self.possible_d_levels[self.bucket_type]:
-            if d_level == Bucket.DurabilityLevel.NONE:
+            if d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)

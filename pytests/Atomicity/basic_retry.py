@@ -4,10 +4,10 @@ Basic test cases with commit,rollback scenarios
 
 import threading
 
-from BucketLib.bucket import Bucket
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator
 from sdk_client3 import SDKClient
+from constants.sdk_constants.java_client import SDKConstants
 
 from com.couchbase.client.java.json import JsonObject
 from com.couchbase.test.transactions import SimpleTransaction as Transaction
@@ -35,13 +35,13 @@ class basic_ops(ClusterSetup):
         super(basic_ops, self).tearDown()
 
     def __durability_level(self):
-        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
+        if self.durability_level == SDKConstants.DurabilityLevel.MAJORITY:
             self.durability = 1
         elif self.durability_level \
-                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             self.durability = 2
         elif self.durability_level \
-                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+                == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
             self.durability = 3
         elif self.durability_level == "ONLY_NONE":
             self.durability = 4

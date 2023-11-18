@@ -34,7 +34,7 @@ from com.couchbase.client.core.error import \
     ServerOutOfMemoryException, \
     TemporaryFailureException, \
     TimeoutException
-from com.couchbase.client.core.msg.kv import DurabilityLevel
+from com.couchbase.client.core.msg.kv import DurabilityLevel as KVDurabilityLevel
 from com.couchbase.client.core.service import ServiceType
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.codec import RawBinaryTranscoder,\
@@ -74,7 +74,6 @@ from constants.sdk_constants.java_client import SDKConstants
 from global_vars import logger
 from sdk_utils.java_sdk import SDKOptions
 from sdk_exceptions import SDKException
-
 
 class SDKClientPool(object):
     """
@@ -318,7 +317,7 @@ class SDKClient(object):
             else:
                 t_cluster_env.transactionsConfig(
                     TransactionsConfig.durabilityLevel(
-                        DurabilityLevel.decodeFromManagementApi(
+                        KVDurabilityLevel.decodeFromManagementApi(
                             self.transaction_conf.durability)))
 
             # Set metadata-collection for storing transactional docs / subdocs

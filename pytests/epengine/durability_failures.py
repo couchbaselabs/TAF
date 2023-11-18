@@ -375,7 +375,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                    node=target_node)
 
         self.durability_level = \
-            Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
+            SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         half_of_num_items = max(int(self.num_items/2), 1)
         # Override the crud_batch_size
@@ -812,7 +812,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                    node=shell_conn)
 
         self.durability_level = \
-            Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
+            SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         # Override the crud_batch_size
         self.crud_batch_size = 5
@@ -1146,7 +1146,7 @@ class TimeoutTests(DurabilityTestsBase):
         vb_info = dict()
 
         self.durability_level = \
-            Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
+            SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         curr_time = int(time.time())
         expected_timeout = curr_time + self.sdk_timeout

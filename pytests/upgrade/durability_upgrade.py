@@ -11,6 +11,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams, MetaCo
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper, BucketDurability
 from membase.api.rest_client import RestConnection
+from constants.sdk_constants.java_client import SDKConstants
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from sdk_client3 import SDKClient, SDKClientPool
@@ -276,7 +277,7 @@ class UpgradeTests(UpgradeBase):
                 CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
                 CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
 
-                sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
+                sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = SDKConstants.DurabilityLevel.MAJORITY
 
                 ## Collections are dropped and re-created while the cluster is mixed mode ###
                 self.log.info("Performing collection ops in mixed mode cluster setting...")
@@ -489,7 +490,7 @@ class UpgradeTests(UpgradeBase):
             sync_load_spec = self.bucket_util.get_crud_template_from_package(self.sync_write_spec)
             CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
             CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
-            sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
+            sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = SDKConstants.DurabilityLevel.MAJORITY
 
             ### Collections are dropped and re-created while the cluster is mixed mode ###
             if "collections" in self.cluster_features \
@@ -557,7 +558,7 @@ class UpgradeTests(UpgradeBase):
         sync_load_spec = self.bucket_util.get_crud_template_from_package(self.sync_write_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
         CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
-        sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
+        sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = SDKConstants.DurabilityLevel.MAJORITY
         if "collections" in self.cluster_features \
                 and self.perform_collection_ops:
             sync_load_spec[MetaCrudParams.COLLECTIONS_TO_DROP] = 2
@@ -743,8 +744,8 @@ class UpgradeTests(UpgradeBase):
         possible_d_levels[Bucket.Type.MEMBASE] = \
             self.bucket_util.get_supported_durability_levels()
         possible_d_levels[Bucket.Type.EPHEMERAL] = [
-            Bucket.DurabilityLevel.NONE,
-            Bucket.DurabilityLevel.MAJORITY]
+            SDKConstants.DurabilityLevel.NONE,
+            SDKConstants.DurabilityLevel.MAJORITY]
         len_possible_d_levels = len(possible_d_levels[self.bucket_type]) - 1
 
         if not sync_write_support:
@@ -1556,7 +1557,7 @@ class UpgradeTests(UpgradeBase):
         CollectionBase.over_ride_doc_loading_template_params(self, sync_load_spec)
         CollectionBase.set_retry_exceptions(sync_load_spec, self.durability_level)
 
-        sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = Bucket.DurabilityLevel.MAJORITY
+        sync_load_spec[MetaCrudParams.DURABILITY_LEVEL] = SDKConstants.DurabilityLevel.MAJORITY
 
         ### Collections are dropped and re-created while the cluster is mixed mode ###
         self.log.info("Performing collection ops in mixed mode cluster setting...")

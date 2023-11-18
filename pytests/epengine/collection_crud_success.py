@@ -10,7 +10,7 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from error_simulation.disk_error import DiskError
 from remote.remote_util import RemoteMachineShellConnection
-
+from constants.sdk_constants.java_client import SDKConstants
 
 class CollectionsSuccessTests(CollectionBase):
     def setUp(self):
@@ -143,8 +143,8 @@ class CollectionsSuccessTests(CollectionBase):
         """
 
         if self.durability_level in [
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]:
+                SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY]:
             self.log.critical("Test not valid for persistence durability")
             return
 
@@ -804,8 +804,8 @@ class CollectionsSuccessTests(CollectionBase):
         """
 
         if self.durability_level.upper() in [
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]:
+                SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY]:
             self.log.critical("Test not valid for persistence durability")
             return
 

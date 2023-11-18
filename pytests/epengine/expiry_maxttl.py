@@ -12,6 +12,7 @@ from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from constants.sdk_constants.java_client import SDKConstants
 from table_view import TableView
 
 
@@ -615,7 +616,7 @@ class ExpiryMaxTTL(ClusterSetup):
         """
         def perform_sync_write():
             client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},
-                        durability=Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+                        durability=SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY,
                         timeout=60)
 
         doc_ttl = 5

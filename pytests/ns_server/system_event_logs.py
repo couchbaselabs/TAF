@@ -15,6 +15,7 @@ from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from SystemEventLogLib.ns_server_events import NsServerEvents
 from basetestcase import ClusterSetup
+from constants.sdk_constants.java_client import SDKConstants
 from cb_constants.system_event_log import NsServer, KvEngine
 from cb_tools.cb_collectinfo import CbCollectInfo
 from couchbase_helper.documentgenerator import doc_generator
@@ -24,7 +25,6 @@ from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Windows
 from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
-
 
 class SystemEventLogs(ClusterSetup):
     def setUp(self):
@@ -1334,8 +1334,8 @@ class SystemEventLogs(ClusterSetup):
             flush_enabled = choice([0, 1])
             if bucket_type == Bucket.Type.EPHEMERAL:
                 bucket_durability = choice(
-                    [BucketDurability[Bucket.DurabilityLevel.NONE],
-                     BucketDurability[Bucket.DurabilityLevel.MAJORITY]])
+                    [BucketDurability[SDKConstants.DurabilityLevel.NONE],
+                     BucketDurability[SDKConstants.DurabilityLevel.MAJORITY]])
             else:
                 bucket_durability = \
                     choice([value for _, value in BucketDurability.items()])

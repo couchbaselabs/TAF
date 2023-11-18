@@ -3,7 +3,6 @@ from datetime import timedelta
 from random import choice, randint, randrange
 from threading import Thread
 
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from bucket_collections.app.constants import global_vars
 from bucket_collections.app.constants.global_vars import sdk_clients
@@ -15,6 +14,7 @@ from bucket_collections.app.constants.user import \
     COUNTRY, COMMON_KEY, DAYS_BETWEEN_DATES_INT, GENDER, START_DATE, \
     FIRST_NAMES, LAST_NAMES
 from global_vars import logger
+from constants.sdk_constants.java_client import SDKConstants
 
 from com.couchbase.client.java.json import JsonObject
 from java.lang import Exception as Java_base_exception
@@ -97,7 +97,7 @@ class User(Thread):
             while retry <= User.max_retries:
                 result = client.crud(
                     DocLoading.Bucket.DocOps.CREATE, key, template,
-                    durability=Bucket.DurabilityLevel.MAJORITY,
+                    durability=SDKConstants.DurabilityLevel.MAJORITY,
                     timeout=10)
                 if result["status"] is False:
                     if SDKException.DurabilityImpossibleException \
@@ -120,7 +120,7 @@ class User(Thread):
 
         ticket_type = "normal"
         checkout_cart_collection = "checkout_cart"
-        d_level = Bucket.DurabilityLevel
+        d_level = SDKConstants.DurabilityLevel
         if [src_airport, dest_airport].count(None) == 0:
             ticket_type = "return"
 

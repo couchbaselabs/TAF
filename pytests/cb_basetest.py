@@ -10,6 +10,7 @@ from Jython_tasks.task_manager import TaskManager
 from SystemEventLogLib.Events import EventHelper
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
+from constants.sdk_constants.java_client import SDKConstants
 from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks
 from couchbase_helper.durability_helper import BucketDurability
@@ -56,7 +57,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.num_replicas = self.input.param("replicas",
                                              Bucket.ReplicaNum.ONE)
         self.bucket_durability_level = self.input.param(
-            "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
+            "bucket_durability", SDKConstants.DurabilityLevel.NONE).upper()
         self.active_resident_threshold = \
             int(self.input.param("active_resident_threshold", 100))
         self.compression_mode = \

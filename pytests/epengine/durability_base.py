@@ -12,7 +12,7 @@ from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
-
+from constants.sdk_constants.java_client import SDKConstants
 
 class DurabilityTestsBase(ClusterSetup):
     def setUp(self):
@@ -150,20 +150,20 @@ class BucketDurabilityBase(ClusterSetup):
                                      Bucket.Type.MEMCACHED]
 
         self.d_level_order = [
-            Bucket.DurabilityLevel.NONE,
-            Bucket.DurabilityLevel.MAJORITY,
-            Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-            Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]
+            SDKConstants.DurabilityLevel.NONE,
+            SDKConstants.DurabilityLevel.MAJORITY,
+            SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+            SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY]
 
         # Dict representing the possible levels supported by each bucket type
         self.possible_d_levels = dict()
         self.possible_d_levels[Bucket.Type.MEMBASE] = \
             self.bucket_util.get_supported_durability_levels()
         self.possible_d_levels[Bucket.Type.EPHEMERAL] = [
-            Bucket.DurabilityLevel.NONE,
-            Bucket.DurabilityLevel.MAJORITY]
+            SDKConstants.DurabilityLevel.NONE,
+            SDKConstants.DurabilityLevel.MAJORITY]
         self.possible_d_levels[Bucket.Type.MEMCACHED] = [
-            Bucket.DurabilityLevel.NONE]
+            SDKConstants.DurabilityLevel.NONE]
 
         # Dict to store the list of active/replica VBs in each node
         self.vbs_in_node = dict()
@@ -212,8 +212,8 @@ class BucketDurabilityBase(ClusterSetup):
 
     def get_supported_durability_for_bucket(self):
         if self.bucket_type == Bucket.Type.EPHEMERAL:
-            return [Bucket.DurabilityLevel.NONE,
-                    Bucket.DurabilityLevel.MAJORITY]
+            return [SDKConstants.DurabilityLevel.NONE,
+                    SDKConstants.DurabilityLevel.MAJORITY]
         return self.bucket_util.get_supported_durability_levels()
 
     def validate_durability_with_crud(
@@ -221,7 +221,7 @@ class BucketDurabilityBase(ClusterSetup):
             verification_dict,
             doc_start_index=0,
             num_items_to_load=1, op_type="create",
-            doc_durability=Bucket.DurabilityLevel.NONE):
+            doc_durability=SDKConstants.DurabilityLevel.NONE):
         """
         Common API to validate durability settings of the bucket is set
         correctly or not.
@@ -247,7 +247,7 @@ class BucketDurabilityBase(ClusterSetup):
 
         d_level_to_test = get_d_level_used()
         # Nothing to test for durability_level=None (async_write case)
-        if d_level_to_test == Bucket.DurabilityLevel.NONE:
+        if d_level_to_test == SDKConstants.DurabilityLevel.NONE:
             return
 
         self.log.info("Performing %s operation to validate d_level %s"

@@ -70,6 +70,7 @@ from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
     MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
+from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.tuq_generators import JsonGenerator
 from StatsLib.StatsOperations import StatsHelper
 
@@ -958,7 +959,7 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def perform_doc_loading(task_manager, loader_map, cluster, buckets=None,
-                            durability_level=Bucket.DurabilityLevel.NONE,
+                            durability_level=SDKConstants.DurabilityLevel.NONE,
                             maxttl=0, ttl_time_unit="seconds",
                             process_concurrency=1,
                             track_failures=True,
@@ -1739,15 +1740,15 @@ class BucketUtils(ScopeUtils):
         return rand_name
 
     @staticmethod
-    def get_supported_durability_levels(minimum_level=Bucket.DurabilityLevel.NONE):
+    def get_supported_durability_levels(minimum_level=SDKConstants.DurabilityLevel.NONE):
         """ Returns all the durability levels sorted by relative strength.
 
-        :param minimum_level: The minimum_level e.g. `Bucket.DurabilityLevel.None`.
+        :param minimum_level: The minimum_level e.g. `SDKConstants.DurabilityLevel.None`.
         """
-        levels = [Bucket.DurabilityLevel.NONE,
-                  Bucket.DurabilityLevel.MAJORITY,
-                  Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-                  Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]
+        levels = [SDKConstants.DurabilityLevel.NONE,
+                  SDKConstants.DurabilityLevel.MAJORITY,
+                  SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                  SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY]
 
         if minimum_level not in levels:
             raise ValueError("minimum_level must be in {}".format(levels))
@@ -2183,7 +2184,7 @@ class BucketUtils(ScopeUtils):
             storage=Bucket.StorageBackend.magma,
             eviction_policy=None,
             flush_enabled=Bucket.FlushBucket.DISABLED,
-            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
+            bucket_durability=BucketDurability[SDKConstants.DurabilityLevel.NONE],
             purge_interval=1,
             autoCompactionDefined="false",
             fragmentation_percentage=50,
@@ -2923,7 +2924,7 @@ class BucketUtils(ScopeUtils):
             storage={Bucket.StorageBackend.magma: 3,
                      Bucket.StorageBackend.couchstore: 0},
             compression_mode=Bucket.CompressionMode.ACTIVE,
-            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
+            bucket_durability=BucketDurability[SDKConstants.DurabilityLevel.NONE],
             ram_quota=None,
             bucket_rank=None,
             bucket_name=None,

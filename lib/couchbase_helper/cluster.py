@@ -13,6 +13,7 @@ from couchbase_helper.documentgenerator import doc_generator, \
 from global_vars import logger
 from sdk_client3 import SDKClient, TransactionConfig
 from BucketLib.BucketOperations import BucketHelper
+from constants.sdk_constants.java_client import SDKConstants
 
 """An API for scheduling tasks that run against Couchbase Server
 
@@ -215,7 +216,7 @@ class ServerTasks(object):
                 if durability.lower() == "none":
                     check_persistence = False
                     majority_value = 1
-                elif durability.upper() == Bucket.DurabilityLevel.MAJORITY:
+                elif durability.upper() == SDKConstants.DurabilityLevel.MAJORITY:
                     check_persistence = False
 
                 _task = jython_tasks.Durability(

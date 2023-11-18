@@ -1,6 +1,6 @@
-from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
+from constants.sdk_constants.java_client import SDKConstants
 from upgrade.upgrade_base import UpgradeBase
 
 

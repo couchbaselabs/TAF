@@ -22,6 +22,7 @@ from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
 from couchbase.test.docgen import DRConstants
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
+from constants.sdk_constants.java_client import SDKConstants
 from com.couchbase.client.core.error import ServerOutOfMemoryException,\
     DocumentExistsException, DocumentNotFoundException, TimeoutException
 from cb_tools.cbstats import Cbstats
@@ -847,13 +848,13 @@ class LMT(ServerlessOnPremBaseTest):
             self.num_items_per_collection -= (self.expiry_end - self.expiry_start)
 
     def __durability_level(self):
-        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
+        if self.durability_level == SDKConstants.DurabilityLevel.MAJORITY:
             self.durability = 1
         elif self.durability_level \
-                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             self.durability = 2
         elif self.durability_level \
-                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+                == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
             self.durability = 3
         else:
             self.durability = 5

@@ -8,6 +8,7 @@ from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from constants.sdk_constants.java_client import SDKConstants
 from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.durability_helper import BucketDurability
 from BucketLib.bucket import Bucket
@@ -233,7 +234,7 @@ class UpgradeBase(BaseTestCase):
                 if bucket.name == "bucket-1":
                     self.bucket_util.update_bucket_property(self.cluster.master,
                                     bucket,
-                                    bucket_durability=BucketDurability[Bucket.DurabilityLevel.MAJORITY])
+                                    bucket_durability=BucketDurability[SDKConstants.DurabilityLevel.MAJORITY])
 
         # Load initial async_write docs into the cluster
         self.PrintStep("Initial doc generation process starting...")

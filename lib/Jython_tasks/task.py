@@ -35,6 +35,7 @@ from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
     CBAS_Index, CBAS_UDF
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats
+from constants.sdk_constants.java_client import SDKConstants
 from collections_helper.collections_spec_constants import MetaConstants,MetaCrudParams
 from common_lib import sleep
 from couchbase_helper.document import DesignDocument
@@ -1855,7 +1856,7 @@ class Durability(Task):
                                 len(self.bucket.vbuckets) - 1)
                         nodes = [self.bucket.vbuckets[vBucket].master]
                         if self.durability \
-                                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+                                == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
                             nodes += self.bucket.vbuckets[vBucket].replica
                         count = 0
                         if self.op_type == 'create':

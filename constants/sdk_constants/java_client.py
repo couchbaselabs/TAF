@@ -9,3 +9,9 @@ class SDKConstants(object):
         MINUTES = "minutes"
         HOURS = "hours"
         DAYS = "days"
+
+    class DurabilityLevel(object):
+        NONE = "NONE"
+        MAJORITY = "MAJORITY"
+        MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
+        PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
