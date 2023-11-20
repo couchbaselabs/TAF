@@ -1583,7 +1583,7 @@ class BucketUtils(ScopeUtils):
                 break
         if status is True:
             warmed_up = self._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=60)
+                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=300)
             if not warmed_up:
                 status = False
         if status is True:
@@ -1622,7 +1622,7 @@ class BucketUtils(ScopeUtils):
                            "or any other bucket request connections")
             sleep(2)
             warmed_up = self._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=60)
+                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=300)
             if not warmed_up:
                 task.result = False
                 raise_exception = "Bucket not warmed up"
@@ -2295,7 +2295,7 @@ class BucketUtils(ScopeUtils):
             for bucket in cluster.buckets:
                 warmed_up = self._wait_warmup_completed(
                     self.cluster_util.get_kv_nodes(cluster), bucket,
-                    wait_time=60)
+                    wait_time=300)
                 if not warmed_up:
                     success = False
                     raise_exception = "Bucket %s not warmed up" % bucket.name
@@ -2378,7 +2378,7 @@ class BucketUtils(ScopeUtils):
                 try:
                     warmed_up = self._wait_warmup_completed(
                         self.cluster_util.get_kv_nodes(cluster), bucket,
-                        wait_time=60)
+                        wait_time=300)
                     if not warmed_up:
                         buckets_warmed_up = False
                         break
@@ -2444,7 +2444,7 @@ class BucketUtils(ScopeUtils):
             """
             replica number will be either replica number or one less than the zone number
             or min number of nodes in the zone
-            zone =2: 
+            zone =2:
                 1 node each, replica set =1, actual =1
                 1 node each, replica set >1, actual = 1
                 2 nodes each, replica set =2, actual =2
@@ -2453,7 +2453,7 @@ class BucketUtils(ScopeUtils):
                 group1: 2 nodes, group 1: 1 node, replica_set >1, actual = 1
                 group1: 3 nodes, group 1: 2 node, replica_set >=2, actual = 2
                 group1: 4 nodes, group 1: 5 node, replica_set =3, actual = 3
-                
+
             zone =3:
                 1 node each, replica_set=2, actual =2
                 2 nodes each, relica_set =3, actual =3
@@ -4397,6 +4397,7 @@ class BucketUtils(ScopeUtils):
         self.log.debug("Waiting for bucket %s to complete warm-up"
                        % bucket.name)
         warmed_up = False
+        ready_for_persistence = False
         start = time.time()
         for server in servers:
             # Cbstats implementation to wait for bucket warmup
@@ -4413,9 +4414,25 @@ class BucketUtils(ScopeUtils):
                     self.log.warning("Exception during cbstat all cmd: %s" % e)
                 sleep(2, "Warm-up not complete for %s on %s" % (bucket.name,
                                                                 server.ip))
+
+            ready_for_persistence = False
+            while time.time() - start < wait_time:
+                try:
+                    result = cbstat_obj.vbucket_seqno(bucket.name)
+                    all_vbuckets_ready = True
+                    for vbucket in result:
+                        if int(result[vbucket]["last_persisted_seqno"]) == 0:
+                            all_vbuckets_ready = False
+                    if all_vbuckets_ready:
+                        ready_for_persistence = True
+                        break
+                except Exception as e:
+                    self.log.warning("Exception during cbstat vbucket-seqno cmd: {}".format(e))
+                sleep(2, "Bucket {} is not ready for persistence on {}".format(bucket.name,
+                                                                               server.ip))
             shell.disconnect()
 
-        return warmed_up
+        return warmed_up and ready_for_persistence
 
     def add_rbac_user(self, cluster_node, testuser=None, rolelist=None):
         """
