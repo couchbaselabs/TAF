@@ -266,7 +266,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                 expected_val))
         else:
             result = self.client.crud("read", self.doc_id)
-            self.assertEqual(result["value"], expected_val,
+            self.assertEqual(type(expected_val)(result["value"]), expected_val,
                              "Document value mismatch: %s != %s"
                              % (result["value"], expected_val))
 
