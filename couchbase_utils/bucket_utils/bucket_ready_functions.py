@@ -1933,7 +1933,7 @@ class BucketUtils(ScopeUtils):
                 break
         if status is True:
             self.get_updated_bucket_server_list(cluster, bucket)
-            warmed_up = self._wait_warmup_completed(bucket, wait_time=60)
+            warmed_up = self._wait_warmup_completed(bucket, wait_time=300)
             if not warmed_up:
                 status = False
         if status is True:
@@ -3098,7 +3098,7 @@ class BucketUtils(ScopeUtils):
             for bucket in buckets:
                 try:
                     warmed_up = self._wait_warmup_completed(bucket,
-                                                            wait_time=60)
+                                                            wait_time=300)
                     if not warmed_up:
                         buckets_warmed_up = False
                         break
