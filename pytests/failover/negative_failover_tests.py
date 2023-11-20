@@ -168,7 +168,7 @@ class NegativeFailoverTests(FailoverBaseTest):
             servers_out = self.cluster_util.add_remove_servers(
                 self.cluster, [], [], [chosen[1]])
             rebalance = self.task.async_rebalance(
-                self.servers[:self.nodes_init], [], servers_out)
+                self.cluster, [], servers_out)
             self.task_manager.get_task_result(rebalance)
         except Exception as ex:
             self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),
@@ -187,7 +187,7 @@ class NegativeFailoverTests(FailoverBaseTest):
                 self.rest.set_recovery_type(otpNode=chosen[0].id,
                                             recoveryType="delta")
             rebalance = self.task.async_rebalance(
-                self.servers[:self.nodes_init],
+                self.cluster,
                 [self.servers[self.nodes_init]], [])
             self.task_manager.get_task_result(rebalance)
         except Exception as ex:
