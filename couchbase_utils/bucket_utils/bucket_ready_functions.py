@@ -5169,6 +5169,7 @@ class BucketUtils(ScopeUtils):
                        % (bucket.name, servers))
 
         warmed_up = False
+        ready_for_persistence = False
         start = time.time()
         for server in servers:
             # Cbstats implementation to wait for bucket warmup
@@ -5184,8 +5185,22 @@ class BucketUtils(ScopeUtils):
                     self.log.warning("Exception during cbstat all cmd: %s" % e)
                 sleep(2, "Warm-up not complete for %s on %s" % (bucket.name,
                                                                 server.ip))
-
-        return warmed_up
+            ready_for_persistence = False
+            while time.time() - start < wait_time:
+                try:
+                    result = cbstat_obj.vbucket_seqno(bucket.name)
+                    all_vbuckets_ready = True
+                    for vbucket in result:
+                        if int(result[vbucket]["last_persisted_seqno"]) == 0:
+                            all_vbuckets_ready = False
+                    if all_vbuckets_ready:
+                        ready_for_persistence = True
+                        break
+                except Exception as e:
+                    self.log.warning("Exception during cbstat vbucket-seqno cmd: {}".format(e))
+                sleep(2, "Bucket {} is not ready for persistence on {}".format(bucket.name,
+                                                                               server.ip))
+        return warmed_up and ready_for_persistence
 
     def add_rbac_user(self, cluster_node, testuser=None, rolelist=None):
         """
