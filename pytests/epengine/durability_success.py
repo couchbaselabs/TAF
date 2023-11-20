@@ -356,8 +356,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 retry_num = 0
                 while retry_num != 2:
                     result = self.task.rebalance(
-                        self.servers[0:self.nodes_init],
-                        [], [])
+                        self.cluster, [], [])
                     if result:
                         break
                     retry_num += 1
