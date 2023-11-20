@@ -2176,7 +2176,7 @@ class RestConnection(object):
         return status
 
     def set_data_path(self, data_path=None, index_path=None, cbas_path=[]):
-        end_point = '/nodes/self/controller/settings'
+        end_point = 'nodes/self/controller/settings'
         api = self.baseUrl + end_point
         set_path = False
         from urllib3._collections import HTTPHeaderDict
