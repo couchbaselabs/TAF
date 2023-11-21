@@ -184,7 +184,7 @@ class KVUpgradeTests(UpgradeBase):
         xdcr_cluster.nodes_in_cluster = [in_node]
         RestConnection(in_node).init_node()
         self.bucket_util.create_default_bucket(
-            cluster=xdcr_cluster, ram_quota=256, replica=0,
+            cluster=xdcr_cluster, ram_quota=self.bucket_size, replica=0,
             wait_for_warmup=True)
 
         rest = RestConnection(self.cluster.master)
