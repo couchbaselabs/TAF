@@ -1933,7 +1933,8 @@ class BucketUtils(ScopeUtils):
                 break
         if status is True:
             self.get_updated_bucket_server_list(cluster, bucket)
-            warmed_up = self._wait_warmup_completed(bucket, wait_time=300)
+            warmed_up = self._wait_warmup_completed(bucket, wait_time=300,
+                                                    check_for_persistence=False)
             if not warmed_up:
                 status = False
         if status is True:
@@ -5020,7 +5021,7 @@ class BucketUtils(ScopeUtils):
             """
             replica number will be either replica number or one less than the zone number
             or min number of nodes in the zone
-            zone =2: 
+            zone =2:
                 1 node each, replica set =1, actual =1
                 1 node each, replica set >1, actual = 1
                 2 nodes each, replica set =2, actual =2
@@ -5159,7 +5160,7 @@ class BucketUtils(ScopeUtils):
             return True
         return False
 
-    def _wait_warmup_completed(self, bucket, servers=None, wait_time=300):
+    def _wait_warmup_completed(self, bucket, servers=None, wait_time=300, check_for_persistence=True):
         # Return True, if bucket_type is not equal to MEMBASE
         if bucket.bucketType != Bucket.Type.MEMBASE:
             return True
@@ -5186,6 +5187,10 @@ class BucketUtils(ScopeUtils):
                 sleep(2, "Warm-up not complete for %s on %s" % (bucket.name,
                                                                 server.ip))
             ready_for_persistence = False
+            if not check_for_persistence:
+                ready_for_persistence = True
+                continue
+
             while time.time() - start < wait_time:
                 try:
                     result = cbstat_obj.vbucket_seqno(bucket.name)
