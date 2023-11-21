@@ -351,8 +351,7 @@ class CBAS_UDF(object):
         self.udf_dependencies = list()
         self.synonym_dependencies = list()
         for entity in referenced_entities:
-            if isinstance(entity, Dataset) or isinstance(
-                    entity, CBAS_Collection):
+            if isinstance(entity, Dataset):
                 self.dataset_dependencies.append([
                     CBASHelper.unformat_name(entity.dataverse_name),
                     CBASHelper.unformat_name(entity.name)])
@@ -373,36 +372,6 @@ class CBAS_UDF(object):
 
     def reset_full_name(self):
         self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
-
-
-class Kafka(object):
-    """
-    Defines the kafka cluster object.
-    """
-
-    """
-    :param url <str> Kafka cluster URI.
-    :param api_key <str> Kafka API key
-    :param api_secret <str> Kafka API secret key
-    """
-
-    def __init__(self, url, api_key, api_secret):
-        self.kafka_url = url
-        self.api_key = api_key
-        self.api_secret = api_secret
-
-    def get_kafka_cluster_detail_object_for_kafka_links(
-            self, auth_type="PLAIN"):
-        return {
-            "CLUSTER_URL": self.kafka_url,
-            "KAFKA_CREDENTIALS": {
-                "AUTH_MECHANISM": auth_type,
-                "AUTH_FIELDS": {
-                    "API_KEY": self.api_key,
-                    "API_SECRET": self.api_secret
-                }
-            }
-        }
 
 
 class ExternalDB(object):

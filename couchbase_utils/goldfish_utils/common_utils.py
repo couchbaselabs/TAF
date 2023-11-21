@@ -182,8 +182,7 @@ class GoldfishUtils:
             region = random.choice(["us-east-2"])
 
         if not nodes:
-            nodes = 2
-            #nodes = random.randint(2, 8)
+            nodes = random.choice([1, 2, 4, 8])
 
         config = {
             "name": name,

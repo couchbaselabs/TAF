@@ -3,13 +3,11 @@ Created on 25-OCTOBER-2023
 
 @author: umang.agrawal
 '''
-
 from Queue import Queue
 import time
 
 from CbasLib.cbas_entity import ExternalDB
 from Goldfish.goldfish_base import GoldFishBaseTest
-import urllib
 from CbasLib.CBASOperations import CBASHelper
 
 
@@ -27,26 +25,9 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
             self.gf_spec_name)
 
         self.mongo_db_name = "sanity-db"
-        self.mongo_coll_name = "sanity-collection"
+        self.mongo_colletions = list()
 
-        self.mongo_coll_full_name = CBASHelper.format_name(
-            self.mongo_db_name, self.mongo_coll_name)
-
-        mongo_atlas_username = self.input.param(
-            "mongo_atlas_username", None)
-        mongo_atlas_password = self.input.param(
-            "mongo_atlas_password", None)
-        mongo_altas_cluster_name = self.input.param(
-            "mongo_altas_cluster_name", "couchbase")
-        mongo_altas_cluster_id = self.input.param(
-            "mongo_altas_cluster_id", "2yp38b3")
-
-        self.mongo_atlas_url = (
-            "mongodb+srv://{0}:{1}@{2}.{3}.mongodb.net/".format(
-                urllib.quote_plus(mongo_atlas_username),
-                urllib.quote_plus(mongo_atlas_password),
-                mongo_altas_cluster_name, mongo_altas_cluster_id)) if (
-            mongo_atlas_username) else None
+        self.mongo_atlas_url = self.input.param("mongo_atlas_url", None)
 
         self.mongo_on_prem_host = self.input.param("mongo_on_prem_host", None)
         self.mongo_on_prem_username = self.input.param(
@@ -58,7 +39,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
 
         self.initial_doc_count = self.input.param("initial_doc_count", 1000)
 
-        self.loader_id = None
+        self.loader_ids = list()
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -67,23 +48,25 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
 
-        if self.loader_id:
-            resp = self.doc_loading_APIs.stop_crud_on_mongo(self.loader_id)
+        for loader_id in self.loader_ids:
+            resp = self.doc_loading_APIs.stop_crud_on_mongo(loader_id)
             if resp.status_code != 200 or resp.json()["status"] != "stopped":
-                self.log.error("Failed to stop CRUD on Mongo DB")
+                self.log.error("Failed to stop CRUD Loader {} on Mongo "
+                               "DB.".format(loader_id))
 
-        resp = self.doc_loading_APIs.delete_mongo_collection(
-            self.mongo_on_prem_host, 27017, self.mongo_db_name,
-            self.mongo_coll_name, self.mongo_atlas_url,
-            self.mongo_on_prem_username, self.mongo_on_prem_password)
-        if resp.status_code != 200:
-            self.fail("Error while deleting mongo collection - {}".format(
-                self.mongo_coll_name))
+        for mongo_collection in self.mongo_colletions:
+            resp = self.doc_loading_APIs.delete_mongo_collection(
+                self.mongo_on_prem_host, 27017, self.mongo_db_name,
+                mongo_collection, self.mongo_atlas_url,
+                self.mongo_on_prem_username, self.mongo_on_prem_password)
+            if resp.status_code != 200:
+                self.fail("Error while deleting mongo collection - {}".format(
+                    mongo_collection))
 
         resp = self.doc_loading_APIs.drop_mongo_database(
             self.mongo_on_prem_host, self.mongo_db_name,
-            self.mongo_coll_name, self.mongo_atlas_url,
-            self.mongo_on_prem_username, self.mongo_on_prem_password)
+            self.mongo_atlas_url, self.mongo_on_prem_username,
+            self.mongo_on_prem_password)
         if resp.status_code != 200:
             self.fail("Error while deleting mongo database - {}".format(
                 self.mongo_db_name))
@@ -102,67 +85,114 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
                       "username and password for either Mongo Atlas or Mongo "
                       "On-prem Cluster.")
         else:
-            resp = self.doc_loading_APIs.start_mongo_loader(
-                self.mongo_on_prem_host, self.mongo_db_name,
-                self.mongo_coll_name, self.mongo_atlas_url, 27017,
-                self.mongo_on_prem_username, self.mongo_on_prem_password,
-                None, self.initial_doc_count, None)
-            if resp.status_code != 200:
-                self.log.error("Failed to load initial docs into Mongo")
-                return False
+            # Create same number of mongo collections as standalone
+            # collections where the data would be ingested and load
+            # data in them.
+            for i in range(1, self.input.param("num_of_ds_on_external_db",
+                                               1) + 1):
+                mongo_collection = "sanity-collection-{}".format(i)
+                resp = self.doc_loading_APIs.start_mongo_loader(
+                    self.mongo_on_prem_host, self.mongo_db_name,
+                    mongo_collection, self.mongo_atlas_url, 27017,
+                    self.mongo_on_prem_username, self.mongo_on_prem_password,
+                    initial_doc_count=self.initial_doc_count)
+                if resp.status_code != 200:
+                    self.log.error("Failed to load initial docs into Mongo "
+                                   "collection {}".format(mongo_collection))
+                    return False
+                self.mongo_colletions.append(mongo_collection)
+            self.fully_qualified_mongo_collection_name = [
+                ("", CBASHelper.format_name(
+                    self.mongo_db_name, coll)) for coll in
+                self.mongo_colletions]
             return True
 
     def wait_for_initial_data_load(self, expected_count, timeout=600):
         endtime = time.time() + timeout
         doc_count = 0
+        results = []
+
         self.log.info("waiting for initial data load in mongo to finish")
         while time.time() < endtime:
-            resp = self.doc_loading_APIs.get_mongo_doc_count(
-                self.mongo_on_prem_host, self.mongo_db_name,
-                self.mongo_coll_name, self.mongo_on_prem_username,
-                self.mongo_on_prem_password, self.mongo_atlas_url)
-            if resp.status_code == 200:
-                doc_count = resp.json()["count"]
-                if doc_count == expected_count:
-                    return True
+            for mongo_coll in self.mongo_colletions:
+                if mongo_coll not in results:
+                    resp = self.doc_loading_APIs.get_mongo_doc_count(
+                        self.mongo_on_prem_host, self.mongo_db_name,
+                        mongo_coll, self.mongo_on_prem_username,
+                        self.mongo_on_prem_password, self.mongo_atlas_url)
+                    if resp.status_code == 200:
+                        doc_count = resp.json()["count"]
+                        if doc_count == expected_count:
+                            results.append(mongo_coll)
+                    else:
+                        self.log.error("Failed to fetch mongo doc count. Retrying...")
+            if len(results) == len(self.mongo_colletions):
+                return True
             else:
-                self.log.error("Failed to fetch mongo doc count. Retrying...")
-        self.log.error("Initial data loading on Mongo did not finish within "
-                       "stipulated time. Doc Count - Actual - {}, Expected - "
-                       "{}".format(doc_count, expected_count))
+                self.sleep(15, "Still Waiting for initial data load on mongo to finish")
+        for mongo_coll in self.mongo_colletions:
+            if mongo_coll not in results:
+                self.log.error("Initial data loading on Mongo collection {} "
+                               "did not finish within stipulated time. Doc "
+                               "Count - Actual - {}, Expected - {}".format(
+                    mongo_coll, doc_count, expected_count))
         return False
 
-    def perform_CRUD_on_mongo(self, wait_time=300):
-        resp = self.doc_loading_APIs.start_crud_on_mongo(
-            self.mongo_on_prem_host, self.mongo_db_name, self.mongo_coll_name,
-            self.mongo_atlas_url, 27017, self.mongo_on_prem_username,
-            self.mongo_on_prem_password, num_buffer=self.initial_doc_count//10)
+    def start_CRUD(self, mongo_collections):
+        for mongo_collection in mongo_collections:
+            resp = self.doc_loading_APIs.start_crud_on_mongo(
+                self.mongo_on_prem_host, self.mongo_db_name, mongo_collection,
+                self.mongo_atlas_url, 27017, self.mongo_on_prem_username,
+                self.mongo_on_prem_password,
+                num_buffer=self.initial_doc_count//10)
 
-        if resp.status_code != 200:
-            self.log.error("Failed to start CRUD on Mongo DB")
-            return 0
-        else:
-            self.loader_id = resp.json()["loader_id"]
+            if resp.status_code != 200:
+                self.log.error("Failed to start CRUD on Mongo DB collection "
+                               "{}".format(mongo_collection))
+                return False
+            else:
+                self.loader_ids.append(resp.json()["loader_id"])
+        return True
+
+    def stop_CRUD(self, loader_ids):
+        for loader_id in loader_ids:
+            resp = self.doc_loading_APIs.stop_crud_on_mongo(loader_id)
+            if resp.status_code != 200 or resp.json()["status"] != "stopped":
+                self.log.error("Failed to stop CRUD Loader {} on Mongo "
+                               "DB.".format(loader_id))
+                return False
+        return True
+
+    def get_mongo_collection_doc_count(self, mongo_collections):
+        results = {}
+        for mongo_collection in mongo_collections:
+            resp = self.doc_loading_APIs.get_mongo_doc_count(
+                self.mongo_on_prem_host, self.mongo_db_name,
+                mongo_collection, self.mongo_on_prem_username,
+                self.mongo_on_prem_password, self.mongo_atlas_url)
+            if resp.status_code == 200:
+                results[CBASHelper.format_name(
+                    self.mongo_db_name, mongo_collection)] = resp.json()["count"]
+            else:
+                self.log.error("Failed to fetch mongo doc count.")
+                return {}
+        return results
+
+    def perform_CRUD_on_mongo(self, wait_time=300):
+
+        if not self.start_CRUD(self.mongo_colletions):
+            return {}
 
         self.sleep(wait_time, "Waiting for CRUD on mongo collection.")
 
-        resp = self.doc_loading_APIs.stop_crud_on_mongo(self.loader_id)
-        if resp.status_code != 200 or resp.json()["status"] != "stopped":
-            self.log.error("Failed to stop CRUD on Mongo DB")
-            return 0
-        self.loader_id = None
+        if not self.stop_CRUD(self.loader_ids):
+            return {}
+
+        self.loader_ids = list()
 
         self.sleep(30, "Waiting after stopping CRUD on mongo collection.")
 
-        resp = self.doc_loading_APIs.get_mongo_doc_count(
-            self.mongo_on_prem_host, self.mongo_db_name,
-            self.mongo_coll_name, self.mongo_on_prem_username,
-            self.mongo_on_prem_password, self.mongo_atlas_url)
-        if resp.status_code == 200:
-            return resp.json()["count"]
-        else:
-            self.log.error("Failed to fetch mongo doc count.")
-            return 0
+        return self.get_mongo_collection_doc_count(self.mongo_colletions)
 
     def test_create_query_drop_standalone_collection_for_mongo(self):
         # start initial data load on mongo atlas or on-prem cluster
@@ -190,7 +220,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
             "num_of_ds_on_external_db", 1)
         self.gf_spec["kafka_dataset"]["data_source"] = ["mongo"]
         self.gf_spec["kafka_dataset"]["include_external_collections"][
-            "mongo"] = [self.mongo_coll_full_name]
+            "mongo"] = self.fully_qualified_mongo_collection_name
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.cluster, self.gf_spec, self.bucket_util, False)
@@ -210,24 +240,20 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
                 self.fail("Ingestion failed from Mongo into standalone "
                           "collection.")
 
-        doc_count_after_crud = self.perform_CRUD_on_mongo()
+        doc_counts_after_crud = self.perform_CRUD_on_mongo()
 
         # validate doc count on datasets
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
-                    self.cluster, dataset.full_name, doc_count_after_crud, 600):
+                    self.cluster, dataset.full_name,
+                    doc_counts_after_crud[dataset.external_collection_name],
+                    600):
                 self.fail("Ingestion failed from Mongo into standalone "
                           "collection.")
 
         # Validate doc count after disconnecting and connecting kafka links
-        resp = self.doc_loading_APIs.start_crud_on_mongo(
-            self.mongo_on_prem_host, self.mongo_db_name, self.mongo_coll_name,
-            self.mongo_atlas_url, 27017, self.mongo_on_prem_username,
-            self.mongo_on_prem_password, num_buffer=self.initial_doc_count//10)
-        if resp.status_code != 200:
-            self.fail("Failed to start CRUD on Mongo DB")
-        else:
-            self.loader_id = resp.json()["loader_id"]
+        if not self.start_CRUD(self.mongo_colletions):
+            self.fail("Failed to start CRUD on Mongo DB collection")
 
         jobs = Queue()
         results = []
@@ -259,47 +285,45 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
                 self.cluster, state="CONNECTED"):
             self.fail("Kafka Link was unable to diconnect")
 
-        resp = self.doc_loading_APIs.stop_crud_on_mongo(self.loader_id)
-        if resp.status_code != 200 or resp.json()["status"] != "stopped":
+        if not self.stop_CRUD(self.loader_ids):
             self.fail("Failed to stop CRUD on Mongo DB")
 
-        self.loader_id = None
+        self.loader_ids = list()
 
         self.sleep(30, "Waiting after stopping CRUD on mongo collection.")
 
-        doc_count_after_connect_disconnect = 0
-        resp = self.doc_loading_APIs.get_mongo_doc_count(
-            self.mongo_on_prem_host, self.mongo_db_name,
-            self.mongo_coll_name, self.mongo_on_prem_username,
-            self.mongo_on_prem_password, self.mongo_atlas_url)
-        if resp.status_code == 200:
-            doc_count_after_connect_disconnect = resp.json()["count"]
+        doc_counts_after_connect_disconnect = (
+            self.get_mongo_collection_doc_count(self.mongo_colletions))
 
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
                     self.cluster, dataset.full_name,
-                    doc_count_after_connect_disconnect, 600):
+                    doc_counts_after_connect_disconnect[
+                        dataset.external_collection_name],
+                    600):
                 self.fail("Ingestion failed from Mongo into standalone "
                           "collection.")
 
+        limit_value = min(doc_counts_after_connect_disconnect.values())
+        if limit_value > 100:
+            limit_value = 100
+
         results = []
-        query = "select * from {} limit 100"
+        query = "select * from {} limit {}"
         for dataset in datasets:
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
                 {"cluster": self.cluster,
-                 "statement": query.format(dataset.full_name)}))
+                 "statement": query.format(dataset.full_name, limit_value)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         for result in results:
             if result[0] != "success":
                 self.fail("Query execution failed with error - {}".format(
                     result[2]))
-            elif not (len(result[3]) == 100 or len(
-                    result[3]) == doc_count_after_connect_disconnect):
+            elif len(result[3]) != limit_value:
                 self.fail("Doc count mismatch. Expected - {}, Actual - {"
-                          "}".format(doc_count_after_connect_disconnect,
-                                     len(result[3])))
+                          "}".format(limit_value, len(result[3])))
 
     def test_data_ingestion_when_collection_created_after_connecting_link(
             self):
@@ -328,7 +352,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
             "num_of_ds_on_external_db", 1)
         self.gf_spec["kafka_dataset"]["data_source"] = ["mongo"]
         self.gf_spec["kafka_dataset"]["include_external_collections"][
-            "mongo"] = [self.mongo_coll_full_name]
+            "mongo"] = self.fully_qualified_mongo_collection_name
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.cluster, self.gf_spec, self.bucket_util, False, None, True)

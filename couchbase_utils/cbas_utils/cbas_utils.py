@@ -4137,6 +4137,10 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     dataset_obj.name] = dataset_obj
         return all(results)
 
+    """
+    Note - Number of external collection should be same as number of 
+    standalone collections to be created. 
+    """
     def create_standalone_dataset_for_external_db_from_spec(
             self, cluster, cbas_spec):
         self.log.info("Creating Standalone Datasets for external database "
@@ -4157,6 +4161,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     cluster, CBASHelper.format_name(link_name))}
 
         num_of_ds_on_external_db = dataset_spec.get("num_of_ds_on_external_db", 0)
+        link_source_db_pairs = []
         for i in range(0, num_of_ds_on_external_db):
             dataverse = None
             while not dataverse:
@@ -4198,36 +4203,63 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 datasource = dataset_spec["data_source"][i % len(dataset_spec["data_source"])]
 
             eligible_links = [link for link in kafka_link_objs if link.db_type == datasource]
-            link_name = (random.choice(eligible_links)).full_name
 
-            if (dataset_spec["include_external_collections"].get(
-                    datasource, {}) and dataset_spec[
-                "exclude_external_collections"].get(datasource, {})
-                    and (set(dataset_spec["include_external_collections"][
-                                 datasource]) == set(
-                        dataset_spec["exclude_external_collections"][
-                            datasource]))):
-                self.log.error("Both include and exclude "
-                               "external collections cannot be "
-                               "same")
-                return False
-            elif dataset_spec["exclude_external_collections"].get(datasource, {}):
-                dataset_spec["include_external_collections"][datasource] = (
-                        set(dataset_spec["include_external_collections"][
-                                datasource]) - set(
-                    dataset_spec["exclude_external_collections"][datasource]))
+            """
+            This is to make sure that we don't create 2 collection with same 
+            source collection and link
+            include_external_collections should be of format -
+            { "datasource" : [("region","collection_name")]}
+            for mongo and MySQL, region should be empty string
+            This is to support Dynamo tables multiple regions.
+            """
+            retry = 0
+            while retry < 10:
+                link = random.choice(eligible_links)
 
-            if dataset_spec["include_external_collections"][datasource] and len(
-                    dataset_spec["include_external_collections"][datasource]) > 0:
-                external_collection_name = random.choice(
-                    dataset_spec["include_external_collections"][datasource])
-            else:
-                return False
+                if (dataset_spec["include_external_collections"].get(
+                        datasource, {}) and dataset_spec[
+                    "exclude_external_collections"].get(datasource, {})
+                        and (set(dataset_spec["include_external_collections"][
+                                     datasource]) == set(
+                            dataset_spec["exclude_external_collections"][
+                                datasource]))):
+                    self.log.error("Both include and exclude "
+                                   "external collections cannot be "
+                                   "same")
+                    return False
+                elif dataset_spec["exclude_external_collections"].get(datasource, {}):
+                    dataset_spec["include_external_collections"][datasource] = (
+                            set(dataset_spec["include_external_collections"][
+                                    datasource]) - set(
+                        dataset_spec["exclude_external_collections"][datasource]))
+
+                if dataset_spec["include_external_collections"][datasource]:
+                    external_collection_name = random.choice(
+                        dataset_spec["include_external_collections"][
+                            datasource])
+
+                    # this will be True for Dynamo only
+                    if external_collection_name[0]:
+                        while (external_collection_name[0] !=
+                                link.external_database_details[
+                                    "connectionFields"]["region"]):
+                            external_collection_name = random.choice(
+                                dataset_spec["include_external_collections"][
+                                    datasource])
+                    external_collection_name = external_collection_name[1]
+                else:
+                    return False
+                link_source_db_pair = (link.full_name, external_collection_name)
+                if link_source_db_pair not in link_source_db_pairs:
+                    link_source_db_pairs.append(link_source_db_pair)
+                    break
+                else:
+                    retry += 1
 
             dataset_obj = Standalone_Dataset(
                 name, datasource,
                 random.choice(dataset_spec["primary_key"]),
-                dataverse.name, link_name, external_collection_name,
+                dataverse.name, link.full_name, external_collection_name,
                 {}, 0, storage_format)
 
             dataverse_name = dataset_obj.dataverse_name
@@ -4237,7 +4269,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             if not self.create_standalone_collection_using_links(
                     cluster, name, creation_method, False,
                     dataverse_name, dataset_obj.primary_key,
-                    link_name, external_collection_name,
+                    link.full_name, external_collection_name,
                     False, storage_format):
                 self.log.error("Failed to create dataset {}".format(name))
                 results.append(False)
@@ -6231,11 +6263,18 @@ class CbasUtil(CBOUtil):
         self.log.info("Disconnecting all the Links")
         for link in self.list_all_link_objs():
             if link.link_type != "s3":
-                retry_func(
-                    link, self.disconnect_link,
-                    {"cluster": cluster, "link_name": link.full_name,
-                     "timeout": cbas_spec.get("api_timeout", 300),
-                     "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
+                link_info = self.get_link_info(cluster, link.dataverse_name,
+                                               link.name, link.link_type)
+                if ((type(link_info) is not None) and len(link_info) > 0 and
+                        "linkState" in link_info[0] and link_info[0][
+                            "linkState"] == "DISCONNECTED"):
+                    pass
+                else:
+                    retry_func(
+                        link, self.disconnect_link,
+                        {"cluster": cluster, "link_name": link.full_name,
+                         "timeout": cbas_spec.get("api_timeout", 300),
+                         "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
             if any(results):
                 if retry_link_disconnect_fail:
                     if link.link_type == "kafka":

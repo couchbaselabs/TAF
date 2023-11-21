@@ -32,10 +32,12 @@ class StandaloneCollectionMySQL(GoldFishBaseTest):
         # This will made dynamic once support for creating mysql database is
         # added in docloader repo.
         self.mysql_db_name = "db_2"
-        self.mysql_table_name = "sanity_test_{}".format(
-            self.cbas_util.generate_name(max_length=5))
-        self.mysql_table_full_name = CBASHelper.format_name(
-            self.mysql_db_name, self.mysql_table_name)
+        self.mysql_tables = ["sanity_test_{}".format(
+            self.cbas_util.generate_name(max_length=5)) for i in range(
+            0, self.input.param("num_of_ds_on_external_db", 1))]
+        self.fully_qualified_mysql_table_name = [
+            ("", CBASHelper.format_name(self.mysql_db_name, table_name))
+             for table_name in self.mysql_tables]
 
         self.mysql_column_def = ("id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, "
                              "address VARCHAR(255), avg_rating FLOAT, "
@@ -47,8 +49,9 @@ class StandaloneCollectionMySQL(GoldFishBaseTest):
                              "VARCHAR(255), url VARCHAR(255)")
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
+        self.doc_size = self.input.param("doc_size", 1024)
 
-        self.loader_id = None
+        self.loader_ids = list()
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -57,17 +60,19 @@ class StandaloneCollectionMySQL(GoldFishBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
 
-        if self.loader_id:
-            resp = self.doc_loading_APIs.stop_crud_on_mysql(self.loader_id)
+        for loader_id in self.loader_ids:
+            resp = self.doc_loading_APIs.stop_crud_on_mysql(loader_id)
             if resp.status_code != 200 or resp.json()["status"] != "stopped":
-                self.log.error("Failed to stop CRUD on MySQL DB")
+                self.log.error("Failed to stop CRUD Loader {} on MySQL "
+                               "DB".format(loader_id))
 
-        resp = self.doc_loading_APIs.delete_mysql_table(
-            self.mysql_host, self.mysql_port, self.mysql_username,
-            self.mysql_password, self.mysql_db_name, self.mysql_table_name)
-        if resp.status_code != 200:
-            self.fail("Error while deleting mysql table - {}".format(
-                self.mysql_table_name))
+        for mysql_table in self.mysql_tables:
+            resp = self.doc_loading_APIs.delete_mysql_table(
+                self.mysql_host, self.mysql_port, self.mysql_username,
+                self.mysql_password, self.mysql_db_name, mysql_table)
+            if resp.status_code != 200:
+                self.fail("Error while deleting mysql table - {}".format(
+                    mysql_table))
 
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
                 self.cluster, self.gf_spec):
@@ -78,64 +83,103 @@ class StandaloneCollectionMySQL(GoldFishBaseTest):
                               stage="Teardown")
 
     def start_initial_data_load(self):
-        resp = self.doc_loading_APIs.start_mysql_loader(
-            self.mysql_host, self.mysql_port, self.mysql_username,
-            self.mysql_password, self.mysql_db_name, self.mysql_table_name,
-            self.mysql_column_def, self.initial_doc_count)
-        if resp.status_code != 200:
-            self.log.error("Failed to load initial docs into MySQL")
-            return False
+        for mysql_table in self.mysql_tables:
+            resp = self.doc_loading_APIs.start_mysql_loader(
+                self.mysql_host, self.mysql_port, self.mysql_username,
+                self.mysql_password, self.mysql_db_name, mysql_table,
+                self.mysql_column_def, self.initial_doc_count, self.doc_size)
+            if resp.status_code != 200:
+                self.log.error("Failed to load initial docs into MySQL table {}".format(
+                    mysql_table))
+                return False
         return True
 
     def wait_for_initial_data_load(self, expected_count, timeout=600):
         endtime = time.time() + timeout
         doc_count = 0
+        results = []
+
         self.log.info("waiting for initial data load in MySQL to finish")
         while time.time() < endtime:
-            resp = self.doc_loading_APIs.count_mysql_documents(
-                self.mysql_host, self.mysql_port, self.mysql_username,
-                self.mysql_password, self.mysql_db_name, self.mysql_table_name)
-            if resp.status_code == 200:
-                doc_count = resp.json()["count"]
-                if doc_count == expected_count:
-                    return True
+            for mysql_table in self.mysql_tables:
+                resp = self.doc_loading_APIs.count_mysql_documents(
+                    self.mysql_host, self.mysql_port, self.mysql_username,
+                    self.mysql_password, self.mysql_db_name, mysql_table)
+                if resp.status_code == 200:
+                    doc_count = resp.json()["count"]
+                    if doc_count == expected_count:
+                        results.append(mysql_table)
+                else:
+                    self.log.error("Failed to fetch MySQL doc count. Retrying...")
+            if len(results) == self.input.param("num_of_ds_on_external_db", 1):
+                return True
             else:
-                self.log.error("Failed to fetch MySQL doc count. Retrying...")
-        self.log.error("Initial data loading on MySQL did not finish within "
-                       "stipulated time. Doc Count - Actual - {}, Expected - "
-                       "{}".format(doc_count, expected_count))
+                self.sleep(15, "Still Waiting for initial data load on "
+                               "Dynamo to finish")
+        for mysql_table in self.mysql_tables:
+            if mysql_table not in results:
+                self.log.error("Initial data loading on MySQL table {} did "
+                               "not finish within stipulated time. Doc Count - "
+                               "Actual - {}, Expected - {}".format(
+                    mysql_table, doc_count, expected_count))
         return False
 
-    def perform_CRUD_on_mysql(self, wait_time=300):
-        resp = self.doc_loading_APIs.start_crud_on_mysql(
-            self.mysql_host, self.mysql_port, self.mysql_username,
-            self.mysql_password, self.mysql_db_name, self.mysql_table_name,
-            self.mysql_column_def, num_buffer=self.initial_doc_count//10)
+    def start_CRUD(self, mysql_tables):
+        for mysql_table in mysql_tables:
+            resp = self.doc_loading_APIs.start_crud_on_mysql(
+                self.mysql_host, self.mysql_port, self.mysql_username,
+                self.mysql_password, self.mysql_db_name, mysql_table,
+                self.mysql_column_def,
+                num_buffer=self.initial_doc_count // 10,
+                document_size = self.doc_size)
 
-        if resp.status_code != 200:
-            self.log.error("Failed to start CRUD on MySQL")
-            return 0
-        else:
-            self.loader_id = resp.json()["loader_id"]
+            if resp.status_code != 200:
+                self.log.error("Failed to start CRUD on MySQL table {"
+                               "}".format(mysql_table))
+                return False
+            else:
+                self.loader_ids.append(resp.json()["loader_id"])
+        return True
+
+    def stop_CRUD(self, loader_ids):
+        for loader_id in loader_ids:
+            resp = self.doc_loading_APIs.stop_crud_on_mysql(loader_id)
+            if resp.status_code != 200 or resp.json()["status"] != "stopped":
+                self.log.error("Failed to stop CRUD Loader {} on "
+                               "MySQL".format(loader_id))
+                return False
+        return True
+
+    def get_mysql_table_doc_count(self, mysql_tables):
+        results = {}
+        for mysql_table in mysql_tables:
+            resp = self.doc_loading_APIs.count_mysql_documents(
+                self.mysql_host, self.mysql_port, self.mysql_username,
+                self.mysql_password, self.mysql_db_name, mysql_table)
+            if resp.status_code == 200:
+                results[CBASHelper.format_name(
+                    self.mysql_db_name, mysql_table)] = (resp.json())[
+                    "count"]
+            else:
+                self.log.error("Failed to fetch MySQL doc count.")
+                return {}
+        return results
+
+    def perform_CRUD_on_mysql(self, wait_time=300):
+
+        if not self.start_CRUD(self.mysql_tables):
+            return {}
 
         self.sleep(wait_time, "Waiting for CRUD on MySQL table.")
 
-        resp = self.doc_loading_APIs.stop_crud_on_mysql(self.loader_id)
-        if resp.status_code != 200 or resp.json()["status"] != "stopped":
-            self.log.error("Failed to stop CRUD on MySQL")
-            return 0
-        self.loader_id = None
+        if not self.stop_CRUD(self.loader_ids):
+            return {}
+
+        self.loader_ids = list()
 
         self.sleep(30, "Waiting after stopping CRUD on MySQL table.")
 
-        resp = self.doc_loading_APIs.count_mysql_documents(
-            self.mysql_host, self.mysql_port, self.mysql_username,
-            self.mysql_password, self.mysql_db_name, self.mysql_table_name)
-        if resp.status_code == 200:
-            return resp.json()["count"]
-        else:
-            self.log.error("Failed to fetch MySQL doc count.")
-            return 0
+        return self.get_mysql_table_doc_count(self.mysql_tables)
 
     def test_create_query_drop_standalone_collection_for_mysql(self):
         # start initial data load on MySQL table
@@ -164,7 +208,7 @@ class StandaloneCollectionMySQL(GoldFishBaseTest):
             "num_of_ds_on_external_db", 1)
         self.gf_spec["kafka_dataset"]["data_source"] = ["rds"]
         self.gf_spec["kafka_dataset"]["include_external_collections"][
-            "rds"] = [CBASHelper.format_name(self.mysql_table_full_name)]
+            "rds"] = self.fully_qualified_mysql_table_name
         self.gf_spec["kafka_dataset"]["primary_key"] = [{"id": "bigint"}]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
@@ -190,20 +234,15 @@ class StandaloneCollectionMySQL(GoldFishBaseTest):
         # validate doc count on datasets
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
-                    self.cluster, dataset.full_name, doc_count_after_crud, 600):
+                    self.cluster, dataset.full_name,
+                    doc_count_after_crud[dataset.external_collection_name],
+                    600):
                 self.fail("Ingestion failed from MySQL into standalone "
                           "collection.")
 
         # Validate doc count after disconnecting and connecting kafka links
-        resp = self.doc_loading_APIs.start_crud_on_mysql(
-            self.mysql_host, self.mysql_port, self.mysql_username,
-            self.mysql_password, self.mysql_db_name, self.mysql_table_name,
-            self.mysql_column_def, num_buffer=self.initial_doc_count // 10
-        )
-        if resp.status_code != 200:
-            self.fail("Failed to start CRUD on MySQL DB")
-        else:
-            self.loader_id = resp.json()["loader_id"]
+        if not self.start_CRUD(self.mysql_tables):
+            self.fail("Failed to start CRUD on MySQL DB tables")
 
         jobs = Queue()
         results = []
@@ -235,45 +274,44 @@ class StandaloneCollectionMySQL(GoldFishBaseTest):
                 self.cluster, state="CONNECTED"):
             self.fail("Kafka Link was unable to diconnect")
 
-        resp = self.doc_loading_APIs.stop_crud_on_mysql(self.loader_id)
-        if resp.status_code != 200 or resp.json()["status"] != "stopped":
+        if not self.stop_CRUD(self.loader_ids):
             self.fail("Failed to stop CRUD on MySQL DB")
-        self.loader_id = None
+
+        self.loader_id = list()
 
         self.sleep(30, "Waiting after stopping CRUD on MySQL table.")
 
-        doc_count_after_connect_disconnect = 0
-        resp = self.doc_loading_APIs.count_mysql_documents(
-            self.mysql_host, self.mysql_port, self.mysql_username,
-            self.mysql_password, self.mysql_db_name, self.mysql_table_name)
-        if resp.status_code == 200:
-            doc_count_after_connect_disconnect = resp.json()["count"]
+        doc_count_after_connect_disconnect = self.get_mysql_table_doc_count(
+            self.mysql_tables)
 
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
                     self.cluster, dataset.full_name,
-                    doc_count_after_connect_disconnect, 600):
+                    doc_count_after_connect_disconnect[
+                        dataset.external_collection_name], 600):
                 self.fail("Ingestion failed from MySQL into standalone "
                           "collection.")
 
+        limit_value = min(doc_count_after_connect_disconnect.values())
+        if limit_value > 100:
+            limit_value = 100
+
         results = []
-        query = "select * from {} limit 100"
+        query = "select * from {} limit {}"
         for dataset in datasets:
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
                 {"cluster": self.cluster,
-                 "statement": query.format(dataset.full_name)}))
+                 "statement": query.format(dataset.full_name, limit_value)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         for result in results:
             if result[0] != "success":
                 self.fail("Query execution failed with error - {}".format(
                     result[2]))
-            elif not (len(result[3]) == 100 or len(
-                    result[3]) == doc_count_after_connect_disconnect):
+            elif len(result[3]) != limit_value:
                 self.fail("Doc count mismatch. Expected - {}, Actual - {"
-                          "}".format(doc_count_after_connect_disconnect,
-                                     len(result[3])))
+                          "}".format(limit_value, len(result[3])))
 
     def test_data_ingestion_when_collection_created_after_connecting_link(
             self):
