@@ -2877,7 +2877,7 @@ class Remote_Dataset_Util(Dataset_Util):
             link = remote_link_objs[i % len(remote_link_objs)]
             remote_cluster = None
             if remote_clusters is None:
-                my_collection = (random.choice(include_collection["remote"])).split('.')
+                my_collection = random.choice(dataset_spec.get("include_collections", [])).split('.')
                 bucket = my_collection[0]
                 scope = my_collection[1]
                 collection = my_collection[2]
@@ -2897,12 +2897,15 @@ class Remote_Dataset_Util(Dataset_Util):
                     dataset_spec.get("include_collections", []),
                     dataset_spec.get("exclude_collections", []))
 
-                if collection:
+            if collection:
+                if isinstance(collection, dict):
                     num_of_items = collection.num_items
                 else:
-                    num_of_items = bucket_util.get_collection_obj(
-                        bucket_util.get_scope_obj(bucket, "_default"),
-                        "_default").num_items
+                    num_of_items = None
+            else:
+                num_of_items = bucket_util.get_collection_obj(
+                    bucket_util.get_scope_obj(bucket, "_default"),
+                    "_default").num_items
 
             if dataset_spec["storage_format"] == "mixed":
                 storage_format = random.choice(
@@ -3400,13 +3403,13 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
     def load_doc_to_standalone_collection(
             self, cluster, collection_name, dataverse_name, no_of_docs,
-            document_size=256000, batch_size=25, max_concurrent_batches=3):
+            document_size=256000, batch_size=25, max_concurrent_batches=10):
         """
         Load documents to a standalone collection.
         """
         start = time.time()
 
-        with concurrent.futures.ThreadPoolExecutor(max_concurrent_batches) as executor:
+        with concurrent.futures.ProcessPoolExecutor(max_concurrent_batches) as executor:
             for i in range(0, no_of_docs, batch_size):
                 batch_start = i
                 batch_end = min(i + batch_size, no_of_docs)

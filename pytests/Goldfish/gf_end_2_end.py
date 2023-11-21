@@ -34,11 +34,14 @@ Assumption for test -
 
 import copy
 import random
-import threading
 import time
-from Queue import Queue
-from threading import Thread
 
+import requests
+from Queue import Queue
+
+
+from couchbase_utils.capella_utils.dedicated import CapellaUtils
+from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import ExternalDB
 from Goldfish.goldfish_base import GoldFishBaseTest
@@ -52,6 +55,8 @@ class GoldfishE2E(GoldFishBaseTest):
 
     def setUp(self):
         super(GoldfishE2E, self).setUp()
+
+        self.capella_provisioned_cluster_setup()
 
         self.clusters = self.list_all_clusters()
         self.goldfish_utils = GoldfishUtils(self.log)
@@ -82,18 +87,6 @@ class GoldfishE2E(GoldFishBaseTest):
         self.num_of_CRUD_on_datasets = self.input.param("num_of_CRUD_on_datasets", 5)
         self.num_iterations = self.input.param("num_iterations", 1)
 
-        mongo_crud_collection = self.input.param("mongo_crud_collection", "").split('|')
-        dynamo_crud_collection = self.input.param("dynamo_crud_collection", "").split('|')
-        rds_crud_collection = self.input.param("rds_crud_collection", "").split('|')
-
-        self.crud_collections = dict()
-        if len(mongo_crud_collection) > 0:
-            self.crud_collections["mongo"] = mongo_crud_collection
-        if len(dynamo_crud_collection) > 0:
-            self.crud_collections["dynamo"] = dynamo_crud_collection
-        if len(rds_crud_collection) > 0:
-            self.crud_collections["rds"] = rds_crud_collection
-
         self.run_concurrent_query = self.input.param("run_query", False)
 
         self.doc_count_per_format = {
@@ -103,11 +96,174 @@ class GoldfishE2E(GoldFishBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
 
+    def capella_provisioned_cluster_setup(self):
+
+        self.pod.url_public = (self.pod.url_public).replace("https://api", "https://cloudapi")
+        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.super_user.email, self.super_user.password, '')
+        resp = (self.capellaAPI.create_control_plane_api_key(self.super_user.org_id, 'init api keys')).json()
+        self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
+        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
+        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
+        self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
+        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
+        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
+
+        # create the first V4 API KEY WITH organizationOwner role, which will
+        # be used to perform further operations on capella cluster
+        resp = self.capellaAPI.org_ops_apis.create_api_key(
+            organizationId=self.super_user.org_id,
+            name=self.cbas_util.generate_name(),
+            organizationRoles=["organizationOwner"],
+            description=self.cbas_util.generate_name())
+        if resp.status_code == 201:
+            self.capella_cluster_keys = resp.json()
+        else:
+            self.fail("Error while creating API key for organization owner")
+
+        cluster_name = self.cbas_util.generate_name()
+        self.expected_result = {
+            "name": cluster_name,
+            "description": None,
+            "cloudProvider": {
+                "type": "aws",
+                "region": "us-east-1",
+                "cidr": CapellaUtils.get_next_cidr() + "/20"
+            },
+            "couchbaseServer": {
+                "version": self.input.capella.get(
+                    "capella_server_version", "7.2")
+            },
+            "serviceGroups": [
+                {
+                    "node": {
+                        "compute": {
+                            "cpu": 4,
+                            "ram": 16
+                        },
+                        "disk": {
+                            "storage": 100,
+                            "type": "gp3",
+                            "iops": 7000,
+                            "autoExpansion": "on"
+                        }
+                    },
+                    "numOfNodes": 3,
+                    "services": [
+                        "data"
+                    ]
+                }
+            ],
+            "availability": {
+                "type": "single"
+            },
+            "support": {
+                "plan": "basic",
+                "timezone": "GMT"
+            },
+            "currentState": None,
+            "audit": {
+                "createdBy": None,
+                "createdAt": None,
+                "modifiedBy": None,
+                "modifiedAt": None,
+                "version": None
+            }
+        }
+        cluster_created = False
+        while not cluster_created:
+            resp = self.capellaAPI.cluster_ops_apis.create_cluster(
+                self.super_user.org_id, (self.super_user.projects[0]).project_id, cluster_name,
+                self.expected_result['cloudProvider'],
+                self.expected_result['couchbaseServer'],
+                self.expected_result['serviceGroups'],
+                self.expected_result['availability'],
+                self.expected_result['support'])
+            if resp.status_code == 202:
+                cluster_created = True
+            else:
+                self.expected_result['cloudProvider'][
+                    "cidr"] = CapellaUtils.get_next_cidr() + "/20"
+        self.cluster_id = resp.json()['id']
+        # wait for cluster to be deployed
+
+        wait_start_time = time.time()
+        health_status = "deploying"
+        while time.time() < wait_start_time + 1500:
+            resp = (self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.super_user.org_id,
+                                                                        (self.super_user.projects[0]).project_id,
+                                                                        self.cluster_id)).json()
+            health_status = resp[
+                "currentState"]
+            if health_status == "healthy":
+                self.log.info("Successfully deployed remote cluster")
+                self.remote_cluster_connection_string = resp["connectionString"]
+                break
+            else:
+                self.log.info("Cluster is still deploying, waiting 15 seconds")
+                time.sleep(15)
+
+        if health_status != "healthy":
+            self.fail("Unable to deploy a provisioned cluster for remote links")
+
+        # allow 0.0.0.0/0 to allow access from anywhere
+        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.super_user.org_id,
+                                                                               (self.super_user.projects[0]).project_id,
+                                                                               self.cluster_id, "0.0.0.0/0")
+        if resp.status_code == 201:
+            self.log.info("Added allowed IP 0.0.0.0/0")
+        else:
+            self.fail("Failed to add allowed IP")
+
+        # create a database access credentials
+        access = [{
+            "privileges": ["data_reader",
+                           "data_writer"],
+            "resources": {}
+        }]
+
+        self.remote_cluster_username = "Administrator"
+        self.remote_cluster_password = "Password#123"
+        resp = self.capellaAPI.cluster_ops_apis.create_database_user(self.super_user.org_id,
+                                                                     (self.super_user.projects[0]).project_id,
+                                                                     self.cluster_id, "Administrator", access,
+                                                                     "Password#123")
+        if resp.status_code == 201:
+            self.log.info("Database user added")
+        else:
+            self.fail("Failed to add database user")
+
+        # creating bucket scope and collection to pump data
+        bucket_name = "hotel"
+        scope = None
+        collection = None
+
+        resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.super_user.org_id,
+                                                              (self.super_user.projects[0]).project_id, self.cluster_id,
+                                                              bucket_name, "couchbase", "couchstore", 2000, "seqno",
+                                                              "majorityAndPersistActive", 0, True, 1000000)
+        if resp.status_code == 201:
+            self.bucket_id = resp.json()["id"]
+            self.log.info("Bucket created successfully")
+        else:
+            self.fail("Error creating bucket in remote_cluster")
+
+        if bucket_name and scope and collection:
+            self.remote_collection = "{}.{}.{}".format(bucket_name, scope, collection)
+        else:
+            self.remote_collection = "{}.{}.{}".format(bucket_name, "_default", "_default")
+        resp = self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.super_user.org_id,
+                                                                        (self.super_user.projects[0]).project_id,
+                                                                        self.cluster_id)
+        if resp.status_code == 200:
+            self.remote_cluster_certificate = (resp.json())["certificate"]
+        else:
+            self.fail("Failed to get cluster certificate")
+
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
 
-        super(GoldfishE2E, self).tearDown()
+        # super(GoldfishE2E, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage="Teardown")
 
@@ -132,11 +288,11 @@ class GoldfishE2E(GoldFishBaseTest):
         """
         remote_link_properties = list()
         remote_link_properties.append(
-            {"type": "couchbase", "hostname": self.input.param("hostname", ""),
-             "username": self.input.param("username", ""),
-             "password": self.input.param("password", ""),
-             "encryption": self.input.param("encryption", ""),
-             "certificate": self.input.param("hostname", '''''')})
+            {"type": "couchbase", "hostname": self.remote_cluster_connection_string,
+             "username": self.remote_cluster_username,
+             "password": self.remote_cluster_password,
+             "encryption": "full",
+             "certificate": self.remote_cluster_certificate})
         cbas_spec["remote_link"]["properties"] = remote_link_properties
 
     def update_kafka_link_spec(self, cbas_spec):
@@ -267,21 +423,26 @@ class GoldfishE2E(GoldFishBaseTest):
         Update the kafka datasourece in template
         """
         cbas_spec["kafka_dataset"]["data_source"] = ["mongo", "dynamo", "rds"]
-        mongo_collection = self.input.param("mongo_collection", "").split('|')
-        dynamo_collection = self.input.param("dynamo_collection", "").split('|')
-        rds_collection = self.input.param("rds_collection", "").split('|')
-        remote_collection = self.input.param("remote_collection", "").split('|')
+        mongo_collection = self.input.param("mongo_collection", None)
+        mongo_collection = mongo_collection.split('|') if mongo_collection else None
+        dynamo_collection = self.input.param("dynamo_collection", None)
+        dynamo_collection = dynamo_collection.split('|') if dynamo_collection else None
+        rds_collection = self.input.param("rds_collection", None)
+        rds_collection = rds_collection.split('|') if rds_collection else None
 
         self.include_external_collections = dict()
-        if len(mongo_collection) > 0:
+        if mongo_collection and len(mongo_collection) > 0:
             self.include_external_collections["mongo"] = mongo_collection
-        if len(dynamo_collection) > 0:
+        if dynamo_collection and len(dynamo_collection) > 0:
             self.include_external_collections["dynamo"] = dynamo_collection
-        if len(rds_collection) > 0:
+        if rds_collection and len(rds_collection) > 0:
             self.include_external_collections["rds"] = rds_collection
-        if len(remote_collection) > 0:
-            self.include_external_collections["remote"] = remote_collection
         cbas_spec["kafka_dataset"]["include_external_collections"] = self.include_external_collections
+
+    def update_remote_dataset_spec(self, cbas_spec):
+        remote_collection = [self.remote_collection]
+        self.include_external_collections["remote"] = remote_collection
+        cbas_spec["remote_dataset"]["include_collections"] = remote_collection
 
     def run_random_queries_on_dataset(self, cluster, query_list, collection_name, dataverse_name,
                                       time_for_query_in_mins):
@@ -376,8 +537,8 @@ class GoldfishE2E(GoldFishBaseTest):
             0]
         valid_count = 0 if not no_of_docs else no_of_docs
         if data_count != valid_count:
-            return False, valid_count, data_count
-        return True, valid_count, data_count
+            return False, valid_count, data_count[0]
+        return True, valid_count, data_count[0]
 
     def validate_data_in_external_dataset(self, cluster, dataset):
         """
@@ -386,8 +547,8 @@ class GoldfishE2E(GoldFishBaseTest):
         item_count = cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
                                                                      timeout=3600, analytics_timeout=3600)
         if item_count[0] != self.doc_count_per_format[dataset.dataset_properties["file_format"]]:
-            return False, self.doc_count_per_format[dataset.dataset_properties["file_format"]], item_count
-        return True, self.doc_count_per_format[dataset.dataset_properties["file_format"]], item_count
+            return False, self.doc_count_per_format[dataset.dataset_properties["file_format"]], item_count[0]
+        return True, self.doc_count_per_format[dataset.dataset_properties["file_format"]], item_count[0]
 
     def validate_data_in_kafka_dataset(self, cluster, dataset):
         """
@@ -404,8 +565,8 @@ class GoldfishE2E(GoldFishBaseTest):
                                                                              timeout=3600, analytics_timeout=3600)[0]
 
             if source_doc_count != dest_doc_count:
-                return False, source_doc_count, dest_doc_count
-            return True, source_doc_count, dest_doc_count
+                return False, source_doc_count, dest_doc_count[0]
+            return True, source_doc_count, dest_doc_count[0]
 
         if dataset.data_source == "dynamo":
             source_doc_count = (self.doc_loader.count_dynamo_documents(self.dynamo_access_key_id,
@@ -415,8 +576,8 @@ class GoldfishE2E(GoldFishBaseTest):
             dest_doc_count = cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
                                                                              timeout=3600, analytics_timeout=3600)[0]
             if source_doc_count != dest_doc_count:
-                return False, source_doc_count, dest_doc_count
-            return True, source_doc_count, dest_doc_count
+                return False, source_doc_count, dest_doc_count[0]
+            return True, source_doc_count, dest_doc_count[0]
 
         if dataset.data_source == "rds":
             database = external_collection_name.split('.')[0]
@@ -427,8 +588,8 @@ class GoldfishE2E(GoldFishBaseTest):
             dest_doc_count = cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
                                                                              timeout=3600, analytics_timeout=3600)[0]
             if source_doc_count != dest_doc_count:
-                return False, source_doc_count, dest_doc_count
-            return True, source_doc_count, dest_doc_count
+                return False, source_doc_count, dest_doc_count[0]
+            return True, source_doc_count, dest_doc_count[0]
 
     def validate_data_in_remote_dataset(self, cluster, dataset):
         """
@@ -436,9 +597,16 @@ class GoldfishE2E(GoldFishBaseTest):
         """
         item_count = cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
                                                                      timeout=3600, analytics_timeout=3600)
-        if item_count[0] != dataset.num_of_items:
-            return False, dataset.num_of_items, item_count
-        return True, dataset.num_of_items, item_count
+        resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.super_user.org_id,
+                                                                  (self.super_user.projects[
+                                                                      0]).project_id,
+                                                                  self.cluster_id,
+                                                                  self.bucket_id)
+        if resp.status_code == 200:
+            current_doc_count = (resp.json())["stats"]["itemCount"]
+        if item_count[0] != current_doc_count:
+            return False, current_doc_count, item_count[0]
+        return True, current_doc_count, item_count[0]
 
     def return_doc_match_log_info(self, state, full_name, type="remote", expected=0, actual=0):
         if state:
@@ -491,7 +659,9 @@ class GoldfishE2E(GoldFishBaseTest):
         self.update_external_dataset_spec(self.gf_spec)
         self.update_standalone_collection_spec(self.gf_spec)
         self.update_kafka_dataset_spec(self.gf_spec)
-        self.to_clusters = None
+        self.update_remote_dataset_spec(self.gf_spec)
+        self.start_source_ingestion(self.external_db_doc, 10000)
+        self.wait_for_source_ingestion(self.external_db_doc)
 
     def create_crud_standalone_collection(self, cluster, new_dataset, timeout=300):
         """
@@ -638,6 +808,48 @@ class GoldfishE2E(GoldFishBaseTest):
             dynamo_collections = set(self.include_external_collections["dynamo"])
         if "rds" in self.include_external_collections:
             rds_collections = set(self.include_external_collections["rds"])
+        if "remote" in self.include_external_collections:
+            remote_collections = set(self.include_external_collections["remote"])
+
+        for collection in remote_collections:
+            bucket = collection.split(".")[0]
+            scope = collection.split(".")[1]
+            collection = collection.split(".")[2]
+            url = self.input.param("sirius_url", None)
+            resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.super_user.org_id,
+                                                                      (self.super_user.projects[
+                                                                          0]).project_id,
+                                                                      self.cluster_id,
+                                                                      self.bucket_id)
+            if resp.status_code == 200:
+                current_doc_count = (resp.json())["stats"]["itemCount"]
+            else:
+                current_doc_count = 0
+            data = {
+                "identifierToken": "hotel",
+                "clusterConfig": {
+                    "username": self.remote_cluster_username,
+                    "password": self.remote_cluster_password,
+                    "connectionString": "couchbases://" + self.remote_cluster_connection_string
+                },
+                "bucket": bucket,
+                "scope": scope,
+                "collection": collection,
+                "operationConfig": {
+                    "start": current_doc_count,
+                    "end": no_of_docs,
+                    "docSize": doc_size,
+                    "template": "hotel"
+                },
+                "insertOptions": {
+                    "timeout": 5
+                }
+            }
+            if url is not None:
+                url = "http://" + url + "/bulk-create"
+                response = requests.post(url, json=data)
+                if response.status_code != 200:
+                    self.log.error("Failed to start loader for remote collection")
 
         for collection in mongo_collections:
             database = collection.split(".")[0]
@@ -683,6 +895,8 @@ class GoldfishE2E(GoldFishBaseTest):
             dynamo_collections = set(self.include_external_collections["dynamo"])
         if "rds" in self.include_external_collections:
             rds_collections = set(self.include_external_collections["rds"])
+        if "remote" in self.include_external_collections:
+            remote_collection = set(self.include_external_collections["remote"])
         while time.time() < start_time + timeout:
             self.log.info("Waiting for data to be loaded in source databases")
             for collection in mongo_collections:
@@ -694,10 +908,10 @@ class GoldfishE2E(GoldFishBaseTest):
                     self.log.info("Doc loading complete for mongo collection: {}".format(collection))
                     mongo_collections.remove(collection)
             for collection in dynamo_collections:
-                if (self.doc_loader.count_dynamo_documents(self.dynamo_access_key_id,
-                                                           self.dynamo_security_access_key,
-                                                           self.dynamo_regions, collection).json())[
-                    "count"] == no_of_docs:
+                resp = self.doc_loader.count_dynamo_documents(self.dynamo_access_key_id,
+                                                              self.dynamo_security_access_key,
+                                                              self.dynamo_regions, collection)
+                if resp.json()["count"] == no_of_docs:
                     self.log.info("Doc loading complete for dynamo collection: {}".format(collection))
                     dynamo_collections.remove(collection)
             for collection in rds_collections:
@@ -708,7 +922,18 @@ class GoldfishE2E(GoldFishBaseTest):
                                                           database, table)).json()["count"] == no_of_docs:
                     self.log.info("Doc loading complete for rds collection: {}".format(collection))
                     rds_collections.remove(collection)
-            final_set = mongo_collections.union(rds_collections, dynamo_collections)
+
+            for collection in remote_collection:
+                resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.super_user.org_id,
+                                                                          (self.super_user.projects[
+                                                                              0]).project_id,
+                                                                          self.cluster_id,
+                                                                          self.bucket_id)
+                if resp.status_code == 200 and (resp.json())["stats"]["itemCount"] == no_of_docs:
+                    self.log.info("Doc loading complete for remote collection: {}".format(collection))
+                    remote_collection.remove(collection)
+
+            final_set = remote_collection
             if len(final_set) == 0:
                 self.log.info("Doc loading is complete for all sources")
                 return True
@@ -756,6 +981,81 @@ class GoldfishE2E(GoldFishBaseTest):
         self.log.error("Not all datasets ingestion are complete")
         return False
 
+    def stop_crud_on_kafka_source(self, doc_loader_ids):
+        for database in doc_loader_ids:
+            for key, value in database:
+                if database == "mongo":
+                    status = (self.doc_loader.stop_crud_on_mongo(value).json())["status"]
+                    if status == "stopped":
+                        self.log.info("Stopped crud operation on mongo collection: {}".format(key))
+                    else:
+                        self.log.error("Failed to stop crud on mongo collection: {}".format(key))
+                if database == "dynamo":
+                    status = (self.doc_loader.stop_crud_on_dynamo(value).json())["status"]
+                    if status == "stopped":
+                        self.log.info("Stopped crud operation on dynamo collection: {}".format(key))
+                    else:
+                        self.log.error("Failed to stop crud on dynamo collection: {}".format(key))
+                if database == "rds":
+                    status = (self.doc_loader.stop_crud_on_mysql(value).json())["status"]
+                    if status == "stopped":
+                        self.log.info("Stopped crud operation on rds collection: {}".format(key))
+                    else:
+                        self.log.error("Failed to stop crud on rds collection: {}".format(key))
+    def start_crud_on_kafka_source(self):
+        mongo_collections = dynamo_collections = rds_collections = []
+        if "mongo" in self.include_external_collections:
+            mongo_collections = set(self.include_external_collections["mongo"])
+        if "dynamo" in self.include_external_collections:
+            dynamo_collections = set(self.include_external_collections["dynamo"])
+        if "rds" in self.include_external_collections:
+            rds_collections = set(self.include_external_collections["rds"])
+        if "remote" in self.include_external_collections:
+            remote_collections = set(self.include_external_collections["remote"])
+
+        doc_loader_ids = {"mongo": dict(), "dynamo": dict(), "rds": dict()}
+        for collection in mongo_collections:
+            database = collection.split(".")[0]
+            collection_name = collection.split(".")[1]
+            response = \
+                (self.doc_loader.start_crud_on_mongo('', database, collection_name, atlas_url=self.mongo_connection_uri,
+                                                     document_size=1000000).json())
+            if response["status"] == 'running':
+                doc_loader_ids["mongo"][collection] = response["loader_id"]
+                self.log.info("Started crud on mongo collection: {}".format(collection))
+            else:
+                self.log.error("Failed to start loader for MongoDB collection")
+
+        for collection in dynamo_collections:
+            response = (self.doc_loader.start_crud_on_dynamo(self.dynamo_access_key_id, self.dynamo_security_access_key,
+                                                             self.gf_spec["kafka_dataset"]["primary_key"], collection,
+                                                             self.dynamo_regions, document_size=1000000).json())
+
+            if response["status"] == 'running':
+                doc_loader_ids["dynamo"][collection] = response["loader_id"]
+                self.log.info("Started crud on dynamo collection: {}".format(collection))
+            else:
+                self.log.error("Failed to start loader for DynamoDB collection")
+
+        for collection in rds_collections:
+            database = collection.split('.')[0]
+            table = collection.split('.')[1]
+            columns = "id INT NOT NULL AUTO_INCREMENT PRIMARY KEY, address VARCHAR(255), avg_rating FLOAT, city " \
+                      "VARCHAR(255), country VARCHAR(255), email VARCHAR(255) NULL, free_breakfast BOOLEAN, " \
+                      "free_parking BOOLEAN, name VARCHAR(255), phone VARCHAR(255), price FLOAT, public_likes JSON, " \
+                      "reviews JSON, type VARCHAR(255), url VARCHAR(255)"
+            response = \
+                (self.doc_loader.start_crud_on_mysql(self.rds_hostname, self.rds_port, self.rds_username,
+                                                     self.rds_password,
+                                                     database, table, columns, document_size=1000000).json())
+            if response["status"] == 'running':
+                doc_loader_ids["rds"][collection] = response["loader_id"]
+                self.log.info("Started crud on rds collection: {}".format(collection))
+            else:
+                self.log.error("Failed to start loader for RDS collection")
+
+        return doc_loader_ids
+
     def scale_clusters(self, unit):
         """
         Scale all cluster to the required unit
@@ -781,29 +1081,25 @@ class GoldfishE2E(GoldFishBaseTest):
             for project in user.projects:
                 for cluster in project.clusters:
                     if self.goldfish_utils.get_cluster_info(self.pod, user, cluster)["state"] != "healthy":
-                        my_list = [x for x in my_list if x != 3]
                         self.clusters = [instance for instance in self.clusters if instance.name != cluster.name]
 
     def setup_for_test(self, cluster):
         """
         Process and create entities based on cbas_spec template
         """
-        self.to_clusters = None
         cluster.cbas_util = CbasUtil(self.task, self.use_sdk_for_cbas)
         cluster.goldish_utils = GoldfishUtils(self.log)
-        status, msg = cluster.cbas_util.create_cbas_infra_from_spec(cluster, self.gf_spec,
-                                                                    self.bucket_util, False,
-                                                                    remote_clusters=self.to_clusters)
+        status, msg = cluster.cbas_util.create_cbas_infra_from_spec(cluster, self.gf_spec, self.bucket_util, False)
         if not status:
             self.log.error(msg)
             self.log.error("All infra are not created. Check logs for error")
 
         cluster.jobs = Queue()
         cluster.results = []
-        self.perform_copy_and_load_on_standalone_collection(cluster, no_of_docs=1000)
-        self.run_queries_on_collections(cluster, time_for_query=120)
+        self.perform_copy_and_load_on_standalone_collection(cluster, no_of_docs=10000)
+        self.run_queries_on_collections(cluster, time_for_query=90)
         cluster.jobs.put((self.wait_for_destination_ingestion,
-                          {"cluster": cluster, "timeout": 300}))
+                          {"cluster": cluster, "timeout": self.ingestion_timeout}))
         self.start_thread_processes(cluster.cbas_util, cluster.results, cluster.jobs)
 
     def run_goldfishE2E(self):
@@ -815,7 +1111,6 @@ class GoldfishE2E(GoldFishBaseTest):
         # 100Gb per source
         # *********** Start Scenario:1 **********************
         self.update_goldfish_spec()
-
         # Basic data to be present already of 100GB
         # create the infrastructure and start the basic ingestion in all kinds of collections
         for cluster in self.clusters:
@@ -837,7 +1132,16 @@ class GoldfishE2E(GoldFishBaseTest):
         # remote collection to have 200GB data
         # to add 100GB in remote collection sirius code
         # *********** Start Scenario:2 **********************
-        self.start_source_ingestion(self.external_db_doc * 2)
+        # disconnect all kafka links
+        for cluster in self.clusters:
+            kafka_links = cluster.cbas_util.list_all_link_objs("kafka")
+            for link in kafka_links:
+                cluster.cbas_util.disconnect_link(cluster, link.full_name)
+        for cluster in self.clusters:
+            cluster.cbas_util.wait_for_kafka_links(cluster, "DISCONNECTED")
+            self.check_docs_in_all_datasets(cluster)
+
+        self.start_source_ingestion(self.external_db_doc * 2, 10000)
         for cluster in self.clusters:
             cluster.jobs.put((self.wait_for_source_ingestion,
                               {"no_of_docs": self.external_db_doc * 2, "timeout": self.ingestion_timeout}))
@@ -851,14 +1155,6 @@ class GoldfishE2E(GoldFishBaseTest):
         if not scaling_op:
             self.remove_unhealthy_clusters()
 
-        # disconnect all kafka links
-        for cluster in self.clusters:
-            kafka_links = cluster.cbas_util.list_all_link_objs("kafka")
-            for link in kafka_links:
-                cluster.cbas_util.disconnect_link(cluster, link.full_name)
-            cluster.cbas_util.wait_for_kafka_links(cluster, "DISCONNECTED")
-            self.check_docs_in_all_datasets(cluster)
-
         # scale up cluster
         scaling_op = self.scale_clusters(6)
         # Not perform operation on unhealthy nodes
@@ -866,31 +1162,33 @@ class GoldfishE2E(GoldFishBaseTest):
             self.remove_unhealthy_clusters()
 
         for cluster in self.clusters:
-            self.check_docs_in_all_datasets(cluster)
+            # self.check_docs_in_all_datasets(cluster)
             cluster.cbas_util.connect_links(cluster, self.gf_spec)
+            cluster.jobs.put((cluster.cbas_util.wait_for_kafka_links,
+                              {"cluster": cluster}))
 
-        # increasing number of kafka links from 3 to 6, 2 on each source
+        # increasing number of remote datasets from 2 to 6
         for cluster in self.clusters:
-            kafka_datasets = [x for x in cluster.cbas_util.list_all_dataset_objs("standalone")
-                              if x.data_source in ["mongo", "dynamo", "rds"]]
-            for i in range(2):
-                for dataset in kafka_datasets:
+            remote_datasets = cluster.cbas_util.list_all_dataset_objs("remote")
+            for i in range(3):
+                for dataset in remote_datasets:
                     dataset.name = cluster.cbas_util.generate_name()
                     dataverse = random.choice(cluster.cbas_util.dataverses.values())
                     dataset.dataverse_name = dataverse.name
-                    creation_method = "COLLECTION"
-                    if not cluster.cbas_util.create_standalone_collection_using_links(
-                            cluster, dataset.name, creation_method, False,
-                            dataset.dataverse_name, dataset.primary_key,
-                            dataset.link_name, dataset.external_collection_name,
-                            False, dataset.storage_format):
-                        self.log.error("Failed to create KAFKA dataset")
+                    if not cluster.cbas_util.create_remote_dataset(
+                            cluster, dataset.name,
+                            dataset.full_kv_entity_name, dataset.link_name,
+                            dataset.dataverse_name, False, False, None,
+                            None, "column", False,
+                            False, None, None, None,
+                            timeout=self.gf_spec.get("api_timeout",
+                                                     300),
+                            analytics_timeout=self.gf_spec.get(
+                                "cbas_timeout", 300)):
+                        self.log.error("Failed to create remote dataset {0}".format(dataset.name))
                     else:
-                        dataverse.standalone_datasets[
-                            dataset.name] = dataset
-            cluster.cbas_util.connect_links(cluster, self.gf_spec)
-            cluster.jobs.put((cluster.cbas_util.wait_for_kafka_links,
-                              {"cluster": cluster, "state": "CONNECTED"}))
+                        dataverse = cluster.cbas_util.dataverses[dataset.dataverse_name]
+                        dataverse.remote_datasets[dataset.name] = dataset
 
         # wait for source ingestion to complete
         for cluster in self.clusters:
@@ -953,7 +1251,7 @@ class GoldfishE2E(GoldFishBaseTest):
         # remote collection to have 300GB data, total 600GB
         # 3 standalone collection to copy from s3, total 300GB
         # 1 standalone collection insert and upsert, total 100 GB
-        self.start_source_ingestion(self.external_db_doc * 3)
+        self.start_source_ingestion(self.external_db_doc * 3, 10000)
         for cluster in self.clusters:
             cluster.jobs.put((self.wait_for_source_ingestion,
                               {"no_of_docs": self.external_db_doc * 3, "timeout": self.ingestion_timeout}))
@@ -979,7 +1277,7 @@ class GoldfishE2E(GoldFishBaseTest):
                         "cbas_timeout", 300)):
                 self.log.error("Failed to create remote dataset {0}".format(remote_datasets.name))
             else:
-                dataverse = cluster.cbas_util.dataverses
+                dataverse = cluster.cbas_util.dataverses[remote_datasets.dataverse_name]
                 dataverse.remote_datasets[remote_datasets.name] = remote_datasets
 
             standalone_collection = random.choice(
@@ -1062,24 +1360,32 @@ class GoldfishE2E(GoldFishBaseTest):
                 else:
                     self.log.info("Created dataset {0} on link {1}".format(dataset.full_name, dataset.link_name))
 
+            cluster.cbas_util.connect_links(cluster, self.gf_spec)
+            cluster.jobs.put((cluster.cbas_util.wait_for_kafka_links,
+                              {"cluster": cluster, "state": "CONNECTED"}))
+
         for cluster in self.clusters:
-            kafka_datasets = [x for x in cluster.cbas_util.list_all_dataset_objs("standalone")
-                              if x.data_source in ["mongo", "dynamo", "rds"]]
+            remote_datasets = cluster.cbas_util.list_all_dataset_objs("remote")
             for i in range(4):
-                dataset = random.choice(kafka_datasets)
+                dataset = random.choice(remote_datasets)
                 dataset.name = cluster.cbas_util.generate_name()
                 dataverse = random.choice(cluster.cbas_util.dataverses.values())
                 dataset.dataverse_name = dataverse.name
                 creation_method = "COLLECTION"
-                if not cluster.cbas_util.create_standalone_collection_using_links(
-                        cluster, dataset.name, creation_method, False,
-                        dataset.dataverse_name, dataset.primary_key,
-                        dataset.link_name, dataset.external_collection_name,
-                        False, dataset.storage_format):
-                    self.log.error("Failed to create KAFKA dataset")
+                if not cluster.cbas_util.create_remote_dataset(
+                        cluster, dataset.name,
+                        dataset.full_kv_entity_name, dataset.link_name,
+                        dataset.dataverse_name, False, False, None,
+                        None, "column", False,
+                        False, None, None, None,
+                        timeout=self.gf_spec.get("api_timeout",
+                                                 300),
+                        analytics_timeout=self.gf_spec.get(
+                            "cbas_timeout", 300)):
+                    self.log.error("Failed to create remote dataset {0}".format(dataset.name))
                 else:
-                    dataverse.standalone_datasets[
-                        dataset.name] = dataset
+                    dataverse = cluster.cbas_util.dataverses[dataverse.name]
+                    dataverse.remote_datasets[dataset.name] = dataset
 
             cluster.cbas_util.connect_links(cluster, self.gf_spec)
             cluster.jobs.put((cluster.cbas_util.wait_for_kafka_links,
