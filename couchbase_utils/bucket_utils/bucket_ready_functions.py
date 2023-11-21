@@ -1583,7 +1583,8 @@ class BucketUtils(ScopeUtils):
                 break
         if status is True:
             warmed_up = self._wait_warmup_completed(
-                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=300)
+                self.cluster_util.get_kv_nodes(cluster), bucket, wait_time=300,
+                check_for_persistence=False)
             if not warmed_up:
                 status = False
         if status is True:
@@ -4389,7 +4390,7 @@ class BucketUtils(ScopeUtils):
             return True
         return False
 
-    def _wait_warmup_completed(self, servers, bucket, wait_time=300):
+    def _wait_warmup_completed(self, servers, bucket, wait_time=300, check_for_persistence=True):
         # Return True, if bucket_type is not equal to MEMBASE
         if bucket.bucketType != Bucket.Type.MEMBASE:
             return True
@@ -4416,6 +4417,10 @@ class BucketUtils(ScopeUtils):
                                                                 server.ip))
 
             ready_for_persistence = False
+            if not check_for_persistence:
+                ready_for_persistence = True
+                continue
+
             while time.time() - start < wait_time:
                 try:
                     result = cbstat_obj.vbucket_seqno(bucket.name)
