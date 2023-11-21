@@ -388,6 +388,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.__log("started")
         except Exception as e:
             traceback.print_exc()
+            for server in self.input.servers:
+                self.set_ports_for_server(server, "non_ssl")
             self.task.shutdown(force=True)
             self.fail(e)
         finally:
