@@ -278,7 +278,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                            "my.attr", "value")
 
         # Read full doc and validate
-        self.__read_doc_and_validate({})
+        self.__read_doc_and_validate('{}')
 
         # Using lookup_in
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
@@ -299,7 +299,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                key, val)
 
         # Read full doc and validate
-        self.__read_doc_and_validate({})
+        self.__read_doc_and_validate('{}')
 
         # Use lookup_in with 'xattrs' attribute enabled to validate the values
         for key, val in xattrs_to_insert:
@@ -353,7 +353,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         updated_cas_2 = result["cas"]
 
-        self.__read_doc_and_validate({})
+        self.__read_doc_and_validate('{}')
 
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
         self.assertTrue(failure)
@@ -633,7 +633,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         updated_cas_2 = result["cas"]
 
         if self.xattr:
-            self.__read_doc_and_validate({})
+            self.__read_doc_and_validate('{}')
 
         # Ensure we cannot read a non-existent xattribute
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
