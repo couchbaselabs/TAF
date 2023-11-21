@@ -28,14 +28,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
         self.mongo_colletions = list()
 
         self.mongo_atlas_url = self.input.param("mongo_atlas_url", None)
-
-        self.mongo_on_prem_host = self.input.param("mongo_on_prem_host", None)
-        self.mongo_on_prem_username = self.input.param(
-            "mongo_on_prem_username", None)
-        self.mongo_on_prem_password = self.input.param(
-            "mongo_on_prem_password", None)
-        self.mongo_on_prem_url = "mongodb://{}:27017/".format(
-            self.mongo_on_prem_host) if self.mongo_on_prem_host else None
+        self.mongo_on_prem_url = self.input.param("mongo_on_prem_url", None)
 
         self.initial_doc_count = self.input.param("initial_doc_count", 1000)
 
@@ -56,17 +49,17 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
 
         for mongo_collection in self.mongo_colletions:
             resp = self.doc_loading_APIs.delete_mongo_collection(
-                self.mongo_on_prem_host, 27017, self.mongo_db_name,
+                None, 27017, self.mongo_db_name,
                 mongo_collection, self.mongo_atlas_url,
-                self.mongo_on_prem_username, self.mongo_on_prem_password)
+                None, None)
             if resp.status_code != 200:
                 self.fail("Error while deleting mongo collection - {}".format(
                     mongo_collection))
 
         resp = self.doc_loading_APIs.drop_mongo_database(
-            self.mongo_on_prem_host, self.mongo_db_name,
-            self.mongo_atlas_url, self.mongo_on_prem_username,
-            self.mongo_on_prem_password)
+            None, self.mongo_db_name,
+            self.mongo_atlas_url, None,
+            None)
         if resp.status_code != 200:
             self.fail("Error while deleting mongo database - {}".format(
                 self.mongo_db_name))
@@ -80,7 +73,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
                               stage="Teardown")
 
     def start_initial_data_load(self):
-        if not (self.mongo_atlas_url or self.mongo_on_prem_username):
+        if not (self.mongo_atlas_url or None):
             self.fail("Unable to load inital data into mongo. Please pass "
                       "username and password for either Mongo Atlas or Mongo "
                       "On-prem Cluster.")
@@ -92,9 +85,9 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
                                                1) + 1):
                 mongo_collection = "sanity-collection-{}".format(i)
                 resp = self.doc_loading_APIs.start_mongo_loader(
-                    self.mongo_on_prem_host, self.mongo_db_name,
+                    None, self.mongo_db_name,
                     mongo_collection, self.mongo_atlas_url, 27017,
-                    self.mongo_on_prem_username, self.mongo_on_prem_password,
+                    None, None,
                     initial_doc_count=self.initial_doc_count)
                 if resp.status_code != 200:
                     self.log.error("Failed to load initial docs into Mongo "
@@ -117,9 +110,9 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
             for mongo_coll in self.mongo_colletions:
                 if mongo_coll not in results:
                     resp = self.doc_loading_APIs.get_mongo_doc_count(
-                        self.mongo_on_prem_host, self.mongo_db_name,
-                        mongo_coll, self.mongo_on_prem_username,
-                        self.mongo_on_prem_password, self.mongo_atlas_url)
+                        None, self.mongo_db_name,
+                        mongo_coll, None,
+                        None, self.mongo_atlas_url)
                     if resp.status_code == 200:
                         doc_count = resp.json()["count"]
                         if doc_count == expected_count:
@@ -141,9 +134,9 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
     def start_CRUD(self, mongo_collections):
         for mongo_collection in mongo_collections:
             resp = self.doc_loading_APIs.start_crud_on_mongo(
-                self.mongo_on_prem_host, self.mongo_db_name, mongo_collection,
-                self.mongo_atlas_url, 27017, self.mongo_on_prem_username,
-                self.mongo_on_prem_password,
+                None, self.mongo_db_name, mongo_collection,
+                self.mongo_atlas_url, 27017, None,
+                None,
                 num_buffer=self.initial_doc_count//10)
 
             if resp.status_code != 200:
@@ -167,9 +160,9 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
         results = {}
         for mongo_collection in mongo_collections:
             resp = self.doc_loading_APIs.get_mongo_doc_count(
-                self.mongo_on_prem_host, self.mongo_db_name,
-                mongo_collection, self.mongo_on_prem_username,
-                self.mongo_on_prem_password, self.mongo_atlas_url)
+                None, self.mongo_db_name,
+                mongo_collection, None,
+                None, self.mongo_atlas_url)
             if resp.status_code == 200:
                 results[CBASHelper.format_name(
                     self.mongo_db_name, mongo_collection)] = resp.json()["count"]
