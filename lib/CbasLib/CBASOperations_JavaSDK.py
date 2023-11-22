@@ -60,7 +60,7 @@ class CBASHelper(object):
             options.raw("mode", mode)
 
         options.raw("pretty", pretty)
-        #options.raw("timeout", str(analytics_timeout) + time_out_unit)
+        options.timeout(Duration.ofSeconds(timeout))
 
         output = {}
         try:
@@ -116,7 +116,7 @@ class CBASHelper(object):
             options.raw("mode", mode)
 
         options.raw("pretty", pretty)
-        #options.raw("timeout", str(analytics_timeout) + "s")
+        options.timeout(Duration.ofSeconds(timeout))
 
         for param in parameters:
             options.raw(param, parameters[param])

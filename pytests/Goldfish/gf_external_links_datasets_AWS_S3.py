@@ -74,7 +74,7 @@ class S3LinksDatasets(GoldFishBaseTest):
         dataset_properties["include"] = "*.{0}".format(file_format)
         dataset_properties["region"] = self.aws_region
         dataset_properties["path_on_external_container"] = (
-            "{depth:string}_{depth-no:int}_{folder:string}_{folder-no:int}")
+            "Depth_{depth-no:int}_Folder_{folder-no:int}")
 
         if file_format in ["csv", "tsv"]:
             dataset_properties["object_construction_def"] = (
