@@ -111,6 +111,15 @@ class CBASBaseTest(BaseTestCase):
             cluster.nodes_in_cluster.append(cluster.master)
             cluster.kv_nodes.append(cluster.master)
 
+            # Force disable TLS to avoid initial connection issues
+            tasks = [self.node_utils.async_disable_tls(server)
+                     for server in cluster.servers]
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+            for server in cluster.servers:
+                self.set_ports_for_server(server, "non_ssl")
+            CbServer.use_https = False
+
             self.initialize_cluster(cluster_name, cluster,
                                     services=self.services_init[i][0])
             cluster.master.services = self.services_init[i][0].replace(":", ",")
@@ -132,6 +141,12 @@ class CBASBaseTest(BaseTestCase):
                 if not status:
                     self.fail(msg)
             self.modify_cluster_settings(cluster)
+
+            # Enforce tls on nodes of all clusters
+            self.enable_tls_on_nodes()
+            for server in cluster.servers:
+                self.set_ports_for_server(server, "ssl")
+            CbServer.use_https = True
 
         self.available_servers = self.servers[end:]
 
