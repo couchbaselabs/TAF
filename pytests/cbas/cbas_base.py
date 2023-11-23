@@ -2,6 +2,7 @@
 Created on 04-Jun-2021
 @author: Umang Agrawal
 '''
+import copy
 
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
@@ -91,7 +92,7 @@ class CBASBaseTest(BaseTestCase):
         end = self.nodes_init[0]
         cluster = self.cb_clusters[self.cb_clusters.keys()[0]]
         # Instead of cluster.servers , use cluster.nodes_in_cluster
-        cluster.nodes_in_cluster = self.servers[start:end]
+        cluster.servers = self.servers[start:end]
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
@@ -108,7 +109,6 @@ class CBASBaseTest(BaseTestCase):
                 name=cluster_name,
                 servers=self.servers[start:end])
             self.cb_clusters[cluster_name] = cluster
-            cluster.nodes_in_cluster.append(cluster.master)
             cluster.kv_nodes.append(cluster.master)
 
             # Force disable TLS to avoid initial connection issues
@@ -147,6 +147,8 @@ class CBASBaseTest(BaseTestCase):
             for server in cluster.servers:
                 self.set_ports_for_server(server, "ssl")
             CbServer.use_https = True
+            RestConnection(cluster.master).set_internalSetting(
+                "magmaMinMemoryQuota", 256)
 
         self.available_servers = self.servers[end:]
 
@@ -219,7 +221,7 @@ class CBASBaseTest(BaseTestCase):
                     self.service_mem_dict[service][2] = service_mem_in_cluster
 
             j = 1
-            for server in cluster.nodes_in_cluster:
+            for server in cluster.servers:
                 if server.ip != cluster.master.ip:
                     server.services = self.services_init[i][j].replace(":", ",")
                     j += 1
@@ -256,15 +258,15 @@ class CBASBaseTest(BaseTestCase):
                         self.set_memory_for_services(
                             cluster, server, server.services)
 
-            if cluster.nodes_in_cluster[1:]:
+            if cluster.servers[1:]:
                 self.task.rebalance(
-                    cluster, cluster.nodes_in_cluster[1:], [],
-                    services=[server.services for server in cluster.nodes_in_cluster[1:]])
+                    cluster, cluster.servers[1:], [],
+                    services=[server.services for server in cluster.servers[1:]])
 
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None
                 retry = 0
-                while True and retry < 60:
+                while True and retry < 3:
                     cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
                         cluster)
                     if cbas_cc_node_ip:
@@ -274,7 +276,7 @@ class CBASBaseTest(BaseTestCase):
                         retry += 1
 
                 if not cbas_cc_node_ip:
-                    self.fail("CBAS service did not come up even after 10 "
+                    self.fail("CBAS service did not come up even after 15 "
                               "mins.")
 
                 for server in cluster.cbas_nodes:
@@ -628,7 +630,7 @@ class CBASBaseTest(BaseTestCase):
         # Prints bucket stats before doc_ops
         self.bucket_util.print_bucket_stats(cluster)
 
-        CollectionBase.create_clients_for_sdk_pool(self)
+        CollectionBase.create_clients_for_sdk_pool(self, cluster)
         self.cluster_util.print_cluster_stats(cluster)
         if load_data:
             self.load_data_into_buckets(cluster, doc_loading_spec)

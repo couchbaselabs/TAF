@@ -606,16 +606,19 @@ class CollectionBase(ClusterSetup):
         test_obj.bucket_util.print_bucket_stats(test_obj.cluster)
 
     @staticmethod
-    def create_clients_for_sdk_pool(test_obj):
+    def create_clients_for_sdk_pool(test_obj, cluster=None):
         # Init sdk_client_pool if not initialized before
         if test_obj.sdk_client_pool is None:
             test_obj.init_sdk_pool_object()
 
+        if not cluster:
+            cluster = test_obj.cluster
+
         test_obj.log.info("Creating required SDK clients for client_pool")
         CollectionBase.create_sdk_clients(
             test_obj.task_manager.number_of_threads,
-            test_obj.cluster.master,
-            test_obj.cluster.buckets,
+            cluster.master,
+            cluster.buckets,
             test_obj.sdk_client_pool,
             test_obj.sdk_compression)
 

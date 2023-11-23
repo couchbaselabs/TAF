@@ -1047,6 +1047,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
         import shutil
         shutil.copy("couchbase_utils/nebula_utils/Dockerfile", nebula_path)
 
+    def handle_setup_exception(self, exception_obj):
+        for server in self.input.servers:
+            self.set_ports_for_server(server, "non_ssl")
+        super(OnPremBaseTest, self).handle_setup_exception(exception_obj)
+
 
 class ClusterSetup(OnPremBaseTest):
     def setUp(self):
