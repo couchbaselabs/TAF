@@ -203,15 +203,15 @@ class SystemEventLogs(ClusterSetup):
 
         old_setting = {"authenticationEnabled": "false", "authorizationEnabled": "false",
                        "bindDN": "", "bindPass": "", "cacheValueLifetime": 300000,
-                       "encryption": "None", "failOnMaxDepth": "false",
-                       "hosts": [], "maxCacheSize": 10000,
+                       "encryption": "None", "failOnMaxDepth": "false", "middleboxCompMode": "true",
+                       "hosts": [], "maxGroupCacheSize": 1000, "maxCacheSize": 10000,
                        "maxParallelConnections": 100, "nestedGroupsEnabled": "false",
                        "nestedGroupsMaxDepth": 10, "port": 389, "requestTimeout": 5000,
                        "serverCertValidation": "true", "userDNMapping": "None"}
         new_setting = {"authenticationEnabled": "true", "authorizationEnabled": "true",
                        "bindDN": "", "bindPass": "", "cacheValueLifetime": 300000,
-                       "encryption": "None", "failOnMaxDepth": "false",
-                       "hosts": [], "maxCacheSize": 10000,
+                       "encryption": "None", "failOnMaxDepth": "false", "middleboxCompMode": "true",
+                       "hosts": [], "maxGroupCacheSize": 1000, "maxCacheSize": 10000,
                        "maxParallelConnections": 100, "nestedGroupsEnabled": "false",
                        "nestedGroupsMaxDepth": 10, "port": 390, "requestTimeout": 5000,
                        "serverCertValidation": "true", "userDNMapping": "None"}
