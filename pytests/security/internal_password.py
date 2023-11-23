@@ -104,14 +104,20 @@ class InternalUserPassword(ClusterSetup):
         grep_output = shell.execute_command(cmd_to_run)[0]
         return check_logs(grep_output)
 
-
+    def get_current_time(self, server):
+        shell = RemoteMachineShellConnection(server)
+        timestamps = shell.execute_command('date +"%Y-%m-%dT%H:%M:%S"')
+        timestamp = timestamps[0][0]
+        timestamp = timestamp.strip("\n")
+        current_time = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S")
+        return current_time
 
     def wait_for_rebalance_to_start(self, rebalance_task):
         while rebalance_task.start_time == None:
             self.sleep(5, "Wait for rebalance to start")
 
     def test_password_rotation(self):
-        start_time = datetime.now()
+        start_time = self.get_current_time(self.cluster.master)
         self.log.info("Internal user password test case")
         result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
         if not result:
@@ -126,7 +132,7 @@ class InternalUserPassword(ClusterSetup):
             self.fail("Failed to get security settings: {}".format(content))
         self.log.info("Cred rotations interval: {}".format(content))
         self.sleep(30, "Wait for password rotation")
-        end_time = datetime.now()
+        end_time = self.get_current_time(self.cluster.master)
         self.log.info("Start time: {}".format(start_time))
         self.log.info("End time: {}".format(end_time))
         validate_result = self.validate_password_rotation(start_time, end_time)
@@ -154,7 +160,6 @@ class InternalUserPassword(ClusterSetup):
                                     nodes_in, nodes_out,
                                     retry_get_process_num=2000)
         self.wait_for_rebalance_to_start(rebalance_task)
-        self.log.info("Rebalance start time: {}".format(rebalance_task.start_time))
         # start_time = datetime.fromtimestamp(rebalance_task.start_time)
         self.sleep(5, "Wait after rebalance started")
 
@@ -169,14 +174,14 @@ class InternalUserPassword(ClusterSetup):
         self.task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.fail("Failed to complete rebalance")
-        start_time = datetime.now()
+        start_time = self.get_current_time(self.cluster.master)
         self.sleep(60, "Wait after rebalance completes")
         if self.force_rotate:
             result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
             if not result:
                 self.fail("Failed to rotate password")
         self.sleep(30, "Wait after rotating password")
-        end_time = datetime.now()
+        end_time = self.get_current_time(self.cluster.master)
         self.log.info("Start time: {}".format(start_time))
         self.log.info("End time: {}".format(end_time))
         validate_result = self.validate_password_rotation(start_time, end_time)
@@ -186,7 +191,7 @@ class InternalUserPassword(ClusterSetup):
 
     def test_password_rotation_failover(self):
         failover_error = None
-        start_time = datetime.now()
+        start_time = self.get_current_time(self.cluster.master)
         try:
             self.failover_task()
         except Exception as e:
@@ -200,7 +205,7 @@ class InternalUserPassword(ClusterSetup):
             self.log.info("Password rotated succesfully!")
 
         self.rest.monitorRebalance()
-        end_time = datetime.now()
+        end_time = self.get_current_time(self.cluster.master)
         validate_result = self.validate_password_rotation(start_time, end_time)
         self.log.info("Validate result: {}".format(validate_result))
         if not validate_result:
@@ -211,7 +216,7 @@ class InternalUserPassword(ClusterSetup):
         status = self.rest.update_autofailover_settings(
             False, 60)
         self.assertTrue(status, "Auto-failover disable failed")
-        start_time = datetime.now()
+        start_time = self.get_current_time(self.cluster.master)
         for server_to_fail in self.servers_to_fail:
             self.cluster_util.stop_server(self.cluster, server_to_fail)
         self.sleep(60, "keeping the failure")
@@ -221,7 +226,7 @@ class InternalUserPassword(ClusterSetup):
                 self.fail("Failed to rotate password: {}".format(content))
             self.log.info("Password rotated succesfully!")
         self.sleep(60, "Wait after for password rotation")
-        end_time = datetime.now()
+        end_time = self.get_current_time(self.cluster.master)
         validate_result = self.validate_password_rotation(start_time, end_time)
         self.log.info("Validate result: {}".format(validate_result))
         if not validate_result:
@@ -239,7 +244,7 @@ class InternalUserPassword(ClusterSetup):
             self.log.info("Password rotated succesfully!")
 
     def test_password_rotation_certificates(self):
-        start_time = datetime.now()
+        start_time = self.get_current_time(self.cluster.master)
         self.x509.generate_multiple_x509_certs(servers=self.cluster.servers)
         self.log.info("Manifest #########\n {0}".format(json.dumps(self.x509.manifest, indent=4)))
         for server in self.cluster.servers:
@@ -251,7 +256,7 @@ class InternalUserPassword(ClusterSetup):
                 self.fail("Failed to rotate password: {}".format(content))
             self.log.info("Password rotated succesfully!")
         self.sleep(120, "Wait for for password rotation")
-        end_time = datetime.now()
+        end_time = self.get_current_time(self.cluster.master)
         validate_result = self.validate_password_rotation(start_time, end_time)
         self.log.info("Validate result: {}".format(validate_result))
         if not validate_result:
