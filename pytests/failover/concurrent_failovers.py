@@ -354,7 +354,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     if node.ip == self.cluster.master.ip:
                         master_fo = True
                     break
-        if master_fo:
+        if master_fo and len(nodes_in_cluster) > 0:
             # Assign new cluster.master to handle rest connections
             self.cluster.master = [
                 server for server in self.cluster.nodes_in_cluster
@@ -614,6 +614,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                       Node running services a_b & c to ignore anything from
                       nodes running services b_a & d and vice versa
         """
+        self.failover_method = "network_split"
         def get_nodes_based_on_services(services):
             nodes = list()
             services = services.split(":")
@@ -702,16 +703,16 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                         service_count[index][service] = 0
                     service_count[index][service] += 1
 
-        if len(node_split_1) > len(node_split_2):
-            num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_2),
-                                                  service_count[1],
-                                                  service_count[0])
-            self.cluster.master = node_split_1[0]
+        if len(node_split_1) == len(node_split_2):
+            num_nodes_to_fo = 0
         else:
-            num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_1),
-                                                  service_count[0],
-                                                  service_count[1])
-            self.cluster.master = node_split_2[0]
+            bigger_chunk_in_split = node_split_1 if len(node_split_1) > len(
+                node_split_2) else node_split_2
+            fo_nodes = dict()
+            for node in bigger_chunk_in_split:
+                fo_nodes[node] = self.failover_method
+            self.nodes_to_fail = fo_nodes
+            num_nodes_to_fo = self.num_nodes_to_be_failover
 
         self.rest = RestConnection(self.cluster.master)
         self.log.info("N/w split between -> [%s] || [%s]. Expect %s fo_events"
@@ -883,6 +884,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         out_nodes = self.input.param("out_nodes", "kv").split(":")
         # Can take any of (in/out/swap)
         rebalance_type = self.input.param("rebalance_type", "in")
+        perform_doc_ops_before_rebalance = self.input.param(
+            "perform_doc_ops_before_rebalance", True)
+
         services_to_fo = self.failover_order[0].split(":")
         self.nodes_to_fail = self.get_nodes_to_fail(services_to_fo,
                                                     dynamic_fo_method=True)
@@ -952,8 +956,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
 
             # Perform collection crud + doc_ops before rebalance operation
-            self.__perform_doc_ops(durability="NONE", validate_num_items=False)
-
+            self.__update_unaffected_node()
+            if perform_doc_ops_before_rebalance:
+                self.__perform_doc_ops(durability="NONE", validate_num_items=False)
         finally:
             # Disable auto-fo after the expected time limit
             retry = 5
@@ -985,17 +990,18 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.sleep(5, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
                 enabled=True, timeout=self.timeout, maxCount=self.max_count,
-                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo,)
+                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
             # Rebalance the cluster to remove failed nodes
             result = self.cluster_util.rebalance(self.cluster)
             self.assertTrue(result, "Rebalance failed")
 
         # Validate auto_failover_settings after rebalance operation
-        self.validate_failover_settings(True, self.timeout, 0,
+        self.validate_failover_settings(True, self.timeout, expected_fo_nodes,
                                         self.max_count)
 
         # Perform collection crud + doc_ops after rebalance operation
+        self.__update_unaffected_node()
         self.__perform_doc_ops()
 
     def test_autofailover_preserve_durability(self):

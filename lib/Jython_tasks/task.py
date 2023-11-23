@@ -6377,7 +6377,7 @@ class ConcurrentFailoverTask(Task):
                                           curr_fo_settings.count))
                 self.set_result(False)
         if time.time() > max_fo_time_allowed:
-            self.test_log_critical("Auto failover triggered outside the "
+            self.test_log.critical("Auto failover triggered outside the "
                                    "timeout window")
             self.set_result(False)
 
@@ -6425,6 +6425,7 @@ class ConcurrentFailoverTask(Task):
                 if task_id_changed:
                     status = self.rest.monitorRebalance()
                 else:
+                    sleep(4,"waiting for fo count to reflect in REST")
                     curr_fo_settings = self.rest.get_autofailover_settings()
                     if self.expected_nodes_to_fo == curr_fo_settings.count:
                         status = True
