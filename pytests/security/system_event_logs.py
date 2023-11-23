@@ -20,6 +20,10 @@ class SystemEventLogs(ClusterSetup):
 
     def tearDown(self):
         self.log_setup_status("SystemEventLogs", "started", stage="tearDown")
+        #set the TLS min vesion back to 1.2(if it has been set to 1.3)
+        # so that the next tests don't fail
+        settings = {"tlsMinVersion": "tlsv1.2"}
+        self.rest.set_security_settings(settings)
         self.log_setup_status("SystemEventLogs", "completed", stage="tearDown")
         super(SystemEventLogs, self).tearDown()
 
@@ -274,6 +278,10 @@ class SystemEventLogs(ClusterSetup):
         validate_saslauthd_event(event=actual_event, user_event=expected_event)
 
     def test_security_config_changed_event(self):
+        #set the TLS min version to 1.2 if it not already
+        settings = {"tlsMinVersion": "tlsv1.2"}
+        self.rest.set_security_settings(settings)
+
         _ = self.rest.update_autofailover_settings(False, 120)
         shell_conn = RemoteMachineShellConnection(self.cluster.master)
         cb_cli = CbCli(shell_conn)
@@ -282,11 +290,11 @@ class SystemEventLogs(ClusterSetup):
         shell_conn.disconnect()
         self.rest.set_encryption_level(level="control")
 
-        settings = {"tlsMinVersion": "tlsv1.1", "clusterEncryptionLevel": "all"}
+        settings = {"tlsMinVersion": "tlsv1.3", "clusterEncryptionLevel": "all"}
         self.rest.set_security_settings(settings)
 
         old_settings = {"ssl_minimum_protocol": "tlsv1.2", "cluster_encryption_level": "control"}
-        new_settings = {"ssl_minimum_protocol": "tlsv1.1", "cluster_encryption_level": "all"}
+        new_settings = {"ssl_minimum_protocol": "tlsv1.3", "cluster_encryption_level": "all"}
         # Get the last event
         event = self.get_event_from_cluster()
         user_event = SecurityEvents.security_config_changed(self.cluster.master.ip,
