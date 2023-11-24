@@ -589,15 +589,15 @@ class CollectionBase(ClusterSetup):
         test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)
 
-        if hasattr(test_obj, "initial_version") and \
-                    float(test_obj.initial_version[:3]) < 7.6:
+        if hasattr(test_obj, "upgrade_chain") and \
+                    float(test_obj.upgrade_chain[0][:3]) < 7.6:
             for bucket in test_obj.cluster.buckets:
                 for coll in bucket.scopes[CbServer.system_scope].collections:
                     bucket.scopes[CbServer.system_scope].collections.pop(coll)
                 bucket.scopes.pop(CbServer.system_scope)
 
-        if not (hasattr(test_obj, "initial_version")
-                and int(test_obj.initial_version[0]) < 7):
+        if not (hasattr(test_obj, "upgrade_chain")
+                and int(test_obj.upgrade_chain[0][0]) < 7):
             test_obj.bucket_util.wait_for_collection_creation_to_complete(
                 test_obj.cluster)
 
@@ -648,8 +648,8 @@ class CollectionBase(ClusterSetup):
 
         # Code to handle collection specific validation during upgrade test
         collection_supported = True
-        if hasattr(test_obj, "initial_version") \
-                and int(test_obj.initial_version[0]) < 7:
+        if hasattr(test_obj, "upgrade_chain") \
+                and int(test_obj.upgrade_chain[0][0]) < 7:
             collection_supported = False
 
         # Verify initial doc load count

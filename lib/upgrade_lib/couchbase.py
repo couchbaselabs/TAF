@@ -22,6 +22,8 @@ upgrade_chains = {
     "7.2.3": ["7.2.3-" + CB_RELEASE_BUILDS["7.2.3"]],
 
     # Ref: https://docs.couchbase.com/server/current/install/upgrade.html
+    "6.6.4_7.2.3": ["6.6.4-" + CB_RELEASE_BUILDS["6.6.4"],
+                    "7.2.3-" + CB_RELEASE_BUILDS["7.2.3"]],
     "6.6.5_7.2.3": ["6.6.5-" + CB_RELEASE_BUILDS["6.6.5"],
                     "7.2.3-" + CB_RELEASE_BUILDS["7.2.3"]],
     "6.6.5_7.2.0": ["6.6.5-" + CB_RELEASE_BUILDS["6.6.5"],

@@ -40,8 +40,8 @@ class KVUpgradeTests(UpgradeBase):
                         msg="The number of nodes specified for upgrade are more than number of nodes in cluster")
 
         #Loading Travel Sample Bucket
-        travelSampleBucket=TravelSample()
-        if float(self.initial_version[:3]) < 7.0:
+        travelSampleBucket = TravelSample()
+        if float(self.upgrade_chain[0][:3]) < 7.0:
             travelSampleBucket.stats.expected_item_count = 31591
         load_success=self.bucket_util.load_sample_bucket(self.cluster, travelSampleBucket)
         self.assertTrue(load_success,
@@ -98,7 +98,7 @@ class KVUpgradeTests(UpgradeBase):
         # Install the initial version on the 2nd node as well
         # This was not done initially
         self.upgrade_helper.install_version_on_nodes(
-            self.cluster.servers[1:2], self.initial_version)
+            self.cluster.servers[1:2], self.upgrade_chain[0])
 
         client = SDKClient([self.cluster.master], bucket)
 
@@ -179,7 +179,7 @@ class KVUpgradeTests(UpgradeBase):
         elif upgrade_cluster == "remote":
             self.log.info("Upgrading node: %s" % self.cluster.servers[1].ip)
             self.upgrade_helper.install_version_on_nodes(
-                self.cluster.servers[1:2], self.initial_version)
+                self.cluster.servers[1:2], self.upgrade_chain[0])
 
         self.log.info("Starting XDCR replication")
         xdcr_cluster = CBCluster("C2", servers=[in_node])

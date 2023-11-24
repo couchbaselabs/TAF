@@ -87,7 +87,7 @@ class UpgradeBase(BaseTestCase):
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
-        self.community_upgrade = self.input.param("community_upgrade", False)
+        community_upgrade = self.input.param("community_upgrade", False)
 
         self.upgrade_helper = CbServerUpgrade(self.log, self.product)
         self._populate_upgrade_chain()
@@ -109,18 +109,19 @@ class UpgradeBase(BaseTestCase):
 
         self.__validate_upgrade_type()
 
-        if self.community_upgrade:
+        if community_upgrade:
             build_type = "community"
             CbServer.enterprise_edition = False
-            self.initial_version = self.upgrade_version
+            self.upgrade_chain[0] = self.upgrade_version
         else:
             build_type = "enterprise"
 
         self.PrintStep("Installing initial version {0} on servers"
-                       .format(self.initial_version))
+                       .format(self.upgrade_chain[0]))
+        self.cluster.version = self.upgrade_chain[0]
         self.upgrade_helper.install_version_on_nodes(
             nodes=self.cluster.servers[0:self.nodes_init],
-            version=self.initial_version,
+            version=self.upgrade_chain[0],
             vbuckets=self.cluster.vbuckets,
             build_type=build_type,
             cluster_profile=self.cluster_profile)
@@ -193,11 +194,11 @@ class UpgradeBase(BaseTestCase):
         self.cluster_util.print_cluster_stats(self.cluster)
 
         self.cluster_features = \
-            self.upgrade_helper.get_supported_features(self.initial_version)
+            self.upgrade_helper.get_supported_features(self.cluster.version)
         self.set_feature_specific_params()
 
         # Disable auto-failover to avoid failover of nodes
-        if not self.community_upgrade:
+        if not community_upgrade:
             status = RestConnection(self.cluster.master) \
                 .update_autofailover_settings(False, 120, False)
             self.assertTrue(status, msg="Failure during disabling auto-failover")
@@ -263,20 +264,9 @@ class UpgradeBase(BaseTestCase):
         super(UpgradeBase, self).tearDown()
 
     def _populate_upgrade_chain(self):
-        chain_to_test = self.input.param("upgrade_chain", None)
-        upgrade_version = self.input.param("upgrade_version",
-                                           "8.0.0-1000")
-        if chain_to_test is None:
-            self.initial_version = self.input.param("initial_version",
-                                                    "6.0.0-1000")
-            if self.initial_version == "same_version":
-                self.initial_version = upgrade_version
-            self.upgrade_chain = [self.initial_version]
-        else:
-            self.upgrade_chain = upgrade_chains[chain_to_test]
-            self.initial_version = self.upgrade_chain[0]
-
-        self.upgrade_chain.append(upgrade_version)
+        chain_to_test = self.input.param("upgrade_chain", "7.2.3")
+        upgrade_version = self.input.param("upgrade_version", "8.0.0-1000")
+        self.upgrade_chain = upgrade_chains[chain_to_test] + [upgrade_version]
         self.upgrade_version = self.upgrade_chain[0]
 
     def set_feature_specific_params(self):

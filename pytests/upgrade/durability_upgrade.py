@@ -318,8 +318,10 @@ class UpgradeTests(UpgradeBase):
                 ### Fetching the next node to upgrade ###
                 node_to_upgrade = self.fetch_node_to_upgrade()
                 itr += 1
+
+            self.cluster.version = upgrade_version
             self.cluster_features = \
-                self.upgrade_helper.get_supported_features(upgrade_version)
+                self.upgrade_helper.get_supported_features(self.cluster.version)
             self.set_feature_specific_params()
 
         ### Printing cluster stats after the upgrade of the whole cluster ###
@@ -473,7 +475,6 @@ class UpgradeTests(UpgradeBase):
         node_to_upgrade = self.fetch_node_to_upgrade()
 
         while node_to_upgrade is not None:
-
             self.log.info("Selected node for upgrade: %s" % node_to_upgrade.ip)
 
             if self.load_large_docs:
@@ -598,14 +599,15 @@ class UpgradeTests(UpgradeBase):
 
             count += 1
 
-        self.PrintStep("Starting the downgrade of nodes to {0}".format(self.initial_version))
+        self.PrintStep("Starting the downgrade of nodes to {0}"
+                       .format(self.upgrade_chain[0]))
 
         self.log.info("Nodes in {0} : {1}".format(self.upgrade_version, upgraded_nodes))
         for node_to_downgrade in upgraded_nodes:
             self.log.info("Selected node for downgrade : {0}".format(node_to_downgrade))
 
             self.upgrade_function[self.upgrade_type](node_to_downgrade,
-                                                    self.initial_version)
+                                                     self.upgrade_chain[0])
 
             self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
@@ -634,7 +636,7 @@ class UpgradeTests(UpgradeBase):
         self.__wait_for_persistence_and_validate()
         self.log.info("Final doc count verified")
 
-        self.upgrade_version = self.initial_version
+        self.upgrade_version = self.upgrade_chain[0]
         self.PrintStep("Starting rebalance/failover tasks post downgrade")
         self.tasks_post_upgrade()
 
@@ -647,7 +649,7 @@ class UpgradeTests(UpgradeBase):
 
         # To make sure sync_write can we supported by initial cluster version
         sync_write_support = True
-        if float(self.initial_version[0:3]) < 6.5:
+        if float(self.cluster.version[0:3]) < 6.5:
             sync_write_support = False
 
         if sync_write_support:
@@ -1039,25 +1041,23 @@ class UpgradeTests(UpgradeBase):
 
             for server in self.cluster.nodes_in_cluster:
                 cb_obj = Cbstats(server)
-                frag_res = cb_obj.magma_stats(self.cluster.buckets[0].name, field_to_grep,
-                                                "kvstore")
+                frag_res = cb_obj.magma_stats(self.cluster.buckets[0].name,
+                                              field_to_grep, "kvstore")
                 frag_dict[server.ip] = frag_res
 
-            self.log.info(
-                "Fragmentation after upsert {0}".format(server_frag))
+            self.log.info("Fragmentation after upsert {0}".format(server_frag))
 
-            if int(self.initial_version[0]) >= 7:
+            if int(self.cluster.version[0]) >= 7:
                 self.__wait_for_persistence_and_validate()
-
         else:
             self.log_failure("Upsert task failed.")
 
     def loading_large_documents(self, large_docs_start_num):
         self.log.info("Loading large docs...")
         gen_create = doc_generator("large_docs", large_docs_start_num,
-                                    large_docs_start_num + 1000,
-                                    doc_size=1024000,
-                                    randomize_value=True)
+                                   large_docs_start_num + 1000,
+                                   doc_size=1024000,
+                                   randomize_value=True)
 
         task = self.task.async_load_gen_docs(
             self.cluster, self.cluster.buckets[0],

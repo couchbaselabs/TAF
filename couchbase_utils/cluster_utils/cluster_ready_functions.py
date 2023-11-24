@@ -74,7 +74,10 @@ class CBCluster:
         self.xdcr_remote_clusters = list()
         self.buckets = list()
         self.vbuckets = vbuckets
-        # edition = community/enterprise
+        # version = 9.9.9-9999
+        # edition = community / enterprise
+        # type = default / serverless / dedicated
+        self.version = None
         self.edition = None
         self.type = "default"
 

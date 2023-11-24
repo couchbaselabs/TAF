@@ -99,7 +99,7 @@ class UpgradeTests(UpgradeBase):
         Number of datasets is fixed here, as pre 6.6 default max number of
         datasets that can be created was 8.
         """
-        major_version = float(self.initial_version[:3])
+        major_version = float(self.upgrade_chain[0][:3])
         if major_version >= 7.0:
             update_spec = {
                 "no_of_dataverses": self.input.param('pre_update_no_of_dv', 2),
