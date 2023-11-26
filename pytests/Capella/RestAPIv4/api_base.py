@@ -28,7 +28,7 @@ class APIBase(BaseTestCase):
         self.count = 0
 
         self.capellaAPI = CapellaAPI(
-            self.url, "", "", self.user, self.passwd, "")
+            "https://" + self.url, "", "", self.user, self.passwd, "")
         self.create_v2_control_plane_api_key()
 
         # create the first V4 API KEY WITH organizationOwner role, which will
@@ -500,6 +500,7 @@ class APIBase(BaseTestCase):
             self.log.debug("New bucket created, ID: {}".format(buck_id))
             return buck_id
         else:
+            self.log.error(resp)
             self.fail("New bucket creation failed.")
 
     def delete_buckets(self, org_id, proj_id, clus_id, bucket_ids, token):

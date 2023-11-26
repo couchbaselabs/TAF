@@ -71,7 +71,9 @@ class GetCluster(APIBase):
                 "modifiedBy": None,
                 "modifiedAt": None,
                 "version": None
-            }
+            },
+            "connectionString": None,
+            "configurationType": None
         }
         cluster_created = False
         while not cluster_created:
@@ -130,28 +132,29 @@ class GetCluster(APIBase):
         super(GetCluster, self).tearDown()
 
     def validate_cluster_api_response(self, expected_res, actual_res):
+        failure_key = None
         for key in actual_res:
             if key not in expected_res:
-                return False
+                return key
             if isinstance(expected_res[key], dict):
-                self.validate_cluster_api_response(
+                failure_key = self.validate_cluster_api_response(
                     expected_res[key], actual_res[key])
             elif isinstance(expected_res[key], list):
                 if key == "services":
                     for service in expected_res[key]:
                         if service not in actual_res[key]:
-                            return False
+                            return key
                     continue
                 for i in range(len(expected_res[key])):
-                    self.validate_cluster_api_response(
+                    failure_key = self.validate_cluster_api_response(
                         expected_res[key][i], actual_res[key][i])
             elif expected_res[key]:
                 if expected_res[key] == "version":
                     if expected_res[key] not in actual_res[key]:
-                        return False
+                        return key
                 elif expected_res[key] != actual_res[key]:
-                    return False
-        return True
+                    return key
+        return failure_key
 
     def test_api_path(self):
         testcases = [
@@ -243,10 +246,13 @@ class GetCluster(APIBase):
                 result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     org, proj, clus)
             if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_cluster_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
+                failure_key = self.validate_cluster_api_response(
+                        self.expected_result, result.json())
+                if failure_key:
+                    self.log.error("Status == 200, Key : `{}` "
+                                   "validation Failure at: {}".format(
+                                    failure_key, testcase["description"]))
+                    self.log.warning("Result : {}".format(result))
                     failures.append(testcase["description"])
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
@@ -484,10 +490,13 @@ class GetCluster(APIBase):
                     self.organisation_id, self.project_id, self.cluster_id,
                     header)
             if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_cluster_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
+                failure_key = self.validate_cluster_api_response(
+                    self.expected_result, result.json())
+                if failure_key:
+                    self.log.error("Status == 200, Key : `{}` "
+                                   "validation Failure at: {}".format(
+                                    failure_key, testcase["description"]))
+                    self.log.warning("Result : {}".format(result))
                     failures.append(testcase["description"])
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
@@ -638,7 +647,7 @@ class GetCluster(APIBase):
                         "message": "Unable to process the request. The "
                                    "provided projectId {} is not valid for "
                                    "the cluster {}."
-                        .format(self.project_id, self.cluster_id)
+                        .format(combination[1], combination[2])
                     }
             testcases.append(testcase)
 
@@ -659,10 +668,13 @@ class GetCluster(APIBase):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], **kwarg)
             if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_cluster_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
+                failure_key = self.validate_cluster_api_response(
+                    self.expected_result, result.json())
+                if failure_key:
+                    self.log.error("Status == 200, Key : `{}` "
+                                   "validation Failure at: {}".format(
+                                    failure_key, testcase["description"]))
+                    self.log.warning("Result : {}".format(result))
                     failures.append(testcase["description"])
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])

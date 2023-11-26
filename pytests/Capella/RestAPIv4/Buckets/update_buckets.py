@@ -911,9 +911,9 @@ class UpdateBucket(APIBase):
                     testcase["expected_error"] = {
                         "code": 6005,
                         "hint": "The provided durability level is not "
-                                "supported. The supported levels are none, "
-                                "majority, persistToMajority, and "
-                                "majorityAndPersistActive. Please choose a "
+                                "supported. The supported levels are 'none', "
+                                "'majority', 'persistToMajority', and "
+                                "'majorityAndPersistActive'. Please choose a "
                                 "valid durability level for the bucket.",
                         "httpStatusCode": 422,
                         "message": "The durability level {} provided is not "
@@ -964,13 +964,13 @@ class UpdateBucket(APIBase):
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 8021,
-                        "hint": "Returned when a time to live unit that is "
+                        "hint": "Returned when a time-to-live unit that is "
                                 "not supported is given during bucket "
                                 "creation. This should be a non-negative "
                                 "value.",
                         "httpStatusCode": 422,
-                        "message": "The time to live value provided is not "
-                                   "supported. It should be a non negative "
+                        "message": "The time-to-live value provided is not "
+                                   "supported. It should be a non-negative "
                                    "integer."
                     }
                 else:
@@ -1116,10 +1116,14 @@ class UpdateBucket(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # invalid name param, ie, which give a 422 response.
+            if "422" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["422"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -1164,10 +1168,14 @@ class UpdateBucket(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # invalid name param, ie, which give a 422 response.
+            if "422" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["422"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

@@ -565,7 +565,7 @@ class DeleteCluster(APIBase):
                         "message": "Unable to process the request. The "
                                    "provided projectId {} is not valid for "
                                    "the cluster {}."
-                        .format(self.project_id, self.dummy_cluster_id)
+                        .format(combination[1], combination[2])
                     }
             testcases.append(testcase)
 
