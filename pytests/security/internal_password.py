@@ -165,15 +165,16 @@ class InternalUserPassword(ClusterSetup):
 
         result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
 
+        self.task_manager.get_task_result(rebalance_task)
+        if not rebalance_task.result:
+            self.fail("Failed to complete rebalance")
+
         expected_err_msg = '''["System is being reconfigured. Please try later."]'''
         actual_err_msg = content
         self.assertTrue(expected_err_msg == actual_err_msg, \
                         "Expected err msg: {}, Actual err msg: {}".format(expected_err_msg,
                                                                             actual_err_msg))
 
-        self.task_manager.get_task_result(rebalance_task)
-        if not rebalance_task.result:
-            self.fail("Failed to complete rebalance")
         start_time = self.get_current_time(self.cluster.master)
         self.sleep(60, "Wait after rebalance completes")
         if self.force_rotate:
