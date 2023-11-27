@@ -2,7 +2,6 @@
 Created on 04-Jun-2021
 @author: Umang Agrawal
 '''
-import copy
 
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
@@ -12,13 +11,11 @@ from Cb_constants import CbServer
 from cbas_utils.cbas_utils import CbasUtil
 from java.lang import Exception as Java_base_exception
 from bucket_collections.collections_base import CollectionBase
-from collections_helper.collections_spec_constants import \
-    MetaConstants, MetaCrudParams
-from sdk_exceptions import SDKException
+from collections_helper.collections_spec_constants import MetaConstants
 from BucketLib.bucket import Bucket
 from security_utils.security_utils import SecurityUtils
-from BucketLib.BucketOperations import BucketHelper
 from tpch_utils.tpch_utils import TPCHUtil
+from security_config import trust_all_certs
 
 
 class CBASBaseTest(BaseTestCase):
@@ -96,6 +93,15 @@ class CBASBaseTest(BaseTestCase):
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
 
+        # Force disable TLS to avoid initial connection issues
+        tasks = [self.node_utils.async_disable_tls(server)
+                 for server in self.servers]
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+        for server in self.servers:
+            self.set_ports_for_server(server, "non_ssl")
+        CbServer.use_https = False
+
         """
         Since BaseTestCase will initialize at least one cluster, we need to
         initialize only total clusters required - 1.
@@ -110,15 +116,6 @@ class CBASBaseTest(BaseTestCase):
                 servers=self.servers[start:end])
             self.cb_clusters[cluster_name] = cluster
             cluster.kv_nodes.append(cluster.master)
-
-            # Force disable TLS to avoid initial connection issues
-            tasks = [self.node_utils.async_disable_tls(server)
-                     for server in cluster.servers]
-            for task in tasks:
-                self.task_manager.get_task_result(task)
-            for server in cluster.servers:
-                self.set_ports_for_server(server, "non_ssl")
-            CbServer.use_https = False
 
             self.initialize_cluster(cluster_name, cluster,
                                     services=self.services_init[i][0])
@@ -141,14 +138,15 @@ class CBASBaseTest(BaseTestCase):
                 if not status:
                     self.fail(msg)
             self.modify_cluster_settings(cluster)
-
-            # Enforce tls on nodes of all clusters
-            self.enable_tls_on_nodes()
-            for server in cluster.servers:
-                self.set_ports_for_server(server, "ssl")
-            CbServer.use_https = True
             RestConnection(cluster.master).set_internalSetting(
                 "magmaMinMemoryQuota", 256)
+
+        # Enforce tls on nodes of all clusters
+        self.enable_tls_on_nodes()
+        for server in self.servers:
+            self.set_ports_for_server(server, "ssl")
+        CbServer.use_https = True
+        trust_all_certs()
 
         self.available_servers = self.servers[end:]
 
