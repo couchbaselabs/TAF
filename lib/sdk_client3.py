@@ -371,7 +371,7 @@ class SDKClient(object):
             except Java_base_exception as e:
                 # JCBC-1983: Suppress the exception just by logging it
                 # We might have got 10 seconds sleep for the connection to work
-                self.log.critical(e)
+                self.log.debug(e)
 
             self.select_collection(self.scope_name,
                                    self.collection_name)
