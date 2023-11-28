@@ -2823,7 +2823,7 @@ class BucketUtils(ScopeUtils):
                     bucket.name,
                     "{} / {}".format(bucket.bucketType, storage_backend),
                     str(bucket.replicaNumber), str(bucket.rank), num_vbuckets,
-                    str(bucket.durabilityMinlevel),
+                    str(bucket.durabilityMinLevel),
                     str(bucket.maxTTL), str(bucket.stats.itemCount),
                     "{} / {}".format(humanbytes(str(bucket.stats.ram)),
                                      humanbytes(str(bucket.stats.memUsed))),
