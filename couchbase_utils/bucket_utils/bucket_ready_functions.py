@@ -2193,8 +2193,7 @@ class BucketUtils(ScopeUtils):
             history_retention_seconds=0,
             magma_key_tree_data_block_size=4096,
             magma_seq_tree_data_block_size=4096,
-            vbuckets=None, weight=None, width=None,
-            ):
+            vbuckets=None, weight=None, width=None):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2246,7 +2245,7 @@ class BucketUtils(ScopeUtils):
                     True if bucket_obj.flushEnabled else False,
                 CloudCluster.Bucket.replicaNumber: bucket_obj.replicaNumber,
                 CloudCluster.Bucket.durabilityMinLevel:
-                    bucket_obj.durability_level,
+                    bucket_obj.durabilityMinLevel,
                 CloudCluster.Bucket.maxTTL:
                     {"unit": "seconds", "value": bucket_obj.maxTTL}
             }
@@ -2824,7 +2823,7 @@ class BucketUtils(ScopeUtils):
                     bucket.name,
                     "{} / {}".format(bucket.bucketType, storage_backend),
                     str(bucket.replicaNumber), str(bucket.rank), num_vbuckets,
-                    str(bucket.durability_level),
+                    str(bucket.durabilityMinlevel),
                     str(bucket.maxTTL), str(bucket.stats.itemCount),
                     "{} / {}".format(humanbytes(str(bucket.stats.ram)),
                                      humanbytes(str(bucket.stats.memUsed))),
@@ -4895,7 +4894,7 @@ class BucketUtils(ScopeUtils):
                 bucket.serverless.weight = parsed[Bucket.weight]
 
             if Bucket.durabilityMinLevel in parsed:
-                bucket.durability_level = parsed[Bucket.durabilityMinLevel]
+                bucket.durabilityMinLevel = parsed[Bucket.durabilityMinLevel]
 
             if Bucket.rank in parsed:
                 bucket.rank = parsed[Bucket.rank]

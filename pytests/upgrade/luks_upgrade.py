@@ -28,7 +28,7 @@ class LuksUpgrade(UpgradeBase):
                 process_concurrency=1,
                 persist_to=1,
                 replicate_to=1,
-                durability=Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+                durability=SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY,
                 timeout_secs=30)
 
         create_gen = doc_generator(self.key, self.num_items,

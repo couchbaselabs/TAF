@@ -247,7 +247,7 @@ class Bucket(object):
         self.compressionMode = new_params.get(
             Bucket.compressionMode,
             Bucket.CompressionMode.PASSIVE)
-        self.durability_level = new_params.get(
+        self.durabilityMinLevel = new_params.get(
             Bucket.durabilityMinLevel,
             Bucket.DurabilityMinLevel.NONE)
         self.purge_interval = new_params.get(Bucket.purge_interval, 1)
