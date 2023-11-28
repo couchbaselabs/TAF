@@ -217,7 +217,6 @@ class BucketParamTest(ClusterSetup):
 
     def generic_replica_update(self, doc_count, doc_ops, bucket_helper_obj,
                                replicas_to_update, start_doc_for_insert):
-        supported_d_levels = self.bucket_util.get_supported_durability_levels()
         for replica_num in replicas_to_update:
             # Creating doc creator to be used by test cases
             doc_create = doc_generator(self.key, start_doc_for_insert,

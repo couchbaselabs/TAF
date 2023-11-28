@@ -861,7 +861,7 @@ class LMT(ServerlessOnPremBaseTest):
     def create_Transaction(self, client):
         self.__durability_level()
         self.log.info("durability_level is %s and self.durability is %s"
-                      %(self.durability_level, self.durability))
+                      % (self.durability_level, self.durability))
         transaction_config = Transaction().createTransactionConfig(
             self.transaction_timeout, self.durability)
         try:
