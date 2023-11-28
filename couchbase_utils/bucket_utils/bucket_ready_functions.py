@@ -4438,7 +4438,7 @@ class BucketUtils(ScopeUtils):
                                                                 server.ip))
 
             ready_for_persistence = False
-            if not check_for_persistence:
+            if not check_for_persistence or bucket.storageBackend == Bucket.StorageBackend.couchstore:
                 ready_for_persistence = True
                 continue
 
