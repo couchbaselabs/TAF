@@ -34,6 +34,7 @@ from com.couchbase.client.core.error import \
     ServerOutOfMemoryException, \
     TemporaryFailureException, \
     TimeoutException
+from com.couchbase.client.core.msg.kv import DurabilityLevel
 from com.couchbase.client.core.service import ServiceType
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.codec import RawBinaryTranscoder,\
@@ -44,6 +45,14 @@ from com.couchbase.client.java.json import JsonObject
 from com.couchbase.client.java.manager.collection import CollectionSpec
 from com.couchbase.client.java.kv import GetAllReplicasOptions
 from com.couchbase.client.java.query import QueryOptions
+
+# Transaction dependencies
+from com.couchbase.client.java.transactions.config import \
+    TransactionsCleanupConfig, \
+    TransactionsConfig
+from com.couchbase.client.java.transactions import TransactionKeyspace
+# End of transaction dependencies
+
 from java.time import Duration
 from java.nio.charset import StandardCharsets
 from java.lang import Exception as Java_base_exception
@@ -171,6 +180,17 @@ class SDKClientPool(object):
         self.clients[bucket.name]["lock"].release()
 
 
+class TransactionConfig(object):
+    def __init__(self, durability=None, timeout=None,
+                 cleanup_window=None, transaction_keyspace=None):
+        """
+        None means leave it to default value during config creation
+        """
+        self.durability = durability
+        self.timeout = timeout
+        self.cleanup_window = cleanup_window
+        self.transaction_keyspace = transaction_keyspace
+
 class SDKClient(object):
     System.setProperty("com.couchbase.forceIPv4", "false")
     env = ClusterEnvironment \
@@ -192,7 +212,8 @@ class SDKClient(object):
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  username=None, password=None,
-                 compression_settings=None, cert_path=None):
+                 compression_settings=None, cert_path=None,
+                 transaction_config=None):
         """
         :param servers: List of servers for SDK to establish initial
                         connections with
@@ -229,8 +250,8 @@ class SDKClient(object):
         self.compression = compression_settings
         self.cert_path = cert_path
         self.log = logger.get("test")
+        self.transaction_conf = transaction_config
         if self.bucket is not None:
-            self.log.debug("The bucket is serverless: %s" % bucket.name)
             if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
                 self.hosts = [bucket.serverless.nebula_endpoint.srv]
                 self.log.info("For SDK, Nebula endpoint used for bucket is: %s"
@@ -255,7 +276,12 @@ class SDKClient(object):
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
         # Having 'None' will enable us to test without sending any
         # compression settings and explicitly setting to 'False' as well
-        cluster_env = None
+        build_env = False
+        t_cluster_env = SDKClient.cluster_env
+        if CbServer.use_https or self.transaction_conf or self.compression:
+            t_cluster_env = SDKClient.env
+            build_env = True
+
         if self.compression is not None:
             is_compression = self.compression.get("enabled", False)
             compression_config = CompressionConfig.enable(is_compression)
@@ -265,21 +291,50 @@ class SDKClient(object):
             if "minRatio" in self.compression:
                 compression_config = compression_config.minRatio(
                     self.compression["minRatio"])
-            cluster_env = SDKClient.env.compressionConfig(compression_config)
+            t_cluster_env = t_cluster_env.compressionConfig(compression_config)
+
         if CbServer.use_https:
-            if cluster_env:
-                cluster_env = cluster_env.\
-                    securityConfig(SecurityConfig.enableTls(True).
-                                   trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+            t_cluster_env = t_cluster_env.\
+                securityConfig(SecurityConfig.enableTls(True).
+                               trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+
+        if self.transaction_conf:
+            t_cluster_env = t_cluster_env.transactionsConfig(
+                TransactionsConfig.cleanupConfig(
+                    TransactionsCleanupConfig
+                        .cleanupClientAttempts(True)
+                        .cleanupLostAttempts(True)
+                        .cleanupWindow(
+                            Duration.ofSeconds(
+                                self.transaction_conf.cleanup_window or 60)
+                        )
+                )
+            )
+
+            # Set transaction's durability level
+            if self.transaction_conf.durability is None:
+                # Assume default durability configured as per the SDK
+                pass
             else:
-                cluster_env = SDKClient.env.\
-                    securityConfig(SecurityConfig.enableTls(True).
-                                   trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
-        if CbServer.use_https or (self.compression is not None):
-            SDKClient.cluster_env = cluster_env.build()
+                t_cluster_env.transactionsConfig(
+                    TransactionsConfig.durabilityLevel(
+                        DurabilityLevel.decodeFromManagementApi(
+                            self.transaction_conf.durability)))
+
+            # Set metadata-collection for storing transactional docs / subdocs
+            # Default it uses _default collection
+            if self.transaction_conf.transaction_keyspace:
+                b_name, scope, col = self.transaction_conf.transaction_keyspace
+                tnx_keyspace = TransactionKeyspace.create(b_name, scope, col)
+                t_cluster_env.transactionsConfig(
+                    TransactionsConfig.metadataCollection(tnx_keyspace))
+
+        if build_env:
+            t_cluster_env = t_cluster_env.build()
+
         cluster_options = ClusterOptions \
             .clusterOptions(self.username, self.password) \
-            .environment(SDKClient.cluster_env)
+            .environment(t_cluster_env)
         i = 1
         while i <= 5:
             try:
@@ -315,7 +370,7 @@ class SDKClient(object):
             except Java_base_exception as e:
                 # JCBC-1983: Suppress the exception just by logging it
                 # We might have got 10 seconds sleep for the connection to work
-                self.log.critical(e)
+                self.log.debug(e)
 
             self.select_collection(self.scope_name,
                                    self.collection_name)
@@ -332,6 +387,40 @@ class SDKClient(object):
         mem = float(out[1].split()[vsz_index]) / 1024
         self.log.info("RAM FootPrint: {}".format(str(mem)))
         return mem
+
+    def sampling_scan(self, limit, seed, timeout=None):
+        options = None
+        if timeout is not None:
+            options = SDKOptions.get_scan_options(timeout=60)
+        data = SDKClient.doc_op.sampling_scan(self.collection, limit, seed,
+                                              options)
+        result = self.__translate_ranges_scan_results(data)
+        self.log.debug("sampling scan result for term %s" % (str(result)))
+        return result, self.bucket.name, self.collection_name, self.scope_name
+
+    def prefix_range_scan(self, term, timeout=None):
+        self.log.debug("prefix scan started!")
+        options = None
+        if timeout is not None:
+            options = SDKOptions.get_scan_options(timeout=timeout)
+        data = SDKClient.doc_op.prefix_scan_query(self.collection, term,
+                                                  options)
+        result = self.__translate_ranges_scan_results(data)
+        self.log.debug("prefix scan result for term %s %s" % (str(result),
+                                                              term))
+        return result, self.bucket.name, self.collection_name, self.scope_name
+
+    def range_scan(self, start_term, end_term, include_start=True,
+                   include_end=True, timeout=None):
+        options = None
+        if timeout is not None:
+            options = SDKOptions.get_scan_options(timeout=timeout)
+        data = SDKClient.doc_op.range_scan_query(self.collection,
+                                                 start_term, end_term,
+                                                 include_start,
+                                                 include_end, options)
+        result = self.__translate_ranges_scan_results(data)
+        return result, self.bucket.name, self.collection_name, self.scope_name
 
     def close(self):
         self.log.debug("Closing SDK for bucket '%s'" % self.bucket)
@@ -385,6 +474,15 @@ class SDKClient(object):
                 " | retryReasons:" + str(req_context.retryReasons())
         except Exception:
             pass
+
+    @staticmethod
+    def __translate_ranges_scan_results(data):
+        result = dict()
+        result['time_taken'] = data['timeTaken']
+        result['count'] = int(data['count'])
+        result['exception'] = data['exception']
+        result['status'] = data['status']
+        return result
 
     @staticmethod
     def __translate_upsert_multi_results(data):

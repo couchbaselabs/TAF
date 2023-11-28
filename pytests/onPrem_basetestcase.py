@@ -20,6 +20,7 @@ from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Nebula
+from couchbase_utils.security_utils.security_utils import SecurityUtils
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -127,6 +128,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
         global_vars.cluster_util = self.cluster_util
         global_vars.bucket_util = self.bucket_util
 
+        # Sets internal password rotation time interval
+        self.int_pwd_rotn = self.input.param("int_pwd_rotn", 1800000)
+
         # Populate memcached_port in case of cluster_run
         if int(self.input.servers[0].port) == ClusterRun.port:
             # This flag will be used globally to decide port_mapping stuff
@@ -226,6 +230,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
             if not mem_quota_percent:
                 mem_quota_percent = None
+
+            # Rotate the internal user's password at the specified interval
+            self.security_util = SecurityUtils(self.log)
+            self.security_util.set_internal_creds_rotation_interval(self.cluster, self.int_pwd_rotn)
 
             if self.skip_setup_cleanup:
                 # Update current server/service map and buckets for the cluster
@@ -387,6 +395,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         except Exception as e:
             traceback.print_exc()
+            for server in self.input.servers:
+                self.set_ports_for_server(server, "non_ssl")
             self.task.shutdown(force=True)
             self.fail(e)
         finally:
@@ -397,12 +407,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.log_setup_status("OnPremBaseTest", "finished")
 
     def initialize_cluster(self, cluster_name, cluster, services=None,
-                           services_mem_quota_percent=None,
-                           use_rest_reset=True):
-        if use_rest_reset:
-            self.node_utils.reset_cluster_nodes(cluster)
-        else:
-            self.node_utils.reset_nodes_lt_7_6(self.cluster_util, cluster)
+                           services_mem_quota_percent=None):
+        self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
         self.cluster_util.wait_for_ns_servers_or_assert(cluster.servers)
         self.sleep(5, "Wait for nodes to become ready after reset")
 
@@ -449,6 +455,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             status, content = rest.set_minimum_bucket_replica_for_cluster(
                 self.minimum_bucket_replica)
             self.assertTrue(status, "minimum replica setting failed to update")
+            self.num_replicas = self.minimum_bucket_replica
 
     def start_fetch_pcaps(self):
         log_path = TestInputSingleton.input.param("logs_folder", "/tmp")
@@ -662,7 +669,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
             if cluster.master != server:
                 continue
-
             init_port = port or server.port or '8091'
             assigned_services = services
             init_tasks.append(
@@ -1053,6 +1059,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
         import shutil
         shutil.copy("couchbase_utils/nebula_utils/Dockerfile", nebula_path)
 
+    def handle_setup_exception(self, exception_obj):
+        for server in self.input.servers:
+            self.set_ports_for_server(server, "non_ssl")
+        super(OnPremBaseTest, self).handle_setup_exception(exception_obj)
+
 
 class ClusterSetup(OnPremBaseTest):
     def setUp(self):
@@ -1099,6 +1110,10 @@ class ClusterSetup(OnPremBaseTest):
                 # in BaseTest if failure happens during setup() stage
                 if self.get_cbcollect_info:
                     self.fetch_cb_collect_logs()
+                CbServer.use_https = False
+                CbServer.n2n_encryption = False
+                for server in self.input.servers:
+                    self.set_ports_for_server(server, "non_ssl")
                 self.fail("Initial rebalance failed")
 
         if CbServer.cluster_profile == "serverless":

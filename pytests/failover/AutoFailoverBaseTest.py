@@ -11,6 +11,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from bucket_utils.bucket_ready_functions import CollectionUtils
 
 from pytests.bucket_collections.collections_base import CollectionBase
 from sdk_client3 import SDKClient
@@ -26,13 +27,30 @@ class AutoFailoverBaseTest(ClusterSetup):
         super(AutoFailoverBaseTest, self).setUp()
         self.spec_name = self.input.param("bucket_spec", None)
         self.auto_reprovision = self.input.param("auto_reprovision", False)
+        self.skip_collections_during_data_load = self.input.param(
+            "skip_col_dict", None)
         self._get_params()
+        self.range_scan_timeout = self.input.param("range_scan_timeout",
+                                                   None)
+        self.expect_range_scan_exceptions = self.input.param(
+            "expect_range_scan_exceptions",
+            ["com.couchbase.client.core.error.CouchbaseException: "
+             "The range scan internal partition UUID could not be found on the server "])
+        self.range_scan_collections = self.input.param("range_scan_collections", None)
         self.rest = RestConnection(self.orchestrator)
         self.server_index_to_fail = self.input.param("server_index_to_fail",
                                                      None)
+        self.key_size = self.input.param("key_size", 8)
+        self.range_scan_task = self.input.param("range_scan_task", None)
+        self.skip_range_scan_collection_mutation = self.input.param(
+            "skip_range_scan_collection_mutation", True)
         self.new_replica = self.input.param("new_replica", None)
         self.replica_update_during = self.input.param("replica_update_during",
                                                       None)
+        self.include_prefix_scan = self.input.param("include_prefix_scan",
+                                                    True)
+        self.include_range_scan = self.input.param("include_range_scan",
+                                                   True)
         if self.server_index_to_fail is None:
             self.server_to_fail = self._servers_to_fail()
         else:
@@ -144,6 +162,12 @@ class AutoFailoverBaseTest(ClusterSetup):
 
     def tearDown(self):
         self.log.info("============AutoFailoverBaseTest teardown============")
+        if self.range_scan_task is not None:
+            self.range_scan_task.stop_task = True
+            self.task.jython_task_manager.get_task_result(self.range_scan_task)
+            result = CollectionUtils.get_range_scan_results(
+                self.range_scan_task.fail_map, self.range_scan_task.expect_range_scan_failure, self.log)
+            self.assertTrue(result, "unexpected failures in range scans")
         self.bucket_util.print_bucket_stats(self.cluster)
         self._get_params()
         self.server_to_fail = self._servers_to_fail()
@@ -166,6 +190,8 @@ class AutoFailoverBaseTest(ClusterSetup):
         CollectionBase.deploy_buckets_from_spec_file(self)
         CollectionBase.create_clients_for_sdk_pool(self)
         CollectionBase.load_data_from_spec_file(self, "initial_load")
+        if self.range_scan_collections > 0:
+            CollectionBase.range_scan_load_setup(self)
 
     def _loadgen(self):
         tasks = []
@@ -599,12 +625,6 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.max_count = self.input.param("maxCount", 1)
         self.failover_action = self.input.param("failover_action",
                                                 "stop_server")
-
-        if self.failover_action in ["restart_machine", "restart_network",
-                                    "network_split"]:
-            self.get_cbcollect_info = False
-            self.fail("CBQE-8008: Disabling network failure tests")
-
         self.failover_orchestrator = self.input.param("failover_orchestrator",
                                                       False)
         self.multiple_node_failure = self.input.param("multiple_nodes_failure",
@@ -645,18 +665,13 @@ class AutoFailoverBaseTest(ClusterSetup):
     def reset_cluster(self):
         try:
             for node in self.cluster.servers:
-                shell = RemoteMachineShellConnection(node)
-                # Start node
+                # Reset node
                 rest = RestConnection(node)
-                data_path = rest.get_data_path()
-                # Stop node
-                shell.stop_server()
-                # Delete Path
-                shell.cleanup_data_config(data_path)
-                shell.start_server()
+                rest.reset_node()
 
                 # If Ipv6 update dist_cfg file post server restart
                 # to change distribution to IPv6
+                shell = RemoteMachineShellConnection(node)
                 if '.com' in node.ip or ':' in node.ip:
                     self.log.info("Updating dist_cfg for IPv6 Machines")
                     shell.update_dist_type()
@@ -850,6 +865,20 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.disk_location = self.input.param("data_location", "/data")
         self.disk_location_size = self.input.param("data_location_size", 5120)
         self.data_location = "{0}/data".format(self.disk_location)
+        self.skip_collections_during_data_load = self.input.param(
+            "skip_col_dict", None)
+        self.range_scan_timeout = self.input.param("range_scan_timeout",
+                                                   None)
+        self.expect_range_scan_exceptions = self.input.param(
+            "expect_range_scan_exceptions",
+            ["com.couchbase.client.core.error.CouchbaseException: "
+             "The range scan internal partition UUID could not be found on the server "])
+        self.range_scan_collections = self.input.param(
+            "range_scan_collections", None)
+        self.key_size = self.input.param("key_size", 8)
+        self.range_scan_task = self.input.param("range_scan_task", None)
+        self.skip_range_scan_collection_mutation = self.input.param(
+            "skip_range_scan_collection_mutation", True)
         self.disk_timeout = self.input.param("disk_timeout", 120)
         self.read_loadgen = self.input.param("read_loadgen", False)
         self.retry_get_process_num = self.input.param("retry_get_process_num", 200)

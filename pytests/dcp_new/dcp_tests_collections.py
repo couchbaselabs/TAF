@@ -107,7 +107,7 @@ class DcpTestCase(DCPBase):
     def rebalance_in(self):
         servs_in = [self.cluster.servers[0 + self.nodes_init]]
         rebalance_task = self.task.async_rebalance(
-            self.cluster.servers[:self.nodes_init], servs_in, [])
+            self.cluster, servs_in, [])
         self.sleep(10)
         self.task_manager.get_task_result(rebalance_task)
         if rebalance_task.result is False:

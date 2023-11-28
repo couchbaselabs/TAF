@@ -28,11 +28,12 @@ import com.couchbase.test.sdk.SDKClient;
 import com.couchbase.test.taskmanager.Task;
 import com.couchbase.test.transactions.Transaction;
 
-import com.couchbase.transactions.Transactions;
-import com.couchbase.transactions.TransactionGetResult;
-import com.couchbase.transactions.TransactionResult;
-import com.couchbase.transactions.error.TransactionFailed;
-import com.couchbase.transactions.log.LogDefer;
+import com.couchbase.client.java.transactions.Transactions;
+import com.couchbase.client.java.transactions.TransactionGetResult;
+import com.couchbase.client.java.transactions.TransactionResult;
+import com.couchbase.client.java.transactions.error.TransactionFailedException;
+import com.couchbase.client.core.error.transaction.internal.CoreTransactionFailedException;
+
 
 public class TransactionWorkLoadGenerate extends Task{
     int batch_size;
@@ -74,7 +75,6 @@ public class TransactionWorkLoadGenerate extends Task{
 
     void run_transaction(Collection col_obj, List<Tuple2<String, Object>> docs, List<String> ops,
                          Boolean wait_for_cleanup) {
-        List<LogDefer> res = new ArrayList<LogDefer>();
         long start_time = TimeUnit.SECONDS.convert(System.currentTimeMillis(), TimeUnit.MILLISECONDS);
         Set<String> attempt_ids = Collections.newSetFromMap(new ConcurrentHashMap<String, Boolean>());
         EventSubscription cleanup_es = trans_helper.record_cleanup_attempt_events(this.cluster, attempt_ids);
@@ -109,32 +109,26 @@ public class TransactionWorkLoadGenerate extends Task{
                     }
                 }
                 if (this.rollback != null && this.rollback == true)
-                    ctx.rollback();
-                else if (this.commit != null && this.commit)
-                    ctx.commit();
+                    throw new CoreTransactionFailedException(new Exception("Rollback exception"), null, "Test", "Rollback");
             });
 
             if (wait_for_cleanup
                     && this.rollback != true
                     && (this.commit == null || this.commit)
                     && !result.unstagingComplete()) {
-                long cleanup_timeout = trans_helper.get_cleanup_timeout(transaction, start_time);
-                trans_helper.waitForTransactionCleanupEvent(
-                    this.cluster, result.attempts(), attempt_ids, cleanup_timeout);
+                long cleanup_timeout = trans_helper.get_cleanup_timeout(cluster.environment().transactionsConfig(), start_time);
+//                 trans_helper.waitForTransactionCleanupEvent(
+//                     this.cluster, result.attempts(), attempt_ids, cleanup_timeout);
             }
         }
-        catch (TransactionFailed err) {
+        catch (TransactionFailedException err) {
             System.out.println(err.getCause());
-            res = err.result().log().logs();
-            if (res.toString().contains("DurabilityImpossibleException"))
+            if (((TransactionFailedException) err).logs().toString().contains("DurabilityImpossibleException"))
                 System.out.println("DurabilityImpossibleException seen");
-//             else
-//                 for (LogDefer e : ((TransactionFailed) err).result().log().logs())
-//                     System.out.println(e);
             if (wait_for_cleanup) {
-                long cleanup_timeout = trans_helper.get_cleanup_timeout(transaction, start_time);
-                trans_helper.waitForTransactionCleanupEvent(
-                    this.cluster, err.result().attempts(), attempt_ids, cleanup_timeout);
+                long cleanup_timeout = trans_helper.get_cleanup_timeout(cluster.environment().transactionsConfig(), start_time);
+//                 trans_helper.waitForTransactionCleanupEvent(
+//                     this.cluster, err.result().attempts(), attempt_ids, cleanup_timeout);
             }
         }
     }

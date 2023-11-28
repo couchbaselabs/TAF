@@ -103,7 +103,7 @@ class CBASExternalLinks(CBASBaseTest):
                 bucket_created = False
                 aws_bucket_name = self.input.param(
                     "aws_bucket_name", "cbas-regression-{0}".format(
-                        random.randint(1, 10000)))
+                        self.cbas_util.generate_name(max_length=10)))
 
                 while (not bucket_created) and retry < 10:
                     try:
@@ -174,11 +174,10 @@ class CBASExternalLinks(CBASBaseTest):
                     self.fail("Dataset creation failed")
 
         if initialize_helper_objs:
-            self.n1ql_helper = N1QLHelper(
-                shell=RemoteMachineShellConnection(self.cluster.master),
-                buckets=self.cluster.buckets, item_flag=0,
-                n1ql_port=8093, log=self.log, input=self.input,
-                server=self.cluster.master, use_rest=True)
+            self.n1ql_helper = N1QLHelper(shell=RemoteMachineShellConnection(
+                self.cluster.query_nodes[0]), buckets=self.cluster.buckets,
+                item_flag=0, n1ql_port=8093, log=self.log, input=self.input,
+                server=self.cluster.query_nodes[0], use_rest=True)
 
             self.s3_data_helper = S3DataHelper(
                 aws_access_key=self.aws_access_key,

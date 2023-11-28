@@ -9,6 +9,7 @@ import json
 import re
 import time
 import os
+from datetime import datetime,timedelta
 from threading import Lock
 
 from Cb_constants import constants, CbServer, ClusterRun
@@ -19,6 +20,7 @@ from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from global_vars import logger
+import global_vars
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux, Mac, Windows
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
@@ -318,6 +320,114 @@ class ClusterUtils:
             elif node_weight == min_node_weight:
                 nodes.append(node.ip)
         return nodes
+
+    def validate_bucket_ranking(self, cluster, cluster_node=None,
+                                fetch_latest_buckets=False):
+
+        def parse_timestamp(timestamp):
+            time_format = "%Y-%m-%dT%H:%M:%S.%f"
+            result = datetime.strptime(timestamp[:23], time_format)
+            if timestamp[23]=='+':
+                result -= timedelta(hours=int(timestamp[24:26]),
+                                    minutes=int(timestamp[27:29]))
+            elif timestamp[23]=='-':
+                result += timedelta(hours=int(timestamp[24:26]),
+                                    minutes=int(timestamp[27:29]))
+            return result
+
+        def validate_order_of_rebalance(rank_map, bucket_list):
+            for bucket in rank_map:
+                if not rank_map[bucket]:
+                    rank_map[bucket] = 0
+
+            if len(bucket_list):
+                bucket_name_prev = bucket_list[0]["bucket_name"]
+                i = 1
+                while i < len(bucket_list):
+                    bucket_name_curr = bucket_list[i]["bucket_name"]
+                    if rank_map[bucket_name_curr] > rank_map[bucket_name_prev]:
+                        return False
+                    bucket_name_prev = bucket_name_curr
+                    i += 1
+            return True
+
+        result = True
+        cluster_node = cluster_node if cluster_node else cluster.master
+        rest_orchestrator = RestConnection(cluster_node)
+
+        # Fetch task from /pools/default/tasks
+        cluster_tasks = rest_orchestrator.ns_server_tasks()
+        for cluster_task in cluster_tasks:
+            # Check if task type is rebalance
+            if cluster_task["type"] != "rebalance":
+                continue
+
+            # Check if task is complete
+            if cluster_task["status"] != "notRunning":
+                continue
+
+            self.log.debug("Task type : {} Task subtype : {}".format(cluster_task["type"],
+                                                                     cluster_task.get("subtype", None)))
+
+            # Get the endpoint for rebalance report and fetch
+            report_url = cluster_task["lastReportURI"]
+            rebalance_report = rest_orchestrator.fetch_rebalance_report(report_url)
+
+            rebalance_start_time_report = rebalance_report["startTime"]
+            self.log.debug("The rebalance report is fetched from {}".format(report_url))
+            self.log.debug("The rebalance startTime in the report is {}".format(rebalance_start_time_report))
+
+            # Create a list based on rebalance startTime
+            data_buckets = []
+            if "data" in rebalance_report["stageInfo"]:
+                if "details" in rebalance_report["stageInfo"]["data"]:
+                    for bucket in rebalance_report["stageInfo"]["data"]["details"]:
+                        startTime = rebalance_report["stageInfo"]["data"]["details"][bucket]["startTime"]
+                        completedTime = rebalance_report["stageInfo"]["data"]["details"][bucket]["completedTime"]
+
+                        # startTime and completedTime can be False
+                        startTime = parse_timestamp(startTime) if startTime else startTime
+                        completedTime = parse_timestamp(completedTime) if completedTime else completedTime
+
+                        data_buckets.append({
+                            "bucket_name": bucket,
+                            "startTime": startTime,
+                            "completedTime": completedTime
+                        })
+            failover_buckets = []
+            if "failover" in rebalance_report["stageInfo"]:
+                if "subStages" in rebalance_report["stageInfo"]["failover"]:
+                    for bucket in rebalance_report["stageInfo"]["failover"]["subStages"]:
+                        startTime = rebalance_report["stageInfo"]["failover"]["subStages"][bucket]["startTime"]
+                        completedTime = rebalance_report["stageInfo"]["failover"]["subStages"][bucket]["completedTime"]
+
+                        # startTime and completedTime can be False
+                        startTime = parse_timestamp(startTime) if startTime else startTime
+                        completedTime =  parse_timestamp(completedTime) if completedTime else completedTime
+                        failover_buckets.append({
+                            "bucket_name": bucket,
+                            "startTime": startTime,
+                            "completedTime": completedTime
+                        })
+
+            # Creating a sorted list based on startTime
+            data_buckets = sorted(data_buckets, key=lambda x: x['startTime'])
+            failover_buckets = sorted(failover_buckets, key=lambda x: x['startTime'])
+
+            # Validate that with rank map
+            rank_map = global_vars.bucket_util.fetch_rank_map(cluster,
+                                                              cluster_node,
+                                                              fetch_latest_buckets=fetch_latest_buckets)
+            self.log.debug("Rank map : {}".format(rank_map))
+            self.log.debug("Order of bucket movement : {}".format(data_buckets))
+            self.log.debug("Order of failover bucket movement : {}".format(failover_buckets))
+            data_validation = validate_order_of_rebalance(rank_map=rank_map,
+                                                          bucket_list=data_buckets)
+            failover_validation = validate_order_of_rebalance(rank_map=rank_map,
+                                                              bucket_list=failover_buckets)
+            result = result and data_validation and failover_validation
+
+        return result
 
     def validate_orchestrator_selection(self, cluster, removed_nodes=[]):
         result = False
@@ -1081,7 +1191,7 @@ class ClusterUtils:
                         remoteIp=server.ip, port=constants.port,
                         services=server.services.split(",")))
 
-            self.rebalance(cluster.master, wait_for_completion)
+            self.rebalance(cluster, wait_for_completion)
         else:
             self.log.warning("No Nodes provided to add in cluster")
 

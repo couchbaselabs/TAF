@@ -449,7 +449,7 @@ class CollectionsRebalance(CollectionBase):
                                 bucket, servers=[node], wait_time=1200))
                         self.log.info("second attempt to rebalance")
                         self.sleep(60, "wait before starting rebalance after warmup")
-                        operation = self.task.async_rebalance(self.cluster + add_nodes, [], [],
+                        operation = self.task.async_rebalance(self.cluster, [], [],
                                                               retry_get_process_num=self.retry_get_process_num)
                         self.wait_for_rebalance_to_complete(operation)
                     self.sleep(60)
@@ -815,6 +815,8 @@ class CollectionsRebalance(CollectionBase):
         if self.forced_hard_failover and self.spec_name == "multi_bucket.buckets_for_rebalance_tests_more_collections":
             # create collections, else if other bucket_spec - then just "create" ops
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
+        if self.skip_collections_during_data_load is not None:
+            doc_loading_spec['skip_dict'] = self.skip_collections_during_data_load
         tasks = self.bucket_util.run_scenario_from_spec(self.task,
                                                         self.cluster,
                                                         self.cluster.buckets,

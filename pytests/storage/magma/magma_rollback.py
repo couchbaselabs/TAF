@@ -14,7 +14,7 @@ from cb_tools.cbstats import Cbstats
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_client3 import SDKClient
+from sdk_client3 import SDKClient, TransactionConfig
 
 from reactor.util.function import Tuples
 from com.couchbase.test.docgen import WorkLoadSettings
@@ -37,10 +37,8 @@ class MagmaRollbackTests(MagmaBaseTest):
 
     def _run_transaction(self):
         transaction_app = Transaction()
-        trans_config = transaction_app.createTransactionConfig(
-            self.transaction_timeout,
-            self.sdk_timeout,
-            self.transaction_durability_level)
+        trans_conf = TransactionConfig(self.transaction_durability_level,
+                                       self.transaction_timeout)
 
         workload = dict()
         workload["keyPrefix"] = "trans_basics"
@@ -65,9 +63,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             workload["transaction_pattern"],
             workload["workers"])
         work_load.setTransactionRollback(True)
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
-        transaction_obj = transaction_app.createTransaction(client.cluster,
-                                                            trans_config)
+        client = SDKClient([self.cluster.master], self.cluster.buckets[0],
+                           transaction_config=trans_conf)
         for index, load_pattern in enumerate(work_load.transaction_pattern):
             th_name = "Transaction_%s" % index
             batch_size = load_pattern[0]
@@ -75,7 +72,8 @@ class MagmaRollbackTests(MagmaBaseTest):
             trans_pattern = load_pattern[2]
 
             task = TransactionWorkLoadGenerate(
-                th_name, client.cluster, client.bucketObj, transaction_obj,
+                th_name, client.cluster, client.bucketObj,
+                client.cluster.transactions(),
                 work_load.doc_gen, batch_size, num_transactions, trans_pattern,
                 work_load.commit_transaction, work_load.rollback_transaction,
                 transaction_app)

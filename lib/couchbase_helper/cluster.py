@@ -3,7 +3,7 @@ from copy import deepcopy
 import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer, DocLoading
-from Jython_tasks.task import MutateDocsFromSpecTask
+from Jython_tasks.task import MutateDocsFromSpecTask,ContinuousRangeScan
 from Jython_tasks.task import CompareIndexKVData
 from capella_utils.dedicated import CapellaUtils
 from common_lib import sleep
@@ -11,7 +11,7 @@ from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
 from global_vars import logger
-from sdk_client3 import SDKClient
+from sdk_client3 import SDKClient, TransactionConfig
 from BucketLib.BucketOperations import BucketHelper
 
 """An API for scheduling tasks that run against Couchbase Server
@@ -100,6 +100,32 @@ class ServerTasks(object):
 
         self.jython_task_manager.schedule(_task)
         return _task
+
+    def async_range_scan(self, cluster, task_manager, sdk_client_pool,
+                         range_scan_collections,
+                         items_per_collection,
+                         include_prefix_scan=True,
+                         include_range_scan=True, include_start_term=1,
+                         include_end_term=1, key_size=8, timeout=60,
+                         expect_exceptions=[], runs_per_collection=1,
+                         expect_range_scan_failure=True):
+        self.log.debug("Continuous range scan started")
+        task = jython_tasks.ContinuousRangeScan(cluster, task_manager,
+                                                sdk_client_pool,
+                                                items_per_collection,
+                                                range_scan_collections=
+                                                range_scan_collections,
+                                                include_prefix_scan=include_prefix_scan,
+                                                include_range_scan=include_range_scan,
+                                                include_start_term=include_start_term,
+                                                include_end_term=include_end_term,
+                                                key_size=key_size,
+                                                timeout=timeout,
+                                                expect_exceptions=expect_exceptions,
+                                                runs_per_collection=runs_per_collection,
+                                                expect_range_scan_failure=expect_range_scan_failure )
+        task_manager.add_new_task(task)
+        return task
 
     def async_load_gen_docs_from_spec(self, cluster, task_manager, loader_spec,
                                       sdk_client_pool,
@@ -325,10 +351,10 @@ class ServerTasks(object):
                                       update_count=1, transaction_timeout=5,
                                       commit=True, durability=0, sync=True,
                                       num_threads=5, record_fail=False,
-                                      defer=False,
                                       scope=CbServer.default_scope,
                                       collection=CbServer.default_collection,
-                                      start_task=True):
+                                      start_task=True,
+                                      transaction_keyspace=None):
 
         bucket_list = list()
         client_list = list()
@@ -336,12 +362,18 @@ class ServerTasks(object):
         gen_end = int(generator.end)
         gen_range = max(int((generator.end - generator.start)
                             / process_concurrency), 1)
+
+        if op_type == "time_out":
+            transaction_timeout = 2
+        trans_conf = TransactionConfig(
+            durability=durability, timeout=transaction_timeout,
+            transaction_keyspace=transaction_keyspace)
         for _ in range(gen_start, gen_end, gen_range):
             temp_bucket_list = list()
             temp_client_list = list()
             for bucket in buckets:
-                client = SDKClient([cluster.master], bucket,
-                                   scope, collection)
+                client = SDKClient([cluster.master], bucket, scope, collection,
+                                   transaction_config=trans_conf)
                 temp_client_list.append(client)
                 temp_bucket_list.append(client.collection)
             bucket_list.append(temp_bucket_list)
@@ -355,11 +387,13 @@ class ServerTasks(object):
             batch_size=batch_size,
             timeout_secs=timeout_secs,
             compression=compression,
-            process_concurrency=process_concurrency, retries=retries,
+            process_concurrency=process_concurrency,
+            retries=retries,
             update_count=update_count,
-            transaction_timeout=transaction_timeout, commit=commit,
-            durability=durability, sync=sync, num_threads=num_threads,
-            record_fail=record_fail, defer=defer)
+            commit=commit,
+            sync=sync,
+            num_threads=num_threads,
+            record_fail=record_fail)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task

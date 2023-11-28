@@ -61,24 +61,20 @@ class NodeUtils(object):
         for task in tasks:
             self.jython_task_manager.get_task_result(task)
 
-    def reset_cluster_nodes(self, cluster):
+    def reset_cluster_nodes(self, cluster_util, cluster):
         self.log.info("Resetting cluster_nodes")
-        for node in cluster.servers:
-            RestConnection(node).reset_node()
-
-    def reset_nodes_lt_7_6(self, cluster_util, cluster):
-        """
-        This is the old reset node code to use for upgrade tests
-        """
         tasks = list()
-        try:
-            for node in cluster.servers:
+        for node in cluster.servers:
+            rest = RestConnection(node)
+            version = rest.get_pools_info()
+            if float(version["implementationVersion"][:3]) >= 7.6:
+                RestConnection(node).reset_node()
+            else:
+                # This is the old reset node code for upgrade scenarios
                 task = jython_tasks.FunctionCallTask(
                     self.__reset_node, (cluster_util, cluster, node))
                 self.jython_task_manager.schedule(task)
                 tasks.append(task)
-        except Exception as ex:
-            self.log.critical(ex)
         for task in tasks:
             self.jython_task_manager.get_task_result(task)
         return tasks

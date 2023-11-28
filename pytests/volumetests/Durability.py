@@ -194,7 +194,7 @@ class volume(BaseTestCase):
                                                        retries=self.sdk_retries, update_count=self.mutate,
                                                        transaction_timeout=self.transaction_timeout,
                                                        commit=self.transaction_commit, durability=self.durability_level,
-                                                       sync=self.sync, defer=self.defer)
+                                                       sync=self.sync)
         return task
 
     # Loading documents through normal doc loader

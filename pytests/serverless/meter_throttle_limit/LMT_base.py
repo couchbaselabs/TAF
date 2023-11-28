@@ -874,22 +874,11 @@ class LMT(ServerlessOnPremBaseTest):
     def transaction_operations(self, client, create_docs=[],
                                update_docs=[], delete_docs=[],
                                commit=True):
-        if self.defer:
-            ret = Transaction().DeferTransaction(
-                    client.cluster,
-                    self.transaction, [client.collection], create_docs,
-                    update_docs, delete_docs, self.update_count)
-            encoded = ret.getT1()
-            self.sleep(5) # wait before commit/rollback defer transactions
-            exception = Transaction().DefferedTransaction(
-                            client.cluster,
-                            self.transaction, commit, encoded)
-        else:
-            exception = Transaction().RunTransaction(
-                    client.cluster,
-                    self.transaction, [client.collection], create_docs,
-                    update_docs, delete_docs, commit,
-                    self.sync, self.update_count)
+        exception = Transaction().RunTransaction(
+                client.cluster,
+                self.transaction, [client.collection], create_docs,
+                update_docs, delete_docs, commit,
+                self.sync, self.update_count)
         if exception:
             self.log.info("txn failed")
         self.sleep(1)

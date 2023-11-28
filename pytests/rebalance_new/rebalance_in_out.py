@@ -667,8 +667,9 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
                         stopped = rest.stop_rebalance()
                         self.assertTrue(stopped, msg="unable to stop rebalance")
                         self.sleep(20)
-                        rebalance_task = self.task.async_rebalance(
-                            self.cluster.servers[:self.nodes_init] + servs_in, [], toBeEjectedNodes)
+                        rebalance_task = self.task.async_rebalance(self.cluster,
+                                                                   [],
+                                                                   toBeEjectedNodes)
                         break
                     elif retry > 100:
                         break

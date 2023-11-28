@@ -21,17 +21,11 @@ class CollectionsQuorumLoss(CollectionBase):
         self.create_zones = self.input.param("create_zones", False)
         self.skip_validations = self.input.param("skip_validations", True)
         self.data_path = RestConnection(self.cluster.master).get_data_path()
-        if self.failover_action == "firewall":
-            self.get_cbcollect_info = False
-            self.fail("CBQE-8008: Disabling network failure tests")
 
     def tearDown(self):
         if self.failover_action:
             self.custom_remove_failure()
-            self.sleep(25, "wait after removing failure")
         super(CollectionsQuorumLoss, self).tearDown()
-        # if self.failover_action:
-        #     self.wipe_config_on_removed_nodes()
 
     def wait_for_rebalance_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
@@ -180,6 +174,7 @@ class CollectionsQuorumLoss(CollectionBase):
             elif self.failover_action == "kill_erlang":
                 self.cluster_util.stop_server(self.cluster, node)
                 self.cluster_util.start_server(self.cluster, node)
+        self.sleep(10, "Wait after removing failure")
 
     def shuffle_nodes_between_two_zones(self):
         """
@@ -215,22 +210,16 @@ class CollectionsQuorumLoss(CollectionBase):
 
     def wipe_config_on_removed_nodes(self, removed_nodes=None):
         """
-        Stop servers on nodes that were failed over and removed, and wipe config dir
+        Reset the nodes
         """
         if removed_nodes is None:
             removed_nodes = self.server_to_fail
         for node in removed_nodes:
-            self.log.info("Wiping node config and restarting server on {0}".format(node))
-            rest = RestConnection(node)
-            shell = RemoteMachineShellConnection(node)
-            shell.stop_couchbase()
-            self.sleep(10)
-            shell.cleanup_data_config(self.data_path)
-            shell.start_server()
-            self.sleep(10)
-            if not rest.is_ns_server_running():
+            RestConnection(node).reset_node()
+        self.sleep(5, "Wait for nodes to respond")
+        for node in removed_nodes:
+            if not RestConnection(node).is_ns_server_running():
                 self.log.error("ns_server {0} is not running.".format(node.ip))
-            shell.disconnect()
 
     def populate_uids(self, base_name="pre_qf"):
         """
@@ -323,10 +312,8 @@ class CollectionsQuorumLoss(CollectionBase):
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
-            self.sleep(20, "wait after removing failure")
 
         self.wipe_config_on_removed_nodes()
-
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))
@@ -393,9 +380,8 @@ class CollectionsQuorumLoss(CollectionBase):
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
-            self.sleep(20, "wait after removing failure")
-        self.wipe_config_on_removed_nodes()
 
+        self.wipe_config_on_removed_nodes()
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Adding back nodes which were failed and rebalanced out".
                       format(self.server_to_fail))
@@ -451,11 +437,8 @@ class CollectionsQuorumLoss(CollectionBase):
         self.data_validation_collection()
         if self.failover_action:
             self.custom_remove_failure()
-            self.sleep(20, "wait after removing failure")
 
-        removed_nodes = failover_nodes
-        self.wipe_config_on_removed_nodes(removed_nodes)
-
+        self.wipe_config_on_removed_nodes(failover_nodes)
         tasks, cont_load_task = self.data_load(async_load=True)
         self.log.info("Add back nodes which were failed and rebalanced out {0}"
                       .format(self.server_to_fail))
@@ -519,7 +502,6 @@ class CollectionsQuorumLoss(CollectionBase):
             self.num_node_failures = int(math.ceil(len(self.nodes_in_cluster) / 2.0))
 
         self.custom_remove_failure()
-        self.sleep(20, "wait after removing failure")
         self.wipe_config_on_removed_nodes()
 
         tasks, cont_load_task = self.data_load(async_load=True)
@@ -578,7 +560,6 @@ class CollectionsQuorumLoss(CollectionBase):
         self.task.rebalance(self.cluster, [], [],
                             retry_get_process_num=self.retry_get_process_num)
         self.custom_remove_failure()
-        self.sleep(20, "wait after removing failure")
 
         self.log.info("Adding back nodes which were failed and removed".
                       format(self.server_to_fail))

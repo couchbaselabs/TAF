@@ -11,13 +11,11 @@ from Cb_constants import CbServer
 from cbas_utils.cbas_utils import CbasUtil
 from java.lang import Exception as Java_base_exception
 from bucket_collections.collections_base import CollectionBase
-from collections_helper.collections_spec_constants import \
-    MetaConstants, MetaCrudParams
-from sdk_exceptions import SDKException
+from collections_helper.collections_spec_constants import MetaConstants
 from BucketLib.bucket import Bucket
 from security_utils.security_utils import SecurityUtils
-from BucketLib.BucketOperations import BucketHelper
 from tpch_utils.tpch_utils import TPCHUtil
+from security_config import trust_all_certs
 
 
 class CBASBaseTest(BaseTestCase):
@@ -91,9 +89,18 @@ class CBASBaseTest(BaseTestCase):
         end = self.nodes_init[0]
         cluster = self.cb_clusters[self.cb_clusters.keys()[0]]
         # Instead of cluster.servers , use cluster.nodes_in_cluster
-        cluster.nodes_in_cluster = self.servers[start:end]
+        cluster.servers = self.servers[start:end]
         if "cbas" in cluster.master.services:
             cluster.cbas_nodes.append(cluster.master)
+
+        # Force disable TLS to avoid initial connection issues
+        tasks = [self.node_utils.async_disable_tls(server)
+                 for server in self.servers]
+        for task in tasks:
+            self.task_manager.get_task_result(task)
+        for server in self.servers:
+            self.set_ports_for_server(server, "non_ssl")
+        CbServer.use_https = False
 
         """
         Since BaseTestCase will initialize at least one cluster, we need to
@@ -108,7 +115,6 @@ class CBASBaseTest(BaseTestCase):
                 name=cluster_name,
                 servers=self.servers[start:end])
             self.cb_clusters[cluster_name] = cluster
-            cluster.nodes_in_cluster.append(cluster.master)
             cluster.kv_nodes.append(cluster.master)
 
             self.initialize_cluster(cluster_name, cluster,
@@ -132,6 +138,15 @@ class CBASBaseTest(BaseTestCase):
                 if not status:
                     self.fail(msg)
             self.modify_cluster_settings(cluster)
+            RestConnection(cluster.master).set_internalSetting(
+                "magmaMinMemoryQuota", 256)
+
+        # Enforce tls on nodes of all clusters
+        self.enable_tls_on_nodes()
+        for server in self.servers:
+            self.set_ports_for_server(server, "ssl")
+        CbServer.use_https = True
+        trust_all_certs()
 
         self.available_servers = self.servers[end:]
 
@@ -204,7 +219,7 @@ class CBASBaseTest(BaseTestCase):
                     self.service_mem_dict[service][2] = service_mem_in_cluster
 
             j = 1
-            for server in cluster.nodes_in_cluster:
+            for server in cluster.servers:
                 if server.ip != cluster.master.ip:
                     server.services = self.services_init[i][j].replace(":", ",")
                     j += 1
@@ -241,15 +256,15 @@ class CBASBaseTest(BaseTestCase):
                         self.set_memory_for_services(
                             cluster, server, server.services)
 
-            if cluster.nodes_in_cluster[1:]:
+            if cluster.servers[1:]:
                 self.task.rebalance(
-                    cluster, cluster.nodes_in_cluster[1:], [],
-                    services=[server.services for server in cluster.nodes_in_cluster[1:]])
+                    cluster, cluster.servers[1:], [],
+                    services=[server.services for server in cluster.servers[1:]])
 
             if cluster.cbas_nodes:
                 cbas_cc_node_ip = None
                 retry = 0
-                while True and retry < 60:
+                while True and retry < 3:
                     cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(
                         cluster)
                     if cbas_cc_node_ip:
@@ -259,7 +274,7 @@ class CBASBaseTest(BaseTestCase):
                         retry += 1
 
                 if not cbas_cc_node_ip:
-                    self.fail("CBAS service did not come up even after 10 "
+                    self.fail("CBAS service did not come up even after 15 "
                               "mins.")
 
                 for server in cluster.cbas_nodes:
@@ -613,7 +628,7 @@ class CBASBaseTest(BaseTestCase):
         # Prints bucket stats before doc_ops
         self.bucket_util.print_bucket_stats(cluster)
 
-        CollectionBase.create_clients_for_sdk_pool(self)
+        CollectionBase.create_clients_for_sdk_pool(self, cluster)
         self.cluster_util.print_cluster_stats(cluster)
         if load_data:
             self.load_data_into_buckets(cluster, doc_loading_spec)

@@ -36,14 +36,14 @@ class Windows(object):
     NAME = "windows"
 
     COUCHBASE_DATA_PATH = \
-        "/cygdrive/c/Program Files/Couchbase/Server/var/lib/couchbase/data/"
+        "/cygdrive/c/Program\ Files/Couchbase/Server/var/lib/couchbase/data/"
     COUCHBASE_DATA_PATH_RAW = \
-        "c:/Program Files/Couchbase/Server/var/lib/couchbase/data/"
+        "c:/Program\ Files/Couchbase/Server/var/lib/couchbase/data/"
     COUCHBASE_CRASH_PATH_RAW = \
-        "c:/Program Files/Couchbase/Server/var/lib/couchbase/crash/"
-    CB_PATH = "/cygdrive/c/Program Files/Couchbase/Server/"
-    CB_PATH_PARA = "/cygdrive/c/Program Files/Couchbase/Server/"
-    MB_PATH = "/cygdrive/c/Program Files/Membase/Server/"
+        "c:/Program\ Files/Couchbase/Server/var/lib/couchbase/crash/"
+    CB_PATH = "/cygdrive/c/Program\ Files/Couchbase/Server/"
+    CB_PATH_PARA = "/cygdrive/c/Program\ Files/Couchbase/Server/"
+    MB_PATH = "/cygdrive/c/Program\ Files/Membase/Server/"
     PROCESSES_KILLED = ["msiexec32.exe", "msiexec.exe", "setup.exe",
                         "ISBEW64.*", "iexplore.*", "WerFault.*", "Firefox.*",
                         "bash.exe", "chrome.exe", "cbq-engine.exe"]
@@ -106,19 +106,19 @@ class Windows(object):
                    "470": "5F8BB367-A796-1104-05DE-00BCD7A787A5",
                    "500": "5F8BB367-A796-1104-05DE-00BCD7A787A5"}
 
-    COUCHBASE_BIN_PATH = "/cygdrive/c/Program Files/Couchbase/Server/bin/"
-    COUCHBASE_BIN_PATH_RAW = "C:/Program Files/Couchbase/Server/bin/"
+    COUCHBASE_BIN_PATH = "/cygdrive/c/Program\ Files/Couchbase/Server/bin/"
+    COUCHBASE_BIN_PATH_RAW = "C:/Program\ Files/Couchbase/Server/bin/"
     COUCHBASE_PORT_CONFIG_PATH = \
-        "/cygdrive/c/Program Files/couchbase/Server/etc/couchbase"
+        "/cygdrive/c/Program\ Files/couchbase/Server/etc/couchbase"
     COUCHBASE_OLD_CONFIG_PATH = \
-        "/cygdrive/c/Program Files/couchbase/Server/var/lib/couchbase/config"
+        "/cygdrive/c/Program\ Files/couchbase/Server/var/lib/couchbase/config"
     GOPATH = "/cygdrive/c/tuq/gocode"
     CYGWIN_BIN_PATH = "/cygdrive/c/cygwin64/bin/"
     TMP_PATH = "/cygdrive/c/tmp/"
     TMP_PATH_RAW = "C:/tmp/"
     ROOT_PATH = "/home/Administrator/"
     COUCHBASE_LOGS_PATH = \
-        "/cygdrive/c/Program Files/Couchbase/Server/var/lib/couchbase/logs/"
+        "/cygdrive/c/Program\ Files/Couchbase/Server/var/lib/couchbase/logs/"
     UNZIP = "https://s3-us-west-1.amazonaws.com/" \
             "qebucket/testrunner/win-cmd/unzip.exe"
     PSSUSPEND = "https://s3-us-west-1.amazonaws.com/" \

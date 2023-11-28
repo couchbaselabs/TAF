@@ -27,6 +27,8 @@ from table_view import TableView
 
 from java.lang import RuntimeException
 from com.couchbase.client.java.codec import RawJsonTranscoder
+from com.couchbase.client.core.error import AmbiguousTimeoutException, \
+    CouchbaseException
 
 from couchbase_utils.cluster_utils.cluster_ready_functions import CBCluster
 from membase.api.rest_client import RestConnection
@@ -2322,6 +2324,79 @@ class basic_ops(ClusterSetup):
             [self.cluster.master],
             self.cluster.servers[1:1+self.num_replicas], [])
         self.assertTrue(result, "Rebalance failed")
+
+    def test_unlock_key(self):
+        """
+        Ref: MB-58088 / MB-59060
+        """
+        def validate_unlock_exception(t_key, d_cas, expected_errors):
+            try:
+                client.collection.unlock(t_key, d_cas)
+            except AmbiguousTimeoutException as e:
+                if "KV_TEMPORARY_FAILURE" in str(e):
+                    self.fail("Key '{}' - KV_TEMPORARY_FAILURE".format(t_key))
+            except CouchbaseException as e:
+                for exp_err in expected_errors:
+                    if exp_err not in str(e):
+                        self.fail("Key '{}' - Unexpected error message: {}"
+                                  .format(t_key, e))
+
+        key_1 = "test_doc_1"
+        key_2 = "test_doc_2"
+        key_3 = "test_doc_3"
+        bucket = self.cluster.buckets[0]
+        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+
+        not_locked_msgs = ["Requested resource is not locked", "NOT_LOCKED"]
+        self.log.info("Test for multiple doc-unlock")
+        client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
+        result = client.collection.getAndLock(
+            key_1, SDKOptions.get_duration(15, "seconds"))
+        cas = result.cas()
+        client.collection.unlock(key_1, cas)
+        validate_unlock_exception(key_1, cas, not_locked_msgs)
+
+        self.log.info("Testing unlock without lock")
+        cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
+                                key_2, {})["cas"]
+        validate_unlock_exception(key_2, cas, not_locked_msgs)
+
+        self.log.info("Testing with expired key")
+        cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
+                                key_3, {}, exp=2)["cas"]
+        self.sleep(3, "Wait for doc_to_expire")
+        validate_unlock_exception(key_3, cas,
+                                  [SDKException.DocumentNotFoundException])
+
+        # Test with evicted docs
+        self.log.info("Testing evicted keys with lock expired")
+        client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
+        client.crud(DocLoading.Bucket.DocOps.UPDATE, key_2, {})
+        doc_1_cas = client.collection.getAndLock(
+            key_1, SDKOptions.get_duration(15, "seconds")).cas()
+        doc_2_cas = client.collection.getAndLock(
+            key_2, SDKOptions.get_duration(15, "seconds")).cas()
+        doc_3_cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
+                                key_3, {}, exp=10)["cas"]
+        self.log.info("Loading more docs for eviction to get trigger")
+        doc_gen = doc_generator("non_ttl_keys", 0, 1000000,
+                                key_size=20, doc_size=1024)
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            batch_size=100, process_concurrency=4, print_ops_rate=False,
+            sdk_client_pool=self.sdk_client_pool)
+        self.task_manager.get_task_result(load_task)
+        self.log.info("Validating unlock outcome with eviction")
+        validate_unlock_exception(key_1, doc_1_cas, not_locked_msgs)
+        validate_unlock_exception(key_2, doc_2_cas, not_locked_msgs)
+        validate_unlock_exception(key_3, doc_3_cas,
+                                  [SDKException.DocumentNotFoundException])
+        # Invalid CAS test
+        validate_unlock_exception(key_1, doc_1_cas+1, not_locked_msgs)
+        validate_unlock_exception(key_2, doc_2_cas+1, not_locked_msgs)
+        validate_unlock_exception(key_3, doc_3_cas+1,
+                                  [SDKException.DocumentNotFoundException])
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.

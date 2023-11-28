@@ -384,8 +384,7 @@ class RebalanceBaseTest(BaseTestCase):
                     transaction_timeout=self.transaction_timeout,
                     update_count=self.update_count,
                     commit=self.transaction_commit,
-                    durability=self.durability_level, sync=sync,
-                    defer=self.defer): None})
+                    durability=self.durability_level, sync=sync): None})
         if "create" in self.doc_ops:
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
@@ -397,7 +396,7 @@ class RebalanceBaseTest(BaseTestCase):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=sync, defer=self.defer): None})
+                    sync=sync): None})
         if "delete" in self.doc_ops:
             tasks_info.update(
                 {self.task.async_load_gen_docs_atomicity(
@@ -409,7 +408,7 @@ class RebalanceBaseTest(BaseTestCase):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=sync, defer=self.defer): None})
+                    sync=sync): None})
 
         if task_verification:
             for task in tasks_info.keys():

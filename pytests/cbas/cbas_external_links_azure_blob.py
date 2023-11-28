@@ -1,4 +1,5 @@
 import random
+import urllib
 import random, json, copy, os
 from azureLib.azure_data_helper import  AzureDataHelper
 from TestInput import TestInputSingleton
@@ -15,8 +16,8 @@ from threading import Thread
 
 rbac_users_created = {}
 
-class CBASExternalAzureLinks(CBASBaseTest):
 
+class CBASExternalAzureLinks(CBASBaseTest):
 
     def setUp(self):
 
@@ -44,7 +45,11 @@ class CBASExternalAzureLinks(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.setUp.__name__)
 
-        self.accountName, self.accountKey, self.connection_string = self.get_azure_credentials()
+        self.accountName = self.input.param("azure_account_name")
+        accountKey = self.input.param("azure_account_key")
+        self.accountKey = urllib.unquote(accountKey).decode('utf8')
+        self.connection_string = "AccountName={};AccountKey={}".format(
+            self.accountName, self.accountKey)
 
         self.endpoint = "https://{0}.blob.core.windows.net".format(self.accountName)
 
@@ -76,11 +81,6 @@ class CBASExternalAzureLinks(CBASBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
 
-    def get_azure_credentials(self):
-        with open("/etc/azure_creds", "r") as fh:
-            cred = json.loads(fh.read())
-            return cred["accountName"], cred["accountKey"], cred["connection_string"]
-
     def setup_for_test(self, create_links=True, create_azure_containers=True,
                        create_dataset_objs=True, same_dv_for_link_and_dataset=True,
                        create_datasets=True, initialize_helper_objs=True,rebalance_util=False,link_perm=False):
@@ -101,11 +101,10 @@ class CBASExternalAzureLinks(CBASBaseTest):
                     username=self.analytics_username):
                     self.fail("link creation failed")
         if initialize_helper_objs:
-            self.n1ql_helper = N1QLHelper(
-                shell=RemoteMachineShellConnection(self.cluster.master),
-                buckets=self.cluster.buckets, item_flag=0,
-                n1ql_port=8093, log=self.log, input=self.input,
-                server=self.cluster.master, use_rest=True)
+            self.n1ql_helper = N1QLHelper(shell=RemoteMachineShellConnection(
+                self.cluster.query_nodes[0]), buckets=self.cluster.buckets,
+                item_flag=0, n1ql_port=8093, log=self.log, input=self.input,
+                server=self.cluster.query_nodes[0], use_rest=True)
 
             self.azure_data_helper = AzureDataHelper(
                 connection_string=self.connection_string,cluster=self.cluster,

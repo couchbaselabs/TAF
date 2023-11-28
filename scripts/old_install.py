@@ -31,6 +31,7 @@ from platform_utils.remote.remote_util import \
 from testconstants import MV_LATESTBUILD_REPO
 from testconstants import CB_REPO, CB_DOWNLOAD_SERVER, CB_DOWNLOAD_SERVER_FQDN
 from testconstants import CB_VERSION_NAME, CB_RELEASE_BUILDS
+import install_constants
 
 
 def usage(err=None):
@@ -128,6 +129,13 @@ class Installer(object):
         self.msi = 'msi' in params and params['msi'].lower() == 'true'
         remote_client.couchbase_uninstall(windows_msi=self.msi,
                                           product=params['product'])
+
+        if "cluster_profile" in params and params["cluster_profile"] == "provisioned":
+            key = "LINUX_DISTROS"
+            # Remove the existing provisioned_profile file (if any) on the node
+            cmd = install_constants.RM_CONF_PROFILE_FILE[key]
+            remote_client.execute_command(cmd)
+
         remote_client.disconnect()
 
     def build_url(self, params):
@@ -704,6 +712,12 @@ class CouchbaseServerInstaller(Installer):
                 queue.put(False)
             raise e
         remote_client = RemoteMachineShellConnection(params["server"])
+
+        if "cluster_profile" in params and params["cluster_profile"] == "provisioned":
+            key = "LINUX_DISTROS"
+            cmd = install_constants.CREATE_PROVISIONED_PROFILE_FILE[key]
+            remote_client.execute_command(cmd)
+
         info = remote_client.extract_remote_info()
         type = info.type.lower()
         server = params["server"]

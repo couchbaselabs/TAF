@@ -269,7 +269,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                            "my.attr", "value")
 
         # Read full doc and validate
-        self.__read_doc_and_validate("{}")
+        self.__read_doc_and_validate('{}')
 
         # Using lookup_in
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr", xattr=self.xattr)
@@ -332,13 +332,13 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertTrue(result["status"], "Read failed")
         updated_cas_2 = result["cas"]
 
-        self.__read_doc_and_validate("{}")
+        self.__read_doc_and_validate('{}')
 
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
         self.assertTrue(failure)
 
-        self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
-        self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",
+        self.__read_doc_and_validate({"value_inner":2}, "my.inner")
+        self.__read_doc_and_validate({"value":1,"inner":{"value_inner":2}},
                                      "my")
         self.assertTrue(initial_cas != updated_cas_1, "CAS not updated")
         self.assertTrue(updated_cas_1 != updated_cas_2, "CAS not updated")
@@ -612,14 +612,14 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         updated_cas_2 = result["cas"]
 
         if self.xattr:
-            self.__read_doc_and_validate("{}")
+            self.__read_doc_and_validate('{}')
 
         # Ensure we cannot read a non-existent xattribute
         _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
         self.assertTrue(failure)
 
-        self.__read_doc_and_validate("{\"value_inner\":2}", "my.inner")
-        self.__read_doc_and_validate("{\"value\":1,\"inner\":{\"value_inner\":2}}",
+        self.__read_doc_and_validate({"value_inner":2}, "my.inner")
+        self.__read_doc_and_validate({"value":1,"inner":{"value_inner":2}},
                                      "my")
         self.assertTrue(initial_cas != updated_cas_1, "CAS not updated")
         self.assertTrue(updated_cas_1 != updated_cas_2, "CAS not updated")

@@ -63,11 +63,9 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.disable_autofailover_and_validate()
 
     def _get_server_group_nodes(self, server_group):
-        servers_in_group = self.zones[server_group]
-        server_group_nodes = []
-        for server in self.servers:
-            if server in servers_in_group:
-                server_group_nodes.append(server)
+        servers_in_group = [server.ip for server in self.zones[server_group]]
+        server_group_nodes = [server for server in self.servers \
+                              if server.ip in servers_in_group]
         return server_group_nodes
 
     def test_autofailover_for_server_group(self):

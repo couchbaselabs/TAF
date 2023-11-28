@@ -179,6 +179,19 @@ class RestConnection(newRC):
             pass
         return cluster_tasks
 
+    def fetch_rebalance_report(self, report_url):
+        report_url = report_url[1:] if report_url[0] == "/" else report_url
+        api = self.baseUrl + report_url
+        status, content, _ = self._http_request(
+            api, 'GET', headers=self._create_headers())
+        if status:
+            return json.loads(content)
+        else:
+            self.test_log.error("{0} - failed : status:{1},content:{2}"
+                                .format(api, status, content))
+            raise Exception("API '{0}' failed".format(api))
+
+
     # DEPRECATED: use create_ddoc() instead.
     def create_view(self, design_doc_name, bucket_name, views, options=None):
         return self.create_ddoc(design_doc_name, bucket_name, views, options)
@@ -3274,7 +3287,7 @@ class RestConnection(newRC):
     'Get list of current users and rols assigned to them'
 
     def retrieve_user_roles(self):
-        url = "/settings/rbac/users"
+        url = "settings/rbac/users"
         api = self.baseUrl + url
         status, content, header = self._http_request(api, 'GET')
         if not status:

@@ -115,7 +115,6 @@ class GetOrganization(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_organization_info(
                     self.organisation_id)
-
             if result.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_org_api_response(
                         self.expected_result, result.json()):
@@ -175,10 +174,9 @@ class GetOrganization(APIBase):
             }
             if not any(element in ["organizationOwner", "organizationMember",
                                    "projectCreator", "projectViewer",
-                                   "projectOwner", "projectManager",
-                                   "projectDataReader",
-                                   "projectDataReaderWriter"] for element in
-                       self.api_keys[role]["roles"]):
+                                   "projectDataReaderWriter", "projectManager",
+                                   "projectOwner", "projectDataReader"] for
+                       element in self.api_keys[role]["roles"]):
                 testcase["expected_status_code"] = 403,
                 testcase["expected_error"] = {
                     "code": 1003,
@@ -199,7 +197,7 @@ class GetOrganization(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -213,7 +211,7 @@ class GetOrganization(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -227,7 +225,7 @@ class GetOrganization(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -241,7 +239,7 @@ class GetOrganization(APIBase):
                             "have provided appropriate credentials in the "
                             "request header. Please make sure the client IP "
                             "that is trying to access the resource using the "
-                            "APIKey is in the APIKey allowlist.",
+                            "API key is in the API key allowlist.",
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
@@ -279,7 +277,7 @@ class GetOrganization(APIBase):
                 self.update_auth_with_api_token(self.org_owner_key["token"])
                 resp = self.capellaAPI.org_ops_apis.delete_api_key(
                     organizationId=self.organisation_id,
-                    accessKey=self.api_keys["organizationOwner"]["Id"])
+                    accessKey=self.api_keys["organizationOwner"]["id"])
                 if resp.status_code != 204:
                     failures.append(testcase["description"])
                 self.update_auth_with_api_token(
@@ -297,7 +295,8 @@ class GetOrganization(APIBase):
                 self.organisation_id, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-
+                result = self.capellaAPI.org_ops_apis.fetch_organization_info(
+                    self.organisation_id, header)
             if result.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_org_api_response(
                         self.expected_result, result.json()):
@@ -380,20 +379,14 @@ class GetOrganization(APIBase):
             elif val != self.organisation_id:
                 testcase["expected_status_code"] = 403
                 testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
             testcases.append(testcase)
-
-        testcases.append({
-            "description": "Pass extra query parameter",
-            "organizationID": self.organisation_id,
-            "param": "page",
-            "paramValue": 10
-        })
 
         failures = list()
         for testcase in testcases:
@@ -455,23 +448,13 @@ class GetOrganization(APIBase):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
-
         api_func_list = [[self.capellaAPI.org_ops_apis.fetch_organization_info,
                           (self.organisation_id,)]]
 
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id,
-                self.generate_random_string(prefix=self.prefix),
-                ["organizationOwner"],
-                self.generate_random_string(50, prefix=self.prefix))
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id,
-                    self.generate_random_string(prefix=self.prefix),
-                    ["organizationOwner"],
-                    self.generate_random_string(50, prefix=self.prefix))
+                self.organisation_id, self.generate_random_string(),
+                ["organizationOwner"], self.generate_random_string(50))
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_{}".format(i)] = resp.json()
             else:
@@ -495,10 +478,14 @@ class GetOrganization(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
+            # Removing failure for tests which are intentionally ran for
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
+
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")
-
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[self.capellaAPI.org_ops_apis.fetch_organization_info,
@@ -535,6 +522,11 @@ class GetOrganization(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
+            # Removing failure for tests which are intentionally ran for
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
+
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")

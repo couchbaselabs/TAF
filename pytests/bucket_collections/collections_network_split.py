@@ -124,18 +124,10 @@ class CollectionsNetworkSplit(CollectionBase):
         if removed_nodes is None:
             removed_nodes = self.server_to_fail
         for node in removed_nodes:
-            self.log.info("Wiping node config and restarting server on {0}".format(node))
             rest = RestConnection(node)
-            data_path = rest.get_data_path()
-            shell = RemoteMachineShellConnection(node)
-            shell.stop_couchbase()
-            self.sleep(10)
-            shell.cleanup_data_config(data_path)
-            shell.start_server()
-            self.sleep(10)
-            if not rest.is_ns_server_running():
-                self.log.error("ns_server {0} is not running.".format(node.ip))
-            shell.disconnect()
+            rest.reset_node()
+            if rest.is_ns_server_running(timeout_in_seconds=60) is False:
+                self.log.critical("Ns_server not up on {}".format(node.ip))
 
     def populate_uids(self, base_name="pre_qf"):
         """
@@ -396,7 +388,7 @@ class CollectionsNetworkSplit(CollectionBase):
         result = self.task.rebalance(otp_nodes, [],
                                      [], retry_get_process_num=
                                      self.retry_get_process_num)
+        self.wipe_config_on_removed_nodes(self.nodes_failover)
         self.assertTrue(result, "Rebalance failed")
         self.wait_for_async_data_load_to_complete(task)
         self.remove_network_split()
-        self.wipe_config_on_removed_nodes(self.nodes_failover)

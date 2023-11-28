@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.time.temporal.TemporalUnit;
 import java.util.List;
+import java.io.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import reactor.core.scheduler.Schedulers;
@@ -14,6 +15,13 @@ import com.couchbase.client.core.msg.kv.DurabilityLevel;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.ReactiveCollection;
 import com.couchbase.client.java.kv.GetOptions;
+import com.couchbase.client.java.kv.ScanType;
+import com.couchbase.client.java.kv.RangeScan;
+import com.couchbase.client.java.kv.ScanTerm;
+import com.couchbase.client.java.kv.ScanOptions;
+import com.couchbase.client.java.kv.SamplingScan;
+import com.couchbase.client.java.kv.PrefixScan;
+import com.couchbase.client.java.kv.ScanResult;
 import com.couchbase.client.java.kv.GetResult;
 import com.couchbase.client.java.kv.InsertOptions;
 import com.couchbase.client.java.kv.MutationResult;
@@ -27,8 +35,103 @@ import com.couchbase.client.java.kv.UpsertOptions;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.util.function.Tuple2;
+import java.util.stream.*;
 
 public class doc_ops {
+
+public ConcurrentHashMap<String, Object> sampling_scan(Collection collection, long limit, long seed, ScanOptions options){
+    ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
+    returnValue.put("count", 0);
+    returnValue.put("timeTaken", 0);
+    returnValue.put("exception", "");
+    returnValue.put("status", false);
+    long startTime = System.nanoTime();
+    try {
+            SamplingScan samplingScan = ScanType.samplingScan(limit);
+            Stream<ScanResult>  documents = collection.scan(samplingScan,options);
+            long count =0;
+            count = documents.parallel().count();
+            long endTime = System.nanoTime();
+            long executionTime = (endTime - startTime) / 1000000;
+            returnValue.put("count", count);
+            returnValue.put("status", true);
+            returnValue.put("timeTaken", executionTime);
+            return(returnValue);
+    }
+    catch(Exception e) {
+        long endTime = System.nanoTime();
+        long executionTime = (endTime - startTime) / 1000000;
+        returnValue.put("count", -1);
+        returnValue.put("status", false);
+        returnValue.put("timeTaken", executionTime);
+        returnValue.put("exception", e);
+        return(returnValue);
+        }
+    }
+
+
+public ConcurrentHashMap<String, Object> prefix_scan_query(Collection collection, String scan_term, ScanOptions options){
+    ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
+    returnValue.put("count", 0);
+    returnValue.put("timeTaken", 0);
+    returnValue.put("exception", "");
+    returnValue.put("status", false);
+    long startTime = System.nanoTime();
+    try {
+            PrefixScan prefixScan = ScanType.prefixScan(scan_term);
+            Stream<ScanResult>  documents = collection.scan(prefixScan,options);
+            long count =0;
+            count = documents.parallel().count();
+            long endTime = System.nanoTime();
+            long executionTime = (endTime - startTime) / 1000000;
+            returnValue.put("count", count);
+            returnValue.put("status", true);
+            returnValue.put("timeTaken", executionTime);
+            return(returnValue);
+        }
+        catch(Exception e) {
+            long endTime = System.nanoTime();
+            long executionTime
+            = (endTime - startTime) / 1000000;
+            returnValue.put("count", -1);
+            returnValue.put("status", false);
+            returnValue.put("timeTaken", executionTime);
+            returnValue.put("exception", e);
+            return(returnValue);
+        }
+    }
+
+public ConcurrentHashMap<String, Object> range_scan_query(Collection collection, String startTerm, String endTerm, boolean includeStartTerm ,  boolean includeEndTerm, ScanOptions options){
+    ConcurrentHashMap<String, Object> returnValue = new ConcurrentHashMap<String, Object>();
+    returnValue.put("count", 0);
+    returnValue.put("timeTaken", 0);
+    returnValue.put("exception", "");
+    returnValue.put("status", false);
+    long startTime = System.nanoTime();
+    try {
+            ScanTerm searchStartTerm = includeStartTerm == true ? ScanTerm.inclusive(startTerm): ScanTerm.exclusive(startTerm);
+            ScanTerm searchEndTerm = includeEndTerm == true ? ScanTerm.inclusive(endTerm): ScanTerm.exclusive(endTerm);
+            RangeScan rangeScan = ScanType.rangeScan(searchStartTerm, searchEndTerm);
+            Stream<ScanResult>  documents = collection.scan(rangeScan,options);
+            long count =0;
+            count = documents.parallel().count();
+            long endTime = System.nanoTime();
+            long executionTime = (endTime - startTime) / 1000000;
+            returnValue.put("count", count);
+            returnValue.put("status", true);
+            returnValue.put("timeTaken", executionTime);
+            return(returnValue);
+        }
+        catch(Exception e) {
+            long endTime = System.nanoTime();
+            long executionTime = (endTime - startTime) / 1000000;
+            returnValue.put("count", -1);
+            returnValue.put("status", false);
+            returnValue.put("timeTaken", executionTime);
+            returnValue.put("exception", e);
+            return(returnValue);
+        }
+    }
 
 public static List<ConcurrentHashMap<String, Object>> bulkInsert_new(Collection collection,
             List<Tuple2<String, Object>> documents,
