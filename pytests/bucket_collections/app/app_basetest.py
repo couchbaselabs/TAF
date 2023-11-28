@@ -14,7 +14,6 @@ from cbas_utils.cbas_utils import CbasUtil
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from constants.sdk_constants.java_client import SDKConstants
 
 from com.couchbase.client.core.error import IndexFailureException, \
     InternalServerFailureException
@@ -192,7 +191,7 @@ class AppBase(BaseTestCase):
                             Bucket.EvictionPolicy.VALUE_ONLY),
                         bucket_durability=bucket.get(
                             Bucket.durabilityMinLevel,
-                            SDKConstants.DurabilityLevel.NONE))
+                            Bucket.DurabilityMinLevel.NONE))
 
                 bucket_obj = self.cluster.buckets[-1]
 

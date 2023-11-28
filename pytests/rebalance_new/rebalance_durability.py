@@ -1,10 +1,9 @@
 from math import floor
 
+from BucketLib.bucket import Bucket
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper, \
-    BucketDurability
-from constants.sdk_constants.java_client import SDKConstants
+from couchbase_helper.durability_helper import DurabilityHelper
 from rebalance_base import RebalanceBaseTest
 from rebalance_new import rebalance_base
 
@@ -134,7 +133,7 @@ class RebalanceDurability(RebalanceBaseTest):
 
         bucket_durability_set = \
             (self.bucket_durability_level
-             != BucketDurability[SDKConstants.DurabilityLevel.NONE])
+             != Bucket.DurabilityMinLevel.NONE)
         expected_err = "You do not have enough data servers to support " \
                        "this durability level"
         self.sleep(10, "Wait for cluster to be ready after rebalance")

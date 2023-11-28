@@ -9,7 +9,7 @@ from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams, MetaConstants
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import DurabilityHelper, BucketDurability
+from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from constants.sdk_constants.java_client import SDKConstants
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
@@ -760,11 +760,11 @@ class UpgradeTests(UpgradeBase):
             self.bucket_util.update_bucket_property(
                 self.cluster.master,
                 self.cluster.buckets[0],
-                bucket_durability=BucketDurability[d_level])
+                bucket_durability=d_level)
             self.bucket_util.print_bucket_stats(self.cluster)
 
             buckets = self.bucket_util.get_all_buckets(self.cluster)
-            if buckets[0].durability_level != BucketDurability[d_level]:
+            if buckets[0].durability_level != d_level:
                 self.log_failure("New bucket_durability not taken")
 
             self.summary.add_step("Update bucket_durability=%s" % d_level)

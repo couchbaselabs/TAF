@@ -53,7 +53,6 @@ from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator, sub_doc_generator_for_edit
-from couchbase_helper.durability_helper import BucketDurability
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 
@@ -2184,7 +2183,7 @@ class BucketUtils(ScopeUtils):
             storage=Bucket.StorageBackend.magma,
             eviction_policy=None,
             flush_enabled=Bucket.FlushBucket.DISABLED,
-            bucket_durability=BucketDurability[SDKConstants.DurabilityLevel.NONE],
+            bucket_durability=Bucket.DurabilityMinLevel.NONE,
             purge_interval=1,
             autoCompactionDefined="false",
             fragmentation_percentage=50,
@@ -2924,7 +2923,7 @@ class BucketUtils(ScopeUtils):
             storage={Bucket.StorageBackend.magma: 3,
                      Bucket.StorageBackend.couchstore: 0},
             compression_mode=Bucket.CompressionMode.ACTIVE,
-            bucket_durability=BucketDurability[SDKConstants.DurabilityLevel.NONE],
+            bucket_durability=Bucket.DurabilityMinLevel.NONE,
             ram_quota=None,
             bucket_rank=None,
             bucket_name=None,

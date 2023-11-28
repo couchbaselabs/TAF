@@ -9,16 +9,6 @@ from error_simulation.cb_error import CouchbaseError
 from constants.sdk_constants.java_client import SDKConstants
 
 
-# Required since the str(values) are different for bucket-create
-BucketDurability = dict()
-BucketDurability[SDKConstants.DurabilityLevel.NONE] = "none"
-BucketDurability[SDKConstants.DurabilityLevel.MAJORITY] = "majority"
-BucketDurability[SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE] = \
-    "majorityAndPersistActive"
-BucketDurability[SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY] = \
-    "persistToMajority"
-
-
 class DurabilityHelper:
     EQUAL = '=='
     GREATER_THAN_EQ = '>='

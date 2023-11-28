@@ -1,6 +1,5 @@
 from BucketLib.bucket import Bucket
 from collections_helper.collections_spec_constants import MetaConstants
-from constants.sdk_constants.java_client import SDKConstants
 
 spec = {
     MetaConstants.NUM_BUCKETS: 2,
@@ -16,7 +15,7 @@ spec = {
     "buckets": {
         "default": {
             Bucket.durabilityMinLevel:
-                SDKConstants.DurabilityLevel.MAJORITY,
+                Bucket.DurabilityMinLevel.MAJORITY,
             Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
             Bucket.storageBackend: Bucket.StorageBackend.magma,
             Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,

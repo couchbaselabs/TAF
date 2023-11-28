@@ -5,7 +5,6 @@ from BucketLib.bucket import Bucket
 from cb_tools.cb_cli import CbCli
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import BucketDurability
 from epengine.durability_base import BucketDurabilityBase
 from error_simulation.cb_error import CouchbaseError
 from sdk_client3 import SDKClient
@@ -514,7 +513,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     client.close()
 
             for task in tasks_to_run:
-                new_d_level = BucketDurability[b_durability_to_update.pop()]
+                new_d_level = b_durability_to_update.pop()
 
                 self.log.info("Starting %s task" % task.op_type)
                 self.task_manager.add_new_task(task)
@@ -615,7 +614,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.sleep(5, "Wait before starting doc_op")
             self.task_manager.add_new_task(doc_load_task)
 
-            new_d_level = BucketDurability[bucket_durability]
+            new_d_level = bucket_durability
             self.sleep(5, "Wait before updating bucket level "
                           "durability=%s" % new_d_level)
 

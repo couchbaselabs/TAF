@@ -5,9 +5,7 @@ from BucketLib.bucket import Bucket
 from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import \
-    BucketDurability, \
-    DurabilityHelper
+from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -206,7 +204,7 @@ class BucketDurabilityBase(ClusterSetup):
         bucket_dict = deepcopy(self.bucket_template)
         bucket_dict[Bucket.bucketType] = bucket_type
         bucket_dict[Bucket.durabilityMinLevel] = \
-            BucketDurability[bucket_durability]
+            bucket_durability
 
         return bucket_dict
 

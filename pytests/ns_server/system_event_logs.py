@@ -15,11 +15,9 @@ from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from SystemEventLogLib.ns_server_events import NsServerEvents
 from basetestcase import ClusterSetup
-from constants.sdk_constants.java_client import SDKConstants
 from cb_constants.system_event_log import NsServer, KvEngine
 from cb_tools.cb_collectinfo import CbCollectInfo
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import BucketDurability
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Windows
@@ -1334,11 +1332,13 @@ class SystemEventLogs(ClusterSetup):
             flush_enabled = choice([0, 1])
             if bucket_type == Bucket.Type.EPHEMERAL:
                 bucket_durability = choice(
-                    [BucketDurability[SDKConstants.DurabilityLevel.NONE],
-                     BucketDurability[SDKConstants.DurabilityLevel.MAJORITY]])
+                    [Bucket.DurabilityMinLevel.NONE,
+                     Bucket.DurabilityMinLevel.MAJORITY])
             else:
+                durability_levels = [Bucket.DurabilityMinLevel.NONE, Bucket.DurabilityMinLevel.MAJORITY,
+                                     Bucket.DurabilityMinLevel.MAJORITY_AND_PERSIST_ACTIVE, Bucket.DurabilityMinLevel.PERSIST_TO_MAJORITY]
                 bucket_durability = \
-                    choice([value for _, value in BucketDurability.items()])
+                    choice([value for _, value in durability_levels])
 
             tbl = TableView(self.log.critical)
             tbl.set_headers(["Field", "Value"])

@@ -178,6 +178,12 @@ class Bucket(object):
         TWO = 2
         THREE = 3
 
+    class DurabilityMinLevel(object):
+        NONE = "none"
+        MAJORITY = "majority"
+        MAJORITY_AND_PERSIST_ACTIVE = "majorityAndPersistActive"
+        PERSIST_TO_MAJORITY = "persistToMajority"
+
     class EvictionPolicy(object):
         FULL_EVICTION = "fullEviction"
         NO_EVICTION = "noEviction"
@@ -243,7 +249,7 @@ class Bucket(object):
             Bucket.CompressionMode.PASSIVE)
         self.durability_level = new_params.get(
             Bucket.durabilityMinLevel,
-            SDKConstants.DurabilityLevel.NONE.lower())
+            Bucket.DurabilityMinLevel.NONE)
         self.purge_interval = new_params.get(Bucket.purge_interval, 1)
         self.autoCompactionDefined = new_params.get(
             Bucket.autoCompactionDefined, "false")
