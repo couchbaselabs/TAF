@@ -960,7 +960,7 @@ class volume(BaseTestCase):
         while expected_progress < 100:
             expected_progress = 20 * i
             reached = self.cluster_util.rebalance_reached(
-                rest, expected_progress)
+                self.cluster.master, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not self.cluster_util.is_cluster_rebalanced(rest):
@@ -983,7 +983,7 @@ class volume(BaseTestCase):
         while expected_progress < 80:
             expected_progress = 20 * i
             reached = self.cluster_util.rebalance_reached(
-                rest, expected_progress, wait_step=10)
+                self.cluster.master, expected_progress, wait_step=10)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
 

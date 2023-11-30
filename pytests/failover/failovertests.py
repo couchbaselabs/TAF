@@ -637,7 +637,7 @@ class FailoverTests(FailoverBaseTest):
                                                   graceful=(self.graceful and graceful_failover))
             if self.graceful and (failover_reason not in ['stop_server',
                                                           'firewall']):
-                reached = self.cluster_util.rebalance_reached(self.rest)
+                reached = self.cluster_util.rebalance_reached(self.master)
                 self.assertTrue(reached, "rebalance failed for Graceful Failover, stuck or did not completed")
 
         # Verify Active and Replica Bucket Count

@@ -1210,8 +1210,9 @@ class ClusterUtils:
             result = rest.monitorRebalance()
         return result
 
-    def rebalance_reached(self, rest, percentage=100, wait_step=2,
+    def rebalance_reached(self, node, percentage=100, wait_step=2,
                           num_retry=40):
+        rest = RestConnection(node)
         start = time.time()
         progress = 0
         previous_progress = 0

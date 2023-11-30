@@ -300,7 +300,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         self.log.info("Fail Swap Rebalance PHASE @ {0}"
                       .format(self.percentage_progress))
         reached = self.cluster_util.rebalance_reached(
-            self.rest, self.percentage_progress)
+            self.cluster.master, self.percentage_progress)
         if reached and self.cluster_util.is_cluster_rebalanced(self.rest):
             # handle situation when rebalance failed at the beginning
             self.log.error('seems rebalance failed!')

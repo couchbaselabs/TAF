@@ -184,7 +184,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
     def test_auto_retry_of_failed_rebalance_does_not_get_triggered_when_rebalance_is_stopped(self):
         _ = self._rebalance_operation(self.rebalance_operation)
-        reached = self.cluster_util.rebalance_reached(self.rest, 30)
+        reached = self.cluster_util.rebalance_reached(self.cluster.master, 30)
         self.assertTrue(reached, "Rebalance failed or did not reach 30%")
         # Trigger cbcollect before interrupting the rebalance
         self.cbcollect_info(trigger=True, validate=False)
