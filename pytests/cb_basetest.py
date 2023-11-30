@@ -146,6 +146,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.sdk_timeout = self.input.param("sdk_timeout", 5)
         self.time_unit = self.input.param("time_unit", "seconds")
         self.durability_level = self.input.param("durability", "NONE").upper()
+        self.validate_bucket_ranking = self.input.param("validate_bucket_ranking", True)
         self.sdk_client_pool = self.input.param("sdk_client_pool", None)
         self.sdk_pool_capacity = self.input.param("sdk_pool_capacity", 1)
         # Client compression settings
