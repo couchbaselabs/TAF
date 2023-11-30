@@ -74,7 +74,8 @@ class CouchbaseBaseTest(unittest.TestCase):
                                                 CbServer.default_collection)
         self.bucket_purge_interval = self.input.param("bucket_purge_interval",
                                                       1)
-        self.bucket_durability_level = self.bucket_durability_level
+        self.bucket_durability_level = getattr(Bucket.DurabilityMinLevel,
+                                               self.bucket_durability_level)
         self.oso_dcp_backfill = self.input.param("oso_dcp_backfill", None)
         self.bucket_collection_history_retention_default = \
             self.input.param("default_history_retention_for_collections", None)
