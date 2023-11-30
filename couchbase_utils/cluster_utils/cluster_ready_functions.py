@@ -562,6 +562,7 @@ class ClusterUtils:
                 ejectedNodes=[node.id for node in nodes
                               if node.id != master_id],
                 wait_for_rebalance=wait_for_rebalance)
+
             success_cleaned = []
             for removed in [node for node in nodes if (node.id != master_id)]:
                 removed.rest_password = cluster.master.rest_password
@@ -1201,17 +1202,21 @@ class ClusterUtils:
         return otp_nodes
 
     @staticmethod
-    def rebalance(cluster, wait_for_completion=True, ejected_nodes=[]):
+    def rebalance(cluster, wait_for_completion=True, ejected_nodes=[], validate_bucket_ranking=True):
         rest = RestConnection(cluster.master)
         nodes = rest.node_statuses()
         result, _ = rest.rebalance(otpNodes=[node.id for node in nodes],
                                    ejectedNodes=ejected_nodes)
         if result and wait_for_completion:
             result = rest.monitorRebalance()
+            if validate_bucket_ranking:
+                # Validating bucket ranking post rebalance
+                validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(cluster)
+                result = result and validate_ranking_res
         return result
 
     def rebalance_reached(self, node, percentage=100, wait_step=2,
-                          num_retry=40):
+                          num_retry=40, validate_bucket_ranking=True):
         rest = RestConnection(node)
         start = time.time()
         progress = 0
@@ -1232,6 +1237,14 @@ class ClusterUtils:
                     previous_progress = progress
             # Wait before fetching rebalance progress
             sleep(wait_step)
+        if validate_bucket_ranking:
+            # Validating bucket ranking post rebalance
+            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(cluster=None,
+                                                                                cluster_node=node,
+                                                                                fetch_latest_buckets=True)
+            if not validate_ranking_res:
+                self.log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
+                return False
         if progress <= 0:
             self.log.error("Rebalance progress: {0}".format(progress))
 
@@ -1272,7 +1285,7 @@ class ClusterUtils:
                            wait_for_completion=wait_for_rebalance_completion)
         return otpnode
 
-    def remove_node(self, cluster, otpnode=None, wait_for_rebalance=True):
+    def remove_node(self, cluster, otpnode=None, wait_for_rebalance=True, validate_bucket_ranking=True):
         rest = RestConnection(cluster.master)
         nodes = rest.node_statuses()
         '''This is the case when master node is running cbas service as well'''
@@ -1289,11 +1302,26 @@ class ClusterUtils:
             self.log.error("First time rebalance failed on Removal. "
                            "Wait and try again. THIS IS A BUG.")
             sleep(5)
+
+            if validate_bucket_ranking:
+                # Validating bucket ranking post rebalance
+                validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(cluster)
+                if not validate_ranking_res:
+                    self.log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
+                    raise Exception("Vbucket movement during rebalance did not occur as per bucket ranking")
+
             _ = self.remove_nodes(
                 rest,
                 knownNodes=[node.id for node in nodes],
                 ejectedNodes=[node.id for node in otpnode],
                 wait_for_rebalance=wait_for_rebalance)
+            if validate_bucket_ranking:
+                # Validating bucket ranking post rebalance
+                validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(cluster)
+                if not validate_ranking_res:
+                    self.log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
+                    raise Exception("Vbucket movement during rebalance did not occur as per bucket ranking")
+
         # if wait_for_rebalance:
         #     self.assertTrue(
         #         removed,

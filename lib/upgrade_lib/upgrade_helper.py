@@ -7,6 +7,7 @@ from scripts.old_install import InstallerJob
 from upgrade_lib.couchbase import features
 from remote.remote_util import RemoteMachineShellConnection
 from testconstants import CB_REPO, CB_RELEASE_BUILDS, CB_VERSION_NAME
+import global_vars
 
 
 class CbServerUpgrade(object):
@@ -84,7 +85,8 @@ class CbServerUpgrade(object):
         self.installer.parallel_install(nodes, install_params)
 
     def offline(self, node_to_upgrade, version,
-                rebalance_required=True, is_downgrade=False):
+                rebalance_required=True, is_downgrade=False,
+                validate_bucket_ranking=True):
         rest = RestConnection(node_to_upgrade)
         shell = RemoteMachineShellConnection(node_to_upgrade)
         appropriate_build = self.get_build(version, shell)
@@ -120,6 +122,12 @@ class CbServerUpgrade(object):
                         "Rebalance failed post node upgrade of {0}"
                         .format(node_to_upgrade))
                     return
+                if validate_bucket_ranking:
+                    # Validating bucket ranking post rebalance
+                    validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, node_to_upgrade)
+                    if not validate_ranking_res:
+                        self.log.error("The vbucket movement was not according to bucket ranking")
+                        return validate_ranking_res
             else:
                 self.log.critical(
                     "Cluster reported (/pools/default) balanced=false")

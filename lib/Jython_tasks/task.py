@@ -441,7 +441,7 @@ class RebalanceTask(Task):
                  use_hostnames=False, services=None,
                  check_vbucket_shuffling=True,
                  retry_get_process_num=25, add_nodes_server_groups=None,
-                 defrag_options=None):
+                 defrag_options=None, validate_bucket_ranking=True):
         super(RebalanceTask, self).__init__(
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
             .format(",".join([node.ip for node in to_add]),
@@ -460,6 +460,7 @@ class RebalanceTask(Task):
         self.retry_get_process_num = retry_get_process_num
         self.server_groups_to_add = dict()
         self.defrag_options = None
+        self.validate_bucket_ranking = validate_bucket_ranking
 
         if isinstance(add_nodes_server_groups, dict):
             """
@@ -864,10 +865,18 @@ class RebalanceTask(Task):
                     sleep(10, log_type="infra")
                     self.poll = True
                 else:
+                    exception_msg = "Seems like rebalance hangs. Please check logs!"
+                    if self.validate_bucket_ranking:
+                        # Validate if the vbucket movement is as per bucket ranking
+                        ranking_validation_res = global_vars.cluster_util.\
+                            validate_bucket_ranking(self.cluster)
+                        if not ranking_validation_res:
+                            self.log.error("The vbucket movement was not according to bucket ranking")
+                            exception_msg += "\nFurther, the vbucket movement upto the hang was not according to bucket ranking"
+
                     self.result = False
                     self.rest.print_UI_logs()
-                    raise RebalanceFailedException(
-                        "seems like rebalance hangs. please check logs!")
+                    raise RebalanceFailedException(exception_msg)
             else:
                 success_cleaned = []
                 for removed in self.to_remove:
@@ -895,6 +904,17 @@ class RebalanceTask(Task):
                 self.test_log.info(
                     "Rebalance completed with progress: {0}% in {1} sec"
                     .format(progress, time.time() - self.start_time))
+
+                if self.validate_bucket_ranking:
+                    # Validate if the vbucket movement is as per bucket ranking
+                    ranking_validation_res = global_vars.cluster_util.\
+                            validate_bucket_ranking(self.cluster)
+                    if not ranking_validation_res:
+                        self.log.error("The vbucket movement was not according to bucket ranking")
+                        self.result = False
+                        raise RebalanceFailedException(
+                            "The vbucket movement was not according to bucket ranking")
+
                 self.result = True
                 return
 
@@ -5752,7 +5772,7 @@ class AutoFailoverNodesFailureTask(Task):
                  timeout, pause=0, expect_auto_failover=True, timeout_buffer=3,
                  check_for_failover=True, failure_timers=None,
                  disk_timeout=0, disk_location=None, disk_size=200,
-                 auto_reprovision=False):
+                 auto_reprovision=False, validate_bucket_ranking=True):
         super(AutoFailoverNodesFailureTask, self) \
             .__init__("AutoFailoverNodesFailureTask")
         self.task_manager = task_manager
@@ -5778,6 +5798,7 @@ class AutoFailoverNodesFailureTask(Task):
         self.failure_timers = failure_timers
         self.rebalance_in_progress = False
         self.auto_reprovision = auto_reprovision
+        self.validate_bucket_ranking = validate_bucket_ranking
 
     def check_failure_timer_task_start(self, timer_task, retry_count=5):
         while retry_count != 0 and not timer_task.started:
@@ -6152,6 +6173,14 @@ class AutoFailoverNodesFailureTask(Task):
             self.set_result(False)
             self.set_exception(Exception("Failed to rebalance after failover"))
 
+        if self.validate_bucket_ranking:
+            # Validating bucket ranking post rebalance
+            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, self.master)
+            if not validate_ranking_res:
+                self.log.error("The vbucket movement was not according to bucket ranking")
+                self.set_result(False)
+                self.set_exception(Exception("Vbucket movement during rebalance did not occur as per bucket ranking"))
+
     def _check_if_rebalance_in_progress(self, timeout):
         rest = RestConnection(self.master)
         end_time = time.time() + timeout
@@ -6319,7 +6348,8 @@ class ConcurrentFailoverTask(Task):
     def __init__(self, task_manager, master, servers_to_fail,
                  disk_location=None, disk_size=200,
                  expected_fo_nodes=1, monitor_failover=True,
-                 task_type="induce_failure", grace_timeout=5):
+                 task_type="induce_failure", grace_timeout=5,
+                 validate_bucket_ranking=True):
         """
         :param servers_to_fail: Dict of nodes to fail mapped with their
                                 corresponding failure method.
@@ -6351,6 +6381,8 @@ class ConcurrentFailoverTask(Task):
         # To track failover operation
         self.expected_nodes_to_fo = expected_fo_nodes
         self.monitor_failover = monitor_failover
+
+        self.validate_bucket_ranking = validate_bucket_ranking
 
         # To track NodeFailureTask per node
         self.sub_tasks = list()
@@ -6446,6 +6478,15 @@ class ConcurrentFailoverTask(Task):
                             % (self.expected_nodes_to_fo,
                                curr_fo_settings.count))
                         self.set_result(False)
+
+                    if self.validate_bucket_ranking:
+                        # Validating bucket ranking post rebalance
+                        validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, self.master)
+                        if not validate_ranking_res:
+                            self.log.error("The vbucket movement was not according to bucket ranking")
+                            self.set_result(False)
+                            self.set_exception(Exception("Vbucket movement during rebalance"
+                                                        "did not occur as per bucket ranking"))
 
         self.complete_task()
 
@@ -7519,11 +7560,12 @@ class NodeInitializeTask(Task):
 class FailoverTask(Task):
     def __init__(self, servers, to_failover=[], wait_for_pending=0,
                  graceful=False, use_hostnames=False, allow_unsafe=False,
-                 all_at_once=False):
+                 all_at_once=False, validate_bucket_ranking=True):
         Task.__init__(self, "failover_task")
         self.servers = servers
         self.to_failover = to_failover
         self.graceful = graceful
+        self.validate_bucket_ranking = validate_bucket_ranking
         self.wait_for_pending = wait_for_pending
         self.use_hostnames = use_hostnames
         self.allow_unsafe = allow_unsafe
@@ -7577,6 +7619,15 @@ class FailoverTask(Task):
                 if not result:
                     self.set_exception("Node failover failed!!")
         self.rest.monitorRebalance()
+
+        if self.validate_bucket_ranking:
+            # Validating bucket ranking post rebalance
+            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, self.servers[0])
+            if not validate_ranking_res:
+                self.log.error("The vbucket movement was not according to bucket ranking")
+                self.set_result(False)
+                self.set_exception(Exception("Vbucket movement during rebalance"
+                                            "did not occur as per bucket ranking"))
 
 
 class BucketFlushTask(Task):
