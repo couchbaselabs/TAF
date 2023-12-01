@@ -10,7 +10,6 @@ import base64
 import time
 import itertools
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
-from datetime import datetime, timedelta
 
 
 class CreateBucket(APIBase):
@@ -69,6 +68,8 @@ class CreateBucket(APIBase):
                 "timezone": "GMT"
             }
         }
+
+        # CIDR selection.
         start_time = time.time()
         while time.time() - start_time < 1800:
             res = self.capellaAPI.cluster_ops_apis.create_cluster(
@@ -89,20 +90,20 @@ class CreateBucket(APIBase):
 
         # Wait for the cluster to be deployed.
         self.log.info("Waiting for cluster to be deployed.")
-        start_time = datetime.now()
-        while self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+        start_time = time.time()
+        while (start_time + 1800 > time.time() and
+                self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
-                self.cluster_id).json()["currentState"] == "deploying" and \
-                start_time + timedelta(minutes=30) > datetime.now():
+                self.cluster_id).json()["currentState"] == "deploying"):
             time.sleep(10)
         if self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
                 self.cluster_id).json()["currentState"] == "healthy":
-            self.log.info("Cluster deployed successfully, initialising Bucket "
-                          "creation inside the cluster.")
+            self.log.info("Cluster deployed successfully.")
         else:
-            self.fail("Failed to deploy cluster")
+            self.fail("Cluster didn't deploy within half an hour.")
 
+        # Initialise bucket params (for future bucket creation).
         self.expected_result = {
             "name": self.generate_random_string(special_characters=False),
             "type": "couchbase",
@@ -293,6 +294,7 @@ class CreateBucket(APIBase):
                         self.expected_result, result.json()):
                     self.log.error("Status == 201, Key validation Failure "
                                    ": {}".format(testcase["description"]))
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
                 if result.status_code >= 500:

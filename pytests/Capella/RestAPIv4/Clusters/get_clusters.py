@@ -75,8 +75,10 @@ class GetCluster(APIBase):
             "connectionString": None,
             "configurationType": None
         }
-        cluster_created = False
-        while not cluster_created:
+
+        # CIDR selection.
+        start_time = time.time()
+        while time.time() - start_time < 1800:
             resp = self.capellaAPI.cluster_ops_apis.create_cluster(
                 self.organisation_id, self.project_id, cluster_name,
                 self.expected_result['cloudProvider'],
@@ -85,20 +87,30 @@ class GetCluster(APIBase):
                 self.expected_result['availability'],
                 self.expected_result['support'])
             if resp.status_code == 202:
-                cluster_created = True
-            else:
-                self.expected_result['cloudProvider'][
-                    "cidr"] = CapellaUtils.get_next_cidr() + "/20"
-        self.cluster_id = resp.json()['id']
-        self.expected_result['id'] = self.cluster_id
+                self.cluster_id = resp.json()['id']
+                self.expected_result['id'] = self.cluster_id
+                break
+            elif "Please ensure you are passing a unique CIDR block" in \
+                 resp.json()["message"]:
+                self.expected_result['cloudProvider']["cidr"] \
+                    = CapellaUtils.get_next_cidr() + "/20"
+        if time.time() - start_time >= 1800:
+            self.fail("Couldn't find CIDR within half an hour.")
 
         # Wait for the cluster to be deployed.
         self.log.info("Waiting for cluster to be deployed.")
-        while self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+        start_time = time.time()
+        while (start_time + 1800 > time.time() and
+                self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
-                self.cluster_id).json()["currentState"] == "deploying":
+                self.cluster_id).json()["currentState"] == "deploying"):
             time.sleep(10)
-        self.log.info("Cluster deployed successfully.")
+        if self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, self.project_id,
+                self.cluster_id).json()["currentState"] == "healthy":
+            self.log.info("Cluster deployed successfully.")
+        else:
+            self.fail("Cluster didn't deploy within half an hour.")
 
     def tearDown(self):
         failures = list()
