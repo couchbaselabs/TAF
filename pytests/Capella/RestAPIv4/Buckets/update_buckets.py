@@ -20,12 +20,9 @@ class UpdateBucket(APIBase):
         # Create project.
         # The project ID will be used to create API keys for roles that
         # require project ID
-        project_name = self.generate_random_string(prefix=self.prefix)
-        project_description = self.generate_random_string(
-            100, prefix=self.prefix)
         self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, project_name,
-            project_description).json()["id"]
+            organizationId=self.organisation_id,
+            name=self.generate_random_string(prefix=self.prefix)).json()["id"]
 
         # Initialize params for cluster creation.
         cluster_name = self.prefix + "TestBucketPut"

@@ -21,9 +21,7 @@ class CreateCluster(APIBase):
         # require project ID
         self.project_id = self.capellaAPI.org_ops_apis.create_project(
             organizationId=self.organisation_id,
-            name=self.generate_random_string(prefix=self.prefix),
-            description=self.generate_random_string(
-                100, prefix=self.prefix)).json()["id"]
+            name=self.generate_random_string(prefix=self.prefix)).json()["id"]
 
         cluster_name = self.prefix + 'TestPost'
         """
