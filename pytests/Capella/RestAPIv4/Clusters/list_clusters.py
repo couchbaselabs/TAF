@@ -264,7 +264,7 @@ class ListCluster(APIBase):
                         self.expected_result, result.json()):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
-                    self.log.warning("Result : {}".format(result))
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
@@ -503,7 +503,7 @@ class ListCluster(APIBase):
                         self.expected_result, result.json()):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
-                    self.log.warning("Result : {}".format(result))
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
@@ -646,7 +646,7 @@ class ListCluster(APIBase):
                         self.expected_result, result.json()):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
-                    self.log.warning("Result : {}".format(result))
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])

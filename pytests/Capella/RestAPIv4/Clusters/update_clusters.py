@@ -448,6 +448,7 @@ class UpdateCluster(APIBase):
                 if isinstance(testcase["expected_error"], dict) \
                         and result.json()["code"] != 4025:
                     self.log.error("Dummy error not correct")
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase)
                 else:
                     self.log.debug("This is a handler condition for the dummy "
@@ -644,6 +645,7 @@ class UpdateCluster(APIBase):
                 if isinstance(testcase["expected_error"], dict) \
                         and result.json()["code"] != 4025:
                     self.log.error("Dummy error not correct")
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase)
                 else:
                     self.log.debug("This is a handler condition for the dummy "
@@ -727,10 +729,12 @@ class UpdateCluster(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # dummy clusters, ie, which give a 404 response.
             if "404" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["404"]
 
@@ -777,10 +781,12 @@ class UpdateCluster(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # dummy clusters, ie, which give a 404 response.
             if "404" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["404"]
 

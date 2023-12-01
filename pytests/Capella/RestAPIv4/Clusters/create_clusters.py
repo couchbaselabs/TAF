@@ -455,6 +455,7 @@ class CreateCluster(APIBase):
                 if isinstance(testcase["expected_error"], dict) \
                         and result.json()["code"] != 4002:
                     self.log.error("Dummy error not correct")
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase)
                 else:
                     self.log.debug("This is a handler condition for the dummy "
@@ -627,6 +628,7 @@ class CreateCluster(APIBase):
                 if isinstance(testcase["expected_error"], dict) \
                         and result.json()["code"] != 4002:
                     self.log.error("Dummy error not correct")
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase)
                 else:
                     self.log.debug("This is a handler condition for the dummy "
@@ -712,10 +714,12 @@ class CreateCluster(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # invalid body params, ie, which give a 422 response.
             if "422" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["422"]
 
@@ -764,10 +768,12 @@ class CreateCluster(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # invalid body params, ie, which give a 422 response.
             if "422" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["422"]
 
