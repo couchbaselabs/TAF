@@ -998,7 +998,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.assertTrue(result, "Rebalance failed")
 
         # Validate auto_failover_settings after rebalance operation
-        self.validate_failover_settings(True, self.timeout, expected_fo_nodes,
+        self.validate_failover_settings(True, self.timeout, 0,
                                         self.max_count)
 
         # Perform collection crud + doc_ops after rebalance operation

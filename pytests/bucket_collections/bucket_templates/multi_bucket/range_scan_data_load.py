@@ -7,7 +7,6 @@ spec = {
     MetaConstants.NUM_COLLECTIONS_PER_SCOPE: 3,
     MetaConstants.NUM_ITEMS_PER_COLLECTION: 200000,
     MetaConstants.REMOVE_DEFAULT_COLLECTION: False,
-    Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
     Bucket.evictionPolicy: Bucket.EvictionPolicy.VALUE_ONLY,
     Bucket.ramQuotaMB: 512,
     Bucket.replicaIndex: 1,
@@ -16,6 +15,7 @@ spec = {
         "default": {
             Bucket.durabilityMinLevel:
                 Bucket.DurabilityMinLevel.MAJORITY,
+            Bucket.replicaNumber: Bucket.ReplicaNum.ONE,
             Bucket.evictionPolicy: Bucket.EvictionPolicy.FULL_EVICTION,
             Bucket.storageBackend: Bucket.StorageBackend.magma,
             Bucket.compressionMode: Bucket.CompressionMode.PASSIVE,

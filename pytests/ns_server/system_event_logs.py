@@ -1500,7 +1500,7 @@ class SystemEventLogs(ClusterSetup):
             "conflict_resolution_type": bucket.conflictResolutionType,
             "num_threads": bucket.threadsNumber,
             "flush_enabled": True if bucket.flushEnabled else False,
-            "durability_min_level": bucket.durability_level,
+            "durability_min_level": bucket.durabilityMinLevel,
             "replica_index": bucket.replicaIndex,
             "num_replicas": bucket.replicaNumber,
             "eviction_policy": eviction_policy_val
