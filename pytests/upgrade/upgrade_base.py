@@ -92,6 +92,9 @@ class UpgradeBase(BaseTestCase):
         self.upgrade_helper = CbServerUpgrade(self.log, self.product)
         self._populate_upgrade_chain()
 
+        if community_upgrade:
+            self.upgrade_version = self.upgrade_chain[-1]
+
         # Dict to map upgrade_type to action functions
         self.upgrade_function = dict()
         self.upgrade_function["online_swap"] = self.online_swap

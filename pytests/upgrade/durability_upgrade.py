@@ -554,6 +554,7 @@ class UpgradeTests(UpgradeBase):
     def test_downgrade(self):
         upgraded_nodes = []
         count = 0
+        self.upgrade_version = self.upgrade_chain[-1]
 
         ### Sync write collection spec ###
         sync_load_spec = self.bucket_util.get_crud_template_from_package(self.sync_write_spec)
