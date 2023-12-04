@@ -701,6 +701,15 @@ class RebalanceTask(Task):
             validate_orchestrator_selection(self.cluster, self.to_remove)
         if result:
             self.result = True
+        
+        if self.validate_bucket_ranking:
+            # Validate if the vbucket movement is as per bucket ranking
+            ranking_validation_res = global_vars.cluster_util.\
+                    validate_bucket_ranking(self.cluster)
+            if not ranking_validation_res:
+                self.log.error("The vbucket movement was not according to bucket ranking")
+                self.result = False
+
 
         print_nodes("Cluster nodes..", self.cluster.nodes_in_cluster)
         print_nodes("KV............", self.cluster.kv_nodes)
@@ -904,17 +913,6 @@ class RebalanceTask(Task):
                 self.test_log.info(
                     "Rebalance completed with progress: {0}% in {1} sec"
                     .format(progress, time.time() - self.start_time))
-
-                if self.validate_bucket_ranking:
-                    # Validate if the vbucket movement is as per bucket ranking
-                    ranking_validation_res = global_vars.cluster_util.\
-                            validate_bucket_ranking(self.cluster)
-                    if not ranking_validation_res:
-                        self.log.error("The vbucket movement was not according to bucket ranking")
-                        self.result = False
-                        raise RebalanceFailedException(
-                            "The vbucket movement was not according to bucket ranking")
-
                 self.result = True
                 return
 
