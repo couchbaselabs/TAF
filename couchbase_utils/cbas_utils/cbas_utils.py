@@ -5199,6 +5199,8 @@ class CBASRebalanceUtil(object):
         servs_out = random.sample(cluster_kv_nodes, kv_nodes_out) + random.sample(
             cluster_cbas_nodes, cbas_nodes_out)
 
+        cluster.servers.extend(servs_in)
+
         if kv_nodes_in == kv_nodes_out:
             self.vbucket_check = False
 
@@ -5221,6 +5223,9 @@ class CBASRebalanceUtil(object):
         nodes_in_cluster = [server for server in cluster.nodes_in_cluster if
                             server not in servs_out]
         cluster.nodes_in_cluster = nodes_in_cluster
+
+        for old_server in servs_out:
+            cluster.servers.remove(old_server)
         # cluster.servers = nodes_in_cluster
 
         return rebalance_task, available_servers
