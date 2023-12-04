@@ -86,7 +86,7 @@ class BucketGuardrails(GuardrailsBase):
         count = 0
 
         while count < self.iterations:
-            random_idx = random.randint(0,len(self.cluster.buckets))
+            random_idx = random.randint(0,len(self.cluster.buckets)-1)
             bucket_to_delete = self.cluster.buckets[random_idx]
 
             res = self.bucket_util.delete_bucket(self.cluster, bucket_to_delete)

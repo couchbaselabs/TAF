@@ -500,7 +500,7 @@ class UpgradeTests(UpgradeBase):
         self.cluster_util.print_cluster_stats(self.cluster)
 
         ### Editing history for a few collections after enabling CDC ###
-        if self.magma_upgrade:
+        if self.magma_upgrade and self.guardrail_type != "collection_guardrail":
             self.edit_history_for_collections_existing_bucket()
 
         ### Creation of a new bucket post upgrade ###

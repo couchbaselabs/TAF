@@ -245,18 +245,14 @@ class DiskUsageGuardrails(GuardrailsBase):
         self.sleep(30, "Wait for 30 seconds after hitting the disk usage guardrail")
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        if self.load_till_threshold == self.max_disk_usage:
-            self.sleep(30, "Wait for a few seconds after hitting disk usage guardrail")
-            self.bucket_util.print_bucket_stats(self.cluster)
-
-            result = self.insert_new_docs_sdk(num_docs=number_of_docs,
-                                            bucket=self.bucket,
-                                            doc_key="new_docs")
-            self.log.info("Validating SDK error messages")
-            for res in result:
-                exp = res["status"] == False and error_code in res["error"]
-                self.assertTrue(exp, "Mutations were not blocked")
-            self.log.info("Expected error code {} was seen on all inserts".format(error_code))
+        result = self.insert_new_docs_sdk(num_docs=number_of_docs,
+                                        bucket=self.bucket,
+                                        doc_key="new_docs")
+        self.log.info("Validating SDK error messages")
+        for res in result:
+            exp = res["status"] == False and error_code in res["error"]
+            self.assertTrue(exp, "Mutations were not blocked")
+        self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
         rest = RestConnection(self.cluster.master)
         rest_nodes = rest.node_statuses()
@@ -382,12 +378,12 @@ class DiskUsageGuardrails(GuardrailsBase):
             self.assertTrue(exp, "Mutations were not blocked")
         self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
-        spare_node = self.cluster.servers[0]
+        spare_node = self.cluster.servers[self.nodes_init]
         rest = RestConnection(self.cluster.master)
         services = rest.get_nodes_services()
         services_on_target_node = services[(self.cluster.master.ip + ":"
                                             + str(self.cluster.master.port))]
-        self.log.info("Rebalancing-in the node {}".format_map(spare_node.ip))
+        self.log.info("Rebalancing-in the node {}".format(spare_node.ip))
         rebalance_in_task = self.task.async_rebalance(self.cluster,
                                     to_add=[spare_node],
                                     to_remove=[],

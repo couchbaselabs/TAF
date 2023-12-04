@@ -389,7 +389,7 @@ class RRGuardrails(GuardrailsBase):
         self.doc_loading_tm.getAllTaskResult()
         self.printOps.end_task()
 
-        self.sleep(15, "Wait for item count to get reflected")
+        self.sleep(30, "Wait for item count to get reflected")
         self.bucket_util.print_bucket_stats(self.cluster)
         bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
                                                                            new_bucket)
@@ -426,8 +426,8 @@ class RRGuardrails(GuardrailsBase):
             self.assertTrue(exp, "Mutations were not blocked")
         self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
-        self.bucket_util._expiry_pager(self.cluster, val=1)
-        self.sleep(300, "Wait for docs to expire")
+        self.bucket_util._expiry_pager(self.cluster, val=0.1)
+        self.sleep(self.bucket_ttl*3, "Wait for docs to expire")
 
         bucket_item_count2 = self.bucket_util.get_bucket_current_item_count(self.cluster,
                                                                             self.bucket)
@@ -493,7 +493,7 @@ class RRGuardrails(GuardrailsBase):
         bucket_item_count2 = self.bucket_util.get_bucket_current_item_count(self.cluster,
                                                                            self.bucket)
         self.log.info("Bucket item count = {}".format(bucket_item_count2))
-        exp = bucket_item_count2 == bucket_item_count2 + number_of_docs
+        exp = bucket_item_count2 == bucket_item_count + number_of_docs
         self.assertTrue(exp, "Item count does not match")
 
 
@@ -528,13 +528,18 @@ class RRGuardrails(GuardrailsBase):
         self.create_start = 0
         self.create_end = 20000
         self.log.info("Loading data into the bucket after flushing")
-        self.new_loader(wait=True)
+        self.new_loader()
+        self.doc_loading_tm.getAllTaskResult()
+        self.printOps.end_task()
 
+        self.sleep(20, "Wait for num_items to get relfected")
+        self.bucket_util.print_bucket_stats(self.cluster)
         bucket_item_count2 = self.bucket_util.get_bucket_current_item_count(self.cluster,
                                                                            self.bucket)
-        final_item_count = self.create_end * (self.num_scopes - 1) * self.num_collections
+        final_item_count = self.create_end * ((self.num_scopes * self.num_collections) - 1)
         exp = bucket_item_count2 == final_item_count
-        self.assertTrue(exp, "Item count does not match")
+        self.log.info("Expected = {0}, actual = {1}".format(final_item_count, bucket_item_count2))
+        self.assertTrue(exp, "Item count does not match.")
 
 
     def test_rr_guardrail_target_vb_on_node(self):
@@ -654,11 +659,13 @@ class RRGuardrails(GuardrailsBase):
             elif self.restart_service == "server":
                 shell.start_couchbase()
 
+            self.sleep(30, "Wait after bringing the service back up")
             self.log.info("Current resident ratio = {}".format(
                                     self.check_resident_ratio(self.cluster)))
             document_key = "new_docs" + str(count)
             result = self.insert_new_docs_sdk(num_docs=1, bucket=self.bucket,
                                               doc_key=document_key)
+            print(result)
             exp = result[0]["status"] == False and error_code in result[0]["error"]
             self.assertTrue(exp, "Mutations were not blocked")
             count += 1

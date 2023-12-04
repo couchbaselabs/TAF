@@ -278,7 +278,7 @@ class MaxDataGuardrails(GuardrailsBase):
         total_bucket_size = sum(bucket_data_size)
         num_nodes = len(self.kv_nodes)
 
-        new_per_node_bucket_size = total_bucket_size * (float(num_nodes) / float(num_nodes-1))
+        new_per_node_bucket_size = total_bucket_size / float(num_nodes-1)
         if new_per_node_bucket_size >= self.data_guardrail_threshold:
             rebalance_not_allowed = True
         else:
@@ -315,7 +315,7 @@ class MaxDataGuardrails(GuardrailsBase):
         self.log.info("Starting initial data load...")
         self.initial_data_load_until_guardrail_limit(self.data_guardrail_threshold)
 
-        self.sleep(30, "Wait for 30 seconds after huitting max data per bucket guardrail")
+        self.sleep(30, "Wait for 30 seconds after hitting max data per bucket guardrail")
         self.bucket_util.print_bucket_stats(self.cluster)
 
         result = self.insert_new_docs_sdk(num_docs=number_of_docs,
@@ -431,10 +431,22 @@ class MaxDataGuardrails(GuardrailsBase):
 
         self.log.info("Starting initial data load...")
         self.initial_data_load_until_guardrail_limit(self.load_till_threshold)
+        self.sleep(30, "Wait for 30 seconds after hitting max data per bucket guardrail")
+
         self.bucket_util.print_bucket_stats(self.cluster)
 
         self.log.info("Buckets data sizes after initial loading = {} ".format(
                                 self.check_bucket_data_size_per_node(self.cluster)))
+
+        if self.data_guardrail_threshold == self.load_till_threshold:
+            result = self.insert_new_docs_sdk(num_docs=number_of_docs,
+                                            bucket=self.bucket,
+                                            doc_key="new_docs")
+            self.log.info("Validating SDK error messages")
+            for res in result:
+                exp = res["status"] == False and error_code in res["error"]
+                self.assertTrue(exp, "Mutations were not blocked")
+            self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
         node_to_swap = None
         for server in self.cluster.kv_nodes:
