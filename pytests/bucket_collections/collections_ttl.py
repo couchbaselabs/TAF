@@ -1,4 +1,3 @@
-from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 from Cb_constants import CbServer, DocLoading
@@ -345,9 +344,12 @@ class CollectionsTTL(CollectionBase):
             else:
                 self.fail("Collection TTL update did not fail even when maxTTL was < 0")
 
-    def test_doc_preserve_ttl_on_rest(self):
+    def test_doc_preserve_ttl(self):
         """
-        MB-58693
+        References:
+        MB-58693: Preserve TTL when modifying document using REST API
+        MB-58664: TTL is not set when using Upsert(explicit TTL + preserveTTL)
+                  to create a new document under full-eviction
         """
         bucket = self.cluster.buckets[0]
         self.log.info("Creating custom scope and collections")
@@ -369,9 +371,19 @@ class CollectionsTTL(CollectionBase):
         rest = RestConnection(self.cluster.master)
         client = self.sdk_client_pool.get_client_for_bucket(bucket)
 
+        key = "doc_preserve_expiry_with_ttl"
+
         for scope, col in scope_col_list:
             self.log.info("Loading docs in to {}:{}".format(scope, col))
             client.select_collection(scope, col)
+
+            # MB-58664
+            client.crud(DocLoading.Bucket.DocOps.UPDATE, key, {},
+                        preserve_expiry=True, exp=60)
+            result = client.read(key, populate_value=False, with_expiry=True)
+            self.assertTrue(result["ttl_present"], "TTL not present")
+
+            # MB-58693
             result = client.crud(DocLoading.Bucket.DocOps.CREATE, "key_1", {})
             self.assertTrue(result["status"], "Create 'key_1' failed")
             for key in ["key_2", "key_3"]:
@@ -380,6 +392,7 @@ class CollectionsTTL(CollectionBase):
                 self.assertTrue(result["status"],
                                 "Create {} with ttl=40 failed".format(key))
 
+        # MB-58693
         self.sleep(30, "Wait before upserting docs using REST")
         for scope, col in scope_col_list:
             self.log.info("Loading docs in to {}:{}".format(scope, col))
