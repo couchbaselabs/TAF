@@ -2325,7 +2325,7 @@ class basic_ops(ClusterSetup):
 
     def test_unlock_key(self):
         """
-        Ref: MB-58088 / MB-59060
+        Ref: MB-58088 / MB-59060 / MB-59746
         """
         def validate_unlock_exception(t_key, d_cas, expected_errors):
             try:
@@ -2347,16 +2347,20 @@ class basic_ops(ClusterSetup):
 
         not_locked_msgs = ["Requested resource is not locked", "NOT_LOCKED"]
         self.log.info("Test for multiple doc-unlock")
-        client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
+        result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
+        original_cas = result["cas"]
         result = client.collection.getAndLock(
             key_1, SDKOptions.get_duration(15, "seconds"))
-        cas = result.cas()
-        client.collection.unlock(key_1, cas)
-        validate_unlock_exception(key_1, cas, not_locked_msgs)
+        locked_cas = result.cas()
+        self.assertNotEqual(original_cas, locked_cas, "CAS not updated")
+        client.collection.unlock(key_1, locked_cas)
+        validate_unlock_exception(key_1, locked_cas, not_locked_msgs)
+        result = client.crud(DocLoading.Bucket.DocOps.READ, key_1)
+        cas_after_unlock = result["cas"]
+        self.assertEqual(original_cas, cas_after_unlock, "CAS updated")
 
         self.log.info("Testing unlock without lock")
-        cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
-                                key_2, {})["cas"]
+        cas = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_2, {})["cas"]
         validate_unlock_exception(key_2, cas, not_locked_msgs)
 
         self.log.info("Testing with expired key")
