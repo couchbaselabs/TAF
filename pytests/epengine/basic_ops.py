@@ -1748,6 +1748,25 @@ class basic_ops(ClusterSetup):
             rest.remove_all_replications()
             rest.remove_all_remote_clusters()
 
+    def test_unlock_key(self):
+        """
+        Ref: MB-59746
+        """
+        key = "test_doc"
+        bucket = self.cluster.buckets[0]
+        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        self.log.info("Testing CAS update for lock/unlock document")
+        result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key, {})
+        self.assertTrue(result["status"], "Doc upsert failed")
+        original_cas = result["cas"]
+        result = client.collection.getAndLock(
+            key, SDKOptions.get_duration(15, "seconds"))
+        locked_cas = result.cas()
+        self.assertNotEqual(original_cas, locked_cas, "CAS not updated")
+        client.collection.unlock(key, locked_cas)
+        result = client.crud(DocLoading.Bucket.DocOps.READ, key)
+        self.assertEqual(original_cas, result["cas"], "CAS updated")
+
     def test_stats_with_warmup(self):
         """
         Ref: MB-53829
