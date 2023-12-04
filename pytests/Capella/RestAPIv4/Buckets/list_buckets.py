@@ -25,7 +25,7 @@ class ListBucket(APIBase):
 
         # Initialize params for cluster creation.
         cluster_name = self.prefix + "TestBucketsList"
-        self.cluster = {
+        cluster = {
             "name": cluster_name,
             "description": None,
             "cloudProvider": {
@@ -70,17 +70,17 @@ class ListBucket(APIBase):
         while time.time() - start_time < 1800:
             res = self.capellaAPI.cluster_ops_apis.create_cluster(
                 self.organisation_id, self.project_id, cluster_name,
-                self.cluster['cloudProvider'], self.cluster['couchbaseServer'],
-                self.cluster['serviceGroups'], self.cluster['availability'],
-                self.cluster['support'])
+                cluster['cloudProvider'], cluster['couchbaseServer'],
+                cluster['serviceGroups'], cluster['availability'],
+                cluster['support'])
             if res.status_code == 202:
                 self.cluster_id = res.json()['id']
-                self.cluster['id'] = self.cluster_id
+                cluster['id'] = self.cluster_id
                 break
             elif "Please ensure you are passing a unique CIDR block" in \
                     res.json()["message"]:
                 newCIDR = CapellaUtils.get_next_cidr() + "/20"
-                self.cluster["cloudProvider"]["cidr"] = newCIDR
+                cluster["cloudProvider"]["cidr"] = newCIDR
         if time.time() - start_time >= 1800:
             self.fail("Couldn't find CIDR within half an hour.")
 
