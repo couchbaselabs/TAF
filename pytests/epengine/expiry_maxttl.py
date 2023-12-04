@@ -1,7 +1,6 @@
 from random import randint
 from threading import Thread
 
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
@@ -141,10 +140,12 @@ class ExpiryMaxTTL(ClusterSetup):
         self.log.info("Calling compaction after expiry pager call")
         compact_tasks = []
         for bucket in self.cluster.buckets:
-            compact_tasks.append(self.task.async_compact_bucket(self.cluster.master, bucket))
+            compact_tasks.append(self.task.async_compact_bucket(
+                self.cluster.master, bucket))
         for task in compact_tasks:
             self.task.jython_task_manager.get_task_result(task)
-            self.assertTrue(task.result, "Compaction failed due to:" + str(task.exception))
+            self.assertTrue(task.result, "Compaction failed due to:"
+                                         + str(task.exception))
         self.sleep(20, "Waiting for item count to come down...")
 
         for bucket in self.cluster.buckets:
@@ -609,15 +610,17 @@ class ExpiryMaxTTL(ClusterSetup):
         1. Regular write with TTL 1 second for some key
         2. Disable expiry pager (to prevent raciness)
         3. Wait TTL period
-        4. Disable persistence on the node with the replica vBucket for that key
-        5. SyncWrite PersistMajority to active vBucket for that key (should hang)
+        4. Disable persistence on the node with the replica vb for that key
+        5. SyncWrite PersistMajority to active vBucket for that key
+           (should hang)
         6. Access key on other thread to trigger expiry
         7. Observe DCP connection being torn down without fix
         """
         def perform_sync_write():
-            client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},
-                        durability=SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY,
-                        timeout=60)
+            client.crud(
+                DocLoading.Bucket.DocOps.CREATE, key, {},
+                durability=SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY,
+                timeout=60)
 
         doc_ttl = 5
         target_node = None

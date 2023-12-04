@@ -1727,8 +1727,6 @@ class basic_ops(ClusterSetup):
         cb_stats = Cbstats(self.cluster.master)
 
         self.log.info("Collection stats before executing the scenario")
-        stats = cb_stats.all_stats(bucket.name)
-
         cb_err.create(CouchbaseError.STOP_SERVER)
         cb_err.revert(CouchbaseError.STOP_SERVER)
         self.cluster_util.wait_for_ns_servers_or_assert([self.cluster.master])
@@ -1745,7 +1743,6 @@ class basic_ops(ClusterSetup):
             self.assertTrue(int(curr_stats[field]) != 0,
                             "%s stat is zero" % field)
         shell.disconnect()
-
 
     def test_warmup_scan_reset(self):
         """
@@ -2365,7 +2362,7 @@ class basic_ops(ClusterSetup):
 
         self.log.info("Testing with expired key")
         cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
-                                key_3, {}, exp=2)["cas"]
+                          key_3, {}, exp=2)["cas"]
         self.sleep(3, "Wait for doc_to_expire")
         validate_unlock_exception(key_3, cas,
                                   [SDKException.DocumentNotFoundException])
