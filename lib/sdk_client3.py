@@ -769,18 +769,20 @@ class SDKClient(object):
         return result
 
     def read(self, key, timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
-             sdk_retry_strategy=None, access_deleted=False):
+             sdk_retry_strategy=None, access_deleted=False, with_expiry=None):
         result = {
             "key": key,
             "value": None,
             "cas": 0,
             "status": False,
-            "error": None
+            "error": None,
+            "ttl_present": None
         }
         read_options = SDKOptions.get_read_options(
             timeout, time_unit,
             sdk_retry_strategy=sdk_retry_strategy,
-            access_deleted=access_deleted)
+            access_deleted=access_deleted,
+            with_expiry=with_expiry)
         try:
             get_result = self.collection.get(key, read_options)
             self.log.debug("Found document: cas=%s, content=%s"
@@ -789,6 +791,8 @@ class SDKClient(object):
             result["status"] = True
             result["value"] = str(get_result.contentAsObject())
             result["cas"] = get_result.cas()
+            if with_expiry:
+                result["ttl_present"] = get_result.expiryTime().isPresent()
         except DocumentNotFoundException as e:
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})

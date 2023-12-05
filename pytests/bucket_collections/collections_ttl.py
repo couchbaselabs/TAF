@@ -1,6 +1,6 @@
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
-from Cb_constants import CbServer
+from Cb_constants import CbServer, DocLoading
 import copy
 
 
@@ -360,3 +360,36 @@ class CollectionsTTL(CollectionBase):
         self.bucket_util.validate_doc_count_as_per_collections(
             self.cluster, self.bucket)
         self.validate_test_failure()
+
+    def test_doc_preserve_ttl(self):
+        """
+        Ref: MB-58664
+        TTL is not set when using Upsert(explicit TTL + preserveTTL)
+        to create a new document under full-eviction
+        """
+        bucket = self.cluster.buckets[0]
+        self.log.info("Creating custom scope and collections")
+        self.bucket_util.create_scope(self.cluster.master, bucket,
+                                      {"name": "s1"})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c1"})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c2", "maxTTL": 0})
+        self.bucket_util.create_collection(
+            self.cluster.master, bucket, "s1", {"name": "c3", "maxTTL": 60})
+        scope_col_list = [
+            (CbServer.default_scope, CbServer.default_collection),
+            ("s1", "c1"),
+            ("s1", "c2"),
+            ("s1", "c3")]
+
+        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        key = "doc_preserve_expiry_with_ttl"
+
+        for scope, col in scope_col_list:
+            self.log.info("Loading docs in to {}:{}".format(scope, col))
+            client.select_collection(scope, col)
+            client.crud(DocLoading.Bucket.DocOps.UPDATE, key, {},
+                        preserve_expiry=True, exp=60)
+            result = client.read(key, populate_value=False, with_expiry=True)
+            self.assertTrue(result["ttl_present"], "TTL not present")
