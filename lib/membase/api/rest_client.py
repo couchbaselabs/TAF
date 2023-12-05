@@ -673,6 +673,17 @@ class RestConnection(newRC):
         if not status:
             self.test_log.error("Failed to set internal password rotation "
                                 "interval: {}".format(content))
+
+    def set_allow_hash_migration_during_auth(self, enable="true"):
+        api = self.baseUrl + "settings/security"
+        payload = {
+            'allowHashMigrationDuringAuth': enable
+        }
+        params = urllib.urlencode(payload)
+        status, content, header = self._http_request(api, 'POST', params)
+        if not status:
+            self.test_log.error("Failed to allow hash migration during "
+                                "authentication: {}".format(content))
         return status, content
 
     def set_security_settings(self, settings):
