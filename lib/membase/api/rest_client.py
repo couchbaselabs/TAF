@@ -673,6 +673,7 @@ class RestConnection(newRC):
         if not status:
             self.test_log.error("Failed to set internal password rotation "
                                 "interval: {}".format(content))
+        return status, content
 
     def set_allow_hash_migration_during_auth(self, enable="true"):
         api = self.baseUrl + "settings/security"
