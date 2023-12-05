@@ -41,6 +41,14 @@ class SecurityUtils():
             return False, content
         return True, content
 
+    def set_hash_algo(self, cluster=None, hash_algo="argon2id"):
+        self.log.info("Cluster master: {}".format(cluster.master.ip))
+        self.rest = RestConnection(cluster.master)
+        status, content = self.rest.set_paswd_hash_algo(hash_algo)
+        if not status:
+            return False, content
+        return True, content
+
     def rotate_password_for_internal_users(self, cluster=None):
         self.log.info("Cluster master: {}".format(cluster.master.ip))
         self.rest = RestConnection(cluster.master)
