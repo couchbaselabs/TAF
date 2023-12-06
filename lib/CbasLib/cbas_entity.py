@@ -7,13 +7,33 @@ Created on 08-Dec-2020
 from CbasLib.CBASOperations import CBASHelper
 
 
+class Database(object):
+    """
+    Database object
+    """
+
+    def __init__(self, name="Default"):
+        self.name = CBASHelper.format_name(name)
+
+        self.dataverses = dict()
+        self.crud_dataverses = dict()
+        if self.name == "Default":
+            self.dataverses["Default"] = Dataverse()
+
+    def __str__(self):
+        return self.name
+
+
 class Dataverse(object):
     """
     Dataverse object
     """
 
-    def __init__(self, name="Default"):
+    def __init__(self, name="Default", database_name="Default"):
         self.name = CBASHelper.format_name(name)
+        self.database_name = CBASHelper.format_name(database_name)
+        self.full_name = CBASHelper.format_name(
+            self.database_name, self.name)
 
         self.remote_links = dict()
         self.external_links = dict()
@@ -36,14 +56,18 @@ class Link(object):
     Link object
     """
 
-    def __init__(self, name, dataverse_name="Default"):
+    def __init__(self, name, dataverse_name="Default",
+                 database_name="Default"):
         """
-        :param name str, name of the link, not needed in case of a link of type Local
+        :param name str, name of the link, not needed in case of a link of
+        type Local
         :param dataverse_name str, dataverse where the link is present.
         """
         self.name = CBASHelper.format_name(name)
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
-        self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
+        self.database_name = CBASHelper.format_name(database_name)
+        self.full_name = CBASHelper.format_name(
+            self.database_name, self.dataverse_name, self.name)
 
     def __str__(self):
         return self.full_name
@@ -51,7 +75,8 @@ class Link(object):
 
 class Remote_Link(Link):
 
-    def __init__(self, name, dataverse_name="Default", properties={}):
+    def __init__(self, name, dataverse_name="Default",
+                 database_name="Default", properties={}):
         """
         :param name str, name of the link
         :param dataverse_name str, dataverse where the link is present.
@@ -72,17 +97,19 @@ class Remote_Link(Link):
         <Optional> clientKey : The client key for user authentication.
         Required only if encryption is set to "full" and username and password is not used.
         """
-        super(Remote_Link, self).__init__(name, dataverse_name)
+        super(Remote_Link, self).__init__(name, dataverse_name, database_name)
         self.properties = properties
         self.properties["name"] = CBASHelper.unformat_name(self.name)
         self.properties["dataverse"] = CBASHelper.unformat_name(
             self.dataverse_name)
+        self.properties["database"] = CBASHelper.unformat_name(self.database_name)
         self.link_type = "couchbase"
 
 
 class External_Link(Link):
 
-    def __init__(self, name, dataverse_name="Default", properties={}):
+    def __init__(self, name, dataverse_name="Default",
+                 database_name="Default", properties={}):
         """
         :param name str, name of the link
         :param dataverse_name str, dataverse where the link is present.
@@ -93,18 +120,21 @@ class External_Link(Link):
         <Optional> serviceEndpoint : The service endpoint of the link.
         Note - please use the exact key names as provided above in link properties dict.
         """
-        super(External_Link, self).__init__(name, dataverse_name)
+        super(External_Link, self).__init__(
+            name, dataverse_name, database_name)
         self.properties = properties
         self.properties["name"] = CBASHelper.unformat_name(self.name)
         self.properties["dataverse"] = CBASHelper.unformat_name(
             self.dataverse_name)
+        self.properties["database"] = CBASHelper.unformat_name(
+            self.database_name)
         self.link_type = self.properties["type"].lower()
 
 
 class Kafka_Link(Link):
 
-    def __init__(self, name, dataverse_name="Default", db_type="mongo",
-                 external_database_details={}):
+    def __init__(self, name, dataverse_name="Default", database_name="Default",
+                 db_type="mongo", external_database_details={}):
         """
         :param name str, name of the link
         :param dataverse_name str, dataverse where the link is present.
@@ -116,7 +146,7 @@ class Kafka_Link(Link):
         and other details required to connect to external databases like
         mongo, dynamo or cassandra
         """
-        super(Kafka_Link, self).__init__(name, dataverse_name)
+        super(Kafka_Link, self).__init__(name, dataverse_name, database_name)
         self.link_type = "kafka"
         self.db_type = db_type.lower()
         self.external_database_details = external_database_details
@@ -124,9 +154,9 @@ class Kafka_Link(Link):
 
 class Dataset(object):
 
-    def __init__(self, name, dataverse_name="Dafault", bucket=None,
-                 scope=None, collection=None, enabled_from_KV=False,
-                 num_of_items=0, storage_format="row"):
+    def __init__(self, name, dataverse_name="Dafault", database_name="Default",
+                 bucket=None, scope=None, collection=None,
+                 enabled_from_KV=False, num_of_items=0, storage_format="row"):
         """
         :param name <str> name of the dataset
         :param dataverse_name <str> dataverse where the dataset is present.
@@ -142,23 +172,24 @@ class Dataset(object):
         """
         self.name = CBASHelper.format_name(name)
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
-        self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
+        self.database_name = CBASHelper.format_name(database_name)
+        self.full_name = CBASHelper.format_name(
+            self.database_name, self.dataverse_name, self.name)
         self.indexes = dict()
         self.enabled_from_KV = enabled_from_KV
         self.kv_bucket = bucket
         self.kv_scope = scope
         self.kv_collection = collection
         if isinstance(self.kv_bucket, str):
-            self.full_kv_entity_name = CBASHelper.format_name(self.kv_bucket,
-                                          self.kv_scope,
-                                          self.kv_collection)
+            self.full_kv_entity_name = CBASHelper.format_name(
+                self.kv_bucket, self.kv_scope, self.kv_collection)
         else:
             if self.kv_collection:
-                self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
-                    cardinality=3)
+                self.full_kv_entity_name = (
+                    self.get_fully_qualified_kv_entity_name(cardinality=3))
             elif self.kv_bucket:
-                self.full_kv_entity_name = self.get_fully_qualified_kv_entity_name(
-                    cardinality=1)
+                self.full_kv_entity_name = (
+                    self.get_fully_qualified_kv_entity_name(cardinality=1))
             else:
                 self.full_kv_entity_name = None
         self.num_of_items = num_of_items
@@ -185,8 +216,8 @@ class Dataset(object):
 class Remote_Dataset(Dataset):
 
     def __init__(self, name, link_name, dataverse_name="Dafault",
-                 bucket=None, scope=None, collection=None,
-                 num_of_items=0, storage_format="row"):
+                 database_name="Default", bucket=None, scope=None,
+                 collection=None, num_of_items=0, storage_format="row"):
         """
         :param name <str> name of the dataset
         :param link_name <str> name of the remote link to which dataset is
@@ -202,8 +233,8 @@ class Remote_Dataset(Dataset):
         :param storage_format <str> storage format for the dataset.
         """
         super(Remote_Dataset, self).__init__(
-            name, dataverse_name, bucket, scope, collection, False,
-            num_of_items, storage_format)
+            name, dataverse_name, database_name, bucket, scope,
+            collection, False,num_of_items, storage_format)
 
         self.link_name = CBASHelper.format_name(link_name)
 
@@ -211,7 +242,8 @@ class Remote_Dataset(Dataset):
 class External_Dataset(Dataset):
 
     def __init__(self, name, link_name, dataverse_name="Dafault",
-                 dataset_properties={}, num_of_items=0):
+                 database_name="Default", dataset_properties={},
+                 num_of_items=0):
         """
         :param name <str> name of the dataset
         :param dataverse_name <str> dataverse where the dataset is present.
@@ -221,7 +253,7 @@ class External_Dataset(Dataset):
         :param num_of_items <int> expected number of items in dataset.
         """
         super(External_Dataset, self).__init__(
-            name, dataverse_name, None, None, None, False,
+            name, dataverse_name, database_name, None, None, None, False,
             num_of_items, "")
         self.link_name = CBASHelper.format_name(link_name)
         self.dataset_properties = dataset_properties
@@ -230,9 +262,9 @@ class External_Dataset(Dataset):
 class Standalone_Dataset(Dataset):
 
     def __init__(self, name, data_source, primary_key,
-                 dataverse_name="Dafault", link_name=None,
-                 external_collection_name=None, dataset_properties={},
-                 num_of_items=0, storage_format="row"):
+                 dataverse_name="Dafault", database_name="Default",
+                 link_name=None, external_collection_name=None,
+                 dataset_properties={}, num_of_items=0, storage_format="row"):
         """
         :param name <str> name of the dataset
         :param primary_key <dict> dict of field_name:field_type to be used
@@ -250,7 +282,7 @@ class Standalone_Dataset(Dataset):
         :param storage_format <str> storage format for the dataset.
         """
         super(Standalone_Dataset, self).__init__(
-            name, dataverse_name, None, None, None, False,
+            name, dataverse_name, database_name, None, None, None, False,
             num_of_items, storage_format)
 
         self.primary_key = primary_key
@@ -271,8 +303,8 @@ class Synonym(object):
     """
 
     def __init__(self, name, cbas_entity_name, cbas_entity_dataverse,
-                 dataverse_name="Default",
-                 synonym_on_synonym=False):
+                 cbas_entity_database, dataverse_name="Default",
+                 database_name="Default", synonym_on_synonym=False):
         """
         :param name str, name of the synonym
         :param cbas_entity_name str, Cbas entity on which Synonym is based,
@@ -285,10 +317,15 @@ class Synonym(object):
         self.cbas_entity_name = CBASHelper.format_name(cbas_entity_name)
         self.cbas_entity_dataverse = CBASHelper.format_name(
             cbas_entity_dataverse)
+        self.cbas_entity_database = CBASHelper.format_name(
+            cbas_entity_database)
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
-        self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
+        self.database_name = CBASHelper.format_name(database_name)
+        self.full_name = CBASHelper.format_name(
+            self.database_name, self.dataverse_name, self.name)
         self.cbas_entity_full_name = CBASHelper.format_name(
-            self.cbas_entity_dataverse, self.cbas_entity_name)
+            self.cbas_entity_database, self.cbas_entity_dataverse,
+            self.cbas_entity_name)
         self.synonym_on_synonym = synonym_on_synonym
 
     def __str__(self):
@@ -300,7 +337,7 @@ class CBAS_Index(object):
     Analytics index object
     """
 
-    def __init__(self, name, dataset_name, dataverse_name,
+    def __init__(self, name, dataset_name, dataverse_name, database_name,
                  indexed_fields=None):
         """
         :param name str, name of the index
@@ -312,8 +349,9 @@ class CBAS_Index(object):
         self.name = CBASHelper.format_name(name)
         self.dataset_name = CBASHelper.format_name(dataset_name)
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
-        self.full_dataset_name = CBASHelper.format_name(self.dataverse_name,
-                                                        self.dataset_name)
+        self.database_name = CBASHelper.format_name(database_name)
+        self.full_dataset_name = CBASHelper.format_name(
+            self.database_name, self.dataverse_name, self.dataset_name)
         self.analytics_index = False
         self.indexed_fields = []
         if indexed_fields:
@@ -328,7 +366,7 @@ class CBAS_UDF(object):
     Analytics UDF object
     """
 
-    def __init__(self, name, dataverse_name, parameters, body,
+    def __init__(self, name, dataverse_name, database_name, parameters, body,
                  referenced_entities):
         """
         :param name str, name of the User defined fucntion
@@ -341,6 +379,7 @@ class CBAS_UDF(object):
         """
         self.name = CBASHelper.format_name(name)
         self.dataverse_name = CBASHelper.format_name(dataverse_name)
+        self.database_name = CBASHelper.format_name(database_name)
         self.parameters = parameters
         if parameters and parameters[0] == "...":
             self.arity = -1
@@ -407,7 +446,8 @@ class ExternalDB(object):
         if self.db_type == "mongo":
             return {
                 "source": "MONGODB",
-                "connectionFields": {"connectionUri": self.mongo_connection_uri}
+                "connectionFields": {
+                    "connectionUri": self.mongo_connection_uri}
             }
         elif self.db_type == "dynamo":
             return {
@@ -422,8 +462,10 @@ class ExternalDB(object):
             return {
                 "source": "MYSQLDB",
                 "connectionFields": {
-                    "databaseHostname": self.rds_hostname, "databasePort": self.rds_port,
-                    "databaseUser": self.rds_username, "databasePassword": self.rds_password,
+                    "databaseHostname": self.rds_hostname,
+                    "databasePort": self.rds_port,
+                    "databaseUser": self.rds_username,
+                    "databasePassword": self.rds_password,
                     "databaseServerId": self.rds_server_id
                 }
             }
