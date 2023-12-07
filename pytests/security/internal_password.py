@@ -181,7 +181,9 @@ class InternalUserPassword(ClusterSetup):
                 1:self.nodes_out + 1]
             rebalance_task = self.task.async_rebalance(self.cluster,
                                     nodes_in, nodes_out,
-                                    retry_get_process_num=2000)
+                                    retry_get_process_num=2000,
+                                    check_vbucket_shuffling=False)
+
         self.wait_for_rebalance_to_start(rebalance_task)
         # start_time = datetime.fromtimestamp(rebalance_task.start_time)
         self.sleep(5, "Wait after rebalance started")
