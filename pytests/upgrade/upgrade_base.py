@@ -6,6 +6,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from pytests.ns_server.enforce_tls import EnforceTls
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
+from rebalance_utils.retry_rebalance import RetryRebalanceUtil
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from bucket_collections.collections_base import CollectionBase
@@ -96,6 +97,12 @@ class UpgradeBase(BaseTestCase):
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
         community_upgrade = self.input.param("community_upgrade", False)
+
+        self.enable_auto_retry_rebalance = \
+            self.input.param("auto_retry_rebalance", False)
+        self.rebalance_failure_condition = \
+            self.input.param("rebalance_failure_condition", None)
+        self.delay_time = self.input.param("delay_time", 60000)
 
         self.upgrade_helper = CbServerUpgrade(self.log, self.product)
         self._populate_upgrade_chain()
@@ -214,6 +221,17 @@ class UpgradeBase(BaseTestCase):
                 .update_autofailover_settings(False, 120, False)
             self.assertTrue(status, msg="Failure during disabling auto-failover")
 
+        if self.enable_auto_retry_rebalance:
+            afterTimePeriod = self.input.param("afterTimePeriod", 100)
+            maxAttempts = self.input.param("maxAttempts", 3)
+            body = dict()
+            body["enabled"] = "true"
+            body["afterTimePeriod"] = afterTimePeriod
+            body["maxAttempts"] = maxAttempts
+            rest = RestConnection(self.cluster.master)
+            res = rest.set_retry_rebalance_settings(body)
+            self.log.info("Rebalance retry settings = {}".format(res))
+
         # Creating buckets from spec file
         CollectionBase.deploy_buckets_from_spec_file(self)
 
@@ -276,6 +294,8 @@ class UpgradeBase(BaseTestCase):
             RestConnection(self.cluster.master).set_service_mem_quota(
                 {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem,
                 CbServer.Settings.INDEX_MEM_QUOTA: self.index_quota_mem})
+
+        self.retry_rebalance_util = RetryRebalanceUtil()
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
@@ -464,6 +484,17 @@ class UpgradeBase(BaseTestCase):
                 "{} - REST endpoint unreachable after 30 seconds"
                 .format(self.spare_node.ip))
 
+        if self.rebalance_failure_condition is not None:
+            nodes_to_induce = self.cluster.nodes_in_cluster + [self.spare_node]
+            self.retry_rebalance_util.induce_rebalance_test_condition(nodes_to_induce,
+                                            self.rebalance_failure_condition,
+                                            self.cluster.buckets[0].name,
+                                            delay_time=self.delay_time)
+            rebalance_fail = False
+            if self.rebalance_failure_condition in ["backfill_done", "verify_replication",
+                                        "after_apply_delta_recovery", "rebalance_start"]:
+                rebalance_fail = True
+        self.sleep(10)
         # Perform swap rebalance for node_to_upgrade <-> spare_node
         self.log.info("Swap Rebalance starting...")
         rebalance_passed = self.task.async_rebalance(
@@ -485,8 +516,19 @@ class UpgradeBase(BaseTestCase):
         self.task_manager.get_task_result(rebalance_passed)
         if rebalance_passed.result is True:
             self.log.info("Swap Rebalance passed")
+        elif rebalance_passed.result is False and self.rebalance_failure_condition is None:
+            self.fail("Swap rebalance failed")
+        elif rebalance_passed.result is False and self.rebalance_failure_condition is not None \
+                                                 and not rebalance_fail:
+            self.fail("Swap rebalance failed even though test condition was {}".format(
+                                                self.rebalance_failure_condition))
         else:
-            self.log.info("Swap Rebalance failed")
+            delete_condition_nodes = self.cluster.nodes_in_cluster + [self.spare_node]
+            self.retry_rebalance_util.delete_rebalance_test_condition(delete_condition_nodes,
+                                                        self.rebalance_failure_condition)
+            self.sleep(30, "Wait for 30 seconds before retrying rebalance")
+            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+            self.assertTrue(status, "Retry rebalance didn't succeed")
 
         # VBuckets shuffling verification
         if CbServer.Services.KV in services_on_target_node:
