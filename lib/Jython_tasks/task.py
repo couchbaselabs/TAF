@@ -669,6 +669,15 @@ class RebalanceTask(Task):
             self.state = "triggered"
             self.table.display("Rebalance Overview")
 
+            # Pick temp-master if the current one is going out
+            if self.cluster.master in self.to_remove:
+                self.cluster.master = \
+                    [node for node in self.cluster.nodes_in_cluster
+                     if node not in self.to_remove][0]
+                self.log.critical("Picked new temp-master: {}"
+                                  .format(self.cluster.master))
+                self.rest = RestConnection(self.cluster.master)
+
             check_timeout = int(time.time()) + 10
             rebalance_started = False
             # Wait till current rebalance statusId updates in cluster's task
@@ -701,7 +710,7 @@ class RebalanceTask(Task):
             validate_orchestrator_selection(self.cluster, self.to_remove)
         if result:
             self.result = True
-        
+
         if self.validate_bucket_ranking:
             # Validate if the vbucket movement is as per bucket ranking
             ranking_validation_res = global_vars.cluster_util.\
@@ -709,7 +718,6 @@ class RebalanceTask(Task):
             if not ranking_validation_res:
                 self.log.error("The vbucket movement was not according to bucket ranking")
                 self.result = False
-
 
         print_nodes("Cluster nodes..", self.cluster.nodes_in_cluster)
         print_nodes("KV............", self.cluster.kv_nodes)
