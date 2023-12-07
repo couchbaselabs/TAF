@@ -116,7 +116,7 @@ class BucketHelper(RestConnection):
         return None if not bucket.vbuckets else bucket.vbuckets
 
     def _get_vbuckets(self, servers, bucket_name='default'):
-        target_server = list()
+        target_servers = [server.ip for server in servers]
         if bucket_name is None:
             bucket_name = self.get_buckets_json()[0]["name"]
         bucket_to_check = self.get_bucket_json(bucket_name)
@@ -124,26 +124,20 @@ class BucketHelper(RestConnection):
         bucket_servers = [ip.split(":")[0] for ip in bucket_servers]
 
         vbuckets_servers = dict()
-        for server in servers:
+        for server in bucket_servers:
             vbuckets_servers[server] = dict()
             vbuckets_servers[server]['active_vb'] = list()
             vbuckets_servers[server]['replica_vb'] = list()
 
-        for server in bucket_servers:
-            for tem_server in servers:
-                if tem_server.ip == server:
-                    target_server.append(tem_server)
-
-        target_server_len = len(target_server)
         for vb_num, vb_map in enumerate(bucket_to_check["vBucketServerMap"]["vBucketMap"]):
-            for index, vb_index in enumerate(vb_map):
-                if index >= target_server_len:
+            vbuckets_servers[bucket_servers[int(vb_map[0])]]["active_vb"].append(vb_num)
+            for vb_index in vb_map[1:]:
+                if vb_index == -1:
                     continue
-                vb_index = int(vb_index)
-                if vb_index == 0:
-                    vbuckets_servers[target_server[index]]["active_vb"].append(vb_num)
-                elif vb_index > 0:
-                    vbuckets_servers[target_server[index]]["replica_vb"].append(vb_num)
+                vbuckets_servers[bucket_servers[int(vb_index)]]["replica_vb"].append(vb_num)
+
+        for server in set(bucket_servers) - set(target_servers):
+            vbuckets_servers.pop(server)
         return vbuckets_servers
 
     def fetch_vbucket_map(self, bucket="default"):
