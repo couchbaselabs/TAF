@@ -182,6 +182,14 @@ class BucketDurabilityBase(ClusterSetup):
         self.validate_test_failure()
 
     @staticmethod
+    def get_bucket_durability_level(sdk_durability_level):
+        sdk_durability_level = sdk_durability_level.upper()
+        if sdk_durability_level == \
+                SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+            return Bucket.DurabilityMinLevel.MAJORITY_AND_PERSIST_ACTIVE
+        return getattr(Bucket.DurabilityMinLevel, sdk_durability_level)
+
+    @staticmethod
     def get_cb_stat_verification_dict():
         verification_dict = dict()
         verification_dict["ops_create"] = 0

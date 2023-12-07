@@ -759,19 +759,19 @@ class UpgradeTests(UpgradeBase):
         key, value = doc_generator("b_durability_doc", 0, 1).next()
         client = SDKClient([self.cluster.master], self.cluster.buckets[0])
         for index, d_level in enumerate(possible_d_levels[self.bucket_type]):
-            self.log.info("Updating bucket_durability=%s" % d_level)
+            b_level = getattr(Bucket.DurabilityMinLevel, d_level)
+            self.log.info("Updating bucket_durability=%s" % b_level)
             self.bucket_util.update_bucket_property(
                 self.cluster.master,
                 self.cluster.buckets[0],
-                bucket_durability=d_level)
+                bucket_durability=b_level)
             self.bucket_util.print_bucket_stats(self.cluster)
 
             buckets = self.bucket_util.get_all_buckets(self.cluster)
-            if buckets[0].durability_level != d_level:
+            if buckets[0].durabilityMinLevel != b_level:
                 self.log_failure("New bucket_durability not taken")
 
-            self.summary.add_step("Update bucket_durability=%s" % d_level)
-
+            self.summary.add_step("Update bucket_durability=%s" % b_level)
             self.sleep(10, "MB-39678: Bucket_d_level change to take effect")
 
             if index == 0:
