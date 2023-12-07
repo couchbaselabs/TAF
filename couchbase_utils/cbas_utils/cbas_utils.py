@@ -5161,6 +5161,7 @@ class CBASRebalanceUtil(object):
     def wait_for_rebalance_task_to_complete(self, task, cluster,
                                             check_cbas_running=False):
         self.task.jython_task_manager.get_task_result(task)
+        cluster.servers = cluster.nodes_in_cluster
         if hasattr(cluster, "cbas_cc_node"):
             self.reset_cbas_cc_node(cluster)
         if task.result and hasattr(cluster, "cbas_nodes"):
@@ -5224,8 +5225,6 @@ class CBASRebalanceUtil(object):
                             server not in servs_out]
         cluster.nodes_in_cluster = nodes_in_cluster
 
-        for old_server in servs_out:
-            cluster.servers.remove(old_server)
         # cluster.servers = nodes_in_cluster
 
         return rebalance_task, available_servers
