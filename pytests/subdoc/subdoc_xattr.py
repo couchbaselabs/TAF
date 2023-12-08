@@ -260,9 +260,11 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                      subdoc_key,
                                                      xattr=self.xattr)
             self.assertFalse(failed_items, "Xattr read failed")
+            val = success[self.doc_id]["value"][0]
+            if not isinstance(val, unicode):
+                val = json.loads(val.toString())
             self.assertEqual(
-                expected_val,
-                json.loads(success[self.doc_id]["value"][0].toString()),
+                expected_val, val,
                 "Sub_doc value mismatch: %s != %s"
                 % (success[self.doc_id]["value"][0], expected_val))
         else:
