@@ -357,7 +357,7 @@ class ServerTasks(object):
         return _task
 
     def async_load_gen_docs_atomicity(self, cluster, buckets, generator,
-                                      op_type, exp=0, flag=0,
+                                      op_type, exp=0,
                                       persist_to=0, replicate_to=0,
                                       batch_size=1,
                                       timeout_secs=5,
@@ -397,7 +397,7 @@ class ServerTasks(object):
         _task = jython_tasks.Atomicity(
             cluster, self.jython_task_manager, bucket_list,
             client_list, [generator], op_type, exp,
-            flag=flag, persist_to=persist_to,
+            persist_to=persist_to,
             replicate_to=replicate_to,
             batch_size=batch_size,
             timeout_secs=timeout_secs,

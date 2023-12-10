@@ -6573,7 +6573,7 @@ class Atomicity(Task):
     write_offset = list()
 
     def __init__(self, cluster, task_manager, bucket, clients,
-                 generator, op_type, exp, flag=0,
+                 generator, op_type, exp,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  batch_size=1,
                  timeout_secs=5, compression=None,
@@ -6590,7 +6590,6 @@ class Atomicity(Task):
         self.record_fail = record_fail
         self.num_docs = num_threads
         self.exp = exp
-        self.flag = flag
         self.sync = sync
         self.persist_to = persist_to
         self.replicate_to = replicate_to
@@ -6661,7 +6660,6 @@ class Atomicity(Task):
                                generators[i], self.op_type,
                                self.exp, self.num_docs, self.update_count,
                                self.sync, self.record_fail,
-                               flag=self.flag,
                                persist_to=self.persist_to,
                                replicate_to=self.replicate_to,
                                time_unit=self.time_unit,
@@ -6686,7 +6684,7 @@ class Atomicity(Task):
         def __init__(self, cluster, bucket, clients,
                      generator, op_type, exp,
                      num_docs, update_count, sync, record_fail,
-                     flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
+                     persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, timeout_secs=5,
                      compression=None, retries=5, instance_num=0,
                      transaction_app=None, commit=True,
@@ -6709,7 +6707,6 @@ class Atomicity(Task):
                                   generator._doc_gen.end,
                                   time.time())
             self.exp = exp
-            self.flag = flag
             self.persist_to = persist_to
             self.replicate_to = replicate_to
             self.compression = compression
