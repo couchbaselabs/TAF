@@ -6573,7 +6573,7 @@ class Atomicity(Task):
     write_offset = list()
 
     def __init__(self, cluster, task_manager, bucket, clients,
-                 generator, op_type, exp,
+                 generator, op_type, exp, transaction_options=None,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  batch_size=1,
                  timeout_secs=5, compression=None,
@@ -6607,6 +6607,7 @@ class Atomicity(Task):
         self.retries = retries
         self.update_count = update_count
         self.transaction_app = Transaction()
+        self.transaction_options = transaction_options
         sleep(10, "Wait before txn load")
 
     def call(self):
@@ -6660,6 +6661,7 @@ class Atomicity(Task):
                                generators[i], self.op_type,
                                self.exp, self.num_docs, self.update_count,
                                self.sync, self.record_fail,
+                               transaction_options=self.transaction_options,
                                persist_to=self.persist_to,
                                replicate_to=self.replicate_to,
                                time_unit=self.time_unit,
@@ -6684,6 +6686,7 @@ class Atomicity(Task):
         def __init__(self, cluster, bucket, clients,
                      generator, op_type, exp,
                      num_docs, update_count, sync, record_fail,
+                     transaction_options,
                      persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, timeout_secs=5,
                      compression=None, retries=5, instance_num=0,
@@ -6712,6 +6715,7 @@ class Atomicity(Task):
             self.compression = compression
             self.timeout_secs = timeout_secs
             self.time_unit = time_unit
+            self.transaction_options = transaction_options
             self.instance = instance_num
             self.transaction_app = transaction_app
             self.commit = commit
@@ -6783,7 +6787,8 @@ class Atomicity(Task):
                     exception = self.transaction_app.RunTransaction(
                         self.clients[0][0].cluster,
                         self.bucket, [], self.update_keys,
-                        [], False, True, self.update_count)
+                        [], False, True, self.update_count,
+                        self.transaction_options)
                 elif op_type == "delete" or op_type == "rebalance_delete":
                     for doc in self.list_docs:
                         self.transaction_load(doc, self.commit,
@@ -6817,7 +6822,8 @@ class Atomicity(Task):
                     err = self.transaction_app.RunTransaction(
                         self.clients[0][0].cluster,
                         self.bucket, docs, [], [],
-                        True, True, self.update_count)
+                        True, True, self.update_count,
+                        self.transaction_options)
                     if "AttemptExpired" in str(err):
                         self.test_log.info("Transaction Expired as Expected")
                         for line in err:
@@ -6873,17 +6879,20 @@ class Atomicity(Task):
                 err = self.transaction_app.RunTransaction(
                     self.clients[0][0].cluster,
                     self.bucket, doc, update_keys, [],
-                    commit, self.sync, self.update_count)
+                    commit, self.sync, self.update_count,
+                    self.transaction_options)
             elif op_type == "update":
                 err = self.transaction_app.RunTransaction(
                     self.clients[0][0].cluster,
                     self.bucket, [], doc, [],
-                    commit, self.sync, self.update_count)
+                    commit, self.sync, self.update_count,
+                    self.transaction_options)
             elif op_type == "delete":
                 err = self.transaction_app.RunTransaction(
                     self.clients[0][0].cluster,
                     self.bucket, [], [], doc,
-                    commit, self.sync, self.update_count)
+                    commit, self.sync, self.update_count,
+                    self.transaction_options)
             if err:
                 if self.record_fail:
                     self.all_keys = list()

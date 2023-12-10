@@ -383,6 +383,7 @@ class ServerTasks(object):
         trans_conf = TransactionConfig(
             durability=durability, timeout=transaction_timeout,
             transaction_keyspace=transaction_keyspace)
+        transaction_options = SDKClient.get_transaction_options(trans_conf)
         for _ in range(gen_start, gen_end, gen_range):
             temp_bucket_list = list()
             temp_client_list = list()
@@ -397,6 +398,7 @@ class ServerTasks(object):
         _task = jython_tasks.Atomicity(
             cluster, self.jython_task_manager, bucket_list,
             client_list, [generator], op_type, exp,
+            transaction_options=transaction_options,
             persist_to=persist_to,
             replicate_to=replicate_to,
             batch_size=batch_size,

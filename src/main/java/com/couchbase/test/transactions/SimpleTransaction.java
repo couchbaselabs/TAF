@@ -44,6 +44,7 @@ import com.couchbase.client.java.transactions.ReactiveTransactions;
 import com.couchbase.client.java.transactions.TransactionResult;
 import com.couchbase.client.java.transactions.Transactions;
 import com.couchbase.client.java.transactions.TransactionGetResult;
+import com.couchbase.client.java.transactions.config.TransactionOptions;
 import com.couchbase.client.java.transactions.error.TransactionFailedException;
 
 import reactor.core.publisher.Flux;
@@ -454,7 +455,7 @@ public class SimpleTransaction {
     }
 
     public List<String> RunTransaction(Cluster cluster, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
-                                         List<String> Deletekeys, Boolean commit, Boolean sync, int updatecount) {
+                                       List<String> Deletekeys, Boolean commit, Boolean sync, int updatecount, TransactionOptions trx_options) {
         List<String> res = new ArrayList<String>();
           // synchronous API - transactions
         if (sync) {
@@ -510,7 +511,7 @@ public class SimpleTransaction {
                     if (!commit) {
                         throw new CoreTransactionFailedException(new Exception("Rollback exception"), null, "Test", "Rollback");
                     }
-                });
+                }, trx_options);
 
                 if (commit && !result.unstagingComplete()) {
                     long cleanup_timeout = this.get_cleanup_timeout(cluster.environment().transactionsConfig(), start_time);
