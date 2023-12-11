@@ -6,8 +6,7 @@ import threading
 
 from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator
-from sdk_client3 import SDKClient
-from constants.sdk_constants.java_client import SDKConstants
+from sdk_client3 import SDKClient, TransactionConfig
 
 from com.couchbase.client.java.json import JsonObject
 from com.couchbase.test.transactions import SimpleTransaction as Transaction
@@ -25,28 +24,15 @@ class basic_ops(ClusterSetup):
 
         self.def_bucket = self.bucket_util.get_all_buckets(self.cluster)
         self.client = SDKClient([self.cluster.master], self.def_bucket[0])
-        self.__durability_level()
-        self.create_Transaction()
+        self.transaction_options = SDKClient.get_transaction_options(
+            TransactionConfig(durability=self.durability_level,
+                              timeout=self.transaction_timeout))
         self._stop = threading.Event()
         self.log.info("==========Finished Basic_ops base setup========")
 
     def tearDown(self):
         self.client.close()
         super(basic_ops, self).tearDown()
-
-    def __durability_level(self):
-        if self.durability_level == SDKConstants.DurabilityLevel.MAJORITY:
-            self.durability = 1
-        elif self.durability_level \
-                == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
-            self.durability = 2
-        elif self.durability_level \
-                == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
-            self.durability = 3
-        elif self.durability_level == "ONLY_NONE":
-            self.durability = 4
-        else:
-            self.durability = 0
 
     def get_doc_generator(self, start, end):
         age = range(5)
@@ -68,25 +54,14 @@ class basic_ops(ClusterSetup):
 
     def set_exception(self, exception):
         self.exception = exception
-        raise BaseException("Got an exception %s" % self.exception)
+        raise Exception("Got an exception %s" % self.exception)
 
     def __chunks(self, l, n):
         """Yield successive n-sized chunks from l."""
         for i in range(0, len(l), n):
             yield l[i:i + n]
 
-    def create_Transaction(self, client=None):
-        if not client:
-            client = self.client
-        transaction_config = Transaction().createTransactionConfig(
-            self.transaction_timeout, self.durability)
-        try:
-            self.transaction = Transaction().createTansaction(
-                client.cluster, transaction_config)
-        except Exception as e:
-            self.set_exception(e)
-
-    def __thread_to_transaction(self, transaction, op_type, doc, txn_commit,
+    def __thread_to_transaction(self, tnx_options, op_type, doc, txn_commit,
                                 update_count=1, sync=True,
                                 set_exception=True, client=None):
         exception = None
@@ -94,20 +69,18 @@ class basic_ops(ClusterSetup):
             client = self.client
         if op_type == "create":
             exception = Transaction().RunTransaction(
-                client.cluster,
-                transaction, [client.collection], doc, [], [],
-                txn_commit, sync, update_count)
+                client.cluster, [client.collection], doc, [], [],
+                txn_commit, sync, update_count, tnx_options)
         elif op_type == "update":
             self.log.info("updating all the keys through threads")
             exception = Transaction().RunTransaction(
-                client.cluster,
-                transaction, [client.collection], [], doc, [],
-                txn_commit, sync, update_count)
+                client.cluster, [client.collection], [], doc, [],
+                txn_commit, sync, update_count, tnx_options)
         elif op_type == "delete":
             exception = Transaction().RunTransaction(
-                client.cluster,
-                transaction, [client.collection], [], [], doc,
-                txn_commit, sync, update_count)
+                client.cluster, [client.collection],
+                [], [], doc,
+                txn_commit, sync, update_count, tnx_options)
         if set_exception and exception:
             self.set_exception("Failed")
 
@@ -148,20 +121,20 @@ class basic_ops(ClusterSetup):
 
         # create the docs
         exception = Transaction().RunTransaction(
-            self.client.cluster,
-            self.transaction, [self.client.collection], self.docs, [], [],
-            self.transaction_commit, True, self.update_count)
+            self.client.cluster, [self.client.collection], self.docs, [], [],
+            self.transaction_commit, True, self.update_count,
+            self.transaction_options)
         if exception:
             self.set_exception("Failed")
 
         if self.update_retry:
             threads.append(threading.Thread(
                 target=self.__thread_to_transaction,
-                args=(self.transaction, "delete", self.keys,
+                args=(self.transaction_options, "delete", self.keys,
                       self.transaction_commit, self.update_count)))
             threads.append(threading.Thread(
                 target=self.__thread_to_transaction,
-                args=(self.transaction, "update", self.keys, 10,
+                args=(self.transaction_options, "update", self.keys, 10,
                       self.update_count)))
 
         else:
@@ -173,13 +146,13 @@ class basic_ops(ClusterSetup):
             for keys in update_docs:
                 threads.append(threading.Thread(
                     target=self.__thread_to_transaction,
-                    args=(self.transaction, "update", keys,
+                    args=(self.transaction_options, "update", keys,
                           self.transaction_commit, self.update_count)))
 
             for keys in delete_docs:
                 threads.append(threading.Thread(
                     target=self.__thread_to_transaction,
-                    args=(self.transaction, "delete", keys,
+                    args=(self.transaction_options, "delete", keys,
                           self.transaction_commit, self.update_count)))
 
         for thread in threads:
@@ -232,7 +205,7 @@ class basic_ops(ClusterSetup):
         for update_count in [2, 4, 6]:
             threads.append(threading.Thread(
                 target=self.__thread_to_transaction,
-                args=(self.transaction, "update", self.keys,
+                args=(self.transaction_options, "update", self.keys,
                       self.transaction_commit, update_count)))
         # Add verification task
         if self.transaction_commit:
@@ -266,9 +239,8 @@ class basic_ops(ClusterSetup):
         keys = ["test_docs-0"]*2
 
         exception = Transaction().RunTransaction(
-            self.client.cluster,
-            self.transaction, [self.client.collection], [], keys, [],
-            self.transaction_commit, False, 0)
+            self.client.cluster, [self.client.collection], [], keys, [],
+            self.transaction_commit, False, 0, self.transaction_options)
         if exception:
             self.set_exception(Exception(exception))
 
@@ -279,7 +251,7 @@ class basic_ops(ClusterSetup):
 
         # run transaction
         thread = threading.Thread(target=self.__thread_to_transaction,
-                                  args=(self.transaction, "create", self.docs,
+                                  args=("create", self.docs,
                                         self.transaction_commit,
                                         self.update_count, True, False))
         thread.start()
@@ -287,14 +259,12 @@ class basic_ops(ClusterSetup):
 
         if self.crash:
             self.client.cluster.disconnect()
-            self.transaction.close()
             self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
-            self.create_Transaction(self.client1)
             self.sleep(self.transaction_timeout+60,
                        "Wait for transaction cleanup to complete")
             exception = Transaction().RunTransaction(
                 self.client.cluster,
-                self.transaction, [self.client1.collection], self.docs, [], [],
+                [self.client1.collection], self.docs, [], [],
                 self.transaction_commit, self.sync, self.update_count)
             if exception:
                 self.sleep(60, "Wait for transaction cleanup to happen")
@@ -333,7 +303,7 @@ class basic_ops(ClusterSetup):
         for doc in docs:
             threads.append(threading.Thread(
                 target=self.__thread_to_transaction,
-                args=(self.transaction, "create", doc,
+                args=(self.transaction_options, "create", doc,
                       self.transaction_commit, self.update_count,
                       True, False)))
 
@@ -341,19 +311,16 @@ class basic_ops(ClusterSetup):
             thread.start()
 
         self.client.cluster.disconnect()
-        self.transaction.close()
-
         self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
-        self.create_Transaction(self.client1)
         self.sleep(self.transaction_timeout+60,
                    "Wait for transaction cleanup to happen")
 
         self.log.info("going to start the load")
         for doc in docs:
             exception = Transaction().RunTransaction(
-                self.client1.cluster,
-                self.transaction, [self.client1.collection], doc, [], [],
-                self.transaction_commit, self.sync, self.update_count)
+                self.client1.cluster, [self.client1.collection], doc, [], [],
+                self.transaction_commit, self.sync, self.update_count,
+                self.transaction_options)
             if exception:
                 self.sleep(60, "Wait for transaction cleanup to happen")
 
@@ -395,8 +362,8 @@ class basic_ops(ClusterSetup):
 
         self.doc_gen(self.num_items)
         thread = threading.Thread(target=self.__thread_to_transaction,
-                                  args=(self.transaction, "create", self.docs,
-                                        self.transaction_commit,
+                                  args=(self.transaction_options, "create",
+                                        self.docs, self.transaction_commit,
                                         self.update_count))
         thread.start()
         thread.join()
@@ -405,7 +372,7 @@ class basic_ops(ClusterSetup):
                      value={"mutated": 1, "value": "value1"})
         thread = threading.Thread(
             target=self.__thread_to_transaction,
-            args=(self.transaction, "update", self.docs,
+            args=(self.transaction_options, "update", self.docs,
                   self.transaction_commit, self.update_count))
         thread.start()
         self.sleep(1)
@@ -425,8 +392,8 @@ class basic_ops(ClusterSetup):
 
         self.doc_gen(self.num_items)
         thread = threading.Thread(target=self.__thread_to_transaction,
-                                  args=(self.transaction, "create", self.docs,
-                                        self.transaction_commit,
+                                  args=(self.transaction_options, "create",
+                                        self.docs, self.transaction_commit,
                                         self.update_count))
         thread.start()
         thread.join()
@@ -435,7 +402,7 @@ class basic_ops(ClusterSetup):
                      value={"mutated": 1, "value": "value1"})
         thread = threading.Thread(
             target=self.__thread_to_transaction,
-            args=(self.transaction, "update", self.docs,
+            args=(self.transaction_options, "update", self.docs,
                   self.transaction_commit, self.update_count))
 
         thread.start()

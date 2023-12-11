@@ -76,6 +76,7 @@ from global_vars import logger
 from sdk_utils.java_sdk import SDKOptions
 from sdk_exceptions import SDKException
 
+
 class SDKClientPool(object):
     """
     Client pool manager for list of SDKClients per bucket which can be
@@ -191,6 +192,7 @@ class TransactionConfig(object):
         self.cleanup_window = cleanup_window
         self.transaction_keyspace = transaction_keyspace
 
+
 class SDKClient(object):
     System.setProperty("com.couchbase.forceIPv4", "false")
     env = ClusterEnvironment \
@@ -266,7 +268,8 @@ class SDKClient(object):
         self.log = logger.get("test")
         self.transaction_conf = transaction_config
         if self.bucket is not None:
-            if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
+            if bucket.serverless is not None \
+                    and bucket.serverless.nebula_endpoint:
                 self.hosts = [bucket.serverless.nebula_endpoint.srv]
                 self.log.info("For SDK, Nebula endpoint used for bucket is: %s"
                               % bucket.serverless.nebula_endpoint.ip)
@@ -467,7 +470,6 @@ class SDKClient(object):
                 return value
         except Exception:
             pass
-
         return json_obj
 
     @staticmethod
