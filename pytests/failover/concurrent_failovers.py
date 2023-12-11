@@ -707,15 +707,15 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         if len(node_split_1) == len(node_split_2):
             num_nodes_to_fo = 0
         else:
-            bigger_chunk_in_split = node_split_1 if len(node_split_1) > len(
+            smaller_chunk_in_split = node_split_1 if len(node_split_1) < len(
                 node_split_2) else node_split_2
             fo_nodes = dict()
-            for node in bigger_chunk_in_split:
+            for node in smaller_chunk_in_split:
                 fo_nodes[node] = self.failover_method
             self.nodes_to_fail = fo_nodes
             num_nodes_to_fo = self.num_nodes_to_be_failover
 
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = RestConnection(self.orchestrator)
         self.log.info("N/w split between -> [%s] || [%s]. Expect %s fo_events"
                       % ([n.ip for n in node_split_1],
                          [n.ip for n in node_split_2],
