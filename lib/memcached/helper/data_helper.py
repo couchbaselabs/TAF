@@ -18,9 +18,12 @@ class MemcachedClientHelper(object):
         log.debug("creating memcached client: {0}:{1} {2}"
                   .format(server.ip, server.memcached_port, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
+        print("Break point 1")
         vbuckets = BucketHelper(server).get_vbuckets(bucket)
+        print(vbuckets)
         client = MemcachedClient(server.ip, server.memcached_port,
                                  timeout=timeout)
+        print("Break point 2")
         if vbuckets is not None:
             client.vbucket_count = len(vbuckets)
         else:
@@ -28,9 +31,13 @@ class MemcachedClientHelper(object):
         # todo raise exception for not bucket_info
         admin_user = admin_user or server.rest_username
         admin_pass = admin_pass or server.rest_password
+        print("Break point 3")
         bucket_name = bucket.name.encode('ascii')
+        print("Break point 4")
         client.sasl_auth_plain(admin_user, admin_pass)
+        print("Break point 5")
         client.bucket_select(bucket_name)
+        print("Break point 6")
         return client
 
     @staticmethod
@@ -104,8 +111,10 @@ class VBucketAwareMemcached(object):
             server.port = rest.port
             server.rest_username = rest.username
             server.rest_password = rest.password
+            print("Username and password = ", rest.username, rest.password)
             try:
                 for node in nodes:
+                    print("Establishing connection to", node.ip)
                     if node.ip == server_ip and node.memcached == server_port:
                         if server_str not in memcacheds:
                             server.port = node.port

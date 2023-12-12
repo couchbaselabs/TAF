@@ -114,7 +114,6 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
         self.sleep(2)
         self._multi_node_failover()
         tasks, cont_load_task = self.subsequent_load_gen()
-        tasks = self.subsequent_load_gen()
         try:
             rebalance_task.result()
         except RebalanceFailedException:

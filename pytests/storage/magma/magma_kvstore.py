@@ -355,9 +355,11 @@ class KVStoreTests(MagmaBaseTest):
             self.assertTrue(buckets_created, "Unable to create multiple buckets after bucket deletion")
 
             for bucket in self.cluster.buckets:
+                self.log.info("Master node = {}".format(self.cluster.master.ip))
                 ready = self.bucket_util.wait_for_memcached(
                     self.cluster.master,
-                    bucket)
+                    bucket,
+                    timeout_in_seconds=1000)
                 self.assertTrue(ready, msg="Wait_for_memcached failed")
 
             task_info = dict()

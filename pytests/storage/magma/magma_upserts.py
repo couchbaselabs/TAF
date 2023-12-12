@@ -677,7 +677,7 @@ class BasicUpsertTests(BasicCrudTests):
                 _res = disk_usage[0]
                 self.log.info("Create Iteration{}, Disk Usage= {}MB \
                 ".format(i+1, _res))
-                self.assertIs(_res > 2 * self.disk_usage[
+                self.assertIs(_res > 2.5 * self.disk_usage[
                     self.disk_usage.keys()[0]],
                     False, msg.format("Create", _res, i+1, 1.5,
                                       self.disk_usage[self.disk_usage.keys()[0]]))

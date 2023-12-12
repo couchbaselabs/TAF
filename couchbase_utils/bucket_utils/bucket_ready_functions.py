@@ -3372,6 +3372,9 @@ class BucketUtils(ScopeUtils):
         self.log.debug("Validating history retention settings on node {0}"
                        .format(kv_node.ip))
         for bucket in buckets:
+            if bucket.bucketType == Bucket.Type.EPHEMERAL or \
+                bucket.storageBackend == Bucket.StorageBackend.couchstore:
+                continue
             stat = cb_stat.all_stats(bucket.name)
             if bucket.storageBackend != Bucket.StorageBackend.magma:
                 for s_field in ["ep_history_retention_bytes",
