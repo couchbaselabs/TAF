@@ -22,12 +22,15 @@ from mc_bin_client import MemcachedClient, MemcachedError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from sdk_constants.java_client import SDKConstants
 from sdk_exceptions import SDKException
 from sdk_utils.java_sdk import SDKOptions
 from table_view import TableView
 
 from java.lang import RuntimeException
 from com.couchbase.client.java.codec import RawJsonTranscoder
+
+from testconstants import LINUX_COUCHBASE_BIN_PATH
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -2403,6 +2406,95 @@ class basic_ops(ClusterSetup):
             [self.cluster.master],
             self.cluster.servers[1:1+self.num_replicas], [])
         self.assertTrue(result, "Rebalance failed")
+
+    def test_mutate_prepare_evict(self):
+        """
+        Ref: MB-60046
+        """
+        def perform_sync_write(sdk_client, doc_key):
+            self.log.info("Creating prepare document")
+            self.mutation_result = sdk_client.crud(
+                DocLoading.Bucket.DocOps.UPDATE, doc_key, {},
+                durability=Bucket.DurabilityLevel.MAJORITY,
+                timeout=70)
+
+        def load_docs(num_items):
+            gen = doc_generator("test_docs", 0, num_items, key_size=100,
+                                doc_size=1024)
+
+            l_task = self.task.async_load_gen_docs(
+                self.cluster, bucket, gen, DocLoading.Bucket.DocOps.UPDATE,
+                batch_size=20, process_concurrency=3, print_ops_rate=False,
+                skip_read_on_error=True, suppress_error_table=True,
+                sdk_client_pool=self.sdk_client_pool)
+            self.task_manager.get_task_result(l_task)
+
+        shell = cb_err = None
+        active_vbs = None
+        key = "test_key"
+        bucket = self.cluster.buckets[0]
+        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+            key, self.cluster.vbuckets)
+
+        self.log.info("Disabling auto-failover settings")
+        RestConnection(self.cluster.master)\
+            .update_autofailover_settings(False, 60)
+
+        load_docs(10000)
+        perform_sync_write(client, key)
+        load_docs(1000)
+        for node in self.cluster.nodes_in_cluster:
+            shell = RemoteMachineShellConnection(node)
+            cbstat = Cbstats(shell)
+            active_vbs = cbstat.vbucket_list(bucket.name)
+            replica_vbs = cbstat.vbucket_list(bucket.name,
+                                              Bucket.vBucket.REPLICA)
+            if vb_for_key in replica_vbs:
+                self.log.critical("Stopping memcached on %s" % node.ip)
+                cb_err = CouchbaseError(self.log, shell)
+                cb_err.create(CouchbaseError.STOP_MEMCACHED)
+                break
+            shell.disconnect()
+
+        target_vbs = list(set(range(0, 1024)) - set(active_vbs))
+        doc_gen = doc_generator("test_docs", 0, 100000, key_size=220,
+                                doc_size=1024, target_vbucket=target_vbs)
+
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+            batch_size=20, process_concurrency=3, print_ops_rate=False,
+            skip_read_on_error=True, suppress_error_table=True,
+            start_task=False, sdk_client_pool=self.sdk_client_pool)
+
+        prepare_mutation_thread = Thread(target=perform_sync_write,
+                                         args=[client, key])
+        prepare_mutation_thread.start()
+
+        self.sleep(1, "Wait for prepare mutation to initiate")
+        self.log.info("Starting data load to tigger eviction")
+        self.task_manager.add_new_task(load_task)
+        self.task_manager.get_task_result(load_task)
+        self.sdk_client_pool.release_client(client)
+        self.log.info("Reverting error condition")
+        cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+        shell.disconnect()
+
+        self.sleep(5, "Wait before validating hash_table")
+        hash_dump_cmd = \
+            "%s -u %s -p %s localhost:%d raw \"_hash-dump %d\" | grep %s" \
+            % (LINUX_COUCHBASE_BIN_PATH + "cbstats",
+               self.cluster.master.rest_username,
+               self.cluster.master.rest_password,
+               self.cluster.master.memcached_port, vb_for_key, key)
+
+        for node in self.cluster.nodes_in_cluster:
+            if node.ip != shell.ip:
+                t_shell = RemoteMachineShellConnection(node)
+                output = t_shell.execute_command(hash_dump_cmd)[0][0]
+                t_shell.disconnect()
+                self.assertTrue(output.find("..J W.R.Cp. temp:") > 0,
+                                "Unexpected hash_table output: %s" % output)
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
