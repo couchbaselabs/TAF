@@ -56,6 +56,14 @@ class RestConnection(newRC):
         self.test_log = logger.get("test")
         self.log_errors = True
 
+    def __get_capi_url(self):
+        port = "8092/"
+        if CbServer.use_https:
+            port = "18092/"
+        capi_url = self.baseUrl.split(':')
+        capi_url[2] = port
+        return ':'.join(capi_url)
+
     def sasl_streaming_rq(self, bucket, timeout=120):
         api = self.baseUrl + 'pools/default/bucketsStreaming/{0}'.format(bucket)
         if isinstance(bucket, Bucket):
@@ -205,9 +213,10 @@ class RestConnection(newRC):
 
     def create_design_document(self, bucket, design_doc):
         design_doc_name = design_doc.id
-        api = '%s/%s/%s' % (self.capi_baseUrl, bucket, design_doc_name)
+        capi_url = self.__get_capi_url()
+        api = '%s/%s/%s' % (capi_url, bucket, design_doc_name)
         if isinstance(bucket, Bucket):
-            api = '%s/%s/%s' % (self.capi_baseUrl, bucket.name, design_doc_name)
+            api = '%s/%s/%s' % (capi_url, bucket.name, design_doc_name)
 
         status, content, header = self._http_request(api, 'PUT', str(design_doc),
                                                      headers=self._create_capi_headers())
@@ -252,15 +261,14 @@ class RestConnection(newRC):
             design_doc_name = design_doc_name.replace('/', '%2f')
         if view_name.find('/') != -1:
             view_name = view_name.replace('/', '%2f')
-        api = self.capi_baseUrl + '%s/_design/%s/_%s/%s?%s' % (bucket,
-                                                               design_doc_name, view_type,
-                                                               view_name,
-                                                               urllib.urlencode(query))
+        capi_url = self.__get_capi_url()
+        api = capi_url + '%s/_design/%s/_%s/%s?%s' % (
+            bucket, design_doc_name, view_type,
+            view_name, urllib.urlencode(query))
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '%s/_design/%s/_%s/%s?%s' % (bucket.name,
-                                                                   design_doc_name, view_type,
-                                                                   view_name,
-                                                                   urllib.urlencode(query))
+            api = capi_url + '%s/_design/%s/_%s/%s?%s' % (
+                bucket.name, design_doc_name, view_type,
+                view_name, urllib.urlencode(query))
         self.test_log.info("Index query url: {0}".format(api))
         status, content, header = self._http_request(api, headers=self._create_capi_headers(),
                                                      timeout=timeout)
@@ -295,7 +303,8 @@ class RestConnection(newRC):
         return json, meta
 
     def run_view(self, bucket, view, name):
-        api = self.capi_baseUrl + '%s/_design/%s/_view/%s' % (bucket, view, name)
+        api = self.__get_capi_url() + '%s/_design/%s/_view/%s'\
+              % (bucket, view, name)
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         if not status:
@@ -338,11 +347,12 @@ class RestConnection(newRC):
                        view_name=None):
         if view_name is None:
             view_name = ddoc_name
-        query = '/{0}/_design/{1}/_{2}/{3}'
-        api = self.capi_baseUrl + query.format(bucket, ddoc_name, type_, view_name)
+        query = '{0}/_design/{1}/_{2}/{3}'
+        api = self.__get_capi_url()+ query.format(bucket, ddoc_name,
+                                                  type_, view_name)
 
         num_params = 0
-        if limit != None:
+        if limit is not None:
             num_params = 1
             api += "?limit={0}".format(limit)
         for param in params:
@@ -367,7 +377,7 @@ class RestConnection(newRC):
 
     def get_couch_doc(self, doc_id, bucket="default", timeout=120):
         """ use couchBase uri to retrieve document from a bucket """
-        api = self.capi_baseUrl + '%s/%s' % (bucket, doc_id)
+        api = self.__get_capi_url() + '%s/%s' % (bucket, doc_id)
         status, content, header = self._http_request(api, headers=self._create_capi_headers(),
                                                      timeout=timeout)
         if not status:
@@ -375,16 +385,16 @@ class RestConnection(newRC):
         return json.loads(content)
 
     def _create_design_doc(self, bucket, name, function):
-        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
+        api = self.__get_capi_url() + '%s/_design/%s' % (bucket, name)
         status, content, header = self._http_request(
             api, 'PUT', function, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def _get_design_doc(self, bucket, name):
-        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
+        api = self.__get_capi_url() + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '%s/_design/%s' % (bucket.name, name)
+            api = self.baseUrl + '%s/_design/%s' % (bucket.name, name)
 
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
@@ -404,18 +414,20 @@ class RestConnection(newRC):
         status, design_doc, meta = self._get_design_doc(bucket, name)
         if not status:
             raise Exception("unable to find for deletion design document")
-        api = self.capi_baseUrl + '%s/_design/%s' % (bucket, name)
+        capi_url = self.__get_capi_url()
+        api = capi_url + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + '%s/_design/%s' % (bucket.name, name)
+            api = capi_url + '%s/_design/%s' % (bucket.name, name)
         status, content, header = self._http_request(api, 'DELETE',
                                                      headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         return status, json_parsed
 
     def spatial_compaction(self, bucket, design_name):
-        api = self.capi_baseUrl + '%s/_design/%s/_spatial/_compact' % (bucket, design_name)
+        capi_url = self.__get_capi_url()
+        api = capi_url + '%s/_design/%s/_spatial/_compact' % (bucket, design_name)
         if isinstance(bucket, Bucket):
-            api = self.capi_baseUrl + \
+            api = capi_url + \
                   '%s/_design/%s/_spatial/_compact' % (bucket.name, design_name)
 
         status, content, header = self._http_request(api, 'POST',
@@ -426,9 +438,9 @@ class RestConnection(newRC):
     # Make a _design/_info request
     def set_view_info(self, bucket, design_name):
         """Get view diagnostic info (node specific)"""
-        api = self.capi_baseUrl
+        api = self.__get_capi_url()
         if isinstance(bucket, Bucket):
-            api += '/_set_view/{0}/_design/{1}/_info'.format(bucket.name, design_name)
+            api += '_set_view/{0}/_design/{1}/_info'.format(bucket.name, design_name)
         else:
             api += '_set_view/{0}/_design/{1}/_info'.format(bucket, design_name)
 
@@ -441,8 +453,8 @@ class RestConnection(newRC):
 
     # Make a _spatial/_info request
     def spatial_info(self, bucket, design_name):
-        api = self.capi_baseUrl + \
-              '/%s/_design/%s/_spatial/_info' % (bucket, design_name)
+        api = self.__get_capi_url() + \
+              '%s/_design/%s/_spatial/_info' % (bucket, design_name)
         status, content, header = self._http_request(
             api, 'GET', headers=self._create_capi_headers())
         json_parsed = json.loads(content)
