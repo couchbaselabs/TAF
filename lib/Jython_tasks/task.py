@@ -628,13 +628,15 @@ class RebalanceTask(Task):
 
         self.start_task()
         try:
-            if len(self.to_add) and len(self.to_add) == len(self.to_remove):
+            if len(self.to_add) and len(self.to_add) == len(self.to_remove) \
+                    and self.cluster.nodes_in_cluster:
                 node_version_check = self.rest.check_node_versions()
-                non_swap_servers = set(self.servers) - set(
+                non_swap_servers = set(self.cluster.nodes_in_cluster) - set(
                     self.to_remove) - set(self.to_add)
                 if self.check_vbucket_shuffling:
                     self.old_vbuckets = BucketHelper(
-                        self.servers[0])._get_vbuckets(non_swap_servers, None)
+                        self.cluster.nodes_in_cluster) \
+                        ._get_vbuckets(non_swap_servers, None)
                 if self.old_vbuckets and self.check_vbucket_shuffling:
                     self.monitor_vbuckets_shuffling = True
                 if self.monitor_vbuckets_shuffling \
@@ -671,9 +673,14 @@ class RebalanceTask(Task):
 
             # Pick temp-master if the current one is going out
             if self.cluster.master in self.to_remove:
-                self.cluster.master = \
-                    [node for node in self.cluster.nodes_in_cluster
-                     if node not in self.to_remove][0]
+                retained_nodes = [
+                    node for node in self.cluster.nodes_in_cluster
+                    if node not in self.to_remove]
+                # In case of swap of all available nodes,
+                # retained nodes will be None. Consider self.to_add nodes here
+                if not retained_nodes:
+                    retained_nodes = self.to_add
+                self.cluster.master = retained_nodes[0]
                 self.log.critical("Picked new temp-master: {}"
                                   .format(self.cluster.master))
                 self.rest = RestConnection(self.cluster.master)
@@ -731,7 +738,8 @@ class RebalanceTask(Task):
         return self.result
 
     def add_nodes(self):
-        master = self.servers[0]
+        username = self.cluster.master.rest_username
+        password = self.cluster.master.rest_password
         node_index = 0
         server_groups = self.server_groups_to_add.keys() \
             if self.server_groups_to_add else []
@@ -754,12 +762,12 @@ class RebalanceTask(Task):
                                 ",".join(services_for_node), "", "",
                                 "<--- IN ---", ""])
             if self.use_hostnames:
-                self.rest.add_node(master.rest_username, master.rest_password,
+                self.rest.add_node(username, password,
                                    node.hostname, node.port,
                                    zone_name=zone_name,
                                    services=services_for_node)
             else:
-                self.rest.add_node(master.rest_username, master.rest_password,
+                self.rest.add_node(username, password,
                                    node.ip, node.port,
                                    zone_name=zone_name,
                                    services=services_for_node)
