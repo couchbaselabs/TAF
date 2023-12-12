@@ -51,6 +51,8 @@ class MagmaExpiryTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 100)
         self.meta_purge_interval = self.input.param("meta_purge_interval", 180)
         self.items = self.num_items
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
+
     def load_bucket(self):
         tasks = dict()
         for collection in self.collections:

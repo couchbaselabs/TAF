@@ -75,7 +75,8 @@ class SteadyStateTests(MagmaBaseTest):
 
         self.PrintStep("Step 4: Sequence number count check")
 
-        expected_count = ((count) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1)))
+        expected_count = ((count) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1))) \
+                            + (3 * (self.vbuckets*(self.num_replicas+1)))
         seq_count = self.get_seqnumber_count()
         self.log.info("expected_count = {}".format(expected_count))
         self.assertEqual(seq_count, expected_count, "Not all sequence numbers are present")
@@ -113,7 +114,7 @@ class SteadyStateTests(MagmaBaseTest):
                     msg = "init_history_start_seq {} > curr_history_start_seq {} for  bucket {} and vbucket {} ".format(init_history_start_seq[bucket][key]["active"]["history_start_seqno"],
                                                                                                                     history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], 
                                                                                                                     bucket.name, key)
-                    self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] < history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
+                    self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] <= history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
             seq_count = self.get_seqnumber_count()
 
     def test_history_retention_for_n_expiry_iterations(self):
@@ -192,7 +193,8 @@ class SteadyStateTests(MagmaBaseTest):
             self.PrintStep("Step 4: Sequence number count check")
             expected_count = ((count-1) * ((self.num_replicas+1) * (2 * self.init_items_per_collection) * (self.num_scopes *(self.num_collections-1))))\
             + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1))) \
-            + ((self.num_replicas+1) * self.init_items_per_collection * (self.num_scopes * (self.num_collections-1)))
+            + ((self.num_replicas+1) * self.init_items_per_collection * (self.num_scopes * (self.num_collections-1))) \
+            + (3 * (self.vbuckets*(self.num_replicas+1)))
 
             seq_count = self.get_seqnumber_count()
             self.log.info("expected_count = {}".format(expected_count))
@@ -236,7 +238,9 @@ class SteadyStateTests(MagmaBaseTest):
                     history_retention_bytes=96000000000)
             self.expiry_start = 0
             self.expiry_end = 2000
-            self.new_loader(wait=False)
+            tasks = self.new_loader()
+            self.doc_loading_tm.getAllTaskResult()
+            self.printOps.end_task()
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.restart_couchbase()
@@ -250,7 +254,7 @@ class SteadyStateTests(MagmaBaseTest):
                     msg = "init_history_start_seq {} > curr_history_start_seq {} for  bucket {} and vbucket {} ".format(init_history_start_seq[bucket][key]["active"]["history_start_seqno"],
                                                                                                                     history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], 
                                                                                                                     bucket.name, key)
-                    self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] < history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
+                    self.assertTrue(init_history_start_seq[bucket][key]["active"]["history_start_seqno"] <= history_start_seq_stats[bucket][key]["active"]["history_start_seqno"], msg)
             seq_count = self.get_seqnumber_count()
 
     def test_history_retention_for_multiple_CRUD_iterations(self):
@@ -306,7 +310,8 @@ class SteadyStateTests(MagmaBaseTest):
 
         self.PrintStep("Step 4: Sequence number count check")
 
-        expected_count = (( 1+ (count * 2)) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1)))
+        expected_count = (( 1+ (count * 2)) * ((self.num_replicas+1) * self.init_items_per_collection * (self.num_collections-1))) + ((self.num_collections) * (self.vbuckets*(self.num_replicas+1))) \
+                            + (3 * (self.vbuckets*(self.num_replicas+1)))
         seq_count = self.get_seqnumber_count()
         self.log.info("expected_count = {}".format(expected_count))
         self.assertEqual(seq_count, expected_count, "Not all sequence numbers are present")

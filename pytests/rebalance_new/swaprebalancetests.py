@@ -65,6 +65,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             bucket_helper.change_bucket_props(
                 self.cluster.buckets[0],
                 replicaNumber=self.replica_to_update)
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
         self.log.info("=== SwapRebalanceBase setup done for test #%s %s ==="
                       % (self.case_number, self._testMethodName))
 
@@ -139,7 +140,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
             if self.num_swap is len(current_nodes):
                 opt_nodes_ids.append(content)
             else:
-                opt_nodes_ids[0] = content
+                if content not in opt_nodes_ids:
+                    opt_nodes_ids[0] = content
 
         for node in opt_nodes_ids:
             self.log.info("removing node {0} and rebalance afterwards"
@@ -253,6 +255,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
 
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
+                                                    inactive_added=True,
+                                                    inactive_failed=True)
         self.validate_docs()
 
     def _common_test_body_failed_swap_rebalance(self):
@@ -264,6 +269,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         to_eject_nodes = self.cluster_util.pick_nodes(self.cluster.master,
                                                       howmany=self.num_swap)
         opt_nodes_ids = [node.id for node in to_eject_nodes]
+        self.log.info("Nodes to remove = {}".format(opt_nodes_ids))
         if self.swap_orchestrator:
             status, content = self.cluster_util.find_orchestrator(self.cluster)
             self.assertTrue(status, msg="Unable to find orchestrator: {0}:{1}"
@@ -272,7 +278,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
             if self.num_swap is len(current_nodes):
                 opt_nodes_ids.append(content)
             else:
-                opt_nodes_ids[0] = content
+                if content not in opt_nodes_ids:
+                    opt_nodes_ids[0] = content
+        self.log.info("Nodes to remove = {}".format(opt_nodes_ids))
 
         for node in opt_nodes_ids:
             self.log.info("removing node {0} and rebalance afterwards"
@@ -377,6 +385,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: %s" % task.thread_name)
 
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
+                                                    inactive_added=True,
+                                                    inactive_failed=True)
         self.validate_docs()
 
     def _add_back_failed_node(self):
@@ -412,8 +423,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
             if self.num_swap is len(current_nodes):
                 opt_nodes_ids.append(content)
             else:
-                opt_nodes_ids[0] = content
-                to_eject_nodes[0] = self.cluster.master
+                if content not in opt_nodes_ids:
+                    opt_nodes_ids[0] = content
+                    to_eject_nodes[0] = self.cluster.master
 
         self.log.info("To be removed nodes: {}".format(opt_nodes_ids))
         # Failover selected nodes
@@ -471,6 +483,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: %s" % task.thread_name)
 
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
+                                                    inactive_added=True,
+                                                    inactive_failed=True)
         self.validate_docs()
 
     def _failover_swap_rebalance(self):
@@ -485,7 +500,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
             status, content = self.cluster_util.find_orchestrator(self.cluster)
             self.assertTrue(status, msg="Unable to find orchestrator: %s:%s"
                                         % (status, content))
-            opt_nodes_ids[0] = content
+            if content not in opt_nodes_ids:
+                opt_nodes_ids[0] = content
 
         self.log.info("Failover phase")
         # Failover selected nodes
@@ -534,6 +550,9 @@ class SwapRebalanceBase(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
 
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
+                                                    inactive_added=True,
+                                                    inactive_failed=True)
         self.validate_docs()
 
 

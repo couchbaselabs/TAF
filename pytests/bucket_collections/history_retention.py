@@ -119,8 +119,7 @@ class DocHistoryRetention(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             print_ops_rate=False, batch_size=500, process_concurrency=2,
-            iterations=iterations, scope=scope, collection=collection,
-            sdk_client_pool=self.sdk_client_pool)
+            iterations=iterations, scope=scope, collection=collection)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
 
@@ -297,6 +296,8 @@ class DocHistoryRetention(ClusterSetup):
 
     def run_data_ops_on_individual_collection(self, bucket):
         for s_name, scope in bucket.scopes.items():
+            if s_name == "_system":
+                continue
             for c_name, _, in scope.collections.items():
                 self.__validate_dedupe_with_data_load(bucket, s_name, c_name)
 
@@ -304,6 +305,8 @@ class DocHistoryRetention(ClusterSetup):
         scope_list = bucket.scopes.keys()
         collection_list = list()
         for s_name in scope_list:
+            if s_name == "_system":
+                continue
             active_cols = self.bucket_util.get_active_collections(
                 bucket, s_name, only_names=True)
             collection_list += [[s_name, c_name] for c_name in active_cols]
@@ -318,7 +321,7 @@ class DocHistoryRetention(ClusterSetup):
         5. Re-enable the history retention and validate with doc_ops
         """
 
-        def validate_hist_retention_settings():
+        def validate_hist_retention_settings(bucket):
             for node in self.cluster.nodes_in_cluster:
                 max_retry = 7
                 while max_retry:
@@ -423,7 +426,7 @@ class DocHistoryRetention(ClusterSetup):
                     self.cluster.master, bucket,
                     "scope_1", {"name": "c2", "history": "true"})
 
-                validate_hist_retention_settings()
+                validate_hist_retention_settings(bucket)
                 self.log.info("Running doc_ops to validate the retention")
                 self.sleep(60, "Wait for changes to be persisted")
                 self.run_data_ops_on_individual_collection(bucket)
@@ -438,7 +441,7 @@ class DocHistoryRetention(ClusterSetup):
                             self.cluster.master, bucket, s_name, c_name,
                             "false")
 
-                validate_hist_retention_settings()
+                validate_hist_retention_settings(bucket)
                 self.log.info("Running doc_ops to validate the retention")
                 self.run_data_ops_on_individual_collection(bucket)
 
@@ -450,9 +453,9 @@ class DocHistoryRetention(ClusterSetup):
                 for _, scope in bucket.scopes.items():
                     self.__set_history_retention_for_scope(bucket, scope,
                                                            "true")
-                validate_hist_retention_settings()
+                validate_hist_retention_settings(bucket)
                 self.log.info("Running doc_ops to validate the retention")
-                self.run_data_ops_on_individual_collection(bucket, check_dedup_verification)
+                self.run_data_ops_on_individual_collection(bucket)
 
                 self.log.info("Deleting the bucket")
                 self.bucket_util.delete_all_buckets(self.cluster)
@@ -468,7 +471,7 @@ class DocHistoryRetention(ClusterSetup):
         enable_by = self.input.param("enable_by", "rest")
         bucket_dedup_retention_seconds = self.input.param("cdc_seconds", 1)
         bucket_dedup_retention_bytes = \
-            self.input.param("cdc_bytes", 2000000000)
+            self.input.param("cdc_bytes", 4000000000)
         target_node = choice(self.cluster.nodes_in_cluster)
         exp_err = "History Retention can only used with Magma"
 
@@ -486,6 +489,7 @@ class DocHistoryRetention(ClusterSetup):
             self.bucket_util.validate_history_start_seqno_stat(
                 {},  stats["before_ops"], no_history_preserved=True)
 
+        coll_cdc_incr = 0
         self.log.critical("Using node '%s' for testing" % target_node.ip)
         self.log.info("Trying to enable CDC using '%s'" % enable_by)
         if enable_by == "rest":
@@ -506,6 +510,7 @@ class DocHistoryRetention(ClusterSetup):
                 for _, scope in bucket.scopes.items():
                     self.__set_history_retention_for_scope(bucket, scope,
                                                            "true")
+                coll_cdc_incr += 2
         elif enable_by == "cb_cli":
             shell = RemoteMachineShellConnection(target_node)
             cb_cli = CbCli(shell)
@@ -576,8 +581,9 @@ class DocHistoryRetention(ClusterSetup):
 
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets)
-        stats["after_ops"] = \
-            self.bucket_util.get_vb_details_for_bucket(bucket, kv_nodes)
+        if is_history_valid:
+            stats["after_ops"] = \
+                self.bucket_util.get_vb_details_for_bucket(bucket, kv_nodes)
         for key in keys:
             client.crud(DocLoading.Bucket.DocOps.DELETE, key)
 
@@ -600,10 +606,10 @@ class DocHistoryRetention(ClusterSetup):
                 .format(vb_num, a_stat["history_start_seqno"],
                         exp_hist_start_seq))
             self.assertEqual(
-                a_stat["high_seqno"], a_stat["history_start_seqno"],
+                a_stat["high_seqno"], a_stat["history_start_seqno"] + coll_cdc_incr,
                 "vb_{0}::Active high_seqno {1} != {2} hist_start_seqno"
                 .format(vb_num, a_stat["high_seqno"],
-                        a_stat["history_start_seqno"]))
+                        a_stat["history_start_seqno"] + coll_cdc_incr))
             for r_stat in t_stats["replica"]:
                 for field in fields:
                     self.assertEqual(
@@ -613,10 +619,10 @@ class DocHistoryRetention(ClusterSetup):
                         .format(vb_num, field, r_stat[field],
                                 a_stat[field]))
                     self.assertEqual(
-                        r_stat["high_seqno"], r_stat["history_start_seqno"],
+                        r_stat["high_seqno"], r_stat["history_start_seqno"] + coll_cdc_incr,
                         "vb_{0}::Replica high_seqno {1} != {2} hist_start_seqno"
                         .format(vb_num, r_stat["high_seqno"],
-                                r_stat["history_start_seqno"]))
+                                r_stat["history_start_seqno"] + coll_cdc_incr))
 
         self.bucket_util.validate_history_start_seqno_stat(
             stats["before_ops"], stats["after_ops"], comparison=">")
@@ -784,7 +790,8 @@ class DocHistoryRetention(ClusterSetup):
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 durability=self.durability_level, batch_size=500,
                 process_concurrency=1, iterations=20,
-                sdk_client_pool=self.sdk_client_pool)
+                sdk_client_pool=self.sdk_client_pool,
+                scope=s_name, collection=c_name)
             load_tasks.append(load_task)
         self.validate_retention_settings_on_all_nodes()
 
@@ -832,7 +839,7 @@ class DocHistoryRetention(ClusterSetup):
         # Enabling history for all collections
         for _, scope in bucket.scopes.items():
             self.__set_history_retention_for_scope(bucket, scope, "true")
-        self.assertFalse(result, "Bucket update succeeded")
+        self.assertTrue(result, "Bucket update failed")
 
         self.sleep(10, "Wait for vb-details to get updated")
         prev_stat = curr_stat
@@ -961,7 +968,7 @@ class DocHistoryRetention(ClusterSetup):
             load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 scope=CbServer.default_scope, collection="c1", exp=self.maxttl,
-                durability=self.durability_level, iterations=1000,
+                durability=self.durability_level, iterations=420,
                 skip_read_on_error=True, print_ops_rate=False,
                 sdk_client_pool=self.sdk_client_pool)
             self.task_manager.get_task_result(load_task)
@@ -984,8 +991,6 @@ class DocHistoryRetention(ClusterSetup):
                              .format(node.ip, ep_total_deduped))
         self.log.info("Running compaction")
         self.bucket_util._run_compaction(self.cluster)
-
-        self.fail("Validate roll back")
 
     def test_crash_replica_node(self):
         def stop_persistence_using_cbepctl():
@@ -1044,7 +1049,7 @@ class DocHistoryRetention(ClusterSetup):
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             scope=CbServer.default_scope, collection="c1",
             durability=self.durability_level, print_ops_rate=False,
-            iterations=1000, skip_read_on_error=True,
+            iterations=420, skip_read_on_error=True,
             sdk_client_pool=self.sdk_client_pool)
         if target_scenario != CouchbaseError.STOP_MEMCACHED:
             while not load_task.completed:

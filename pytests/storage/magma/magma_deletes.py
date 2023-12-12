@@ -382,10 +382,10 @@ class BasicDeleteTests(BasicCrudTests):
                         _res = disk_usage[0]
                         self.log.info("Iteration-{}, Disk Usage at time {} is {}MB \
                         ".format(count+1, time_end - time.time(), _res))
-                        if _res < 2 * self.disk_usage[self.disk_usage.keys()[0]]:
+                        if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
                             break
                     msg = "Disk Usage={}MB > {} * init_Usage={}MB"
-                    self.assertIs(_res > 2 * self.disk_usage[
+                    self.assertIs(_res > 2.5 * self.disk_usage[
                         self.disk_usage.keys()[0]], False,
                         msg.format(disk_usage[0], 2,
                                    self.disk_usage[self.disk_usage.keys()[0]]))

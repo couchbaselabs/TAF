@@ -472,7 +472,8 @@ class MagmaBaseTest(StorageBase):
                 for kvstore in kvstores:
                     dump = cmd
                     kvstore_num = kvstore.split("-")[1].strip()
-                    dump += ' --kvstore {} --tree key --treedata | grep Key |grep \'"deleted":true\' | wc -l'.format(kvstore_num)
+                    # dump += ' --kvstore {} --tree key --treedata | grep Key |grep \'"deleted":true\' | wc -l'.format(kvstore_num)
+                    dump += ' tree --kvstore {} --index key --treedata | grep Key |grep \'"deleted":true\' | wc -l'.format(kvstore_num)
                     ts_count = shell.execute_command(dump)[0][0].strip()
                     self.log.debug("kvstore_num=={}, ts_count=={}".format(kvstore_num, ts_count))
                     result_str += str(ts_count) + "+"
@@ -641,7 +642,8 @@ class MagmaBaseTest(StorageBase):
                     dump = cmd
                     kvstore_num = kvstore.split("-")[1].strip()
                     #dump += ' --kvstore {} --tree seq --treedata | grep  bySeqno | wc -l'.format(kvstore_num)
-                    dump += ' --kvstore {} --docs-by-seq --history | wc -l'.format(kvstore_num)
+                    #dump += ' --kvstore {} --docs-by-seq --history | wc -l'.format(kvstore_num)
+                    dump += ' docs --index seq --kvstore {} --history | wc -l'.format(kvstore_num)
                     seqnumber_count = shell.execute_command(dump)[0][0].strip()
                     result["_".join(node.ip.split("."))][kvstore] = seqnumber_count
         self.log.info("seqnumber_count/kvstore {}".format(result))
