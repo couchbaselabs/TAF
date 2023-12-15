@@ -400,9 +400,14 @@ class RestConnection(newRC):
         json_parsed = json.loads(content)
         meta_parsed = ""
         if status:
+            if not isinstance(type(header), dict):
+                header = header.headers
             # in dp4 builds meta data is in content, not in header
             if 'x-couchbase-meta' in header:
                 meta = header['x-couchbase-meta']
+                meta_parsed = json.loads(meta)
+            elif 'X-Couchbase-Meta' in header:
+                meta = header['X-Couchbase-Meta']
                 meta_parsed = json.loads(meta)
             else:
                 meta_parsed = {}
