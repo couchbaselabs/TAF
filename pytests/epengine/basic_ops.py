@@ -942,8 +942,7 @@ class basic_ops(ClusterSetup):
 
         # Start rebalance-out operation
         rebalance_out = self.task.async_rebalance(
-            self.cluster.servers[0:self.nodes_init], [],
-            [self.cluster.servers[-1]])
+            self.cluster, [], [self.cluster.servers[-1]])
         self.sleep(10, "Wait for rebalance to start")
 
         # Start deleting the evicted docs in parallel to rebalance task
@@ -1973,7 +1972,7 @@ class basic_ops(ClusterSetup):
     def MB36948(self):
         node_to_stop = self.servers[0]
         self.log.info("Adding index/query node")
-        self.task.rebalance([self.cluster.master], [self.servers[2]], [],
+        self.task.rebalance(self.cluster, [self.servers[2]], [],
                             services=["n1ql,index"])
         self.log.info("Creating SDK client connection")
         client = SDKClient([self.cluster.master],
@@ -2316,8 +2315,7 @@ class basic_ops(ClusterSetup):
         self.sleep(10, "WAIT")
         self.log.info("Rebalance-in %s nodes" % self.num_replicas)
         result = self.task.rebalance(
-            [self.cluster.master],
-            self.cluster.servers[1:1+self.num_replicas], [])
+            self.cluster, self.cluster.servers[1:1+self.num_replicas], [])
         self.assertTrue(result, "Rebalance failed")
 
     def test_unlock_key(self):
