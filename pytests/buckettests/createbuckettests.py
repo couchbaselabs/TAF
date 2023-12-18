@@ -273,7 +273,7 @@ class CreateBucketTests(ClusterSetup):
 
         error = create_bucket(num_vb=CbServer.total_vbuckets)
         self.assertEqual(
-            error["numVbuckets"],
+            error["numVBuckets"],
             "Support for variable number of vbuckets is not enabled",
             "Invalid error message")
 
