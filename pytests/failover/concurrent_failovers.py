@@ -695,14 +695,16 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                         service_count[index][service] = 0
                     service_count[index][service] += 1
 
-        if len(node_split_1) > len(node_split_2):
-            num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_2),
-                                                  service_count[1],
-                                                  service_count[0])
+        if len(node_split_1) == len(node_split_2):
+            num_nodes_to_fo = 0
         else:
-            num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_1),
-                                                  service_count[0],
-                                                  service_count[1])
+            smaller_chunk_in_split = node_split_1 if len(node_split_1) < len(
+                node_split_2) else node_split_2
+            fo_nodes = dict()
+            for node in smaller_chunk_in_split:
+                fo_nodes[node] = self.failover_method
+            self.nodes_to_fail = fo_nodes
+            num_nodes_to_fo = self.num_nodes_to_be_failover
 
         self.log.info("N/w split between -> [%s] || [%s]. Expect %s fo_events"
                       % ([n.ip for n in node_split_1],
