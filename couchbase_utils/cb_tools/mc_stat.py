@@ -1,6 +1,7 @@
 import json
 
 from BucketLib.bucket import Bucket
+from Cb_constants import CbServer
 from cb_tools.cb_tools_base import CbCmdBase
 from memcached.helper.data_helper import MemcachedClientHelper
 
@@ -11,22 +12,26 @@ class McStat(CbCmdBase):
         CbCmdBase.__init__(self, shell_conn, "mcstat",
                            username=username, password=password)
 
+    @staticmethod
+    def __tls_flag():
+        return "--tls" if CbServer.use_https else ""
+
     def reset(self, bucket_name):
         """
         Resets mcstat for the specified bucket_name
         :param bucket_name: Bucket name to reset stat
         """
-        cmd = "%s -h localhost:%s -u %s -P %s -b %s reset" \
+        cmd = "%s -h localhost:%s -u %s -P %s %s -b %s reset" \
               % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name)
+                 self.__tls_flag(), bucket_name)
         _, error = self._execute_cmd(cmd)
         if error:
             raise Exception("".join(error))
 
     def get_tenants_stat(self, bucket_name):
-        cmd = "%s -h localhost:%s -u %s -P %s -b %s tenants" \
+        cmd = "%s -h localhost:%s -u %s -P %s %s -b %s tenants" \
               % (self.cbstatCmd, self.mc_port, self.username, self.password,
-                 bucket_name)
+                 self.__tls_flag(), bucket_name)
         output, error = self._execute_cmd(cmd)
         if error:
             raise Exception("".join(error))
@@ -34,9 +39,9 @@ class McStat(CbCmdBase):
 
     def get_user_stat(self, bucket_name, user):
         # 'tenants {\"domain\":\"local\",\"user\":\"%s\"}'
-        cmd = "%s -h localhost:%s -u %s -P %s -b %s tenants" \
+        cmd = "%s -h localhost:%s -u %s -P %s %s -b %s tenants" \
               % (self.cbstatCmd, self.mc_port, user.username, user.password,
-                 bucket_name)
+                 self.__tls_flag(), bucket_name)
         output, error = self._execute_cmd(cmd)
         if error:
             raise Exception("{0}".format(error))
@@ -52,6 +57,7 @@ class McStat(CbCmdBase):
             if bucket["name"] == bucket_name:
                 return bucket
         return None
+
 
 class Mcthrottle(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",
