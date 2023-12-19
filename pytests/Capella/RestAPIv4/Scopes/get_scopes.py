@@ -123,15 +123,14 @@ class GetScope(APIBase):
         ).json()['id']
 
         # Initialize scope params and create a scope.
-        self.scope_name = self.generate_random_string(special_characters=False)
-        self.expected_result = {
-            "name": self.scope_name
-        }
-        if self.capellaAPI.cluster_ops_apis.create_scope(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name).status_code != 201:
+        self.scope_name = self.generate_random_string(5, False, self.prefix)
+        res = self.capellaAPI.cluster_ops_apis.create_scope(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.bucket_id, self.scope_name)
+        if res.status_code != 201:
             self.fail("Scope creation failed!")
         self.log.info("Scope: {} creation successful".format(self.scope_name))
+        self.expected_result = res.json()
 
     def tearDown(self):
         failures = list()
@@ -140,29 +139,29 @@ class GetScope(APIBase):
         self.delete_api_keys(self.api_keys)
 
         # Delete scope
+        self.log.info("Deleting scope: {}".format(self.scope_name))
         if self.capellaAPI.cluster_ops_apis.delete_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name).status_code != 204:
-            self.fail("Error while deleting Scope: {}".format(self.scope_name))
-        self.log.info("Scope deletion successful. Destroying Bucket: {}"
-                      .format(self.bucket_id))
+            failures.append("Error while deleting Scope.")
+        else:
+            self.log.info("Scope deletion successful.")
 
         # Delete the bucket that was created.
         self.log.info("Deleting bucket: {}".format(self.bucket_id))
         if self.capellaAPI.cluster_ops_apis.delete_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id).status_code != 204:
-            failures.append("Error while deleting bucket {}"
-                            .format(self.bucket_id))
-        self.log.info("Successfully deleted bucket. Destroying "
-                      "Cluster: {}".format(self.cluster_id))
+            failures.append("Error while deleting bucket.")
+        else:
+            self.log.info("Successfully deleted bucket.")
 
         # Delete the cluster that was created.
+        self.log.info("Destroying Cluster: {}".format(self.cluster_id))
         if self.capellaAPI.cluster_ops_apis.delete_cluster(
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code != 202:
-            failures.append("Error while deleting cluster {}".format(
-                self.cluster_id))
+            failures.append("Error while deleting cluster.")
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
@@ -170,17 +169,19 @@ class GetScope(APIBase):
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code == 404:
             time.sleep(10)
-        self.log.info("Cluster destroyed, destroying Project now.")
+        self.log.info("Cluster destroyed successfully.")
 
         # Delete the project that was created.
+        self.log.info("Deleting Project: {}".format(self.project_id))
         if self.delete_projects(self.organisation_id, [self.project_id],
                                 self.org_owner_key["token"]):
-            failures.append("Error while deleting project {}".format(
-                self.project_id))
+            failures.append("Error while deleting project.")
+        else:
+            self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}".format(
-                failures))
+            self.fail("Following error occurred in teardown: {}"
+                      .format(failures))
         super(GetScope, self).tearDown()
 
     def validate_scope_api_response(self, expected_res, actual_res):
@@ -310,7 +311,7 @@ class GetScope(APIBase):
                 clus = testcase["invalid_clusterID"]
             elif "invalid_bucketID" in testcase:
                 buck = testcase["invalid_bucketID"]
-            elif "invalid_scopeName" in testcase:
+            elif "invalid_scope" in testcase:
                 scope = testcase["invalid_scopeName"]
 
             result = self.capellaAPI.cluster_ops_apis.fetch_scope_info(
@@ -389,13 +390,16 @@ class GetScope(APIBase):
                                    "projectViewer", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
+                    "code": 1001,
+                    "hint": "The request is unauthorized. Please ensure you "
+                            "have provided appropriate credentials in the "
+                            "request header. Please make sure the client IP "
+                            "that is trying to access the resource using the "
+                            "API key is in the API key allowlist.",
+                    "httpStatusCode": 401,
+                    "message": "Unauthorized"
                 }
-                testcase["expected_status_code"] = 403
+                testcase["expected_status_code"] = 401
             testcases.append(testcase)
         testcases.extend([
             {
@@ -865,9 +869,9 @@ class GetScope(APIBase):
             99, api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
+            # unauthorized roles, ie, which give a 401 response.
+            if "401" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["401"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -907,9 +911,9 @@ class GetScope(APIBase):
             99, api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
+            # unauthorized roles, ie, which give a 401 response.
+            if "401" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["401"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

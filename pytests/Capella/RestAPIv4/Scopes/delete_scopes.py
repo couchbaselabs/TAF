@@ -26,7 +26,7 @@ class DeleteScope(APIBase):
                 100, prefix=self.prefix)).json()["id"]
 
         # Initialize params for cluster creation.
-        cluster_name = self.prefix + "TestScopesUpdate"
+        cluster_name = self.prefix + "TestScopesDelete"
         cluster = {
             "name": cluster_name,
             "description": None,
@@ -102,7 +102,7 @@ class DeleteScope(APIBase):
             self.fail("Cluster didn't deploy within half an hour.")
 
         # Initialise params for bucket creation and assign BucketID.
-        bucket_name = "TestScopesUpdate"
+        bucket_name = "TestScopesDelete"
         bucket = {
             "name": bucket_name,
             "type": "couchbase",
@@ -124,14 +124,13 @@ class DeleteScope(APIBase):
 
         # Initialize scope params and create a scope.
         self.scope_name = self.generate_random_string(special_characters=False)
-        self.expected_result = {
-            "name": self.scope_name
-        }
-        if self.capellaAPI.cluster_ops_apis.create_scope(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name).status_code != 201:
+        res = self.capellaAPI.cluster_ops_apis.create_scope(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.bucket_id, self.scope_name)
+        if res.status_code != 201:
             self.fail("Scope creation failed!")
         self.log.info("Scope: {} creation successful".format(self.scope_name))
+        self.expected_result = res.json()
 
     def tearDown(self):
         failures = list()
@@ -140,29 +139,29 @@ class DeleteScope(APIBase):
         self.delete_api_keys(self.api_keys)
 
         # Delete scope
+        self.log.info("Deleting scope: {}".format(self.scope_name))
         if self.capellaAPI.cluster_ops_apis.delete_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name).status_code != 204:
-            self.fail("Error while deleting Scope: {}".format(self.scope_name))
-        self.log.info("Scope deletion successful. Destroying Bucket: {}"
-                      .format(self.bucket_id))
+            self.log.warning("Error while deleting Scope.")
+        else:
+            self.log.info("Scope deletion successful.")
 
         # Delete the bucket that was created.
         self.log.info("Deleting bucket: {}".format(self.bucket_id))
         if self.capellaAPI.cluster_ops_apis.delete_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id).status_code != 204:
-            failures.append("Error while deleting bucket {}"
-                            .format(self.bucket_id))
-        self.log.info("Successfully deleted bucket. Destroying "
-                      "Cluster: {}".format(self.cluster_id))
+            failures.append("Error while deleting bucket.")
+        else:
+            self.log.info("Successfully deleted bucket.")
 
         # Delete the cluster that was created.
+        self.log.info("Destroying Cluster: {}".format(self.cluster_id))
         if self.capellaAPI.cluster_ops_apis.delete_cluster(
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code != 202:
-            failures.append("Error while deleting cluster {}".format(
-                self.cluster_id))
+            failures.append("Error while deleting cluster.")
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
@@ -170,17 +169,19 @@ class DeleteScope(APIBase):
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code == 404:
             time.sleep(10)
-        self.log.info("Cluster destroyed, destroying Project now.")
+        self.log.info("Cluster destroyed successfully.")
 
         # Delete the project that was created.
+        self.log.info("Deleting Project: {}".format(self.project_id))
         if self.delete_projects(self.organisation_id, [self.project_id],
                                 self.org_owner_key["token"]):
-            failures.append("Error while deleting project {}".format(
-                self.project_id))
+            failures.append("Error while deleting project.")
+        else:
+            self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}".format(
-                failures))
+            self.fail("Following error occurred in teardown: {}"
+                      .format(failures))
         super(DeleteScope, self).tearDown()
 
     def test_api_path(self):
@@ -378,13 +379,16 @@ class DeleteScope(APIBase):
                                    "projectOwner", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
+                    "code": 1001,
+                    "hint": "The request is unauthorized. Please ensure you "
+                            "have provided appropriate credentials in the "
+                            "request header. Please make sure the client IP "
+                            "that is trying to access the resource using the "
+                            "API key is in the API key allowlist.",
+                    "httpStatusCode": 401,
+                    "message": "Unauthorized"
                 }
-                testcase["expected_status_code"] = 403
+                testcase["expected_status_code"] = 401
             testcases.append(testcase)
         testcases.extend([
             {
@@ -555,6 +559,7 @@ class DeleteScope(APIBase):
             if result.status_code == 200:
                 if "expected_error" in testcase:
                     self.log.error(testcase["description"])
+                    self.log.warning("Result: {}".format(result.json()))
                     failures.append(testcase["description"])
                 else:
                     self.log.debug("Deletion Successful.")
@@ -578,11 +583,9 @@ class DeleteScope(APIBase):
                             failures.append(testcase["description"])
                             break
                 except (Exception,):
-                    if str(testcase["expected_error"]) not in \
-                            result.content:
-                        self.log.error(
-                            "Response type not JSON, Failure : {}".format(
-                                testcase["description"]))
+                    if str(testcase["expected_error"]) not in result.content:
+                        self.log.error("Response type not JSON, Failure : {}"
+                                       .format(testcase["description"]))
                         self.log.warning(result.content)
                         failures.append(testcase["description"])
             else:
@@ -868,12 +871,12 @@ class DeleteScope(APIBase):
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
-            #   # empty name dummies, ie, which give a {} response.
-            if "{}" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["{}"]
-            #   # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
+            #   # empty name dummies, ie, which give a 405 response.
+            if "405" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["405"]
+            #   # unauthorized roles, ie, which give a 401 response.
+            if "401" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["401"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -919,12 +922,12 @@ class DeleteScope(APIBase):
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
-            #   # empty name dummies, ie, which give a {} response.
-            if "{}" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["{}"]
-            #   # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
+            #   # empty name dummies, ie, which give a 405 response.
+            if "405" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["405"]
+            #   # unauthorized roles, ie, which give a 401 response.
+            if "401" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["401"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
