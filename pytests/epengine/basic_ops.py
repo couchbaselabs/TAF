@@ -2395,6 +2395,28 @@ class basic_ops(ClusterSetup):
         validate_unlock_exception(key_3, doc_3_cas+1,
                                   [SDKException.DocumentNotFoundException])
 
+    def test_ephemeral_num_pager_runs(self):
+        """
+        Ref: MB-59368
+        """
+        load_gen = doc_generator(self.key, 0, 320000, doc_size=1024)
+        for i in range(20):
+            load_task = self.task.async_load_gen_docs(
+                self.cluster, self.cluster.buckets[0], load_gen,
+                DocLoading.Bucket.DocOps.UPDATE,
+                batch_size=20, process_concurrency=8, print_ops_rate=False,
+                skip_read_on_error=True, suppress_error_table=True,
+                sdk_client_pool=self.sdk_client_pool)
+            self.task_manager.get_task_result(load_task)
+
+        for node in self.cluster.nodes_in_cluster:
+            cbstat = Cbstats(node)
+            stats = cbstat.all_stats(self.cluster.buckets[0].name)
+            cbstat.shellConn.disconnect()
+            val = int(stats["ep_num_pager_runs"])
+            self.assertTrue(val < 5000,
+                            "Node %s, ep_num_pager_runs: %s" % (node.ip, val))
+
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.
         mc = MemcachedClient(self.cluster.master.ip,
