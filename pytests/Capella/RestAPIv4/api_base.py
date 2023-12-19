@@ -499,13 +499,12 @@ class APIBase(BaseTestCase):
             buck_id = resp.json()['id']
             self.log.debug("New bucket created, ID: {}".format(buck_id))
             return buck_id
-        else:
-            self.log.error(resp)
-            self.fail("New bucket creation failed.")
+        self.log.error(resp)
+        self.fail("New bucket creation failed.")
 
-    def delete_buckets(self, org_id, proj_id, clus_id, bucket_ids, token):
+    def delete_buckets(self, org_id, proj_id, clus_id, bucket_ids):
         bucket_deletion_failed = False
-        self.update_auth_with_api_token(token)
+        self.update_auth_with_api_token(self.org_owner_key['token'])
         for bucket_id in bucket_ids:
             resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
                 org_id, proj_id, clus_id, bucket_id
@@ -541,3 +540,57 @@ class APIBase(BaseTestCase):
             self.log.debug("Cluster state healthy.")
 
         return bucket_deletion_failed
+
+    def create_scope_to_be_tested(self, org_id, proj_id, clus_id, buck_id):
+        self.update_auth_with_api_token(self.org_owner_key["token"])
+
+        new_scope_name = self.generate_random_string(5, False, self.prefix)
+        res = self.capellaAPI.cluster_ops_apis.create_scope(
+            org_id, proj_id, clus_id, buck_id, new_scope_name)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_scope(
+                org_id, proj_id, clus_id, buck_id, new_scope_name)
+        if res.status_code == 200:
+            return new_scope_name
+        self.fail("Scope creation unsuccessful.")
+
+    def flush_scopes(self, org_id, proj_id, clus_id, buck_id, scopes):
+        self.update_auth_with_api_token(self.org_owner_key['token'])
+
+        scopes_deletion_failed = False
+        for scope in scopes:
+            res = self.capellaAPI.cluster_ops_apis.delete_scope(
+                org_id, proj_id, clus_id, buck_id, scope)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers["Retry-After"]))
+                res = self.capellaAPI.cluster_ops_apis.delete_scope(
+                    org_id, proj_id, clus_id, buck_id, scope)
+            if res.status_code != 200:
+                self.log.error("Error while deleting scope {}".format(scope))
+                scopes_deletion_failed = True
+            else:
+                scopes.remove(scope)
+
+        return scopes_deletion_failed
+
+    def flush_collections(self, org_id, proj_id, clus_id, buck_id, scope,
+                          collections):
+        self.update_auth_with_api_token(self.org_owner_key['token'])
+
+        collections_deletion_failed = False
+        for collection in collections:
+            res = self.capellaAPI.cluster_ops_apis.delete_collection(
+                org_id, proj_id, clus_id, buck_id, scope, collection)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.capellaAPI.cluster_ops_apis.delete_collection(
+                    org_id, proj_id, clus_id, buck_id, scope, collection)
+            if res.status_code != 200:
+                self.log.error("Error while deleting collection {}"
+                               .format(collection))
+                collections_deletion_failed = True
+            else:
+                collections.remove(collection)
+
+        return collections_deletion_failed
