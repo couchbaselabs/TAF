@@ -41,13 +41,15 @@ public class WorkLoadSettings extends WorkLoadBase {
     public List<List<?>> transaction_pattern;
     public Boolean commit_transaction;
     public Boolean rollback_transaction;
+	public boolean vector;
 
     /**** Constructors ****/
     public WorkLoadSettings(String keyPrefix,
             int keySize, int docSize, int c, int r, int u, int d, int e,
             int workers, int ops, String loadType,
             String keyType, String valueType,
-            boolean validate, boolean gtm, boolean deleted, int mutated) {
+            boolean validate, boolean gtm, boolean deleted, int mutated,
+            boolean vector) {
         super();
         this.keyPrefix = keyPrefix;
         this.keySize = keySize;
@@ -67,6 +69,7 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.mutated = mutated;
         this.valueType = valueType;
         this.keyType = keyType;
+        this.vector = vector;
     };
 
     public WorkLoadSettings(

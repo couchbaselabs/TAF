@@ -187,7 +187,8 @@ public class MongoLoader {
                 cmd.getOptionValue("keyType", "SimpleKey"),
                 cmd.getOptionValue("valueType", "Hotel"),
                 false, false, false,
-                Integer.parseInt(cmd.getOptionValue("mutate", "0"))
+                Integer.parseInt(cmd.getOptionValue("mutate", "0")),
+                false
                 );
         HashMap<String, Number> dr = new HashMap<String, Number>();
         dr.put(DRConstants.create_s, Long.parseLong(cmd.getOptionValue(DRConstants.create_s, "0")));

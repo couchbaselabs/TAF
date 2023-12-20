@@ -1,24 +1,27 @@
 package com.couchbase.test.val;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
-import java.util.Date;
-import java.util.ArrayList;
-import java.time.Duration;
-import java.time.Instant;
+import java.io.IOException;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 
+import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.json.JsonObject;
+import com.couchbase.test.docgen.WorkLoadSettings;
 import com.github.javafaker.Faker;
 
-import com.couchbase.test.docgen.WorkLoadSettings;
+import ai.djl.MalformedModelException;
+import ai.djl.huggingface.translator.TextEmbeddingTranslatorFactory;
+import ai.djl.inference.Predictor;
+import ai.djl.repository.zoo.Criteria;
+import ai.djl.repository.zoo.ModelNotFoundException;
+import ai.djl.repository.zoo.ZooModel;
+import ai.djl.training.util.ProgressBar;
+import ai.djl.translate.TranslateException;
 
 public class Hotel {
     Faker faker;
@@ -33,7 +36,11 @@ public class Hotel {
     private ArrayList<String> phone = new ArrayList<String>();
     private ArrayList<String> url = new ArrayList<String>();
     private ArrayList<ArrayList<JsonObject>> reviews = new ArrayList<ArrayList<JsonObject>>();
+    public Predictor<String, float[]> predictor = null;
 
+    public Hotel() {
+        super();
+    }
     public Hotel(WorkLoadSettings ws) {
         super();
         this.random = new Random();
@@ -59,6 +66,30 @@ public class Hotel {
             url.add(this.faker.internet().url());
             this.setReviewsArray();
         }
+        if (ws.vector){
+            setEmbeddingsModel();
+        }
+    }
+
+    public void setEmbeddingsModel() {
+        String DJL_MODEL = "sentence-transformers/all-MiniLM-L6-v2";
+        String DJL_PATH = "djl://ai.djl.huggingface.pytorch/" + DJL_MODEL;
+        Criteria<String, float[]> criteria =
+                Criteria.builder()
+                .setTypes(String.class, float[].class)
+                .optModelUrls(DJL_PATH)
+                .optEngine("PyTorch")
+                .optTranslatorFactory(new TextEmbeddingTranslatorFactory())
+                .optProgress(new ProgressBar())
+                .build();
+        ZooModel<String, float[]> model = null;
+        try {
+            model = criteria.loadModel();
+        } catch (ModelNotFoundException | MalformedModelException | IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        this.predictor = model.newPredictor();
     }
 
     public void setReviewsArray() {
@@ -93,6 +124,18 @@ public class Hotel {
         random.setSeed(key.hashCode());
         int index = random.nextInt(4096);
         jsonObject.put("address", this.addresses.get(index));
+        if (this.predictor != null){
+            try {
+                JsonArray a = JsonArray.create();
+                for(Float i: this.predictor.predict(this.city.get(index))) {
+                    a.add(i.floatValue());
+                }
+                jsonObject.put("embedding", a);
+            } catch (TranslateException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+        }
         jsonObject.put("city", this.city.get(index));
         jsonObject.put("country", this.country.get(index));
         jsonObject.put("email", this.emails.get(index));

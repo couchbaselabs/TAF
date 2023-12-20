@@ -14,6 +14,15 @@ class FtsHelper(RestConnection):
                                                 timeout=60)
         return status, content
 
+    def run_fts_query_curl(self, index_name, param_data):
+        api = self.ftsUrl + "api/index/%s/query" % index_name
+        json_header = self.get_headers_for_content_type_json()
+        status, content, _ = self._http_request(api, "POST",
+                                                params=param_data,
+                                                headers=json_header,
+                                                timeout=120)
+        return status, content
+
     def delete_fts_index(self, index_name):
         api = self.ftsUrl + "api/index/%s" % index_name
         status, content, _ = self._http_request(api, "DELETE",

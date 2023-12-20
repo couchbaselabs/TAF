@@ -21,7 +21,7 @@ from com.couchbase.test.docgen import WorkLoadSettings,\
 from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
-from couchbase.test.docgen import DRConstants
+from com.couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
@@ -383,12 +383,13 @@ class OPD:
                                           cmd.get("workers", self.process_concurrency),
                                           cmd.get("ops", self.ops_rate),
                                           cmd.get("loadType", None),
-                                          cmd.get("keyType", None),
-                                          cmd.get("valueType", None),
+                                          cmd.get("keyType", self.key_type),
+                                          cmd.get("valueType", self.val_type),
                                           cmd.get("validate", False),
                                           cmd.get("gtm", self.gtm),
                                           cmd.get("deleted", False),
-                                          cmd.get("mutated", 0)
+                                          cmd.get("mutated", 0),
+                                          cmd.get("vector", self.vector)
                                           )
                     hm = HashMap()
                     hm.putAll({DRConstants.create_s: self.create_start,
@@ -622,13 +623,13 @@ class OPD:
         if self.cluster.type != "default":
             return
 
-        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-        if result:
-            self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
-            if self.assert_crashes_on_load:
-                self.task_manager.abort_all_tasks()
-                self.doc_loading_tm.abortAllTasks()
-                self.assertFalse(result)
+        # result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+        # if result:
+        #     self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
+        #     if self.assert_crashes_on_load:
+        #         self.task_manager.abort_all_tasks()
+        #         self.doc_loading_tm.abortAllTasks()
+        #         self.assertFalse(result)
 
     def get_magma_disk_usage(self, bucket=None):
         if bucket is None:

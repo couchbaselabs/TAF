@@ -179,7 +179,8 @@ public class Loader {
                 Boolean.parseBoolean(cmd.getOptionValue("validate", "false")),
                 Boolean.parseBoolean(cmd.getOptionValue("gtm", "false")),
                 Boolean.parseBoolean(cmd.getOptionValue("deleted", "false")),
-                Integer.parseInt(cmd.getOptionValue("mutated", "0"))
+                Integer.parseInt(cmd.getOptionValue("mutated", "0")),
+                false
                 );
         HashMap<String, Number> dr = new HashMap<String, Number>();
         dr.put(DRConstants.create_s, Long.parseLong(cmd.getOptionValue(DRConstants.create_s, "0L")));
