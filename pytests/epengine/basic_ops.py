@@ -17,9 +17,9 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from gsiLib.gsiHelper import GsiHelper
 
+from constants.sdk_constants.java_client import SDKConstants
 from mc_bin_client import MemcachedClient, MemcachedError
 from platform_constants.os_constants import Linux
-from constants.sdk_constants.java_client import SDKConstants
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -33,6 +33,7 @@ from com.couchbase.client.core.error import AmbiguousTimeoutException, \
 
 from couchbase_utils.cluster_utils.cluster_ready_functions import CBCluster
 from membase.api.rest_client import RestConnection
+
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -2227,7 +2228,7 @@ class basic_ops(ClusterSetup):
         rest.set_indexer_params(indexerThreads=1)
         c_index = 1
         num_items = self.num_items
-        c_dict = { CbServer.default_collection: self.num_items * 2 }
+        c_dict = {CbServer.default_collection: self.num_items * 2}
         while num_items != 0:
             c_name = "c{}".format(c_index)
             self.log.info("Creating collections %s" % c_name)
@@ -2395,10 +2396,97 @@ class basic_ops(ClusterSetup):
         validate_unlock_exception(key_3, doc_3_cas+1,
                                   [SDKException.DocumentNotFoundException])
 
+    def test_mutate_prepare_evict(self):
+        """
+        Ref: MB-60046
+        """
+        def perform_sync_write(sdk_client, doc_key):
+            self.log.info("Creating prepare document")
+            self.mutation_result = sdk_client.crud(
+                DocLoading.Bucket.DocOps.UPDATE, doc_key, {},
+                durability=SDKConstants.DurabilityLevel.MAJORITY,
+                timeout=70)
+
+        def load_docs(num_items):
+            gen = doc_generator("test_docs", 0, num_items, key_size=100,
+                                doc_size=1024)
+
+            l_task = self.task.async_load_gen_docs(
+                self.cluster, bucket, gen, DocLoading.Bucket.DocOps.UPDATE,
+                batch_size=20, process_concurrency=3, print_ops_rate=False,
+                skip_read_on_error=True, suppress_error_table=True,
+                sdk_client_pool=self.sdk_client_pool)
+            self.task_manager.get_task_result(l_task)
+
+        cbstat = cb_err = None
+        active_vbs = None
+        key = "test_key"
+        bucket = self.cluster.buckets[0]
+        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+            key, self.cluster.vbuckets)
+
+        self.log.info("Disabling auto-failover settings")
+        RestConnection(self.cluster.master)\
+            .update_autofailover_settings(False, 60)
+
+        load_docs(10000)
+        perform_sync_write(client, key)
+        load_docs(1000)
+        for node in self.cluster.nodes_in_cluster:
+            cbstat = Cbstats(node)
+            active_vbs = cbstat.vbucket_list(bucket.name)
+            replica_vbs = cbstat.vbucket_list(bucket.name,
+                                              Bucket.vBucket.REPLICA)
+            if vb_for_key in replica_vbs:
+                self.log.critical("Stopping memcached on %s" % node.ip)
+                cb_err = CouchbaseError(self.log, cbstat.shellConn)
+                cb_err.create(CouchbaseError.STOP_MEMCACHED)
+                break
+            cbstat.shellConn.disconnect()
+
+        target_vbs = list(set(range(0, 1024)) - set(active_vbs))
+        doc_gen = doc_generator("test_docs", 0, 100000, key_size=220,
+                                doc_size=1024, target_vbucket=target_vbs)
+
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+            batch_size=20, process_concurrency=3, print_ops_rate=False,
+            skip_read_on_error=True, suppress_error_table=True,
+            start_task=False, sdk_client_pool=self.sdk_client_pool)
+
+        prepare_mutation_thread = Thread(target=perform_sync_write,
+                                         args=[client, key])
+        prepare_mutation_thread.start()
+
+        self.sleep(1, "Wait for prepare mutation to initiate")
+        self.log.info("Starting data load to tigger eviction")
+        self.task_manager.add_new_task(load_task)
+        self.task_manager.get_task_result(load_task)
+        self.sdk_client_pool.release_client(client)
+        self.log.info("Reverting error condition")
+        cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+        cbstat.shellConn.disconnect()
+
+        self.sleep(5, "Wait before validating hash_table")
+        hash_dump_cmd = \
+            "%s -u %s -p %s localhost:%d raw \"_hash-dump %d\" | grep %s" \
+            % (Linux.COUCHBASE_BIN_PATH + "cbstats",
+               self.cluster.master.rest_username,
+               self.cluster.master.rest_password,
+               self.cluster.master.memcached_port, vb_for_key, key)
+
+        for node in self.cluster.nodes_in_cluster:
+            if node.ip != cbstat.shellConn.ip:
+                t_shell = RemoteMachineShellConnection(node)
+                output = t_shell.execute_command(hash_dump_cmd)[0][0]
+                t_shell.disconnect()
+                self.assertTrue(output.find("..J W.R.Cp. temp:") > 0,
+                                "Unexpected hash_table output: %s" % output)
+                self.assertTrue(output.find(" del_time:") == -1,
+                                "Unexpected hash_table output: %s" % output)
+
     def test_ephemeral_num_pager_runs(self):
-        """
-        Ref: MB-59368
-        """
         load_gen = doc_generator(self.key, 0, 320000, doc_size=1024)
         for i in range(20):
             load_task = self.task.async_load_gen_docs(
@@ -2414,7 +2502,7 @@ class basic_ops(ClusterSetup):
             stats = cbstat.all_stats(self.cluster.buckets[0].name)
             cbstat.shellConn.disconnect()
             val = int(stats["ep_num_pager_runs"])
-            self.assertTrue(val < 5000,
+            self.assertTrue(val < 50,
                             "Node %s, ep_num_pager_runs: %s" % (node.ip, val))
 
     def do_get_random_key(self):
