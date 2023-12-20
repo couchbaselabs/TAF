@@ -1,5 +1,5 @@
 """
-Created on December 13, 2023
+Created on December 18, 2023
 
 @author: Vipul Bhardwaj
 """
@@ -36,7 +36,7 @@ class ListSample(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": self.input.capella.get("server_version")
+                "version": str(self.input.param("server_version"))
             },
             "serviceGroups": [
                 {
@@ -84,7 +84,7 @@ class ListSample(APIBase):
                 newCIDR = CapellaUtils.get_next_cidr() + "/20"
                 cluster["cloudProvider"]["cidr"] = newCIDR
         if time.time() - start_time >= 1800:
-            self.fail("Couldn't find CIDR within half an hour.")
+            self.log.error("Couldn't find CIDR within half an hour.")
 
         # Wait for the cluster to be deployed.
         self.log.info("Waiting for cluster to be deployed.")
@@ -99,22 +99,22 @@ class ListSample(APIBase):
                 self.cluster_id).json()["currentState"] == "healthy":
             self.log.info("Cluster deployed successfully.")
         else:
-            self.fail("Cluster didn't deploy within half an hour.")
+            self.log.error("Cluster didn't deploy within half an hour.")
 
         # Initialize params and create a sample bucket.
         self.expected_res = {
             "data": [
                 {
-                    "name": self.input.capella.get("sample_bucket"),
-                    "type": "string",
+                    "name": self.input.param("sample_bucket", "beer-sample"),
+                    "type": "couchbase",
                     "storageBackend": "couchstore",
-                    "memoryAllocationInMb": 100,
-                    "bucketConflictResolution": "string",
-                    "durabilityLevel": "string",
-                    "replicas": 0,
+                    "memoryAllocationInMb": 200,
+                    "bucketConflictResolution": "seqno",
+                    "durabilityLevel": "none",
+                    "replicas": 1,
                     "flush": False,
-                    "timeToLiveInSeconds": 100,
-                    "evictionPolicy": "fullEviction",
+                    "timeToLiveInSeconds": 0,
+                    "evictionPolicy": "valueOnly",
                     "stats": {
                         "itemCount": None,
                         "opsPerSecond": None,
@@ -125,11 +125,13 @@ class ListSample(APIBase):
             ]
         }
         res = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
-            self.organisation_id, self.project_id, self.cluster_id)
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.expected_res["data"][0]["name"])
         if res.status_code != 201:
-            self.fail("Error creating sample bucket")
-        self.expected_res["data"][0]["id"] = res.json()["id"]
-        self.sample_bucket_id = res.json()["id"]
+            self.log.error("Error while creating sample bucket: {}"
+                           .format(res.json()))
+        self.expected_res["data"][0]["id"] = res.json()["bucketId"]
+        self.sample_bucket_id = res.json()["bucketId"]
 
     def tearDown(self):
         failures = list()
@@ -139,20 +141,19 @@ class ListSample(APIBase):
 
         # Delete the sample bucket that was created.
         self.log.info("Deleting bucket: {}".format(self.sample_bucket_id))
-        if self.capellaAPI.cluster_ops_apis.delete_bucket(
+        if self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.sample_bucket_id).status_code != 204:
-            failures.append("Error while deleting bucket {}"
-                            .format(self.sample_bucket_id))
-        self.log.info("Successfully deleted bucket. Destroying "
-                      "Cluster: {}".format(self.cluster_id))
+            failures.append("Error while deleting bucket.")
+        else:
+            self.log.info("Successfully deleted bucket.")
 
         # Delete the cluster that was created.
+        self.log.info("Destroying Cluster: {}".format(self.cluster_id))
         if self.capellaAPI.cluster_ops_apis.delete_cluster(
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code != 202:
-            failures.append("Error while deleting cluster {}".format(
-                self.cluster_id))
+            failures.append("Error while deleting cluster.")
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
@@ -160,17 +161,19 @@ class ListSample(APIBase):
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code == 404:
             time.sleep(10)
-        self.log.info("Cluster destroyed, destroying Project now.")
+        self.log.info("Cluster destroyed successfully.")
 
         # Delete the project that was created.
+        self.log.info("Deleting Project: {}".format(self.project_id))
         if self.delete_projects(self.organisation_id, [self.project_id],
                                 self.org_owner_key["token"]):
-            failures.append("Error while deleting project {}".format(
-                self.project_id))
+            failures.append("Error while deleting project.")
+        else:
+            self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}".format(
-                failures))
+            self.fail("Following error occurred in teardown: {}"
+                      .format(failures))
         super(ListSample, self).tearDown()
 
     def validate_bucket_api_response(self, expected_res, actual_res):
