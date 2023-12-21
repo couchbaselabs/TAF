@@ -1,11 +1,14 @@
+import copy
 import random
 from random import choice
 from time import time
 
 from BucketLib.bucket import Bucket
+from sdk_client3 import SDKClient
 from Cb_constants import CbServer, DocLoading
 from Jython_tasks.task import ConcurrentFailoverTask
 from bucket_collections.collections_base import CollectionBase
+from couchbase_helper.tuq_helper import N1QLHelper
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
@@ -68,7 +71,6 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.find_minimum_bucket_replica()
         # Hold the dict of {node_obj_to_fail: failover_type, ...}
         self.nodes_to_fail = None
-
         # To display test execution status
         self.test_status_tbl = TableView(self.log.critical)
         self.auto_fo_settings_tbl = TableView(self.log.critical)
@@ -90,9 +92,22 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         # Perform initial collection load
         self.__load_initial_collection_data()
-
         self.log_setup_status(self.__class__.__name__, "complete",
                               self.setUp.__name__)
+        self.delete_primary_indexes()
+
+    def delete_primary_indexes(self):
+        try:
+            if self.cluster.index_nodes and self.cluster.query_nodes:
+                for bucket in self.cluster.buckets:
+                    client = SDKClient([self.cluster.master], bucket)
+                    a = client.run_query(
+                        "DROP INDEX default:`%s`.`_system`.`_query`.`#primary`"
+                        % (bucket.name), timeout=300)
+        except Exception as e:
+            self.log.info("Exception %s occurred wile deleting primary "
+                          "indexes" % e)
+        self.sleep(8, "small sleep post primary index deletion")
 
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "started",
@@ -245,7 +260,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                         # Decrement the node count for the service
                         decr_node_count(service_type)
                 else:
-                    self.log.warning("KV failover not possible")
+                    self.log.info("KV failover not possible")
                     # No nodes should be FO'ed if KV FO is not possible
                     fo_nodes = set()
                     # Break to make sure no other service failover
@@ -624,7 +639,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 t_service.sort()
                 for c_node in cluster_nodes:
                     if c_node.services == t_service:
-                        nodes.append(self.__get_server_obj(c_node))
+                        node_object = copy.deepcopy(self.__get_server_obj(c_node))
+                        node_object.services = c_node.services
+                        nodes.append(node_object)
                         # Remove nodes from cluster_nodes once picked
                         # to avoid picking same node again
                         cluster_nodes.remove(c_node)
@@ -637,20 +654,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 for src_node in src_nodes:
                     shell_conn.execute_command(
                         "iptables -A INPUT -s %s -j DROP" % src_node.ip)
-                    shell_conn.execute_command(
+                    o,b = shell_conn.execute_command(
                         "nft add rule ip filter INPUT ip saddr %s counter "
                         "drop " % src_node.ip)
                 shell_conn.disconnect()
-
-        def get_num_nodes_to_fo(num_nodes_affected,
-                                service_count_affected_nodes,
-                                service_count_unaffected_nodes):
-            nodes_to_fo = num_nodes_affected
-            for t_server, count in service_count_affected_nodes.items():
-                if t_server not in service_count_unaffected_nodes \
-                        or service_count_unaffected_nodes[t_server] < 1:
-                    nodes_to_fo -= service_count_affected_nodes[t_server]
-            return nodes_to_fo
 
         def recover_from_split(node_list):
             self.log.info("Flushing iptables rules from all nodes")
