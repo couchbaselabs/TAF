@@ -34,7 +34,7 @@ class GetSample(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": str(self.input.param("server_version"))
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -126,6 +126,8 @@ class GetSample(APIBase):
                            .format(res.json()))
         self.expected_res["id"] = res.json()["bucketId"]
         self.sample_bucket_id = res.json()["bucketId"]
+        self.log.info("Wait for data load in sample bucket to complete")
+        time.sleep(10)
 
     def tearDown(self):
         failures = list()
@@ -205,14 +207,8 @@ class GetSample(APIBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/"
                        "sampleBuckets/sampleBucket",
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "message": "BucketID is invalid.",
-                    "httpStatusCode": 400
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Fetch sample but with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
@@ -261,13 +257,11 @@ class GetSample(APIBase):
                     self.sample_bucket_id),
                 "expected_status_code": 400,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
+                    'code': 400,
+                    'message': 'BucketID is invalid.',
+                    'hint': 'Please review your request and ensure that all '
+                            'required parameters are correctly provided.',
+                    'httpStatusCode': 400
                 }
             }
         ]
@@ -309,7 +303,7 @@ class GetSample(APIBase):
                 self.log.warning(result.content)
                 failures.append(testcase["description"])
                 continue
-            if result.status_code == testcase["expected_status_code"]:
+            elif result.status_code == testcase["expected_status_code"]:
                 try:
                     result = result.json()
                     for key in result:
@@ -554,7 +548,7 @@ class GetSample(APIBase):
                 self.log.warning(result.content)
                 failures.append(testcase["description"])
                 continue
-            if result.status_code == testcase["expected_status_code"]:
+            elif result.status_code == testcase["expected_status_code"]:
                 try:
                     result = result.json()
                     for key in result:
@@ -662,7 +656,7 @@ class GetSample(APIBase):
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id and
-                    combination[3] == self.bucket_id):
+                    combination[3] == self.sample_bucket_id):
                 if (combination[1] == "" or combination[0] == "" or
                         combination[2] == "" or combination[3] == ""):
                     testcase["expected_status_code"] = 404
@@ -693,7 +687,7 @@ class GetSample(APIBase):
                         "message": "Access Denied.",
                         "httpStatusCode": 403
                     }
-                elif combination[3] != self.bucket_id and not \
+                elif combination[3] != self.sample_bucket_id and not \
                         isinstance(combination[3], type(None)):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
@@ -775,7 +769,7 @@ class GetSample(APIBase):
                 self.log.warning(result.content)
                 failures.append(testcase["description"])
                 continue
-            if result.status_code == testcase["expected_status_code"]:
+            elif result.status_code == testcase["expected_status_code"]:
                 try:
                     result = result.json()
                     for key in result:
