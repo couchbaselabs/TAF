@@ -104,6 +104,11 @@ class ColumnarBaseTest(CouchbaseBaseTest):
         self.cluster.refresh_object(nodes)
 
     def tearDown(self):
+        # Deleting the project created in setUp -> "a_taf_run"
+        project_in_ini = TestInputSingleton.input.capella.get("project", None)
+        if not project_in_ini:
+            CapellaUtils.delete_project(self.pod, self.tenant)
+
         self.shutdown_task_manager()
         if self.sdk_client_pool:
             self.sdk_client_pool.shutdown()
