@@ -635,7 +635,7 @@ class RebalanceTask(Task):
                     self.to_remove) - set(self.to_add)
                 if self.check_vbucket_shuffling:
                     self.old_vbuckets = BucketHelper(
-                        self.cluster.nodes_in_cluster) \
+                        self.cluster.master) \
                         ._get_vbuckets(non_swap_servers, None)
                 if self.old_vbuckets and self.check_vbucket_shuffling:
                     self.monitor_vbuckets_shuffling = True
@@ -848,8 +848,8 @@ class RebalanceTask(Task):
                         non_swap_servers, None)
                     for vb_type in ["active_vb", "replica_vb"]:
                         for srv in non_swap_servers:
-                            if set(self.old_vbuckets[srv][vb_type]) != set(
-                                    new_vbuckets[srv][vb_type]):
+                            if set(self.old_vbuckets[srv.ip][vb_type]) != set(
+                                    new_vbuckets[srv.ip][vb_type]):
                                 msg = "%s vBuckets were shuffled on %s! " \
                                       "Expected: %s, Got: %s" \
                                       % (vb_type, srv.ip,
