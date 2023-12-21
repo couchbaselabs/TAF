@@ -407,8 +407,8 @@ class RebalanceTask(Task):
                         non_swap_servers, None)
                     for vb_type in ["active_vb", "replica_vb"]:
                         for srv in non_swap_servers:
-                            if set(self.old_vbuckets[srv][vb_type]) != set(
-                                    new_vbuckets[srv][vb_type]):
+                            if set(self.old_vbuckets[srv.ip][vb_type]) != set(
+                                    new_vbuckets[srv.ip][vb_type]):
                                 msg = "%s vBuckets were shuffled on %s! " \
                                       "Expected: %s, Got: %s" \
                                       % (vb_type, srv.ip,
