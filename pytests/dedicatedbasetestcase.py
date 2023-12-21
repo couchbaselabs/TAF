@@ -218,6 +218,11 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             raise Exception("SetUp Failed - {}".format(e))
 
     def tearDown(self):
+        # Deleting the project created in setUp -> "a_taf_run"
+        project_in_ini = TestInputSingleton.input.capella.get("project", None)
+        if not project_in_ini:
+            CapellaUtils.delete_project(self.pod, self.tenant)
+
         if self.is_test_failed() and self.get_cbcollect_info:
             for _, cluster in self.cb_clusters.items():
                 CapellaUtils.trigger_log_collection(self.pod, self.tenant, cluster.id)

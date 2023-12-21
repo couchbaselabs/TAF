@@ -1,5 +1,5 @@
 """
-Created on December 18, 2023
+Created on December 19, 2023
 
 @author: Vipul Bhardwaj
 """
@@ -11,7 +11,7 @@ import itertools
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 
 
-class ListSample(APIBase):
+class CreateSample(APIBase):
 
     def setUp(self):
         APIBase.setUp(self)
@@ -26,7 +26,7 @@ class ListSample(APIBase):
                 100, prefix=self.prefix)).json()["id"]
 
         # Initialize params for cluster creation.
-        cluster_name = self.prefix + "TestSamplesList"
+        cluster_name = self.prefix + "TestSamplesCreate"
         cluster = {
             "name": cluster_name,
             "description": None,
@@ -84,7 +84,7 @@ class ListSample(APIBase):
                 newCIDR = CapellaUtils.get_next_cidr() + "/20"
                 cluster["cloudProvider"]["cidr"] = newCIDR
         if time.time() - start_time >= 1800:
-            self.log.error("Couldn't find CIDR within half an hour.")
+            self.fail("Couldn't find CIDR within half an hour.")
 
         # Wait for the cluster to be deployed.
         self.log.info("Waiting for cluster to be deployed.")
@@ -99,56 +99,18 @@ class ListSample(APIBase):
                 self.cluster_id).json()["currentState"] == "healthy":
             self.log.info("Cluster deployed successfully.")
         else:
-            self.log.error("Cluster didn't deploy within half an hour.")
+            self.fail("Cluster didn't deploy within half an hour.")
 
-        # Initialize params and create a sample bucket.
+        # Initialize params for a sample bucket.
         self.expected_res = {
-            "data": [
-                {
-                    "name": self.input.param("sample_bucket", "beer-sample"),
-                    "type": "couchbase",
-                    "storageBackend": "couchstore",
-                    "memoryAllocationInMb": 200,
-                    "bucketConflictResolution": "seqno",
-                    "durabilityLevel": "none",
-                    "replicas": 1,
-                    "flush": False,
-                    "timeToLiveInSeconds": 0,
-                    "evictionPolicy": "valueOnly",
-                    "stats": {
-                        "itemCount": None,
-                        "opsPerSecond": None,
-                        "diskUsedInMib": None,
-                        "memoryUsedInMib": None
-                    }
-                }
-            ]
+            "name": self.input.param("sample_bucket", "beer-sample"),
         }
-        res = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_res["data"][0]["name"])
-        if res.status_code != 201:
-            self.log.error("Error while creating sample bucket: {}"
-                           .format(res.json()))
-        self.expected_res["data"][0]["id"] = res.json()["bucketId"]
-        self.sample_bucket_id = res.json()["bucketId"]
-        self.log.info("Wait for data load in sample bucket to complete")
-        time.sleep(10)
 
     def tearDown(self):
         failures = list()
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
-
-        # Delete the sample bucket that was created.
-        self.log.info("Deleting bucket: {}".format(self.sample_bucket_id))
-        if self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.sample_bucket_id).status_code != 204:
-            failures.append("Error while deleting bucket.")
-        else:
-            self.log.info("Successfully deleted bucket.")
 
         # Delete the cluster that was created.
         self.log.info("Destroying Cluster: {}".format(self.cluster_id))
@@ -176,7 +138,7 @@ class ListSample(APIBase):
         if failures:
             self.fail("Following error occurred in teardown: {}"
                       .format(failures))
-        super(ListSample, self).tearDown()
+        super(CreateSample, self).tearDown()
 
     def validate_bucket_api_response(self, expected_res, actual_res):
         for key in actual_res:
@@ -185,14 +147,6 @@ class ListSample(APIBase):
             if isinstance(expected_res[key], dict):
                 self.validate_bucket_api_response(
                     expected_res[key], actual_res[key])
-            elif isinstance(expected_res[key], list):
-                for i in range(len(expected_res[key])):
-                    if (actual_res[key] == "data" and
-                            actual_res[key][i]["bucketId"] !=
-                            self.sample_bucket_id):
-                        continue
-                    self.validate_bucket_api_response(
-                        expected_res[key][i], actual_res[key][i])
             elif expected_res[key]:
                 if expected_res[key] != actual_res[key]:
                     return False
@@ -201,7 +155,7 @@ class ListSample(APIBase):
     def test_api_path(self):
         testcases = [
             {
-                "description": "List a valid sample"
+                "description": "Create a valid sample"
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/"
@@ -221,16 +175,10 @@ class ListSample(APIBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/"
                        "sampleBuckets/sampleBucket",
-                "expected_status_code": 404,
-                "expected_error": {
-                    "code": 6008,
-                    "hint": "The requested bucket does not exist. Please "
-                            "ensure that the correct bucket ID is provided.",
-                    "httpStatusCode": 404,
-                    "message": "Unable to find the specified bucket."
-                }
+                "expected_status_code": 405,
+                "expected_error": ""
             }, {
-                "description": "List sample but with non-hex organizationID",
+                "description": "Create sample but with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
                 "expected_status_code": 400,
@@ -244,7 +192,7 @@ class ListSample(APIBase):
                                " to be a client error."
                 }
             }, {
-                "description": "List sample but with non-hex projectID",
+                "description": "Create sample but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
                 "expected_status_code": 400,
@@ -258,7 +206,7 @@ class ListSample(APIBase):
                                " to be a client error."
                 }
             }, {
-                "description": "List sample but with non-hex clusterID",
+                "description": "Create sample but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
                 "expected_status_code": 400,
@@ -290,19 +238,19 @@ class ListSample(APIBase):
             elif "invalid_clusterID" in testcase:
                 clus = testcase["invalid_clusterID"]
 
-            result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
-                org, proj, clus)
+            result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
+                org, proj, clus, self.expected_res["name"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
-                    org, proj, clus)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_bucket_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
+                result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
+                    org, proj, clus, self.expected_res["name"])
+            if result.status_code == 201 and "expected_error" not in testcase:
+                self.log.info("Wait for data load in sample bucket to complete")
+                time.sleep(10)
+                sample_id = result.json()
+                self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    sample_id)
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
                 self.log.warning(result.content)
@@ -313,7 +261,7 @@ class ListSample(APIBase):
                     result = result.json()
                     for key in result:
                         if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
+                            self.log.error("Status != 201, Key validation "
                                            "Failure : {}".format(
                                             testcase["description"]))
                             self.log.warning("Result : {}".format(result))
@@ -361,9 +309,8 @@ class ListSample(APIBase):
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"],
             }
-            if not any(element in ["organizationOwner", "projectDataReader",
-                                   "projectOwner", "projectDataReaderWriter",
-                                   "projectViewer", "projectManager"] for
+            if not any(element in ["organizationOwner",
+                                   "projectOwner", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
@@ -533,19 +480,21 @@ class ListSample(APIBase):
                 header = {}
                 self.update_auth_with_api_token(testcase["token"])
 
-            result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
-                self.organisation_id, self.project_id, self.cluster_id, header)
+            result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.expected_res["name"], header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
-                    self.organisation_id, self.project_id,
-                    self.cluster_id, header)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_bucket_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    failures.append(testcase["description"])
+                result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.expected_res["name"], header)
+            if result.status_code == 201 and "expected_error" not in testcase:
+                self.log.info("Wait for data load in sample bucket to complete")
+                time.sleep(10)
+                sample_id = result.json()
+                self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    sample_id)
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
                 self.log.warning(result.content)
@@ -650,10 +599,8 @@ class ListSample(APIBase):
                     testcase["expected_error"] = "404 page not found"
                 elif combination[2] == "" or any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
-                                                 variable in
-                                                 [type(combination[0]),
-                                                  type(combination[1]),
-                                                  type(combination[2])]):
+                    variable in [type(combination[0]), type(combination[1]),
+                                 type(combination[2])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -706,20 +653,21 @@ class ListSample(APIBase):
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
+            result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], **kwarg)
+                testcase["clusterID"], self.expected_res["name"], kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
+                result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_bucket_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    failures.append(testcase["description"])
+                    testcase["clusterID"], self.expected_res["name"], kwarg)
+            if result.status_code == 201 and "expected_error" not in testcase:
+                self.log.info("Wait for data load in sample bucket to complete")
+                time.sleep(10)
+                sample_id = result.json()
+                self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    sample_id)
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
                 self.log.warning(result.content)
@@ -758,9 +706,10 @@ class ListSample(APIBase):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
-        api_func_list = [[self.capellaAPI.cluster_ops_apis.list_sample_buckets,
-                         (self.organisation_id, self.project_id,
-                          self.cluster_id)]]
+        api_func_list = [[
+            self.capellaAPI.cluster_ops_apis.create_sample_bucket,
+            (self.organisation_id, self.project_id, self.cluster_id, "")
+        ]]
 
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
@@ -793,19 +742,24 @@ class ListSample(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # invalid name param, ie, which give a 422 response.
+            if "422" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["422"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
-        api_func_list = [[self.capellaAPI.cluster_ops_apis.list_sample_buckets,
-                         (self.organisation_id, self.project_id,
-                          self.cluster_id)]]
+        api_func_list = [[
+            self.capellaAPI.cluster_ops_apis.create_sample_bucket,
+            (self.organisation_id, self.project_id, self.cluster_id, "")
+        ]]
 
         org_roles = self.input.param("org_roles", "organizationOwner")
         proj_roles = self.input.param("proj_roles", "projectDataReader")
@@ -835,10 +789,14 @@ class ListSample(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # invalid name param, ie, which give a 422 response.
+            if "422" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["422"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
