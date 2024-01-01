@@ -47,7 +47,7 @@ class UpdateCluster(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": "7.1"
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {

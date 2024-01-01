@@ -35,7 +35,7 @@ class UpdateBucket(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": "7.1"
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -351,9 +351,10 @@ class UpdateBucket(APIBase):
                                    "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
@@ -427,9 +428,10 @@ class UpdateBucket(APIBase):
                 "has_multi_project_access": False,
                 "expected_status_code": 403,
                 "expected_error": {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }

@@ -101,7 +101,7 @@ class GetSample(APIBase):
 
         # Initialize params and create a sample bucket.
         self.expected_res = {
-            "name": self.input.param("sample_bucket", "beer-sample"),
+            "name": self.input.param("sample_bucket", "travel-sample"),
             "type": "couchbase",
             "storageBackend": "couchstore",
             "memoryAllocationInMb": 200,
@@ -663,9 +663,8 @@ class GetSample(APIBase):
                     testcase["expected_error"] = "404 page not found"
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
-                         variable in [type(combination[0]),
-                                      type(combination[1]),
-                                      type(combination[2])]):
+                    variable in [type(combination[0]), type(combination[1]),
+                                 type(combination[2])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,

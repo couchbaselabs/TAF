@@ -35,7 +35,7 @@ class CreateBucket(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": "7.1"
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -129,8 +129,7 @@ class CreateBucket(APIBase):
 
         # Delete the buckets that were created.
         if self.delete_buckets(self.organisation_id, self.project_id,
-                               self.cluster_id, self.bucket_ids,
-                               self.org_owner_key["token"]):
+                               self.cluster_id, self.bucket_ids):
             self.fail("Error while deleting buckets.")
         self.log.info("Successfully deleted buckets. Destroying "
                       "Cluster: {}".format(self.cluster_id))
@@ -358,9 +357,10 @@ class CreateBucket(APIBase):
                                    "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
@@ -434,9 +434,10 @@ class CreateBucket(APIBase):
                 "has_multi_project_access": False,
                 "expected_status_code": 403,
                 "expected_error": {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
@@ -616,8 +617,7 @@ class CreateBucket(APIBase):
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids,
-                                    self.org_owner_key['token'])
+                                    self.cluster_id, self.bucket_ids)
 
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
@@ -845,8 +845,7 @@ class CreateBucket(APIBase):
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids,
-                                    self.org_owner_key['token'])
+                                    self.cluster_id, self.bucket_ids)
 
         if failures:
             for fail in failures:
@@ -1160,8 +1159,7 @@ class CreateBucket(APIBase):
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids,
-                                    self.org_owner_key['token'])
+                                    self.cluster_id, self.bucket_ids)
 
         if failures:
             for fail in failures:

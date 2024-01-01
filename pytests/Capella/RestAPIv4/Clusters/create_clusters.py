@@ -47,7 +47,7 @@ class CreateCluster(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": self.input.capella.get("server_version")
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {

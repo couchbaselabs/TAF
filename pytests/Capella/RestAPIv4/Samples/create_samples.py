@@ -103,7 +103,7 @@ class CreateSample(APIBase):
 
         # Initialize params for a sample bucket.
         self.expected_res = {
-            "name": self.input.param("sample_bucket", "beer-sample"),
+            "name": self.input.param("sample_bucket", "travel-sample"),
         }
 
     def tearDown(self):
@@ -139,18 +139,6 @@ class CreateSample(APIBase):
             self.fail("Following error occurred in teardown: {}"
                       .format(failures))
         super(CreateSample, self).tearDown()
-
-    def validate_bucket_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(expected_res[key], dict):
-                self.validate_bucket_api_response(
-                    expected_res[key], actual_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
 
     def test_api_path(self):
         testcases = [
@@ -313,12 +301,11 @@ class CreateSample(APIBase):
                                    "projectOwner", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
+                    'code': 1003,
+                    'message': 'Access Denied.',
+                    'hint': 'Make sure you have adequate access to the '
+                            'resource.',
+                    'httpStatusCode': 403
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
@@ -505,7 +492,7 @@ class CreateSample(APIBase):
                     result = result.json()
                     for key in result:
                         if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
+                            self.log.error("Status != 201, Key validation "
                                            "Failure : {}".format(
                                             testcase["description"]))
                             self.log.warning("Failure : {}".format(result))
@@ -597,7 +584,10 @@ class CreateSample(APIBase):
                 if combination[1] == "" or combination[0] == "":
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
-                elif combination[2] == "" or any(variable in [
+                elif combination[2] == "":
+                    testcase["expected_status_code"] = 405
+                    testcase["expected_error"] = ""
+                elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                     variable in [type(combination[0]), type(combination[1]),
                                  type(combination[2])]):
@@ -678,7 +668,7 @@ class CreateSample(APIBase):
                     result = result.json()
                     for key in result:
                         if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
+                            self.log.error("Status != 201, Key validation "
                                            "failed for Test : {}".format(
                                             testcase["description"]))
                             self.log.warning("Failure : {}".format(result))
