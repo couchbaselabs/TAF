@@ -625,7 +625,7 @@ class Dataverse_Util(Database_Util):
         """
         database_name = self.format_name(database_name)
         dataverse_name = self.format_name(dataverse_name)
-        if database_name and not self.create_database(
+        if database_name and database_name != "Default" and not self.create_database(
                 cluster, database_name, if_not_exists=True,
                 timeout=timeout, analytics_timeout=analytics_timeout):
             return False
@@ -1702,7 +1702,7 @@ class ExternalLink_Util(RemoteLink_Util):
 
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(cluster))
+                dataverse = random.choice(self.get_all_dataverse_obj())
                 if link_spec.get("include_dataverses",
                                  []) and CBASHelper.unformat_name(
                     dataverse.name) not in link_spec.get(
@@ -1917,7 +1917,7 @@ class KafkaLink_Util(ExternalLink_Util):
 
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(cluster))
+                dataverse = random.choice(self.get_all_dataverse_obj())
                 if link_spec.get("include_dataverses",
                                  []) and CBASHelper.unformat_name(
                     dataverse.name) not in link_spec.get(
@@ -2583,7 +2583,7 @@ class Dataset_Util(KafkaLink_Util):
 
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(cluster))
+                dataverse = random.choice(self.get_all_dataverse_obj())
                 if dataset_spec.get("include_dataverses",
                                     []) and CBASHelper.unformat_name(
                     dataverse.name) not in dataset_spec.get(
@@ -3255,7 +3255,7 @@ class Remote_Dataset_Util(Dataset_Util):
         for i in range(0, num_of_remote_datasets):
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(cluster))
+                dataverse = random.choice(self.get_all_dataverse_obj())
                 if dataset_spec.get("include_dataverses",
                                     []) and CBASHelper.unformat_name(
                     dataverse.name) not in dataset_spec.get(
@@ -3698,7 +3698,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
 
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(cluster))
+                dataverse = random.choice(self.get_all_dataverse_obj())
                 if dataset_spec.get("include_dataverses",
                                     []) and CBASHelper.unformat_name(
                     dataverse.name) not in dataset_spec.get(
@@ -4508,7 +4508,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         for i in range(0, num_of_standalone_coll):
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(cluster))
+                dataverse = random.choice(self.get_all_dataverse_obj())
                 if dataset_spec.get("include_dataverses",
                                     []) and CBASHelper.unformat_name(
                     dataverse.name) not in dataset_spec.get(
@@ -4605,7 +4605,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         for i in range(0, num_of_ds_on_external_db):
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(cluster))
+                dataverse = random.choice(self.get_all_dataverse_obj())
                 if dataset_spec.get("include_dataverses",
                                     []) and CBASHelper.unformat_name(
                     dataverse.name) not in dataset_spec.get(
@@ -4958,7 +4958,7 @@ class Synonym_Util(StandAlone_Collection_Util):
 
                 dataverse = None
                 while not dataverse:
-                    dataverse = random.choice(self.get_all_dataverse_obj(cluster))
+                    dataverse = random.choice(self.get_all_dataverse_obj())
                     if synonym_spec[
                         "include_dataverses"] and CBASHelper.unformat_name(
                         dataverse.name) not in synonym_spec[
