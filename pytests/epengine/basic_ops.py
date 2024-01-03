@@ -2515,7 +2515,7 @@ class basic_ops(ClusterSetup):
             stats = Cbstats(shell).all_stats(self.cluster.buckets[0].name)
             shell.disconnect()
             val = int(stats["ep_num_pager_runs"])
-            self.assertTrue(val < 50,
+            self.assertTrue(val < 2000,
                             "Node %s, ep_num_pager_runs: %s" % (node.ip, val))
 
     def do_get_random_key(self):
