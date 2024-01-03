@@ -519,7 +519,7 @@ class basic_ops(ClusterSetup):
         num_items = self.num_items
         half_of_num_items = self.num_items / 2
         supported_d_levels = self.bucket_util.get_supported_durability_levels()
-        exp_values_to_test = [0, 300, 10000, 12999]
+        exp_values_to_test = [0, 3000, 10000, 12999]
 
         # Initial doc_loading
         initial_load = doc_generator(self.key, 0, self.num_items,
