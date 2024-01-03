@@ -1,12 +1,12 @@
-import random, json
+import json
+import random
 
-from rbac_utils.Rbac_ready_functions import RbacUtils
-
-from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from awsLib.s3_data_helper import perform_S3_operation, S3DataHelper
-from couchbase_helper.tuq_helper import N1QLHelper
 from cbas.cbas_base import CBASBaseTest
 from cbas_utils.cbas_utils import CBASRebalanceUtil
+from couchbase_helper.tuq_helper import N1QLHelper
+from rbac_utils.Rbac_ready_functions import RbacUtils
+from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 
 rbac_users_created = {}
 
@@ -93,8 +93,8 @@ class CBASExternalCollectionsDynamicPrefixes(CBASBaseTest):
                         random.randint(1, 10000)))
 
                 while (not bucket_created) and retry < 10:
+                    region = random.choice(self.aws_region_list)
                     try:
-                        region = random.choice(self.aws_region_list)
                         self.log.info("Creating AWS bucket - {0} in region {1}".format(
                             aws_bucket_name, region))
                         if not perform_S3_operation(
@@ -194,9 +194,9 @@ class CBASExternalCollectionsDynamicPrefixes(CBASBaseTest):
         null_key STRING, missing_field INT"
 
         self.setup_for_test(
-                    create_links=True, create_aws_buckets=True,
-                    create_dataset_objs=True, same_dv_for_link_and_dataset=False,
-                    initialize_helper_objs=True)
+            create_links=True, create_aws_buckets=True,
+            create_dataset_objs=True, same_dv_for_link_and_dataset=False,
+            initialize_helper_objs=True)
 
         dataset_obj = self.cbas_util.list_all_dataset_objs()[0]
 
@@ -221,9 +221,9 @@ class CBASExternalCollectionsDynamicPrefixes(CBASBaseTest):
 
         # create external dataset
         if not self.cbas_util.create_dataset_on_external_resource(
-            self.cluster, dataset_obj.name, link_name=dataset_obj.link_name,
-            dataverse_name=dataset_obj.dataverse_name,
-            **dataset_obj.dataset_properties):
+                self.cluster, dataset_obj.name, link_name=dataset_obj.link_name,
+                dataverse_name=dataset_obj.dataverse_name,
+                **dataset_obj.dataset_properties):
             self.fail("Dataset creation failed")
 
         # run query on dataset
