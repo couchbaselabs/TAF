@@ -120,8 +120,8 @@ class RestConnection(object):
                 new_services=fts-kv-index-n1ql """
             self.services_node_init = self.input.param("new_services", None)
 
-        http_url_format = "http://%s:%s/"
-        https_url_format = "https://%s:%s/"
+        http_url_format = "http://{}:{}/"
+        https_url_format = "https://{}:{}/"
         url_format = http_url_format
         if CbServer.use_https:
             url_format = https_url_format
@@ -130,12 +130,12 @@ class RestConnection(object):
         if self.hostname:
             url_host = self.hostname
 
-        self.baseUrl = url_format % (url_host, self.port)
-        self.fts_baseUrl = url_format % (url_host, self.fts_port)
-        self.index_baseUrl = url_format % (url_host, self.index_port)
-        self.query_baseUrl = url_format % (url_host, self.query_port)
-        self.capi_baseUrl = url_format % (url_host, constants.capi_port)
-        self.eventing_baseUrl = url_format % (url_host, self.eventing_port)
+        self.baseUrl = url_format.format(url_host, self.port)
+        self.fts_baseUrl = url_format.format(url_host, self.fts_port)
+        self.index_baseUrl = url_format.format(url_host, self.index_port)
+        self.query_baseUrl = url_format.format(url_host, self.query_port)
+        self.capi_baseUrl = url_format.format(url_host, constants.capi_port)
+        self.eventing_baseUrl = url_format.format(url_host, self.eventing_port)
 
         # for Node is unknown to this cluster error
         for iteration in xrange(5):
