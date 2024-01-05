@@ -381,6 +381,20 @@ class ClusterUtils:
                                                                      cluster_task.get("subtype", None)))
 
             # Get the endpoint for rebalance report and fetch
+            if "lastReportURI" not in cluster_task:
+                self.log.critical("The result of /pools/default/tasks from {} is \n{}".format(cluster_node.ip, cluster_tasks))
+
+                # Re-trying and checking if the /pools/default/tasks is returning same results each time
+                # This code block can be removed if no errors are seen
+                retry = 1
+                while retry <= 5:
+                    sleep(5, "Sleeping before re-trying request to /pools/default/tasks")
+                    cluster_tasks = rest_orchestrator.ns_server_tasks()
+                    self.log.critical("Retry {} : The result of /pools/default/tasks from {} is \n{}".format(retry, cluster_node.ip, cluster_tasks))
+                    retry += 1
+
+                raise Exception("Unable to fetch all details from /pools/default/tasks endpoint")
+
             report_url = cluster_task["lastReportURI"]
             rebalance_report = rest_orchestrator.fetch_rebalance_report(report_url)
 
