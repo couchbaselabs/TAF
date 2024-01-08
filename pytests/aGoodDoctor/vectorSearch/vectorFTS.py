@@ -15,31 +15,32 @@ import time
 from Cb_constants.CBServer import CbServer
 from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
-from aGoodDoctor.serverlessfts import ftsQueries, ftsIndex, HotelQueries, \
-    HotelIndex, template
+from aGoodDoctor.serverlessfts import ftsQueries, ftsIndex, template
 from com.couchbase.client.core.error import TimeoutException, \
     AmbiguousTimeoutException, UnambiguousTimeoutException, \
     RequestCanceledException, CouchbaseException
 from com.couchbase.client.java.search import SearchQuery
 from global_vars import logger
+from com.couchbase.test.val import Vector
+from com.github.javafaker import Faker
+import pprint
 from java.net import SocketTimeoutException
 from elasticsearch import EsClient
-from vectorSearch.vectorFTS import predictor, vector
 
 
-NimbusPQueries = [
-            SearchQuery.queryString("000000000000000000000000000000406101"),
-            SearchQuery.match("Bhutan"),
-            SearchQuery.prefix("Zim"),
+input = TestInputSingleton.input
+vector = Vector()
+vector.setEmbeddingsModel(input.param("model", "sentence-transformers/all-MiniLM-L6-v2"))
+predictor = vector.predictor
+faker = Faker()
+
+HotelQueries = [
+            SearchQuery.queryString("United Kingdom"),
+            SearchQuery.match("Algeria"),
+            SearchQuery.prefix("Serbi"),
     ]
 
-NimbusMQueries = [
-            SearchQuery.queryString("uWKyrYzYhD"),
-            SearchQuery.match("000000000000000000000000000000833238"),
-            SearchQuery.prefix("0000"),
-    ]
-
-vectorIndex = {
+HotelIndex = {
     "dynamic": False,
     "enabled": True,
     "properties": {
@@ -77,8 +78,6 @@ class DoctorFTS:
         for b in buckets:
             b.ftsIndexes = dict()
             b.FTSqueries = ftsQueries
-            b.ftsIndexes
-            i = 0
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 if s == CbServer.system_scope:
                     continue
@@ -90,15 +89,9 @@ class DoctorFTS:
                     valType = workload["valType"]
                     queryTypes = ftsQueries
                     indexType = ftsIndex
-                    if valType == "Vector":
-                        indexType = vectorIndex
                     if valType == "Hotel":
                         queryTypes = HotelQueries
                         indexType = HotelIndex
-                    if valType == "NimbusP":
-                        queryTypes = NimbusPQueries
-                    if valType == "NimbusM":
-                        queryTypes = NimbusMQueries
                     i = 0
                     while i < workload.get("FTS")[0]:
                         name = str(b.name).replace("-", "_") + c + "_fts_idx_"+str(i)
@@ -163,7 +156,7 @@ class DoctorFTS:
 
 
 class FTSQueryLoad:
-    def __init__(self, bucket, cluster, esClient=None):
+    def __init__(self, bucket, cluster, esClient):
         self.bucket = bucket
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
@@ -175,13 +168,14 @@ class FTSQueryLoad:
         self.stop_run = False
         self.log = logger.get("infra")
         self.failures = 0
-        self.cluster = cluster
         self.cluster_conn = random.choice(self.bucket.clients).cluster
+        self.cluster = cluster
         self.fts_node = random.choice(self.cluster.fts_nodes)
         self.fts_helper = FtsHelper(self.fts_node)
         self.esClient = esClient
 
     def start_query_load(self):
+        self.log.info("Starting fts query thread")
         th = threading.Thread(target=self._run_concurrent_queries)
         th.start()
 
@@ -193,13 +187,10 @@ class FTSQueryLoad:
         self.total_query_count = 0
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("ftsQPS")
         self.currently_running = 0
-        method = self._run_query
-        if self.bucket.loadDefn.get("valType") == "Vector":
-            method = self._run_vector_query
         query_count = 0
         for i in range(0, self.concurrent_queries_to_run):
             threads.append(Thread(
-                target=method,
+                target=self._run_query,
                 name="query_thread_{0}".format(self.bucket.name + str(i)),
                 args=()))
 
@@ -210,7 +201,7 @@ class FTSQueryLoad:
         for thread in threads:
             thread.join()
 
-    def _run_vector_query(self):
+    def _run_query(self, validate_item_count=False, expected_count=0):
         while not self.stop_run:
             index, _tuple = random.choice(self.bucket.ftsIndexes.items())
             collection, queries = _tuple
@@ -236,6 +227,8 @@ class FTSQueryLoad:
             e = ""
             try:
                 self.total_query_count += 1
+                # result = self.execute_fts_query("{}".format(index), query)
+                # print result.metaData().metrics().totalRows()
                 if self.fts_node not in self.cluster.fts_nodes:
                     self.fts_node = random.choice(self.cluster.fts_nodes)
                     self.fts_helper = FtsHelper(self.fts_node)
@@ -244,6 +237,14 @@ class FTSQueryLoad:
                 status, result = self.fts_helper.run_fts_query_curl(index, query)
                 result = json.loads(str(result).encode().decode())
                 if status:
+                    # self.log.info("Vector search for city: %s" % city)
+                    # self.log.info("Embeddings for city %s: %s" % (city, vector_float))
+                # if validate_item_count:
+                #     if result.metaData().metrics().totalRows() != expected_count:
+                #         self.failed_count.next()
+                #     else:
+                #         self.success_count.next()
+                # else:
                     if result["status"].get("errors"):
                         self.error_count.next()
                         self.log.critical(result["status"]["errors"])
@@ -280,48 +281,6 @@ class FTSQueryLoad:
                 pass
             except Exception as e:
                 print e
-            if str(e).find("TimeoutException") != -1\
-                or str(e).find("AmbiguousTimeoutException") != -1\
-                    or str(e).find("UnambiguousTimeoutException") != -1:
-                self.timeout_count.next()
-            elif str(e).find("RequestCanceledException") != -1:
-                self.failures += self.cancel_count.next()
-            elif str(e).find("CouchbaseException") != -1:
-                self.failures += self.error_count.next()
-
-            if str(e).find("no more information available") != -1:
-                self.log.critical(query)
-                self.log.critical(e)
-            end = time.time()
-            if end - start < 1:
-                time.sleep(end - start)
-
-
-    def _run_query(self, validate_item_count=False, expected_count=0):
-        while not self.stop_run:
-            index, _tuple = random.choice(self.bucket.ftsIndexes.items())
-            _, queries = _tuple
-            query = random.choice(queries)
-            start = time.time()
-            e = ""
-            try:
-                self.total_query_count += 1
-                result = self.execute_fts_query("{}".format(index), query)
-                if validate_item_count:
-                    if result.metaData().metrics().totalRows() != expected_count:
-                        self.failed_count.next()
-                    else:
-                        self.success_count.next()
-                else:
-                    self.success_count.next()
-            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
-                pass
-            except RequestCanceledException as e:
-                pass
-            except CouchbaseException as e:
-                pass
-            except Exception as e:
-                pass
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:

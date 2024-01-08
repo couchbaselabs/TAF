@@ -284,7 +284,8 @@ class OPD:
                                           cmd.get("validate", False),
                                           cmd.get("gtm", False),
                                           cmd.get("deleted", False),
-                                          cmd.get("mutated", 0)
+                                          cmd.get("mutated", 0),
+                                          cmd.get("model", self.model)
                                           )
                     hm = HashMap()
                     hm.putAll({DRConstants.create_s: bucket.create_start,
@@ -478,7 +479,8 @@ class OPD:
                         # self.sleep(1)
                         taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
-                                                self.sdk_client_pool, self.durability_level,
+                                                self.sdk_client_pool, self.esClient,
+                                                self.durability_level,
                                                 self.maxttl, self.time_unit,
                                                 self.track_failures, 0)
                         task.set_collection_for_load(bucket.name, scope, collection)

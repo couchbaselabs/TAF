@@ -41,6 +41,7 @@ public class WorkLoadSettings extends WorkLoadBase {
     public List<List<?>> transaction_pattern;
     public Boolean commit_transaction;
     public Boolean rollback_transaction;
+	public String model;
 
     /**** Constructors ****/
     public WorkLoadSettings(String keyPrefix,
@@ -67,6 +68,34 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.mutated = mutated;
         this.valueType = valueType;
         this.keyType = keyType;
+    };
+
+    public WorkLoadSettings(String keyPrefix,
+            int keySize, int docSize, int c, int r, int u, int d, int e,
+            int workers, int ops, String loadType,
+            String keyType, String valueType,
+            boolean validate, boolean gtm, boolean deleted, int mutated,
+            String model) {
+        super();
+        this.keyPrefix = keyPrefix;
+        this.keySize = keySize;
+        this.docSize = docSize;
+        this.creates = c;
+        this.reads = r;
+        this.updates = u;
+        this.deletes = d;
+        this.expiry = e;
+        this.workers = workers;
+        this.ops = ops;
+
+        this.batchSize = this.ops/this.workers;
+        this.gtm = gtm;
+        this.expectDeleted = deleted;
+        this.validate = validate;
+        this.mutated = mutated;
+        this.valueType = valueType;
+        this.keyType = keyType;
+        this.model = model;
     };
 
     public WorkLoadSettings(

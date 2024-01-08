@@ -1,24 +1,27 @@
 package com.couchbase.test.val;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Locale;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
-import java.util.Date;
-import java.util.ArrayList;
-import java.time.Duration;
-import java.time.Instant;
+import java.io.IOException;
 import java.time.LocalDateTime;
-import java.time.temporal.ChronoUnit;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Random;
 
+import com.couchbase.client.java.json.JsonArray;
 import com.couchbase.client.java.json.JsonObject;
+import com.couchbase.test.docgen.WorkLoadSettings;
 import com.github.javafaker.Faker;
 
-import com.couchbase.test.docgen.WorkLoadSettings;
+import ai.djl.MalformedModelException;
+import ai.djl.huggingface.translator.TextEmbeddingTranslatorFactory;
+import ai.djl.inference.Predictor;
+import ai.djl.repository.zoo.Criteria;
+import ai.djl.repository.zoo.ModelNotFoundException;
+import ai.djl.repository.zoo.ZooModel;
+import ai.djl.training.util.ProgressBar;
+import ai.djl.translate.TranslateException;
 
 public class Hotel {
     Faker faker;
@@ -34,6 +37,9 @@ public class Hotel {
     private ArrayList<String> url = new ArrayList<String>();
     private ArrayList<ArrayList<JsonObject>> reviews = new ArrayList<ArrayList<JsonObject>>();
 
+    public Hotel() {
+        super();
+    }
     public Hotel(WorkLoadSettings ws) {
         super();
         this.random = new Random();

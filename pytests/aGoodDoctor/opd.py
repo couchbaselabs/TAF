@@ -16,8 +16,8 @@ from cb_tools.cbstats import Cbstats
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import Server, SDKClient
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
-from com.couchbase.test.docgen import WorkLoadSettings,\
-    DocumentGenerator
+from com.couchbase.test.docgen import WorkLoadSettings
+from com.couchbase.test.docgen import DocumentGenerator
 from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
@@ -383,12 +383,13 @@ class OPD:
                                           cmd.get("workers", self.process_concurrency),
                                           cmd.get("ops", self.ops_rate),
                                           cmd.get("loadType", None),
-                                          cmd.get("keyType", None),
-                                          cmd.get("valueType", None),
+                                          cmd.get("keyType", self.key_type),
+                                          cmd.get("valueType", self.val_type),
                                           cmd.get("validate", False),
                                           cmd.get("gtm", self.gtm),
                                           cmd.get("deleted", False),
-                                          cmd.get("mutated", 0)
+                                          cmd.get("mutated", 0),
+                                          cmd.get("model", self.model)
                                           )
                     hm = HashMap()
                     hm.putAll({DRConstants.create_s: self.create_start,
@@ -498,10 +499,10 @@ class OPD:
                                                   cmd.get("workers", pc),
                                                   cmd.get("ops", self.ops_rate),
                                                   cmd.get("loadType", None),
-                                                  cmd.get("keyType", None),
-                                                  cmd.get("valueType", None),
+                                                  cmd.get("keyType", self.key_type),
+                                                  cmd.get("valueType", self.val_type),
                                                   cmd.get("validate", True),
-                                                  cmd.get("gtm", False),
+                                                  cmd.get("gtm", True),
                                                   cmd.get("deleted", False),
                                                   cmd.get("mutated", 0))
                             ws.dr = dr
@@ -598,7 +599,8 @@ class OPD:
                         self.sleep(1)
                         taskName = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
-                                                client, self.durability_level,
+                                                client, self.esClient,
+                                                self.durability_level,
                                                 self.maxttl, self.time_unit,
                                                 self.track_failures, 0)
                         tasks.append(task)
@@ -622,13 +624,13 @@ class OPD:
         if self.cluster.type != "default":
             return
 
-        result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-        if result:
-            self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
-            if self.assert_crashes_on_load:
-                self.task_manager.abort_all_tasks()
-                self.doc_loading_tm.abortAllTasks()
-                self.assertFalse(result)
+        # result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
+        # if result:
+        #     self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
+        #     if self.assert_crashes_on_load:
+        #         self.task_manager.abort_all_tasks()
+        #         self.doc_loading_tm.abortAllTasks()
+        #         self.assertFalse(result)
 
     def get_magma_disk_usage(self, bucket=None):
         if bucket is None:

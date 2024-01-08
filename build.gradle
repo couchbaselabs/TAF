@@ -41,19 +41,32 @@ dependencies {
     compile group: 'org.apache.logging.log4j', name: 'log4j-slf4j-impl', version: '2.11.1'
 
     // https://mvnrepository.com/artifact/commons-cli/commons-cli
-	compile group: 'commons-cli', name: 'commons-cli', version: '1.4'
-	
-	// https://mvnrepository.com/artifact/com.azure/azure-storage-blob - Azure blob
-	compile group: 'com.azure', name: 'azure-storage-blob', version: '12.20.3'
-	
-	// https://mvnrepository.com/artifact/com.spotify/docker-client
-	compile group: 'com.spotify', name: 'docker-client', version: '8.16.0'
-	
-	compile group: 'com.github.javafaker', name: 'javafaker', version: '0.15'
-	
-	implementation 'dnsjava:dnsjava:3.5.1'
+    compile group: 'commons-cli', name: 'commons-cli', version: '1.4'
+    
+    // https://mvnrepository.com/artifact/com.azure/azure-storage-blob - Azure blob
+    compile group: 'com.azure', name: 'azure-storage-blob', version: '12.20.3'
+    
+    // https://mvnrepository.com/artifact/com.spotify/docker-client
+    compile group: 'com.spotify', name: 'docker-client', version: '8.16.0'
+    
+    compile group: 'com.github.javafaker', name: 'javafaker', version: '0.15'
+    
+    implementation 'dnsjava:dnsjava:3.5.1'
 
     implementation 'org.mongodb:mongodb-driver-sync:4.11.0'
+    
+	compile group: 'co.elastic.clients' , name: 'elasticsearch-java', version:'8.11.3'
+    compile group: 'com.fasterxml.jackson.core' , name:'jackson-databind', version:'2.12.3'
+    
+    // https://mvnrepository.com/artifact/ai.djl.pytorch/pytorch-engine
+    compile group: 'ai.djl.pytorch', name: 'pytorch-engine', version: '0.25.0'
+    
+    // https://mvnrepository.com/artifact/ai.djl.huggingface/tokenizers
+    compile group: 'ai.djl.huggingface', name: 'tokenizers', version: '0.25.0'
+    
+    // https://mvnrepository.com/artifact/ai.djl.pytorch/pytorch-model-zoo
+    compile group: 'ai.djl.pytorch', name: 'pytorch-model-zoo', version: '0.25.0'
+    
 }
 
 task copyDeps(type: Copy) {

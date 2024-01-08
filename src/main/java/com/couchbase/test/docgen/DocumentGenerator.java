@@ -16,13 +16,13 @@ import reactor.util.function.Tuples;
 
 import com.couchbase.test.val.Hotel;
 import com.couchbase.test.val.SimpleValue;
+import com.couchbase.test.val.Vector;
 import com.couchbase.test.val.anySizeValue;
 
 import com.couchbase.test.val.NimbusM;
 import com.couchbase.test.val.NimbusP;
 
 import com.couchbase.test.docgen.DocRange;
-import com.couchbase.test.docgen.KVGenerator;
 import com.couchbase.test.docgen.WorkLoadSettings;
 
 abstract class KVGenerator{
@@ -31,8 +31,6 @@ abstract class KVGenerator{
             + "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
     protected Object keys;
     protected Object vals;
-    private String keyClass;
-    private String valClass;
     private Class<?> keyInstance;
     private Class<?> valInstance;
     protected Method keyMethod;
@@ -60,6 +58,8 @@ abstract class KVGenerator{
             this.valInstance = NimbusM.class;
         else if (valClass.equals(Hotel.class.getSimpleName()))
             this.valInstance = Hotel.class;
+        else if (valClass.equals(Vector.class.getSimpleName()))
+            this.valInstance = Vector.class;
         else
             this.valInstance = SimpleValue.class;
 

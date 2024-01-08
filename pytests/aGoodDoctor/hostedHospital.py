@@ -32,6 +32,7 @@ from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
 from custom_exceptions.exception import ServerUnavailableException
 from exceptions import IndexError
+from elasticsearch import EsClient
 
 
 class Murphy(BaseTestCase, OPD):
@@ -137,6 +138,14 @@ class Murphy(BaseTestCase, OPD):
         self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
         self.query_result = True
 
+        self.vector = self.input.param("vector", False)
+        self.esHost = self.input.param("esHost", None)
+        self.esAPIKey = self.input.param("esAPIKey", None)
+        if self.esHost:
+            self.esHost = "http://" + self.esHost + ":9200"
+        if self.esAPIKey:
+            self.esAPIKey = "".join(self.esAPIKey.split(","))
+
     def tearDown(self):
         self.check_dump_thread = False
         self.stop_crash = True
@@ -201,6 +210,8 @@ class Murphy(BaseTestCase, OPD):
                         self.iops[service] = aws_min_iops[0]
                 spec["disk"]["iops"] = self.iops[service]
             specs.append(spec)
+
+        self.PrintStep("Rebalance Config:")
         pprint.pprint(specs)
         return specs
 
@@ -473,6 +484,30 @@ class Murphy(BaseTestCase, OPD):
                     }
                 ]
             }
+        
+        self.vector_load = {
+            "valType": "Vector",
+            "scopes": 1,
+            "collections": self.input.param("collections", 2),
+            "num_items": self.input.param("num_items", 5000000),
+            "start": 0,
+            "end": self.input.param("num_items", 5000000),
+            "ops": self.input.param("ops_rate", 5000),
+            "doc_size": 1024,
+            "pattern": [0, 0, 100, 0, 0], # CRUDE
+            "load_type": ["update"],
+            "2iQPS": 10,
+            "ftsQPS": 10,
+            "cbasQPS": 0,
+            "collections_defn": [
+                {
+                    "valType": "Vector",
+                    "2i": [2, 2],
+                    "FTS": [2, 2],
+                    "cbas": [2, 2, 2]
+                    }
+                ]
+            }
 
         # temp = [{
         #     "valType": "Hotel",
@@ -493,6 +528,11 @@ class Murphy(BaseTestCase, OPD):
             for load in self.load_defn:
                 load["pattern"] = [0, 50, 0, 0, 50]
                 load["load_type"] = ["read", "expiry"]
+
+        if self.vector:
+            self.load_defn = list()
+            self.load_defn.append(self.vector_load)
+
         #######################################################################
         if not self.skip_init:
             self.create_buckets()
@@ -517,6 +557,24 @@ class Murphy(BaseTestCase, OPD):
 
         self.skip_read_on_error = True
         self.suppress_error_table = True
+
+        self.esClient = None
+        self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
+        if self.esHost and self.esAPIKey:
+            self.esClient = EsClient(self.esHost, self.esAPIKey)
+            self.esClient.initializeSDK()
+            if not self.self.skip_init:
+                for bucket in self.cluster.buckets:
+                    for scope in bucket.scopes.keys():
+                        if scope == CbServer.system_scope:
+                            continue
+                        for collection in bucket.scopes[scope].collections.keys():
+                            if scope == CbServer.system_scope:
+                                continue
+                            if collection == "_default" and scope == "_default":
+                                continue 
+                            self.esClient.deleteESIndex(collection.lower())
+                            self.esClient.createESIndex(collection.lower(), None)
         '''
         Create sequential: 0 - 10M
         Final Docs = 10M (0-10M, 10M seq items)
@@ -575,7 +633,7 @@ class Murphy(BaseTestCase, OPD):
             self.assertTrue(status, "FTS index build failed.")
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("ftsQPS", 0) > 0:
-                    ql = FTSQueryLoad(bucket)
+                    ql = FTSQueryLoad(bucket, self.cluster)
                     ql.start_query_load()
                     self.ftsQL.append(ql)
 

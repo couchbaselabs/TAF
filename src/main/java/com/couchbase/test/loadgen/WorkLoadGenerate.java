@@ -17,6 +17,8 @@ import com.fasterxml.jackson.annotation.PropertyAccessor;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import elasticsearch.EsClient;
+
 import com.couchbase.client.core.error.AmbiguousTimeoutException;
 import com.couchbase.client.core.error.DocumentExistsException;
 import com.couchbase.client.core.error.DocumentNotFoundException;
@@ -59,6 +61,7 @@ public class WorkLoadGenerate extends Task{
     public String collection = "_default";
     public boolean stop_loading = false;
     public HashMap<String, List<Result>> failedMutations;
+	private EsClient esClient = null;
     static Logger logger = LogManager.getLogger(WorkLoadGenerate.class);
 
     public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, String durability) {
@@ -137,6 +140,36 @@ public class WorkLoadGenerate extends Task{
         this.failedMutations = new HashMap<String, List<Result>>();
     }
 
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClient client, EsClient esClient,
+            String durability, int exp, String exp_unit, boolean trackFailures, int retryTimes) {
+        super(taskName);
+        this.dg = dg;
+        this.docops = new DocOps();
+        this.sdk = client;
+        this.esClient = esClient;
+        this.durability = durability;
+        this.trackFailures = trackFailures;
+        this.retryTimes = retryTimes;
+        this.exp = exp;
+        this.exp_unit = exp_unit;
+        this.failedMutations = new HashMap<String, List<Result>>();
+    }
+
+    public WorkLoadGenerate(String taskName, DocumentGenerator dg, SDKClientPool client_pool, EsClient esClient,
+            String durability, int exp, String exp_unit, boolean trackFailures, int retryTimes) {
+        super(taskName);
+        this.dg = dg;
+        this.docops = new DocOps();
+        this.sdkClientPool = client_pool;
+        this.esClient = esClient;
+        this.durability = durability;
+        this.trackFailures = trackFailures;
+        this.retryTimes = retryTimes;
+        this.exp = exp;
+        this.exp_unit = exp_unit;
+        this.failedMutations = new HashMap<String, List<Result>>();
+    }
+
     public void stop_work_load() {
         this.stop_loading = true;
     }
@@ -203,6 +236,9 @@ public class WorkLoadGenerate extends Task{
                     flag = true;
 //                    st = Instant.now();
                     List<Result> result = docops.bulkInsert(this.sdk.connection, docs, setOptions);
+                    if(esClient != null) {
+                        esClient.insertDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
+                    }
 //                    en = Instant.now();
 //                    System.out.println(this.taskName + " Time Taken by Inserts: " + Duration.between(st, en).toMillis() + "ms");
                     ops += dg.ws.batchSize*dg.ws.creates/100;
@@ -219,6 +255,9 @@ public class WorkLoadGenerate extends Task{
                 if (docs.size()>0) {
                     flag = true;
                     List<Result> result = docops.bulkUpsert(this.sdk.connection, docs, upsertOptions);
+                    if(esClient != null) {
+                        esClient.insertDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
+                    }
                     ops += dg.ws.batchSize*dg.ws.updates/100;
                     if(trackFailures && result.size()>0)
                         try {
@@ -247,6 +286,9 @@ public class WorkLoadGenerate extends Task{
                 if (docs.size()>0) {
                     flag = true;
                     List<Result> result = docops.bulkDelete(this.sdk.connection, docs, removeOptions);
+                    if(esClient != null) {
+                        esClient.deleteDocs(this.sdk.collection.replace("_", "").toLowerCase(), docs);
+                    }
                     ops += dg.ws.batchSize*dg.ws.deletes/100;
                     if(trackFailures && result.size()>0)
                         try {
