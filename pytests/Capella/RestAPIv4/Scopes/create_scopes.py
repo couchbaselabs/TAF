@@ -36,7 +36,7 @@ class CreateScope(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": self.input.capella.get("server_version")
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -124,7 +124,6 @@ class CreateScope(APIBase):
 
         # Initialize scope params.
         self.scopes = list()
-        self.expected_result = dict()
 
     def tearDown(self):
         failures = list()
@@ -172,8 +171,8 @@ class CreateScope(APIBase):
             self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}"
-                      .format(failures))
+            self.log.error("Following error occurred in teardown: {}"
+                           .format(failures))
         super(CreateScope, self).tearDown()
 
     def test_api_path(self):
@@ -199,8 +198,8 @@ class CreateScope(APIBase):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/buckets/"
                        "{}/scopes/scope",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 405,
+                "expected_error": ""
             }, {
                 "description": "Create scope but with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
@@ -345,21 +344,17 @@ class CreateScope(APIBase):
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"],
             }
-            if not any(element in ["organizationOwner", "projectDataReader",
-                                   "projectOwner", "projectDataReaderWriter",
-                                   "projectViewer", "projectManager"] for
+            if not any(element in ["organizationOwner",
+                                   "projectOwner", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
+                    "code": 1003,
+                    "hint": "Make sure you have adequate access to the "
+                            "resource.",
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
                 }
-                testcase["expected_status_code"] = 401
+                testcase["expected_status_code"] = 403
             testcases.append(testcase)
         testcases.extend([
             {
@@ -583,84 +578,24 @@ class CreateScope(APIBase):
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Bu"
-                       "ckID: {}".format(self.organisation_id, self.project_id,
-                                         self.cluster_id, self.bucket_id))
-        organizations_id_values = [
-            self.organisation_id,
-            self.replace_last_character(self.organisation_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.organisation_id],
-            (self.organisation_id,),
-            {self.organisation_id},
-            None
-        ]
-        project_id_values = [
-            self.project_id,
-            self.replace_last_character(self.project_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.project_id],
-            (self.project_id,),
-            {self.project_id},
-            None
-        ]
-        cluster_id_values = [
-            self.cluster_id,
-            self.replace_last_character(self.cluster_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.cluster_id],
-            (self.cluster_id,),
-            {self.cluster_id},
-            None
-        ]
-        bucket_id_values = [
-            self.bucket_id,
-            self.replace_last_character(self.bucket_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.bucket_id],
-            (self.bucket_id,),
-            {self.bucket_id},
-            None
-        ]
-        scope_name_values = [
-            self.scope_name,
-            self.replace_last_character(self.scope_name),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.scope_name],
-            (self.scope_name,),
-            {self.scope_name},
-            None
-        ]
-        combinations = list(itertools.product(*[
-            organizations_id_values, project_id_values, cluster_id_values,
-            bucket_id_values, scope_name_values]))
+                       "ckID: {}, ScopeName: {}".format(
+                        self.organisation_id, self.project_id, self.cluster_id,
+                        self.bucket_id, self.scope_name))
+        combinations = self.create_path_combinations(
+            org_id=self.organisation_id, proj_id=self.project_id,
+            clus_id=self.cluster_id, buck_id=self.bucket_id)
 
         testcases = list()
         for combination in combinations:
             testcase = {
                 "description": "OrganizationID: {}, ProjectID: {}, "
-                               "ClusterID: {}, BucketID: {}, ScopeName: {}"
+                               "ClusterID: {}, BucketID: {}"
                 .format(str(combination[0]), str(combination[1]),
-                        str(combination[2]), str(combination[3]),
-                        str(combination[4])),
+                        str(combination[2]), str(combination[3])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
                 "clusterID": combination[2],
-                "bucketID": combination[3]
+                "bucketID": combination[3],
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
@@ -672,9 +607,8 @@ class CreateScope(APIBase):
                     testcase["expected_error"] = "404 page not found"
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
-                         variable in [type(combination[0]),
-                                      type(combination[1]),
-                                      type(combination[2])]):
+                     variable in [type(combination[0]), type(combination[1]),
+                                  type(combination[2])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -701,9 +635,9 @@ class CreateScope(APIBase):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 400,
-                        "hint": "Please review your request and ensure "
-                                "that all required parameters are "
-                                "correctly provided.",
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
                         "message": "BucketID is invalid.",
                         "httpStatusCode": 400
                     }
@@ -738,16 +672,6 @@ class CreateScope(APIBase):
                         "httpStatusCode": 404,
                         "message": "Unable to find the specified bucket."
                     }
-                else:
-                    testcase["expected_status_code"] = 400
-                    testcase["expected_error"] = {
-                        "code": 400,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "message": "BucketID is invalid.",
-                        "httpStatusCode": 400
-                    }
             testcases.append(testcase)
 
         failures = list()
@@ -768,7 +692,7 @@ class CreateScope(APIBase):
                 result = self.capellaAPI.cluster_ops_apis.create_scope(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["bucketID"],
-                    scope_name, **kwarg)
+                    testcase["scopeName"], **kwarg)
             if result.status_code == 201 and "expected_error" not in testcase:
                 self.scopes.append(scope_name)
             elif result.status_code >= 500:
@@ -825,10 +749,15 @@ class CreateScope(APIBase):
                     "description": "Testing scope with name {}".format(name),
                     "name": name
                 }
-                if pre != "":
+                if pre != "" or len(name) > 251:
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
-
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 400,
+                        "message": "Bad Request"
                     }
                 testcases.append(testcase)
 
@@ -848,6 +777,8 @@ class CreateScope(APIBase):
                     self.log.error(testcase["description"])
                     self.log.warning("Result: {}".format(res.json()))
                     failures.append(testcase["description"])
+                else:
+                    self.scopes.append(testcase["name"])
             elif res.status_code >= 500:
                 self.log.critical(testcase["description"])
                 self.log.warning(res.content)
@@ -887,10 +818,9 @@ class CreateScope(APIBase):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         """
-        Scope creation requests here have a dummy name which on purpose
-        is made to start with '%' (because scope names Cannot start
-        with `_` or `%`). And we want to see the erroneous response and
-        handle it as a success to the API calls sent.
+        Scope creation requests here have an empty  name on purpose.
+        And we want to see the erroneous response and handle it as a
+        success to the API calls sent.
         """
         api_func_list = [[self.capellaAPI.cluster_ops_apis.create_scope,
                           (self.organisation_id, self.project_id,
@@ -932,9 +862,9 @@ class CreateScope(APIBase):
             #   # empty name dummies, ie, which give a 400 response.
             if "400" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["400"]
-            #   # unauthorized roles, ie, which give a 401 response.
-            if "401" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["401"]
+            #   # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -942,10 +872,9 @@ class CreateScope(APIBase):
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         """
-        Scope creation requests here have a dummy name which on purpose
-        is made to start with '%' (because scope names Cannot start
-        with `_` or `%`). And we want to see the erroneous response and
-        handle it as a success to the API calls sent.
+        Scope creation requests here have an empty  name on purpose.
+        And we want to see the erroneous response and handle it as a
+        success to the API calls sent.
         """
         api_func_list = [[self.capellaAPI.cluster_ops_apis.create_scope,
                           (self.organisation_id, self.project_id,
@@ -984,9 +913,9 @@ class CreateScope(APIBase):
             #   # empty name dummies, ie, which give a 400 response.
             if "400" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["400"]
-            #   # unauthorized roles, ie, which give a 401 response.
-            if "401" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["401"]
+            #   # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

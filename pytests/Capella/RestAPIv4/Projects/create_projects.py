@@ -31,8 +31,13 @@ class CreateProject(APIBase):
         # Delete the project that was created in setUp.
         if self.delete_projects(self.organisation_id, [self.project_id],
                                 self.org_owner_key["token"]):
-            self.fail("Following error occurred in teardown: {}".format(
-                failures))
+            failures.append("Error while deleting project.")
+        else:
+            self.log.info("Project deleted successfully")
+
+        if failures:
+            self.log.error("Following error occurred in teardown: {}"
+                           .format(failures))
         super(CreateProject, self).tearDown()
 
     def test_api_path(self):

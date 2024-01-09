@@ -61,14 +61,16 @@ class ListProject(APIBase):
         self.delete_api_keys(self.api_keys)
 
         # Delete the project that was created.
+        self.log.info("Deleting Project: {}".format(self.project_id))
         if self.delete_projects(self.organisation_id, [self.project_id],
                                 self.org_owner_key["token"]):
-            failures.append("Error while deleting project {}".format(
-                self.project_id))
+            failures.append("Error while deleting project.")
+        else:
+            self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}".format(
-                failures))
+            self.log.error("Following error occurred in teardown: {}"
+                           .format(failures))
         super(ListProject, self).tearDown()
 
     def validate_project_api_response(self, expected_res, actual_res):

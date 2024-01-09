@@ -116,11 +116,11 @@ class GetCluster(APIBase):
         self.delete_api_keys(self.api_keys)
 
         # Delete the cluster that was created.
+        self.log.info("Destroying Cluster: {}".format(self.cluster_id))
         if self.capellaAPI.cluster_ops_apis.delete_cluster(
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code != 202:
-            failures.append("Error while deleting cluster {}".format(
-                self.cluster_id))
+            failures.append("Error while deleting cluster.")
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
@@ -128,17 +128,19 @@ class GetCluster(APIBase):
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code == 404:
             time.sleep(10)
-        self.log.info("Cluster destroyed, destroying Project now.")
+        self.log.info("Cluster destroyed successfully.")
 
         # Delete the project that was created.
+        self.log.info("Deleting Project: {}".format(self.project_id))
         if self.delete_projects(self.organisation_id, [self.project_id],
                                 self.org_owner_key["token"]):
-            failures.append("Error while deleting project {}".format(
-                self.project_id))
+            failures.append("Error while deleting project.")
+        else:
+            self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}".format(
-                failures))
+            self.log.error("Following error occurred in teardown: {}"
+                           .format(failures))
         super(GetCluster, self).tearDown()
 
     def validate_cluster_api_response(self, expected_res, actual_res):

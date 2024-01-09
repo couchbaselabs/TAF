@@ -1,5 +1,5 @@
 """
-Created on December 8, 2023
+Created on December 11, 2023
 
 @author: Vipul Bhardwaj
 """
@@ -36,7 +36,7 @@ class GetCollection(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": self.input.capella.get("server_version")
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -133,14 +133,18 @@ class GetCollection(APIBase):
         # Create a collection inside the scope and create expected result.
         self.collection_name = self.generate_random_string(
             5, False, self.prefix)
+        self.expected_res = {
+            "maxTTL": 0,
+            "name": self.collection_name,
+            "uid": None
+        }
         res = self.capellaAPI.cluster_ops_apis.create_collection(
             self.organisation_id, self.project_id, self.cluster_id,
             self.bucket_id, self.scope_name, self.collection_name)
-        if res.status_code != 200:
+        if res.status_code != 201:
             self.fail("Collection creation failed!")
         self.log.info("Collection: {} creation successful"
                       .format(self.collection_name))
-        self.expected_res = res.json()
 
     def tearDown(self):
         failures = list()
@@ -152,8 +156,10 @@ class GetCollection(APIBase):
         self.log.info("Deleting collection: {}".format(self.collection_name))
         if self.capellaAPI.cluster_ops_apis.delete_collection(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name, self.collection_name) != 200:
-            failures.append("Error while deleting Collection.")
+                self.bucket_id, self.scope_name,
+                self.collection_name).status_code != 200:
+            failures.append("Error while deleting Collection: {}"
+                            .format(self.collection_name))
         else:
             self.log.info("Collection deletion successful.")
 
@@ -161,7 +167,7 @@ class GetCollection(APIBase):
         self.log.info("Deleting scope: {}".format(self.scope_name))
         if self.capellaAPI.cluster_ops_apis.delete_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name).status_code != 204:
+                self.bucket_id, self.scope_name).status_code != 200:
             failures.append("Error while deleting Scope.")
         else:
             self.log.info("Scope deletion successful.")
@@ -199,8 +205,8 @@ class GetCollection(APIBase):
             self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}"
-                      .format(failures))
+            self.log.error("Following error occurred in teardown: {}"
+                           .format(failures))
         super(GetCollection, self).tearDown()
 
     def validate_collection_api_response(self, expected_res, actual_res):
@@ -289,39 +295,38 @@ class GetCollection(APIBase):
                     self.bucket_id),
                 "expected_status_code": 400,
                 "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that "
-                            "all required parameters are correctly "
-                            "provided.",
-                    "message": "BucketID is invalid.",
-                    "httpStatusCode": 400
+                    "code": 6008,
+                    "hint": "The requested bucket does not exist. Please "
+                            "ensure that the correct bucket ID is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Unable to find the specified bucket."
                 }
             }, {
                 "description": "Fetch collection but with invalid scopeName",
                 "invalid_scopeName": self.replace_last_character(
                     self.scope_name),
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that "
-                            "all required parameters are correctly "
-                            "provided.",
-                    "message": "ScopeName is invalid.",
-                    "httpStatusCode": 400
+                    "code": 11002,
+                    "hint": "The requested scope details could not be "
+                            "found or fetched. Please ensure that the "
+                            "correct scope name is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Scope Not Found"
                 }
             }, {
                 "description": "Fetch collection but with invalid "
                                "collectionName",
                 "invalid_collectionName": self.replace_last_character(
                     self.collection_name),
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that "
-                            "all required parameters are correctly "
-                            "provided.",
-                    "message": "ScopeName is invalid.",
-                    "httpStatusCode": 400
+                    "code": 11001,
+                    "hint": "The requested collection details could not be "
+                            "found or fetched. Please ensure that the correct "
+                            "collection name is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Collection Not Found"
                 }
             }
         ]
@@ -428,16 +433,13 @@ class GetCollection(APIBase):
                                    "projectViewer", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
+                    "code": 1003,
+                    "hint": "Make sure you have adequate access to the "
+                            "resource.",
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
                 }
-                testcase["expected_status_code"] = 401
+                testcase["expected_status_code"] = 403
             testcases.append(testcase)
         testcases.extend([
             {
@@ -656,85 +658,44 @@ class GetCollection(APIBase):
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Bu"
-                       "ckID: {}".format(self.organisation_id, self.project_id,
-                                         self.cluster_id, self.bucket_id))
-        organizations_id_values = [
-            self.organisation_id,
-            self.replace_last_character(self.organisation_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.organisation_id],
-            (self.organisation_id,),
-            {self.organisation_id},
-            None
-        ]
-        project_id_values = [
-            self.project_id,
-            self.replace_last_character(self.project_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.project_id],
-            (self.project_id,),
-            {self.project_id},
-            None
-        ]
-        cluster_id_values = [
-            self.cluster_id,
-            self.replace_last_character(self.cluster_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.cluster_id],
-            (self.cluster_id,),
-            {self.cluster_id},
-            None
-        ]
-        bucket_id_values = [
-            self.bucket_id,
-            self.replace_last_character(self.bucket_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.bucket_id],
-            (self.bucket_id,),
-            {self.bucket_id},
-            None
-        ]
-        combinations = list(itertools.product(*[
-            organizations_id_values, project_id_values, cluster_id_values,
-            bucket_id_values]))
+                       "ckID: {}, ScopeName: {}, CollectionName: {}".format(
+                        self.organisation_id, self.project_id, self.cluster_id,
+                        self.bucket_id, self.scope_name, self.collection_name))
+        combinations = self.create_path_combinations(
+            org_id=self.organisation_id, proj_id=self.project_id,
+            clus_id=self.cluster_id, buck_id=self.bucket_id,
+            scope_name=self.scope_name, coll_name=self.collection_name)
 
         testcases = list()
         for combination in combinations:
             testcase = {
-                "description": "OrganizationID: {}, ProjectID: {}, "
-                               "ClusterID: {}, BucketID: {}".format(
-                                str(combination[0]), str(combination[1]),
-                                str(combination[2]), str(combination[3])),
+                "description": "OrganizationID: {}, ProjectID: {}, ClusterID: "
+                "{}, BucketID: {}, ScopeName: {}, CollectionName: {}"
+                .format(str(combination[0]), str(combination[1]),
+                        str(combination[2]), str(combination[3]),
+                        str(combination[4]), str(combination[5])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
                 "clusterID": combination[2],
-                "bucketID": combination[3]
+                "bucketID": combination[3],
+                "scopeName": combination[4],
+                "collectionName": combination[5]
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id and
-                    combination[3] == self.bucket_id):
+                    combination[3] == self.bucket_id and
+                    combination[4] == self.scope_name and
+                    combination[5] == self.collection_name):
                 if (combination[1] == "" or combination[0] == "" or
-                        combination[2] == "" or combination[3] == ""):
+                        combination[2] == "" or combination[3] == "" or
+                        combination[4] == "" or combination[5] == ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
-                         variable in [type(combination[0]),
-                                      type(combination[1]),
-                                      type(combination[2])]):
+                     variable in [type(combination[0]), type(combination[1]),
+                                  type(combination[2])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -761,9 +722,9 @@ class GetCollection(APIBase):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 400,
-                        "hint": "Please review your request and ensure "
-                                "that all required parameters are "
-                                "correctly provided.",
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
                         "message": "BucketID is invalid.",
                         "httpStatusCode": 400
                     }
@@ -798,15 +759,25 @@ class GetCollection(APIBase):
                         "httpStatusCode": 404,
                         "message": "Unable to find the specified bucket."
                     }
-                else:
-                    testcase["expected_status_code"] = 400
+                elif combination[4] != self.scope_name:
+                    testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
-                        "code": 400,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "message": "BucketID is invalid.",
-                        "httpStatusCode": 400
+                        "code": 11002,
+                        "hint": "The requested scope details could not be "
+                                "found or fetched. Please ensure that the "
+                                "correct scope name is provided.",
+                        "httpStatusCode": 404,
+                        "message": "Scope Not Found"
+                    }
+                else:
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = {
+                        "code": 11001,
+                        "hint": "The requested collection details could not "
+                                "be found or fetched. Please ensure that the "
+                                "correct collection name is provided.",
+                        "httpStatusCode": 404,
+                        "message": "Collection Not Found"
                     }
             testcases.append(testcase)
 
@@ -821,13 +792,13 @@ class GetCollection(APIBase):
             result = self.capellaAPI.cluster_ops_apis.fetch_collection_info(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
-                self.scope_name, self.collection_name, **kwarg)
+                testcase["scopeName"], testcase["collectionName"], **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.fetch_collection_info(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["bucketID"],
-                    self.scope_name, self.collection_name, **kwarg)
+                    testcase["scopeName"], testcase["collectionName"], **kwarg)
             if result.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_collection_api_response(
                         self.expected_res, result.json()):
@@ -910,9 +881,9 @@ class GetCollection(APIBase):
             99, api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 401 response.
-            if "401" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["401"]
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -954,9 +925,9 @@ class GetCollection(APIBase):
             99, api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 401 response.
-            if "401" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["401"]
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

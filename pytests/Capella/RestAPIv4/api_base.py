@@ -121,7 +121,7 @@ class APIBase(BaseTestCase):
         role_combinations = list()
         for r in range(1, len(organization_roles+project_roles) + 1):
             combinations = itertools.combinations(
-                organization_roles+project_roles, r)
+                organization_roles + project_roles, r)
             role_combinations.extend([list(c) for c in combinations])
 
         api_key_dict = dict()
@@ -246,7 +246,7 @@ class APIBase(BaseTestCase):
         self.capellaAPI.cluster_ops_apis.bearer_token = token
 
     """
-    Method make parallel api calls.
+    Method makes parallel api calls.
     param num_of_calls_per_api (int) Number of API calls per API to be made.
     param apis_to_call (list(list)) List of lists, where inner list is of
     format [api_function_call, function_args]
@@ -317,8 +317,7 @@ class APIBase(BaseTestCase):
                     api_key_list[i % len(api_key_list)],
                     apis_to_call[i % len(apis_to_call)][0],
                     apis_to_call[i % len(apis_to_call)][1],
-                    results,)
-            ))
+                    results,)))
 
         for thread in threads:
             thread.start()
@@ -333,53 +332,19 @@ class APIBase(BaseTestCase):
 
             if results[result]["rate_limit_hit"]:
                 self.log.info("Rate limit was hit after {0} API calls".format(
-                    results[result]["total_api_calls_made_to_hit_rate_limit"]
-                ))
+                    results[result]["total_api_calls_made_to_hit_rate_limit"]))
 
             def print_status_code_wise_results(status_code_dict):
                 for status_code in status_code_dict:
-                    self.log.info("Total API calls which returned {0} : {"
-                                  "1}".format(
-                        status_code, status_code_dict[status_code]
-                    ))
+                    self.log.info("Total API calls which returned {0} : {1}"
+                                  .format(status_code,
+                                          status_code_dict[status_code]))
 
             print_status_code_wise_results(results[result]["2xx_status_code"])
             print_status_code_wise_results(results[result]["4xx_errors"])
             print_status_code_wise_results(results[result]["5xx_errors"])
 
         return results
-
-    def validate_api_response(self, expected_resp, actual_resp):
-        for key in expected_resp:
-            if key not in actual_resp:
-                return False
-            else:
-                if key in ["createdAt", "modifiedAt"]:
-                    if expected_resp[key] not in actual_resp[key]:
-                        return False
-                elif isinstance(expected_resp[key], dict):
-                    self.validate_api_response(expected_resp[key],
-                                               actual_resp[key])
-                elif expected_resp[key] != actual_resp[key]:
-                    return False
-        return True
-
-    def validate_list_api_response(self, expected_resp, actual_resp):
-        match_counter = 0
-        for data in actual_resp:
-            if data["name"] in expected_resp:
-                if self.validate_api_response(
-                        expected_resp[data["name"]]["expected_result"], data):
-                    match_counter += 1
-                else:
-                    self.log.error(
-                        "Expected Response - {}. Actual Response - {}".format(
-                            expected_resp[data["name"]]["expected_result"],
-                            data))
-        if len(expected_resp) == match_counter:
-            return True
-        else:
-            return False
 
     @staticmethod
     def replace_last_character(id, non_hex=False):
@@ -404,6 +369,49 @@ class APIBase(BaseTestCase):
         replaced_id = id[:-1] + next_char
         return replaced_id
 
+    def create_path_combinations(self, **kwargs):
+        organizations_id_values = []
+        project_id_values = []
+        cluster_id_values = []
+        bucket_id_values = []
+        scope_name_values = []
+        collection_name_values = []
+        comb_args = []
+
+        for key, param in kwargs.items():
+            values = [
+                param, self.replace_last_character(param), True, 123456789,
+                123456789.123456789, "", [param], (param,), {param}, None
+            ]
+            k = str(key)
+            if k == "org_id":
+                organizations_id_values = values
+                comb_args.append(k)
+            elif k == "proj_id":
+                project_id_values = values
+                comb_args.append(k)
+            elif k == "clus_id":
+                cluster_id_values = values
+                comb_args.append(k)
+            elif k == "buck_id":
+                bucket_id_values = values
+                comb_args.append(k)
+            elif k == "scope_name":
+                scope_name_values = values
+                comb_args.append(k)
+            elif k == "coll_name":
+                collection_name_values = values
+                comb_args.append(k)
+            else:
+                self.fail("Unknown param name passed : {}. Accepted params = ["
+                          "org_id, proj_id, clus_id, buck_id, scope_name, "
+                          "coll_name]".format(k))
+        self.log.info("Created combinations for : {}".format(comb_args))
+        return list(itertools.product(*[
+            organizations_id_values, project_id_values, cluster_id_values,
+            bucket_id_values, scope_name_values, collection_name_values
+        ]))
+
     def create_projects(self, org_id, num_projects, access_key, token,
                         prefix=""):
         projects = dict()
@@ -416,22 +424,18 @@ class APIBase(BaseTestCase):
                     100, special_characters=False)
             }
             resp = self.capellaAPI.org_ops_apis.create_project(
-                organizationId=org_id,
-                name=project_name,
+                organizationId=org_id, name=project_name,
                 description=projects[project_name]["description"])
-
             if resp.status_code == 429:
                 self.handle_rate_limit(int(resp.headers["Retry-After"]))
                 resp = self.capellaAPI.org_ops_apis.create_project(
-                    organizationId=org_id,
-                    name=project_name,
+                    organizationId=org_id, name=project_name,
                     description=projects[project_name]["description"])
-
             if resp.status_code == 201:
                 projects[project_name]["id"] = resp.json()["id"]
             else:
-                self.fail(
-                    "Error while creating project {}".format(project_name))
+                self.fail("Error while creating project {}"
+                          .format(project_name))
 
             projects[project_name]["expected_result"] = {
                 "id": projects[project_name]["id"],
@@ -452,15 +456,11 @@ class APIBase(BaseTestCase):
         self.update_auth_with_api_token(token)
         for project_id in project_ids:
             resp = self.capellaAPI.org_ops_apis.delete_project(
-                organizationId=org_id,
-                projectId=project_id
-            )
+                organizationId=org_id, projectId=project_id)
             if resp.status_code == 429:
                 self.handle_rate_limit(int(resp.headers["Retry-After"]))
                 resp = self.capellaAPI.org_ops_apis.delete_project(
-                    organizationId=org_id,
-                    projectId=project_id
-                )
+                    organizationId=org_id, projectId=project_id)
             if resp.status_code != 204:
                 self.log.error("Error while deleting project {}".format(
                     project_id))
@@ -507,13 +507,11 @@ class APIBase(BaseTestCase):
         self.update_auth_with_api_token(self.org_owner_key['token'])
         for bucket_id in bucket_ids:
             resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
-                org_id, proj_id, clus_id, bucket_id
-            )
+                org_id, proj_id, clus_id, bucket_id)
             if resp.status_code == 429:
                 self.handle_rate_limit(int(resp.headers["Retry-After"]))
                 resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
-                    org_id, proj_id, clus_id, bucket_id
-                )
+                    org_id, proj_id, clus_id, bucket_id)
             if resp.status_code != 204:
                 self.log.error("Error while deleting bucket {}".format(
                     bucket_id))
@@ -551,9 +549,24 @@ class APIBase(BaseTestCase):
             self.handle_rate_limit(int(res.headers["Retry-After"]))
             res = self.capellaAPI.cluster_ops_apis.create_scope(
                 org_id, proj_id, clus_id, buck_id, new_scope_name)
-        if res.status_code == 200:
+        if res.status_code == 201:
             return new_scope_name
         self.fail("Scope creation unsuccessful.")
+
+    def create_collection_to_be_tested(self, org_id, proj_id, clus_id,
+                                       buck_id, scope_name):
+        self.update_auth_with_api_token(self.org_owner_key["token"])
+
+        new_coll_name = self.generate_random_string(5, False, self.prefix)
+        res = self.capellaAPI.cluster_ops_apis.create_collection(
+            org_id, proj_id, clus_id, buck_id, scope_name, new_coll_name)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_scope(
+                org_id, proj_id, clus_id, buck_id, scope_name, new_coll_name)
+        if res.status_code == 201:
+            return new_coll_name
+        self.fail("Collection creation unsuccessful.")
 
     def flush_scopes(self, org_id, proj_id, clus_id, buck_id, scopes):
         self.update_auth_with_api_token(self.org_owner_key['token'])

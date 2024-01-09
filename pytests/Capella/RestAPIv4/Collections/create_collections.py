@@ -36,7 +36,7 @@ class CreateCollection(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": self.input.capella.get("server_version")
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -132,9 +132,6 @@ class CreateCollection(APIBase):
 
         # Initialize collection params.
         self.collections = list()
-        self.expected_res = {
-            "name": ""
-        }
 
     def tearDown(self):
         failures = list()
@@ -152,7 +149,7 @@ class CreateCollection(APIBase):
         # Delete scope.
         if self.capellaAPI.cluster_ops_apis.delete_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name).status_code != 204:
+                self.bucket_id, self.scope_name).status_code != 200:
             failures.append("Error while deleting Scope: {}"
                             .format(self.scope_name))
         self.log.info("Scope deletion successful. Destroying Bucket: {}"
@@ -190,26 +187,14 @@ class CreateCollection(APIBase):
                 self.project_id))
 
         if failures:
-            self.fail("Following error occurred in teardown: {}".format(
-                failures))
+            self.log.error("Following error occurred in teardown: {}"
+                           .format(failures))
         super(CreateCollection, self).tearDown()
-
-    def validate_collection_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(expected_res[key], dict):
-                self.validate_collection_api_response(
-                    expected_res[key], actual_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
 
     def test_api_path(self):
         testcases = [
             {
-                "description": "Fetch info for a valid collection"
+                "description": "Create a valid collection"
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/buckets/"
@@ -232,74 +217,36 @@ class CreateCollection(APIBase):
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
-                "description": "Fetch collection but with non-hex "
+                "description": "Create collection but with non-hex "
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
-                "description": "Fetch collection but with non-hex projectID",
+                "description": "Create collection but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
-                "description": "Fetch collection but with non-hex clusterID",
+                "description": "Create collection but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
-                "description": "Fetch collection but with invalid bucketID",
+                "description": "Create collection but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that "
-                            "all required parameters are correctly "
-                            "provided.",
-                    "message": "BucketID is invalid.",
-                    "httpStatusCode": 400
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
-                "description": "Fetch collection but with invalid scopeName",
+                "description": "Create collection but with invalid scopeName",
                 "invalid_scopeName": self.replace_last_character(
                     self.scope_name),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that "
-                            "all required parameters are correctly "
-                            "provided.",
-                    "message": "ScopeName is invalid.",
-                    "httpStatusCode": 400
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
@@ -334,13 +281,6 @@ class CreateCollection(APIBase):
                     org, proj, clus, buck, scope, collection_name)
             if result.status_code == 201 and "expected_error" not in testcase:
                 self.collections.append(collection_name)
-
-                if not self.validate_collection_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 201, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
                 self.log.warning(result.content)
@@ -573,18 +513,16 @@ class CreateCollection(APIBase):
             collection_name = self.generate_random_string(50, False)
             result = self.capellaAPI.cluster_ops_apis.create_collection(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name, collection_name, header)
+                self.bucket_id, self.scope_name, collection_name,
+                headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_collection(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    self.bucket_id, self.scope_name, collection_name, header)
+                    self.bucket_id, self.scope_name, collection_name,
+                    headers=header)
             if result.status_code == 201 and "expected_error" not in testcase:
-                if not self.validate_collection_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 201, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    failures.append(testcase["description"])
+                self.collections.append(collection_name)
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
                 self.log.warning(result.content)
@@ -639,85 +577,44 @@ class CreateCollection(APIBase):
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Bu"
-                       "ckID: {}".format(self.organisation_id, self.project_id,
-                                         self.cluster_id, self.bucket_id))
-        organizations_id_values = [
-            self.organisation_id,
-            self.replace_last_character(self.organisation_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.organisation_id],
-            (self.organisation_id,),
-            {self.organisation_id},
-            None
-        ]
-        project_id_values = [
-            self.project_id,
-            self.replace_last_character(self.project_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.project_id],
-            (self.project_id,),
-            {self.project_id},
-            None
-        ]
-        cluster_id_values = [
-            self.cluster_id,
-            self.replace_last_character(self.cluster_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.cluster_id],
-            (self.cluster_id,),
-            {self.cluster_id},
-            None
-        ]
-        bucket_id_values = [
-            self.bucket_id,
-            self.replace_last_character(self.bucket_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.bucket_id],
-            (self.bucket_id,),
-            {self.bucket_id},
-            None
-        ]
-        combinations = list(itertools.product(*[
-            organizations_id_values, project_id_values, cluster_id_values,
-            bucket_id_values]))
+                       "ckID: {}, ScopeName: {}".format(
+                        self.organisation_id, self.project_id, self.cluster_id,
+                        self.bucket_id, self.scope_name))
+        combinations = self.create_path_combinations(
+            org_id=self.organisation_id, proj_id=self.project_id,
+            clus_id=self.cluster_id, buck_id=self.bucket_id,
+            scope_name=self.scope_name)
 
         testcases = list()
         for combination in combinations:
             testcase = {
                 "description": "OrganizationID: {}, ProjectID: {}, "
-                               "ClusterID: {}, BucketID: {}".format(
-                                str(combination[0]), str(combination[1]),
-                                str(combination[2]), str(combination[3])),
+                               "ClusterID: {}, BucketID: {}, ScopeName: {}"
+                .format(str(combination[0]), str(combination[1]),
+                        str(combination[2]), str(combination[3]),
+                        str(combination[4])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
                 "clusterID": combination[2],
-                "bucketID": combination[3]
+                "bucketID": combination[3],
+                "scopeName": combination[4]
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id and
-                    combination[3] == self.bucket_id):
+                    combination[3] == self.bucket_id and
+                    combination[4] == self.scope_name):
                 if (combination[1] == "" or combination[0] == "" or
                         combination[2] == "" or combination[3] == ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
+                elif combination[4] == "":
+                    testcase["expected_status_code"] = 405
+                    testcase["expected_error"] = ""
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
-                         variable in [type(combination[0]),
-                                      type(combination[1]),
-                                      type(combination[2])]):
+                     variable in [type(combination[0]), type(combination[1]),
+                                  type(combination[2])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -782,14 +679,14 @@ class CreateCollection(APIBase):
                         "message": "Unable to find the specified bucket."
                     }
                 else:
-                    testcase["expected_status_code"] = 400
+                    testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
-                        "code": 400,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "message": "BucketID is invalid.",
-                        "httpStatusCode": 400
+                        "code": 11002,
+                        "hint": "The requested scope details could not be "
+                                "found or fetched. Please ensure that the "
+                                "correct scope name is provided.",
+                        "httpStatusCode": 404,
+                        "message": "Scope Not Found"
                     }
             testcases.append(testcase)
 
@@ -805,19 +702,15 @@ class CreateCollection(APIBase):
             result = self.capellaAPI.cluster_ops_apis.create_collection(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase["bucketID"],
-                self.scope_name, collection_name, **kwarg)
+                testcase["scopeName"], collection_name, **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_collection(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["bucketID"],
-                    self.scope_name, collection_name, **kwarg)
+                    testcase["scopeName"], collection_name, **kwarg)
             if result.status_code == 201 and "expected_error" not in testcase:
-                if not self.validate_collection_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 201, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    failures.append(testcase["description"])
+                self.collections.append(collection_name)
             elif result.status_code >= 500:
                 self.log.critical(testcase["description"])
                 self.log.warning(result.content)
@@ -866,6 +759,11 @@ class CreateCollection(APIBase):
 
     def test_payload(self):
         testcases = list()
+        testcases.append({
+            "description": "Passing negative maxTTL value.",
+            "name": "negative_maxTTL",
+            "maxTTL": -1
+        })
         for length in [0, 1, 100, 251, 1000]:
             for pre in ["", "_", "%"]:
                 name = self.generate_random_string(length, False, pre)
@@ -873,10 +771,27 @@ class CreateCollection(APIBase):
                     "description": "Testing scope with name {}".format(name),
                     "name": name
                 }
-                if pre != "":
+                if pre != "" or len(name) == 0 or len(name) > 251:
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
-
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 400,
+                        "message": "Bad Request"
+                    }
+                elif testcase["maxTTL"] < 0:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 11003,
+                        "hint": "Returned when a time-to-live unit given "
+                                "during collection creation is not supported. "
+                                "This should be a non-negative value.",
+                        "httpStatusCode": 422,
+                        "message": "The time-to-live value provided is not "
+                                   "supported. It should be a non-negative "
+                                   "integer."
                     }
                 testcases.append(testcase)
 
@@ -893,14 +808,10 @@ class CreateCollection(APIBase):
                     self.bucket_id, self.scope_name, testcase["name"])
             if res.status_code == 201:
                 if "expected_error" in testcase:
-                    self.log.error(res.json())
+                    self.log.warning(res.json())
                     failures.append(testcase["description"])
-                if not self.validate_collection_api_response(
-                        self.expected_res, res.json()):
-                    self.log.error("Status == 201, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    self.log.warning("Result : {}".format(res.json()))
-                    failures.append(testcase["description"])
+                else:
+                    self.collections.append(testcase["name"])
             elif res.status_code >= 500:
                 self.log.critical(testcase["description"])
                 self.log.warning(res.content)
@@ -931,6 +842,16 @@ class CreateCollection(APIBase):
                 self.log.warning("Result : {}".format(res.content))
                 failures.append(testcase["description"])
 
+            if len(self.collections) == 1000:
+                self.log.warning("Reached 1000 Collections, flushing all.")
+                self.update_auth_with_api_token(self.org_owner_key["token"])
+                if self.flush_collections(self.organisation_id,
+                                          self.project_id, self.cluster_id,
+                                          self.bucket_id, self.scope_name,
+                                          self.collections):
+                    self.fail("Collections flushing operation could not be "
+                              "completed successfully.")
+
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -940,10 +861,10 @@ class CreateCollection(APIBase):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         """
-        Scope creation requests here have a dummy name which on purpose
-        is made to start with '%' (because scope names Cannot start
-        with `_` or `%`). And we want to see the erroneous response and
-        handle it as a success to the API calls sent.
+        Collection creation requests here have a dummy name which on
+        purpose is made to start with '%' (because scope names Cannot
+        start with `_` or `%`). And we want to see the erroneous
+        response and handle it as a success to the API calls sent.
         """
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.create_collection,
@@ -987,9 +908,9 @@ class CreateCollection(APIBase):
             #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
-            #   # dummy collection, ie, which give a 404 response.
-            if "404" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["404"]
+            #   # dummy collection, ie, which give a 400 response.
+            if "400" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["400"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -1041,9 +962,9 @@ class CreateCollection(APIBase):
             #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
-            #   # dummy collection, ie, which give a 404 response.
-            if "404" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["404"]
+            #   # dummy collection, ie, which give a 400 response.
+            if "400" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["400"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

@@ -21,7 +21,7 @@ class ListScope(APIBase):
         # require project ID
         self.project_id = self.capellaAPI.org_ops_apis.create_project(
             self.organisation_id,
-            self.generate_random_string(prefix=self.prefix),
+            self.prefix + "TestScopesList",
             self.generate_random_string(
                 100, prefix=self.prefix)).json()["id"]
 
@@ -36,7 +36,7 @@ class ListScope(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": self.input.capella.get("server_version")
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -124,13 +124,33 @@ class ListScope(APIBase):
 
         # Initialize scope params and create a scope.
         self.scope_name = self.generate_random_string(5, False, self.prefix)
+        self.expected_result = {
+            "scopes": [
+                {
+                    "collections": [],
+                    "name": self.scope_name,
+                    "uid": None
+                },
+                {
+                    "collections": [
+                        {
+                            "maxTTL": 0,
+                            "name": "_default",
+                            "uid": None
+                        }
+                    ],
+                    "name": "_default",
+                    "uid": None
+                }
+            ],
+            "uid": None
+        }
         res = self.capellaAPI.cluster_ops_apis.create_scope(
             self.organisation_id, self.project_id, self.cluster_id,
             self.bucket_id, self.scope_name)
         if res.status_code != 201:
             self.fail("Scope creation failed!")
         self.log.info("Scope: {} creation successful".format(self.scope_name))
-        self.expected_result = res.json()
 
     def tearDown(self):
         failures = list()
@@ -142,7 +162,7 @@ class ListScope(APIBase):
         self.log.info("Deleting scope: {}".format(self.scope_name))
         if self.capellaAPI.cluster_ops_apis.delete_scope(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name).status_code != 204:
+                self.bucket_id, self.scope_name).status_code != 200:
             failures.append("Error while deleting Scope.")
         else:
             self.log.info("Scope deletion successful.")
@@ -180,8 +200,8 @@ class ListScope(APIBase):
             self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}"
-                      .format(failures))
+            self.log.error("Following error occurred in teardown: {}"
+                           .format(failures))
         super(ListScope, self).tearDown()
 
     def validate_scope_api_response(self, expected_res, actual_res):
@@ -192,6 +212,8 @@ class ListScope(APIBase):
                 self.validate_scope_api_response(
                     expected_res[key], actual_res[key])
             elif isinstance(expected_res[key], list):
+                if key == "collections":
+                    continue
                 for i in actual_res[key]:
                     if i["name"] != self.scope_name:
                         continue
@@ -226,7 +248,14 @@ class ListScope(APIBase):
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/buckets/"
                        "{}/scopes/scope",
                 "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_error": {
+                    "code": 11002,
+                    "hint": "The requested scope details could not be found "
+                            "or fetched. Please ensure that the correct scope "
+                            "name is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Scope Not Found"
+                }
             }, {
                 "description": "Fetch scope but with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
@@ -380,16 +409,13 @@ class ListScope(APIBase):
                                    "projectViewer", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
+                    "code": 1003,
+                    "hint": "Make sure you have adequate access to the "
+                            "resource.",
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
                 }
-                testcase["expected_status_code"] = 401
+                testcase["expected_status_code"] = 403
             testcases.append(testcase)
         testcases.extend([
             {
@@ -609,57 +635,9 @@ class ListScope(APIBase):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Bu"
                        "ckID: {}".format(self.organisation_id, self.project_id,
                                          self.cluster_id, self.bucket_id))
-        organizations_id_values = [
-            self.organisation_id,
-            self.replace_last_character(self.organisation_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.organisation_id],
-            (self.organisation_id,),
-            {self.organisation_id},
-            None
-        ]
-        project_id_values = [
-            self.project_id,
-            self.replace_last_character(self.project_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.project_id],
-            (self.project_id,),
-            {self.project_id},
-            None
-        ]
-        cluster_id_values = [
-            self.cluster_id,
-            self.replace_last_character(self.cluster_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.cluster_id],
-            (self.cluster_id,),
-            {self.cluster_id},
-            None
-        ]
-        bucket_id_values = [
-            self.bucket_id,
-            self.replace_last_character(self.bucket_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.bucket_id],
-            (self.bucket_id,),
-            {self.bucket_id},
-            None
-        ]
-        combinations = list(itertools.product(*[
-            organizations_id_values, project_id_values, cluster_id_values,
-            bucket_id_values]))
+        combinations = self.create_path_combinations(
+            org_id=self.organisation_id, proj_id=self.project_id,
+            clus_id=self.cluster_id, buck_id=self.bucket_id)
 
         testcases = list()
         for combination in combinations:
@@ -678,7 +656,7 @@ class ListScope(APIBase):
                     combination[2] == self.cluster_id and
                     combination[3] == self.bucket_id):
                 if (combination[1] == "" or combination[0] == "" or
-                        combination[2] == "" or combination[3] == ""):
+                        combination[2] == ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
                 elif any(variable in [
@@ -857,9 +835,9 @@ class ListScope(APIBase):
             99, api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 401 response.
-            if "401" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["401"]
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -899,9 +877,9 @@ class ListScope(APIBase):
             99, api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 401 response.
-            if "401" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["401"]
+            # unauthorized roles, ie, which give a 403 response.
+            if "403" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["403"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

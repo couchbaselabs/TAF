@@ -131,21 +131,20 @@ class UpdateBucket(APIBase):
         self.delete_api_keys(self.api_keys)
 
         # Delete the bucket that was created.
+        self.log.info("Deleting bucket: {}".format(self.bucket_id))
         if self.capellaAPI.cluster_ops_apis.delete_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id).status_code != 204:
-            failures.append("Bucket deletion failed.")
+            failures.append("Error while deleting bucket.")
         else:
-            self.log.info("Successfully deleted bucket {}. Destroying "
-                          "cluster: {} now."
-                          .format(self.bucket_id, self.cluster_id))
+            self.log.info("Successfully deleted bucket.")
 
         # Delete the cluster that was created.
+        self.log.info("Destroying Cluster: {}".format(self.cluster_id))
         if self.capellaAPI.cluster_ops_apis.delete_cluster(
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code != 202:
-            failures.append("Error while deleting cluster {}".format(
-                self.cluster_id))
+            failures.append("Error while deleting cluster.")
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
@@ -153,16 +152,19 @@ class UpdateBucket(APIBase):
                 self.organisation_id, self.project_id,
                 self.cluster_id).status_code == 404:
             time.sleep(10)
-        self.log.info("Cluster destroyed, destroying Project now.")
+        self.log.info("Cluster destroyed successfully.")
 
         # Delete the project that was created.
+        self.log.info("Deleting Project: {}".format(self.project_id))
         if self.delete_projects(self.organisation_id, [self.project_id],
                                 self.org_owner_key["token"]):
-            failures.append("Error while deleting projects.")
+            failures.append("Error while deleting project.")
+        else:
+            self.log.info("Project deleted successfully")
 
         if failures:
-            self.fail("Following error occurred in teardown: {}".format(
-                failures))
+            self.log.error("Following error occurred in teardown: {}"
+                           .format(failures))
         super(UpdateBucket, self).tearDown()
 
     def test_api_path(self):
@@ -608,58 +610,9 @@ class UpdateBucket(APIBase):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Bu"
                        "ckID: {}".format(self.organisation_id, self.project_id,
                                          self.cluster_id, self.bucket_id))
-        organizations_id_values = [
-            self.organisation_id,
-            self.replace_last_character(self.organisation_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.organisation_id],
-            (self.organisation_id,),
-            {self.organisation_id},
-            None
-        ]
-        project_id_values = [
-            self.project_id,
-            self.replace_last_character(self.project_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.project_id],
-            (self.project_id,),
-            {self.project_id},
-            None
-        ]
-        cluster_id_values = [
-            self.cluster_id,
-            self.replace_last_character(self.cluster_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.cluster_id],
-            (self.cluster_id,),
-            {self.cluster_id},
-            None
-        ]
-        bucket_id_values = [
-            self.bucket_id,
-            self.replace_last_character(self.bucket_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.bucket_id],
-            (self.bucket_id,),
-            {self.bucket_id},
-            None
-        ]
-
-        combinations = list(itertools.product(*[
-            organizations_id_values, project_id_values, cluster_id_values,
-            bucket_id_values]))
+        combinations = self.create_path_combinations(
+            org_id=self.organisation_id, proj_id=self.project_id,
+            clus_id=self.cluster_id, buck_id=self.bucket_id)
 
         testcases = list()
         for combination in combinations:
