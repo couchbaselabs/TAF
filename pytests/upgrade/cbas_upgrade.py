@@ -618,7 +618,18 @@ class UpgradeTests(UpgradeBase):
 
     def test_upgrade(self):
         self.log.info("Upgrading cluster nodes to target version")
+
+        cbas_cc_node_upgrade_sequence = self.input.param(
+            "cbas_cc_node_upgrade_sequence", "random")
         node_to_upgrade = self.fetch_node_to_upgrade()
+        if cbas_cc_node_upgrade_sequence == "first":
+            while node_to_upgrade.ip != self.cluster.cbas_cc_node.ip:
+                node_to_upgrade = self.fetch_node_to_upgrade()
+        elif cbas_cc_node_upgrade_sequence == "last":
+            while node_to_upgrade.ip == self.cluster.cbas_cc_node.ip:
+                node_to_upgrade = self.fetch_node_to_upgrade()
+
+        num_nodes_to_be_upgraded = len(self.cluster.nodes_in_cluster)
         while node_to_upgrade is not None:
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
@@ -629,13 +640,28 @@ class UpgradeTests(UpgradeBase):
                 self.upgrade_function[self.upgrade_type](node_to_upgrade,
                                                          self.upgrade_version)
             self.cluster_util.print_cluster_stats(self.cluster)
-            node_to_upgrade = self.fetch_node_to_upgrade()
+            num_nodes_to_be_upgraded -= 1
+            if cbas_cc_node_upgrade_sequence == "last" and num_nodes_to_be_upgraded > 1:
+                while node_to_upgrade.ip == self.cluster.cbas_cc_node.ip:
+                    node_to_upgrade = self.fetch_node_to_upgrade()
+            else:
+                node_to_upgrade = self.fetch_node_to_upgrade()
         if not all(self.post_upgrade_validation().values()):
             self.fail("Post upgrade scenarios failed")
 
     def test_upgrade_with_failover(self):
         self.log.info("Upgrading cluster nodes to target version")
+        cbas_cc_node_upgrade_sequence = self.input.param(
+            "cbas_cc_node_upgrade_sequence", "random")
         node_to_upgrade = self.fetch_node_to_upgrade()
+        if cbas_cc_node_upgrade_sequence == "first":
+            while node_to_upgrade.ip != self.cluster.cbas_cc_node.ip:
+                node_to_upgrade = self.fetch_node_to_upgrade()
+        elif cbas_cc_node_upgrade_sequence == "last":
+            while node_to_upgrade.ip == self.cluster.cbas_cc_node.ip:
+                node_to_upgrade = self.fetch_node_to_upgrade()
+
+        num_nodes_to_be_upgraded = len(self.cluster.nodes_in_cluster)
         while node_to_upgrade is not None:
             self.log.info("Selected node for upgrade: %s"
                           % node_to_upgrade.ip)
@@ -651,6 +677,11 @@ class UpgradeTests(UpgradeBase):
             else:
                 self.upgrade_function[self.upgrade_type](node_to_upgrade)
             self.cluster_util.print_cluster_stats(self.cluster)
-            node_to_upgrade = self.fetch_node_to_upgrade()
+            num_nodes_to_be_upgraded -= 1
+            if cbas_cc_node_upgrade_sequence == "last" and num_nodes_to_be_upgraded > 1:
+                while node_to_upgrade.ip == self.cluster.cbas_cc_node.ip:
+                    node_to_upgrade = self.fetch_node_to_upgrade()
+            else:
+                node_to_upgrade = self.fetch_node_to_upgrade()
         if not all(self.post_upgrade_validation().values()):
             self.fail("Post upgrade scenarios failed")
