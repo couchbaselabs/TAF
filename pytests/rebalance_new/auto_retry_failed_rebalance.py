@@ -120,7 +120,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self._recover_from_error(before_rebalance_failure)
             if self.data_load:
                 tasks = self.async_data_load()
-            self.check_retry_rebalance_succeeded()
+            self.sleep(30, "Wait for 30 seconds before retrying rebalance")
+            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+            self.assertTrue(status, "Retry rebalance didn't succeed")
             # Validate cbcollect result after rebalance retry
             self.cbcollect_info(trigger=False, validate=True,
                                 known_failures=self.cb_collect_failure_nodes)
@@ -155,7 +157,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self._recover_from_error(during_rebalance_failure)
             if self.data_load:
                 tasks = self.async_data_load()
-            self.check_retry_rebalance_succeeded()
+            self.sleep(30, "Wait for 30 seconds before retrying rebalance")
+            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+            self.assertTrue(status, "Retry rebalance didn't succeed")
             if self.data_load:
                 CollectionBase.wait_for_cont_doc_load_to_complete(self,
                                                                   tasks[1])
@@ -167,7 +171,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                 self._recover_from_error(during_rebalance_failure)
                 if self.data_load:
                     tasks = self.async_data_load()
-                self.check_retry_rebalance_succeeded()
+                self.sleep(30, "Wait for 30 seconds before retrying rebalance")
+                status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+                self.assertTrue(status, "Retry rebalance didn't succeed")
                 if self.data_load:
                     CollectionBase.wait_for_cont_doc_load_to_complete(
                         self, tasks[1])
@@ -184,7 +190,7 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
 
     def test_auto_retry_of_failed_rebalance_does_not_get_triggered_when_rebalance_is_stopped(self):
         _ = self._rebalance_operation(self.rebalance_operation)
-        reached = self.cluster_util.rebalance_reached(self.rest, 30)
+        reached = self.cluster_util.rebalance_reached(self.cluster.master, 30)
         self.assertTrue(reached, "Rebalance failed or did not reach 30%")
         # Trigger cbcollect before interrupting the rebalance
         self.cbcollect_info(trigger=True, validate=False)
@@ -310,7 +316,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             # In these failure scenarios while the retry is pending,
             # then the retry will be attempted but fail
             try:
-                self.check_retry_rebalance_succeeded()
+                self.sleep(30, "Wait for 30 seconds before retrying rebalance")
+                status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+                self.assertTrue(status, "Retry rebalance didn't succeed")
                 # Validate cbcollect results
                 self.cbcollect_info(trigger=False, validate=True)
             except Exception as e:
@@ -344,7 +352,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         tasks = None
         test_failure_condition = self.input.param("test_failure_condition")
         # induce the failure before the rebalance starts
-        self._induce_rebalance_test_condition(test_failure_condition)
+        self.retry_rebalance_util.induce_rebalance_test_condition(self.servers,
+                                                        test_failure_condition)
         self.sleep(self.sleep_time)
         try:
             rebalance = self._rebalance_operation(self.rebalance_operation)
@@ -353,10 +362,13 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         except Exception as e:
             self.log.info("Rebalance failed with: %s" % e)
             # Delete the rebalance test condition to recover from the error
-            self._delete_rebalance_test_condition(test_failure_condition)
+            self.retry_rebalance_util.delete_rebalance_test_condition(self.servers,
+                                                            test_failure_condition)
             if self.data_load:
                 tasks = self.async_data_load()
-            self.check_retry_rebalance_succeeded()
+            self.sleep(30, "Wait for 30 seconds before retrying rebalance")
+            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+            self.assertTrue(status, "Retry rebalance didn't succeed")
             if self.data_load:
                 CollectionBase.wait_for_cont_doc_load_to_complete(self,
                                                                   tasks[1])
@@ -367,7 +379,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         finally:
             if self.disable_auto_failover:
                 self.rest.update_autofailover_settings(True, 120)
-            self._delete_rebalance_test_condition(test_failure_condition)
+            self.retry_rebalance_util.delete_rebalance_test_condition(self.servers,
+                                                            test_failure_condition)
 
     def test_auto_retry_of_failed_rebalance_with_autofailvoer_enabled(self):
         before_rebalance_failure = self.input.param("before_rebalance_failure",
@@ -396,7 +409,9 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
                               "of the failed rebalance")
             else:
                 try:
-                    self.check_retry_rebalance_succeeded()
+                    self.sleep(30, "Wait for 30 seconds before retrying rebalance")
+                    status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+                    self.assertTrue(status, "Retry rebalance didn't succeed")
                 except Exception as e:
                     expected_msg = "Retrying of rebalance still did not help"
                     if expected_msg not in str(e):
@@ -424,9 +439,10 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         vb_num = self.input.param("target_vb")
         delay_milliseconds = self.input.param("delay_time", 60) * 1000
         # induce the failure before the rebalance starts
-        self._induce_rebalance_test_condition(test_failure_condition,
-                                              vb_num=vb_num,
-                                              delay_time=delay_milliseconds)
+        self.retry_rebalance_util.induce_rebalance_test_condition(self.servers,
+                                                                test_failure_condition,
+                                                                vb_num=vb_num,
+                                                                delay_time=delay_milliseconds)
         self.sleep(self.sleep_time,
                    "Wait for rebalance_test_condition to take effect")
         rebalance = self._rebalance_operation(self.rebalance_operation)
@@ -435,7 +451,8 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
         self.task.jython_task_manager.get_task_result(rebalance)
         if self.disable_auto_failover:
             self.rest.update_autofailover_settings(True, 120)
-        self._delete_rebalance_test_condition(test_failure_condition)
+        self.retry_rebalance_util.delete_rebalance_test_condition(self.servers,
+                                                        test_failure_condition)
         if rebalance.result is False:
             self.fail("Rebalance failed with test_condition: %s"
                       % test_failure_condition)
@@ -517,65 +534,3 @@ class AutoRetryFailedRebalance(RebalanceBaseTest):
             self.sleep(self.sleep_time * 4)
             self.cluster_util.stop_firewall_on_node(self.cluster,
                                                     self.servers[1])
-
-    def _induce_rebalance_test_condition(self, test_failure_condition,
-                                         bucket_name="default",
-                                         vb_num=1,
-                                         delay_time=60000):
-        if test_failure_condition == "verify_replication":
-            set_command = 'testconditions:set(verify_replication, ' \
-                          '{fail, "%s"})' % bucket_name
-        elif test_failure_condition == "backfill_done":
-            set_command = 'testconditions:set(backfill_done, ' \
-                          '{for_vb_move, "%s", %s , fail})' \
-                          % (bucket_name, vb_num)
-        elif test_failure_condition == "delay_rebalance_start":
-            set_command = 'testconditions:set(rebalance_start, {delay, %s}).' \
-                          % delay_time
-        elif test_failure_condition == "delay_verify_replication":
-            set_command = 'testconditions:set(verify_replication, ' \
-                          '{delay, "%s", %s})' % (bucket_name, delay_time)
-        elif test_failure_condition == "delay_backfill_done":
-            set_command = 'testconditions:set(backfill_done, ' \
-                          '{for_vb_move, "%s", %s, {delay, %s}})' \
-                          % (bucket_name, vb_num, delay_time)
-        else:
-            set_command = "testconditions:set(%s, fail)" \
-                          % test_failure_condition
-        get_command = "testconditions:get(%s)" % test_failure_condition
-        for server in self.servers:
-            rest = RestConnection(server)
-            shell = RemoteMachineShellConnection(server)
-            shell.enable_diag_eval_on_non_local_hosts()
-            _, content = rest.diag_eval(set_command)
-            self.log.debug("Set Command: %s. Return: %s"
-                           % (set_command, content))
-            shell.disconnect()
-
-        for server in self.servers:
-            rest = RestConnection(server)
-            shell = RemoteMachineShellConnection(server)
-            shell.enable_diag_eval_on_non_local_hosts()
-            _, content = rest.diag_eval(get_command)
-            self.log.info("Command: %s, Return: %s" % (get_command, content))
-
-    def _delete_rebalance_test_condition(self, test_failure_condition):
-        if test_failure_condition.startswith("delay_"):
-            test_failure_condition = test_failure_condition[6:]
-
-        delete_command = "testconditions:delete(%s)" % test_failure_condition
-        get_command = "testconditions:get(%s)" % test_failure_condition
-        for server in self.servers:
-            rest = RestConnection(server)
-            shell = RemoteMachineShellConnection(server)
-            shell.enable_diag_eval_on_non_local_hosts()
-            _, content = rest.diag_eval(delete_command)
-            self.log.info("Command: %s, Return: %s"
-                          % (delete_command, content))
-
-        for server in self.servers:
-            rest = RestConnection(server)
-            shell = RemoteMachineShellConnection(server)
-            shell.enable_diag_eval_on_non_local_hosts()
-            _, content = rest.diag_eval(get_command)
-            self.log.info("Command: %s, Return: %s" % (get_command, content))

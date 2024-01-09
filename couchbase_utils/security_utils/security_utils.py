@@ -13,6 +13,7 @@ from couchbase_utils.security_utils.x509main import x509main
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 
+
 class SecurityUtils():
 
     def __init__(self, logger, client_cert_state="enable",
@@ -31,6 +32,22 @@ class SecurityUtils():
         self.ssltype = ssltype
         self.encryption_type = encryption_type
         self.key_length = key_length
+
+    def set_allow_hash_migration_during_auth(self, cluster=None, enable="true"):
+        self.log.info("Cluster master: {}".format(cluster.master.ip))
+        self.rest = RestConnection(cluster.master)
+        status, content = self.rest.set_allow_hash_migration_during_auth(enable)
+        if not status:
+            return False, content
+        return True, content
+
+    def set_hash_algo(self, cluster=None, hash_algo="argon2id"):
+        self.log.info("Cluster master: {}".format(cluster.master.ip))
+        self.rest = RestConnection(cluster.master)
+        status, content = self.rest.set_paswd_hash_algo(hash_algo)
+        if not status:
+            return False, content
+        return True, content
 
     def rotate_password_for_internal_users(self, cluster=None):
         self.log.info("Cluster master: {}".format(cluster.master.ip))

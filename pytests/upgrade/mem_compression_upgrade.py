@@ -56,7 +56,7 @@ class MemCompressionUpgradeTests(UpgradeBase):
         self.log.info("Upgrading cluster nodes to target version")
         self.index_replicas = self.input.param("index_replicas", 0)
         self.index_count = self.input.param("index_count", 1)
-        major_version = float(self.initial_version[:3])
+        major_version = float(self.upgrade_chain[0][:3])
         self.log.info("major version is {}".format(major_version))
         rest = RestConnection(self.cluster.master)
         # Update RAM quota allocated to buckets created before upgrade
@@ -176,7 +176,7 @@ class MemCompressionUpgradeTests(UpgradeBase):
         self.log.info("Upgrading cluster nodes to target version")
         self.index_replicas = self.input.param("index_replicas", 0)
         self.index_count = self.input.param("index_count", 1)
-        major_version = float(self.initial_version[:3])
+        major_version = float(self.upgrade_chain[0][:3])
         self.log.info("major version is {}".format(major_version))
         rest = RestConnection(self.cluster.master)
         # Update RAM quota allocated to buckets created before upgrade

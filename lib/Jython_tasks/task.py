@@ -38,6 +38,7 @@ from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
 from Jython_tasks.task_manager import TaskManager
 from common_lib import IDENTIFIER_TOKEN
 from cb_tools.cbstats import Cbstats
+from constants.sdk_constants.java_client import SDKConstants
 from collections_helper.collections_spec_constants import MetaConstants,MetaCrudParams
 from common_lib import sleep
 from couchbase_helper.document import DesignDocument
@@ -449,7 +450,7 @@ class RebalanceTask(Task):
                  use_hostnames=False, services=None,
                  check_vbucket_shuffling=True,
                  retry_get_process_num=25, add_nodes_server_groups=None,
-                 defrag_options=None):
+                 defrag_options=None, validate_bucket_ranking=True):
         super(RebalanceTask, self).__init__(
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
             .format(",".join([node.ip for node in to_add]),
@@ -468,6 +469,7 @@ class RebalanceTask(Task):
         self.retry_get_process_num = retry_get_process_num
         self.server_groups_to_add = dict()
         self.defrag_options = None
+        self.validate_bucket_ranking = validate_bucket_ranking
 
         if isinstance(add_nodes_server_groups, dict):
             """
@@ -635,13 +637,15 @@ class RebalanceTask(Task):
 
         self.start_task()
         try:
-            if len(self.to_add) and len(self.to_add) == len(self.to_remove):
+            if len(self.to_add) and len(self.to_add) == len(self.to_remove) \
+                    and self.cluster.nodes_in_cluster:
                 node_version_check = self.rest.check_node_versions()
-                non_swap_servers = set(self.servers) - set(
+                non_swap_servers = set(self.cluster.nodes_in_cluster) - set(
                     self.to_remove) - set(self.to_add)
                 if self.check_vbucket_shuffling:
                     self.old_vbuckets = BucketHelper(
-                        self.servers[0])._get_vbuckets(non_swap_servers, None)
+                        self.cluster.master) \
+                        ._get_vbuckets(non_swap_servers, None)
                 if self.old_vbuckets and self.check_vbucket_shuffling:
                     self.monitor_vbuckets_shuffling = True
                 if self.monitor_vbuckets_shuffling \
@@ -676,6 +680,20 @@ class RebalanceTask(Task):
             self.state = "triggered"
             self.table.display("Rebalance Overview")
 
+            # Pick temp-master if the current one is going out
+            if self.cluster.master in self.to_remove:
+                retained_nodes = [
+                    node for node in self.cluster.nodes_in_cluster
+                    if node not in self.to_remove]
+                # In case of swap of all available nodes,
+                # retained nodes will be None. Consider self.to_add nodes here
+                if not retained_nodes:
+                    retained_nodes = self.to_add
+                self.cluster.master = retained_nodes[0]
+                self.log.critical("Picked new temp-master: {}"
+                                  .format(self.cluster.master))
+                self.rest = RestConnection(self.cluster.master)
+
             check_timeout = int(time.time()) + 10
             rebalance_started = False
             # Wait till current rebalance statusId updates in cluster's task
@@ -709,6 +727,14 @@ class RebalanceTask(Task):
         if result:
             self.result = True
 
+        if self.validate_bucket_ranking:
+            # Validate if the vbucket movement is as per bucket ranking
+            ranking_validation_res = global_vars.cluster_util.\
+                    validate_bucket_ranking(self.cluster)
+            if not ranking_validation_res:
+                self.log.error("The vbucket movement was not according to bucket ranking")
+                self.result = False
+
         print_nodes("Cluster nodes..", self.cluster.nodes_in_cluster)
         print_nodes("KV............", self.cluster.kv_nodes)
         print_nodes("Index.........", self.cluster.index_nodes)
@@ -721,7 +747,8 @@ class RebalanceTask(Task):
         return self.result
 
     def add_nodes(self):
-        master = self.servers[0]
+        username = self.cluster.master.rest_username
+        password = self.cluster.master.rest_password
         node_index = 0
         server_groups = self.server_groups_to_add.keys() \
             if self.server_groups_to_add else []
@@ -744,12 +771,12 @@ class RebalanceTask(Task):
                                 ",".join(services_for_node), "", "",
                                 "<--- IN ---", ""])
             if self.use_hostnames:
-                self.rest.add_node(master.rest_username, master.rest_password,
+                self.rest.add_node(username, password,
                                    node.hostname, node.port,
                                    zone_name=zone_name,
                                    services=services_for_node)
             else:
-                self.rest.add_node(master.rest_username, master.rest_password,
+                self.rest.add_node(username, password,
                                    node.ip, node.port,
                                    zone_name=zone_name,
                                    services=services_for_node)
@@ -830,8 +857,8 @@ class RebalanceTask(Task):
                         non_swap_servers, None)
                     for vb_type in ["active_vb", "replica_vb"]:
                         for srv in non_swap_servers:
-                            if set(self.old_vbuckets[srv][vb_type]) != set(
-                                    new_vbuckets[srv][vb_type]):
+                            if set(self.old_vbuckets[srv.ip][vb_type]) != set(
+                                    new_vbuckets[srv.ip][vb_type]):
                                 msg = "%s vBuckets were shuffled on %s! " \
                                       "Expected: %s, Got: %s" \
                                       % (vb_type, srv.ip,
@@ -872,10 +899,18 @@ class RebalanceTask(Task):
                     sleep(10, log_type="infra")
                     self.poll = True
                 else:
+                    exception_msg = "Seems like rebalance hangs. Please check logs!"
+                    if self.validate_bucket_ranking:
+                        # Validate if the vbucket movement is as per bucket ranking
+                        ranking_validation_res = global_vars.cluster_util.\
+                            validate_bucket_ranking(self.cluster)
+                        if not ranking_validation_res:
+                            self.log.error("The vbucket movement was not according to bucket ranking")
+                            exception_msg += "\nFurther, the vbucket movement upto the hang was not according to bucket ranking"
+
                     self.result = False
                     self.rest.print_UI_logs()
-                    raise RebalanceFailedException(
-                        "seems like rebalance hangs. please check logs!")
+                    raise RebalanceFailedException(exception_msg)
             else:
                 success_cleaned = []
                 for removed in self.to_remove:
@@ -1864,7 +1899,7 @@ class Durability(Task):
                                 len(self.bucket.vbuckets) - 1)
                         nodes = [self.bucket.vbuckets[vBucket].master]
                         if self.durability \
-                                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+                                == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
                             nodes += self.bucket.vbuckets[vBucket].replica
                         count = 0
                         if self.op_type == 'create':
@@ -5761,7 +5796,7 @@ class AutoFailoverNodesFailureTask(Task):
                  timeout, pause=0, expect_auto_failover=True, timeout_buffer=3,
                  check_for_failover=True, failure_timers=None,
                  disk_timeout=0, disk_location=None, disk_size=200,
-                 auto_reprovision=False):
+                 auto_reprovision=False, validate_bucket_ranking=True):
         super(AutoFailoverNodesFailureTask, self) \
             .__init__("AutoFailoverNodesFailureTask")
         self.task_manager = task_manager
@@ -5787,6 +5822,7 @@ class AutoFailoverNodesFailureTask(Task):
         self.failure_timers = failure_timers
         self.rebalance_in_progress = False
         self.auto_reprovision = auto_reprovision
+        self.validate_bucket_ranking = validate_bucket_ranking
 
     def check_failure_timer_task_start(self, timer_task, retry_count=5):
         while retry_count != 0 and not timer_task.started:
@@ -6161,6 +6197,14 @@ class AutoFailoverNodesFailureTask(Task):
             self.set_result(False)
             self.set_exception(Exception("Failed to rebalance after failover"))
 
+        if self.validate_bucket_ranking:
+            # Validating bucket ranking post rebalance
+            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, self.master)
+            if not validate_ranking_res:
+                self.log.error("The vbucket movement was not according to bucket ranking")
+                self.set_result(False)
+                self.set_exception(Exception("Vbucket movement during rebalance did not occur as per bucket ranking"))
+
     def _check_if_rebalance_in_progress(self, timeout):
         rest = RestConnection(self.master)
         end_time = time.time() + timeout
@@ -6328,7 +6372,8 @@ class ConcurrentFailoverTask(Task):
     def __init__(self, task_manager, master, servers_to_fail,
                  disk_location=None, disk_size=200,
                  expected_fo_nodes=1, monitor_failover=True,
-                 task_type="induce_failure", grace_timeout=5):
+                 task_type="induce_failure", grace_timeout=5,
+                 validate_bucket_ranking=True):
         """
         :param servers_to_fail: Dict of nodes to fail mapped with their
                                 corresponding failure method.
@@ -6361,6 +6406,8 @@ class ConcurrentFailoverTask(Task):
         self.expected_nodes_to_fo = expected_fo_nodes
         self.monitor_failover = monitor_failover
 
+        self.validate_bucket_ranking = validate_bucket_ranking
+
         # To track NodeFailureTask per node
         self.sub_tasks = list()
         self.set_result(True)
@@ -6387,7 +6434,7 @@ class ConcurrentFailoverTask(Task):
                                           curr_fo_settings.count))
                 self.set_result(False)
         if time.time() > max_fo_time_allowed:
-            self.test_log_critical("Auto failover triggered outside the "
+            self.test_log.critical("Auto failover triggered outside the "
                                    "timeout window")
             self.set_result(False)
 
@@ -6435,6 +6482,7 @@ class ConcurrentFailoverTask(Task):
                 if task_id_changed:
                     status = self.rest.monitorRebalance()
                 else:
+                    sleep(4,"waiting for fo count to reflect in REST")
                     curr_fo_settings = self.rest.get_autofailover_settings()
                     if self.expected_nodes_to_fo == curr_fo_settings.count:
                         status = True
@@ -6454,6 +6502,15 @@ class ConcurrentFailoverTask(Task):
                             % (self.expected_nodes_to_fo,
                                curr_fo_settings.count))
                         self.set_result(False)
+
+                    if self.validate_bucket_ranking:
+                        # Validating bucket ranking post rebalance
+                        validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, self.master)
+                        if not validate_ranking_res:
+                            self.log.error("The vbucket movement was not according to bucket ranking")
+                            self.set_result(False)
+                            self.set_exception(Exception("Vbucket movement during rebalance"
+                                                        "did not occur as per bucket ranking"))
 
         self.complete_task()
 
@@ -6534,7 +6591,7 @@ class Atomicity(Task):
     write_offset = list()
 
     def __init__(self, cluster, task_manager, bucket, clients,
-                 generator, op_type, exp, flag=0,
+                 generator, op_type, exp, transaction_options=None,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  batch_size=1,
                  timeout_secs=5, compression=None,
@@ -6551,7 +6608,6 @@ class Atomicity(Task):
         self.record_fail = record_fail
         self.num_docs = num_threads
         self.exp = exp
-        self.flag = flag
         self.sync = sync
         self.persist_to = persist_to
         self.replicate_to = replicate_to
@@ -6569,6 +6625,7 @@ class Atomicity(Task):
         self.retries = retries
         self.update_count = update_count
         self.transaction_app = Transaction()
+        self.transaction_options = transaction_options
         sleep(10, "Wait before txn load")
 
     def call(self):
@@ -6622,7 +6679,7 @@ class Atomicity(Task):
                                generators[i], self.op_type,
                                self.exp, self.num_docs, self.update_count,
                                self.sync, self.record_fail,
-                               flag=self.flag,
+                               transaction_options=self.transaction_options,
                                persist_to=self.persist_to,
                                replicate_to=self.replicate_to,
                                time_unit=self.time_unit,
@@ -6647,7 +6704,8 @@ class Atomicity(Task):
         def __init__(self, cluster, bucket, clients,
                      generator, op_type, exp,
                      num_docs, update_count, sync, record_fail,
-                     flag=0, persist_to=0, replicate_to=0, time_unit="seconds",
+                     transaction_options,
+                     persist_to=0, replicate_to=0, time_unit="seconds",
                      batch_size=1, timeout_secs=5,
                      compression=None, retries=5, instance_num=0,
                      transaction_app=None, commit=True,
@@ -6670,12 +6728,12 @@ class Atomicity(Task):
                                   generator._doc_gen.end,
                                   time.time())
             self.exp = exp
-            self.flag = flag
             self.persist_to = persist_to
             self.replicate_to = replicate_to
             self.compression = compression
             self.timeout_secs = timeout_secs
             self.time_unit = time_unit
+            self.transaction_options = transaction_options
             self.instance = instance_num
             self.transaction_app = transaction_app
             self.commit = commit
@@ -6747,7 +6805,8 @@ class Atomicity(Task):
                     exception = self.transaction_app.RunTransaction(
                         self.clients[0][0].cluster,
                         self.bucket, [], self.update_keys,
-                        [], False, True, self.update_count)
+                        [], False, True, self.update_count,
+                        self.transaction_options)
                 elif op_type == "delete" or op_type == "rebalance_delete":
                     for doc in self.list_docs:
                         self.transaction_load(doc, self.commit,
@@ -6781,7 +6840,8 @@ class Atomicity(Task):
                     err = self.transaction_app.RunTransaction(
                         self.clients[0][0].cluster,
                         self.bucket, docs, [], [],
-                        True, True, self.update_count)
+                        True, True, self.update_count,
+                        self.transaction_options)
                     if "AttemptExpired" in str(err):
                         self.test_log.info("Transaction Expired as Expected")
                         for line in err:
@@ -6837,17 +6897,20 @@ class Atomicity(Task):
                 err = self.transaction_app.RunTransaction(
                     self.clients[0][0].cluster,
                     self.bucket, doc, update_keys, [],
-                    commit, self.sync, self.update_count)
+                    commit, self.sync, self.update_count,
+                    self.transaction_options)
             elif op_type == "update":
                 err = self.transaction_app.RunTransaction(
                     self.clients[0][0].cluster,
                     self.bucket, [], doc, [],
-                    commit, self.sync, self.update_count)
+                    commit, self.sync, self.update_count,
+                    self.transaction_options)
             elif op_type == "delete":
                 err = self.transaction_app.RunTransaction(
                     self.clients[0][0].cluster,
                     self.bucket, [], [], doc,
-                    commit, self.sync, self.update_count)
+                    commit, self.sync, self.update_count,
+                    self.transaction_options)
             if err:
                 if self.record_fail:
                     self.all_keys = list()
@@ -7527,11 +7590,12 @@ class NodeInitializeTask(Task):
 class FailoverTask(Task):
     def __init__(self, servers, to_failover=[], wait_for_pending=0,
                  graceful=False, use_hostnames=False, allow_unsafe=False,
-                 all_at_once=False):
+                 all_at_once=False, validate_bucket_ranking=True):
         Task.__init__(self, "failover_task")
         self.servers = servers
         self.to_failover = to_failover
         self.graceful = graceful
+        self.validate_bucket_ranking = validate_bucket_ranking
         self.wait_for_pending = wait_for_pending
         self.use_hostnames = use_hostnames
         self.allow_unsafe = allow_unsafe
@@ -7585,6 +7649,15 @@ class FailoverTask(Task):
                 if not result:
                     self.set_exception("Node failover failed!!")
         self.rest.monitorRebalance()
+
+        if self.validate_bucket_ranking:
+            # Validating bucket ranking post rebalance
+            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, self.servers[0])
+            if not validate_ranking_res:
+                self.log.error("The vbucket movement was not according to bucket ranking")
+                self.set_result(False)
+                self.set_exception(Exception("Vbucket movement during rebalance"
+                                            "did not occur as per bucket ranking"))
 
 
 class BucketFlushTask(Task):

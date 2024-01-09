@@ -90,6 +90,18 @@ class CapellaUtils(object):
         return CapellaUtils.cidr
 
     @staticmethod
+    def create_access_secret_key(pod, tenant, name):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.create_access_secret_key(name, tenant.id)
+        if resp.status_code != 201:
+            raise Exception("Creating Tenant Access/Secret Failed: %s" % resp.content)
+        return json.loads(resp.content)
+
+    @staticmethod
     def create_cluster(pod, tenant, cluster_details, timeout=1800):
         end_time = time.time() + timeout
         while time.time() < end_time:

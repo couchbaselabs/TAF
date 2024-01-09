@@ -35,7 +35,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.expect_range_scan_exceptions = self.input.param(
             "expect_range_scan_exceptions",
             ["com.couchbase.client.core.error.CouchbaseException: "
-             "The range scan internal partition UUID could not be found on the server "])
+             "The range scan internal partition UUID could not be found on the server"])
         self.range_scan_collections = self.input.param("range_scan_collections", None)
         self.rest = RestConnection(self.orchestrator)
         self.server_index_to_fail = self.input.param("server_index_to_fail",

@@ -620,6 +620,7 @@ class CBASBaseTest(BaseTestCase):
             if Bucket.ramQuotaMB not in buckets_spec:
                 buckets_spec[Bucket.ramQuotaMB] = 100
 
+        self.cluster_util.update_cluster_nodes_service_list(cluster)
         # Process params to over_ride values if required
         self.over_ride_bucket_template_params(cluster, buckets_spec)
         self.bucket_util.create_buckets_using_json_data(cluster, buckets_spec)

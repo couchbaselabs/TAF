@@ -1,7 +1,6 @@
 from random import choice
 from threading import Thread, Lock
 
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
@@ -10,9 +9,12 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from constants.sdk_constants.java_client import SDKConstants
 
 from com.couchbase.test.transactions import SimpleTransaction as Transaction
 from reactor.util.function import Tuples
+
+from sdk_client3 import TransactionConfig, SDKClient
 
 
 class OutOfOrderReturns(ClusterSetup):
@@ -242,18 +244,6 @@ class OutOfOrderReturns(ClusterSetup):
 
         self.validate_test_failure()
 
-    def __durability_level(self):
-        if self.durability_level == Bucket.DurabilityLevel.MAJORITY:
-            return 1
-        elif self.durability_level \
-                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
-            return 2
-        elif self.durability_level \
-                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
-            return 3
-        else:
-            return 0
-
     def trans_doc_gen(self, start, end, op_type):
         docs = list()
         value = {'mutated': 0}
@@ -267,20 +257,20 @@ class OutOfOrderReturns(ClusterSetup):
                 docs.append(key)
         return docs
 
-    def __transaction_runner(self, trans_obj, docs, op_type):
+    def __transaction_runner(self, trans_obj, docs, op_type, tnx_options):
         exception = None
         if op_type == DocLoading.Bucket.DocOps.CREATE:
             exception = trans_obj.RunTransaction(
-                self.client.cluster, self.transaction,
-                [self.client.collection], docs, [], [], True, True, 1)
+                self.client.cluster, [self.client.collection],
+                docs, [], [], True, True, 1, tnx_options)
         elif op_type == DocLoading.Bucket.DocOps.UPDATE:
             exception = trans_obj.RunTransaction(
-                self.client.cluster, self.transaction,
-                [self.client.collection], [], docs, [], True, True, 1)
+                self.client.cluster, [self.client.collection],
+                [], docs, [], True, True, 1, tnx_options)
         elif op_type == DocLoading.Bucket.DocOps.DELETE:
             exception = trans_obj.RunTransaction(
-                self.client.cluster, self.transaction,
-                [self.client.collection], [], [], docs, True, True, 1)
+                self.client.cluster, [self.client.collection],
+                [], [], docs, True, True, 1, tnx_options)
         if exception:
             self.log_failure("'%s' transx failed: %s" % (op_type, exception))
 
@@ -293,14 +283,12 @@ class OutOfOrderReturns(ClusterSetup):
         self.client = self.sdk_client_pool.get_client_for_bucket(
             self.bucket, self.scope_name, self.collection_name)
 
+        trans_options = SDKClient.get_transaction_options(
+            TransactionConfig(durability=self.durability_level,
+                              timeout=self.transaction_timeout))
+
         half_of_num_items = self.num_items / 2
         doc_gen = doc_generator(self.key, 0, half_of_num_items)
-
-        # Create trans config and object
-        transaction_config = trans_obj.createTransactionConfig(
-            self.transaction_timeout, self.__durability_level())
-        self.transaction = trans_obj.createTansaction(self.client.cluster,
-                                                      transaction_config)
 
         # Create docs for update/delete ops
         if doc_op != DocLoading.Bucket.DocOps.CREATE:
@@ -316,7 +304,8 @@ class OutOfOrderReturns(ClusterSetup):
             t_doc_gen = self.trans_doc_gen(half_of_num_items, self.num_items,
                                            DocLoading.Bucket.DocOps.CREATE)
             self.__transaction_runner(trans_obj, t_doc_gen,
-                                      DocLoading.Bucket.DocOps.CREATE)
+                                      DocLoading.Bucket.DocOps.CREATE,
+                                      trans_options)
 
         replicate_to = choice(range(0, self.num_replicas))
         persist_to = choice(range(0, self.num_replicas + 1))
@@ -326,8 +315,9 @@ class OutOfOrderReturns(ClusterSetup):
 
         t_doc_gen = self.trans_doc_gen(half_of_num_items, self.num_items,
                                        transx_op)
-        trans_thread = Thread(target=self.__transaction_runner,
-                              args=[trans_obj, t_doc_gen, transx_op])
+        trans_thread = Thread(
+            target=self.__transaction_runner,
+            args=[trans_obj, t_doc_gen, transx_op, trans_options])
         crud_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, doc_gen, doc_op,
             replicate_to=replicate_to, persist_to=persist_to,
@@ -348,24 +338,24 @@ class OutOfOrderReturns(ClusterSetup):
         trans_obj = Transaction()
         self.client = self.sdk_client_pool.get_client_for_bucket(
             self.bucket, self.scope_name, self.collection_name)
-
-        # Create trans config and object
-        transaction_config = trans_obj.createTransactionConfig(
-            self.transaction_timeout, self.__durability_level())
-        self.transaction = trans_obj.createTansaction(self.client.cluster,
-                                                      transaction_config)
+        # Create transaction options
+        trans_options = SDKClient.get_transaction_options(
+            TransactionConfig(durability=self.durability_level,
+                              timeout=self.transaction_timeout))
 
         # Create docs for update/delete ops
         if self.doc_ops[0] != DocLoading.Bucket.DocOps.CREATE:
             docs = self.trans_doc_gen(0, self.num_items/2,
                                       DocLoading.Bucket.DocOps.CREATE)
             self.__transaction_runner(trans_obj, docs,
-                                      DocLoading.Bucket.DocOps.CREATE)
+                                      DocLoading.Bucket.DocOps.CREATE,
+                                      trans_options)
         if self.doc_ops[1] != DocLoading.Bucket.DocOps.CREATE:
             docs = self.trans_doc_gen(self.num_items/2, self.num_items,
                                       DocLoading.Bucket.DocOps.CREATE)
             self.__transaction_runner(trans_obj, docs,
-                                      DocLoading.Bucket.DocOps.CREATE)
+                                      DocLoading.Bucket.DocOps.CREATE,
+                                      trans_options)
 
         # Create doc_gens for test
         doc_set = list()
@@ -375,9 +365,11 @@ class OutOfOrderReturns(ClusterSetup):
                                           self.doc_ops[1]))
 
         t1 = Thread(target=self.__transaction_runner,
-                    args=[trans_obj, doc_set[0], self.doc_ops[0]])
+                    args=[trans_obj, doc_set[0], self.doc_ops[0],
+                          trans_options])
         t2 = Thread(target=self.__transaction_runner,
-                    args=[trans_obj, doc_set[1], self.doc_ops[1]])
+                    args=[trans_obj, doc_set[1], self.doc_ops[1],
+                          trans_options])
 
         t1.start()
         t2.start()

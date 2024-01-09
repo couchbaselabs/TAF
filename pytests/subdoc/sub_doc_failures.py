@@ -9,6 +9,7 @@ from couchbase_helper.documentgenerator import \
     sub_doc_generator, \
     sub_doc_generator_for_edit
 from epengine.durability_base import DurabilityTestsBase
+from constants.sdk_constants.java_client import SDKConstants
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
@@ -294,7 +295,7 @@ class SubDocTimeouts(DurabilityTestsBase):
         if self.nodes_init == 1:
             pass
         elif self.durability_level \
-                == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+                == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
             target_vbs = target_nodes_vbuckets[Bucket.vBucket.REPLICA]
 
         # Create required doc_generators

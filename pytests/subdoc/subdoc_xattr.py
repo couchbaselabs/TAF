@@ -258,8 +258,24 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.assertFalse(failed_items, "Subdoc Xattr insert failed")
 
     def __read_doc_and_validate(self, expected_val, subdoc_key=None):
-        result = self.client.validate_doc(key=self.doc_id)
-        self.assertTrue(result['status'], result['error'])
+        if subdoc_key:
+            success, failed_items = self.client.crud("subdoc_read",
+                                                     self.doc_id,
+                                                     subdoc_key,
+                                                     xattr=self.xattr)
+            self.assertFalse(failed_items, "Xattr read failed")
+            val = success[self.doc_id]["value"][0]
+            if not isinstance(val, unicode):
+                val = json.loads(val.toString())
+            self.assertEqual(
+                expected_val, val,
+                "Sub_doc value mismatch: %s != %s"
+                % (success[self.doc_id]["value"][0], expected_val))
+        else:
+            result = self.client.crud("read", self.doc_id)
+            self.assertEqual(type(expected_val)(result["value"]), expected_val,
+                             "Document value mismatch: %s != %s"
+                             % (result["value"], expected_val))
 
     def test_basic_functionality(self):
         self.__upsert_document_and_validate("create", {})

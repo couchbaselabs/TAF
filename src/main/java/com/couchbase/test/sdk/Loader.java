@@ -2,6 +2,7 @@ package com.couchbase.test.sdk;
 
 import java.util.HashMap;
 import java.util.concurrent.TimeUnit;
+
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.DefaultParser;
@@ -12,13 +13,12 @@ import org.apache.commons.cli.ParseException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
+import com.couchbase.test.docgen.DRConstants;
 import com.couchbase.test.docgen.DocRange;
 import com.couchbase.test.docgen.DocumentGenerator;
 import com.couchbase.test.docgen.WorkLoadSettings;
 import com.couchbase.test.loadgen.WorkLoadGenerate;
 import com.couchbase.test.taskmanager.TaskManager;
-
-import couchbase.test.docgen.DRConstants;
 
 public class Loader {
     static Logger logger = LogManager.getLogger(Loader.class);

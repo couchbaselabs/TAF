@@ -34,7 +34,7 @@ from com.couchbase.client.core.error import \
     ServerOutOfMemoryException, \
     TemporaryFailureException, \
     TimeoutException
-from com.couchbase.client.core.msg.kv import DurabilityLevel
+from com.couchbase.client.core.msg.kv import DurabilityLevel as KVDurabilityLevel
 from com.couchbase.client.core.service import ServiceType
 from com.couchbase.client.java import Cluster, ClusterOptions
 from com.couchbase.client.java.codec import RawBinaryTranscoder,\
@@ -49,7 +49,8 @@ from com.couchbase.client.java.query import QueryOptions
 # Transaction dependencies
 from com.couchbase.client.java.transactions.config import \
     TransactionsCleanupConfig, \
-    TransactionsConfig
+    TransactionsConfig, \
+    TransactionOptions
 from com.couchbase.client.java.transactions import TransactionKeyspace
 # End of transaction dependencies
 
@@ -191,6 +192,7 @@ class TransactionConfig(object):
         self.cleanup_window = cleanup_window
         self.transaction_keyspace = transaction_keyspace
 
+
 class SDKClient(object):
     System.setProperty("com.couchbase.forceIPv4", "false")
     env = ClusterEnvironment \
@@ -198,7 +200,8 @@ class SDKClient(object):
         .ioConfig(IoConfig.numKvConnections(25)) \
         .timeoutConfig(TimeoutConfig.builder()
                        .connectTimeout(Duration.ofSeconds(20))
-                       .kvTimeout(Duration.ofSeconds(10)))
+                       .kvDurableTimeout(Duration.ofSeconds(60))
+                       .kvTimeout(Duration.ofSeconds(60)))
     cluster_env = env.build()
     sdk_connections = 0
     sdk_disconnections = 0
@@ -207,6 +210,19 @@ class SDKClient(object):
     """
     Java SDK Client Implementation for testrunner - master branch
     """
+
+    @staticmethod
+    def get_transaction_options(transaction_config_obj):
+        transaction_options = TransactionOptions.transactionOptions()
+        if transaction_config_obj.timeout is not None:
+            transaction_options.timeout(Duration.ofSeconds(
+                transaction_config_obj.timeout))
+        if transaction_config_obj.durability is not None:
+            transaction_options = transaction_options.durabilityLevel(
+                KVDurabilityLevel.decodeFromManagementApi(
+                    transaction_config_obj.durability))
+        # transaction_options.metadataCollection(tnx_keyspace)
+        return transaction_options
 
     def __init__(self, servers, bucket,
                  scope=CbServer.default_scope,
@@ -252,7 +268,8 @@ class SDKClient(object):
         self.log = logger.get("test")
         self.transaction_conf = transaction_config
         if self.bucket is not None:
-            if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
+            if bucket.serverless is not None \
+                    and bucket.serverless.nebula_endpoint:
                 self.hosts = [bucket.serverless.nebula_endpoint.srv]
                 self.log.info("For SDK, Nebula endpoint used for bucket is: %s"
                               % bucket.serverless.nebula_endpoint.ip)
@@ -294,40 +311,37 @@ class SDKClient(object):
             t_cluster_env = t_cluster_env.compressionConfig(compression_config)
 
         if CbServer.use_https:
-            t_cluster_env = t_cluster_env.\
-                securityConfig(SecurityConfig.enableTls(True).
-                               trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+            t_cluster_env = t_cluster_env.securityConfig(
+                SecurityConfig.enableTls(True)
+                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
 
         if self.transaction_conf:
-            t_cluster_env = t_cluster_env.transactionsConfig(
-                TransactionsConfig.cleanupConfig(
-                    TransactionsCleanupConfig
-                        .cleanupClientAttempts(True)
-                        .cleanupLostAttempts(True)
-                        .cleanupWindow(
-                            Duration.ofSeconds(
-                                self.transaction_conf.cleanup_window or 60)
-                        )
-                )
-            )
+            trans_conf = TransactionsConfig().cleanupConfig(
+                TransactionsCleanupConfig.cleanupClientAttempts(True)
+                .cleanupLostAttempts(True)
+                .cleanupWindow(Duration.ofSeconds(
+                    self.transaction_conf.cleanup_window or 60)))
+
+            # Set transaction timeout
+            if self.transaction_conf.timeout is not None:
+                t_timeout = Duration.ofSeconds(self.transaction_conf.timeout)
+                trans_conf = trans_conf.timeout(t_timeout)
 
             # Set transaction's durability level
-            if self.transaction_conf.durability is None:
-                # Assume default durability configured as per the SDK
-                pass
-            else:
-                t_cluster_env.transactionsConfig(
-                    TransactionsConfig.durabilityLevel(
-                        DurabilityLevel.decodeFromManagementApi(
-                            self.transaction_conf.durability)))
+            # If 'None' assume default transaction's durability
+            if self.transaction_conf.durability is not None:
+                t_durability = KVDurabilityLevel.decodeFromManagementApi(
+                        self.transaction_conf.durability)
+                trans_conf = trans_conf.durabilityLevel(t_durability)
 
             # Set metadata-collection for storing transactional docs / subdocs
             # Default it uses _default collection
             if self.transaction_conf.transaction_keyspace:
                 b_name, scope, col = self.transaction_conf.transaction_keyspace
                 tnx_keyspace = TransactionKeyspace.create(b_name, scope, col)
-                t_cluster_env.transactionsConfig(
-                    TransactionsConfig.metadataCollection(tnx_keyspace))
+                trans_conf = trans_conf.metadataCollection(tnx_keyspace)
+
+            t_cluster_env = t_cluster_env.transactionsConfig(trans_conf)
 
         if build_env:
             t_cluster_env = t_cluster_env.build()
@@ -456,7 +470,6 @@ class SDKClient(object):
                 return value
         except Exception:
             pass
-
         return json_obj
 
     @staticmethod
@@ -883,23 +896,27 @@ class SDKClient(object):
         return result
 
     def read(self, key, timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
-             sdk_retry_strategy=None, populate_value=True):
+             sdk_retry_strategy=None, populate_value=True, with_expiry=None):
         result = {
             "key": key,
             "value": None,
             "cas": 0,
             "status": False,
-            "error": None
+            "error": None,
+            "ttl_present": None
         }
         read_options = SDKOptions.get_read_options(
             timeout, time_unit,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            with_expiry=with_expiry)
         try:
             get_result = self.collection.get(key, read_options)
             result["status"] = True
             if populate_value:
                 result["value"] = str(get_result.contentAsObject())
             result["cas"] = get_result.cas()
+            if with_expiry:
+                result["ttl_present"] = get_result.expiryTime().isPresent()
         except DocumentNotFoundException as e:
             result.update({"key": key, "value": None,
                            "error": str(e), "status": False})

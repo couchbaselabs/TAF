@@ -71,6 +71,27 @@ class InternalUserPassword(ClusterSetup):
                     self.ail("Hard failover failed for %s" % node)
                 self.sleep(5, "Wait for failover to start")
 
+    def set_low_rotation_interval(self, interval):
+
+        #enable diag/eval on non local host
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        shell.enable_diag_eval_on_non_local_hosts()
+        shell.disconnect()
+
+        erlang_cmd = 'ns_config:set(int_creds_protection_sleep, {}).'.format(interval)
+
+        status, content = self.rest.diag_eval(erlang_cmd)
+
+        self.log.info("Status, set low interval: {}".format(status))
+        self.log.info("Content, set low interval: {}".format(content))
+
+        if not status:
+            self.fail("Failed to set int_creds_protection_sleep: {}".format(content))
+
+        result, content = self.security_util.set_internal_creds_rotation_interval(self.cluster, interval)
+        if not result:
+            self.fail("Failed to set internal password rotation interval: {}".format(content))
+
     def validate_password_rotation(self, start_time, end_time):
         lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
         logs_dir = lib_cb + "logs/"
@@ -143,6 +164,8 @@ class InternalUserPassword(ClusterSetup):
 
     def test_password_rotation_rebalance(self):
 
+        self.set_low_rotation_interval(4000)
+
         rebalance_task = None
         if self.rebalance_type == "rebalance_in":
             nodes_in = self.cluster.servers[
@@ -158,22 +181,22 @@ class InternalUserPassword(ClusterSetup):
                 1:self.nodes_out + 1]
             rebalance_task = self.task.async_rebalance(self.cluster,
                                     nodes_in, nodes_out,
-                                    retry_get_process_num=2000)
+                                    retry_get_process_num=2000,
+                                    check_vbucket_shuffling=False)
+
         self.wait_for_rebalance_to_start(rebalance_task)
         # start_time = datetime.fromtimestamp(rebalance_task.start_time)
         self.sleep(5, "Wait after rebalance started")
-
-        result, content = self.security_util.rotate_password_for_internal_users(self.cluster)
 
         self.task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
             self.fail("Failed to complete rebalance")
 
-        expected_err_msg = '''["System is being reconfigured. Please try later."]'''
-        actual_err_msg = content
-        self.assertTrue(expected_err_msg == actual_err_msg, \
-                        "Expected err msg: {}, Actual err msg: {}".format(expected_err_msg,
-                                                                            actual_err_msg))
+        #set the rotation interval back to default
+        result, content = self.security_util.set_internal_creds_rotation_interval(self.cluster, 60000)
+        if not result:
+            self.fail("Failed to set internal password rotation interval: {}".format(content))
+        self.sleep(10, "Wait after resetting rotation interval")
 
         start_time = self.get_current_time(self.cluster.master)
         self.sleep(60, "Wait after rebalance completes")

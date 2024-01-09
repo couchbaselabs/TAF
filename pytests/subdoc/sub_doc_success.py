@@ -1,4 +1,3 @@
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator, \
@@ -6,6 +5,7 @@ from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator_for_edit
 from couchbase_helper.durability_helper import DurabilityHelper
 from epengine.durability_base import DurabilityTestsBase
+from constants.sdk_constants.java_client import SDKConstants
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -543,8 +543,8 @@ class BasicOps(DurabilityTestsBase):
         """
 
         if self.durability_level.upper() in [
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]:
+                SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY]:
             self.log.critical("Test not valid for persistence durability")
             return
 
@@ -682,8 +682,18 @@ class BasicOps(DurabilityTestsBase):
                 cbstat_obj[node.ip].failover_stats(def_bucket.name)
 
             # Failover validation
-            val = failover_info["init"][node.ip] \
-                != failover_info["afterCrud"][node.ip]
+            val = True
+            for vb, stat in failover_info["init"][node.ip].items():
+                if len(failover_info["init"][node.ip].keys()) \
+                        != len(failover_info["afterCrud"][node.ip].keys()):
+                    val = False
+                    self.log.error("Some fo-vb stats are missing after crud")
+                    break
+                stat_2 = failover_info["afterCrud"][node.ip][vb]
+                if stat != stat_2:
+                    val = False
+                    self.log.error("Mismatch in failover stats, vb::%s,\n  "
+                                   "%s\n  %s" % (vb, stat, stat_2))
             self.assertTrue(val, msg="Failover stats got updated")
 
             # Seq_no validation (High level)

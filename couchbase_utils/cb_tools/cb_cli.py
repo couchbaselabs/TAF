@@ -104,11 +104,14 @@ class CbCli(CbCmdBase):
         :return:
         """
         host = "localhost"
+        no_ssl_verify_str = ""
         if CbServer.use_https:
             host = "https://localhost"
-        cmd = "%s bucket-create -c %s:%s -u %s -p %s" \
+            no_ssl_verify_str = " --no-ssl-verify"
+
+        cmd = "%s bucket-create -c %s:%s -u %s -p %s %s" \
               % (self.cbstatCmd, host, self.port,
-                 self.username, self.password)
+                 self.username, self.password, no_ssl_verify_str)
         if wait:
             cmd += " --wait"
         for key, value in bucket_dict.items():
@@ -157,8 +160,11 @@ class CbCli(CbCmdBase):
         return output
 
     def delete_bucket(self, bucket_name):
+        host = "localhost"
+        if CbServer.use_https:
+            host = "https://localhost"
         cmd = "%s bucket-delete -c %s:%s -u %s -p %s --bucket %s" \
-              % (self.cbstatCmd, "localhost", self.port,
+              % (self.cbstatCmd, host, self.port,
                  self.username, self.password, bucket_name)
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
@@ -167,9 +173,14 @@ class CbCli(CbCmdBase):
         return output
 
     def edit_bucket(self, bucket_name, **params):
-        cmd = "{0} bucket-edit -c {1}:{2} -u {3} -p {4} --bucket {5}" \
-              .format(self.cbstatCmd, "localhost", self.port,
-                 self.username, self.password, bucket_name)
+        host = "localhost"
+        no_ssl_verify_str = ""
+        if CbServer.use_https:
+            host = "https://localhost"
+            no_ssl_verify_str = " --no-ssl-verify"
+        cmd = "{0} bucket-edit -c {1}:{2} -u {3} -p {4} --bucket {5} {6}" \
+              .format(self.cbstatCmd, host, self.port, self.username,
+                      self.password, bucket_name, no_ssl_verify_str)
 
         for key, value in params.items():
             if key == Bucket.ramQuotaMB:

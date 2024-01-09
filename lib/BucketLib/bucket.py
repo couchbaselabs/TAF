@@ -3,6 +3,7 @@ from _threading import Lock
 import Jython_tasks
 from Cb_constants import CbServer
 from common_lib import Counter
+from constants.sdk_constants.java_client import SDKConstants
 
 
 class BucketStats(object):
@@ -177,6 +178,12 @@ class Bucket(object):
         TWO = 2
         THREE = 3
 
+    class DurabilityMinLevel(object):
+        NONE = "none"
+        MAJORITY = "majority"
+        MAJORITY_AND_PERSIST_ACTIVE = "majorityAndPersistActive"
+        PERSIST_TO_MAJORITY = "persistToMajority"
+
     class EvictionPolicy(object):
         FULL_EVICTION = "fullEviction"
         NO_EVICTION = "noEviction"
@@ -211,12 +218,6 @@ class Bucket(object):
             self.replica = []
             self.id = -1
 
-    class DurabilityLevel(object):
-        NONE = "NONE"
-        MAJORITY = "MAJORITY"
-        MAJORITY_AND_PERSIST_TO_ACTIVE = "MAJORITY_AND_PERSIST_TO_ACTIVE"
-        PERSIST_TO_MAJORITY = "PERSIST_TO_MAJORITY"
-
     class StorageBackend(object):
         magma = "magma"
         couchstore = "couchstore"
@@ -246,9 +247,9 @@ class Bucket(object):
         self.compressionMode = new_params.get(
             Bucket.compressionMode,
             Bucket.CompressionMode.PASSIVE)
-        self.durability_level = new_params.get(
+        self.durabilityMinLevel = new_params.get(
             Bucket.durabilityMinLevel,
-            Bucket.DurabilityLevel.NONE.lower())
+            Bucket.DurabilityMinLevel.NONE)
         self.purge_interval = new_params.get(Bucket.purge_interval, 1)
         self.autoCompactionDefined = new_params.get(
             Bucket.autoCompactionDefined, "false")

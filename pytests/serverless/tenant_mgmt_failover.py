@@ -107,7 +107,7 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
             if self.rest.is_cluster_balanced():
                 break
             counter += 1
-            reached = self.cluster_util.rebalance_reached(self.rest,
+            reached = self.cluster_util.rebalance_reached(self.cluster.master,
                                                           progress)
             self.assertTrue(reached,
                             "Rebalance failed or did not reach "

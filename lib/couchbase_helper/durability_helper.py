@@ -4,9 +4,9 @@ from random import randint
 from math import floor
 
 from BucketLib.BucketOperations import BucketHelper
-from BucketLib.bucket import Bucket
 from cb_tools.cbstats import Cbstats
 from error_simulation.cb_error import CouchbaseError
+from constants.sdk_constants.java_client import SDKConstants
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import check_if_exception_exists
 
@@ -25,7 +25,7 @@ class DurabilityHelper:
     GREATER_THAN_EQ = '>='
 
     def __init__(self, logger, cluster_len,
-                 durability=Bucket.DurabilityLevel.MAJORITY,
+                 durability=SDKConstants.DurabilityLevel.MAJORITY,
                  replicate_to=0, persist_to=0):
         """
         :param logger:       Logger object to log the errors/warnings
@@ -108,7 +108,7 @@ class DurabilityHelper:
             if (self.cluster_len-failed_nodes) < majority_value:
                 durability_succeeds = False
         else:
-            if (self.durability == Bucket.DurabilityLevel.MAJORITY
+            if (self.durability == SDKConstants.DurabilityLevel.MAJORITY
                     and induced_error in self.disk_error_types):
                 durability_succeeds = True
             elif (self.cluster_len-len(failed_nodes)) < majority_value:
@@ -279,14 +279,14 @@ class DurabilityHelper:
         target_vb_type = "replica"
         simulate_error = CouchbaseError.STOP_MEMCACHED
 
-        if d_level == Bucket.DurabilityLevel.MAJORITY:
+        if d_level == SDKConstants.DurabilityLevel.MAJORITY:
             target_vb_type = "replica"
             simulate_error = CouchbaseError.STOP_MEMCACHED
         elif d_level == \
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             target_vb_type = "active"
             simulate_error = CouchbaseError.STOP_PERSISTENCE
-        elif d_level == Bucket.DurabilityLevel.PERSIST_TO_MAJORITY:
+        elif d_level == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
             target_vb_type = "replica"
             simulate_error = CouchbaseError.STOP_PERSISTENCE
         return target_vb_type, simulate_error

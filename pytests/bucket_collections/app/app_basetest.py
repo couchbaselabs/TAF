@@ -191,7 +191,7 @@ class AppBase(BaseTestCase):
                             Bucket.EvictionPolicy.VALUE_ONLY),
                         bucket_durability=bucket.get(
                             Bucket.durabilityMinLevel,
-                            Bucket.DurabilityLevel.NONE))
+                            Bucket.DurabilityMinLevel.NONE))
 
                 bucket_obj = self.cluster.buckets[-1]
 
@@ -225,7 +225,7 @@ class AppBase(BaseTestCase):
                         self.create_capella_users(t_bucket["roles"])
                     else:
                         self.create_on_prem_rbac_users(
-                            "rbac_admin", "rbac_admin", t_bucket["roles"])
+                            "rbac_admin", "Rbac_admin@123", t_bucket["roles"])
                     break
 
     def create_on_prem_rbac_users(self, rest_username, rest_password,

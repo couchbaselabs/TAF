@@ -264,6 +264,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.nebula = self.input.param("nebula", False)
             self.nebula_details = dict()
             for cluster_name, cluster in self.cb_clusters.items():
+                # Check if the master node is initialized. If not, force reset
+                # the cluster to avoid initial rebalance failure
+                result = RestConnection(cluster.master).get_pools_default()
+                if result == "unknown pool":
+                    self.skip_cluster_reset = False
                 if not self.skip_cluster_reset:
                     services = None
                     if self.services_init:

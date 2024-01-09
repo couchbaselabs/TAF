@@ -3,7 +3,6 @@ from random import sample
 
 import time
 
-from BucketLib.bucket import Bucket
 from Cb_constants import CbServer
 from Cb_constants.DocLoading import Bucket as Bucket_Op
 from bucket_collections.collections_base import CollectionBase
@@ -16,6 +15,7 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException, check_if_exception_exists
+from constants.sdk_constants.java_client import SDKConstants
 from table_view import TableView
 
 from com.couchbase.client.core.error import \
@@ -550,7 +550,7 @@ class SDKExceptionTests(CollectionBase):
         target_vb_type = "replica"
         if self.simulate_error == CouchbaseError.STOP_PERSISTENCE \
                 and self.durability_level \
-                == Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
+                == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
             target_vb_type = "active"
 
         # Create required scope/collection for successful CRUD operation

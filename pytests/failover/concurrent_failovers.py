@@ -9,6 +9,7 @@ from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
+from constants.sdk_constants.java_client import SDKConstants
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
@@ -121,15 +122,15 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         doc_key_size = 8
         if self.key_size is not None:
             doc_key_size = self.key_size
-        d_level = Bucket.DurabilityLevel.NONE
+        d_level = SDKConstants.DurabilityLevel.NONE
         if self.num_replicas != Bucket.ReplicaNum.THREE:
             random.seed(round(time()*1000))
             # Since durability is not supported with replicas=3
             d_level = choice([
-                Bucket.DurabilityLevel.NONE,
-                Bucket.DurabilityLevel.MAJORITY,
-                Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-                Bucket.DurabilityLevel.PERSIST_TO_MAJORITY])
+                SDKConstants.DurabilityLevel.NONE,
+                SDKConstants.DurabilityLevel.MAJORITY,
+                SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY])
         return {
             # Scope/Collection ops params
             MetaCrudParams.COLLECTIONS_TO_DROP: 3,
@@ -354,7 +355,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     if node.ip == self.cluster.master.ip:
                         master_fo = True
                     break
-        if master_fo:
+        if master_fo and len(nodes_in_cluster) > 0:
             # Assign new cluster.master to handle rest connections
             self.cluster.master = [
                 server for server in self.cluster.nodes_in_cluster
@@ -599,11 +600,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             for bucket in self.cluster.buckets:
                 # If we have bucket_replica=3, force use level=NONE
                 if bucket.replicaNumber == Bucket.ReplicaNum.THREE:
-                    durability_val = Bucket.DurabilityLevel.NONE
+                    durability_val = SDKConstants.DurabilityLevel.NONE
                     break
                 # If we have ephemeral bucket, force use level=MAJORITY
                 if bucket.bucketType == Bucket.Type.EPHEMERAL:
-                    durability_val = Bucket.DurabilityLevel.MAJORITY
+                    durability_val = SDKConstants.DurabilityLevel.MAJORITY
             self.__perform_doc_ops(durability=durability_val)
 
     def test_split_brain(self):
@@ -614,6 +615,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                       Node running services a_b & c to ignore anything from
                       nodes running services b_a & d and vice versa
         """
+        self.failover_method = "network_split"
         def get_nodes_based_on_services(services):
             nodes = list()
             services = services.split(":")
@@ -702,18 +704,18 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                         service_count[index][service] = 0
                     service_count[index][service] += 1
 
-        if len(node_split_1) > len(node_split_2):
-            num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_2),
-                                                  service_count[1],
-                                                  service_count[0])
-            self.cluster.master = node_split_1[0]
+        if len(node_split_1) == len(node_split_2):
+            num_nodes_to_fo = 0
         else:
-            num_nodes_to_fo = get_num_nodes_to_fo(len(node_split_1),
-                                                  service_count[0],
-                                                  service_count[1])
-            self.cluster.master = node_split_2[0]
+            smaller_chunk_in_split = node_split_1 if len(node_split_1) < len(
+                node_split_2) else node_split_2
+            fo_nodes = dict()
+            for node in smaller_chunk_in_split:
+                fo_nodes[node] = self.failover_method
+            self.nodes_to_fail = fo_nodes
+            num_nodes_to_fo = self.num_nodes_to_be_failover
 
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = RestConnection(self.orchestrator)
         self.log.info("N/w split between -> [%s] || [%s]. Expect %s fo_events"
                       % ([n.ip for n in node_split_1],
                          [n.ip for n in node_split_2],
@@ -883,6 +885,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         out_nodes = self.input.param("out_nodes", "kv").split(":")
         # Can take any of (in/out/swap)
         rebalance_type = self.input.param("rebalance_type", "in")
+        perform_doc_ops_before_rebalance = self.input.param(
+            "perform_doc_ops_before_rebalance", True)
+
         services_to_fo = self.failover_order[0].split(":")
         self.nodes_to_fail = self.get_nodes_to_fail(services_to_fo,
                                                     dynamic_fo_method=True)
@@ -952,8 +957,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                     self.task_manager.get_task_result(task)
 
             # Perform collection crud + doc_ops before rebalance operation
-            self.__perform_doc_ops(durability="NONE", validate_num_items=False)
-
+            self.__update_unaffected_node()
+            if perform_doc_ops_before_rebalance:
+                self.__perform_doc_ops(durability="NONE", validate_num_items=False)
         finally:
             # Disable auto-fo after the expected time limit
             retry = 5
@@ -985,7 +991,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             self.sleep(5, "Wait before enabling back auto-fo")
             self.rest.update_autofailover_settings(
                 enabled=True, timeout=self.timeout, maxCount=self.max_count,
-                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo,)
+                preserve_durability_during_auto_fo=self.preserve_durability_during_auto_fo)
 
             # Rebalance the cluster to remove failed nodes
             result = self.cluster_util.rebalance(self.cluster)
@@ -996,6 +1002,7 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                                         self.max_count)
 
         # Perform collection crud + doc_ops after rebalance operation
+        self.__update_unaffected_node()
         self.__perform_doc_ops()
 
     def test_autofailover_preserve_durability(self):

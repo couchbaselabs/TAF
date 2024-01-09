@@ -260,7 +260,7 @@ class CollectionBase(ClusterSetup):
             for scope in b_util.get_active_scopes(bucket):
                 for col in b_util.get_active_collections(bucket, scope.name):
                     query = 'create index `{0}_{1}_{2}_index` on ' \
-                            '`{0}`.`{1}`.`{2}`(name) WITH ' \
+                            '`{0}`.`{1}`.`{2}`(`name` include missing) WITH ' \
                             '{{ "defer_build": true, "num_replica": 1 }};' \
                         .format(bucket.name, scope.name, col.name)
                     test_obj.log.debug("Creating index {}".format(query))
@@ -589,15 +589,15 @@ class CollectionBase(ClusterSetup):
         test_obj.bucket_util.create_buckets_using_json_data(
             test_obj.cluster, buckets_spec)
 
-        if hasattr(test_obj, "initial_version") and \
-                    float(test_obj.initial_version[:3]) < 7.6:
+        if hasattr(test_obj, "upgrade_chain") and \
+                    float(test_obj.upgrade_chain[0][:3]) < 7.6:
             for bucket in test_obj.cluster.buckets:
                 for coll in bucket.scopes[CbServer.system_scope].collections:
                     bucket.scopes[CbServer.system_scope].collections.pop(coll)
                 bucket.scopes.pop(CbServer.system_scope)
 
-        if not (hasattr(test_obj, "initial_version")
-                and int(test_obj.initial_version[0]) < 7):
+        if not (hasattr(test_obj, "upgrade_chain")
+                and int(test_obj.upgrade_chain[0][0]) < 7):
             test_obj.bucket_util.wait_for_collection_creation_to_complete(
                 test_obj.cluster)
 
@@ -648,8 +648,8 @@ class CollectionBase(ClusterSetup):
 
         # Code to handle collection specific validation during upgrade test
         collection_supported = True
-        if hasattr(test_obj, "initial_version") \
-                and int(test_obj.initial_version[0]) < 7:
+        if hasattr(test_obj, "upgrade_chain") \
+                and int(test_obj.upgrade_chain[0][0]) < 7:
             collection_supported = False
 
         # Verify initial doc load count

@@ -9,7 +9,6 @@ import base64
 import time
 import itertools
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
-from datetime import datetime, timedelta
 
 
 class DeleteBucket(APIBase):
@@ -20,16 +19,13 @@ class DeleteBucket(APIBase):
         # Create project.
         # The project ID will be used to create API keys for roles that
         # require project ID
-        project_name = self.generate_random_string(prefix=self.prefix)
-        project_description = self.generate_random_string(
-            100, prefix=self.prefix)
         self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, project_name,
-            project_description).json()["id"]
+            organizationId=self.organisation_id,
+            name=self.generate_random_string(prefix=self.prefix)).json()["id"]
 
         # Initialize params for cluster creation.
         cluster_name = self.prefix + "TestBucketsDelete"
-        self.cluster = {
+        cluster = {
             "name": cluster_name,
             "description": None,
             "cloudProvider": {
@@ -38,7 +34,7 @@ class DeleteBucket(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": "7.1"
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -68,39 +64,40 @@ class DeleteBucket(APIBase):
                 "timezone": "GMT"
             }
         }
+
+        # CIDR selection.
         start_time = time.time()
         while time.time() - start_time < 1800:
             res = self.capellaAPI.cluster_ops_apis.create_cluster(
                 self.organisation_id, self.project_id, cluster_name,
-                self.cluster['cloudProvider'], self.cluster['couchbaseServer'],
-                self.cluster['serviceGroups'], self.cluster['availability'],
-                self.cluster['support'])
+                cluster['cloudProvider'], cluster['couchbaseServer'],
+                cluster['serviceGroups'], cluster['availability'],
+                cluster['support'])
             if res.status_code == 202:
                 self.cluster_id = res.json()['id']
-                self.cluster['id'] = self.cluster_id
+                cluster['id'] = self.cluster_id
                 break
             elif "Please ensure you are passing a unique CIDR block" in \
                     res.json()["message"]:
                 newCIDR = CapellaUtils.get_next_cidr() + "/20"
-                self.cluster["cloudProvider"]["cidr"] = newCIDR
+                cluster["cloudProvider"]["cidr"] = newCIDR
         if time.time() - start_time >= 1800:
             self.fail("Couldn't find CIDR within half an hour.")
 
         # Wait for the cluster to be deployed.
         self.log.info("Waiting for cluster to be deployed.")
-        start_time = datetime.now()
-        while self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+        start_time = time.time()
+        while (start_time + 1800 > time.time() and
+                self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
-                self.cluster_id).json()["currentState"] == "deploying" and \
-                start_time + timedelta(minutes=30) > datetime.now():
+                self.cluster_id).json()["currentState"] == "deploying"):
             time.sleep(10)
         if self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
                 self.cluster_id).json()["currentState"] == "healthy":
-            self.log.info("Cluster deployed successfully, initialising Bucket "
-                          "creation inside the cluster.")
+            self.log.info("Cluster deployed successfully.")
         else:
-            self.fail("Failed to deploy cluster")
+            self.fail("Cluster didn't deploy within half an hour.")
 
         # Initialise bucket params and create a bucket.
         self.bucket_name = self.generate_random_string(
@@ -348,9 +345,10 @@ class DeleteBucket(APIBase):
                                    "projectOwner", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
@@ -424,9 +422,10 @@ class DeleteBucket(APIBase):
                 "has_multi_project_access": False,
                 "expected_status_code": 403,
                 "expected_error": {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
@@ -883,10 +882,12 @@ class DeleteBucket(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # not found dummies, ie, which give a 404 response.
             if "404" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["404"]
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
 

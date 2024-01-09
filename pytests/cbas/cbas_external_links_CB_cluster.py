@@ -858,6 +858,8 @@ class CBASExternalLinks(CBASBaseTest):
                     raise Exception("Error while Disconnecting the link ")
 
                 if testcase.get("load_bucket", False):
+                    if self.sdk_client_pool:
+                        self.sdk_client_pool.shutdown()
                     self.collectionSetUp(to_cluster_2)
                 elif testcase.get("new_dataverse", False):
                     if testcase.get("invalid_dataverse", None):
@@ -1854,7 +1856,7 @@ class CBASExternalLinks(CBASBaseTest):
 
         if not self.rebalance_util.wait_for_rebalance_task_to_complete(
                 rebalance_task, to_cluster):
-            self.fail("{0} on remote cluster failed".format(
+            self.fail("{0} rebalance on remote cluster failed".format(
                 self.input.param("rebalance_type", "swap").upper()))
 
         self.log.info("Get KV ops result")
@@ -1905,13 +1907,13 @@ class CBASExternalLinks(CBASBaseTest):
                 self.analytics_cluster, statement, "async",
                 self.input.param("num_queries", 0), wait_for_execution=False)
 
-        if self.input.param("rebalance_type", "swap"):
+        if self.input.param("rebalance_type") == "swap":
             cbas_nodes_in = 1
             cbas_nodes_out = 1
-        elif self.input.param("rebalance_type", "rebalance-in"):
+        elif self.input.param("rebalance_type") == "rebalance-in":
             cbas_nodes_in = 1
             cbas_nodes_out = 0
-        elif self.input.param("rebalance_type", "rebalance-out"):
+        elif self.input.param("rebalance_type") == "rebalance-out":
             cbas_nodes_in = 0
             cbas_nodes_out = 1
 
@@ -1938,7 +1940,7 @@ class CBASExternalLinks(CBASBaseTest):
         self.cbas_util.refresh_dataset_item_count(self.bucket_util)
 
         if not self.cbas_util.validate_cbas_dataset_items_count(
-            self.analytics_cluster, dataset.full_name, dataset.num_of_items):
+                self.analytics_cluster, dataset.full_name, dataset.num_of_items):
             self.fail(
                 "Number of items in dataset do not match number of items in bucket")
 

@@ -877,7 +877,7 @@ class RRGuardrails(GuardrailsBase):
                                     services=[CbServer.Services.KV])
         if self.rebalance_pause:
             self.sleep(20)
-            reached = self.cluster_util.rebalance_reached(rest, self.reb_pause_per)
+            reached = self.cluster_util.rebalance_reached(self.cluster.master, self.reb_pause_per)
             if reached:
                 stopped = rest.stop_rebalance(wait_timeout=self.wait_timeout / 3)
                 self.assertTrue(stopped, "Unable to stop rebalance")

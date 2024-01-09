@@ -20,9 +20,7 @@ class DeleteCluster(APIBase):
         # require project ID
         self.project_id = self.capellaAPI.org_ops_apis.create_project(
             organizationId=self.organisation_id,
-            name=self.generate_random_string(prefix=self.prefix),
-            description=self.generate_random_string(
-                100, prefix=self.prefix)).json()["id"]
+            name=self.generate_random_string(prefix=self.prefix)).json()["id"]
 
         # All deletion for cluster tests are being run based on a dummy
         # clusterID, and they will be validated as :
@@ -404,6 +402,7 @@ class DeleteCluster(APIBase):
                 if isinstance(testcase["expected_error"], dict) \
                         and result.json()["code"] != 4025:
                     self.log.error("Dummy error not correct")
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase)
                 else:
                     self.log.debug("This is a handler condition for the dummy "
@@ -565,7 +564,7 @@ class DeleteCluster(APIBase):
                         "message": "Unable to process the request. The "
                                    "provided projectId {} is not valid for "
                                    "the cluster {}."
-                        .format(self.project_id, self.dummy_cluster_id)
+                        .format(combination[1], combination[2])
                     }
             testcases.append(testcase)
 
@@ -594,6 +593,7 @@ class DeleteCluster(APIBase):
                 if isinstance(testcase["expected_error"], dict) \
                         and result.json()["code"] != 4025:
                     self.log.error("Dummy error not correct")
+                    self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase)
                 else:
                     self.log.debug("This is a handler condition for the dummy "
@@ -674,12 +674,14 @@ class DeleteCluster(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
-            if "404" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["404"]
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # dummy clusters, ie, which give a 404 response.
+            if "404" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["404"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -721,12 +723,14 @@ class DeleteCluster(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
-            if "404" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["404"]
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # dummy clusters, ie, which give a 404 response.
+            if "404" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["404"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

@@ -182,7 +182,7 @@ class CreateBucketTests(ClusterSetup):
             try:
                 self.num_replicas = bucket.replicaNumber
                 self.create_bucket(self.cluster, bucket_name=bucket.name)
-            except Exception as ex:
+            except Exception:
                 bucket_recreate_fail = True
             finally:
                 if self.num_replicas < minimum_replica:
@@ -192,7 +192,6 @@ class CreateBucketTests(ClusterSetup):
                     self.assertFalse(bucket_recreate_fail,
                                      "bucket creation was not expected to "
                                      "fail")
-                    continue
 
     def test_invalid_bucket_name(self):
         """
@@ -274,7 +273,7 @@ class CreateBucketTests(ClusterSetup):
 
         error = create_bucket(num_vb=CbServer.total_vbuckets)
         self.assertEqual(
-            error["numVbuckets"],
+            error["numVBuckets"],
             "Support for variable number of vbuckets is not enabled",
             "Invalid error message")
 

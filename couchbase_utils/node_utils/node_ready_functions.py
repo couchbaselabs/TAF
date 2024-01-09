@@ -8,17 +8,17 @@ import os
 import Jython_tasks.task as jython_tasks
 from couchbase_cli import CouchbaseCLI
 from global_vars import logger
-from remote.remote_util import RemoteMachineShellConnection
+from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from membase.api.rest_client import RestConnection
 from cb_tools.cb_cli import CbCli
 
 """
 An API for scheduling tasks for performing node related operations.
 
-This module is contains the top-level API's for scheduling and 
-executing 
+This module is contains the top-level API's for scheduling and
+executing
 tasks related to individual nodes using Remotemachine shell commands.
-The API provides a way to run task do syncronously and asynchronously. 
+The API provides a way to run task do syncronously and asynchronously.
 """
 
 
@@ -68,7 +68,9 @@ class NodeUtils(object):
             rest = RestConnection(node)
             version = rest.get_pools_info()
             if float(version["implementationVersion"][:3]) >= 7.6:
-                RestConnection(node).reset_node()
+                rest.reset_node()
+                if '.com' in node.ip:
+                    rest.rename_node(node.ip)
             else:
                 # This is the old reset node code for upgrade scenarios
                 task = jython_tasks.FunctionCallTask(

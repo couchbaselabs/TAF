@@ -5,7 +5,6 @@ from BucketLib.bucket import Bucket
 from cb_tools.cb_cli import CbCli
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import BucketDurability
 from epengine.durability_base import BucketDurabilityBase
 from error_simulation.cb_error import CouchbaseError
 from sirius_client import RESTClient, check_sirius_status
@@ -34,11 +33,12 @@ class CreateBucketTests(BucketDurabilityBase):
                                  "minimum level cannot be specified with 3"
 
         for d_level in self.bucket_util.get_supported_durability_levels():
+            b_level = self.get_bucket_durability_level(d_level)
             create_failed = False
             test_step = "Creating %s bucket with level %s" \
-                        % (self.bucket_type, d_level)
+                        % (self.bucket_type, b_level)
 
-            bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
+            bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
             # Remove unsupported replica string in case if MC bucket
             if self.bucket_type == Bucket.Type.MEMCACHED:
                 del bucket_dict[Bucket.replicaNumber]
@@ -48,7 +48,7 @@ class CreateBucketTests(BucketDurabilityBase):
 
             output = cb_cli.create_bucket(bucket_dict, wait=True)
             if self.num_replicas == Bucket.ReplicaNum.THREE \
-                    and d_level != Bucket.DurabilityLevel.NONE:
+                    and d_level != SDKConstants.DurabilityLevel.NONE:
                 if err_for_three_replicas not in str(output):
                     self.log_failure("Bucket created with replica=3")
                 else:
@@ -58,7 +58,7 @@ class CreateBucketTests(BucketDurabilityBase):
                 if d_level in self.possible_d_levels[self.bucket_type]:
                     self.log_failure("Create failed for %s bucket "
                                      "with min_durability_level %s"
-                                     % (self.bucket_type, d_level))
+                                     % (self.bucket_type, b_level))
             else:
                 self.bucket_util.get_updated_bucket_server_list(
                     self.cluster, bucket_obj)
@@ -94,11 +94,12 @@ class CreateBucketTests(BucketDurabilityBase):
     def test_create_bucket_using_rest(self):
         log_failure_msg = "Bucket creation succeeded for replica=3"
         for d_level in self.bucket_util.get_supported_durability_levels():
+            b_level = self.get_bucket_durability_level(d_level)
             create_failed = False
             test_step = "Creating %s bucket with level %s" \
-                        % (self.bucket_type, d_level)
+                        % (self.bucket_type, b_level)
 
-            bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
+            bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
             # Object to support performing CRUDs
             bucket_obj = Bucket(bucket_dict)
 
@@ -107,12 +108,12 @@ class CreateBucketTests(BucketDurabilityBase):
                                                wait_for_warmup=True)
                 self.get_vbucket_type_mapping(bucket_obj.name)
                 if self.num_replicas == Bucket.ReplicaNum.THREE:
-                    if d_level != Bucket.DurabilityLevel.NONE:
+                    if d_level != SDKConstants.DurabilityLevel.NONE:
                         self.log_failure(log_failure_msg)
                 elif d_level not in self.possible_d_levels[self.bucket_type]:
                     self.log_failure("Create succeeded for %s bucket for "
                                      "unsupported durability %s"
-                                     % (self.bucket_type, d_level))
+                                     % (self.bucket_type, b_level))
             except Exception as rest_exception:
                 create_failed = True
                 self.log.debug(rest_exception)
@@ -152,7 +153,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
         create_desc = "Creating %s bucket with level 'None'" % self.bucket_type
 
-        b_durability = Bucket.DurabilityLevel.NONE
+        b_durability = Bucket.DurabilityMinLevel.NONE
         verification_dict = self.get_cb_stat_verification_dict()
         bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
 
@@ -167,10 +168,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
         # Index for doc_gen to avoid creating/deleting same docs across d_level
         index = 0
         for d_level in self.get_supported_durability_for_bucket():
-            self.validate_durability_with_crud(bucket_obj, b_durability,
-                                               verification_dict,
-                                               doc_durability=d_level,
-                                               doc_start_index=index)
+            self.validate_durability_with_crud(
+                bucket_obj,
+                getattr(SDKConstants.DurabilityLevel, b_durability.upper()),
+                verification_dict,
+                doc_durability=d_level,
+                doc_start_index=index)
             self.summary.add_step("CRUD with doc_durability %s" % d_level)
 
             # Cbstats vbucket-details validation
@@ -185,16 +188,17 @@ class BucketDurabilityTests(BucketDurabilityBase):
         """
         for d_level in self.get_supported_durability_for_bucket():
             # Avoid creating bucket with durability=None
-            if d_level == Bucket.DurabilityLevel.NONE:
+            if d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
+            b_durability = self.get_bucket_durability_level(d_level)
             step_desc = "Creating %s bucket with level '%s'" \
-                        % (self.bucket_type, d_level)
+                        % (self.bucket_type, b_durability)
             verification_dict = self.get_cb_stat_verification_dict()
 
             self.log.info(step_desc)
             # Object to support performing CRUDs and create Bucket
-            bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
+            bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
             bucket_obj = Bucket(bucket_dict)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
@@ -224,16 +228,17 @@ class BucketDurabilityTests(BucketDurabilityBase):
         sub_doc_vals = ["val_1", "val_2", "val_3", "val_4", "val_5"]
         for d_level in self.get_supported_durability_for_bucket():
             # Avoid creating bucket with durability=None
-            if d_level == Bucket.DurabilityLevel.NONE:
+            if d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
+            b_durability = self.get_bucket_durability_level(d_level)
             step_desc = "Creating %s bucket with level '%s'" \
                         % (self.bucket_type, d_level)
             verification_dict = self.get_cb_stat_verification_dict()
 
             self.log.info(step_desc)
             # Object to support performing CRUDs and create Bucket
-            bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
+            bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
             bucket_obj = Bucket(bucket_dict)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
                                            wait_for_warmup=True)
@@ -310,10 +315,11 @@ class BucketDurabilityTests(BucketDurabilityBase):
         for d_level in supported_d_levels:
             create_desc = "Creating %s bucket with level '%s'" \
                           % (self.bucket_type, d_level)
+            b_durability = self.get_bucket_durability_level(d_level)
             verification_dict = self.get_cb_stat_verification_dict()
 
             self.log.info(create_desc)
-            bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
+            bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
@@ -362,10 +368,11 @@ class BucketDurabilityTests(BucketDurabilityBase):
             create_desc = "Creating %s bucket with level '%s'" \
                           % (self.bucket_type, d_level)
 
+            b_durability = self.get_bucket_durability_level(d_level)
             verification_dict = self.get_cb_stat_verification_dict()
 
             self.log.info(create_desc)
-            bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)
+            bucket_dict = self.get_bucket_dict(self.bucket_type, b_durability)
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
             self.bucket_util.create_bucket(self.cluster, bucket_obj,
@@ -420,12 +427,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
                                         len(supported_bucket_d_levels)):
             b_durability_to_update = list(set(supported_bucket_d_levels)
                                           - set(bucket_durability))
+            b_level = self.get_bucket_durability_level(bucket_durability)
             create_desc = "Create %s bucket with durability level '%s'" \
-                          % (self.bucket_type, bucket_durability)
+                          % (self.bucket_type, b_level)
 
             self.log.info(create_desc)
-            bucket_dict = self.get_bucket_dict(self.bucket_type,
-                                               bucket_durability)
+            bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
 
             # Object to support performing CRUDs and create Bucket
             bucket_obj = Bucket(bucket_dict)
@@ -513,7 +520,8 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     client.close()
 
             for task in tasks_to_run:
-                new_d_level = BucketDurability[b_durability_to_update.pop()]
+                new_d_level = b_durability_to_update.pop()
+                new_d_level = self.get_bucket_durability_level(new_d_level)
 
                 self.log.info("Starting %s task" % task.op_type)
                 self.task_manager.add_new_task(task)
@@ -531,8 +539,9 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     bucket_durability=new_d_level)
 
                 self.cluster.buckets = list()
-                self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
-                if self.cluster.buckets[0].durability_level != new_d_level:
+                self.cluster.buckets = \
+                    self.bucket_util.get_all_buckets(self.cluster)
+                if self.cluster.buckets[0].durabilityMinLevel != new_d_level:
                     self.log_failure("Failed to update bucket_d_level to %s"
                                      % new_d_level)
                 self.summary.add_step("Set bucket-durability=%s"
@@ -570,12 +579,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
         supported_d_levels.reverse()
         supported_d_levels += [supported_d_levels[0]]
 
+        b_level = self.get_bucket_durability_level(supported_d_levels[0])
         create_desc = "Creating %s bucket with level '%s'" \
-                      % (self.bucket_type, supported_d_levels[0])
+                      % (self.bucket_type, b_level)
 
         self.log.info(create_desc)
-        bucket_dict = self.get_bucket_dict(self.bucket_type,
-                                           supported_d_levels[0])
+        bucket_dict = self.get_bucket_dict(self.bucket_type, b_level)
         # Object to support performing CRUDs and create Bucket
         bucket_obj = Bucket(bucket_dict)
         self.bucket_util.create_bucket(self.cluster, bucket_obj,
@@ -604,7 +613,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             doc_load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket_obj, doc_gen, "update",
-                durability=Bucket.DurabilityLevel.NONE,
+                durability=SDKConstants.DurabilityLevel.NONE,
                 timeout_secs=60,
                 start_task=False,
                 sdk_client_pool=self.sdk_client_pool)
@@ -614,7 +623,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.sleep(5, "Wait before starting doc_op")
             self.task_manager.add_new_task(doc_load_task)
 
-            new_d_level = BucketDurability[bucket_durability]
+            new_d_level = self.get_bucket_durability_level(bucket_durability)
             self.sleep(5, "Wait before updating bucket level "
                           "durability=%s" % new_d_level)
 
@@ -626,12 +635,12 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
             self.cluster.buckets=list()
             self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
-            if self.cluster.buckets[0].durability_level != new_d_level:
+            if self.cluster.buckets[0].durabilityMinLevel != new_d_level:
                 self.log_failure("Failed to update bucket_d_level to %s"
                                  % new_d_level)
             self.summary.add_step("Set bucket-durability=%s" % new_d_level)
 
-            if prev_d_level == Bucket.DurabilityLevel.NONE:
+            if prev_d_level == SDKConstants.DurabilityLevel.NONE:
                 if not doc_load_task.completed:
                     self.log_failure("Doc-op still pending for d_level 'NONE'")
             elif doc_load_task.completed:
@@ -848,9 +857,10 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
         for b_d_level in self.possible_d_levels[self.bucket_type]:
             # Skip of Bucket durability level 'None'
-            if b_d_level == Bucket.DurabilityLevel.NONE:
+            if b_d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
+            b_d_level = self.get_bucket_durability_level(b_d_level)
             verification_dict = self.get_cb_stat_verification_dict()
 
             create_desc = "Creating %s bucket with level '%s'" \
@@ -914,7 +924,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
                 self.summary.add_step(crud_desc)
                 old_cas = result["cas"]
-                if d_level == Bucket.DurabilityLevel.MAJORITY:
+                if d_level == SDKConstants.DurabilityLevel.MAJORITY:
                     self.sleep(1, "wait for vb stats to get updated")
             client.close()
 
@@ -922,9 +932,10 @@ class BucketDurabilityTests(BucketDurabilityBase):
         key, value = doc_gen.next()
 
         for d_level in self.possible_d_levels[self.bucket_type]:
-            if d_level == Bucket.DurabilityLevel.NONE:
+            if d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
+            d_level = self.get_bucket_durability_level(d_level)
             create_desc = "Create bucket with durability %s" % d_level
             self.log.info(create_desc)
 
@@ -959,7 +970,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
         """
 
         for d_level in self.possible_d_levels[self.bucket_type]:
-            if d_level == Bucket.DurabilityLevel.NONE:
+            if d_level == SDKConstants.DurabilityLevel.NONE:
                 continue
 
             bucket_dict = self.get_bucket_dict(self.bucket_type, d_level)

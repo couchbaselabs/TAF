@@ -109,7 +109,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.sleep(20)
             expected_progress = 20 * i
             reached = self.cluster_util.rebalance_reached(
-                rest, expected_progress)
+                self.cluster.master, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not self.cluster_util.is_cluster_rebalanced(rest):
@@ -174,7 +174,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.sleep(20)
             expected_progress = 20 * i
             reached = self.cluster_util.rebalance_reached(
-                rest, expected_progress)
+                self.cluster.master, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not self.cluster_util.is_cluster_rebalanced(rest):
@@ -243,7 +243,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
             self.sleep(20)
             expected_progress = 20 * i
             reached = self.cluster_util.rebalance_reached(
-                rest, expected_progress)
+                self.cluster.master, expected_progress)
             self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                             .format(expected_progress))
             if not self.cluster_util.is_cluster_rebalanced(rest):
@@ -325,7 +325,7 @@ class RebalanceStartStopTests(RebalanceBaseTest):
         self.task.async_rebalance(self.cluster, self.servs_in, self.servs_out)
         expected_progress = 50
         rest = RestConnection(self.cluster.master)
-        reached = self.cluster_util.rebalance_reached(rest, expected_progress)
+        reached = self.cluster_util.rebalance_reached(self.cluster.master, expected_progress)
         self.assertTrue(reached, "Rebalance failed or did not reach {0}%"
                         .format(expected_progress))
         if not self.cluster_util.is_cluster_rebalanced(rest):

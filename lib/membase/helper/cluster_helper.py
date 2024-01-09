@@ -5,6 +5,7 @@ from threading import Thread
 from Cb_constants import constants
 from common_lib import sleep
 from global_vars import logger
+import global_vars
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
@@ -18,7 +19,7 @@ class ClusterOperationHelper(object):
 
     # Returns True if cluster successfully finished then rebalance
     @staticmethod
-    def add_and_rebalance(servers, wait_for_rebalance=True):
+    def add_and_rebalance(servers, wait_for_rebalance=True, validate_bucket_ranking=True):
         master = servers[0]
         all_nodes_added = True
         rebalanced = True
@@ -43,6 +44,12 @@ class ClusterOperationHelper(object):
                     ejectedNodes=[])
                 if wait_for_rebalance:
                     rebalanced &= rest.monitorRebalance()
+                    if validate_bucket_ranking:
+                        # Validating bucket ranking post rebalance
+                        validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, master)
+                        if not validate_ranking_res:
+                            log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
+                            return validate_ranking_res
                 else:
                     rebalanced = False
         return all_nodes_added and rebalanced

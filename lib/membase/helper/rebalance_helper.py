@@ -5,6 +5,7 @@ from BucketLib.bucket import Bucket
 from Cb_constants import constants
 from common_lib import sleep
 from global_vars import logger
+import global_vars
 from custom_exceptions.exception import StatsUnavailableException, \
     ServerAlreadyJoinedException, RebalanceFailedException, \
     InvalidArgumentException, ServerSelfJoinException, \
@@ -330,7 +331,7 @@ class RebalanceHelper(object):
     #rest api instead of passing it to the fucntions
 
     @staticmethod
-    def rebalance_in(servers, how_many, do_shuffle=True, monitor=True, do_check=True):
+    def rebalance_in(servers, how_many, do_shuffle=True, monitor=True, do_check=True, validate_bucket_ranking=True):
         log = logger.get("infra")
         servers_rebalanced = []
         rest = RestConnection(servers[0])
@@ -383,13 +384,20 @@ class RebalanceHelper(object):
             except RebalanceFailedException as e:
                 log.error("rebalance failed: {0}".format(e))
                 return False, servers_rebalanced
+            if validate_bucket_ranking:
+                # Validating bucket ranking post rebalance
+                validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, servers[0])
+                if not validate_ranking_res:
+                    log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
+                    return False, servers_rebalanced
+
             msg = "successfully rebalanced in selected nodes from the cluster ? {0}"
             log.info(msg.format(result))
             return result, servers_rebalanced
         return False, servers_rebalanced
 
     @staticmethod
-    def rebalance_out(servers, how_many, monitor=True):
+    def rebalance_out(servers, how_many, monitor=True, validate_bucket_ranking=True):
         log = logger.get("infra")
         rest = RestConnection(servers[0])
         cur_ips = map(lambda node: node.ip, rest.node_statuses())
@@ -407,13 +415,24 @@ class RebalanceHelper(object):
         if not monitor:
             return True, ejections
         try:
-            return rest.monitorRebalance(), ejections
+            result = rest.monitorRebalance()
+            if not result:
+                return result, ejections
+
+            if validate_bucket_ranking:
+                # Validating bucket ranking post rebalance
+                validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, servers[0])
+                result = result and validate_ranking_res
+                if not validate_ranking_res:
+                    log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
+            return result, ejections
+
         except RebalanceFailedException as e:
             log.error("failed to rebalance %s servers out: %s" % (how_many, e))
             return False, ejections
 
     @staticmethod
-    def rebalance_swap(servers, how_many, monitor=True):
+    def rebalance_swap(servers, how_many, monitor=True, validate_bucket_ranking=True):
         log = logger.get("infra")
         if how_many < 1:
             log.error("failed to swap rebalance %s servers - invalid count"
@@ -458,7 +477,18 @@ class RebalanceHelper(object):
             return True, ejections + additions
 
         try:
-            return rest.monitorRebalance(), ejections + additions
+            result = rest.monitorRebalance()
+            if not result:
+                return result, ejections + additions
+
+            if validate_bucket_ranking:
+                # Validating bucket ranking post rebalance
+                validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, servers[0])
+                result = result and validate_ranking_res
+                if not validate_ranking_res:
+                    log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
+            return result, ejections + additions
+
         except RebalanceFailedException as e:
             log.error("failed to swap rebalance %s servers: %s" % (how_many, e))
             return False, ejections + additions
@@ -509,7 +539,7 @@ class RebalanceHelper(object):
             log.error("rebalance failed, trying again after {0} seconds".format(timeout))
 
     @staticmethod
-    def end_rebalance(master):
+    def end_rebalance(master, validate_bucket_ranking=True):
         log = logger.get("infra")
         rest = RestConnection(master)
         result = False
@@ -519,6 +549,11 @@ class RebalanceHelper(object):
             log.error("rebalance failed: {0}".format(e))
         assert result, "rebalance operation failed after adding nodes"
         log.info("rebalance finished")
+
+        if validate_bucket_ranking:
+            # Validating bucket ranking post rebalance
+            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(None, master)
+            assert validate_ranking_res, "Vbucket movement during rebalance did not occur as per bucket ranking"
 
     @staticmethod
     def getOtpNodeIds(master):

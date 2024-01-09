@@ -10,7 +10,6 @@ import base64
 import time
 import itertools
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
-from datetime import datetime, timedelta
 
 
 class UpdateBucket(APIBase):
@@ -21,16 +20,13 @@ class UpdateBucket(APIBase):
         # Create project.
         # The project ID will be used to create API keys for roles that
         # require project ID
-        project_name = self.generate_random_string(prefix=self.prefix)
-        project_description = self.generate_random_string(
-            100, prefix=self.prefix)
         self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, project_name,
-            project_description).json()["id"]
+            organizationId=self.organisation_id,
+            name=self.generate_random_string(prefix=self.prefix)).json()["id"]
 
         # Initialize params for cluster creation.
         cluster_name = self.prefix + "TestBucketPut"
-        self.cluster = {
+        cluster = {
             "name": cluster_name,
             "description": None,
             "cloudProvider": {
@@ -39,7 +35,7 @@ class UpdateBucket(APIBase):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": "7.1"
+                "version": str(self.input.param("server_version", 7.2))
             },
             "serviceGroups": [
                 {
@@ -69,39 +65,40 @@ class UpdateBucket(APIBase):
                 "timezone": "GMT"
             }
         }
+
+        # CIDR selection.
         start_time = time.time()
         while time.time() - start_time < 1800:
             res = self.capellaAPI.cluster_ops_apis.create_cluster(
                 self.organisation_id, self.project_id, cluster_name,
-                self.cluster['cloudProvider'], self.cluster['couchbaseServer'],
-                self.cluster['serviceGroups'], self.cluster['availability'],
-                self.cluster['support'])
+                cluster['cloudProvider'], cluster['couchbaseServer'],
+                cluster['serviceGroups'], cluster['availability'],
+                cluster['support'])
             if res.status_code == 202:
                 self.cluster_id = res.json()['id']
-                self.cluster['id'] = self.cluster_id
+                cluster['id'] = self.cluster_id
                 break
             elif "Please ensure you are passing a unique CIDR block" in \
                     res.json()["message"]:
                 newCIDR = CapellaUtils.get_next_cidr() + "/20"
-                self.cluster["cloudProvider"]["cidr"] = newCIDR
+                cluster["cloudProvider"]["cidr"] = newCIDR
         if time.time() - start_time >= 1800:
             self.fail("Couldn't find CIDR within half an hour.")
 
         # Wait for the cluster to be deployed.
         self.log.info("Waiting for cluster to be deployed.")
-        start_time = datetime.now()
-        while self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+        start_time = time.time()
+        while (start_time + 1800 > time.time() and
+                self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
-                self.cluster_id).json()["currentState"] == "deploying" and \
-                start_time + timedelta(minutes=30) > datetime.now():
+                self.cluster_id).json()["currentState"] == "deploying"):
             time.sleep(10)
         if self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id,
                 self.cluster_id).json()["currentState"] == "healthy":
-            self.log.info("Cluster deployed successfully, initialising Bucket "
-                          "creation inside the cluster.")
+            self.log.info("Cluster deployed successfully.")
         else:
-            self.fail("Failed to deploy cluster")
+            self.fail("Cluster didn't deploy within half an hour.")
 
         # Initialise bucket params and create a bucket.
         self.expected_result = {
@@ -354,9 +351,10 @@ class UpdateBucket(APIBase):
                                    "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
@@ -430,9 +428,10 @@ class UpdateBucket(APIBase):
                 "has_multi_project_access": False,
                 "expected_status_code": 403,
                 "expected_error": {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
@@ -911,9 +910,9 @@ class UpdateBucket(APIBase):
                     testcase["expected_error"] = {
                         "code": 6005,
                         "hint": "The provided durability level is not "
-                                "supported. The supported levels are none, "
-                                "majority, persistToMajority, and "
-                                "majorityAndPersistActive. Please choose a "
+                                "supported. The supported levels are 'none', "
+                                "'majority', 'persistToMajority', and "
+                                "'majorityAndPersistActive'. Please choose a "
                                 "valid durability level for the bucket.",
                         "httpStatusCode": 422,
                         "message": "The durability level {} provided is not "
@@ -964,13 +963,13 @@ class UpdateBucket(APIBase):
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 8021,
-                        "hint": "Returned when a time to live unit that is "
+                        "hint": "Returned when a time-to-live unit that is "
                                 "not supported is given during bucket "
                                 "creation. This should be a non-negative "
                                 "value.",
                         "httpStatusCode": 422,
-                        "message": "The time to live value provided is not "
-                                   "supported. It should be a non negative "
+                        "message": "The time-to-live value provided is not "
+                                   "supported. It should be a non-negative "
                                    "integer."
                     }
                 else:
@@ -1116,10 +1115,14 @@ class UpdateBucket(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # invalid name param, ie, which give a 422 response.
+            if "422" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["422"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -1164,10 +1167,14 @@ class UpdateBucket(APIBase):
         results = self.make_parallel_api_calls(
             99, api_func_list, self.api_keys)
         for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
+            # Removing failure for tests which are intentionally ran
+            # for :
+            #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # invalid name param, ie, which give a 422 response.
+            if "422" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["422"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

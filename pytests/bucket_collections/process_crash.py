@@ -5,6 +5,7 @@ from Cb_constants import CbServer, DocLoading
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_tools.cbstats import Cbstats
+from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from crash_test.constants import signum
@@ -106,7 +107,7 @@ class CrashTest(CollectionBase):
                 CbServer.default_collection].num_items += self.num_items
             verification_dict["ops_create"] += self.num_items
             if self.__is_sync_write_enabled \
-                    and self.durability_level != Bucket.DurabilityLevel.NONE:
+                    and self.durability_level != SDKConstants.DurabilityLevel.NONE:
                 verification_dict["sync_write_committed_count"] += \
                     self.num_items
             # Verify cbstats vbucket-details

@@ -24,7 +24,7 @@ from com.couchbase.test.loadgen import WorkLoadGenerate
 from Jython_tasks.task import PrintBucketStats
 from java.util import HashMap
 from com.couchbase.test.docgen import DocRange
-from couchbase.test.docgen import DRConstants
+from com.couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import ServerOutOfMemoryException,\
     DocumentExistsException, DocumentNotFoundException, TimeoutException
 

@@ -4,32 +4,24 @@ Created on 30-Aug-2021
 @author: riteshagarwal
 '''
 import subprocess
-import json
 from BucketLib.bucket import Bucket
 import os
-from remote.remote_util import RemoteMachineShellConnection
-import random
 from BucketLib.BucketOperations import BucketHelper
 from table_view import TableView
 from membase.api.rest_client import RestConnection
-from cb_tools.cbstats import Cbstats
 from com.couchbase.test.taskmanager import TaskManager
-from com.couchbase.test.sdk import Server, SDKClient
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.docgen import WorkLoadSettings,\
     DocumentGenerator
 from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
-from couchbase.test.docgen import DRConstants
+from com.couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
-from custom_exceptions.exception import RebalanceFailedException
 from Cb_constants.CBServer import CbServer
 from threading import Thread
-import string
-from common_lib import humanbytes
 
 
 class OPD:

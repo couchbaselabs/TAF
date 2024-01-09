@@ -53,7 +53,6 @@ from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator, sub_doc_generator_for_edit
-from couchbase_helper.durability_helper import BucketDurability
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 
@@ -70,6 +69,7 @@ from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
     MIN_COMPACTION_THRESHOLD
 from sdk_client3 import SDKClient
+from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.tuq_generators import JsonGenerator
 from StatsLib.StatsOperations import StatsHelper
 
@@ -81,7 +81,7 @@ from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.sdk import Server
 from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.sdk import SDKClientPool
-from couchbase.test.docgen import DRConstants
+from com.couchbase.test.docgen import DRConstants
 
 from java.util import HashMap
 
@@ -961,7 +961,7 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def perform_doc_loading(task_manager, loader_map, cluster, buckets=None,
-                            durability_level=Bucket.DurabilityLevel.NONE,
+                            durability_level=SDKConstants.DurabilityLevel.NONE,
                             maxttl=0, ttl_time_unit="seconds",
                             process_concurrency=1,
                             track_failures=True,
@@ -1742,15 +1742,15 @@ class BucketUtils(ScopeUtils):
         return rand_name
 
     @staticmethod
-    def get_supported_durability_levels(minimum_level=Bucket.DurabilityLevel.NONE):
+    def get_supported_durability_levels(minimum_level=SDKConstants.DurabilityLevel.NONE):
         """ Returns all the durability levels sorted by relative strength.
 
-        :param minimum_level: The minimum_level e.g. `Bucket.DurabilityLevel.None`.
+        :param minimum_level: The minimum_level e.g. `SDKConstants.DurabilityLevel.None`.
         """
-        levels = [Bucket.DurabilityLevel.NONE,
-                  Bucket.DurabilityLevel.MAJORITY,
-                  Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
-                  Bucket.DurabilityLevel.PERSIST_TO_MAJORITY]
+        levels = [SDKConstants.DurabilityLevel.NONE,
+                  SDKConstants.DurabilityLevel.MAJORITY,
+                  SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+                  SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY]
 
         if minimum_level not in levels:
             raise ValueError("minimum_level must be in {}".format(levels))
@@ -2186,7 +2186,7 @@ class BucketUtils(ScopeUtils):
             storage=Bucket.StorageBackend.magma,
             eviction_policy=None,
             flush_enabled=Bucket.FlushBucket.DISABLED,
-            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
+            bucket_durability=Bucket.DurabilityMinLevel.NONE,
             purge_interval=1,
             autoCompactionDefined="false",
             fragmentation_percentage=50,
@@ -2196,8 +2196,7 @@ class BucketUtils(ScopeUtils):
             history_retention_seconds=0,
             magma_key_tree_data_block_size=4096,
             magma_seq_tree_data_block_size=4096,
-            vbuckets=None, weight=None, width=None,
-            ):
+            vbuckets=None, weight=None, width=None):
         node_info = RestConnection(cluster.master).get_nodes_self()
         if ram_quota:
             ram_quota_mb = ram_quota
@@ -2249,7 +2248,7 @@ class BucketUtils(ScopeUtils):
                     True if bucket_obj.flushEnabled else False,
                 CloudCluster.Bucket.replicaNumber: bucket_obj.replicaNumber,
                 CloudCluster.Bucket.durabilityMinLevel:
-                    bucket_obj.durability_level,
+                    bucket_obj.durabilityMinLevel,
                 CloudCluster.Bucket.maxTTL:
                     {"unit": "seconds", "value": bucket_obj.maxTTL}
             }
@@ -2827,7 +2826,7 @@ class BucketUtils(ScopeUtils):
                     bucket.name,
                     "{} / {}".format(bucket.bucketType, storage_backend),
                     str(bucket.replicaNumber), str(bucket.rank), num_vbuckets,
-                    str(bucket.durability_level),
+                    str(bucket.durabilityMinLevel),
                     str(bucket.maxTTL), str(bucket.stats.itemCount),
                     "{} / {}".format(humanbytes(str(bucket.stats.ram)),
                                      humanbytes(str(bucket.stats.memUsed))),
@@ -2926,7 +2925,7 @@ class BucketUtils(ScopeUtils):
             storage={Bucket.StorageBackend.magma: 3,
                      Bucket.StorageBackend.couchstore: 0},
             compression_mode=Bucket.CompressionMode.ACTIVE,
-            bucket_durability=BucketDurability[Bucket.DurabilityLevel.NONE],
+            bucket_durability=Bucket.DurabilityMinLevel.NONE,
             ram_quota=None,
             bucket_rank=None,
             bucket_name=None,
@@ -4944,7 +4943,7 @@ class BucketUtils(ScopeUtils):
                 bucket.serverless.weight = parsed[Bucket.weight]
 
             if Bucket.durabilityMinLevel in parsed:
-                bucket.durability_level = parsed[Bucket.durabilityMinLevel]
+                bucket.durabilityMinLevel = parsed[Bucket.durabilityMinLevel]
 
             if Bucket.rank in parsed:
                 bucket.rank = parsed[Bucket.rank]
@@ -5236,7 +5235,7 @@ class BucketUtils(ScopeUtils):
                 sleep(2, "Warm-up not complete for %s on %s" % (bucket.name,
                                                                 server.ip))
             ready_for_persistence = False
-            if not check_for_persistence:
+            if not check_for_persistence or bucket.storageBackend == Bucket.StorageBackend.couchstore:
                 ready_for_persistence = True
                 continue
 

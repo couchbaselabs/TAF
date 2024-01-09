@@ -1,12 +1,12 @@
 from datetime import datetime
 from random import choice
 
-from BucketLib.bucket import Bucket
 from Cb_constants import DocLoading, CbServer
 from SystemEventLogLib.Events import Event
 from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from membase.api.rest_client import RestConnection
+from constants.sdk_constants.java_client import SDKConstants
 from upgrade.upgrade_base import UpgradeBase
 
 
@@ -23,8 +23,8 @@ class SystemEventLogs(UpgradeBase):
                                  "in mixed version clusters"
         get_events_error = "This http API endpoint isn't " \
                            "supported in mixed version clusters"
-        t_durability_level = choice([Bucket.DurabilityLevel.NONE,
-                                     Bucket.DurabilityLevel.MAJORITY])
+        t_durability_level = choice([SDKConstants.DurabilityLevel.NONE,
+                                     SDKConstants.DurabilityLevel.MAJORITY])
 
         if self.upgrade_with_data_load:
             self.log.info("Continuous doc updates with durability=%s"
@@ -55,7 +55,7 @@ class SystemEventLogs(UpgradeBase):
             nodes_in_cluster = \
                 RestConnection(self.cluster.master).get_nodes()
             if node_to_upgrade is None \
-                    or self.cluster_supports_system_event_logs:
+                    or "system_event_logs" in self.cluster_features:
                 # Cluster fully upgraded / already supports system event logs
                 self.log.info("Creating events for validation")
                 self.system_events.set_test_start_time()

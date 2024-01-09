@@ -29,6 +29,7 @@ class TestInput(object):
         self.tuq_client = dict()
         self.elastic = list()
         self.capella = dict()
+        self.datasources = dict()
         # servers, each server can have u_name, passwd, port, directory
 
     def param(self, name, *args):
@@ -197,8 +198,10 @@ class TestInputParser:
         t_input.ui_conf = {}
         for section in sections:
             result = re.search('^cluster', section)
-            if section == "capella":
-                t_input.capella = TestInputParser.get_capella_config(config, section)  
+            if section == "datasources":
+                t_input.datasources = TestInputParser.get_datasources_config(config, section)
+            elif section == "capella":
+                t_input.capella = TestInputParser.get_capella_config(config, section)
             elif section == 'servers':
                 ips = TestInputParser.get_server_ips(config, section)
             elif section == 'clients':
@@ -266,6 +269,12 @@ class TestInputParser:
             capella[option] = config.get(section, option)
         return capella
 
+    @staticmethod
+    def get_datasources_config(config, section):
+        datasources = dict()
+        for option in config.options(section):
+            datasources[option] = config.get(section, option)
+        return datasources
 
     @staticmethod
     def get_server_options(servers, membase_settings, global_properties):

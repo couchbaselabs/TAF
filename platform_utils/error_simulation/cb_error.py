@@ -67,7 +67,7 @@ class CouchbaseError:
         elif action == CouchbaseError.STOP_SERVER:
             self.shell_conn.stop_server()
         elif action == CouchbaseError.STOP_PERSISTENCE:
-            if self.server is None:
+            if self.server.type == "default":
                 cbepctl_obj = Cbepctl(self.shell_conn)
                 cbepctl_obj.persistence(bucket_name, "stop")
             else:
@@ -101,7 +101,7 @@ class CouchbaseError:
                 or action == CouchbaseError.STOP_SERVER:
             self.shell_conn.start_server()
         elif action == CouchbaseError.STOP_PERSISTENCE:
-            if self.server is None:
+            if self.server.type == "default":
                 cbepctl_obj = Cbepctl(self.shell_conn)
                 cbepctl_obj.persistence(bucket_name, "start")
             else:

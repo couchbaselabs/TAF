@@ -237,7 +237,7 @@ class Murphy(BaseTestCase, OPD):
                         "flush": bucket.flushEnabled,
                         "replicas": bucket.replicaNumber,
                         "storageBackend": bucket.storageBackend,
-                        "durabilityLevel": bucket.durability_level,
+                        "durabilityLevel": bucket.durabilityMinLevel,
                         "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
                     }
                     CapellaAPI.create_bucket(cluster, self.bucket_params)

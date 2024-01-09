@@ -18,13 +18,11 @@ from basetestcase import ClusterSetup
 from cb_constants.system_event_log import NsServer, KvEngine
 from cb_tools.cb_collectinfo import CbCollectInfo
 from couchbase_helper.documentgenerator import doc_generator
-from couchbase_helper.durability_helper import BucketDurability
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Windows
 from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
-
 
 class SystemEventLogs(ClusterSetup):
     def setUp(self):
@@ -1334,11 +1332,13 @@ class SystemEventLogs(ClusterSetup):
             flush_enabled = choice([0, 1])
             if bucket_type == Bucket.Type.EPHEMERAL:
                 bucket_durability = choice(
-                    [BucketDurability[Bucket.DurabilityLevel.NONE],
-                     BucketDurability[Bucket.DurabilityLevel.MAJORITY]])
+                    [Bucket.DurabilityMinLevel.NONE,
+                     Bucket.DurabilityMinLevel.MAJORITY])
             else:
+                durability_levels = [Bucket.DurabilityMinLevel.NONE, Bucket.DurabilityMinLevel.MAJORITY,
+                                     Bucket.DurabilityMinLevel.MAJORITY_AND_PERSIST_ACTIVE, Bucket.DurabilityMinLevel.PERSIST_TO_MAJORITY]
                 bucket_durability = \
-                    choice([value for _, value in BucketDurability.items()])
+                    choice([value for _, value in durability_levels])
 
             tbl = TableView(self.log.critical)
             tbl.set_headers(["Field", "Value"])
@@ -1500,7 +1500,7 @@ class SystemEventLogs(ClusterSetup):
             "conflict_resolution_type": bucket.conflictResolutionType,
             "num_threads": bucket.threadsNumber,
             "flush_enabled": True if bucket.flushEnabled else False,
-            "durability_min_level": bucket.durability_level,
+            "durability_min_level": bucket.durabilityMinLevel,
             "replica_index": bucket.replicaIndex,
             "num_replicas": bucket.replicaNumber,
             "eviction_policy": eviction_policy_val

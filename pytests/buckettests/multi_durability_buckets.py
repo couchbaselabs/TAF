@@ -2,6 +2,7 @@ from basetestcase import BaseTestCase
 from BucketLib.bucket import Bucket
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
+from constants.sdk_constants.java_client import SDKConstants
 
 
 class MultiDurabilityTests(BaseTestCase):
@@ -194,15 +195,15 @@ class MultiDurabilityTests(BaseTestCase):
         # First-set of ops on multi-buckets
         dict_updater(
             0, self.bucket_dict, gen_create, "create",
-            durability=Bucket.DurabilityLevel.MAJORITY,
+            durability=SDKConstants.DurabilityLevel.MAJORITY,
             sdk_timeout=30)
         dict_updater(
             1, self.bucket_dict, gen_update, "update",
-            durability=Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+            durability=SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
             sdk_timeout=30)
         dict_updater(
             2, self.bucket_dict, gen_delete, "delete",
-            durability=Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+            durability=SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY,
             sdk_timeout=60)
         dict_updater(3, self.bucket_dict, gen_update, "update",
                      persist_to=1, replicate_to=replicate_to,
@@ -224,15 +225,15 @@ class MultiDurabilityTests(BaseTestCase):
                      sdk_timeout=30)
         dict_updater(
             1, self.bucket_dict, gen_delete, "delete",
-            durability=Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
+            durability=SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE,
             sdk_timeout=30)
         dict_updater(
             2, self.bucket_dict, gen_create, "create",
-            durability=Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+            durability=SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY,
             sdk_timeout=60)
         dict_updater(
             3, self.bucket_dict, gen_delete, "delete",
-            durability=Bucket.DurabilityLevel.MAJORITY,
+            durability=SDKConstants.DurabilityLevel.MAJORITY,
             sdk_timeout=10)
         dict_updater(4, self.bucket_dict, gen_update, "update",
                      sdk_timeout=10)

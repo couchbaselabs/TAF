@@ -5161,6 +5161,7 @@ class CBASRebalanceUtil(object):
     def wait_for_rebalance_task_to_complete(self, task, cluster,
                                             check_cbas_running=False):
         self.task.jython_task_manager.get_task_result(task)
+        cluster.servers = cluster.nodes_in_cluster
         if hasattr(cluster, "cbas_cc_node"):
             self.reset_cbas_cc_node(cluster)
         if task.result and hasattr(cluster, "cbas_nodes"):
@@ -5199,6 +5200,8 @@ class CBASRebalanceUtil(object):
         servs_out = random.sample(cluster_kv_nodes, kv_nodes_out) + random.sample(
             cluster_cbas_nodes, cbas_nodes_out)
 
+        cluster.servers.extend(servs_in)
+
         if kv_nodes_in == kv_nodes_out:
             self.vbucket_check = False
 
@@ -5221,6 +5224,7 @@ class CBASRebalanceUtil(object):
         nodes_in_cluster = [server for server in cluster.nodes_in_cluster if
                             server not in servs_out]
         cluster.nodes_in_cluster = nodes_in_cluster
+
         # cluster.servers = nodes_in_cluster
 
         return rebalance_task, available_servers

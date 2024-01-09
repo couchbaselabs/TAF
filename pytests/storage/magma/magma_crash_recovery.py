@@ -16,9 +16,6 @@ from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
-from com.couchbase.test.docgen import DocRange
-from couchbase.test.docgen import DRConstants
-from java.util import HashMap
 
 
 class MagmaCrashTests(MagmaBaseTest):

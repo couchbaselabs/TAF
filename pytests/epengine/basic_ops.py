@@ -17,6 +17,7 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from gsiLib.gsiHelper import GsiHelper
 
+from constants.sdk_constants.java_client import SDKConstants
 from mc_bin_client import MemcachedClient, MemcachedError
 from platform_constants.os_constants import Linux
 from remote.remote_util import RemoteMachineShellConnection
@@ -32,6 +33,7 @@ from com.couchbase.client.core.error import AmbiguousTimeoutException, \
 
 from couchbase_utils.cluster_utils.cluster_ready_functions import CBCluster
 from membase.api.rest_client import RestConnection
+
 
 """
 Capture basic get, set operations, also the meta operations.
@@ -217,7 +219,7 @@ class basic_ops(ClusterSetup):
         ignore_exceptions = list()
         retry_exceptions = list()
         supported_d_levels = self.bucket_util.get_supported_durability_levels(
-            minimum_level=Bucket.DurabilityLevel.MAJORITY)
+            minimum_level=SDKConstants.DurabilityLevel.MAJORITY)
 
         # Stat validation reference variables
         verification_dict = dict()
@@ -519,7 +521,7 @@ class basic_ops(ClusterSetup):
         num_items = self.num_items
         half_of_num_items = self.num_items / 2
         supported_d_levels = self.bucket_util.get_supported_durability_levels()
-        exp_values_to_test = [0, 300, 10000, 12999]
+        exp_values_to_test = [0, 3000, 10000, 12999]
 
         # Initial doc_loading
         initial_load = doc_generator(self.key, 0, self.num_items,
@@ -944,8 +946,7 @@ class basic_ops(ClusterSetup):
 
         # Start rebalance-out operation
         rebalance_out = self.task.async_rebalance(
-            self.cluster.servers[0:self.nodes_init], [],
-            [self.cluster.servers[-1]])
+            self.cluster, [], [self.cluster.servers[-1]])
         self.sleep(10, "Wait for rebalance to start")
 
         # Start deleting the evicted docs in parallel to rebalance task
@@ -1302,7 +1303,7 @@ class basic_ops(ClusterSetup):
         create_thread = Thread(
             target=client_1.crud,
             args=[DocLoading.Bucket.DocOps.CREATE, self.key, doc_val],
-            kwargs={"durability": Bucket.DurabilityLevel.PERSIST_TO_MAJORITY,
+            kwargs={"durability": SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY,
                     "timeout": 15})
         create_thread.start()
         self.sleep(5, "Wait to make sure prepare is generated")
@@ -1456,7 +1457,7 @@ class basic_ops(ClusterSetup):
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
 
-        self.durability_level = Bucket.DurabilityLevel.MAJORITY
+        self.durability_level = SDKConstants.DurabilityLevel.MAJORITY
         active_vbs = cb_stat.vbucket_list(bucket.name,
                                           vbucket_type="active")
         doc_gen = doc_generator(self.key, 0, 10000,
@@ -1711,7 +1712,7 @@ class basic_ops(ClusterSetup):
             DocLoading.Bucket.DocOps.UPDATE, 0,
             batch_size=self.batch_size,
             process_concurrency=10,
-            durability=Bucket.DurabilityLevel.MAJORITY,
+            durability=SDKConstants.DurabilityLevel.MAJORITY,
             timeout_secs=self.sdk_timeout,
             scope=self.scope_name,
             collection=self.collection_name,
@@ -1729,8 +1730,6 @@ class basic_ops(ClusterSetup):
         cb_stats = Cbstats(self.cluster.master)
 
         self.log.info("Collection stats before executing the scenario")
-        stats = cb_stats.all_stats(bucket.name)
-
         cb_err.create(CouchbaseError.STOP_SERVER)
         cb_err.revert(CouchbaseError.STOP_SERVER)
         self.cluster_util.wait_for_ns_servers_or_assert([self.cluster.master])
@@ -1747,7 +1746,6 @@ class basic_ops(ClusterSetup):
             self.assertTrue(int(curr_stats[field]) != 0,
                             "%s stat is zero" % field)
         shell.disconnect()
-
 
     def test_warmup_scan_reset(self):
         """
@@ -1767,7 +1765,7 @@ class basic_ops(ClusterSetup):
                         for vb_num in range(0, self.cluster.vbuckets)])
         index = -1
         req_key_for_vb = doc_keys.keys()
-        d_level = Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
+        d_level = SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         param = "warmup_backfill_scan_chunk_duration"
         param_val = 0
@@ -1978,7 +1976,7 @@ class basic_ops(ClusterSetup):
     def MB36948(self):
         node_to_stop = self.servers[0]
         self.log.info("Adding index/query node")
-        self.task.rebalance([self.cluster.master], [self.servers[2]], [],
+        self.task.rebalance(self.cluster, [self.servers[2]], [],
                             services=["n1ql,index"])
         self.log.info("Creating SDK client connection")
         client = SDKClient([self.cluster.master],
@@ -2233,7 +2231,7 @@ class basic_ops(ClusterSetup):
         rest.set_indexer_params(indexerThreads=1)
         c_index = 1
         num_items = self.num_items
-        c_dict = { CbServer.default_collection: self.num_items * 2 }
+        c_dict = {CbServer.default_collection: self.num_items * 2}
         while num_items != 0:
             c_name = "c{}".format(c_index)
             self.log.info("Creating collections %s" % c_name)
@@ -2321,13 +2319,12 @@ class basic_ops(ClusterSetup):
         self.sleep(10, "WAIT")
         self.log.info("Rebalance-in %s nodes" % self.num_replicas)
         result = self.task.rebalance(
-            [self.cluster.master],
-            self.cluster.servers[1:1+self.num_replicas], [])
+            self.cluster, self.cluster.servers[1:1+self.num_replicas], [])
         self.assertTrue(result, "Rebalance failed")
 
     def test_unlock_key(self):
         """
-        Ref: MB-58088 / MB-59060
+        Ref: MB-58088 / MB-59060 / MB-59746
         """
         def validate_unlock_exception(t_key, d_cas, expected_errors):
             try:
@@ -2349,21 +2346,25 @@ class basic_ops(ClusterSetup):
 
         not_locked_msgs = ["Requested resource is not locked", "NOT_LOCKED"]
         self.log.info("Test for multiple doc-unlock")
-        client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
+        result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
+        original_cas = result["cas"]
         result = client.collection.getAndLock(
             key_1, SDKOptions.get_duration(15, "seconds"))
-        cas = result.cas()
-        client.collection.unlock(key_1, cas)
-        validate_unlock_exception(key_1, cas, not_locked_msgs)
+        locked_cas = result.cas()
+        self.assertNotEqual(original_cas, locked_cas, "CAS not updated")
+        client.collection.unlock(key_1, locked_cas)
+        validate_unlock_exception(key_1, locked_cas, not_locked_msgs)
+        result = client.crud(DocLoading.Bucket.DocOps.READ, key_1)
+        cas_after_unlock = result["cas"]
+        self.assertEqual(original_cas, cas_after_unlock, "CAS updated")
 
         self.log.info("Testing unlock without lock")
-        cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
-                                key_2, {})["cas"]
+        cas = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_2, {})["cas"]
         validate_unlock_exception(key_2, cas, not_locked_msgs)
 
         self.log.info("Testing with expired key")
         cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
-                                key_3, {}, exp=2)["cas"]
+                          key_3, {}, exp=2)["cas"]
         self.sleep(3, "Wait for doc_to_expire")
         validate_unlock_exception(key_3, cas,
                                   [SDKException.DocumentNotFoundException])
@@ -2397,6 +2398,115 @@ class basic_ops(ClusterSetup):
         validate_unlock_exception(key_2, doc_2_cas+1, not_locked_msgs)
         validate_unlock_exception(key_3, doc_3_cas+1,
                                   [SDKException.DocumentNotFoundException])
+
+    def test_mutate_prepare_evict(self):
+        """
+        Ref: MB-60046
+        """
+        def perform_sync_write(sdk_client, doc_key):
+            self.log.info("Creating prepare document")
+            self.mutation_result = sdk_client.crud(
+                DocLoading.Bucket.DocOps.UPDATE, doc_key, {},
+                durability=SDKConstants.DurabilityLevel.MAJORITY,
+                timeout=70)
+
+        def load_docs(num_items):
+            gen = doc_generator("test_docs", 0, num_items, key_size=100,
+                                doc_size=1024)
+
+            l_task = self.task.async_load_gen_docs(
+                self.cluster, bucket, gen, DocLoading.Bucket.DocOps.UPDATE,
+                batch_size=20, process_concurrency=3, print_ops_rate=False,
+                skip_read_on_error=True, suppress_error_table=True,
+                sdk_client_pool=self.sdk_client_pool)
+            self.task_manager.get_task_result(l_task)
+
+        cbstat = cb_err = None
+        active_vbs = None
+        key = "test_key"
+        bucket = self.cluster.buckets[0]
+        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        vb_for_key = self.bucket_util.get_vbucket_num_for_key(
+            key, self.cluster.vbuckets)
+
+        self.log.info("Disabling auto-failover settings")
+        RestConnection(self.cluster.master)\
+            .update_autofailover_settings(False, 60)
+
+        load_docs(10000)
+        perform_sync_write(client, key)
+        load_docs(1000)
+        for node in self.cluster.nodes_in_cluster:
+            cbstat = Cbstats(node)
+            active_vbs = cbstat.vbucket_list(bucket.name)
+            replica_vbs = cbstat.vbucket_list(bucket.name,
+                                              Bucket.vBucket.REPLICA)
+            if vb_for_key in replica_vbs:
+                self.log.critical("Stopping memcached on %s" % node.ip)
+                cb_err = CouchbaseError(self.log, cbstat.shellConn)
+                cb_err.create(CouchbaseError.STOP_MEMCACHED)
+                break
+            cbstat.shellConn.disconnect()
+
+        target_vbs = list(set(range(0, 1024)) - set(active_vbs))
+        doc_gen = doc_generator("test_docs", 0, 100000, key_size=220,
+                                doc_size=1024, target_vbucket=target_vbs)
+
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
+            batch_size=20, process_concurrency=3, print_ops_rate=False,
+            skip_read_on_error=True, suppress_error_table=True,
+            start_task=False, sdk_client_pool=self.sdk_client_pool)
+
+        prepare_mutation_thread = Thread(target=perform_sync_write,
+                                         args=[client, key])
+        prepare_mutation_thread.start()
+
+        self.sleep(1, "Wait for prepare mutation to initiate")
+        self.log.info("Starting data load to tigger eviction")
+        self.task_manager.add_new_task(load_task)
+        self.task_manager.get_task_result(load_task)
+        self.sdk_client_pool.release_client(client)
+        self.log.info("Reverting error condition")
+        cb_err.revert(CouchbaseError.STOP_MEMCACHED)
+        cbstat.shellConn.disconnect()
+
+        self.sleep(5, "Wait before validating hash_table")
+        hash_dump_cmd = \
+            "%s -u %s -p %s localhost:%d raw \"_hash-dump %d\" | grep %s" \
+            % (Linux.COUCHBASE_BIN_PATH + "cbstats",
+               self.cluster.master.rest_username,
+               self.cluster.master.rest_password,
+               self.cluster.master.memcached_port, vb_for_key, key)
+
+        for node in self.cluster.nodes_in_cluster:
+            if node.ip != cbstat.shellConn.ip:
+                t_shell = RemoteMachineShellConnection(node)
+                output = t_shell.execute_command(hash_dump_cmd)[0][0]
+                t_shell.disconnect()
+                self.assertTrue(output.find("..J W.R.Cp. temp:") > 0,
+                                "Unexpected hash_table output: %s" % output)
+                self.assertTrue(output.find(" del_time:") == -1,
+                                "Unexpected hash_table output: %s" % output)
+
+    def test_ephemeral_num_pager_runs(self):
+        load_gen = doc_generator(self.key, 0, 320000, doc_size=1024)
+        for i in range(20):
+            load_task = self.task.async_load_gen_docs(
+                self.cluster, self.cluster.buckets[0], load_gen,
+                DocLoading.Bucket.DocOps.UPDATE,
+                batch_size=20, process_concurrency=8, print_ops_rate=False,
+                skip_read_on_error=True, suppress_error_table=True,
+                sdk_client_pool=self.sdk_client_pool)
+            self.task_manager.get_task_result(load_task)
+
+        for node in self.cluster.nodes_in_cluster:
+            cbstat = Cbstats(node)
+            stats = cbstat.all_stats(self.cluster.buckets[0].name)
+            cbstat.shellConn.disconnect()
+            val = int(stats["ep_num_pager_runs"])
+            self.assertTrue(val < 2000,
+                            "Node %s, ep_num_pager_runs: %s" % (node.ip, val))
 
     def do_get_random_key(self):
         # MB-31548, get_Random key gets hung sometimes.

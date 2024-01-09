@@ -10,6 +10,7 @@ from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
+from rebalance_utils.retry_rebalance import RetryRebalanceUtil
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 
@@ -170,6 +171,7 @@ class RebalanceBaseTest(BaseTestCase):
                 replicate_to=self.replicate_to, persist_to=self.persist_to)
             self.cluster_util.print_cluster_stats(self.cluster)
             self.bucket_util.print_bucket_stats(self.cluster)
+        self.retry_rebalance_util = RetryRebalanceUtil()
         self.log_setup_status("RebalanceBase", "complete")
 
     def collection_setup(self):
@@ -503,23 +505,6 @@ class RebalanceBaseTest(BaseTestCase):
                                                 task_verification=task_verification)
         return loaders
 
-    def induce_rebalance_test_condition(self, test_failure_condition):
-        if test_failure_condition == "verify_replication":
-            set_command = "testconditions:set(verify_replication, {fail, \"" + "default" + "\"})"
-        elif test_failure_condition == "backfill_done":
-            set_command = "testconditions:set(backfill_done, {for_vb_move, \"" + "default\", 1 , " + "fail})"
-        else:
-            set_command = "testconditions:set({0}, fail)" \
-                .format(test_failure_condition)
-        for server in self.servers:
-            rest = RestConnection(server)
-            shell = RemoteMachineShellConnection(server)
-            shell.enable_diag_eval_on_non_local_hosts()
-            _, content = rest.diag_eval(set_command)
-            self.log.debug("Set Command: {0} Return: {1}"
-                           .format(set_command, content))
-            shell.disconnect()
-
     def start_rebalance(self, rebalance_operation):
         self.log.debug("Starting rebalance operation of type: {0}"
                        .format(rebalance_operation))
@@ -548,56 +533,6 @@ class RebalanceBaseTest(BaseTestCase):
                                             graceful=True,
                                             wait_for_pending=300)
         return task
-
-    def delete_rebalance_test_condition(self, test_failure_condition):
-        delete_command = "testconditions:delete({0})".format(test_failure_condition)
-        for server in self.servers:
-            rest = RestConnection(server)
-            shell = RemoteMachineShellConnection(server)
-            shell.enable_diag_eval_on_non_local_hosts()
-            _, content = rest.diag_eval(delete_command)
-            self.log.debug("Delete Command: {0} Return: {1}"
-                           .format(delete_command, content))
-            shell.disconnect()
-
-    def check_retry_rebalance_succeeded(self):
-        self.sleep(30)
-        attempts_remaining = retry_rebalance = retry_after_secs = None
-        for i in range(10):
-            self.log.info("Getting stats : try {0}".format(i))
-            result = json.loads(self.rest.get_pending_rebalance_info())
-            self.log.info(result)
-            if "retry_after_secs" in result:
-                retry_after_secs = result["retry_after_secs"]
-                attempts_remaining = result["attempts_remaining"]
-                retry_rebalance = result["retry_rebalance"]
-                break
-            self.sleep(5)
-        self.log.debug("Attempts remaining: {0}, Retry rebalance: {1}"
-                       .format(attempts_remaining, retry_rebalance))
-        while attempts_remaining:
-            # wait for the afterTimePeriod for the failed rebalance to restart
-            self.sleep(retry_after_secs,
-                       message="Waiting for the afterTimePeriod to complete")
-            try:
-                result = self.rest.monitorRebalance()
-                msg = "monitoring rebalance {0}"
-                self.log.debug(msg.format(result))
-            except Exception:
-                result = json.loads(self.rest.get_pending_rebalance_info())
-                self.log.debug(result)
-                try:
-                    attempts_remaining = result["attempts_remaining"]
-                    retry_rebalance = result["retry_rebalance"]
-                    retry_after_secs = result["retry_after_secs"]
-                except KeyError:
-                    self.fail("Retrying of rebalance still did not help. "
-                              "All the retries exhausted...")
-                self.log.info("Attempts remaining: {0}, Retry rebalance: {1}"
-                              .format(attempts_remaining, retry_rebalance))
-            else:
-                self.log.info("Retry rebalanced fixed the rebalance failure")
-                break
 
     def change_retry_rebalance_settings(self, enabled=True,
                                         afterTimePeriod=300, maxAttempts=1):
