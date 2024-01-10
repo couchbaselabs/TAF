@@ -231,7 +231,7 @@ class ConfigPurging(CollectionBase):
     def __get_current_timestamps_from_debug_log(self):
         cmd = "cat %s/var/lib/couchbase/logs/debug.log " \
               "| grep '\[ns_server:' | tail -1" % self.couchbase_base_dir
-        timestamp_pattern = "\[ns_server:[a-zA-Z]+,([T0-9-:.]+),"
+        timestamp_pattern = "[ns_server:[a-zA-Z]+,([T0-9-:.]+)"
         timestamp_pattern = re.compile(timestamp_pattern)
         ts_result = dict()
         for server in self.cluster.servers:

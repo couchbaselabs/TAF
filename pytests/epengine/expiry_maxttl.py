@@ -13,7 +13,6 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException, check_if_exception_exists
 from constants.sdk_constants.java_client import SDKConstants
 from table_view import TableView
-from sirius_client import RESTClient
 
 
 class ExpiryMaxTTL(ClusterSetup):
@@ -644,7 +643,7 @@ class ExpiryMaxTTL(ClusterSetup):
         cb_ep_ctl.set(bucket.name, "flush_param", "exp_pager_stime", 0)
 
         # Create SDK client
-        client = RESTClient([self.cluster.master], bucket)
+        client = SDKClient([self.cluster.master], bucket)
 
         self.log.info("Non-sync write with TTL=%s" % doc_ttl)
         client.crud(DocLoading.Bucket.DocOps.CREATE, key, {}, exp=doc_ttl)

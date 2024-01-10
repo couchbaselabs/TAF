@@ -7,17 +7,6 @@ from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 from error_simulation.cb_error import CouchbaseError
 from constants.sdk_constants.java_client import SDKConstants
-from remote.remote_util import RemoteMachineShellConnection
-from sdk_exceptions import check_if_exception_exists
-
-# Required since the str(values) are different for bucket-create
-BucketDurability = dict()
-BucketDurability[Bucket.DurabilityLevel.NONE] = "none"
-BucketDurability[Bucket.DurabilityLevel.MAJORITY] = "majority"
-BucketDurability[Bucket.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE] = \
-    "majorityAndPersistActive"
-BucketDurability[Bucket.DurabilityLevel.PERSIST_TO_MAJORITY] = \
-    "persistToMajority"
 
 
 class DurabilityHelper:

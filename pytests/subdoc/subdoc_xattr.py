@@ -6,7 +6,6 @@ import sys
 import re
 from random import choice, shuffle
 
-import Jython_tasks
 import sdk_exceptions
 from BucketLib.bucket import Bucket
 from Cb_constants import CbServer, DocLoading
@@ -30,7 +29,6 @@ from sdk_exceptions import SDKException
 from storage_utils.magma_utils import MagmaUtils
 from Jython_tasks.task import FunctionCallTask
 from StatsLib.StatsOperations import StatsHelper
-from sirius_client import RESTClient
 
 
 class SubdocBaseTest(ClusterSetup):
@@ -228,8 +226,8 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         super(SubdocXattrSdkTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = RESTClient([self.cluster.master],
-                                 self.cluster.buckets[0])
+        self.client = SDKClient([self.cluster.master],
+                                self.cluster.buckets[0])
 
     def tearDown(self):
         # Delete the inserted doc
@@ -239,12 +237,12 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.client.close()
         super(SubdocXattrSdkTest, self).tearDown()
 
-    def __upsert_document_and_validate(self, op_type, value, doc_size=512):
-        result = self.client.crud(op_type, self.doc_id, doc_size=doc_size)
+    def __upsert_document_and_validate(self, op_type, value):
+        result = self.client.crud(op_type, self.doc_id, value=value)
         if result["status"] is False:
             self.fail("Initial doc create failed")
 
-    def __insert_sub_doc_and_validate(self, op_type, key, value, doc_size=100):
+    def __insert_sub_doc_and_validate(self, op_type, key, value):
         _, failed_items = self.client.crud(
             op_type,
             self.doc_id,
@@ -253,8 +251,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
             timeout=self.sdk_timeout,
             time_unit=SDKConstants.TimeUnit.SECONDS,
             create_path=True,
-            xattr=self.xattr,
-            doc_size=doc_size)
+            xattr=self.xattr)
         self.assertFalse(failed_items, "Subdoc Xattr insert failed")
 
     def __read_doc_and_validate(self, expected_val, subdoc_key=None):
@@ -288,11 +285,11 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         self.__read_doc_and_validate('{}')
 
         # Using lookup_in
-        _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr", xattr=self.xattr)
-        self.assertFalse(failure, "Subdoc Xattr read failed")
+        _, failure = self.client.crud("subdoc_read", self.doc_id, "my.attr")
+        self.assertTrue(failure)
 
         # Finally, use lookup_in with 'xattrs' attribute enabled
-        self.__read_doc_and_validate("{}")
+        self.__read_doc_and_validate("value", "my.attr")
 
     def test_multiple_attrs(self):
         self.__upsert_document_and_validate("update", {})
@@ -306,28 +303,40 @@ class SubdocXattrSdkTest(SubdocBaseTest):
                                                key, val)
 
         # Read full doc and validate
-        # Use lookup_in with 'xattrs' attribute enabled to validate the values
+        self.__read_doc_and_validate('{}')
 
-        self.__read_doc_and_validate({}, key)
+        # Use lookup_in with 'xattrs' attribute enabled to validate the values
+        for key, val in xattrs_to_insert:
+            self.__read_doc_and_validate(val, key)
 
     def test_xattr_big_value(self):
         sub_doc_key = "my.attr"
         value = {"v": "v" * 500000}
-
-        self.__upsert_document_and_validate("update", value,doc_size=len(value))
+        self.__upsert_document_and_validate("update", value)
 
         self.__insert_sub_doc_and_validate("subdoc_insert",
-                                           sub_doc_key, value,doc_size=len(value))
+                                           sub_doc_key, value)
 
         # Read full doc and validate
-        result = self.client.validate_doc(key=self.doc_id)
-        self.assertTrue(result['status'], "Document value mismatched")
+        result = self.client.crud("read", self.doc_id)
+        result = json.loads(result["value"])
+        self.assertEqual(result, value,
+                         "Document value mismatch: %s != %s" % (result, value))
+
+        # Read sub_doc for validating the value
+        success, failed_items = self.client.crud("subdoc_read",
+                                                 self.doc_id,
+                                                 sub_doc_key,
+                                                 xattr=self.xattr)
+        self.assertFalse(failed_items, "Xattr read failed")
+        result = json.loads(str(success[self.doc_id]["value"][0]))
+        self.assertEqual(result, value,
+                         "Sub_doc value mismatch: %s != %s" % (result, value))
 
     def test_add_to_parent(self):
         self.__upsert_document_and_validate("update", {})
 
         # Read and record CAS
-
         result = self.client.crud("read", self.doc_id)
         self.assertTrue(result["status"], "Read failed")
         initial_cas = result["cas"]
@@ -1565,11 +1574,11 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         super(SubdocXattrDurabilityTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = RESTClient([self.cluster.master],
-                                 self.cluster.buckets[0],
-                                 scope=self.scope_name,
-                                 collection=self.collection_name,
-                                 compression_settings=self.sdk_compression)
+        self.client = SDKClient([self.cluster.master],
+                                self.cluster.buckets[0],
+                                scope=self.scope_name,
+                                collection=self.collection_name,
+                                compression_settings=self.sdk_compression)
 
     def tearDown(self):
         # Close the SDK connections
@@ -1826,7 +1835,7 @@ class XattrTests(SubdocBaseTest):
         self.bucket = self.cluster.buckets[0]
 
         # A client for reading xattributes
-        self.client = RESTClient([self.cluster.master], self.bucket)
+        self.client = SDKClient([self.cluster.master], self.bucket)
 
         # Parallelism for verifying xattributes
         self.parallelism = self.input.param("parallelism", 5)

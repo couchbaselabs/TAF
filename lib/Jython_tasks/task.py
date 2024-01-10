@@ -4344,7 +4344,7 @@ class DropIndexTask(Task):
                 self.call()
         # catch and set all unexpected exceptions
         except DropIndexException as e:
-            self.setexception(e)
+            self.set_exception(e)
 
     def check(self):
         try:

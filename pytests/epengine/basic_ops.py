@@ -5,7 +5,7 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-from Jython_tasks.task import RestBasedDocLoaderCleaner
+
 from SecurityLib.rbac import RbacUtil
 from Cb_constants import constants, CbServer, DocLoading
 from basetestcase import ClusterSetup
@@ -706,9 +706,8 @@ class basic_ops(ClusterSetup):
             self.log.info("Performing read op")
             result = client.crud(DocLoading.Bucket.DocOps.READ, key)
             self.assertFalse(result["status"], "Read op succeeded")
-            self.assertFalse(check_if_exception_exists(result["error"], SDKException.CouchbaseException),
-                             "Invalid exception type")
-
+            self.assertTrue(check_if_exception_exists(result["error"], SDKException.CouchbaseException),
+                            "Invalid exception type")
             self.assertTrue("NO_ACCESS" in result["error"],
                             "Expected error string not found")
         finally:
@@ -2001,7 +2000,7 @@ class basic_ops(ClusterSetup):
                              timeout=3, time_unit="seconds")
         if result["status"]:
             self.log_failure("Sync write succeeded")
-        if check_if_exception_exists(result["error"], SDKException.DurabilityAmbiguousException):
+        if not check_if_exception_exists(result["error"], SDKException.DurabilityAmbiguousException):
             self.log_failure("Invalid exception for sync_write: %s" % result)
 
         self.log.info("Resuming memcached on: %s" % node_to_stop)
@@ -2488,6 +2487,65 @@ class basic_ops(ClusterSetup):
                                 "Unexpected hash_table output: %s" % output)
                 self.assertTrue(output.find(" del_time:") == -1,
                                 "Unexpected hash_table output: %s" % output)
+
+    def test_backfill_during_warmup_to_load_active_vbs(self):
+        """
+        - Create a cluster with two or more nodes.
+        - Load data greater than memory.
+        - Restart the nodes.
+        - After warmup, all nodes should have high active RR
+          (consistent with data volume) and low replica RR.
+
+        Ref: MB-59817
+        """
+        node_info = dict()
+        bucket = self.cluster.buckets[0]
+        load_gen = doc_generator(self.key, 0, self.num_items*10,
+                                 key_size=100, doc_size=2048)
+        self.log.info("Loading documents into the bucket")
+        load_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, load_gen, DocLoading.Bucket.DocOps.UPDATE,
+            durability=self.durability_level, batch_size=200, iterations=5,
+            process_concurrency=8, print_ops_rate=False,
+            skip_read_on_error=True, suppress_error_table=True,
+            sdk_client_pool=self.sdk_client_pool)
+        self.task_manager.get_task_result(load_task)
+        self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
+
+        self.log.info("Creating shell connections")
+        for node in self.cluster.nodes_in_cluster:
+            node_info[node.ip] = dict()
+            node_info[node.ip]["shell"] = RemoteMachineShellConnection(node)
+            node_info[node.ip]["cbstat"] = Cbstats(node)
+            stats = node_info[node.ip]["cbstat"].all_stats(bucket.name)
+            active_rr_perc = int(stats["vb_active_perc_mem_resident"])
+            replica_rr_perc = int(stats["vb_replica_perc_mem_resident"])
+            self.log.info("{} - vb_active_perc_mem_resident: {}, "
+                          "vb_replica_perc_mem_resident: {}"
+                          .format(node.ip, active_rr_perc, replica_rr_perc))
+
+        self.log.info("Killing memecached on nodes")
+        for _, n_info in node_info.items():
+            cb_err = CouchbaseError(self.log, n_info["shell"])
+            cb_err.create(CouchbaseError.KILL_MEMCACHED)
+
+        self.bucket_util._wait_warmup_completed(bucket,
+                                                self.cluster.nodes_in_cluster)
+        self.sleep(5, "Wait for memcached to complete warmup")
+        for ip, n_info in node_info.items():
+            stats = n_info["cbstat"].all_stats(bucket.name)
+            active_rr_perc = int(stats["vb_active_perc_mem_resident"])
+            replica_rr_perc = int(stats["vb_replica_perc_mem_resident"])
+            self.log.info("{} - vb_active_perc_mem_resident: {}, "
+                          "vb_replica_perc_mem_resident: {}"
+                          .format(ip, active_rr_perc, replica_rr_perc))
+            if active_rr_perc < replica_rr_perc:
+                self.fail("{} - Replica_RR :: {} < {} :: Active_RR"
+                          .format(ip, replica_rr_perc, active_rr_perc))
+
+        self.log.info("Closing connections")
+        for _, n_info in node_info.items():
+            n_info["shell"].disconnect()
 
     def test_ephemeral_num_pager_runs(self):
         load_gen = doc_generator(self.key, 0, 320000, doc_size=1024)
