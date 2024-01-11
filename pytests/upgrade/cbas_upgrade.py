@@ -616,6 +616,19 @@ class UpgradeTests(UpgradeBase):
                 target_spec["doc_crud"][MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = \
                     self.num_items
 
+    def reset_cbas_cc_node(self, cluster):
+        self.sleep(10, "Waiting for cluster service map to get updated.")
+        self.log.info("Reassigning cluster CBAS CC node")
+        cluster.cbas_nodes = self.cluster_util.get_nodes_from_services_map(
+            cluster, service_type="cbas", get_all_nodes=True,
+            servers=cluster.nodes_in_cluster)
+        cbas_cc_node_ip = self.cbas_util.retrieve_cc_ip_from_master(cluster)
+        for node in cluster.cbas_nodes:
+            if node.ip == cbas_cc_node_ip:
+                cluster.cbas_cc_node = node
+                break
+        self.log.info("Reassigned CBAS CC node is {0}".format(cbas_cc_node_ip))
+
     def test_upgrade(self):
         self.log.info("Upgrading cluster nodes to target version")
 
@@ -642,6 +655,7 @@ class UpgradeTests(UpgradeBase):
             self.cluster_util.print_cluster_stats(self.cluster)
             num_nodes_to_be_upgraded -= 1
             if cbas_cc_node_upgrade_sequence == "last" and num_nodes_to_be_upgraded > 1:
+                self.reset_cbas_cc_node(self.cluster)
                 while node_to_upgrade.ip == self.cluster.cbas_cc_node.ip:
                     node_to_upgrade = self.fetch_node_to_upgrade()
             else:
@@ -679,6 +693,7 @@ class UpgradeTests(UpgradeBase):
             self.cluster_util.print_cluster_stats(self.cluster)
             num_nodes_to_be_upgraded -= 1
             if cbas_cc_node_upgrade_sequence == "last" and num_nodes_to_be_upgraded > 1:
+                self.reset_cbas_cc_node(self.cluster)
                 while node_to_upgrade.ip == self.cluster.cbas_cc_node.ip:
                     node_to_upgrade = self.fetch_node_to_upgrade()
             else:
