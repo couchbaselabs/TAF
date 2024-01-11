@@ -4,6 +4,7 @@ from random import choice
 from time import time
 
 from BucketLib.bucket import Bucket
+from custom_exceptions.exception import FailoverFailedException
 from sdk_client3 import SDKClient
 from Cb_constants import CbServer, DocLoading
 from Jython_tasks.task import ConcurrentFailoverTask
@@ -471,15 +472,31 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
                 if failover_task.result is False:
                     self.fail("Failure during concurrent failover procedure")
             elif self.current_fo_strategy == CbServer.Failover.Type.GRACEFUL:
+                fo_err_msg = "Failover Node failed: Failover cannot be done " \
+                             "gracefully for a node " \
+                             "without data service. Use hard failover"
                 for node in self.nodes_to_fail:
                     node = [t_node for t_node in rest_nodes
                             if t_node.ip == node.ip][0]
-                    status = self.rest.fail_over(node.id, graceful=True)
-                    if status is False:
-                        self.fail("Graceful failover failed for %s" % node)
-                    self.sleep(5, "Wait for failover to start")
-                    reb_result = self.rest.monitorRebalance()
-                    self.assertTrue(reb_result, "Graceful failover failed")
+                    try:
+                        status = self.rest.fail_over(node.id, graceful=True)
+                    except Exception as e_msg:
+                        if CbServer.Services.KV in node.services:
+                            self.fail("Graceful failover failed for %s:%s"
+                                      % (node, node.services))
+                        if fo_err_msg not in str(e_msg):
+                            self.fail("Unexpected message: %s" % e_msg)
+                    else:
+                        if status and \
+                                CbServer.Services.KV not in node.services:
+                            self.fail("Graceful FO happened without KV %s: %s"
+                                      % (node, node.services))
+                        if status is False:
+                            self.fail("Graceful failover failed for %s: %s"
+                                      % (node, node.services))
+                        self.sleep(5, "Wait for failover to start")
+                        reb_result = self.rest.monitorRebalance()
+                        self.assertTrue(reb_result, "Graceful failover failed")
             elif self.current_fo_strategy == CbServer.Failover.Type.FORCEFUL:
                 for node in self.nodes_to_fail:
                     node = [t_node for t_node in rest_nodes
