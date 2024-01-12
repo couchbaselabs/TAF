@@ -634,11 +634,11 @@ class UpgradeTests(UpgradeBase):
             "cbas_cc_node_upgrade_sequence", "random")
         node_to_upgrade = self.fetch_node_to_upgrade()
         if cbas_cc_node_upgrade_sequence == "first":
-            while node_to_upgrade.ip != self.cluster.cbas_cc_node.ip:
-                node_to_upgrade = self.fetch_node_to_upgrade()
+            node_to_upgrade = self.fetch_node_to_upgrade(
+                {"cbas": {"select_node": self.cluster.cbas_cc_node}})
         elif cbas_cc_node_upgrade_sequence == "last":
-            while node_to_upgrade.ip == self.cluster.cbas_cc_node.ip:
-                node_to_upgrade = self.fetch_node_to_upgrade()
+            node_to_upgrade = self.fetch_node_to_upgrade(
+                {"cbas": {"exclude_node": self.cluster.cbas_cc_node}})
 
         num_nodes_to_be_upgraded = len(self.cluster.nodes_in_cluster)
         while node_to_upgrade is not None:
@@ -654,8 +654,8 @@ class UpgradeTests(UpgradeBase):
             num_nodes_to_be_upgraded -= 1
             if cbas_cc_node_upgrade_sequence == "last" and num_nodes_to_be_upgraded > 1:
                 self.reset_cbas_cc_node(self.cluster)
-                while node_to_upgrade.ip == self.cluster.cbas_cc_node.ip:
-                    node_to_upgrade = self.fetch_node_to_upgrade()
+                node_to_upgrade = self.fetch_node_to_upgrade(
+                    {"cbas": {"exclude_node": self.cluster.cbas_cc_node}})
             else:
                 node_to_upgrade = self.fetch_node_to_upgrade()
         if not all(self.post_upgrade_validation().values()):

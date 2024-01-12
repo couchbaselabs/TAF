@@ -336,8 +336,14 @@ class UpgradeBase(BaseTestCase):
         if self.upgrade_type not in self.upgrade_function.keys():
             self.fail("Unsupported upgrade_type: %s" % self.upgrade_type)
 
-    def fetch_node_to_upgrade(self):
+    def fetch_node_to_upgrade(self, selection_criteria=None):
         """
+        :param selection_criteria: Criteria for selecting nodes to be upgraded.
+        selection_criteria = {
+            "cbas" : {selection criteria},
+            "fts" : {selection criteria},
+            "kv" : {selection criteria},
+        }
         :return cluster_node: TestServer node to be upgraded.
                               If 'None', no more nodes requires upgrade.
         """
@@ -351,19 +357,45 @@ class UpgradeBase(BaseTestCase):
         cluster_node = None
         self.cluster_util.find_orchestrator(self.cluster)
 
-        if self.prefer_master:
-            node_info = RestConnection(self.cluster.master).get_nodes_self(10)
-            if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
-                    and check_node_runs_service(node_info["services"]):
-                cluster_node = self.cluster.master
-
-        if cluster_node is None:
-            for node in self.cluster_util.get_nodes(self.cluster.master):
-                node_info = RestConnection(node).get_nodes_self(10)
+        if selection_criteria:
+            if CbServer.Services.CBAS in selection_criteria:
+                for node in self.cluster_util.get_nodes(self.cluster.master):
+                    node_info = RestConnection(node).get_nodes_self(10)
+                    if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
+                            and check_node_runs_service(node_info.services):
+                        if "exclude_node" in selection_criteria[
+                            CbServer.Services.CBAS]:
+                            if selection_criteria[CbServer.Services.CBAS][
+                                "exclude_node"].ip == node.ip:
+                                continue
+                            else:
+                                cluster_node = node
+                                break
+                        elif "select_node" in selection_criteria[
+                            CbServer.Services.CBAS]:
+                            if selection_criteria[CbServer.Services.CBAS][
+                                "select_node"].ip == node.ip:
+                                cluster_node = node
+                                break
+                            else:
+                                continue
+                        else:
+                            cluster_node = node
+                            break
+        else:
+            if self.prefer_master:
+                node_info = RestConnection(self.cluster.master).get_nodes_self(10)
                 if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
-                        and check_node_runs_service(node_info.services):
-                    cluster_node = node
-                    break
+                        and check_node_runs_service(node_info["services"]):
+                    cluster_node = self.cluster.master
+
+            if cluster_node is None:
+                for node in self.cluster_util.get_nodes(self.cluster.master):
+                    node_info = RestConnection(node).get_nodes_self(10)
+                    if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
+                            and check_node_runs_service(node_info.services):
+                        cluster_node = node
+                        break
 
         # Fetch TestServer object from 'Node' object
         if cluster_node is not None:
