@@ -227,14 +227,16 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         def delete_cluster(user, clutser, result):
             if not self.goldfish_utils.delete_goldfish_cluster(
                     self.pod, user, clutser):
-                result.append("Deleting cluster {0} failed".format(cluster.name))
+                result.append("Deleting cluster Name - {0}, "
+                              "Cluster ID - {1} failed".format(
+                    cluster.name, cluster.cluster_id))
 
         def wait_for_cluster_deletion(user, cluster, results):
             result = self.goldfish_utils.wait_for_cluster_to_be_destroyed(
                 self.pod, user, cluster)
             if not result:
                 results.append("Cluster {0} failed to be deleted".format(
-                    cluster.name))
+                    cluster.cluster_id))
 
         def delete_project(user, project, results):
             result = self.goldfish_utils.delete_project(self.pod, user, project)
