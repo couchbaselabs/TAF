@@ -53,7 +53,7 @@ class N1qlBase(CollectionBase):
         self.clause = WhereClause()
         self.buckets = self.bucket_util.get_all_buckets(self.cluster)
         self.collection_map = {}
-        self.txtimeout = self.input.param("txntimeout", 0)
+        self.txtimeout = self.input.param("txntimeout", 2)
         self.atrcollection = self.input.param("atrcollection", False)
         self.num_commit = self.input.param("num_commit", 3)
         self.num_rollback_to_savepoint = \
