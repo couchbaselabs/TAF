@@ -283,7 +283,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
 
         self.loader_ids = list()
 
-        self.sleep(30, "Waiting after stopping CRUD on mongo collection.")
+        self.sleep(300, "Waiting after stopping CRUD on mongo collection.")
 
         doc_counts_after_connect_disconnect = (
             self.get_mongo_collection_doc_count(self.mongo_colletions))
