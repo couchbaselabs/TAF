@@ -220,6 +220,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.bucket_util.compare_vbucketseq_failoverlogs(new_vbucket_stats, new_failover_stats)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
         self.bucket_util.vb_distribution_analysis(
             self.cluster,
             servers=nodes, buckets=self.cluster.buckets, std=1.0,
@@ -348,6 +349,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                 check_ep_items_remaining=True,
                 timeout=self.wait_timeout)
         self.sleep(30)
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster)
         self.bucket_util.data_analysis_all(record_data_set, new_server_list, self.cluster.buckets)
         self.bucket_util.verify_unacked_bytes_all_buckets(self.cluster)
         nodes = self.cluster_util.get_nodes_in_cluster(self.cluster)
