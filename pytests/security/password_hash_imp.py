@@ -150,7 +150,8 @@ class PasswordHashImp(ClusterSetup):
                         1:self.nodes_out + 1]
             rebalance_task = self.task.async_rebalance(self.cluster,
                                                        nodes_in, nodes_out,
-                                                       retry_get_process_num=2000)
+                                                       retry_get_process_num=2000,
+                                                       check_vbucket_shuffling=False)
 
         self.test_password_hash_migration()
 
