@@ -364,7 +364,7 @@ class ServerTasks(object):
                                       compression=None,
                                       process_concurrency=8, retries=5,
                                       update_count=1, transaction_timeout=5,
-                                      commit=True, durability=0, sync=True,
+                                      commit=True, durability="NONE", sync=True,
                                       num_threads=5, record_fail=False,
                                       scope=CbServer.default_scope,
                                       collection=CbServer.default_collection,
