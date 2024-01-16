@@ -2,6 +2,7 @@ import json
 from pytests.basetestcase import ClusterSetup
 from pytests.bucket_collections.collections_base import CollectionBase
 from constants.platform_constants import os_constants
+from remote.remote_util import RemoteMachineShellConnection
 from security_utils.security_utils import SecurityUtils
 from membase.api.rest_client import RestConnection
 from Cb_constants import CbServer
@@ -64,10 +65,15 @@ class PasswordHashImp(ClusterSetup):
         lib_cb = os_constants.Linux.COUCHBASE_LIB_PATH
         isasl_file = lib_cb + "isasl.pw"
 
-        with open(isasl_file, 'r') as json_file:
-            data_dictionary = json.load(json_file)
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        file_output = shell.execute_command("cat " + isasl_file)[0]
+        x = ''
+        for i in file_output:
+            x = x + i
 
-        observed_hash_algo = data_dictionary[username]["hash"]["algorithm"]
+        res = json.loads(x)
+
+        observed_hash_algo = res[username]["hash"]["algorithm"]
         if observed_hash_algo == expected_hash_algo:
             self.log.info("Hash algorithm validation success")
         else:
@@ -122,7 +128,10 @@ class PasswordHashImp(ClusterSetup):
         self.log.info("Successfully set password hash algorithm: {}".format(content))
 
         # authenticate via ns server by hitting any random endpoint
-        self.rest.set_cluster_name("TEST_MIGRATION")
+        serverinfo_dict = {"ip": self.cluster.master.ip, "port": self.cluster.master.port,
+                           "username": user_name, "password": password}
+        rest_non_admin = RestConnection(serverinfo_dict)
+        rest_non_admin.set_cluster_name("TEST_MIGRATION")
 
         # verify in isasl.pw
         self.validate_hash_algo(user_name, hash_algo_after_migration)
