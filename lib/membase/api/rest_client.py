@@ -3,7 +3,6 @@ import base64
 import json
 import urllib
 
-import Cb_constants
 import httplib2
 import socket
 import time
@@ -276,11 +275,12 @@ class RestConnection(newRC):
 
     def view_results(self, bucket, ddoc_name, params, limit=100, timeout=120,
                      view_name=None):
-        status, json = self._index_results(bucket, "view", ddoc_name, params, limit, timeout=timeout,
-                                           view_name=view_name)
+        status, parsed_json = self._index_results(
+            bucket, "view", ddoc_name, params, limit, timeout=timeout,
+            view_name=view_name)
         if not status:
             raise Exception("unable to obtain view results")
-        return json
+        return parsed_json
 
     # DEPRECATED: Incorrectly named function kept for backwards compatibility.
     def get_view(self, bucket, view):
@@ -297,10 +297,10 @@ class RestConnection(newRC):
         return node_info.memcached
 
     def get_ddoc(self, bucket, ddoc_name):
-        status, json, meta = self._get_design_doc(bucket, ddoc_name)
+        status, parsed_json, meta = self._get_design_doc(bucket, ddoc_name)
         if not status:
             raise ReadDocumentException(ddoc_name, json)
-        return json, meta
+        return parsed_json, meta
 
     def run_view(self, bucket, view, name):
         api = self.__get_capi_url() + '%s/_design/%s/_view/%s'\
@@ -312,44 +312,44 @@ class RestConnection(newRC):
         return json_parsed
 
     def delete_view(self, bucket, view):
-        status, json = self._delete_design_doc(bucket, view)
+        status, parsed_json = self._delete_design_doc(bucket, view)
         if not status:
             raise Exception("unable to delete the view")
-        return json
+        return parsed_json
 
     def spatial_results(self, bucket, spatial, params, limit=100):
-        status, json = self._index_results(bucket, "spatial", spatial,
-                                           params, limit)
+        status, parsed_json = self._index_results(bucket, "spatial", spatial,
+                                                  params, limit)
         if not status:
             raise Exception("unable to obtain spatial view results")
-        return json
+        return parsed_json
 
     def create_spatial(self, bucket, spatial, function):
-        status, json = self._create_design_doc(bucket, spatial, function)
-        if status == False:
+        status, parsed_json = self._create_design_doc(bucket, spatial, function)
+        if status is False:
             raise Exception("unable to create spatial view")
-        return json
+        return parsed_json
 
     def get_spatial(self, bucket, spatial):
-        status, json, meta = self._get_design_doc(bucket, spatial)
+        status, parsed_json, meta = self._get_design_doc(bucket, spatial)
         if not status:
             raise Exception("unable to get the spatial view definition")
-        return json, meta
+        return parsed_json, meta
 
     def delete_spatial(self, bucket, spatial):
-        status, json = self._delete_design_doc(bucket, spatial)
+        status, parsed_json = self._delete_design_doc(bucket, spatial)
         if not status:
             raise Exception("unable to delete the spatial view")
-        return json
+        return parsed_json
 
     # type_ is "view" or "spatial"
-    def _index_results(self, bucket, type_, ddoc_name, params, limit, timeout=120,
-                       view_name=None):
+    def _index_results(self, bucket, type_, ddoc_name, params, limit,
+                       timeout=120, view_name=None):
         if view_name is None:
             view_name = ddoc_name
         query = '{0}/_design/{1}/_{2}/{3}'
-        api = self.__get_capi_url()+ query.format(bucket, ddoc_name,
-                                                  type_, view_name)
+        api = self.__get_capi_url() + query.format(bucket, ddoc_name,
+                                                   type_, view_name)
 
         num_params = 0
         if limit is not None:
@@ -394,13 +394,13 @@ class RestConnection(newRC):
     def _get_design_doc(self, bucket, name):
         api = self.__get_capi_url() + '%s/_design/%s' % (bucket, name)
         if isinstance(bucket, Bucket):
-            api = self.baseUrl + '%s/_design/%s' % (bucket.name, name)
+            api = self.__get_capi_url() + '%s/_design/%s' % (bucket.name, name)
 
         status, content, header = self._http_request(api, headers=self._create_capi_headers())
         json_parsed = json.loads(content)
         meta_parsed = ""
         if status:
-            if not isinstance(type(header), dict):
+            if 'headers' in dir(header):
                 header = header.headers
             # in dp4 builds meta data is in content, not in header
             if 'x-couchbase-meta' in header:
