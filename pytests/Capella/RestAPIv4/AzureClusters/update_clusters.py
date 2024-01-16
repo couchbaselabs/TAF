@@ -1,23 +1,36 @@
 """
-Created on July 13, 2023
+Created on January 23, 2024
 
 @author: Vipul Bhardwaj
 """
 
-import time
-import base64
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
+class ToggleAzureAutoExpansion(GetProject):
 
-class GetCluster(GetProject):
-
-    def setUp(self, nomenclature="Clusters_Get"):
+    def setUp(self, nomenclature="Auto_Expansion_Update"):
         GetProject.setUp(self, nomenclature)
-
-        cluster_name = self.prefix + nomenclature
+        self.update_service_group = [
+            {
+                "node": {
+                    "compute": {
+                        "cpu": 4,
+                        "ram": 16
+                    },
+                    "disk": {
+                        "type": "P6",
+                        "autoExpansion": True
+                    }
+                },
+                "numOfNodes": 3,
+                "services": [
+                    "data"
+                ]
+            }
+        ]
         self.expected_result = {
-            "name": cluster_name,
+            "name": self.prefix + nomenclature,
             "description": None,
             "cloudProvider": {
                 "type": "azure",
@@ -36,7 +49,7 @@ class GetCluster(GetProject):
                         },
                         "disk": {
                             "type": "P6",
-                            "autoExpansion": True
+                            "autoExpansion": False
                         }
                     },
                     "numOfNodes": 3,
@@ -51,80 +64,60 @@ class GetCluster(GetProject):
             "support": {
                 "plan": "basic",
                 "timezone": "GMT"
-            },
-            "currentState": None,
-            "audit": {
-                "createdBy": None,
-                "createdAt": None,
-                "modifiedBy": None,
-                "modifiedAt": None,
-                "version": None
-            },
-            "connectionString": None,
-            "configurationType": None
+            }
         }
-
-        result = self.select_CIDR(
-            self.organisation_id, self.project_id,
-            self.expected_result["name"],
-            self.expected_result['cloudProvider'],
-            self.expected_result['couchbaseServer'],
-            self.expected_result['serviceGroups'],
-            self.expected_result['availability'],
-            self.expected_result['support'])
+        result = self.select_CIDR(self.organisation_id, self.project_id,
+                                  self.expected_result["name"],
+                                  self.expected_result['cloudProvider'],
+                                  self.expected_result['couchbaseServer'],
+                                  self.expected_result['serviceGroups'],
+                                  self.expected_result['availability'],
+                                  self.expected_result['support'])
         if result.status_code != 202:
-            self.fail("Failed while deploying cluster")
+            self.fail("Failed while deploying Azure cluster")
 
         self.cluster_id = result.json()["id"]
         self.wait_for_cluster_deployment(
             self.organisation_id, self.project_id, self.cluster_id)
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
-
-        # Delete the cluster that was created.
-        self.log.info("Destroying Cluster: {}".format(self.cluster_id))
-        if self.capellaAPI.cluster_ops_apis.delete_cluster(
-                self.organisation_id, self.project_id,
-                self.cluster_id).status_code != 202:
-            self.log.error("Error while deleting cluster.")
-
-        # Wait for the cluster to be destroyed.
-        self.log.info("Waiting for cluster to be destroyed.")
+        self.capellaAPI.cluster_ops_apis.delete_cluster(
+            self.organisation_id, self.project_id, self.cluster_id)
         self.verify_project_empty(self.project_id)
-        self.log.info("Cluster destroyed successfully.")
+        super(ToggleAzureAutoExpansion, self).tearDown()
 
-        super(GetCluster, self).tearDown()
+    def validate_auto_expansion(self, cluster_id):
+        self.update_auth_with_api_token(self.org_owner_key["token"])
+        autoExpansion = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+            self.organisation_id, self.project_id, cluster_id
+        ).json()["serviceGroups"][0]["node"]["disk"]["autoExpansion"]
 
-    def validate_cluster_api_response(self, expected_res, actual_res):
-        failure_key = None
-        for key in actual_res:
-            if key not in expected_res:
-                return key
-            if isinstance(expected_res[key], dict):
-                failure_key = self.validate_cluster_api_response(
-                    expected_res[key], actual_res[key])
-            elif isinstance(expected_res[key], list):
-                if key == "services":
-                    for service in expected_res[key]:
-                        if service not in actual_res[key]:
-                            return key
-                    continue
-                for i in range(len(expected_res[key])):
-                    failure_key = self.validate_cluster_api_response(
-                        expected_res[key][i], actual_res[key][i])
-            elif expected_res[key]:
-                if expected_res[key] == "version":
-                    if expected_res[key] not in actual_res[key]:
-                        return key
-                elif expected_res[key] != actual_res[key]:
-                    return key
-        return failure_key
+        # Wait for cluster scaling to finish.
+        self.wait_for_cluster_deployment(self.organisation_id,
+                                         self.project_id, self.cluster_id)
+
+        # Set the Auto Expansion back to OFF.
+        self.capellaAPI.cluster_ops_apis.update_cluster(
+            self.organisation_id, self.project_id, cluster_id,
+            self.expected_result["name"], "", self.expected_result['support'],
+            self.expected_result["serviceGroups"], False)
+
+        # Wait for cluster scaling to finish.
+        self.wait_for_cluster_deployment(self.organisation_id,
+                                         self.project_id, self.cluster_id)
+
+        if not autoExpansion:
+            self.log.error("Auto Expansion for cluster {} is {}"
+                           .format(cluster_id, autoExpansion))
+            return False
+        self.log.info("Cluster was updated successfully with Auto Expansion "
+                      "as On")
+        return True
 
     def test_api_path(self):
         testcases = [
             {
-                "description": "Fetch info for a valid cluster"
+                "description": "Update a valid Azure cluster"
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters",
@@ -144,7 +137,8 @@ class GetCluster(GetProject):
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
-                "description": "Fetch cluster but with non-hex organizationID",
+                "description": "Update Azure cluster but with non-hex "
+                               "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
                 "expected_status_code": 400,
@@ -158,7 +152,8 @@ class GetCluster(GetProject):
                                " to be a client error."
                 }
             }, {
-                "description": "Fetch cluster but with non-hex projectID",
+                "description": "Update Azure cluster but with non-hex "
+                               "projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
                 "expected_status_code": 400,
@@ -172,8 +167,9 @@ class GetCluster(GetProject):
                                " to be a client error."
                 }
             }, {
-                "description": "Fetch info but with non-hex clusterID",
-                "invalid_clusterID": self.replace_last_character(
+                "description": "Update Azure cluster but with non-hex "
+                               "clusterID",
+                "invalid_projectID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
@@ -204,23 +200,22 @@ class GetCluster(GetProject):
             elif "invalid_clusterID" in testcase:
                 clus = testcase["invalid_clusterID"]
 
-            result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                org, proj, clus)
+            result = self.capellaAPI.cluster_ops_apis.update_cluster(
+                org, proj, clus, self.expected_result["name"], "",
+                self.expected_result['support'],
+                self.update_service_group, False)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    org, proj, clus)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                failure_key = self.validate_cluster_api_response(
-                        self.expected_result, result.json())
-                if failure_key:
-                    self.log.error("Status == 200, Key : `{}` "
-                                   "validation Failure at: {}".format(
-                                    failure_key, testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
+                result = self.capellaAPI.cluster_ops_apis.update_cluster(
+                    org, proj, clus, self.expected_result["name"], "",
+                    self.expected_result['support'],
+                    self.update_service_group, False)
+            if result.status_code == 204 and "expected_error" not in testcase:
+                if not self.validate_auto_expansion(self.cluster_id):
+                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 200, testcase, failures)
+                self.validate_testcase(result, 204, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
@@ -247,19 +242,18 @@ class GetCluster(GetProject):
         for role in self.api_keys:
             testcase = {
                 "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"]
+                "token": self.api_keys[role]["token"],
             }
-            if not any(element in ["organizationOwner", "projectDataReader",
-                                   "projectOwner", "projectDataReaderWriter",
-                                   "projectViewer", "projectManager"] for
+            if not any(element in ["organizationOwner",
+                                   "projectOwner", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
-                    "hint": "Your access to the requested resource is "
-                            "denied. Please make sure you have the necessary "
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
                             "permissions to access the resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
@@ -271,24 +265,24 @@ class GetCluster(GetProject):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, self.project_id, self.cluster_id, header)
+            result = self.capellaAPI.cluster_ops_apis.update_cluster(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.expected_result["name"], "",
+                self.expected_result['support'], self.update_service_group,
+                False, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                result = self.capellaAPI.cluster_ops_apis.update_cluster(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    header)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                failure_key = self.validate_cluster_api_response(
-                    self.expected_result, result.json())
-                if failure_key:
-                    self.log.error("Status == 200, Key : `{}` "
-                                   "validation Failure at: {}".format(
-                                    failure_key, testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
+                    self.expected_result["name"], "",
+                    self.expected_result['support'],
+                    self.update_service_group, False, header)
+            if result.status_code == 204 and "expected_error" not in testcase:
+                if not self.validate_auto_expansion(self.cluster_id):
+                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 200, testcase, failures)
+                self.validate_testcase(result, 204, testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -301,10 +295,11 @@ class GetCluster(GetProject):
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+                      .format(len(failures), testcases))
 
     def test_query_parameters(self):
-        self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}"
+        self.log.debug("Correct Params - OrgID: {}, ProjID: {}, "
+                       "dummy ClusID: {}"
                        .format(self.organisation_id, self.project_id,
                                self.cluster_id))
         testcases = 0
@@ -313,10 +308,9 @@ class GetCluster(GetProject):
                 self.organisation_id, self.project_id, self.cluster_id):
             testcases += 1
             testcase = {
-                "description": "OrganizationID: {}, ProjectID: {}, "
-                               "ClusterID: {}".format(str(combination[0]),
-                                                      str(combination[1]),
-                                                      str(combination[2])),
+                "description": "OrganizationID: {}, ProjectID: {}, ClusterID: "
+                "{}".format(str(combination[0]), str(combination[1]),
+                            str(combination[2])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
                 "clusterID": combination[2]
@@ -381,122 +375,27 @@ class GetCluster(GetProject):
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+            result = self.capellaAPI.cluster_ops_apis.update_cluster(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], **kwarg)
+                testcase["clusterID"], self.expected_result["name"], "",
+                self.expected_result['support'], self.update_service_group,
+                False, **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                result = self.capellaAPI.cluster_ops_apis.update_cluster(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                failure_key = self.validate_cluster_api_response(
-                    self.expected_result, result.json())
-                if failure_key:
-                    self.log.error("Status == 200, Key : `{}` "
-                                   "validation Failure at: {}".format(
-                                    failure_key, testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
+                    testcase["clusterID"], self.expected_result["name"], "",
+                    self.expected_result['support'], self.update_service_group,
+                    False, **kwarg)
+            if result.status_code == 204 and "expected_error" not in testcase:
+                if not self.validate_auto_expansion(self.cluster_id):
+                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 200, testcase, failures)
+                self.validate_testcase(result, 204, testcase, failures)
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
-
-    def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
-            self):
-        api_func_list = [[self.capellaAPI.cluster_ops_apis.fetch_cluster_info,
-                          (self.organisation_id, self.project_id,
-                           self.cluster_id)]]
-
-        for i in range(self.input.param("num_api_keys", 1)):
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id,
-                self.generate_random_string(prefix=self.prefix),
-                ["organizationOwner"], self.generate_random_string(50))
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id,
-                    self.generate_random_string(prefix=self.prefix),
-                    ["organizationOwner"], self.generate_random_string(50))
-            if resp.status_code == 201:
-                self.api_keys["organizationOwner_{}".format(i)] = resp.json()
-            else:
-                self.fail("Error while creating API key for "
-                          "organizationOwner_{}".format(i))
-
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
-        for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
-
-            if len(results[result]["4xx_errors"]) > 0 or len(
-                    results[result]["5xx_errors"]) > 0:
-                self.fail("Some API calls failed")
-
-    def test_multiple_requests_using_API_keys_with_diff_role(self):
-        api_func_list = [[self.capellaAPI.cluster_ops_apis.fetch_cluster_info,
-                          (self.organisation_id, self.project_id,
-                           self.cluster_id)]]
-
-        org_roles = self.input.param("org_roles", "organizationOwner")
-        proj_roles = self.input.param("proj_roles", "projectDataReader")
-        org_roles = org_roles.split(":")
-        proj_roles = proj_roles.split(":")
-
-        api_key_dict = self.create_api_keys_for_all_combinations_of_roles(
-            [self.project_id], proj_roles, org_roles)
-        for i, api_key in enumerate(api_key_dict):
-            if api_key in self.api_keys:
-                self.api_keys["{}_{}".format(api_key_dict[api_key], i)] = \
-                    api_key_dict[api_key]
-            else:
-                self.api_keys[api_key] = api_key_dict[api_key]
-
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
-        for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
-
-            if len(results[result]["4xx_errors"]) > 0 or len(
-                    results[result]["5xx_errors"]) > 0:
-                self.fail("Some API calls failed")

@@ -17,10 +17,10 @@ class ListProject(APIBase):
         # Create project.
         # The project ID will be used to create API keys for roles that
         # require project ID
-        self.project_name = self.prefix + 'List'
+        self.project_name = self.prefix + 'Projects_List'
         self.project_id = self.capellaAPI.org_ops_apis.create_project(
             self.organisation_id, self.project_name,
-            self.generate_random_string(100, prefix=self.prefix)).json()["id"]
+            self.generate_random_string(0, self.prefix)).json()["id"]
 
         self.expected_result = {
             "data": [
@@ -56,7 +56,6 @@ class ListProject(APIBase):
         }
 
     def tearDown(self):
-        failures = list()
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
 
@@ -64,13 +63,10 @@ class ListProject(APIBase):
         self.log.info("Deleting Project: {}".format(self.project_id))
         if self.delete_projects(self.organisation_id, [self.project_id],
                                 self.org_owner_key["token"]):
-            failures.append("Error while deleting project.")
+            self.log.error("Error while deleting project.")
         else:
             self.log.info("Project deleted successfully")
 
-        if failures:
-            self.log.error("Following error occurred in teardown: {}"
-                           .format(failures))
         super(ListProject, self).tearDown()
 
     def validate_project_api_response(self, expected_res, actual_res):
@@ -158,43 +154,17 @@ class ListProject(APIBase):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     failures.append(testcase["description"])
-            elif result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
-                                           "Failure : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Result : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception, ):
-                    if str(testcase["expected_error"]) not in result.content:
-                        self.log.error("Response type not JSON, Failure : {}"
-                                       .format(testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(result, 200, testcase, failures)
+
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_authorization(self):
         self.api_keys.update(
@@ -212,118 +182,22 @@ class ListProject(APIBase):
                                    "projectViewer", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
                     "message": "Access Denied.",
                     "httpStatusCode": 403
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        testcases.extend([
-            {
-                "description": "Calling API without bearer token",
-                "token": "",
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "calling API with expired API keys",
-                "expire_key": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "calling API with revoked API keys",
-                "revoke_key": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "Calling API with Username and Password",
-                "userpwd": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }
-        ])
+        self.auth_test_extension(testcases)
 
         failures = list()
-        header = dict()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-
-            if "expire_key" in testcase:
-                self.update_auth_with_api_token(self.org_owner_key["token"])
-                # create a new API key with expiry of approx 2 mins
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    organizationId=self.organisation_id,
-                    name=self.generate_random_string(prefix=self.prefix),
-                    description=self.generate_random_string(50),
-                    organizationRoles=["organizationOwner"],
-                    expiry=0.001
-                )
-                if resp.status_code == 201:
-                    self.api_keys["organizationOwner_new"] = resp.json()
-                else:
-                    self.fail("Error while creating API key for organization "
-                              "owner with expiry of 0.001 days")
-                # wait for key to expire
-                self.log.debug("Waiting 3 minutes for key expiry")
-                time.sleep(180)
-                self.update_auth_with_api_token(
-                    self.api_keys["organizationOwner_new"]["token"])
-                del self.api_keys["organizationOwner_new"]
-            elif "revoke_key" in testcase:
-                self.update_auth_with_api_token(self.org_owner_key["token"])
-                resp = self.capellaAPI.org_ops_apis.delete_api_key(
-                    organizationId=self.organisation_id,
-                    accessKey=self.api_keys["organizationOwner"]["id"])
-                if resp.status_code != 204:
-                    failures.append(testcase["description"])
-                self.update_auth_with_api_token(
-                    self.api_keys["organizationOwner"]["token"])
-                del self.api_keys["organizationOwner"]
-            elif "userpwd" in testcase:
-                basic = base64.b64encode("{}:{}".format(
-                    self.user, self.passwd).encode()).decode()
-                header["Authorization"] = 'Basic {}'.format(basic)
-            else:
-                header = {}
-                self.update_auth_with_api_token(testcase["token"])
-
+            header = dict()
+            self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.list_projects(
                 self.organisation_id, headers=header)
             if result.status_code == 429:
@@ -336,42 +210,14 @@ class ListProject(APIBase):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     failures.append(testcase["description"])
-            elif result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
-                                           "Error : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Failure : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception,):
-                    if str(testcase["expected_error"]) not in \
-                            result.content:
-                        self.log.error("Response type not JSON, Failure : {}"
-                                       .format(testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(result, 200, testcase, failures)
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}"
@@ -441,43 +287,14 @@ class ListProject(APIBase):
                     self.log.error("Status == 200, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     failures.append(testcase["description"])
-            elif result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Err validation "
-                                           "Failure : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Result : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception,):
-                    if str(testcase["expected_error"]) not in \
-                            result.content:
-                        self.log.error(
-                            "Response type not JSON, Failure : {}".format(
-                                testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(result, 200, testcase, failures)
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):

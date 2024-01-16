@@ -4,27 +4,19 @@ Created on August 31, 2023
 @author: Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.api_base import APIBase
-import itertools
 import time
 import base64
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
+from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 
-class UpdateCluster(APIBase):
+class UpdateCluster(GetProject):
 
-    def setUp(self):
-        APIBase.setUp(self)
-
-        # Create project.
-        # The project ID will be used to create API keys for roles that
-        # require project ID
-        self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            organizationId=self.organisation_id,
-            name=self.generate_random_string(prefix=self.prefix)).json()["id"]
+    def setUp(self, nomenclature="Clusters_Update"):
+        GetProject.setUp(self, nomenclature)
 
         self.dummy_cluster_id = "aaaaaaaa-ffff-ffff-ffff-cccccccccccc"
-        cluster_name = self.prefix + 'TestPut'
+        cluster_name = self.prefix + nomenclature
         """
         Supplying fake/non-existent cluster-ID Parameter in PUT tests, 
         and tests will be verified based on a correct request being sent 
@@ -87,21 +79,7 @@ class UpdateCluster(APIBase):
         }
 
     def tearDown(self):
-        failures = list()
         self.update_auth_with_api_token(self.org_owner_key["token"])
-        self.delete_api_keys(self.api_keys)
-
-        # Delete the project that was created.
-        self.log.info("Deleting Project: {}".format(self.project_id))
-        if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.org_owner_key["token"]):
-            failures.append("Error while deleting project.")
-        else:
-            self.log.info("Project deleted successfully")
-
-        if failures:
-            self.log.error("Following error occurred in teardown: {}"
-                           .format(failures))
         super(UpdateCluster, self).tearDown()
 
     def test_api_path(self):
@@ -181,43 +159,16 @@ class UpdateCluster(APIBase):
                     self.expected_result['description'],
                     self.expected_result['support'],
                     self.expected_result['serviceGroups'], False)
-            if result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
-                                           "Failure : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Result : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception, ):
-                    if str(testcase["expected_error"]) not in result.content:
-                        self.log.error("Response type not JSON, Failure : {}"
-                                       .format(testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
-            else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+            self.validate_testcase(result, 404, testcase, failures)
+
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_authorization(self):
         self.api_keys.update(
@@ -225,9 +176,7 @@ class UpdateCluster(APIBase):
                 [self.project_id]))
 
         resp = self.capellaAPI.org_ops_apis.create_project(
-            organizationId=self.organisation_id,
-            name=self.generate_random_string(prefix=self.prefix),
-            description=self.generate_random_string(100))
+            self.organisation_id, "Auth_Project")
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
@@ -261,171 +210,14 @@ class UpdateCluster(APIBase):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        testcases.extend([
-            {
-                "description": "Calling API without bearer token",
-                "token": "",
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "calling API with expired API keys",
-                "expire_key": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "calling API with revoked API keys",
-                "revoke_key": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "Calling API with Username and Password",
-                "userpwd": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "Calling API with user having access to get "
-                               "multiple projects ",
-                "has_multi_project_access": True,
-                "expected_status_code": 404,
-                "expected_error": {
-                    "code": 4025,
-                    "hint": "The requested cluster details could not be found "
-                            "or fetched. Please ensure that the correct "
-                            "cluster ID is provided.",
-                    "httpStatusCode": 404,
-                    "message": "Unable to fetch the cluster details."
-                }
-            }, {
-                "description": "Calling API with user not having access to "
-                               "get project specific but has access to get "
-                               "other project",
-                "has_multi_project_access": False,
-                "expected_status_code": 404,
-                "expected_error": {
-                    "code": 4025,
-                    "hint": "The requested cluster details could not be found "
-                            "or fetched. Please ensure that the correct "
-                            "cluster ID is provided.",
-                    "httpStatusCode": 404,
-                    "message": "Unable to fetch the cluster details."
-                }
-            }
-        ])
+        self.auth_test_extension(testcases)
 
         failures = list()
-        header = dict()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-
-            if "expire_key" in testcase:
-                self.update_auth_with_api_token(self.org_owner_key["token"])
-                # create a new API key with expiry of approx 2 mins
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    organizationId=self.organisation_id,
-                    name=self.generate_random_string(prefix=self.prefix),
-                    description=self.generate_random_string(50),
-                    organizationRoles=["organizationOwner"],
-                    expiry=0.001
-                )
-                if resp.status_code == 201:
-                    self.api_keys["organizationOwner_new"] = resp.json()
-                else:
-                    self.fail("Error while creating API key for organization "
-                              "owner with expiry of 0.001 days")
-                # wait for key to expire
-                self.log.debug("Waiting 3 minutes for key expiry")
-                time.sleep(180)
-                self.update_auth_with_api_token(
-                    self.api_keys["organizationOwner_new"]["token"])
-                del self.api_keys["organizationOwner_new"]
-            elif "revoke_key" in testcase:
-                self.update_auth_with_api_token(self.org_owner_key["token"])
-                resp = self.capellaAPI.org_ops_apis.delete_api_key(
-                    organizationId=self.organisation_id,
-                    accessKey=self.api_keys["organizationOwner"]["id"])
-                if resp.status_code != 204:
-                    failures.append(testcase["description"])
-                self.update_auth_with_api_token(
-                    self.api_keys["organizationOwner"]["token"])
-                del self.api_keys["organizationOwner"]
-            elif "userpwd" in testcase:
-                basic = base64.b64encode("{}:{}".format(
-                    self.user, self.passwd).encode()).decode()
-                header["Authorization"] = 'Basic {}'.format(basic)
-            elif "has_multi_project_access" in testcase:
-                header = {}
-                org_roles = ["organizationMember"]
-                resource = [{
-                    "type": "project",
-                    "id": other_project_id,
-                    "roles": ["projectOwner"]
-                }]
-                if testcase["has_multi_project_access"]:
-                    key = "multi_project_1"
-                    resource.append({
-                        "type": "project",
-                        "id": self.project_id,
-                        "roles": ["projectOwner"]
-                    })
-                else:
-                    key = "multi_project_2"
-                    org_roles.append("projectCreator")
-                self.update_auth_with_api_token(self.org_owner_key["token"])
-                # create a new API key with expiry of approx 2 mins
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    organizationId=self.organisation_id,
-                    name=self.generate_random_string(prefix=self.prefix),
-                    organizationRoles=org_roles,
-                    description=self.generate_random_string(50),
-                    expiry=180,
-                    allowedCIDRs=["0.0.0.0/0"],
-                    resources=resource)
-                if resp.status_code == 201:
-                    self.api_keys[key] = resp.json()
-                else:
-                    self.fail("Error while creating API key for role having "
-                              "access to multiple projects")
-                self.update_auth_with_api_token(self.api_keys[key]["token"])
-            else:
-                header = {}
-                self.update_auth_with_api_token(testcase["token"])
-
+            header = dict()
+            self.auth_test_setup(testcase, failures, header,
+                                 self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.update_cluster(
                 self.organisation_id, self.project_id, self.dummy_cluster_id,
                 self.expected_result["name"],
@@ -440,12 +232,7 @@ class UpdateCluster(APIBase):
                     self.expected_result['description'],
                     self.expected_result['support'],
                     self.expected_result['serviceGroups'], False, header)
-            if result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == 404:
+            if result.status_code == 404:
                 if isinstance(testcase["expected_error"], dict) \
                         and result.json()["code"] != 4025:
                     self.log.error("Dummy error not correct")
@@ -457,90 +244,32 @@ class UpdateCluster(APIBase):
                                    "as the cluster BODY is dummy, the "
                                    "updation will return a 404:4025.".format(
                                     testcase["expected_error"]))
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
-                                           "Error : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Failure : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception,):
-                    if str(testcase["expected_error"]) not in \
-                            result.content:
-                        self.log.error("Response type not JSON, Failure : {}"
-                                       .format(testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(result, 404, testcase, failures)
 
+        self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:
-            self.log.error("Error while deleting project {}".format(
-                other_project_id))
+            self.log.error("Error while deleting project {}"
+                           .format(other_project_id))
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, "
                        "dummy ClusID: {}"
                        .format(self.organisation_id, self.project_id,
                                self.dummy_cluster_id))
-        organization_id_values = [
-            self.organisation_id,
-            self.replace_last_character(self.organisation_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            (self.organisation_id,),
-            [self.organisation_id],
-            {self.organisation_id},
-            None
-        ]
-        project_id_values = [
-            self.project_id,
-            self.replace_last_character(self.project_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.project_id],
-            (self.project_id,),
-            {self.project_id},
-            None
-        ]
-        cluster_id_values = [
-            self.dummy_cluster_id,
-            self.replace_last_character(self.dummy_cluster_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.dummy_cluster_id],
-            (self.dummy_cluster_id,),
-            {self.dummy_cluster_id},
-            None
-        ]
-        combinations = list(itertools.product(*[
-            organization_id_values, project_id_values, cluster_id_values]))
-
-        testcases = list()
-        for combination in combinations:
+        testcases = 0
+        failures = list()
+        for combination in self.create_path_combinations(
+                self.organisation_id, self.project_id, self.dummy_cluster_id):
+            testcases += 1
             testcase = {
                 "expected_status_code": 404,
                 "expected_error": {
@@ -613,10 +342,6 @@ class UpdateCluster(APIBase):
                                    "the cluster {}."
                         .format(combination[1], combination[2])
                     }
-            testcases.append(testcase)
-
-        failures = list()
-        for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}
@@ -637,12 +362,7 @@ class UpdateCluster(APIBase):
                     self.expected_result['description'],
                     self.expected_result['support'],
                     self.expected_result['serviceGroups'], False, **kwarg)
-            if result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == 404:
+            if result.status_code == 404:
                 if isinstance(testcase["expected_error"], dict) \
                         and result.json()["code"] != 4025:
                     self.log.error("Dummy error not correct")
@@ -654,38 +374,14 @@ class UpdateCluster(APIBase):
                                    "as the cluster BODY is dummy, the "
                                    "updation will return a 404:4025.".format(
                                     testcase["expected_error"]))
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Err validation "
-                                           "Failure : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Result : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception,):
-                    if str(testcase["expected_error"]) not in \
-                            result.content:
-                        self.log.error(
-                            "Response type not JSON, Failure : {}".format(
-                                testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(result, 404, testcase, failures)
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), testcases))
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):

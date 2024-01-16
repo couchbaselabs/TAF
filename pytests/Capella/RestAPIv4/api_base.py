@@ -8,8 +8,10 @@ import time
 import string
 import random
 import itertools
+import base64
 from datetime import datetime
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
+from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.basetestcase import BaseTestCase
 import threading
 
@@ -369,48 +371,237 @@ class APIBase(BaseTestCase):
         replaced_id = id[:-1] + next_char
         return replaced_id
 
-    def create_path_combinations(self, **kwargs):
-        organizations_id_values = []
-        project_id_values = []
-        cluster_id_values = []
-        bucket_id_values = []
-        scope_name_values = []
-        collection_name_values = []
-        comb_args = []
+    @staticmethod
+    def auth_test_extension(testcases):
+        testcases.extend([
+            {
+                "description": "Calling API without bearer token",
+                "token": "",
+                "expected_status_code": 401,
+                "expected_error": {
+                    "code": 1001,
+                    "hint": "The request is unauthorized. Please ensure you "
+                            "have provided appropriate credentials in the "
+                            "request header. Please make sure the client IP "
+                            "that is trying to access the resource using the "
+                            "API key is in the API key allowlist.",
+                    "httpStatusCode": 401,
+                    "message": "Unauthorized"
+                }
+            }, {
+                "description": "calling API with expired API keys",
+                "expire_key": True,
+                "expected_status_code": 401,
+                "expected_error": {
+                    "code": 1001,
+                    "hint": "The request is unauthorized. Please ensure you "
+                            "have provided appropriate credentials in the "
+                            "request header. Please make sure the client IP "
+                            "that is trying to access the resource using the "
+                            "API key is in the API key allowlist.",
+                    "httpStatusCode": 401,
+                    "message": "Unauthorized"
+                }
+            }, {
+                "description": "calling API with revoked API keys",
+                "revoke_key": True,
+                "expected_status_code": 401,
+                "expected_error": {
+                    "code": 1001,
+                    "hint": "The request is unauthorized. Please ensure you "
+                            "have provided appropriate credentials in the "
+                            "request header. Please make sure the client IP "
+                            "that is trying to access the resource using the "
+                            "API key is in the API key allowlist.",
+                    "httpStatusCode": 401,
+                    "message": "Unauthorized"
+                }
+            }, {
+                "description": "Calling API with Username and Password",
+                "userpwd": True,
+                "expected_status_code": 401,
+                "expected_error": {
+                    "code": 1001,
+                    "hint": "The request is unauthorized. Please ensure you "
+                            "have provided appropriate credentials in the "
+                            "request header. Please make sure the client IP "
+                            "that is trying to access the resource using the "
+                            "API key is in the API key allowlist.",
+                    "httpStatusCode": 401,
+                    "message": "Unauthorized"
+                }
+            }, {
+                "description": "Calling API with user having access to get "
+                               "multiple projects ",
+                "has_multi_project_access": True,
+            }, {
+                "description": "Calling API with user not having access to "
+                               "get project specific but has access to get "
+                               "other project",
+                "has_multi_project_access": False,
+                "expected_status_code": 403,
+                "expected_error": {
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
+                }
+            }
+        ])
 
-        for key, param in kwargs.items():
-            values = [
-                param, self.replace_last_character(param), True, 123456789,
-                123456789.123456789, "", [param], (param,), {param}, None
-            ]
-            k = str(key)
-            if k == "org_id":
-                organizations_id_values = values
-                comb_args.append(k)
-            elif k == "proj_id":
-                project_id_values = values
-                comb_args.append(k)
-            elif k == "clus_id":
-                cluster_id_values = values
-                comb_args.append(k)
-            elif k == "buck_id":
-                bucket_id_values = values
-                comb_args.append(k)
-            elif k == "scope_name":
-                scope_name_values = values
-                comb_args.append(k)
-            elif k == "coll_name":
-                collection_name_values = values
-                comb_args.append(k)
+    def auth_test_setup(self, testcase, failures, header,
+                        project_id, other_project_id=None):
+        if "expire_key" in testcase:
+            self.update_auth_with_api_token(self.org_owner_key["token"])
+            # create a new API key with expiry of approx 2 mins
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.organisation_id, "Expiry_Key", ["organizationOwner"],
+                expiry=0.001)
+            if resp.status_code == 201:
+                self.api_keys["organizationOwner_new"] = resp.json()
             else:
-                self.fail("Unknown param name passed : {}. Accepted params = ["
-                          "org_id, proj_id, clus_id, buck_id, scope_name, "
-                          "coll_name]".format(k))
-        self.log.info("Created combinations for : {}".format(comb_args))
-        return list(itertools.product(*[
-            organizations_id_values, project_id_values, cluster_id_values,
-            bucket_id_values, scope_name_values, collection_name_values
-        ]))
+                self.fail("Error while creating API key for organization "
+                          "owner with expiry of 0.001 days")
+            # wait for key to expire
+            self.log.debug("Sleeping 3 minutes for key to expire")
+            time.sleep(180)
+            self.update_auth_with_api_token(
+                self.api_keys["organizationOwner_new"]["token"])
+            del self.api_keys["organizationOwner_new"]
+        elif "revoke_key" in testcase:
+            self.update_auth_with_api_token(self.org_owner_key["token"])
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(
+                organizationId=self.organisation_id,
+                accessKey=self.api_keys["organizationOwner"]["id"])
+            if resp.status_code != 204:
+                failures.append(testcase["description"])
+            self.update_auth_with_api_token(
+                self.api_keys["organizationOwner"]["token"])
+            del self.api_keys["organizationOwner"]
+        elif "userpwd" in testcase:
+            basic = base64.b64encode("{}:{}".format(
+                self.user, self.passwd).encode()).decode()
+            header["Authorization"] = 'Basic {}'.format(basic)
+        elif "has_multi_project_access" in testcase:
+            org_roles = ["organizationMember"]
+            resource = [{
+                "type": "project",
+                "id": other_project_id,
+                "roles": ["projectOwner"]
+            }]
+            if testcase["has_multi_project_access"]:
+                key = "multi_project_1"
+                resource.append({
+                    "type": "project",
+                    "id": project_id,
+                    "roles": ["projectOwner"]
+                })
+            else:
+                key = "multi_project_2"
+                org_roles.append("projectCreator")
+
+            self.update_auth_with_api_token(self.org_owner_key["token"])
+
+            # create a new API key with expiry of approx 2 mins
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.organisation_id, "MultiProj_Key", org_roles,
+                expiry=180, allowedCIDRs=["0.0.0.0/0"], resources=resource)
+            if resp.status_code == 201:
+                self.api_keys[key] = resp.json()
+            else:
+                self.fail("Error while creating API key for role having "
+                          "access to multiple projects")
+            self.update_auth_with_api_token(self.api_keys[key]["token"])
+        else:
+            self.update_auth_with_api_token(testcase["token"])
+
+    def validate_testcase(self, result, success_code, testcase, failures):
+        if result.status_code >= 500:
+            self.log.critical(testcase["description"])
+            self.log.warning(result.content)
+            failures.append(testcase["description"])
+            return
+        elif result.status_code == testcase["expected_status_code"]:
+            try:
+                result = result.json()
+                for key in result:
+                    if result[key] != testcase["expected_error"][key]:
+                        self.log.error("Status != {}, Key validation "
+                                       "Failure : {}".format(
+                                        success_code, testcase["description"]))
+                        self.log.warning("Failure : {}".format(result))
+                        failures.append(testcase["description"])
+                        break
+            except (Exception,):
+                if str(testcase["expected_error"]) not in result.content:
+                    self.log.error("Response type not JSON, Failure : {}"
+                                   .format(testcase["description"]))
+                    self.log.warning(result.content)
+                    failures.append(testcase["description"])
+        else:
+            self.log.error("Expected HTTP status code {}, Actual HTTP status "
+                           "code {}".format(testcase["expected_status_code"],
+                                            result.status_code))
+            self.log.warning("Result : {}".format(result.content))
+            failures.append(testcase["description"])
+
+    def select_CIDR(self, org, proj, name, cp, cs, sg, av, sp,
+                    header=None, **kwargs):
+        self.log.info("Selecting CIDR for cluster deployment.")
+
+        start_time = time.time()
+        while time.time() - start_time < 1800:
+            result = self.capellaAPI.cluster_ops_apis.create_cluster(
+                org, proj, name, cp, cs, sg, av, sp, header, **kwargs)
+            if result.status_code == 429:
+                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                result = self.capellaAPI.cluster_ops_apis.create_cluster(
+                    org, proj, name, cp, cs, sg, av, sp, header, **kwargs)
+            if result.status_code != 422:
+                return result
+            elif "Please ensure you are passing a unique CIDR block" in \
+                    result.json()["message"]:
+                cp["cidr"] = CapellaUtils.get_next_cidr() + "/20"
+            if time.time() - start_time >= 1800:
+                self.fail("Couldn't find CIDR within half an hour.")
+
+    def wait_for_cluster_deployment(self, org_id, proj_id, clus_id, st=None):
+        if not st:
+            st = time.time()
+
+        self.log.info("Waiting for cluster {} to be deployed.".format(clus_id))
+        time.sleep(20)
+        if st + 1800 > time.time() and \
+            self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                org_id, proj_id, clus_id).json()["currentState"] != "healthy":
+            self.wait_for_cluster_deployment(org_id, proj_id, clus_id, st)
+
+        if st + 1800 <= time.time():
+            self.fail("Cluster didn't deploy within half an hour.")
+
+    def verify_project_empty(self, proj_id):
+        res = self.capellaAPI.cluster_ops_apis.list_clusters(
+            self.organisation_id, proj_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.list_clusters(
+                self.organisation_id, proj_id)
+        if len(res.json()["data"]) != 0:
+            time.sleep(30)
+            self.verify_project_empty(proj_id)
+        return
+
+    def create_path_combinations(self, *args):
+        combination_list = []
+        for val in args:
+            values = [val, self.replace_last_character(val), True, None,
+                      123456788, 123456789.123456789, "", [val], (val,), {val}]
+            combination_list.append(values)
+
+        for combination in list(itertools.product(*combination_list)):
+            yield combination
 
     def create_projects(self, org_id, num_projects, access_key, token,
                         prefix=""):
@@ -562,7 +753,7 @@ class APIBase(BaseTestCase):
             org_id, proj_id, clus_id, buck_id, scope_name, new_coll_name)
         if res.status_code == 429:
             self.handle_rate_limit(int(res.headers["Retry-After"]))
-            res = self.capellaAPI.cluster_ops_apis.create_scope(
+            res = self.capellaAPI.cluster_ops_apis.create_collection(
                 org_id, proj_id, clus_id, buck_id, scope_name, new_coll_name)
         if res.status_code == 201:
             return new_coll_name

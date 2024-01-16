@@ -5,99 +5,14 @@ Created on December 14, 2023
 """
 
 import base64
-from pytests.Capella.RestAPIv4.api_base import APIBase
 import time
-import itertools
-from couchbase_utils.capella_utils.dedicated import CapellaUtils
+from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
-class GetSample(APIBase):
+class GetSample(GetCluster):
 
-    def setUp(self):
-        APIBase.setUp(self)
-
-        # Create project.
-        # The project ID will be used to create API keys for roles that
-        # require project ID
-        self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            organizationId=self.organisation_id,
-            name=self.generate_random_string(prefix=self.prefix)).json()["id"]
-
-        # Initialize params for cluster creation.
-        cluster_name = self.prefix + "TestSamplesGet"
-        cluster = {
-            "name": cluster_name,
-            "description": None,
-            "cloudProvider": {
-                "type": "aws",
-                "region": "us-east-1",
-                "cidr": CapellaUtils.get_next_cidr() + "/20"
-            },
-            "couchbaseServer": {
-                "version": str(self.input.param("server_version", 7.2))
-            },
-            "serviceGroups": [
-                {
-                    "node": {
-                        "compute": {
-                            "cpu": 4,
-                            "ram": 16
-                        },
-                        "disk": {
-                            "storage": 50,
-                            "type": "gp3",
-                            "iops": 3000,
-                            "autoExpansion": "on"
-                        }
-                    },
-                    "numOfNodes": 3,
-                    "services": [
-                        "data"
-                    ]
-                }
-            ],
-            "availability": {
-                "type": "single"
-            },
-            "support": {
-                "plan": "basic",
-                "timezone": "GMT"
-            }
-        }
-
-        # CIDR selection.
-        start_time = time.time()
-        while time.time() - start_time < 1800:
-            res = self.capellaAPI.cluster_ops_apis.create_cluster(
-                self.organisation_id, self.project_id, cluster_name,
-                cluster['cloudProvider'], cluster['couchbaseServer'],
-                cluster['serviceGroups'], cluster['availability'],
-                cluster['support'])
-            if res.status_code == 202:
-                self.cluster_id = res.json()['id']
-                cluster['id'] = self.cluster_id
-                break
-            elif "Please ensure you are passing a unique CIDR block" in \
-                    res.json()["message"]:
-                newCIDR = CapellaUtils.get_next_cidr() + "/20"
-                cluster["cloudProvider"]["cidr"] = newCIDR
-        if time.time() - start_time >= 1800:
-            self.log.error("Couldn't find CIDR within half an hour.")
-
-        # Wait for the cluster to be deployed.
-        self.log.info("Waiting for cluster to be deployed.")
-        start_time = time.time()
-        while (start_time + 1800 > time.time() and
-                self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, self.project_id,
-                self.cluster_id).json()["currentState"] == "deploying"):
-            time.sleep(10)
-        if self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, self.project_id,
-                self.cluster_id).json()["currentState"] == "healthy":
-            self.log.info("Cluster deployed successfully.")
-        else:
-            self.log.error("Cluster didn't deploy within half an hour.")
+    def setUp(self, nomenclature="Samples_Get"):
+        GetCluster.setUp(self, nomenclature)
 
         # Initialize params and create a sample bucket.
         self.expected_res = {
@@ -130,46 +45,17 @@ class GetSample(APIBase):
         time.sleep(10)
 
     def tearDown(self):
-        failures = list()
-
         self.update_auth_with_api_token(self.org_owner_key["token"])
-        self.delete_api_keys(self.api_keys)
 
         # Delete the sample bucket that was created.
         self.log.info("Deleting bucket: {}".format(self.sample_bucket_id))
         if self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.sample_bucket_id).status_code != 204:
-            failures.append("Error while deleting bucket.")
+            self.log.error("Error while deleting bucket.")
         else:
             self.log.info("Successfully deleted bucket.")
 
-        # Delete the cluster that was created.
-        self.log.info("Destroying Cluster: {}".format(self.cluster_id))
-        if self.capellaAPI.cluster_ops_apis.delete_cluster(
-                self.organisation_id, self.project_id,
-                self.cluster_id).status_code != 202:
-            failures.append("Error while deleting cluster.")
-
-        # Wait for the cluster to be destroyed.
-        self.log.info("Waiting for cluster to be destroyed.")
-        while not self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, self.project_id,
-                self.cluster_id).status_code == 404:
-            time.sleep(10)
-        self.log.info("Cluster destroyed successfully.")
-
-        # Delete the project that was created.
-        self.log.info("Deleting Project: {}".format(self.project_id))
-        if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.org_owner_key["token"]):
-            failures.append("Error while deleting project.")
-        else:
-            self.log.info("Project deleted successfully")
-
-        if failures:
-            self.fail("Following error occurred in teardown: {}"
-                      .format(failures))
         super(GetSample, self).tearDown()
 
     def validate_bucket_api_response(self, expected_res, actual_res):
@@ -255,13 +141,13 @@ class GetSample(APIBase):
                 "description": "Fetch sample but with invalid sampleBucketID",
                 "invalid_sampleID": self.replace_last_character(
                     self.sample_bucket_id),
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": {
-                    'code': 400,
-                    'message': 'BucketID is invalid.',
-                    'hint': 'Please review your request and ensure that all '
-                            'required parameters are correctly provided.',
-                    'httpStatusCode': 400
+                    "code": 6008,
+                    "hint": "The requested bucket does not exist. Please "
+                            "ensure that the correct bucket ID is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Unable to find the specified bucket."
                 }
             }
         ]
@@ -298,43 +184,17 @@ class GetSample(APIBase):
                                    .format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
-            elif result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
-                                           "Failure : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Result : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception,):
-                    if str(testcase["expected_error"]) not in result.content:
-                        self.log.error("Response type not JSON, Failure : {}"
-                                       .format(testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(result, 200, testcase, failures)
+
             self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/sampleBuckets"
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_authorization(self):
         self.api_keys.update(
@@ -365,169 +225,19 @@ class GetSample(APIBase):
                     "hint": "Your access to the requested resource is denied. "
                             "Please make sure you have the necessary "
                             "permissions to access the resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        testcases.extend([
-            {
-                "description": "Calling API without bearer token",
-                "token": "",
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "calling API with expired API keys",
-                "expire_key": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "calling API with revoked API keys",
-                "revoke_key": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "Calling API with Username and Password",
-                "userpwd": True,
-                "expected_status_code": 401,
-                "expected_error": {
-                    "code": 1001,
-                    "hint": "The request is unauthorized. Please ensure you "
-                            "have provided appropriate credentials in the "
-                            "request header. Please make sure the client IP "
-                            "that is trying to access the resource using the "
-                            "API key is in the API key allowlist.",
-                    "httpStatusCode": 401,
-                    "message": "Unauthorized"
-                }
-            }, {
-                "description": "Calling API with user having access to get "
-                               "multiple projects ",
-                "has_multi_project_access": True
-            }, {
-                "description": "Calling API with user not having access to "
-                               "get project specific but has access to get "
-                               "other project",
-                "has_multi_project_access": False,
-                "expected_status_code": 403,
-                "expected_error": {
-                    "code": 1003,
-                    "hint": "Make sure you have adequate access to the "
-                            "resource.",
-                    "message": "Access Denied.",
-                    "httpStatusCode": 403
-                }
-            }
-        ])
+        self.auth_test_extension(testcases)
 
         failures = list()
-        header = dict()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-
-            if "expire_key" in testcase:
-                self.update_auth_with_api_token(self.org_owner_key["token"])
-                # create a new API key with expiry of approx 2 mins
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    organizationId=self.organisation_id,
-                    name=self.generate_random_string(),
-                    description=self.generate_random_string(
-                        50, prefix=self.prefix),
-                    organizationRoles=["organizationOwner"],
-                    expiry=0.001
-                )
-                if resp.status_code == 201:
-                    self.api_keys["organizationOwner_new"] = resp.json()
-                else:
-                    self.fail("Error while creating API key for organization "
-                              "owner with expiry of 0.001 days")
-                # wait for key to expire
-                self.log.debug("Sleeping 3 minutes for key to expire")
-                time.sleep(180)
-                self.update_auth_with_api_token(
-                    self.api_keys["organizationOwner_new"]["token"])
-                del self.api_keys["organizationOwner_new"]
-            elif "revoke_key" in testcase:
-                self.update_auth_with_api_token(self.org_owner_key["token"])
-                resp = self.capellaAPI.org_ops_apis.delete_api_key(
-                    organizationId=self.organisation_id,
-                    accessKey=self.api_keys["organizationOwner"]["id"])
-                if resp.status_code != 204:
-                    failures.append(testcase["description"])
-                self.update_auth_with_api_token(
-                    self.api_keys["organizationOwner"]["token"])
-                del self.api_keys["organizationOwner"]
-            elif "userpwd" in testcase:
-                basic = base64.b64encode("{}:{}".format(
-                    self.user, self.passwd).encode()).decode()
-                header["Authorization"] = 'Basic {}'.format(basic)
-            elif "has_multi_project_access" in testcase:
-                header = {}
-                org_roles = ["organizationMember"]
-                resource = [{
-                    "type": "project",
-                    "id": other_project_id,
-                    "roles": ["projectOwner"]
-                }]
-                if testcase["has_multi_project_access"]:
-                    key = "multi_project_1"
-                    resource.append({
-                        "type": "project",
-                        "id": self.project_id,
-                        "roles": ["projectOwner"]
-                    })
-                else:
-                    key = "multi_project_2"
-                    org_roles.append("projectCreator")
-                self.update_auth_with_api_token(self.org_owner_key["token"])
-                # create a new API key with expiry of approx 2 mins
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    organizationId=self.organisation_id,
-                    name=self.generate_random_string(),
-                    organizationRoles=org_roles,
-                    description=self.generate_random_string(
-                        50, prefix=self.prefix),
-                    expiry=180,
-                    allowedCIDRs=["0.0.0.0/0"],
-                    resources=resource)
-                if resp.status_code == 201:
-                    self.api_keys[key] = resp.json()
-                else:
-                    self.fail(
-                        "Error while creating API key for role having access "
-                        "to multiple projects")
-                self.update_auth_with_api_token(self.api_keys[key]["token"])
-            else:
-                header = {}
-                self.update_auth_with_api_token(testcase["token"])
-
+            header = dict()
+            self.auth_test_setup(testcase, failures, header,
+                                 self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.fetch_sample_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.sample_bucket_id, header)
@@ -543,106 +253,31 @@ class GetSample(APIBase):
                                    .format(testcase["description"]))
                     self.log.warning("Result: {}".format(result.json()))
                     failures.append(testcase["description"])
-            elif result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
-                                           "Failure : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Result : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception,):
-                    if str(testcase["expected_error"]) not in result.content:
-                        self.log.error("Response type not JSON, Failure : {}"
-                                       .format(testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(result, 200, testcase, failures)
 
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:
-            failures.append("Error while deleting project {}".format(
-                other_project_id))
+            failures.append("Error while deleting project {}"
+                            .format(other_project_id))
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, Sa"
                        "mpID".format(self.organisation_id, self.project_id,
                                      self.cluster_id, self.sample_bucket_id))
-        organizations_id_values = [
-            self.organisation_id,
-            self.replace_last_character(self.organisation_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.organisation_id],
-            (self.organisation_id,),
-            {self.organisation_id},
-            None
-        ]
-        project_id_values = [
-            self.project_id,
-            self.replace_last_character(self.project_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.project_id],
-            (self.project_id,),
-            {self.project_id},
-            None
-        ]
-        cluster_id_values = [
-            self.cluster_id,
-            self.replace_last_character(self.cluster_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.cluster_id],
-            (self.cluster_id,),
-            {self.cluster_id},
-            None
-        ]
-        sample_id_values = [
-            self.sample_bucket_id,
-            self.replace_last_character(self.sample_bucket_id),
-            True,
-            123456789,
-            123456789.123456789,
-            "",
-            [self.sample_bucket_id],
-            (self.sample_bucket_id,),
-            {self.sample_bucket_id},
-            None
-        ]
-        combinations = list(itertools.product(*[
-            organizations_id_values, project_id_values, cluster_id_values,
-            sample_id_values]))
-
-        testcases = list()
-        for combination in combinations:
+        testcases = 0
+        failures = list()
+        for combination in self.create_path_combinations(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.sample_bucket_id):
+            testcases += 1
             testcase = {
                 "description": "OrganizationID: {}, ProjectID: {}, "
                                "ClusterID: {}, SampleID: {}"
@@ -738,10 +373,6 @@ class GetSample(APIBase):
                         "message": "BucketID is invalid.",
                         "httpStatusCode": 400
                     }
-            testcases.append(testcase)
-
-        failures = list()
-        for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}
@@ -763,42 +394,14 @@ class GetSample(APIBase):
                                    .format(testcase["description"]))
                     self.log.warning("Result: {}".format(result.json()))
                     failures.append(testcase["description"])
-            elif result.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(result.content)
-                failures.append(testcase["description"])
-                continue
-            elif result.status_code == testcase["expected_status_code"]:
-                try:
-                    result = result.json()
-                    for key in result:
-                        if result[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 200, Key validation "
-                                           "Failure : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Result : {}".format(result))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception,):
-                    if str(testcase["expected_error"]) not in result.content:
-                        self.log.error("Response type not JSON, Test : {}"
-                                       .format(testcase["description"]))
-                        self.log.warning(result.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}. Test : {}".format(
-                                testcase["expected_status_code"],
-                                result.status_code,
-                                testcase["description"]))
-                self.log.warning("Result : {}".format(result.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(result, 201, testcase, failures)
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), testcases))
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
