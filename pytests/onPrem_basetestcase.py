@@ -1095,6 +1095,10 @@ class ClusterSetup(OnPremBaseTest):
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
         if nodes_init:
+            # Sleeping for 30 seconds since many test runs failed when nodes were added to uninitialized node
+            # error observed - Adding nodes to not provisioned nodes is not allowed
+            # TODO - Investigate why the nodes are taking so long to be initialized and provisioned
+            self.sleep(30, "Sleeping for 30 seconds to let the nodes be initialized")
             result = self.task.rebalance(self.cluster, nodes_init, [],
                                          services=services,
                                          add_nodes_server_groups=None)
