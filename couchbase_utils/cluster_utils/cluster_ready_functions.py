@@ -363,6 +363,10 @@ class ClusterUtils:
             return True
 
         result = True
+        if (cluster and float(cluster.version[0:3]) < 7.6) \
+                or (cluster_node and float(cluster_node.version) < 7.6):
+            return result
+
         cluster_node = cluster_node if cluster_node else cluster.master
         rest_orchestrator = RestConnection(cluster_node)
 
