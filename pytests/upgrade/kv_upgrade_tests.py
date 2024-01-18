@@ -82,6 +82,10 @@ class KVUpgradeTests(UpgradeBase):
 
         Ref: MB-51373
         """
+
+        # Chosing the latest build for upgrades
+        # This is a very specific test case and chain upgrades are not required
+        self.upgrade_version = self.upgrade_chain[-1]
         # Install Couchbase server on target_nodes
         self.upgrade_helper.install_version_on_nodes(
             self.cluster.servers[self.nodes_init:],
