@@ -658,7 +658,10 @@ class Dataverse_Util(Database_Util):
             else:
                 if not self.get_dataverse_obj(dataverse_name, database_name):
                     database_obj = self.get_database_obj(database_name)
-                    obj = Dataverse(dataverse_name)
+                    if database_name:
+                        obj = Dataverse(dataverse_name, database_name)
+                    else:
+                        obj = Dataverse(dataverse_name)
                     database_obj.dataverses[obj.name] = obj
                 return True
 
@@ -727,7 +730,7 @@ class Dataverse_Util(Database_Util):
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
             return self.validate_error_in_response(
-                status, errors,expected_error,expected_error_code)
+                status, errors,  expected_error, expected_error_code)
         else:
             if status != "success":
                 return False
@@ -760,7 +763,7 @@ class Dataverse_Util(Database_Util):
         :return boolean
         """
         return self.create_dataverse(
-            cluster, cbas_scope_name, database_name,username, password,
+            cluster, cbas_scope_name, database_name, username, password,
             validate_error_msg, expected_error, expected_error_code,
             if_not_exists, True, False, timeout, analytics_timeout)
 
@@ -787,7 +790,7 @@ class Dataverse_Util(Database_Util):
         return self.drop_dataverse(
             cluster, cbas_scope_name, database_name, username, password,
             validate_error_msg,expected_error, expected_error_code, if_exists,
-            True, False,timeout, analytics_timeout)
+            True, False, timeout, analytics_timeout)
 
     def create_scope(
             self, cluster, cbas_scope_name, database_name=None, username=None,
@@ -838,7 +841,7 @@ class Dataverse_Util(Database_Util):
         return self.drop_dataverse(
             cluster, cbas_scope_name, database_name, username, password,
             validate_error_msg,expected_error, expected_error_code, if_exists,
-            False, True,timeout, analytics_timeout)
+            False, True, timeout, analytics_timeout)
 
     def get_dataverse_obj(self, dataverse_name, database_name=None):
         """
@@ -6595,6 +6598,9 @@ class CbasUtil(CBOUtil):
                 return False, "Failed at connect_link"
             return True, ""
 
+        if not self.create_database_from_spec(cluster, cbas_spec):
+            return False, "Failed at create database"
+
         if not self.create_dataverse_from_spec(cluster, cbas_spec):
             return False, "Failed at create dataverse"
 
@@ -6666,7 +6672,7 @@ class CbasUtil(CBOUtil):
             self, cluster, cbas_spec, expected_index_drop_fail=True,
             expected_synonym_drop_fail=True, expected_dataset_drop_fail=True,
             expected_link_drop_fail=True, expected_dataverse_drop_fail=True,
-            delete_dataverse_object=True, retry_link_disconnect_fail=True):
+            delete_dataverse_object=True, delete_database_object=True, retry_link_disconnect_fail=True):
 
         results = list()
 
@@ -6788,7 +6794,7 @@ class CbasUtil(CBOUtil):
                 return False
 
         self.log.info("Dropping all the Dataverses")
-        for dataverse in self.dataverses.values():
+        for dataverse in self.get_all_dataverse_obj():
             if dataverse.name != "Default":
                 retry_func(
                     dataverse, self.drop_dataverse,
@@ -6799,6 +6805,15 @@ class CbasUtil(CBOUtil):
                      "timeout": cbas_spec.get("api_timeout", 300),
                      "analytics_timeout": cbas_spec.get("cbas_timeout",
                                                         300)})
+        
+        self.log.info("Dropping all the Databases")
+        for database in self.databases.values():
+            if database.name != "Default":
+                retry_func(
+                    database, self.drop_database,
+                    {"cluster": cluster, "database_name": database.name,
+                     "if_exists": True}
+                )
 
         if any(results):
             if expected_dataverse_drop_fail:
