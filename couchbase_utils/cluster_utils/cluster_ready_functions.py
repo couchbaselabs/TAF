@@ -1508,7 +1508,9 @@ class ClusterUtils:
             nodes = [node for node in nodes if node.ip not in exclude_nodes_ips]
         picked = []
         for node_for_stat in nodes:
-            if node_for_stat.ip != master.ip or str(node_for_stat.port) != master.port:
+            if (not ClusterRun.is_enabled and node_for_stat.ip != master.ip) \
+                    or (ClusterRun.is_enabled and
+                        str(node_for_stat.port) != str(master.port)):
                 if target_node is None:
                     picked.append(node_for_stat)
                 elif target_node.ip == node_for_stat.ip:
