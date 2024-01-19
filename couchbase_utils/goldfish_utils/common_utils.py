@@ -215,7 +215,7 @@ class GoldfishUtils:
                              user.api_access_key, user.email, user.password)
         resp = gf_api.delete_goldfish_instance(
             cluster.org_id, cluster.project_id, cluster.cluster_id)
-        if resp.status_code != 204:
+        if resp.status_code != 202:
             self.log.error("Unable to delete goldfish cluster {0}".format(
                 cluster.name))
             return None

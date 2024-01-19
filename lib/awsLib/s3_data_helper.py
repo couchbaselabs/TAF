@@ -19,7 +19,7 @@ def perform_S3_operation(**kwargs):
     aws_util_file_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__), "S3.py"))
     arguements = ["python", aws_util_file_path, kwargs.get("aws_access_key"),
-                  kwargs.get("aws_secret_key"), kwargs.get("aws_session_token")]
+                  kwargs.get("aws_secret_key"), kwargs.get("aws_session_token", "")]
 
     if kwargs.get("get_regions", False):
         arguements.append("--get_regions")
@@ -44,6 +44,9 @@ def perform_S3_operation(**kwargs):
         if kwargs.get("empty_bucket", False):
             arguements.append("--empty_bucket")
 
+        if kwargs.get("get_bucket_objects", False):
+            arguements.append("--get_objects_in_bucket")
+
         if kwargs.get("upload_file", False):
             arguements.append("--upload_file")
             arguements.append(kwargs.get("src_path", ""))
@@ -59,6 +62,7 @@ def perform_S3_operation(**kwargs):
         elif kwargs.get("delete_file", False):
             arguements.append("--delete_file")
             arguements.append(kwargs.get("file_path", ""))
+
     response = subprocess.Popen(arguements, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, error = response.communicate()

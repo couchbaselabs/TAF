@@ -37,6 +37,8 @@ from Jython_tasks.task import Task, RunQueriesTask
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
 from Cb_constants import CbServer
+from java.lang import System
+from java.util.concurrent import Executors, Callable, TimeUnit, CompletableFuture
 
 
 class BaseUtil(object):
@@ -184,8 +186,14 @@ class BaseUtil(object):
         :param expected_error_code str, error code to match
         """
         if status != "success":
-            actual_error = errors[0]["msg"].replace("`", "")
-            expected_error = expected_error.replace("`", "")
+            if isinstance(errors, list):
+                actual_error = (errors[0]["msg"]).replace("`", "")
+                expected_error = expected_error.replace("`", "")
+
+            else:
+                actual_error = errors["msg"].replace("`", "")
+                expected_error = expected_error.replace("`", "")
+
             if expected_error not in actual_error:
                 self.log.debug("Error message mismatch. Expected: %s, got: %s"
                                % (expected_error, actual_error))
@@ -193,12 +201,17 @@ class BaseUtil(object):
             self.log.debug("Error message matched. Expected: %s, got: %s"
                            % (expected_error, actual_error))
             if expected_error_code is not None:
-                if expected_error_code != errors[0]["code"]:
+                if isinstance(errors, list):
+                    error_code = errors[0]["code"]
+                else:
+                    error_code = errors["code"]
+
+                if expected_error_code != error_code:
                     self.log.debug("Error code mismatch. Expected: %s, got: %s"
-                                   % (expected_error_code, errors[0]["code"]))
+                                   % (expected_error_code, error_code))
                     return False
                 self.log.info("Error code matched. Expected: %s, got: %s"
-                              % (expected_error_code, errors[0]["code"]))
+                              % (expected_error_code, error_code))
             return True
         return False
 
@@ -373,6 +386,7 @@ class Database_Util(BaseUtil):
     """
     Database level utility
     """
+
     def __init__(self, server_task=None, run_query_using_sdk=False):
         super(Database_Util, self).__init__(server_task, run_query_using_sdk)
         self.databases = dict()
@@ -588,7 +602,7 @@ class Dataverse_Util(Database_Util):
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = (
             self.execute_statement_on_cbas_util(
-                cluster, cmd,  username=username, password=password,
+                cluster, cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if status == "success":
             if results:
@@ -667,7 +681,7 @@ class Dataverse_Util(Database_Util):
 
     def drop_dataverse(
             self, cluster, dataverse_name, database_name=None, username=None,
-            password=None,validate_error_msg=False, expected_error=None,
+            password=None, validate_error_msg=False, expected_error=None,
             expected_error_code=None, if_exists=False, analytics_scope=False,
             scope=False, timeout=300, analytics_timeout=300,
             delete_dataverse_obj=True, disconnect_local_link=False):
@@ -730,7 +744,7 @@ class Dataverse_Util(Database_Util):
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
             return self.validate_error_in_response(
-                status, errors,  expected_error, expected_error_code)
+                status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
                 return False
@@ -789,7 +803,7 @@ class Dataverse_Util(Database_Util):
         """
         return self.drop_dataverse(
             cluster, cbas_scope_name, database_name, username, password,
-            validate_error_msg,expected_error, expected_error_code, if_exists,
+            validate_error_msg, expected_error, expected_error_code, if_exists,
             True, False, timeout, analytics_timeout)
 
     def create_scope(
@@ -814,7 +828,7 @@ class Dataverse_Util(Database_Util):
         :return boolean
         """
         return self.create_dataverse(
-            cluster, cbas_scope_name, database_name,username, password,
+            cluster, cbas_scope_name, database_name, username, password,
             validate_error_msg, expected_error, expected_error_code,
             if_not_exists, False, True, timeout, analytics_timeout)
 
@@ -840,7 +854,7 @@ class Dataverse_Util(Database_Util):
         """
         return self.drop_dataverse(
             cluster, cbas_scope_name, database_name, username, password,
-            validate_error_msg,expected_error, expected_error_code, if_exists,
+            validate_error_msg, expected_error, expected_error_code, if_exists,
             False, True, timeout, analytics_timeout)
 
     def get_dataverse_obj(self, dataverse_name, database_name=None):
@@ -968,7 +982,7 @@ class Dataverse_Util(Database_Util):
     def get_dataverses(self, cluster, retries=10):
         dataverses_created = []
         dataverse_query = "select value dv.DatabaseName || \".\" || " \
-                          "dv.DataverseName from Metadata.`Dataverse` as dv "\
+                          "dv.DataverseName from Metadata.`Dataverse` as dv " \
                           "where dv.DataverseName <> \"Metadata\";"
         while not dataverses_created and retries:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
@@ -988,7 +1002,7 @@ class Dataverse_Util(Database_Util):
         """
         dataverses = list()
         if database:
-            databases = self.get_database_obj(database)
+            databases = [self.get_database_obj(database)]
         else:
             databases = self.databases.values()
         for database in databases:
@@ -1203,9 +1217,14 @@ class Link_Util(Dataverse_Util):
         """
         cbas_helper = self.get_cbas_helper_object(cluster)
         if self.run_query_using_sdk:
-            status, content, errors = cbas_helper.get_link_info(
-                "{}".format(self.unformat_name(database, dataverse)),
-                self.unformat_name(link_name), link_type)
+            if database == "Default" or database is None:
+                status, content, errors = cbas_helper.get_link_info(
+                    "{}".format(self.unformat_name(dataverse)),
+                    self.unformat_name(link_name), link_type)
+            else:
+                status, content, errors = cbas_helper.get_link_info(
+                    "{}".format(self.unformat_name(dataverse, database)),
+                    self.unformat_name(link_name), link_type)
         else:
             params = dict()
             uri = ""
@@ -1541,7 +1560,7 @@ class RemoteLink_Util(Link_Util):
 
             database = None
             while not database:
-                database = random.choice(self.databases)
+                database = random.choice(self.databases.values())
                 if link_spec.get("include_databases",
                                  []) and CBASHelper.unformat_name(
                     database.name) not in link_spec.get(
@@ -1611,7 +1630,7 @@ class RemoteLink_Util(Link_Util):
                         max_length=name_length - 1,
                         fixed_length=fixed_length))
                     if not self.create_dataverse(
-                                cluster, dataverse_name, database_name,
+                            cluster, dataverse_name, database_name,
                             if_not_exists=True):
                         raise Exception("Error while creating dataverse {"
                                         "}".format(dataverse_name))
@@ -1738,6 +1757,7 @@ class ExternalLink_Util(RemoteLink_Util):
         """
         Generates External Link objects.
         """
+        external_link_list = []
         count = 0
         while count < no_of_objs:
             if not dataverse:
@@ -1788,7 +1808,9 @@ class ExternalLink_Util(RemoteLink_Util):
                                     "endpoint": serviceEndpoint,
                                     })
             dataverse.external_links[link.name] = link
+            external_link_list.append(link)
             count += 1
+        return external_link_list
 
 
 class KafkaLink_Util(ExternalLink_Util):
@@ -1995,36 +2017,57 @@ class Dataset_Util(KafkaLink_Util):
         super(Dataset_Util, self).__init__(
             server_task, run_query_using_sdk)
 
-    def copy_to_s3(self, cluster, collection_name=None, dataverse_name=None, database_name=None, source_definition_query=None,
+    def copy_to_s3(self, cluster, collection_name=None, dataverse_name=None, database_name=None,
+                   source_definition_query=None,
                    alias_identifier=None, destination_bucket=None, destination_link_name=None,
                    path=None, partition_by=None, partition_alias=None, compression=None, order_by=None,
                    max_object_per_file=None, file_format=None, username=None, password=None, timeout=300,
-                   analytics_timeout=300, validate_error_msg=None, expected_error=None):
+                   analytics_timeout=300, validate_error_msg=None, expected_error=None,
+                   expected_error_code=None):
         cmd = "COPY "
-        if database_name and database_name != "Default":
-            cmd += "{0}.".format(database_name)
-        if dataverse_name is not None and dataverse_name != "Default":
-            cmd = cmd + "{0}.{1} ".format(dataverse_name, collection_name)
-        elif source_definition_query:
+        if source_definition_query:
             cmd = cmd + "( {0} ) ".format(source_definition_query)
+        elif database_name and dataverse_name and collection_name:
+            cmd = cmd + "{0}.{1}.{2} ".format(database_name, dataverse_name, collection_name)
+        elif dataverse_name is not None and dataverse_name != "Default" and collection_name:
+            cmd = cmd + "{0}.{1} ".format(dataverse_name, collection_name)
+        else:
+            cmd = cmd + "{0} ".format(collection_name)
+
         if alias_identifier:
             cmd += "AS {0} ".format(alias_identifier)
 
+        destination_bucket = CBASHelper.format_name(destination_bucket)
         cmd += "TO {0} AT {1} ".format(destination_bucket, destination_link_name)
         if path and partition_alias:
-            cmd += "PATH(\"{0}\", {1}) ".format(path, partition_alias)
+            if isinstance(partition_alias, list):
+                cmd += "PATH(\"{0}\"".format(path)
+                for part_alias in partition_alias:
+                    cmd += ", {0}".format(part_alias)
+                cmd += ") "
+            else:
+                cmd += "PATH(\"{0}\", {1}) ".format(path, partition_alias)
         else:
             cmd += "PATH(\"{0}\") ".format(path)
         over = dict()
-        if partition_by and partition_alias:
+        if isinstance(partition_by, list) and isinstance(partition_alias, list):
+            build = ""
+            for i in range(len(partition_by)):
+                if i == 0:
+                    build += "{0} as {1}".format(partition_by[i], partition_alias[i])
+                else:
+                    build += ", {0} as {1}".format(partition_by[i], partition_alias[i])
+            over["PARTITION BY"] = build
+
+        elif partition_by and partition_alias:
             over["PARTITION BY"] = "{0} AS {1}".format(partition_by, partition_alias)
         if order_by:
-            over["OVER BY"] = order_by
+            over["ORDER BY"] = order_by
         with_dict = dict()
         if compression:
             with_dict["compression"] = compression
         if max_object_per_file:
-            with_dict["max-objects-per-file"] = str(compression)
+            with_dict["max-objects-per-file"] = str(max_object_per_file)
         if file_format:
             with_dict["format"] = file_format
 
@@ -2041,9 +2084,10 @@ class Dataset_Util(KafkaLink_Util):
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(status, errors,
-                                                   expected_error)
+                                                   expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -3604,35 +3648,32 @@ class External_Dataset_Util(Remote_Dataset_Util):
             redact_warning=None, header=None, null_string=None,
             include=None, exclude=None, name_length=30, fixed_length=False,
             no_of_objs=1, parse_json_string=0, convert_decimal_to_double=0,
-            timezone="", embed_filter_values=True):
+            timezone="", embed_filter_values=True, dataverse_name=None):
         """
         Creates a Dataset object for external datasets.
         :param external_container_names: <dict> {"external_container_name":"region"}
         :param link_type <str> s3,azureblob,gcp
         """
+        external_datasets = []
         for _ in range(no_of_objs):
             external_container = random.choice(external_container_names.keys())
 
             all_links = self.list_all_link_objs(link_type)
             link = random.choice(all_links)
-            while link.properties["region"] != external_container_names[
-                external_container]:
+            while link.properties["region"] != external_container_names[external_container]:
                 link = random.choice(all_links)
 
             if same_dv_for_link_and_dataset:
                 dataverse = self.get_dataverse_obj(link.dataverse_name, link.database_name)
             else:
-                if dataset_cardinality > 1:
-                    dataverse_name = CBASHelper.format_name(self.generate_name(
-                        name_cardinality=dataset_cardinality - 1,
-                        max_length=name_length - 1,
-                        fixed_length=fixed_length))
-                    if not self.create_dataverse(cluster, dataverse_name,
-                                                 if_not_exists=True):
-                        raise Exception("Error while creating dataverse")
+                if dataverse_name:
                     dataverse = self.get_dataverse_obj(dataverse_name)
+                    if dataverse is None:
+                        if not self.create_dataverse(cluster, dataverse_name, if_not_exists=True):
+                            raise Exception("Error while creating dataverse")
+                        dataverse = self.get_dataverse_obj(dataverse_name)
                 else:
-                    dataverse = self.get_dataverse_obj("Default")
+                    dataverse = random.choice(self.get_all_dataverse_obj())
 
             dataset = External_Dataset(
                 name=self.generate_name(
@@ -3644,8 +3685,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             dataset.dataset_properties["external_container_name"] = external_container
             dataset.dataset_properties["object_construction_def"] = object_construction_def
             if paths_on_external_container is not None:
-                dataset.dataset_properties["path_on_external_container"] = random.choice(
-                    json.loads(paths_on_external_container))
+                dataset.dataset_properties["path_on_external_container"] = random.choice(paths_on_external_container)
             dataset.dataset_properties["file_format"] = file_format
             dataset.dataset_properties["redact_warning"] = redact_warning
             dataset.dataset_properties["header"] = header
@@ -3658,6 +3698,8 @@ class External_Dataset_Util(Remote_Dataset_Util):
             dataset.dataset_properties["embed_filter_values"] = embed_filter_values
 
             dataverse.external_datasets[dataset.name] = dataset
+            external_datasets.append(dataset)
+        return external_datasets
 
     def create_external_dataset_from_spec(self, cluster, cbas_spec):
         """
@@ -3735,17 +3777,13 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 link_name=link.full_name,
                 dataset_properties=dataset_properties)
 
-            dataverse_name = dataset_obj.dataverse_name
-            if dataverse_name == "Default":
-                dataverse_name = None
-
             results.append(
                 self.create_dataset_on_external_resource(
                     cluster, dataset_obj.name,
                     dataset_obj.dataset_properties[
                         "external_container_name"],
                     dataset_obj.link_name, False,
-                    dataverse_name,
+                    dataset_obj.dataverse_name, dataset_obj.database_name,
                     dataset_obj.dataset_properties[
                         "object_construction_def"],
                     dataset_obj.dataset_properties[
@@ -3803,54 +3841,72 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return data
 
-    def generate_docs(self, document_size=256000):
+    def generate_docs(self, document_size=256000, country_type="string", include_country=True):
         """
         Generate docs of specific size
         """
+        doc = None
         try:
             hotel = Hotel()
-            hotel.generate_document(document_size)
+            hotel.generate_document(document_size, country_type, include_country)
             doc = json.loads(json.dumps(hotel, default=lambda o: o.__dict__, ensure_ascii=False))
             del hotel
             doc = self.convert_unicode_to_string(doc)
-            return doc
         except Exception as err:
             self.log.error(str(err))
+        return doc
+
+    class GenerateDocsCallable(Callable):
+        def __init__(self, instance, document_size, country_type, include_country):
+            self.instance = instance
+            self.document_size = document_size
+            self.country_type = country_type
+            self.include_country = include_country
+
+        def call(self):
+            return self.instance.generate_docs(self.document_size, self.country_type, self.include_country)
 
     def load_doc_to_standalone_collection(
             self, cluster, collection_name, dataverse_name, database_name, no_of_docs,
-            document_size=256000, batch_size=25, max_concurrent_batches=3):
+            document_size=1024, batch_size=500, max_concurrent_batches=10, country_type="string", include_country=True):
         """
         Load documents to a standalone collection.
         """
-        start = time.time()
-
-        with concurrent.futures.ProcessPoolExecutor(max_concurrent_batches) as executor:
+        start = System.currentTimeMillis()
+        executor = Executors.newFixedThreadPool(max_concurrent_batches)
+        try:
             for i in range(0, no_of_docs, batch_size):
                 batch_start = i
                 batch_end = min(i + batch_size, no_of_docs)
-                futures = executor.map(self.generate_docs, [document_size] * (batch_end - batch_start))
-                batch_docs = list(futures)
+                tasks = []
+                
+                for j in range(batch_start, batch_end):
+                    tasks.append(self.GenerateDocsCallable(self, document_size, country_type, include_country))
+                
+                batch_docs = []
+                futures = executor.invokeAll(tasks)
+                for future in futures:
+                    batch_docs.append(future.get())
 
                 retry_count = 0
                 while retry_count < 3:
-                    result = self.insert_into_standalone_collection(
-                        cluster, collection_name, batch_docs, dataverse_name, database_name)
+                    result = self.insert_into_standalone_collection(cluster, collection_name,
+                                                                    batch_docs, dataverse_name, database_name)
                     if result:
                         break
                     elif retry_count == 2:
-                        self.log.error("Error while inserting docs in "
-                                       "collection {}".format(
-                            CBASHelper.format_name(dataverse_name,
-                                                   collection_name)))
+                        self.log.error("Error while inserting docs in collection {}".format(
+                            CBASHelper.format_name(dataverse_name, collection_name)))
                         return False
                     else:
                         retry_count += 1
+        finally:
+            executor.shutdown()
 
-        end = time.time()
+        end = System.currentTimeMillis()
         time_spent = end - start
-        self.log.info("Took {0} seconds to insert {1} docs".format(
-            time_spent, no_of_docs))
+        self.log.info("Took {} seconds to insert {} docs".format(
+            time_spent / 1000.0, no_of_docs))
         return True
 
     def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None,
@@ -3891,7 +3947,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         """
         cmd = "UPSERT INTO "
         if database_name:
-            cmd +="{}.".format(database_name)
+            cmd += "{}.".format(database_name)
         if dataverse_name:
             cmd += "{0}.{1} ".format(
                 CBASHelper.format_name(dataverse_name),
@@ -4048,7 +4104,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 self.log.info("Upserting documents in collection: {0}".format(
                     collection_full_name))
                 if not self.upsert_into_standalone_collection(
-                    cluster, collection_name,
+                        cluster, collection_name,
                         [self.generate_docs(doc_size)], dataverse_name):
                     self.log.error(
                         "Error while upserting docs in collection {"
@@ -4241,7 +4297,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         """
         cmd = "CREATE {0} ".format(random.choice(
             ["DATASET", "ANALYTICS COLLECTION", "COLLECTION"]) if
-                                  ddl_format.lower() == "random" else ddl_format)
+                                   ddl_format.lower() == "random" else ddl_format)
         if database_name:
             cmd += "{}.".format(CBASHelper.format_name(database_name))
         if dataverse_name:
@@ -4329,7 +4385,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
 
         if dataverse_name and not self.create_dataverse(
                 cluster, dataverse_name=dataverse_name, database_name=database_name, username=username,
-                password=password,if_not_exists=True, timeout=timeout,
+                password=password, if_not_exists=True, timeout=timeout,
                 analytics_timeout=analytics_timeout):
             return False
         cmd = self.generate_standalone_create_DDL(
@@ -4392,7 +4448,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         """
 
         if dataverse_name and not self.create_dataverse(
-                cluster, dataverse_name=dataverse_name, database_name=database_name,if_not_exists=True,
+                cluster, dataverse_name=dataverse_name, database_name=database_name, if_not_exists=True,
                 timeout=timeout, analytics_timeout=analytics_timeout):
             return False
         cmd = self.generate_standalone_create_DDL(
@@ -4584,6 +4640,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
     Note - Number of external collection should be same as number of 
     standalone collections to be created. 
     """
+
     def create_standalone_dataset_for_external_db_from_spec(
             self, cluster, cbas_spec):
         self.log.info("Creating Standalone Datasets for external database "
@@ -4684,8 +4741,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     # this will be True for Dynamo only
                     if external_collection_name[0]:
                         while (external_collection_name[0] !=
-                                link.external_database_details[
-                                    "connectionFields"]["region"]):
+                               link.external_database_details[
+                                   "connectionFields"]["region"]):
                             external_collection_name = random.choice(
                                 dataset_spec["include_external_collections"][
                                     datasource])
@@ -5308,6 +5365,8 @@ class Index_Util(Synonym_Util):
                 name = index_spec["name_key"] + "_{0}".format(str(i))
 
             datasets = self.list_all_dataset_objs()
+            external_datasets = self.list_all_dataset_objs("external")
+            datasets = [x for x in datasets if x not in external_datasets]
             dataset = None
             while not dataset:
                 dataset = random.choice(datasets)
@@ -6572,6 +6631,7 @@ class CbasUtil(CBOUtil):
         :param remote_clusters bucket_util_obj, bucket util object of remote cluster.
         :param wait_for_ingestion bool
         """
+
         def connect_links():
             # Connect link only when remote links or kafka links are present,
             # Local link is connected by default and external links are not
@@ -6726,7 +6786,7 @@ class CbasUtil(CBOUtil):
         self.log.info("Disconnecting all the Links")
         for link in self.list_all_link_objs():
             if link.link_type != "s3":
-                link_info = self.get_link_info(cluster, link.dataverse_name,
+                link_info = self.get_link_info(cluster, link.dataverse_name, link.database_name,
                                                link.name, link.link_type)
                 if ((type(link_info) is not None) and len(link_info) > 0 and
                         "linkState" in link_info[0] and link_info[0][
@@ -6805,7 +6865,7 @@ class CbasUtil(CBOUtil):
                      "timeout": cbas_spec.get("api_timeout", 300),
                      "analytics_timeout": cbas_spec.get("cbas_timeout",
                                                         300)})
-        
+
         self.log.info("Dropping all the Databases")
         for database in self.databases.values():
             if database.name != "Default":
