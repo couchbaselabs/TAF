@@ -4,7 +4,7 @@ import datetime
 from threading import Thread, Event
 
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import DocLoading
+from Cb_constants import DocLoading, CbServer
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.documentgenerator import doc_generator
@@ -66,6 +66,8 @@ class AutoCompactionTests(CollectionBase):
             try:
                 for bucket in self.cluster.buckets:
                     for _, scope in bucket.scopes.items():
+                        if scope.name == CbServer.system_scope:
+                            continue
                         for _, collection in scope.collections.items():
                             task = self.task.async_load_gen_docs(
                                 self.cluster, bucket, gen, "update", 0,
@@ -95,6 +97,8 @@ class AutoCompactionTests(CollectionBase):
                           process_concurrency=8, items=0):
         for bucket in self.cluster.buckets:
             for _, scope in bucket.scopes.items():
+                if scope.name == CbServer.system_scope:
+                    continue
                 for _, collection in scope.collections.items():
                     task = self.task.async_load_gen_docs(
                         self.cluster, bucket, generator, op_type, 0,
@@ -146,9 +150,12 @@ class AutoCompactionTests(CollectionBase):
                                   Bucket.storageBackend: self.bucket_storage,
                                   Bucket.replicaNumber: self.num_replicas})
             self.bucket_util.create_bucket(self.cluster, self.bucket)
-            self.bucket_util.wait_for_memcached(server_info, self.bucket)
-            self.bucket_util.wait_for_vbuckets_ready_state(server_info,
-                                                           self.bucket)
+            if self.cluster.type == "default":
+                self.bucket_util.is_warmup_complete([self.bucket])
+            else:
+                self.bucket_util.wait_for_memcached(server_info, self.bucket)
+                self.bucket_util.wait_for_vbuckets_ready_state(server_info,
+                                                               self.bucket)
             self.bucket_util.print_bucket_stats(self.cluster)
 
             self.log.info("Start to load {0}K keys with {1} bytes/key"
