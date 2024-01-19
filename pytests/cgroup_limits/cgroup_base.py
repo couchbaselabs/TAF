@@ -30,6 +30,8 @@ class CGroupBase(unittest.TestCase):
         self.infra_log = logger.get("infra")
         self.infra_log_level = self.input.param("infra_log_level",
                                                 "error").upper()
+        self.image_name = self.input.param("image_name", "couchbase-neo").lower()
+        self.container_name = self.input.param("container_name", "db").lower()
         self.log.setLevel(self.log_level)
         self.infra_log.setLevel(self.infra_log_level)
         self.servers = self.input.servers
@@ -60,8 +62,11 @@ class CGroupBase(unittest.TestCase):
             self.start_docker()
             self.remove_all_containers()
             self.container_id = self.start_couchbase_container(mem=self.mem,
-                                                               cpus=self.cpus)
+                                                               cpus=self.cpus,
+                                                               image_name=self.image_name,
+                                                               container_name=self.container_name)
             self.log.info("Container ID:{}".format(self.container_id))
+            time.sleep(60)
             self.set_disk_paths()
             self.initialize_node()
         self.host_mem_bytes = self.get_host_mem_in_bytes()
@@ -143,7 +148,8 @@ class CGroupBase(unittest.TestCase):
         o, e = self.shell.execute_command(cmd)
         self.log.info("Output:{0}, Error{1}".format(o, e))
 
-    def start_couchbase_container(self, mem=1073741824, cpus=2, sleep=20):
+    def start_couchbase_container(self, mem=1073741824, cpus=2, sleep=20, image_name='couchbase-neo',
+                                  container_name='db'):
         """
         Starts couchbase server inside a container on the VM
         (Assumes a docker image 'couchbase-neo' is present on the VM)
@@ -159,8 +165,8 @@ class CGroupBase(unittest.TestCase):
             flags = flags + " --cpus " + str(cpus)
         if self.cb_cpu_count_env not in [None, "None"]:
             flags = flags + " -e COUCHBASE_CPU_COUNT=" + str(self.cb_cpu_count_env)
-        cmd = "docker run -d -t --name db " + flags + \
-              " -p 8091-8096:8091-8096 -p 11210-11211:11210-11211 -p 9102:9102 couchbase-neo"
+        cmd = "docker run -d --name {} ".format(container_name) + flags + \
+              " -p 8091-8096:8091-8096 -p 11210-11211:11210-11211 -p 9100-9105:9100-9105 {}".format(image_name)
         o, e = self.shell.execute_command(cmd)
         self.log.info("Docker command run: {0}".format(cmd))
         self.log.info("Output:{0}, Error{1}".format(o, e))
