@@ -16,6 +16,7 @@ from BucketLib.bucket import Bucket
 from security_utils.security_utils import SecurityUtils
 from tpch_utils.tpch_utils import TPCHUtil
 from security_config import trust_all_certs
+from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 
 
 class CBASBaseTest(BaseTestCase):
@@ -287,11 +288,23 @@ class CBASBaseTest(BaseTestCase):
 
             cluster.otpNodes = cluster.rest.node_statuses()
 
+            if self.multiple_ca:
+                cluster.x509 = x509main(
+                    host=cluster.master, standard=self.standard,
+                    encryption_type=self.encryption_type,
+                    passphrase_type=self.passphrase_type)
+                self.generate_and_upload_cert(
+                    cluster.servers, cluster.x509, upload_root_certs=True,
+                    upload_node_certs=True, upload_client_certs=True)
+                payload = "name=cbadminbucket&roles=admin&password=password"
+                rest = RestConnection(cluster.master)
+                rest.add_set_builtin_user("cbadminbucket", payload)
+
             # Wait for analytics service to be up.
             if hasattr(cluster, "cbas_cc_node"):
                 if not self.cbas_util.is_analytics_running(cluster):
                     self.fail("Analytics service did not come up even after 10\
-                                 mins of wait after initialisation")
+                                         mins of wait after initialisation")
 
             if self.input.param("n2n_encryption", False):
 

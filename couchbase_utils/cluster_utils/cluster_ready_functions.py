@@ -363,6 +363,7 @@ class ClusterUtils:
             return True
 
         result = True
+
         cluster_node = cluster_node if cluster_node else cluster.master
         rest_orchestrator = RestConnection(cluster_node)
 

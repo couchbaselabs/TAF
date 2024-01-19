@@ -430,7 +430,7 @@ class x509main:
         # create node CA csr
         output, error = shell.execute_command("openssl req -new -key " + node_ca_key_path +
                                               " -out " + node_ca_csr_path +
-                                              " -subj '/C=UA/O=MyCompany/OU=Servers/CN=" + node_ip + "'")
+                                              " -subj '/C=UA/O=MyCompany/OU=Servers/CN=couchbase.node.svc'")
         self.log.info('Output message is {0} and error message is {1}'.format(output, error))
 
         # create node CA pem

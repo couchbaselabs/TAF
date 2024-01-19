@@ -370,18 +370,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.input.param("passphrase_type", "script")
             self.encryption_type = \
                 self.input.param("encryption_type", "aes256")
-            if self.multiple_ca:
-                for _, cluster in self.cb_clusters.items():
-                    cluster.x509 = x509main(
-                        host=cluster.master, standard=self.standard,
-                        encryption_type=self.encryption_type,
-                        passphrase_type=self.passphrase_type)
-                    self.generate_and_upload_cert(
-                        cluster.servers, cluster.x509, upload_root_certs=True,
-                        upload_node_certs=True, upload_client_certs=True)
-                    payload = "name=cbadminbucket&roles=admin&password=password"
-                    rest = RestConnection(cluster.master)
-                    rest.add_set_builtin_user("cbadminbucket", payload)
 
             for cluster_name, cluster in self.cb_clusters.items():
                 self.modify_cluster_settings(cluster)
@@ -411,6 +399,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.sleep(5, "Wait for nodes to become ready after reset")
 
         self.log.info("Initializing cluster : {0}".format(cluster_name))
+
         if not services:
             master_services = self.cluster_util.get_services(
                 cluster.servers[:1], self.services_init, start_node=0)
