@@ -179,7 +179,7 @@ class KVUpgradeTests(UpgradeBase):
         elif upgrade_cluster == "remote":
             self.log.info("Upgrading node: %s" % self.cluster.servers[1].ip)
             self.upgrade_helper.install_version_on_nodes(
-                self.cluster.servers[1:2], self.upgrade_chain[0])
+                self.cluster.servers[1:2], self.upgrade_version)
 
         self.log.info("Starting XDCR replication")
         xdcr_cluster = CBCluster("C2", servers=[in_node])
