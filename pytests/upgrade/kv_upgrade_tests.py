@@ -68,6 +68,7 @@ class KVUpgradeTests(UpgradeBase):
         for upgrade_version in self.upgrade_chain[1:]:
             self.upgrade_version = upgrade_version
             for node_to_upgrade in node_to_upgrades:
+                self.sleep(120, "Sleeping before starting the next failover upgrade")
                 self.failover_recovery(node_to_upgrade=node_to_upgrade,
                                        recovery_type=self.recovery_type,
                                        graceful=self.graceful)

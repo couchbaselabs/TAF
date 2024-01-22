@@ -1210,7 +1210,7 @@ class UpgradeTests(UpgradeBase):
             rebalance_tasks.append(self.rebalance_op)
 
         for reb_task in rebalance_tasks:
-
+            self.sleep(120, "Sleeping before starting the next rebalance task")
             rebalance_data_load = None
             if data_load:
                 rebalance_data_load = self.load_during_rebalance(self.sub_data_spec,
