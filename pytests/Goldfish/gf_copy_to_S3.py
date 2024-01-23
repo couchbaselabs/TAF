@@ -7,6 +7,7 @@ import math
 import random
 import time
 
+import json
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from Goldfish.goldfish_base import GoldFishBaseTest
@@ -1673,7 +1674,8 @@ class CopyToS3(GoldFishBaseTest):
                        "dataverse_name": datasets[i].dataverse_name, "database_name": datasets[i].database_name,
                        "destination_bucket": self.sink_s3_bucket_name,
                        "destination_link_name": s3_link.full_name, "path": path, "partition_alias": "country",
-                       "partition_by": "ally.country", "validate_error_msg": True, "expected_error": "Cannot write to a non-empty directory",
+                       "partition_by": "ally.country", "validate_error_msg": True,
+                       "expected_error": "Cannot write to a non-empty directory",
                        "expected_error_code": 23073}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -1692,7 +1694,7 @@ class CopyToS3(GoldFishBaseTest):
             path = "copy_dataset_" + str(i)
             query = "select * from {0} where 1 = 0".format(datasets[i].full_name)
             jobs.put((self.cbas_util.copy_to_s3,
-                      {"cluster": self.cluster,  "alias_identifier": "ally",
+                      {"cluster": self.cluster, "alias_identifier": "ally",
                        "source_definition_query": query,
                        "destination_bucket": self.sink_s3_bucket_name,
                        "destination_link_name": s3_link.full_name, "path": path, "partition_alias": "country",
@@ -1711,3 +1713,71 @@ class CopyToS3(GoldFishBaseTest):
         if len(objects_in_s3) != 0:
             self.fail("Failed to execute copy statement, objects present for empty query in S3 bucket")
 
+    def test_create_copyToS3_from_collection_aggregate_group_by_result_in_S3(self):
+        self.base_infra_setup()
+        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        no_of_docs = self.input.param("no_of_docs", 1000)
+        jobs = Queue()
+        results = []
+        for i in range(len(datasets)):
+            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": datasets[i].name,
+                       "dataverse_name": datasets[i].dataverse_name, "database_name": datasets[i].database_name,
+                       "no_of_docs": no_of_docs}))
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+        if not all(results):
+            self.log.error("Not all docs were inserted")
+        results = []
+
+        for i in range(len(datasets)):
+            path = "copy_dataset_" + str(i)
+            query = "SELECT country, ARRAY_AGG(city) AS city FROM {0} GROUP BY country".format(datasets[i].full_name)
+            jobs.put((self.cbas_util.copy_to_s3,
+                      {"cluster": self.cluster, "source_definition_query": query, "alias_identifier": "ally",
+                       "destination_bucket": self.sink_s3_bucket_name,
+                       "destination_link_name": s3_link.full_name, "path": path, "partition_alias": "country",
+                       "partition_by": "ally.country"}))
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+        if not all(results):
+            self.fail("Copy to S3 statement failure")
+
+        path_on_external_container_string = "{copy_dataset:string}/{country:string}"
+        dataset_obj_string = self.cbas_util.create_external_dataset_obj(self.cluster,
+                                                                        external_container_names={
+                                                                            self.sink_s3_bucket_name: self.aws_region},
+                                                                        paths_on_external_container=[
+                                                                            path_on_external_container_string],
+                                                                        file_format="json")[0]
+        if not self.create_external_dataset(dataset_obj_string):
+            self.fail("Failed to create external dataset on destination S3 bucket")
+
+        # verification step
+        for i in range(len(datasets)):
+            path = "copy_dataset_" + str(i)
+            for j in range(5):
+                statement = "select * from {0} limit 1".format(datasets[i].full_name)
+                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                                                                                                   statement)
+                country_name = ((result[0])[CBASHelper.unformat_name(datasets[i].name)]["country"]).replace("&amp;", "")
+                query_statement = "SELECT ARRAY_LENGTH(ARRAY_AGG(city)) as city FROM {0} where country = \"{1}\"".format(
+                    datasets[i].full_name, str(country_name))
+                dynamic_statement = "select * from {0} where copy_dataset = \"{1}\" and country = \"{2}\"".format(
+                    dataset_obj_string.full_name, path, str(country_name))
+
+                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                                                                                                   dynamic_statement)
+                lenght_of_city_array_from_s3 = len((result[0][dataset_obj_string.name])['city'])
+
+                status, metrics, errors, result2, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                                                                                                    query_statement)
+
+                lenght_of_city_array_from_dataset = result2[0]["city"]
+                if lenght_of_city_array_from_s3 != lenght_of_city_array_from_dataset:
+                    self.log.error("Length of city aggregate failed")
+                results.append(lenght_of_city_array_from_s3 == lenght_of_city_array_from_dataset)
+
+        if not all(results):
+            self.fail("Copy to statement copied the wrong results")
