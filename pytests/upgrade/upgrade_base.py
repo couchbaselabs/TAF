@@ -490,6 +490,9 @@ class UpgradeBase(BaseTestCase):
         if recovery_type == "delta":
             delta_recovery_buckets=[bucket.name for bucket in self.cluster.buckets]
 
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
+
         rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()],
                        deltaRecoveryBuckets=delta_recovery_buckets)
 
@@ -498,6 +501,9 @@ class UpgradeBase(BaseTestCase):
         if not rebalance_passed:
             self.log_failure("Graceful failover rebalance failed")
             return
+
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
 
     def online_swap(self, node_to_upgrade, version,
                     install_on_spare_node=True):
@@ -634,6 +640,10 @@ class UpgradeBase(BaseTestCase):
                       self.spare_node.port,
                       services=services_on_target_node)
         otp_nodes = [node.id for node in rest.node_statuses()]
+
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
+
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
@@ -650,6 +660,9 @@ class UpgradeBase(BaseTestCase):
         # Update spare node to rebalanced_out node
         self.spare_node = node_to_upgrade
         self.cluster.nodes_in_cluster.remove(node_to_upgrade)
+
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
 
     def online_rebalance_in_out(self, node_to_upgrade, version,
                                 install_on_spare_node=True):
@@ -675,6 +688,10 @@ class UpgradeBase(BaseTestCase):
                       self.spare_node.port,
                       services=services_on_target_node)
         otp_nodes = [node.id for node in rest.node_statuses()]
+
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
+
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
 
         self.perform_collection_ops_load(self.collection_spec)
@@ -682,6 +699,9 @@ class UpgradeBase(BaseTestCase):
         if not rebalance_passed:
             self.log_failure("Rebalance-in failed during upgrade of {0}"
                              .format(node_to_upgrade))
+
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
 
         # Print cluster status
         self.cluster_util.print_cluster_stats(self.cluster)
@@ -706,6 +726,9 @@ class UpgradeBase(BaseTestCase):
         # Update spare node to rebalanced_out node
         self.spare_node = node_to_upgrade
         self.cluster.nodes_in_cluster.remove(node_to_upgrade)
+
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
 
     def online_incremental(self, node_to_upgrade, version):
         # Fetch active services on node_to_upgrade
@@ -735,12 +758,19 @@ class UpgradeBase(BaseTestCase):
                       node_to_upgrade.port,
                       services=services_on_target_node)
         otp_nodes = [node.id for node in rest.node_statuses()]
+
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
+
         rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
         rebalance_passed = rest.monitorRebalance()
         if not rebalance_passed:
             self.log_failure("Rebalance-in failed during upgrade of {0}"
                              .format(node_to_upgrade))
             return
+
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
 
     def failover_delta_recovery(self, node_to_upgrade):
         self.failover_recovery(node_to_upgrade, "delta")
