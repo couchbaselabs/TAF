@@ -382,7 +382,7 @@ class CBASExternalLinks(CBASBaseTest):
 
                 if testcase.get("stop_server", False):
                     self.cluster_util.stop_server(to_cluster, to_cluster.master)
-                    self.sleep(10, "Sleeping after stopping the server")
+                    self.sleep(30, "Sleeping after stopping the server")
 
                 if not self.cbas_util.create_link(
                     self.analytics_cluster, link_properties,

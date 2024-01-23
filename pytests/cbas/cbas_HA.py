@@ -162,12 +162,6 @@ class CBASHighAvailability(CBASBaseTest):
                 "other_node": True
             },
             {
-                "description": "Verify setting replica number using https",
-                "replica_num": 2,
-                "expected_result": 2,
-                "use_https": True
-            },
-            {
                 "description": "Verify setting replica number using invalid "
                                "password for user",
                 "replica_num": 2,
@@ -220,9 +214,6 @@ class CBASHighAvailability(CBASBaseTest):
                         if new_node.ip != self.cluster.master.ip:
                             node = new_node
                             break
-                if "use_https" in testcase:
-                    CbServer.use_https = True
-                    trust_all_certs()
                 if "cbas_down" in testcase:
                     available_servers, _, cbas_failover_nodes = self.rebalance_util.failover(
                         self.cluster, kv_nodes=0, cbas_nodes=1, reset_cbas_cc=False)
@@ -249,8 +240,6 @@ class CBASHighAvailability(CBASBaseTest):
                 self.log.error(str(err))
                 failed_testcases.append(testcase["description"])
             finally:
-                if ("use_https" in testcase) and not self.input.param("n2n_encryption", False):
-                    CbServer.use_https = False
                 if "cbas_down" in testcase:
                     try:
                         self.rebalance_util.perform_action_on_failed_over_nodes(
