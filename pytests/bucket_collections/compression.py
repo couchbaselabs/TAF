@@ -4,6 +4,7 @@ from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_client3 import SDKClient
+from Cb_constants import CbServer
 
 
 class SDKCompression(CollectionBase):
@@ -94,30 +95,31 @@ class SDKCompression(CollectionBase):
 
         self.log.info("Performing doc loading in bucket %s" % self.bucket)
         for _, scope in self.bucket.scopes.items():
-            self.log.info("Mutating docs under scope: %s" % scope.name)
-            for _, collection in scope.collections.items():
-                self.snappy_client.select_collection(scope.name,
-                                                     collection.name)
-                while self.create_gen.has_next():
-                    # Add new doc using snappy client
-                    key, value = self.create_gen.next()
-                    result = create_client.crud(
-                        "create", key, value,
-                        exp=self.maxttl,
-                        durability=self.durability_level)
-                    if result["status"] is False:
-                        self.log_failure("Key '%s' insert failed for %s: %s"
-                                         % (key, collection.name, result))
+            if scope.name != CbServer.system_scope:
+                self.log.info("Mutating docs under scope: %s" % scope.name)
+                for _, collection in scope.collections.items():
+                    self.snappy_client.select_collection(scope.name,
+                                                         collection.name)
+                    while self.create_gen.has_next():
+                        # Add new doc using snappy client
+                        key, value = self.create_gen.next()
+                        result = create_client.crud(
+                            "create", key, value,
+                            exp=self.maxttl,
+                            durability=self.durability_level)
+                        if result["status"] is False:
+                            self.log_failure("Key '%s' insert failed for %s: %s"
+                                             % (key, collection.name, result))
 
-                    # Mutate same doc using the same client
-                    key, value = self.update_gen.next()
-                    result = update_client.crud(
-                        "update", key, value,
-                        exp=self.maxttl,
-                        durability=self.durability_level)
-                    if result["status"] is False:
-                        self.log_failure("Key '%s' update failed for %s: %s"
-                                         % (key, collection.name, result))
+                        # Mutate same doc using the same client
+                        key, value = self.update_gen.next()
+                        result = update_client.crud(
+                            "update", key, value,
+                            exp=self.maxttl,
+                            durability=self.durability_level)
+                        if result["status"] is False:
+                            self.log_failure("Key '%s' update failed for %s: %s"
+                                             % (key, collection.name, result))
 
                 # Reset doc_gens to be utilized by subsequent loaders
                 self.create_gen.reset()
@@ -127,17 +129,18 @@ class SDKCompression(CollectionBase):
 
         self.log.info("Validating docs in bucket %s" % self.bucket)
         for _, scope in self.bucket.scopes.items():
-            self.log.info("Reading docs under scope: %s" % scope.name)
-            for _, collection in scope.collections.items():
-                read_client.select_collection(scope.name,
-                                              collection.name)
-                while self.update_gen.has_next():
-                    key, value = self.update_gen.next()
-                    result = read_client.crud("read", key)
-                    if str(result["value"]) != str(value):
-                        self.log_failure(
-                            "Value mismatch for %s in collection %s: %s"
-                            % (key, collection.name, result))
+            if scope.name != CbServer.system_scope:
+                self.log.info("Reading docs under scope: %s" % scope.name)
+                for _, collection in scope.collections.items():
+                    read_client.select_collection(scope.name,
+                                                  collection.name)
+                    while self.update_gen.has_next():
+                        key, value = self.update_gen.next()
+                        result = read_client.crud("read", key)
+                        if str(result["value"]) != str(value):
+                            self.log_failure(
+                                "Value mismatch for %s in collection %s: %s"
+                                % (key, collection.name, result))
 
         self.validate_test_failure()
         self.bucket.scopes[s_name].collections[c_name].num_items += self.num_items
