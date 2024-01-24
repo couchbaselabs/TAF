@@ -4266,7 +4266,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             cmd += "PATH \"{0}\" ".format(path_on_aws_bucket)
 
         with_parameters = dict()
-        with_parameters["format"] = file_format
+        if file_format:
+            with_parameters["format"] = file_format
 
         if header is not None:
             with_parameters["header"] = header
@@ -4280,7 +4281,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         if files_to_exclude:
             with_parameters["exclude"] = files_to_exclude
 
-        if with_parameters["format"] == "parquet":
+        if "format" in with_parameters and with_parameters["format"] == "parquet":
             if timezone:
                 with_parameters["timezone"] = timezone.upper()
             if parse_json_string > 0:
@@ -4293,8 +4294,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     with_parameters["decimal-to-double"] = True
                 else:
                     with_parameters["decimal-to-double"] = False
-
-        cmd += "WITH {0};".format(json.dumps(with_parameters))
+        if bool(with_parameters):
+            cmd += "WITH {0};".format(json.dumps(with_parameters))
         self.log.info("Coping into {0} from {1}".format(collection_name, external_link_name))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
