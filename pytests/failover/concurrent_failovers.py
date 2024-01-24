@@ -102,8 +102,9 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             if self.cluster.index_nodes and self.cluster.query_nodes:
                 for bucket in self.cluster.buckets:
                     client = SDKClient([self.cluster.master], bucket)
-                    a = client.run_query(
-                        "DROP INDEX default:`%s`.`_system`.`_query`.`#primary`"
+                    client.run_query(
+                        "DROP INDEX "
+                        "default:`%s`.`_system`.`_query`.`#primary` if exists;"
                         % (bucket.name), timeout=300)
         except Exception as e:
             self.log.info("Exception %s occurred wile deleting primary "
