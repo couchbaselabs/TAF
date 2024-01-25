@@ -14,13 +14,13 @@ from collections_helper.collections_spec_constants import MetaConstants, \
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
 from upgrade.upgrade_base import UpgradeBase
+from bucket_collections.collections_base import CollectionBase
 from cbas_utils.cbas_utils import CbasUtil, CBASRebalanceUtil
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from security_utils.security_utils import SecurityUtils
 from security_config import trust_all_certs
 import random
-
 
 class UpgradeTests(UpgradeBase):
 
@@ -259,6 +259,11 @@ class UpgradeTests(UpgradeBase):
                           "was set")
 
         self.log.info("Loading docs in default collection of existing buckets")
+        # The test deletes and creates new documents and initially the docs are created using spec files. 
+        # To match both, a parameter can be passed from the test case with key=key_value. 
+        # This key_value can be same as spec file key value. 
+        # This way the CRUD ops will consider these docs as well.
+        self.key = self.input.param("key", "test_collections")
         for bucket in self.cluster.buckets:
             gen_load = doc_generator(
                 self.key, self.num_items, self.num_items*2,
