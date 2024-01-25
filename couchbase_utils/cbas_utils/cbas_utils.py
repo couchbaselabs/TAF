@@ -5159,9 +5159,11 @@ class CBASRebalanceUtil(object):
         self.query_threads = list()
 
     def wait_for_rebalance_task_to_complete(self, task, cluster,
-                                            check_cbas_running=False):
+                                            check_cbas_running=False,
+                                            reset_cluster_servers=True):
         self.task.jython_task_manager.get_task_result(task)
-        cluster.servers = cluster.nodes_in_cluster
+        if reset_cluster_servers:
+            cluster.servers = cluster.nodes_in_cluster
         if hasattr(cluster, "cbas_cc_node"):
             self.reset_cbas_cc_node(cluster)
         if task.result and hasattr(cluster, "cbas_nodes"):

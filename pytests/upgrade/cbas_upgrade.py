@@ -148,7 +148,7 @@ class UpgradeTests(UpgradeBase):
                 self.cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
                 cbas_nodes_out=0, available_servers=[], exclude_nodes=[])
             if not self.rebalance_util.wait_for_rebalance_task_to_complete(
-                    rebalance_task, self.cluster):
+                    rebalance_task, self.cluster, reset_cluster_servers=False):
                 self.fail("Rebalance failed")
 
     def cbas_setup(self, update_spec, connect_local_link=True):
