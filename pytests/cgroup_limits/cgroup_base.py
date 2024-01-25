@@ -20,7 +20,7 @@ class ServerInfo:
         self.ssh_key = ssh_key
         self.memcached_port = memcached_port
         self.remote_info = None
-
+        self.type = None
 
 class CGroupBase(unittest.TestCase):
     def setUp(self):
