@@ -424,11 +424,11 @@ class Murphy(BaseTestCase, OPD):
             "end": self.input.param("num_items", 1500000000),
             "ops": self.input.param("ops_rate", 100000),
             "doc_size": 1024,
-            "pattern": [0, 90, 10, 0, 0], # CRUDE
+            "pattern": [0, 50, 50, 0, 0], # CRUDE
             "load_type": ["read", "update"],
             "2iQPS": 300,
-            "ftsQPS": 0,
-            "cbasQPS": 0,
+            "ftsQPS": 100,
+            "cbasQPS": 100,
             "collections_defn": [
                 {
                     "valType": "NimbusP",
@@ -453,11 +453,11 @@ class Murphy(BaseTestCase, OPD):
             "end": self.input.param("num_items", 50000000),
             "ops": self.input.param("ops_rate", 50000),
             "doc_size": 1024,
-            "pattern": [0, 80, 20, 0, 0], # CRUDE
+            "pattern": [0, 50, 50, 0, 0], # CRUDE
             "load_type": ["read", "update"],
             "2iQPS": 10,
             "ftsQPS": 10,
-            "cbasQPS": 0,
+            "cbasQPS": 10,
             "collections_defn": [
                 {
                     "valType": "Hotel",
@@ -466,7 +466,7 @@ class Murphy(BaseTestCase, OPD):
                     "cbas": [2, 2, 2]
                     },
                 {
-                    "valType": "Hotel",
+                    "valType": "",
                     "2i": [2, 2],
                     "FTS": [0, 0],
                     "cbas": [2, 2, 2]
@@ -474,13 +474,13 @@ class Murphy(BaseTestCase, OPD):
                 ]
             }
 
-        temp = [{
-            "valType": "Hotel",
-            "2i": [0, 0],
-            "FTS": [0, 0],
-            "cbas": [0, 0, 0]
-            }]*8
-        self.default["collections_defn"].extend(temp)
+        # temp = [{
+        #     "valType": "Hotel",
+        #     "2i": [0, 0],
+        #     "FTS": [0, 0],
+        #     "cbas": [0, 0, 0]
+        #     }]*8
+        # self.default["collections_defn"].extend(temp)
 
         nimbus = self.input.param("nimbus", False)
         expiry = self.input.param("expiry", False)
@@ -491,7 +491,7 @@ class Murphy(BaseTestCase, OPD):
 
         if expiry:
             for load in self.load_defn:
-                load["pattern"] = [0, 90, 0, 0, 10]
+                load["pattern"] = [0, 50, 0, 0, 50]
                 load["load_type"] = ["read", "expiry"]
         #######################################################################
         if not self.skip_init:

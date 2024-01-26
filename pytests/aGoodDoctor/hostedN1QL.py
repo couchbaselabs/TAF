@@ -504,7 +504,7 @@ class QueryLoad:
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
                 self.timeout_failures += self.timeout_count.next()
-                if self.timeout_failures % 50 == 0:
+                if self.timeout_failures % 50 == 0 or str(e).find("UnambiguousTimeoutException") != -1:
                     self.log.critical(client_context_id + ":" + query)
                     self.log.critical(e)
             elif str(e).find("RequestCanceledException") != -1:
