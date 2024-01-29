@@ -259,9 +259,9 @@ class UpgradeTests(UpgradeBase):
                           "was set")
 
         self.log.info("Loading docs in default collection of existing buckets")
-        # The test deletes and creates new documents and initially the docs are created using spec files. 
-        # To match both, a parameter can be passed from the test case with key=key_value. 
-        # This key_value can be same as spec file key value. 
+        # The test deletes and creates new documents and initially the docs are created using spec files.
+        # To match both, a parameter can be passed from the test case with key=key_value.
+        # This key_value can be same as spec file key value.
         # This way the CRUD ops will consider these docs as well.
         self.key = self.input.param("key", "test_collections")
         for bucket in self.cluster.buckets:
@@ -634,6 +634,7 @@ class UpgradeTests(UpgradeBase):
 
     def test_upgrade(self):
         for upgrade_version in self.upgrade_chain[1:]:
+            self.initial_version = self.upgrade_version
             self.upgrade_version = upgrade_version
             self.log.info("Upgrading cluster nodes to target version")
 
@@ -665,6 +666,11 @@ class UpgradeTests(UpgradeBase):
                         {"cbas": {"exclude_node": self.cluster.cbas_cc_node}})
                 else:
                     node_to_upgrade = self.fetch_node_to_upgrade()
+
+            # Adding _system scope and collections under it to the local bucket object since
+            # these are added once the cluster is upgraded to 7.6
+            if float(self.upgrade_version[:3]) >= 7.6 and float(self.initial_version[:3]) < 7.6:
+                self.add_system_scope_to_all_buckets()
             if not all(self.post_upgrade_validation().values()):
                 self.fail("Post upgrade scenarios failed")
 
@@ -705,5 +711,10 @@ class UpgradeTests(UpgradeBase):
                         node_to_upgrade = self.fetch_node_to_upgrade()
                 else:
                     node_to_upgrade = self.fetch_node_to_upgrade()
+
+            # Adding _system scope and collections under it to the local bucket object since
+            # these are added once the cluster is upgraded to 7.6
+            if float(self.upgrade_version[:3]) >= 7.6 and float(self.initial_version[:3]) < 7.6:
+                self.add_system_scope_to_all_buckets()
             if not all(self.post_upgrade_validation().values()):
                 self.fail("Post upgrade scenarios failed")

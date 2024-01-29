@@ -4,6 +4,7 @@ import Jython_tasks.task as jython_tasks
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from pytests.ns_server.enforce_tls import EnforceTls
+from BucketLib.bucket import Bucket, Collection, Scope
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
@@ -299,6 +300,17 @@ class UpgradeBase(BaseTestCase):
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
+
+    def add_system_scope_to_all_buckets(self):
+        for bucket in self.cluster.buckets:
+            scope = Scope({"name": CbServer.system_scope})
+            if CbServer.system_scope not in bucket.scopes:
+                bucket.scopes[CbServer.system_scope] = scope
+            for c_name in [CbServer.query_collection,
+                        CbServer.mobile_collection]:
+                collection = Collection({"name": c_name, "maxTTL": 0})
+                if c_name not in bucket.scopes[CbServer.system_scope].collections:
+                    bucket.scopes[CbServer.system_scope].collections[c_name] = collection
 
     def _populate_upgrade_chain(self):
         chain_to_test = self.input.param("upgrade_chain", "7.2.3")

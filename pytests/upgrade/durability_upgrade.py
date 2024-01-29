@@ -216,6 +216,7 @@ class UpgradeTests(UpgradeBase):
         for upgrade_version in self.upgrade_chain:
             itr = 0
             bucket = self.cluster.buckets[0]
+            self.initial_version = self.upgrade_version
             self.upgrade_version = upgrade_version
             ### Fetching the first node to upgrade ###
             node_to_upgrade = self.fetch_node_to_upgrade()
@@ -383,14 +384,8 @@ class UpgradeTests(UpgradeBase):
 
         # Adding _system scope and collections under it to the local bucket object since
         # these are added once the cluster is upgraded to 7.6
-        if float(self.upgrade_version[:3]) >= 7.6:
-            for bucket in self.cluster.buckets:
-                scope = Scope({"name": CbServer.system_scope})
-                bucket.scopes[CbServer.system_scope] = scope
-                for c_name in [CbServer.query_collection,
-                            CbServer.mobile_collection]:
-                    collection = Collection({"name": c_name, "maxTTL": 0})
-                    bucket.scopes[CbServer.system_scope].collections[c_name] = collection
+        if float(self.upgrade_version[:3]) >= 7.6 and float(self.initial_version[:3]) < 7.6:
+            self.add_system_scope_to_all_buckets()
 
         ### Migration of the storageBackend ###
         if self.migrate_storage_backend:
