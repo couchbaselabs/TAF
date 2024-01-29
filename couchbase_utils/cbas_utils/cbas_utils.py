@@ -1111,8 +1111,9 @@ class Link_Util(Dataverse_Util):
         exists = False
         if create_if_not_exists:
             exists = self.validate_link_in_metadata(
-                cluster, link_properties["name"], link_properties["dataverse"], link_properties["database"],
-                link_properties["type"], username, password)
+                cluster, link_properties["name"], link_properties["dataverse"],
+                link_properties["database"], link_properties["type"],
+                username, password)
 
         if not exists:
             # If dataverse does not exits
@@ -1722,9 +1723,25 @@ class ExternalLink_Util(RemoteLink_Util):
             else:
                 name = link_spec.get("name_key") + "_{0}".format(str(i))
 
+            database = None
+            while not database:
+                database = random.choice(self.databases.values())
+                if link_spec.get("include_databases",
+                                 []) and CBASHelper.unformat_name(
+                    database.name) not in link_spec.get(
+                    "include_databases"):
+                    database = None
+                if link_spec.get("exclude_databases",
+                                 []) and CBASHelper.unformat_name(
+                    database.name) in link_spec.get(
+                    "exclude_databases"):
+                    database = None
+
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj())
+                dataverse = random.choice(self.get_all_dataverse_obj(
+                    database.name))
+
                 if link_spec.get("include_dataverses",
                                  []) and CBASHelper.unformat_name(
                     dataverse.name) not in link_spec.get(
@@ -1760,14 +1777,27 @@ class ExternalLink_Util(RemoteLink_Util):
         external_link_list = []
         count = 0
         while count < no_of_objs:
-            if not dataverse:
-                if link_cardinality > 1:
+            if link_cardinality > 2:
+                if not database:
+                    database_name = CBASHelper.format_name(self.generate_name(
+                        max_length=name_length - 1,
+                        fixed_length=fixed_length))
+                    if not self.create_database(
+                            cluster, database_name,
+                            if_not_exists=True):
+                        raise Exception("Error while creating database {"
+                                        "}".format(database_name))
+                else:
+                    database_name = CBASHelper.format_name(database)
+            elif link_cardinality == 2:
+                if not dataverse:
                     dataverse_name = CBASHelper.format_name(self.generate_name(
                         name_cardinality=link_cardinality - 1,
                         max_length=name_length - 1,
                         fixed_length=fixed_length))
                     if not self.create_dataverse(
-                            cluster, dataverse_name, database, if_not_exists=True):
+                            cluster, dataverse_name, database_name,
+                            if_not_exists=True):
                         raise Exception("Error while creating dataverse")
                     dataverse = self.get_dataverse_obj(dataverse_name)
                 else:
@@ -1828,8 +1858,9 @@ class KafkaLink_Util(ExternalLink_Util):
             self.log.info("Waiting for KAFKA links to be {}".format(state))
             links_in_desired_state = []
             for link in kafka_links:
-                link_info = self.get_link_info(cluster, link.dataverse_name, link.database_name,
-                                               link.name, link.link_type)
+                link_info = self.get_link_info(
+                    cluster, link.dataverse_name,
+                    link.database_name,link.name, link.link_type)
                 if ((type(link_info) is not None) and len(link_info) > 0 and
                         "linkState" in link_info[0] and link_info[0][
                             "linkState"] == state):
@@ -1846,27 +1877,9 @@ class KafkaLink_Util(ExternalLink_Util):
             return False
         return True
 
-    def get_link_status(self, cluster, dataverse_name, database_name, link_name,
-                        username="Administrator", password="password"):
-        """
-        Return the status of a kafka link
-        """
-        dataverse_name = "{0}.{1}".format(database_name, dataverse_name)
-        url = "http://{0}:8091/_p/cbas/analytics/link/{1}/{2}".format(cluster.endpoint,
-                                                                      urllib.quote_plus(dataverse_name),
-                                                                      link_name)
-        username = username
-        password = password
-        response = requests.get(url, auth=(username, password))
-        if response.status_code == 200:
-            data = response.json()
-            return data[0]["linkState"]
-        else:
-            return False
-
     def create_kafka_link(
-            self, cluster, link_name, external_db_details,
-            dataverse_name=None, database_name=None, validate_error_msg=False, username=None,
+            self, cluster, link_name, external_db_details, dataverse_name=None,
+            database_name=None, validate_error_msg=False, username=None,
             password=None, expected_error=None, timeout=300,
             analytics_timeout=300):
         """
@@ -1886,8 +1899,10 @@ class KafkaLink_Util(ExternalLink_Util):
         :param analytics_timeout int, analytics query timeout
 
         """
-        if dataverse_name and not self.create_dataverse(
-                cluster, dataverse_name=dataverse_name, database_name=database_name, if_not_exists=True,
+        if dataverse_name and dataverse_name != "Default" and not \
+                self.create_dataverse(
+                cluster, dataverse_name=dataverse_name,
+                database_name=database_name, if_not_exists=True,
                 timeout=timeout, analytics_timeout=analytics_timeout):
             return False
 
@@ -1940,9 +1955,25 @@ class KafkaLink_Util(ExternalLink_Util):
             else:
                 name = link_spec.get("name_key") + "_{0}".format(str(i))
 
+            database = None
+            while not database:
+                database = random.choice(self.databases.values())
+                if link_spec.get("include_databases",
+                                 []) and CBASHelper.unformat_name(
+                    database.name) not in link_spec.get(
+                    "include_databases"):
+                    database = None
+                if link_spec.get("exclude_databases",
+                                 []) and CBASHelper.unformat_name(
+                    database.name) in link_spec.get(
+                    "exclude_databases"):
+                    database = None
+
             dataverse = None
             while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj())
+                dataverse = random.choice(self.get_all_dataverse_obj(
+                    database.name))
+
                 if link_spec.get("include_dataverses",
                                  []) and CBASHelper.unformat_name(
                     dataverse.name) not in link_spec.get(
@@ -1985,26 +2016,39 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         count = 0
         while count < no_of_objs:
-            if not dataverse:
-                if link_cardinality > 1:
+            if link_cardinality > 2:
+                if not database:
+                    database_name = CBASHelper.format_name(self.generate_name(
+                        max_length=name_length - 1,
+                        fixed_length=fixed_length))
+                    if not self.create_database(
+                            cluster, database_name,
+                            if_not_exists=True):
+                        raise Exception("Error while creating database {"
+                                        "}".format(database_name))
+                else:
+                    database_name = CBASHelper.format_name(database)
+            elif link_cardinality == 2:
+                if not dataverse:
                     dataverse_name = CBASHelper.format_name(self.generate_name(
                         name_cardinality=link_cardinality - 1,
                         max_length=name_length - 1,
                         fixed_length=fixed_length))
                     if not self.create_dataverse(
-                            cluster, dataverse_name, database, if_not_exists=True):
+                            cluster, dataverse_name,
+                            database_name, if_not_exists=True):
                         raise Exception("Error while creating dataverse")
                     dataverse = self.get_dataverse_obj(dataverse_name)
-                else:
-                    dataverse = self.get_dataverse_obj("Default")
+            else:
+                dataverse = self.get_dataverse_obj("Default")
 
             link = Kafka_Link(
                 name=self.generate_name(
                     name_cardinality=1, max_length=name_length,
-                    fixed_length=fixed_length),
-                dataverse_name=dataverse.name, database_name=dataverse.database_name, db_type=db_type,
+                    fixed_length=fixed_length), dataverse_name=dataverse.name,
+                database_name=dataverse.database_name, db_type=db_type,
                 external_database_details=external_db_details)
-            dataverse.external_links[link.name] = link
+            dataverse.kafka_links[link.name] = link
             count += 1
 
 
@@ -4702,7 +4746,26 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             else:
                 datasource = dataset_spec["data_source"][i % len(dataset_spec["data_source"])]
 
-            eligible_links = [link for link in kafka_link_objs if link.db_type == datasource]
+            if (dataset_spec["include_external_collections"].get(
+                    datasource, {}) and dataset_spec[
+                "exclude_external_collections"].get(datasource, {})
+                    and (set(dataset_spec["include_external_collections"][
+                                 datasource]) == set(
+                        dataset_spec["exclude_external_collections"][
+                            datasource]))):
+                self.log.error("Both include and exclude "
+                               "external collections cannot be "
+                               "same")
+                return False
+            elif dataset_spec["exclude_external_collections"].get(datasource,
+                                                                  {}):
+                dataset_spec["include_external_collections"][datasource] = (
+                        set(dataset_spec["include_external_collections"][
+                                datasource]) - set(
+                    dataset_spec["exclude_external_collections"][datasource]))
+
+            eligible_links = [link for link in kafka_link_objs if
+                              link.db_type == datasource]
 
             """
             This is to make sure that we don't create 2 collection with same 
@@ -4713,25 +4776,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             This is to support Dynamo tables multiple regions.
             """
             retry = 0
-            while retry < 10:
+            while retry < 100:
                 link = random.choice(eligible_links)
-
-                if (dataset_spec["include_external_collections"].get(
-                        datasource, {}) and dataset_spec[
-                    "exclude_external_collections"].get(datasource, {})
-                        and (set(dataset_spec["include_external_collections"][
-                                     datasource]) == set(
-                            dataset_spec["exclude_external_collections"][
-                                datasource]))):
-                    self.log.error("Both include and exclude "
-                                   "external collections cannot be "
-                                   "same")
-                    return False
-                elif dataset_spec["exclude_external_collections"].get(datasource, {}):
-                    dataset_spec["include_external_collections"][datasource] = (
-                            set(dataset_spec["include_external_collections"][
-                                    datasource]) - set(
-                        dataset_spec["exclude_external_collections"][datasource]))
 
                 if dataset_spec["include_external_collections"][datasource]:
                     external_collection_name = random.choice(
@@ -6666,8 +6712,10 @@ class CbasUtil(CBOUtil):
 
         if not self.create_remote_link_from_spec(cluster, cbas_spec):
             return False, "Failed at create remote link from spec"
+
         if not self.create_external_link_from_spec(cluster, cbas_spec):
             return False, "Failed at create external link from spec"
+
         if not self.create_kafka_link_from_spec(cluster, cbas_spec):
             return False, "Failed at create kafka link from spec"
 

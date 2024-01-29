@@ -73,7 +73,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
                               stage="Teardown")
 
     def start_initial_data_load(self):
-        if not (self.mongo_atlas_url or None):
+        if not (self.mongo_atlas_url or self.mongo_on_prem_url):
             self.fail("Unable to load inital data into mongo. Please pass "
                       "username and password for either Mongo Atlas or Mongo "
                       "On-prem Cluster.")

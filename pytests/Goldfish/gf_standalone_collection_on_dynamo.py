@@ -226,7 +226,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
             self.fail(msg)
 
         # Wait for initial data load to finish
-        if not self.wait_for_initial_data_load(self.initial_doc_count):
+        if not self.wait_for_initial_data_load(self.initial_doc_count, 3600):
             self.fail("Initial doc loading into Dynamo failed.")
 
         datasets = self.cbas_util.list_all_dataset_objs()
@@ -361,7 +361,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
             self.fail(msg)
 
         # Wait for initial data load to finish
-        if not self.wait_for_initial_data_load(self.initial_doc_count):
+        if not self.wait_for_initial_data_load(self.initial_doc_count, 3600):
             self.fail("Initial doc loading into Dynamo failed.")
 
         if not self.cbas_util.wait_for_kafka_links(self.cluster, "CONNECTED"):
