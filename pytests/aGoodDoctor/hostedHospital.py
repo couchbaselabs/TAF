@@ -477,7 +477,7 @@ class Murphy(BaseTestCase, OPD):
                     "cbas": [2, 2, 2]
                     },
                 {
-                    "valType": "",
+                    "valType": "Hotel",
                     "2i": [2, 2],
                     "FTS": [0, 0],
                     "cbas": [2, 2, 2]
@@ -526,7 +526,7 @@ class Murphy(BaseTestCase, OPD):
 
         if expiry:
             for load in self.load_defn:
-                load["pattern"] = [0, 50, 0, 0, 50]
+                load["pattern"] = [0, 80, 0, 0, 20]
                 load["load_type"] = ["read", "expiry"]
 
         if self.vector:
