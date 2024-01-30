@@ -910,6 +910,11 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         out_nodes = self.input.param("out_nodes", "kv").split(":")
         # Can take any of (in/out/swap)
         rebalance_type = self.input.param("rebalance_type", "in")
+        # During hard failover + non-durability case, there is a chance that
+        # active data in mem. can be lost before replication completes
+        # resulting in less num_items than expected
+        skip_post_rebalance_data_validation = self.input.param(
+            "skip_post_rebalance_data_validation", False)
         perform_doc_ops_before_rebalance = self.input.param(
             "perform_doc_ops_before_rebalance", True)
 
@@ -984,7 +989,8 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
             # Perform collection crud + doc_ops before rebalance operation
             self.__update_unaffected_node()
             if perform_doc_ops_before_rebalance:
-                self.__perform_doc_ops(durability="NONE", validate_num_items=False)
+                self.__perform_doc_ops(durability="NONE",
+                                       validate_num_items=False)
         finally:
             # Disable auto-fo after the expected time limit
             retry = 5
@@ -1028,7 +1034,10 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
 
         # Perform collection crud + doc_ops after rebalance operation
         self.__update_unaffected_node()
-        self.__perform_doc_ops()
+        validate_num_items = True
+        if skip_post_rebalance_data_validation:
+            validate_num_items = False
+        self.__perform_doc_ops(validate_num_items=validate_num_items)
 
     def test_autofailover_preserve_durability(self):
         """
