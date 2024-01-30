@@ -49,7 +49,7 @@ class Users:
         else:
             self.roles = ["organizationOwner"]
 
-        self.projects = list()
+        self.projects = None
 
 
 class Project:
@@ -60,7 +60,7 @@ class Project:
         if name:
             self.name = name
         else:
-            self.name = "project{0}".format(random.randint(1, 100000))
+            self.name = "goldfish_project{0}".format(random.randint(1, 100000))
 
         # List of goldfish cluster objects
         self.clusters = list()
