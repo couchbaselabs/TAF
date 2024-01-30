@@ -372,7 +372,9 @@ class APIBase(BaseTestCase):
         return replaced_id
 
     @staticmethod
-    def auth_test_extension(testcases):
+    def auth_test_extension(testcases, other_project_id,
+                            failure_expected_code=None,
+                            failure_expected_error=None):
         testcases.extend([
             {
                 "description": "Calling API without bearer token",
@@ -430,26 +432,34 @@ class APIBase(BaseTestCase):
                     "httpStatusCode": 401,
                     "message": "Unauthorized"
                 }
-            }, {
-                "description": "Calling API with user having access to get "
-                               "multiple projects ",
-                "has_multi_project_access": True,
-            }, {
-                "description": "Calling API with user not having access to "
-                               "get project specific but has access to get "
-                               "other project",
-                "has_multi_project_access": False,
-                "expected_status_code": 403,
-                "expected_error": {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "httpStatusCode": 403,
-                    "message": "Access Denied."
-                }
             }
         ])
+        if other_project_id:
+            testcases.extend([
+                {
+                    "description": "Calling API with user having access to "
+                                   "get multiple projects ",
+                    "has_multi_project_access": True,
+                }, {
+                    "description": "Calling API with user not having access "
+                                   "to get project specific but has access to "
+                                   "get other project",
+                    "has_multi_project_access": False,
+                    "expected_status_code": 403,
+                    "expected_error": {
+                        "code": 1002,
+                        "hint": "Your access to the requested resource is "
+                                "denied. Please make sure you have the "
+                                "necessary permissions to access the "
+                                "resource.",
+                        "httpStatusCode": 403,
+                        "message": "Access Denied."
+                    }
+                }
+            ])
+        if failure_expected_code:
+            testcases[-2]["expected_status_code"] = failure_expected_code
+            testcases[-2]["expected_error"] = failure_expected_error
 
     def auth_test_setup(self, testcase, failures, header,
                         project_id, other_project_id=None):
@@ -484,7 +494,7 @@ class APIBase(BaseTestCase):
             basic = base64.b64encode("{}:{}".format(
                 self.user, self.passwd).encode()).decode()
             header["Authorization"] = 'Basic {}'.format(basic)
-        elif "has_multi_project_access" in testcase:
+        elif "has_multi_project_access" in testcase and other_project_id:
             org_roles = ["organizationMember"]
             resource = [{
                 "type": "project",

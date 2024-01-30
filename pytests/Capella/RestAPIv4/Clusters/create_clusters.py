@@ -108,12 +108,13 @@ class CreateCluster(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
+                               "request due to something that is perceived to "
+                               "be a client error."
                 }
             }, {
                 "description": "Fetch cluster but with non-hex projectID",
@@ -122,12 +123,13 @@ class CreateCluster(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
+                               "request due to something that is perceived to "
+                               "be a client error."
                 }
             }
         ]
@@ -213,7 +215,15 @@ class CreateCluster(GetProject):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id, 422, {
+            "code": 4002,
+            "hint": "Please ensure that payload or body of the "
+                    "request is not empty.",
+            "httpStatusCode": 422,
+            "message": "Unable to process request. Support package is "
+                       "not valid. Please provide a valid support "
+                       "package and try again."
+        })
 
         failures = list()
         for testcase in testcases:

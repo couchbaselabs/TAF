@@ -109,12 +109,13 @@ class UpdateCluster(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
+                               "request due to something that is perceived to "
+                               "be a client error."
                 }
             }, {
                 "description": "Fetch cluster but with non-hex projectID",
@@ -123,12 +124,13 @@ class UpdateCluster(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
+                               "request due to something that is perceived to "
+                               "be a client error."
                 }
             }
         ]
@@ -210,7 +212,14 @@ class UpdateCluster(GetProject):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id, 404, {
+            "code": 4025,
+            "hint": "The requested cluster details could not be found "
+                    "or fetched. Please ensure that the correct "
+                    "cluster ID is provided.",
+            "httpStatusCode": 404,
+            "message": "Unable to fetch the cluster details."
+        })
 
         failures = list()
         for testcase in testcases:

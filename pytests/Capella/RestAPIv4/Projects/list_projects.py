@@ -111,8 +111,9 @@ class ListProject(APIBase):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present in "
-                            "the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived to "
@@ -125,12 +126,13 @@ class ListProject(APIBase):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
+                               "request due to something that is perceived to "
+                               "be a client error."
                 }
             }
         ]
@@ -191,7 +193,7 @@ class ListProject(APIBase):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, None)
 
         failures = list()
         for testcase in testcases:

@@ -152,7 +152,7 @@ class GetOrganization(APIBase):
                     "httpStatusCode": 403
                 }
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, None)
 
         failures = list()
         for testcase in testcases:
