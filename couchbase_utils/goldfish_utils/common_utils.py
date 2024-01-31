@@ -155,7 +155,7 @@ class GoldfishUtils:
             pod.url_public, user.api_secret_key, user.api_access_key,
             user.email, user.password)
         resp = capella_api.delete_project(user.org_id, project.project_id)
-        if resp.status_code != 204:
+        if resp.status_code != 202:
             self.log.error("Deleting project {0} failed: {1}".
                             format(project.name, resp.content))
             return False
