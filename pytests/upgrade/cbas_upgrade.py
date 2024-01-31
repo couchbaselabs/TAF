@@ -676,6 +676,7 @@ class UpgradeTests(UpgradeBase):
 
     def test_upgrade_with_failover(self):
         for upgrade_version in self.upgrade_chain[1:]:
+            self.initial_version = self.upgrade_version
             self.upgrade_version = upgrade_version
             self.log.info("Upgrading cluster nodes to target version")
             cbas_cc_node_upgrade_sequence = self.input.param(
