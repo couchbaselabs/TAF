@@ -52,6 +52,7 @@ os.environ.copy()
 CTXDIR = os.path.dirname(os.path.abspath(__file__))
 NSDIR = "{0}{1}..{1}..{1}ns_server".format(CTXDIR, os.sep)
 
+
 class KeepRefs(object):
     __refs__ = defaultdict(list)
 
