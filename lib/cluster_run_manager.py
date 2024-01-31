@@ -64,6 +64,7 @@ class KeepRefs(object):
         for ins in cls.__refs__[cls]:
             yield ins
 
+
 class CRManager:
     """ cluster run management api """
 
