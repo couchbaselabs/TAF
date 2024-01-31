@@ -605,8 +605,9 @@ def main():
         create_log_file(log_config_filename, test_log_file, options.loglevel)
         logging.config.fileConfig(log_config_filename)
         print("Logs will be stored at %s" % logs_folder)
-        print("\nguides/gradlew --refresh-dependencies testrunner -P jython=/opt/jython/bin/jython -P 'args=-i {0} {1} -t {2}'\n"
-              .format(arg_i or "", arg_p or "", name))
+        print("\nguides/gradlew --refresh-dependencies testrunner "
+              "-P jython=/opt/jython/bin/jython -P 'args=-i {0} {1} -t {2}'\n"
+              .format(arg_i or "", ("-p " + arg_p if arg_p else ""), name))
         name = name.split(",")[0]
 
         # Update the test params for each test
