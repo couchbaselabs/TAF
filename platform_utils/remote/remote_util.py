@@ -12,6 +12,7 @@ from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
 from Cb_constants import CbServer, constants, ClusterRun
+from cluster_run_manager import KeepRefs
 from common_lib import sleep
 from global_vars import logger
 from platform_constants.os_constants import Linux, Mac, Windows
@@ -128,11 +129,12 @@ class RemoteMachineHelper(object):
             return None
 
 
-class RemoteMachineShellConnection:
+class RemoteMachineShellConnection(KeepRefs):
     connections = 0
     disconnections = 0
 
     def __init__(self, serverInfo):
+        super(RemoteMachineShellConnection, self).__init__()
         RemoteMachineShellConnection.connections += 1
         self.jsch = None
         self.session = None
@@ -194,7 +196,7 @@ class RemoteMachineShellConnection:
 
     def disconnect(self):
         # For cluster_run case
-        if not self.remote:
+        if not self.remote or not self.session.isConnected():
             return
 
         self.log.debug("Disconnecting ssh_client for {0}".format(self.ip))
