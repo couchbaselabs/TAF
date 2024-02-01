@@ -1403,7 +1403,7 @@ class RestConnection(newRC):
             self.test_log.info("Rebalance done. Taken %s seconds to complete"
                                % duration)
             # Sleep required for ns_server to be ready for further actions
-            sleep(10, "Wait after rebalance complete")
+            sleep(120, "Wait after rebalance complete")
             return True
 
     def _rebalance_progress_status(self, include_failover=True):

@@ -723,14 +723,14 @@ class Murphy(BaseTestCase, OPD):
                                                           graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
-                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+                self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
 
             # Rebalance out failed over node
             self.nodes = self.rest.node_statuses()
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[node.id for node in self.chosen])
-            self.assertTrue(self.rest.monitorRebalance(), msg="Rebalance failed")
+            self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Rebalance failed")
             servs_out = []
             for failed_over in self.chosen:
                 servs_out += [node for node in self.cluster.servers
@@ -764,9 +764,9 @@ class Murphy(BaseTestCase, OPD):
                                                                graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
-                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+                self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
-            self.rest.monitorRebalance()
+            self.rest.monitorRebalance(progress_count=50000)
 
             # Mark Node for full recovery
             if self.success_failed_over:
@@ -808,9 +808,9 @@ class Murphy(BaseTestCase, OPD):
                                                                graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
-                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+                self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
-            self.rest.monitorRebalance()
+            self.rest.monitorRebalance(progress_count=50000)
 
             # Mark Node for delta recovery
             if self.success_failed_over:
@@ -1176,13 +1176,13 @@ class Murphy(BaseTestCase, OPD):
                                                                graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
-                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+                self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
 
             self.nodes = self.rest.node_statuses()
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
                                 ejectedNodes=[node.id for node in self.chosen])
-            self.assertTrue(self.rest.monitorRebalance(), msg="Rebalance failed")
+            self.assertTrue(self.rest.monitorRebalance(progress_count=500000), msg="Rebalance failed")
             servs_out = []
             for failed_over in self.chosen:
                 servs_out += [node for node in self.cluster.servers
@@ -1274,9 +1274,9 @@ class Murphy(BaseTestCase, OPD):
                                                                graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
-                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+                self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
-            self.rest.monitorRebalance()
+            self.rest.monitorRebalance(progress_count=50000)
 
             # Mark Node for full recovery
             if self.success_failed_over:
@@ -1355,9 +1355,9 @@ class Murphy(BaseTestCase, OPD):
                                                                graceful=True)
                 self.success_failed_over = self.success_failed_over and success_failed_over
                 self.sleep(60, "Waiting for failover to finish and settle down cluster.")
-                self.assertTrue(self.rest.monitorRebalance(), msg="Failover -> Rebalance failed")
+                self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
             self.sleep(600, "Waiting for data to go in after failover.")
-            self.rest.monitorRebalance()
+            self.rest.monitorRebalance(progress_count=50000)
 
             # Mark Node for delta recovery
             if self.success_failed_over:
