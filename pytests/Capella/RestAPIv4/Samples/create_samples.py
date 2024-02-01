@@ -4,7 +4,6 @@ Created on December 19, 2023
 @author: Vipul Bhardwaj
 """
 
-import base64
 import time
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
@@ -166,7 +165,7 @@ class CreateSample(GetCluster):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id)
 
         failures = list()
         for testcase in testcases:
@@ -305,7 +304,7 @@ class CreateSample(GetCluster):
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+                      .format(len(failures), testcases))
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
