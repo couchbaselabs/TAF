@@ -113,13 +113,13 @@ class DeleteScope(GetBucket):
                 "description": "Delete scope but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 404,
+                "expected_status_code": 400,
                 "expected_error": {
-                    "code": 6008,
-                    "hint": "The requested bucket does not exist. Please "
-                            "ensure that the correct bucket ID is provided.",
-                    "httpStatusCode": 404,
-                    "message": "Unable to find the specified bucket."
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 400,
+                    "message": "BucketID is invalid."
                 }
             }, {
                 "description": "Delete scope but with invalid scopeName",
@@ -216,7 +216,7 @@ class DeleteScope(GetBucket):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id)
 
         failures = list()
         for testcase in testcases:

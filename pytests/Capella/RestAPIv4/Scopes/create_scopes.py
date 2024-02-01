@@ -104,13 +104,13 @@ class CreateScope(GetBucket):
                 "description": "Create scope but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 404,
+                "expected_status_code": 400,
                 "expected_error": {
-                    "code": 6008,
-                    "hint": "The requested bucket does not exist. Please "
-                            "ensure that the correct bucket ID is provided.",
-                    "httpStatusCode": 404,
-                    "message": "Unable to find the specified bucket."
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 400,
+                    "message": "BucketID is invalid."
                 }
             }
         ]
@@ -186,7 +186,7 @@ class CreateScope(GetBucket):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id)
 
         failures = list()
         for testcase in testcases:
@@ -402,35 +402,8 @@ class CreateScope(GetBucket):
                     failures.append(testcase["description"])
                 else:
                     self.scopes.append(testcase["name"])
-            elif res.status_code >= 500:
-                self.log.critical(testcase["description"])
-                self.log.warning(res.content)
-                failures.append(testcase["description"])
-                continue
-            elif res.status_code == testcase["expected_status_code"]:
-                try:
-                    res = res.json()
-                    for key in res:
-                        if res[key] != testcase["expected_error"][key]:
-                            self.log.error("Status != 201, Key validation "
-                                           "Failure : {}".format(
-                                            testcase["description"]))
-                            self.log.warning("Result : {}".format(res))
-                            failures.append(testcase["description"])
-                            break
-                except (Exception,):
-                    if str(testcase["expected_error"]) not in res.content:
-                        self.log.error("Response type not JSON, Failure : {}"
-                                       .format(testcase["description"]))
-                        self.log.warning(res.content)
-                        failures.append(testcase["description"])
             else:
-                self.log.error("Expected HTTP status code {}, Actual "
-                               "HTTP status code {}".format(
-                                testcase["expected_status_code"],
-                                res.status_code))
-                self.log.warning("Result : {}".format(res.content))
-                failures.append(testcase["description"])
+                self.validate_testcase(res, 201, testcase, failures)
 
         if failures:
             for fail in failures:
@@ -441,7 +414,7 @@ class CreateScope(GetBucket):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         """
-        Scope creation requests here have an empty  name on purpose.
+        Scope creation requests here have an empty name on purpose.
         And we want to see the erroneous response and handle it as a
         success to the API calls sent.
         """
@@ -495,7 +468,7 @@ class CreateScope(GetBucket):
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         """
-        Scope creation requests here have an empty  name on purpose.
+        Scope creation requests here have an empty name on purpose.
         And we want to see the erroneous response and handle it as a
         success to the API calls sent.
         """
