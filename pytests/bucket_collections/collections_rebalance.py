@@ -681,6 +681,7 @@ class CollectionsRebalance(CollectionBase):
                     wait_for_doc_load_complete()
                     tasks = (None, None)
                     self.data_load_after_failover()
+                    self.cluster_util.print_cluster_stats(self.cluster)
                     operation = self.task.async_rebalance(self.cluster, [], new_failover_nodes,
                                                           retry_get_process_num=self.retry_get_process_num)
                     self.execute_N1qltxn(new_failover_nodes[0])
