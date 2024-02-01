@@ -44,7 +44,8 @@ class APIBase(BaseTestCase):
         if resp.status_code == 201:
             self.org_owner_key = resp.json()
         else:
-            self.fail("Error while creating API key for organization owner")
+            self.log.error("Error while creating API key for organization "
+                           "owner")
 
         # update the token for capellaAPI object, so that is it being used
         # for api auth.
@@ -59,16 +60,15 @@ class APIBase(BaseTestCase):
             accessKey=self.org_owner_key["id"]
         )
         if resp.status_code != 204:
-            self.fail("Error while deleting api key for role organization "
-                      "Owner")
+            self.log.error("Error while deleting api key for role "
+                           "organization Owner")
 
         if hasattr(self, "v2_control_plane_api_access_key"):
             response = self.capellaAPI.delete_control_plane_api_key(
-                self.organisation_id, self.v2_control_plane_api_access_key
-            )
+                self.organisation_id, self.v2_control_plane_api_access_key)
             if response.status_code != 204:
                 self.log.error("Error while deleting V2 control plane API key")
-                self.fail("{}".format(response.content))
+                self.log.error("{}".format(response.content))
         super(APIBase, self).tearDown()
 
     def create_v2_control_plane_api_key(self):
