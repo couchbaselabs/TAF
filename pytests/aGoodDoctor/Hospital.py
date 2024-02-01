@@ -189,6 +189,7 @@ class Murphy(BaseTestCase, OPD):
 
         if self.index_nodes>0:
             self.indexer_mem_quota = self.input.param("indexer_mem_quota", None)
+            self.enableShardAffinity = self.input.param("enableShardAffinity", True)
             if self.indexer_mem_quota:
                 self.rest.set_service_mem_quota({CbServer.Settings.INDEX_MEM_QUOTA:
                                              int(self.indexer_mem_quota
@@ -204,8 +205,9 @@ class Murphy(BaseTestCase, OPD):
                                 services=["index,n1ql"]*self.index_nodes)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.index_nodes]
-            status = self.rest.set_indexer_params(redistributeIndexes='true')
-
+            status = self.rest.set_indexer_params(redistributeIndexes='true', enableShardAffinity='true') \
+            if self.enableShardAffinity else self.rest.set_indexer_params(redistributeIndexes='true')
+            self.sleep(10, "sleep  after setting indexer params")
         if self.fts_nodes>0:
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
                                              int(server.mcdMemoryReserved - 100
