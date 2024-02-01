@@ -4,8 +4,6 @@ Created on December 7, 2023
 @author: Vipul Bhardwaj
 """
 
-import base64
-import time
 from pytests.Capella.RestAPIv4.Scopes.get_scopes import GetScope
 
 
@@ -164,7 +162,7 @@ class CreateCollection(GetScope):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id)
 
         failures = list()
         for testcase in testcases:
@@ -418,35 +416,6 @@ class CreateCollection(GetScope):
                     self.collections.append(testcase["name"])
             else:
                 self.validate_testcase(res, 201, testcase, failures)
-            # elif res.status_code >= 500:
-            #     self.log.critical(testcase["description"])
-            #     self.log.warning(res.content)
-            #     failures.append(testcase["description"])
-            #     continue
-            # elif res.status_code == testcase["expected_status_code"]:
-            #     try:
-            #         res = res.json()
-            #         for key in res:
-            #             if res[key] != testcase["expected_error"][key]:
-            #                 self.log.error("Status != 201, Key validation "
-            #                                "Failure : {}".format(
-            #                                 testcase["description"]))
-            #                 self.log.warning("Result : {}".format(res))
-            #                 failures.append(testcase["description"])
-            #                 break
-            #     except (Exception,):
-            #         if str(testcase["expected_error"]) not in res.content:
-            #             self.log.error("Response type not JSON, Failure : {}"
-            #                            .format(testcase["description"]))
-            #             self.log.warning(res.content)
-            #             failures.append(testcase["description"])
-            # else:
-            #     self.log.error("Expected HTTP status code {}, Actual "
-            #                    "HTTP status code {}".format(
-            #                     testcase["expected_status_code"],
-            #                     res.status_code))
-            #     self.log.warning("Result : {}".format(res.content))
-            #     failures.append(testcase["description"])
 
             if len(self.collections) == 1000:
                 self.log.warning("Reached 1000 Collections, flushing all.")
@@ -467,10 +436,9 @@ class CreateCollection(GetScope):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         """
-        Collection creation requests here have a dummy name which on
-        purpose is made to start with '%' (because scope names Cannot
-        start with `_` or `%`). And we want to see the erroneous
-        response and handle it as a success to the API calls sent.
+        Collection creation requests here have an empty name on purpose.
+        And we want to see the erroneous response and handle it as a
+        success to the API calls sent.
         """
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.create_collection,
@@ -524,10 +492,9 @@ class CreateCollection(GetScope):
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         """
-        Scope creation requests here have a dummy name which on purpose
-        is made to start with '%' (because scope names Cannot start
-        with `_` or `%`). And we want to see the erroneous response and
-        handle it as a success to the API calls sent.
+        Collection creation requests here have an empty name on purpose.
+        And we want to see the erroneous response and handle it as a
+        success to the API calls sent.
         """
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.create_collection,

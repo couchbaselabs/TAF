@@ -557,6 +557,19 @@ class APIBase(BaseTestCase):
             self.log.warning("Result : {}".format(result.content))
             failures.append(testcase["description"])
 
+    def validate_cluster_schedule_api_response(self, actual_res, expected_res):
+        for key in actual_res:
+            if key not in expected_res:
+                return False
+            if isinstance(actual_res[key], list):
+                self.validate_cluster_schedule_api_response(actual_res[key][0])
+            elif isinstance(actual_res[key], dict):
+                self.validate_cluster_schedule_api_response(actual_res[key])
+            elif expected_res[key]:
+                if expected_res[key] != actual_res[key]:
+                    return True
+        return True
+
     def select_CIDR(self, org, proj, name, cp, cs, sg, av, sp,
                     header=None, **kwargs):
         self.log.info("Selecting CIDR for cluster deployment.")

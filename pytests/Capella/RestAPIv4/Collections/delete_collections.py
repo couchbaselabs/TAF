@@ -4,8 +4,6 @@ Created on December 29, 2023
 @author: Vipul Bhardwaj
 """
 
-import base64
-import time
 from pytests.Capella.RestAPIv4.Scopes.get_scopes import GetScope
 
 
@@ -35,7 +33,7 @@ class DeleteCollection(GetScope):
                 self.bucket_id, self.scope_name,
                 self.collection_name).status_code != 200:
             self.log.error("Error while deleting Collection: {}"
-                            .format(self.collection_name))
+                           .format(self.collection_name))
         else:
             self.log.info("Collection deletion successful.")
 
@@ -235,7 +233,7 @@ class DeleteCollection(GetScope):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id)
 
         failures = list()
         for testcase in testcases:
@@ -437,10 +435,9 @@ class DeleteCollection(GetScope):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         """
-        Collection creation requests here have a dummy name which on
-        purpose is made to start with '%' (because scope names Cannot
-        start with `_` or `%`). And we want to see the erroneous
-        response and handle it as a success to the API calls sent.
+        Collection deletion requests here have an empty name on purpose.
+        And we want to see the erroneous response and handle it as a
+        success to the API calls sent.
         """
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.delete_collection,
@@ -494,10 +491,9 @@ class DeleteCollection(GetScope):
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         """
-        Collection creation requests here have a dummy name which on
-        purpose is made to start with '%' (because scope names Cannot
-        start with `_` or `%`). And we want to see the erroneous
-        response and handle it as a success to the API calls sent.
+        Collection deletion requests here have an empty name on purpose.
+        And we want to see the erroneous response and handle it as a
+        success to the API calls sent.
         """
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.delete_collection,

@@ -4,8 +4,6 @@ Created on December 9, 2023
 @author: Vipul Bhardwaj
 """
 
-import base64
-import time
 from pytests.Capella.RestAPIv4.Scopes.get_scopes import GetScope
 
 
@@ -206,7 +204,7 @@ class ListCollection(GetScope):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id)
 
         failures = list()
         for testcase in testcases:
