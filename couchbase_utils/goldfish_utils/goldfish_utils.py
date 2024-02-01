@@ -7,7 +7,6 @@ import json
 import random
 import string
 import time
-from global_vars import logger
 from goldfishAPI.GoldfishAPIs.ServerlessAnalytics.ServerlessAnalytics import GoldfishAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from TestInput import TestInputServer
@@ -49,7 +48,7 @@ class Users:
         else:
             self.roles = ["organizationOwner"]
 
-        self.projects = None
+        self.project = None
 
 
 class Project:

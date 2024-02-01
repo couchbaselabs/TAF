@@ -1897,7 +1897,6 @@ class KafkaLink_Util(ExternalLink_Util):
         :param expected_error: str
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
-
         """
         if dataverse_name and dataverse_name != "Default" and not \
                 self.create_dataverse(
@@ -2014,8 +2013,8 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         Generates Kafka Link objects.
         """
-        count = 0
-        while count < no_of_objs:
+        links = list()
+        while len(links) < no_of_objs:
             if link_cardinality > 2:
                 if not database:
                     database_name = CBASHelper.format_name(self.generate_name(
@@ -2048,8 +2047,8 @@ class KafkaLink_Util(ExternalLink_Util):
                     fixed_length=fixed_length), dataverse_name=dataverse.name,
                 database_name=dataverse.database_name, db_type=db_type,
                 external_database_details=external_db_details)
-            dataverse.kafka_links[link.name] = link
-            count += 1
+            links.append(link)
+        return links
 
 
 class Dataset_Util(KafkaLink_Util):

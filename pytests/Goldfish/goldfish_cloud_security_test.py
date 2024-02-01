@@ -460,7 +460,7 @@ class SecurityTest(GoldFishBaseTest):
 
     def test_fetch_goldfish_instance_details_security(self):
 
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
         cluster_id = self.cluster.cluster_id
 
         headers = {
@@ -763,7 +763,7 @@ class SecurityTest(GoldFishBaseTest):
 
     def test_cluster_scaling(self):
 
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
         cluster_id = self.cluster.cluster_id
 
 
@@ -910,7 +910,7 @@ class SecurityTest(GoldFishBaseTest):
 
     def test_create_api_keys_security(self):
 
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
         cluster_id = self.cluster.cluster_id
         #create bucket and collections
         payload = self.get_api_key_payload()
@@ -1044,7 +1044,7 @@ class SecurityTest(GoldFishBaseTest):
 
     def goldfish_test_data_isolation(self):
 
-        self.cluster1 = self.list_all_clusters()[0]
+        self.cluster1 = self.user.project.clusters[0]
         cluster_username1, cluster_password1 = self.generate_database_credentials(self.cluster1)
         dataverse_name = "securityScope"
         collection_name = "securityColl"
@@ -1063,7 +1063,7 @@ class SecurityTest(GoldFishBaseTest):
         if not res:
             self.fail("Failed to create standalone collection")
 
-        self.cluster2 = self.list_all_clusters()[1]
+        self.cluster2 = self.user.project.clusters[1]
         cluster_username2, cluster_password2 = self.generate_database_credentials(self.cluster2)
         print("C2 name,  endpoint: {}, {}".format(self.cluster2.name, self.cluster2.endpoint))
 
@@ -1084,7 +1084,7 @@ class SecurityTest(GoldFishBaseTest):
 
         statement_to_execute = "Select 1;"
 
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
         cluster_username, cluster_password = self.generate_database_credentials(self.cluster)
 
         usernames = [cluster_username, "", "%!xyz", "Administrator"]
@@ -1113,7 +1113,7 @@ class SecurityTest(GoldFishBaseTest):
 
     def goldfish_nebula_test_open_ports(self):
 
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
         valid_ports = [self.CBAS_PORT, self.KV_PORT, self.SVC_MGR_PORT]
         invalid_ports = []
 
@@ -1135,7 +1135,7 @@ class SecurityTest(GoldFishBaseTest):
 
     def goldfish_security_test_invalid_endpoints(self):
 
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
 
         cluster_username, cluster_password = self.generate_database_credentials(self.cluster)
 

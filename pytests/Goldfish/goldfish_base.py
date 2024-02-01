@@ -31,7 +31,7 @@ class GoldFishBaseTest(BaseTestCase):
         self.sdk_clients_per_user = self.input.param("sdk_clients_per_user", 1)
 
         if self.use_sdk_for_cbas:
-            for cluster in self.list_all_clusters():
+            for cluster in self.user.project.clusters:
                 for db_user in cluster.db_users:
                     self.init_sdk_pool_object(
                         cluster, self.sdk_clients_per_user,

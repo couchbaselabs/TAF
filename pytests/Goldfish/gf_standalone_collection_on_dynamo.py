@@ -19,7 +19,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         super(StandaloneCollectionDynamo, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
 
         if not self.gf_spec_name:
             self.gf_spec_name = "sanity.standalone_collection_on_external_db"

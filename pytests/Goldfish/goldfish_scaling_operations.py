@@ -5,7 +5,7 @@ class GoldfishScalingOperations(GoldFishBaseTest):
 
     def setUp(self):
         super(GoldfishScalingOperations, self).setUp()
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
 
     def tearDown(self):
         super(GoldfishScalingOperations, self).tearDown()

@@ -47,7 +47,7 @@ from CbasLib.cbas_entity import ExternalDB
 from Goldfish.goldfish_base import GoldFishBaseTest
 from cbas_utils.cbas_utils import StandaloneCollectionLoader
 from cbas_utils.cbas_utils import CbasUtil, External_Dataset, Standalone_Dataset, Remote_Dataset
-from goldfish_utils.common_utils import GoldfishUtils
+from goldfish_utils.goldfish_utils import GoldfishUtils
 from goldfishAPI.GoldfishAPIs.DocloadingAPIs.DocloadingAPIs import DocloadingAPIs
 
 
@@ -58,7 +58,7 @@ class GoldfishE2E(GoldFishBaseTest):
 
         self.capella_provisioned_cluster_setup()
 
-        self.clusters = self.list_all_clusters()
+        self.clusters = self.user.project.clusters
         self.goldfish_utils = GoldfishUtils(self.log)
 
         if not self.gf_spec_name:
@@ -99,8 +99,8 @@ class GoldfishE2E(GoldFishBaseTest):
     def capella_provisioned_cluster_setup(self):
 
         self.pod.url_public = (self.pod.url_public).replace("https://api", "https://cloudapi")
-        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.super_user.email, self.super_user.password, '')
-        resp = (self.capellaAPI.create_control_plane_api_key(self.super_user.org_id, 'init api keys')).json()
+        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.user.email, self.user.password, '')
+        resp = (self.capellaAPI.create_control_plane_api_key(self.user.org_id, 'init api keys')).json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
         self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
         self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
@@ -111,7 +111,7 @@ class GoldfishE2E(GoldFishBaseTest):
         # create the first V4 API KEY WITH organizationOwner role, which will
         # be used to perform further operations on capella cluster
         resp = self.capellaAPI.org_ops_apis.create_api_key(
-            organizationId=self.super_user.org_id,
+            organizationId=self.user.org_id,
             name=self.cbas_util.generate_name(),
             organizationRoles=["organizationOwner"],
             description=self.cbas_util.generate_name())
@@ -172,7 +172,7 @@ class GoldfishE2E(GoldFishBaseTest):
         cluster_created = False
         while not cluster_created:
             resp = self.capellaAPI.cluster_ops_apis.create_cluster(
-                self.super_user.org_id, (self.super_user.projects[0]).project_id, cluster_name,
+                self.user.org_id, self.user.project.project_id, cluster_name,
                 self.expected_result['cloudProvider'],
                 self.expected_result['couchbaseServer'],
                 self.expected_result['serviceGroups'],
@@ -189,8 +189,8 @@ class GoldfishE2E(GoldFishBaseTest):
         wait_start_time = time.time()
         health_status = "deploying"
         while time.time() < wait_start_time + 1500:
-            resp = (self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.super_user.org_id,
-                                                                        (self.super_user.projects[0]).project_id,
+            resp = (self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.user.org_id,
+                                                                        self.user.project.project_id,
                                                                         self.cluster_id)).json()
             health_status = resp[
                 "currentState"]
@@ -206,8 +206,8 @@ class GoldfishE2E(GoldFishBaseTest):
             self.fail("Unable to deploy a provisioned cluster for remote links")
 
         # allow 0.0.0.0/0 to allow access from anywhere
-        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.super_user.org_id,
-                                                                               (self.super_user.projects[0]).project_id,
+        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.user.org_id,
+                                                                               self.user.projects.project_id,
                                                                                self.cluster_id, "0.0.0.0/0")
         if resp.status_code == 201:
             self.log.info("Added allowed IP 0.0.0.0/0")
@@ -223,8 +223,8 @@ class GoldfishE2E(GoldFishBaseTest):
 
         self.remote_cluster_username = "Administrator"
         self.remote_cluster_password = "Password#123"
-        resp = self.capellaAPI.cluster_ops_apis.create_database_user(self.super_user.org_id,
-                                                                     (self.super_user.projects[0]).project_id,
+        resp = self.capellaAPI.cluster_ops_apis.create_database_user(self.user.org_id,
+                                                                     self.user.project.project_id,
                                                                      self.cluster_id, "Administrator", access,
                                                                      "Password#123")
         if resp.status_code == 201:
@@ -237,8 +237,8 @@ class GoldfishE2E(GoldFishBaseTest):
         scope = None
         collection = None
 
-        resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.super_user.org_id,
-                                                              (self.super_user.projects[0]).project_id, self.cluster_id,
+        resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.user.org_id,
+                                                              self.user.project.project_id, self.cluster_id,
                                                               bucket_name, "couchbase", "couchstore", 2000, "seqno",
                                                               "majorityAndPersistActive", 0, True, 1000000)
         if resp.status_code == 201:
@@ -251,8 +251,8 @@ class GoldfishE2E(GoldFishBaseTest):
             self.remote_collection = "{}.{}.{}".format(bucket_name, scope, collection)
         else:
             self.remote_collection = "{}.{}.{}".format(bucket_name, "_default", "_default")
-        resp = self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.super_user.org_id,
-                                                                        (self.super_user.projects[0]).project_id,
+        resp = self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.user.org_id,
+                                                                        self.user.project.project_id,
                                                                         self.cluster_id)
         if resp.status_code == 200:
             self.remote_cluster_certificate = (resp.json())["certificate"]
@@ -597,9 +597,8 @@ class GoldfishE2E(GoldFishBaseTest):
         """
         item_count = cluster.cbas_util.get_num_items_in_cbas_dataset(cluster, dataset.full_name,
                                                                      timeout=3600, analytics_timeout=3600)
-        resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.super_user.org_id,
-                                                                  (self.super_user.projects[
-                                                                      0]).project_id,
+        resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.user.org_id,
+                                                                  self.user.project.project_id,
                                                                   self.cluster_id,
                                                                   self.bucket_id)
         if resp.status_code == 200:
@@ -816,9 +815,8 @@ class GoldfishE2E(GoldFishBaseTest):
             scope = collection.split(".")[1]
             collection = collection.split(".")[2]
             url = self.input.param("sirius_url", None)
-            resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.super_user.org_id,
-                                                                      (self.super_user.projects[
-                                                                          0]).project_id,
+            resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.user.org_id,
+                                                                      self.user.project.project_id,
                                                                       self.cluster_id,
                                                                       self.bucket_id)
             if resp.status_code == 200:
@@ -924,9 +922,8 @@ class GoldfishE2E(GoldFishBaseTest):
                     rds_collections.remove(collection)
 
             for collection in remote_collection:
-                resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.super_user.org_id,
-                                                                          (self.super_user.projects[
-                                                                              0]).project_id,
+                resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.user.org_id,
+                                                                          self.user.project.project_id,
                                                                           self.cluster_id,
                                                                           self.bucket_id)
                 if resp.status_code == 200 and (resp.json())["stats"]["itemCount"] == no_of_docs:
