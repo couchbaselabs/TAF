@@ -2269,6 +2269,11 @@ class BucketUtils(ScopeUtils):
         helper = BucketHelper(cluster.master)
         self.log.debug("Updating server_list for bucket :: %s"
                        % bucket_obj.name)
+        if bucket_obj.bucketType == Bucket.Type.MEMCACHED:
+            self.log.critical("Since the vBucketServerMap does not exist for memcached buckets, "
+                              "populating the bucket servers with kv_nodes in cluster")
+            bucket_obj.servers = cluster.kv_nodes
+            retry = 0
         while retry > 0:
             # Reset the known servers list
             bucket_obj.servers = list()
