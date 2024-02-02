@@ -21,7 +21,7 @@ from com.couchbase.test.docgen import WorkLoadSettings,\
 from com.couchbase.test.loadgen import WorkLoadGenerate
 from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
-from couchbase.test.docgen import DRConstants
+from com.couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
