@@ -3439,6 +3439,8 @@ class BucketUtils(ScopeUtils):
         for node in kv_nodes:
             cbstat = Cbstats(node)
             for bucket in buckets:
+                if bucket.bucketType == Bucket.Type.MEMCACHED:
+                    continue
                 val = cbstat.all_stats(bucket.name)["ep_dcp_oso_backfill"]
                 if val != expected_val:
                     result = False
