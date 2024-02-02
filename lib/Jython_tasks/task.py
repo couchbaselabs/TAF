@@ -266,42 +266,44 @@ class DeployCloud(Task):
 
 
 class UpgradeProvisionedCluster(Task):
-    def __init__(self, cluster, params=dict(), timeout=1200, poll_interval=60):
+    def __init__(self, pod, tenant, cluster, params=dict(), timeout=1200, poll_interval=60):
         Task.__init__(self, "upgrade_task_{}".format(str(time.time())))
+        self.pod = pod
         self.cluster = cluster
+        self.tenant = tenant
         self.params = params
         self.timeout = timeout
         self.servers = None
         self.test_log.critical("upgrade_params: %s" % params)
         self.poll_interval = poll_interval
         self.state = "healthy"
-        DedicatedUtils.upgrade(self.cluster, self.params)
+        DedicatedUtils.upgrade(pod, tenant, cluster, self.params)
 
         count = 120
         self.state = DedicatedUtils.get_cluster_state(
-                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                    self.pod, self.tenant, self.cluster.id)
         while self.state == "healthy" and count > 0:
             self.state = DedicatedUtils.get_cluster_state(
-                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                    self.pod, self.tenant, self.cluster.id)
             self.sleep(5, "Wait until CP trigger the upgrade job and change status")
             self.log.info("Current: {}, Expected: {}".format(self.state, "upgrading"))
             count -= 1
 
     def call(self):
-        capella_api = decicatedCapellaAPI(self.cluster.pod.url_public,
-                                          self.cluster.tenant.api_secret_key,
-                                          self.cluster.tenant.api_access_key,
-                                          self.cluster.tenant.user,
-                                          self.cluster.tenant.pwd)
+        capella_api = decicatedCapellaAPI(self.pod.url_public,
+                                          self.tenant.api_secret_key,
+                                          self.tenant.api_access_key,
+                                          self.tenant.user,
+                                          self.tenant.pwd)
         end = time.time() + self.timeout
         while end > time.time():
             try:
                 content = DedicatedUtils.jobs(capella_api,
-                                              self.cluster.pod,
-                                              self.cluster.tenant,
+                                              self.pod,
+                                              self.tenant,
                                               self.cluster.id)
                 self.state = DedicatedUtils.get_cluster_state(
-                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                    self.pod, self.tenant, self.cluster.id)
                 if self.state in ["deployment_failed",
                                   "deploymentFailed",
                                   "redeploymentFailed",
@@ -328,7 +330,7 @@ class UpgradeProvisionedCluster(Task):
                 self.result = False
                 return self.result
         self.servers = DedicatedUtils.get_nodes(
-            self.cluster.pod, self.cluster.tenant, self.cluster.id)
+            self.pod, self.tenant, self.cluster.id)
         nodes = list()
         for server in self.servers:
             temp_server = TestInputServer()
@@ -348,8 +350,10 @@ class UpgradeProvisionedCluster(Task):
 
 
 class RebalanceTaskCapella(Task):
-    def __init__(self, cluster, scale_params=list(), timeout=1200, poll_interval=60):
+    def __init__(self, pod, tenant, cluster, scale_params=list(), timeout=1200, poll_interval=60):
         Task.__init__(self, "Scaling_task_{}".format(str(time.time())))
+        self.pod = pod
+        self.tenant = tenant
         self.cluster = cluster
         self.scale_params = {"specs": scale_params}
         self.timeout = timeout
@@ -357,31 +361,31 @@ class RebalanceTaskCapella(Task):
         self.test_log.critical("Scale_params: %s" % scale_params)
         self.poll_interval = poll_interval
         self.state = "healthy"
-        DedicatedUtils.scale(self.cluster, self.scale_params, self.timeout)
+        DedicatedUtils.scale(self.pod, self.tenant, self.cluster, self.scale_params, self.timeout)
         count = 120
         while self.state == "healthy" and count > 0:
             self.state = DedicatedUtils.get_cluster_state(
-                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                    self.pod, self.tenant, self.cluster.id)
             self.sleep(5, "Wait until CP trigger the scaling job and change status")
             self.log.info("Current: {}, Expected: {}".format(self.state, "scaling"))
             count -= 1
 
     def call(self):
         self.cluster.cluster_config["specs"] = self.scale_params["specs"]
-        capella_api = decicatedCapellaAPI(self.cluster.pod.url_public,
-                                          self.cluster.tenant.api_secret_key,
-                                          self.cluster.tenant.api_access_key,
-                                          self.cluster.tenant.user,
-                                          self.cluster.tenant.pwd)
+        capella_api = decicatedCapellaAPI(self.pod.url_public,
+                                          self.tenant.api_secret_key,
+                                          self.tenant.api_access_key,
+                                          self.tenant.user,
+                                          self.tenant.pwd)
         end = time.time() + self.timeout
         while end > time.time():
             try:
                 content = DedicatedUtils.jobs(capella_api,
-                                              self.cluster.pod,
-                                              self.cluster.tenant,
+                                              self.pod,
+                                              self.tenant,
                                               self.cluster.id)
                 self.state = DedicatedUtils.get_cluster_state(
-                    self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                    self.pod, self.tenant, self.cluster.id)
                 if self.state in ["deployment_failed",
                                   "deploymentFailed",
                                   "redeploymentFailed",
@@ -411,7 +415,7 @@ class RebalanceTaskCapella(Task):
         count = 5
         while count > 0:
             self.servers = DedicatedUtils.get_nodes(
-                self.cluster.pod, self.cluster.tenant, self.cluster.id)
+                self.pod, self.tenant, self.cluster.id)
             count -= 1
             if self.servers:
                 break

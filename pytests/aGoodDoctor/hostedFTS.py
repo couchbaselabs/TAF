@@ -24,6 +24,7 @@ from com.couchbase.client.java.search import SearchQuery
 from global_vars import logger
 from java.net import SocketTimeoutException
 from elasticsearch import EsClient
+from com.couchbase.test.val import Vector
 try:
     from vectorSearch.vectorFTS import predictor, vector
 except:
@@ -65,19 +66,18 @@ vectorIndex = {
 
 class DoctorFTS:
 
-    def __init__(self, cluster, bucket_util):
-        self.cluster = cluster
+    def __init__(self, bucket_util):
         self.bucket_util = bucket_util
         self.input = TestInputSingleton.input
         self.fts_index_partitions = self.input.param("fts_index_partition", 8)
         self.log = logger.get("test")
-        self.fts_helper = FtsHelper(self.cluster.fts_nodes[0])
         self.indexes = dict()
         self.stop_run = False
 
-    def create_fts_indexes(self, buckets):
+    def create_fts_indexes(self, cluster, dims=1536, similarity="l2_norm"):
         status = False
-        for b in buckets:
+        fts_helper = FtsHelper(cluster.fts_nodes[0])
+        for b in cluster.buckets:
             b.ftsIndexes = dict()
             b.FTSqueries = ftsQueries
             b.ftsIndexes
@@ -95,6 +95,8 @@ class DoctorFTS:
                     indexType = ftsIndex
                     if valType == "Vector":
                         indexType = vectorIndex
+                        indexType["properties"]["embedding"]["fields"][0].update({"dims": dims,
+                                                                                "similarity": similarity})
                     if valType == "Hotel":
                         queryTypes = HotelQueries
                         indexType = HotelIndex
@@ -117,7 +119,7 @@ class DoctorFTS:
                         self.log.debug("Creating fts index: {}".format(name))
                         retry = 10
                         while retry > 0:
-                            status, content = self.fts_helper.create_fts_index_from_json(
+                            status, content = fts_helper.create_fts_index_from_json(
                                 name, str(fts_param_template))
                             if content.find(" an index with the same name already exists") != -1:
                                 status = True
@@ -134,14 +136,15 @@ class DoctorFTS:
     def discharge_FTS(self):
         self.stop_run = True
 
-    def wait_for_fts_index_online(self, buckets, timeout=86400):
+    def wait_for_fts_index_online(self, cluster, timeout=86400):
+        fts_helper = FtsHelper(cluster.fts_nodes[0])
         status = False
-        for bucket in buckets:
+        for bucket in cluster.buckets:
             for index_name, _ in bucket.ftsIndexes.items():
                 status = False
                 stop_time = time.time() + timeout
                 while time.time() < stop_time:
-                    _status, content = self.fts_helper.fts_index_item_count(
+                    _status, content = fts_helper.fts_index_item_count(
                         "%s" % (index_name))
                     self.log.debug("index: {}, status: {}, count: {}, expected: {}"
                                    .format(index_name, _status,
@@ -155,18 +158,19 @@ class DoctorFTS:
                     return status
         return status
 
-    def drop_fts_indexes(self, idx_name):
+    def drop_fts_indexes(self, cluster, idx_name):
         """
         Drop count number of fts indexes using fts name
         from fts_dict
         """
+        fts_helper = FtsHelper(cluster.fts_nodes[0])
         self.log.debug("Dropping fts index: {}".format(idx_name))
-        status, _ = self.fts_helper.delete_fts_index(idx_name)
+        status, _ = fts_helper.delete_fts_index(idx_name)
         return status
 
 
 class FTSQueryLoad:
-    def __init__(self, bucket, cluster, esClient=None):
+    def __init__(self, cluster, bucket, esClient=None, mockVector=None, dim=None):
         self.bucket = bucket
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
@@ -183,6 +187,8 @@ class FTSQueryLoad:
         self.fts_node = random.choice(self.cluster.fts_nodes)
         self.fts_helper = FtsHelper(self.fts_node)
         self.esClient = esClient
+        self.mockVector = mockVector
+        self.dim = dim
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -226,10 +232,17 @@ class FTSQueryLoad:
                                  [vector.colors, vector.clothingType],
                                  [vector.clothingType, vector.fashionBrands]))
             text = ""
-            for option in text_options:
-                text += random.choice(option) + " "
-            text_vector = predictor.predict(text)
-            embedding = text_vector.tolist()
+            flt_buf = Vector.flt_buf
+            text = ""
+            vector_float = []
+            if self.mockVector:
+                _slice = random.randint(0, Vector.flt_buf_length-self.dim)
+                embedding = flt_buf[_slice: _slice+self.dim]
+            else:
+                for option in text_options:
+                    text += random.choice(option) + " "
+                text_vector = predictor.predict(text)
+                embedding = text_vector.tolist()
             vector_float = []
             for value in embedding:
                 vector_float.append(float(value))

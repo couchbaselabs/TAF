@@ -19,24 +19,24 @@ from security_config import trust_all_certs
 from Jython_tasks.task import DeployCloud
 import uuid
 from table_view import TableView
+import random
+import string
 
 
-class OnCloudBaseTest(CouchbaseBaseTest):
+class CapellaBaseTest(CouchbaseBaseTest):
     def setUp(self):
-        super(OnCloudBaseTest, self).setUp()
+        super(CapellaBaseTest, self).setUp()
 
         # Cluster level info settings
-        self.servers = list()
         self.capella = self.input.capella
+        self.num_tenants = self.input.param("num_tenants", 1)
+        self.num_projects = self.input.param("num_projects", 2)
+        self.invite_people = self.input.param("invite_people", 2)
         self.num_clusters = self.input.param("num_clusters", 1)
 
-        # End of bucket parameters
-
-        # Doc Loader Params (Extension from cb_basetest)
-        self.delete_docs_at_end = self.input.param(
-            "delete_doc_at_end", True)
-        # End of client specific parameters
-
+        self.pod_table = TableView(self.log.info)
+        self.pod_table.set_headers(["Tenant", "Creds", "Cluster"])
+        
         self.wait_timeout = self.input.param("wait_timeout", 120)
         self.use_https = self.input.param("use_https", True)
         self.enforce_tls = self.input.param("enforce_tls", True)
@@ -102,29 +102,51 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         url = self.input.capella.get("pod")
         self.pod = Pod("https://%s" % url,
                        self.input.capella.get("override_token",
+                                              None),
+                       self.input.capella.get("signup_token",
                                               None))
-        self.xdcr_cluster = None
-        self.tenant = Tenant(self.input.capella.get("tenant_id"),
-                             self.input.capella.get("capella_user"),
-                             self.input.capella.get("capella_pwd"),
-                             self.input.capella.get("secret_key"),
-                             self.input.capella.get("access_key"))
+        self.tenants = list()
+        if self.input.capella.get("tenant_id"):
+            tenant = Tenant(self.input.capella.get("tenant_id"),
+                            self.input.capella.get("capella_user"),
+                            self.input.capella.get("capella_pwd"),
+                            self.input.capella.get("secret_key"),
+                            self.input.capella.get("access_key"))
+            tenant.name = self.input.capella.get("capella_user").split("@")[0]
+            if not (self.input.capella.get("access_key") and\
+                self.input.capella.get("secret_key")):
+                self.log.info("Creating API keys for tenant...")
+                resp = CapellaUtils.create_access_secret_key(self.pod, tenant, tenant.name)
+                tenant.api_secret_key = resp["secret"]
+                tenant.api_access_key = resp["access"]
+            self.tenants.append(tenant)
+            if TestInputSingleton.input.capella.get("project", None):
+                tenant.projects.append(TestInputSingleton.input.capella.get("project"))
+            else:
+                for i in range(self.num_projects):
+                    CapellaUtils.create_project(self.pod, tenant, tenant.name + "_{}".format(i))
+                    self.sleep(1)
+        else:
+            email = self.input.param("tenant_user",
+                                     ''.join([random.choice(string.ascii_uppercase + string.ascii_lowercase) for _ in range(10)])+"@couchbase.com")
+            self.tenants = self.pod.create_tenants(self.num_tenants, email=email)
+            for tenant in self.tenants:
+                self.log.info("Creating API keys for tenant...")
+                for i in range(1):
+                    resp = CapellaUtils.create_access_secret_key(self.pod, tenant, tenant.name + str(i))
+                    tenant.api_secret_key = resp["secret"]
+                    tenant.api_access_key = resp["access"]
+                for i in range(self.num_projects):
+                    CapellaUtils.create_project(self.pod, tenant, tenant.name + "_{}".format(i))
+                    self.sleep(1)
+                CapellaUtils.invite_users(self.pod, tenant, self.invite_people)
+            self.sleep(600)
+        tenant.project_id = tenant.projects[0]
 
-        '''
-        Be careful while using this flag.
-        This is only and only for stand-alone tests.
-        During bugs reproductions, when a crash is seen
-        stop_server_on_crash will stop the server
-        so that we can collect data/logs/dumps at the right time
-        '''
-        self.stop_server_on_crash = self.input.param("stop_server_on_crash",
-                                                     False)
-        self.collect_data = self.input.param("collect_data", False)
-        self.validate_system_event_logs = \
-            self.input.param("validate_sys_event_logs", False)
+class ProvisionedBaseTestCase(CapellaBaseTest):
+    def setUp(self):
+        CapellaBaseTest.setUp(self)
 
-        self.nonroot = False
-        self.crash_warning = self.input.param("crash_warning", False)
         self.rest_username = \
             TestInputSingleton.input.membase_settings.rest_username
         self.rest_password = \
@@ -133,17 +155,12 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         self.log_setup_status(self.__class__.__name__, "started")
         self.cluster_name_format = "C%s"
         self.xdcr_cluster_name_format = "XDCR%s"
-        default_cluster_index = cluster_index = 1
+        cluster_index = 1
 
         if self.input.capella.get("image"):
             self.generate_cluster_config_internal()
         else:
             self.generate_cluster_config()
-
-        self.tenant.project_id = \
-            TestInputSingleton.input.capella.get("project", None)
-        if not self.tenant.project_id:
-            CapellaUtils.create_project(self.pod, self.tenant, "a_taf_run")
 
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
         cluster_ids = TestInputSingleton.input.capella \
@@ -151,66 +168,74 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         try:
             if cluster_ids:
                 cluster_ids = cluster_ids.split(",")
-                self.__get_existing_cluster_details(cluster_ids)
+                self.__get_existing_cluster_details(self.tenants, cluster_ids)
             else:
                 tasks = list()
-                for _ in range(self.num_clusters):
-                    cluster_name = self.cluster_name_format % cluster_index
-                    name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
-                    self.capella_cluster_config[name] = \
-                        "%s_%s_%s" % (
-                            self.tenant.user.split("@")[0].replace(".", "").replace("+", ""),
-                            self.input.param("provider", "aws"),
-                            cluster_name)
-                    deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
-                                              self.capella_cluster_config,
-                                              timeout=self.wait_timeout)
-                    self.task_manager.add_new_task(deploy_task)
-                    tasks.append(deploy_task)
-                    cluster_index += 1
-                default_xdcr_cluster_index, xdcr_cluster_index = 1, 1
-                for _ in range(self.xdcr_remote_clusters):
-                    self.log.info("Will create the clusters required for XDCR replication.")
-                    cluster_name = self.xdcr_cluster_name_format % xdcr_cluster_index
-                    capella_config = copy.deepcopy(self.capella_cluster_config)
-                    capella_config['name'] = \
-                        "%s_%s_%s" % (
-                            self.tenant.user.split("@")[0].replace(".", "").replace("+", ""),
-                            self.input.param("provider", "aws"),
-                            cluster_name)
-                    self.log.info(capella_config)
-                    deploy_task = DeployCloud(self.pod, self.tenant, cluster_name,
-                                              capella_config,
-                                              timeout=self.wait_timeout)
-                    self.task_manager.add_new_task(deploy_task)
-                    tasks.append(deploy_task)
-                    xdcr_cluster_index += 1
+                for tenant in self.tenants:
+                    for _ in range(self.num_clusters):
+                        cluster_name = self.cluster_name_format % cluster_index
+                        name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
+                        self.capella_cluster_config[name] = \
+                            "%s_%s_%s" % (
+                                tenant.user.split("@")[0].replace(".", "").replace("+", ""),
+                                self.input.param("provider", "aws"),
+                                cluster_name)
+                        deploy_task = DeployCloud(self.pod, tenant, self.capella_cluster_config[name],
+                                                  self.capella_cluster_config,
+                                                  timeout=self.wait_timeout)
+                        self.task_manager.add_new_task(deploy_task)
+                        tasks.append(deploy_task)
+                        cluster_index += 1
+                        self.sleep(5)
+                    for xdcr_cluster_index in range(self.xdcr_remote_clusters):
+                        self.log.info("Will create the clusters required for XDCR replication.")
+                        cluster_name = self.xdcr_cluster_name_format % xdcr_cluster_index
+                        capella_config = copy.deepcopy(self.capella_cluster_config)
+                        capella_config['name'] = \
+                            "%s_%s_%s" % (
+                                tenant.user.split("@")[0].replace(".", "").replace("+", ""),
+                                self.input.param("provider", "aws"),
+                                cluster_name)
+                        self.log.info(capella_config)
+                        deploy_task = DeployCloud(self.pod, tenant, capella_config['name'],
+                                                  capella_config,
+                                                  timeout=self.wait_timeout)
+                        self.task_manager.add_new_task(deploy_task)
+                        tasks.append(deploy_task)
+                        self.sleep(5)
                 self.generate_cluster_config()
                 for task in tasks:
                     self.task_manager.get_task_result(task)
                     self.assertTrue(task.result, "Cluster deployment failed!")
                     CapellaUtils.create_db_user(
-                        self.pod, self.tenant, task.cluster_id,
+                        self.pod, task.tenant, task.cluster_id,
                         self.rest_username, self.rest_password)
-                    self.__populate_cluster_info(task.cluster_id, task.servers,
+                    self.__populate_cluster_info(task.tenant, task.cluster_id, task.servers,
                                                  task.srv, task.name,
                                                  self.capella_cluster_config)
+            for tenant in self.tenants:
+                for i in range(self.xdcr_remote_clusters):
+                    name = "%s_%s_%s" % (
+                                tenant.user.split("@")[0].replace(".", "").replace("+", ""),
+                                self.input.param("provider", "aws"),
+                                self.xdcr_cluster_name_format % i)
+                    xdcr = self.cb_clusters[name]
+                    tenant.xdcr_clusters.append(xdcr)
+                    tenant.clusters.remove(xdcr)
 
-            # Initialize self.cluster with first available cluster as default
-            if self.cb_clusters:
-                self.cluster = self.cb_clusters[self.cluster_name_format
-                                                % default_cluster_index]
-                self.cluster.edition = "enterprise"
-                self.servers = self.cluster.servers
-
-            if self.xdcr_remote_clusters > 0:
-                self.xdcr_cluster = self.cb_clusters[self.xdcr_cluster_name_format
-                                                     % default_xdcr_cluster_index]
             self.cluster_util = ClusterUtils(self.task_manager)
             self.bucket_util = BucketUtils(self.cluster_util, self.task)
+
             for _, cluster in self.cb_clusters.items():
                 self.cluster_util.print_cluster_stats(cluster)
-
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    cluster.sdk_client_pool = \
+                    self.bucket_util.initialize_java_sdk_client_pool()
+                    self.pod_table.add_row([tenant.id,
+                                            tenant.user + " / " + tenant.pwd,
+                                            cluster.id])
+            self.pod_table.display("POD: %s" % self.pod.url_public)
             self.sleep(10)
         except Exception as e:
             self.log.critical(e)
@@ -219,50 +244,57 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
     def tearDown(self):
         if self.is_test_failed() and self.get_cbcollect_info:
-            for _, cluster in self.cb_clusters.items():
-                CapellaUtils.trigger_log_collection(self.pod, self.tenant, cluster.id)
-            for _, cluster in self.cb_clusters.items():
-                table = TableView(self.log.info)
-                table.add_row(["URL"])
-                task = CapellaUtils.check_logs_collect_status(self.pod, self.tenant, cluster.id)
-                for _, logInfo in sorted(task["perNode"].items()):
-                    table.add_row([logInfo["url"]])
-                table.display("Cluster: {}".format(cluster.id))
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    CapellaUtils.trigger_log_collection(self.pod, tenant, cluster.id)
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    table = TableView(self.log.info)
+                    table.add_row(["URL"])
+                    task = CapellaUtils.check_logs_collect_status(self.pod, tenant, cluster.id)
+                    for _, logInfo in sorted(task["perNode"].items()):
+                        table.add_row([logInfo["url"]])
+                    table.display("Cluster: {}".format(cluster.id))
 
         self.shutdown_task_manager()
-        if self.cluster.sdk_client_pool:
-            self.cluster.sdk_client_pool.shutdown()
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                if cluster.sdk_client_pool:
+                    cluster.sdk_client_pool.shutdown()
 
         if self.skip_teardown_cleanup:
             return
 
         if not TestInputSingleton.input.capella.get("clusters", None):
-            for name, cluster in self.cb_clusters.items():
-                self.log.info("Destroying cluster: {}".format(name))
-                CapellaUtils.destroy_cluster(cluster)
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    self.log.info("Destroying cluster: {}".format(cluster.id))
+                    CapellaUtils.destroy_cluster(self.pod, tenant, cluster)
         if not TestInputSingleton.input.capella.get("project", None):
-            CapellaUtils.delete_project(self.pod, self.tenant)
+            for tenant in self.tenants:
+                for project_id in tenant.projects:
+                    CapellaUtils.delete_project(self.pod, tenant, project_id)
 
-    def __get_existing_cluster_details(self, cluster_ids):
+    def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1
-        for cluster_id in cluster_ids:
+        for i, cluster_id in enumerate(cluster_ids):
             cluster_name = self.cluster_name_format % cluster_index
             self.log.info("Fetching cluster details for: %s" % cluster_id)
             # CapellaUtils.wait_until_done(self.pod, self.tenant, cluster_id,
             #                              "Cluster not healthy")
-            cluster_info = CapellaUtils.get_cluster_info(self.pod, self.tenant,
+            cluster_info = CapellaUtils.get_cluster_info(self.pod, tenants[i],
                                                          cluster_id)
             cluster_srv = cluster_info.get("endpointsSrv")
-            CapellaUtils.allow_my_ip(self.pod, self.tenant, cluster_id)
+            CapellaUtils.allow_my_ip(self.pod, tenants[i], cluster_id)
             CapellaUtils.create_db_user(
-                    self.pod, self.tenant, cluster_id,
+                    self.pod, tenants[i], cluster_id,
                     self.rest_username, self.rest_password)
-            servers = CapellaUtils.get_nodes(self.pod, self.tenant, cluster_id)
-            self.__populate_cluster_info(cluster_id, servers, cluster_srv,
+            servers = CapellaUtils.get_nodes(self.pod, tenants[i], cluster_id)
+            self.__populate_cluster_info(tenants[i], cluster_id, servers, cluster_srv,
                                          cluster_name, cluster_info)
-            self.__populate_cluster_buckets(self.cb_clusters[cluster_name])
+            self.__populate_cluster_buckets(tenants[i], self.cb_clusters[cluster_name])
 
-    def __populate_cluster_info(self, cluster_id, servers, cluster_srv,
+    def __populate_cluster_info(self, tenant, cluster_id, servers, cluster_srv,
                                 cluster_name, service_config):
         nodes = list()
         for server in servers:
@@ -283,7 +315,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         cluster.srv = cluster_srv
         cluster.cluster_config = service_config
         cluster.pod = self.pod
-        cluster.tenant = self.tenant
         cluster.type = "dedicated"
 
         for temp_server in nodes:
@@ -302,12 +333,12 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 cluster.fts_nodes.append(temp_server)
 
         cluster.master = cluster.kv_nodes[0]
-        self.tenant.clusters.update({cluster.id: cluster})
+        tenant.clusters.append(cluster)
         self.cb_clusters[cluster_name] = cluster
 
-    def __populate_cluster_buckets(self, cluster):
+    def __populate_cluster_buckets(self, tenant, cluster):
         self.log.debug("Fetching bucket details from cluster %s" % cluster.id)
-        buckets = json.loads(CapellaUtils.get_all_buckets(cluster)
+        buckets = json.loads(CapellaUtils.get_all_buckets(self.pod, tenant, cluster)
                              .content)["buckets"]["data"]
         for bucket in buckets:
             bucket = bucket["data"]
@@ -427,7 +458,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 self.capella_cluster_config["overRide"]["releaseId"] = release_id
 
 
-class ClusterSetup(OnCloudBaseTest):
+class ClusterSetup(ProvisionedBaseTestCase):
     def setUp(self):
         super(ClusterSetup, self).setUp()
 

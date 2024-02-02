@@ -4,6 +4,7 @@ import json
 from constants.cloud_constants.capella_constants import AWS, Cluster
 from global_vars import logger
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
+from capella_utils.common_utils import User
 
 
 class CapellaUtils(object):
@@ -66,18 +67,39 @@ class CapellaUtils(object):
             raise Exception("Creating capella_utils project failed: {}".
                             format(resp.content))
         project_id = json.loads(resp.content).get("id")
-        tenant.project_id = project_id
-        CapellaUtils.log.info("Project ID: {}".format(project_id))
+        tenant.projects.append(project_id)
+        CapellaUtils.log.info("Project {} is created. PID: {}".format(name, project_id))
 
     @staticmethod
-    def delete_project(pod, tenant):
+    def delete_project(pod, tenant, project_id):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        capella_api.delete_project(tenant.id, tenant.project_id)
-        CapellaUtils.log.info("Project Deleted: {}".format(tenant.project_id))
+        capella_api.delete_project(tenant.id, project_id)
+        CapellaUtils.log.info("Project Deleted: {}".format(project_id))
+
+    @staticmethod
+    def invite_users(pod, tenant, num):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        for i in range(num):
+            i = str(i)
+            prefix, suffix = tenant.user.split("@")
+            user = prefix+"-" +i+"@"+suffix
+            resp = capella_api.create_user(tenant.id,
+                                           prefix+"-" +i,
+                                           user,
+                                           tenant.pwd)
+            tenant.users.append(User(user, tenant.pwd))
+            if resp.status_code != 200:
+                raise Exception("User invitations failed: {}".
+                                format(resp.content))
+            CapellaUtils.log.info("Tenant: {}, User Invited: {}/{}".format(tenant.id, user, tenant.pwd))
 
     @staticmethod
     def get_next_cidr():
@@ -113,7 +135,7 @@ class CapellaUtils(object):
                                      tenant.user,
                                      tenant.pwd)
             cluster_details.update({"cidr": subnet})
-            cluster_details.update({"projectId": tenant.project_id})
+            cluster_details.update({"projectId": tenant.projects[0]})
             CapellaUtils.log.info(cluster_details)
             if cluster_details.get("overRide"):
                 capella_api_resp = capella_api.create_cluster_customAMI(tenant.id, cluster_details)
@@ -178,61 +200,61 @@ class CapellaUtils(object):
                 time.sleep(10)
 
     @staticmethod
-    def destroy_cluster(cluster):
-        capella_api = CapellaAPI(cluster.pod.url_public,
-                                 cluster.tenant.api_secret_key,
-                                 cluster.tenant.api_access_key,
-                                 cluster.tenant.user,
-                                 cluster.tenant.pwd)
+    def destroy_cluster(pod, tenant, cluster):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
         resp = capella_api.delete_cluster(cluster.id)
         if resp.status_code != 202:
             raise Exception("Deleting Capella Cluster Failed.")
 
         time.sleep(10)
         while True:
-            resp = capella_api.get_cluster_internal(cluster.tenant.id,
-                                                    cluster.tenant.project_id,
+            resp = capella_api.get_cluster_internal(tenant.id,
+                                                    tenant.projects[0],
                                                     cluster.id)
             content = json.loads(resp.content)
             if content.get("data"):
                 CapellaUtils.log.info(
                     "Cluster status %s: %s"
-                    % (cluster.cluster_config.get("name"),
+                    % (cluster.id,
                        content.get("data").get("status").get("state")))
                 if content.get("data").get("status").get("state") == "destroying":
                     time.sleep(5)
                     continue
             elif content.get("message") == 'Not Found.':
                 CapellaUtils.log.info("Cluster is destroyed.")
-                cluster.tenant.clusters.pop(cluster.id)
+                tenant.clusters.remove(cluster)
                 break
 
     @staticmethod
-    def get_all_buckets(cluster):
-        capella_api = CapellaAPI(cluster.pod.url_public,
-                                 cluster.tenant.api_secret_key,
-                                 cluster.tenant.api_access_key,
-                                 cluster.tenant.user,
-                                 cluster.tenant.pwd)
+    def get_all_buckets(pod, tenant, cluster):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
         resp = capella_api.get_buckets(
-            cluster.tenant.id, cluster.tenant.project_id, cluster.id)
+            tenant.id, tenant.projects[0], cluster.id)
         return resp
 
     @staticmethod
-    def create_bucket(cluster, bucket_params):
+    def create_bucket(pod, tenant, cluster, bucket_params):
         while True:
             state = CapellaUtils.get_cluster_state(
-                cluster.pod, cluster.tenant, cluster.id)
+                pod, tenant, cluster.id)
             if state == "healthy":
                 break
             time.sleep(1)
-        capella_api = CapellaAPI(cluster.pod.url_public,
-                                 cluster.tenant.api_secret_key,
-                                 cluster.tenant.api_access_key,
-                                 cluster.tenant.user,
-                                 cluster.tenant.pwd)
-        resp = capella_api.create_bucket(cluster.tenant.id,
-                                         cluster.tenant.project_id,
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.create_bucket(tenant.id,
+                                         tenant.projects[0],
                                          cluster.id, bucket_params)
         if resp.status_code in [200, 201, 202]:
             CapellaUtils.log.info("Bucket create successfully!")
@@ -242,14 +264,14 @@ class CapellaUtils(object):
             raise Exception("Bucket creation failed")
 
     @staticmethod
-    def get_bucket_id(cluster, name):
-        capella_api = CapellaAPI(cluster.pod.url_public,
-                                 cluster.tenant.api_secret_key,
-                                 cluster.tenant.api_access_key,
-                                 cluster.tenant.user,
-                                 cluster.tenant.pwd)
+    def get_bucket_id(pod, tenant, cluster, name):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
         resp = capella_api.get_buckets(
-            cluster.tenant.id, cluster.tenant.project_id, cluster.id)
+            tenant.id, tenant.projects[0], cluster.id)
         content = json.loads(resp.content)
         bucket_id = None
         for bucket in content.get("buckets").get("data"):
@@ -258,16 +280,16 @@ class CapellaUtils(object):
         return bucket_id
 
     @staticmethod
-    def flush_bucket(cluster, name):
-        bucket_id = CapellaUtils.get_bucket_id(cluster, name)
+    def flush_bucket(pod, tenant, cluster, name):
+        bucket_id = CapellaUtils.get_bucket_id(pod, cluster, name)
         if bucket_id:
-            capella_api = CapellaAPI(cluster.pod.url_public,
-                                     cluster.tenant.api_secret_key,
-                                     cluster.tenant.api_access_key,
-                                     cluster.tenant.user,
-                                     cluster.tenant.pwd)
-            resp = capella_api.flush_bucket(cluster.tenant.id,
-                                            cluster.tenant.project_id,
+            capella_api = CapellaAPI(pod.url_public,
+                                     tenant.api_secret_key,
+                                     tenant.api_access_key,
+                                     tenant.user,
+                                     tenant.pwd)
+            resp = capella_api.flush_bucket(tenant.id,
+                                            tenant.projects[0],
                                             cluster.id,
                                             bucket_id)
             if resp.status_code >= 200 and resp.status_code < 300:
@@ -278,16 +300,16 @@ class CapellaUtils(object):
             CapellaUtils.log.info("Bucket not found.")
 
     @staticmethod
-    def delete_bucket(cluster, name):
-        bucket_id = CapellaUtils.get_bucket_id(cluster, name)
+    def delete_bucket(pod, tenant, cluster, name):
+        bucket_id = CapellaUtils.get_bucket_id(pod, cluster, name)
         if bucket_id:
-            capella_api = CapellaAPI(cluster.pod.url_public,
-                                     cluster.tenant.api_secret_key,
-                                     cluster.tenant.api_access_key,
-                                     cluster.tenant.user,
-                                     cluster.tenant.pwd)
-            resp = capella_api.delete_bucket(cluster.tenant.id,
-                                             cluster.tenant.project_id,
+            capella_api = CapellaAPI(pod.url_public,
+                                     tenant.api_secret_key,
+                                     tenant.api_access_key,
+                                     tenant.user,
+                                     tenant.pwd)
+            resp = capella_api.delete_bucket(tenant.id,
+                                             tenant.projects[0],
                                              cluster.id,
                                              bucket_id)
             if resp.status_code == 204:
@@ -299,14 +321,14 @@ class CapellaUtils(object):
             CapellaUtils.log.info("Bucket not found.")
 
     @staticmethod
-    def update_bucket_settings(cluster, bucket_id, bucket_params):
-        capella_api = CapellaAPI(cluster.pod.url_public,
-                                 cluster.tenant.api_secret_key,
-                                 cluster.tenant.api_access_key,
-                                 cluster.tenant.user,
-                                 cluster.tenant.pwd)
-        resp = capella_api.update_bucket_settings(cluster.tenant.id,
-                                                  cluster.tenant.project_id,
+    def update_bucket_settings(pod, tenant, cluster, bucket_id, bucket_params):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.update_bucket_settings(tenant.id,
+                                                  tenant.projects[0],
                                                   cluster.id, bucket_id,
                                                   bucket_params)
         code = resp.status
@@ -315,21 +337,21 @@ class CapellaUtils(object):
         return resp.status
 
     @staticmethod
-    def scale(cluster, specs, timeout=600):
-        capella_api = CapellaAPI(cluster.pod.url_public,
-                                 cluster.tenant.api_secret_key,
-                                 cluster.tenant.api_access_key,
-                                 cluster.tenant.user,
-                                 cluster.tenant.pwd)
+    def scale(pod, tenant, cluster, specs, timeout=600):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
         while True:
-            resp = capella_api.update_cluster_sepcs(cluster.tenant.id,
-                                                    cluster.tenant.project_id, cluster.id, specs)
+            resp = capella_api.update_cluster_sepcs(tenant.id,
+                                                    tenant.projects[0], cluster.id, specs)
             if resp.status_code != 202:
                 result = json.loads(resp.content)
                 CapellaUtils.log.critical(result)
                 if result["errorType"] in ["ClusterModifySpecsInvalidState", "EntityNotWritable"]:
                     CapellaUtils.wait_until_done(
-                        cluster.pod, cluster.tenant, cluster.id,
+                        pod, tenant, cluster.id,
                         "Wait for healthy cluster state", timeout=timeout)
                 else:
                     raise Exception(result)
@@ -337,21 +359,21 @@ class CapellaUtils(object):
                 break
 
     @staticmethod
-    def upgrade(cluster, config):
-        capella_api = CapellaAPI(cluster.pod.url_public,
-                                 cluster.tenant.api_secret_key,
-                                 cluster.tenant.api_access_key,
-                                 cluster.tenant.user,
-                                 cluster.tenant.pwd)
+    def upgrade(pod, tenant, cluster, config):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
         while True:
-            resp = capella_api.upgrade_cluster(cluster.tenant.id,
-                                               cluster.tenant.project_id,
+            resp = capella_api.upgrade_cluster(tenant.id,
+                                               tenant.projects[0],
                                                cluster.id, config)
             if resp.status_code != 202:
                 result = json.loads(resp.content)
                 if result["errorType"] == "ClusterModifySpecsInvalidState":
                     CapellaUtils.wait_until_done(
-                        cluster.pod, cluster.tenant, cluster.id,
+                        pod, tenant, cluster.id,
                         "Wait for healthy cluster state")
                 else:
                     CapellaUtils.log.critical(result)
@@ -361,7 +383,7 @@ class CapellaUtils(object):
 
     @staticmethod
     def jobs(capella_api, pod, tenant, cluster_id):
-        resp = capella_api.jobs(tenant.project_id, tenant.id, cluster_id)
+        resp = capella_api.jobs(tenant.projects[0], tenant.id, cluster_id)
         if resp.status_code != 200:
             CapellaUtils.log.critical("LOG A BUG: Internal API returns :\
             {}".format(resp.status_code))
@@ -411,7 +433,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.get_nodes(tenant.id, tenant.project_id,
+        resp = capella_api.get_nodes(tenant.id, tenant.projects[0],
                                      cluster_id)
         if resp.status_code != 200:
             CapellaUtils.log.critical("LOG A BUG: Fetch Cluster Node API returns :\
@@ -429,14 +451,14 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.get_db_users(tenant.id, tenant.project_id,
+        resp = capella_api.get_db_users(tenant.id, tenant.projects[0],
                                         cluster_id, page, limit)
         return json.loads(resp.content)
 
     @staticmethod
     def delete_db_user(pod, tenant, cluster_id, user_id):
         uri = "{}/v2/organizations/{}/projects/{}/clusters/{}/users/{}" \
-              .format(tenant.id, tenant.project_id, cluster_id,
+              .format(tenant.id, tenant.projects[0], cluster_id,
                       user_id)
         print(uri)
 
@@ -447,7 +469,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.create_db_user(tenant.id, tenant.project_id,
+        resp = capella_api.create_db_user(tenant.id, tenant.projects[0],
                                           cluster_id, user, pwd)
         if resp.status_code != 200:
             result = json.loads(resp.content)
@@ -469,7 +491,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.allow_my_ip(tenant.id, tenant.project_id,
+        resp = capella_api.allow_my_ip(tenant.id, tenant.projects[0],
                                         cluster_id)
         if resp.status_code != 202:
             result = json.loads(resp.content)
@@ -486,7 +508,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.load_sample_bucket(tenant.id, tenant.project_id,
+        resp = capella_api.load_sample_bucket(tenant.id, tenant.projects[0],
                                               cluster_id, bucket_name)
 
     @staticmethod
@@ -496,7 +518,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.create_xdcr_replication(tenant.id, tenant.project_id,
+        resp = capella_api.create_xdcr_replication(tenant.id, tenant.projects[0],
                                               cluster_id, payload)
         CapellaUtils.log.info("Response from create xdcr replication API: {}".format(resp))
 
@@ -507,7 +529,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.backup_now(tenant_id=tenant.id, project_id=tenant.project_id,
+        resp = capella_api.backup_now(tenant_id=tenant.id, project_id=tenant.projects[0],
                                       cluster_id=cluster_id, bucket_name=bucket_name)
         CapellaUtils.log.info("Response from backup_now method: {}".format(resp))
 
@@ -518,7 +540,7 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.restore_from_backup(tenant_id=tenant.id, project_id=tenant.project_id,
+        resp = capella_api.restore_from_backup(tenant_id=tenant.id, project_id=tenant.projects[0],
                                                cluster_id=cluster_id, bucket_name=bucket_name)
         CapellaUtils.log.info("Response from restore_from_backup method: {}".format(resp))
 
@@ -529,24 +551,23 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        bucket_id = capella_api.get_backups_bucket_id(tenant_id=tenant.id, project_id=tenant.project_id,
+        bucket_id = capella_api.get_backups_bucket_id(tenant_id=tenant.id, project_id=tenant.projects[0],
                                                       cluster_id=cluster.id, bucket_name=bucket_name)
         resp = capella_api.list_all_bucket_backups(tenant_id=tenant.id,
-                                                   project_id=tenant.project_id,
+                                                   project_id=tenant.projects[0],
                                                    cluster_id=cluster.id, bucket_id=bucket_id)
         CapellaUtils.log.info("Response from list_all_backups method: {}".format(resp))
         return resp
 
     @staticmethod
-    def trigger_log_collection(pod, tenant, cluster_id, log_id={}):
+    def trigger_log_collection(pod, tenant, cluster_id, log_id=""):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd,
                                  pod.TOKEN)
-        if log_id:
-            log_id = {"ticketId": log_id}
+        log_id = {"ticketId": log_id}
         resp = capella_api.trigger_log_collection(cluster_id,
                                                   log_id=log_id)
         if resp.status_code != 201:

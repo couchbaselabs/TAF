@@ -118,15 +118,12 @@ def execute_via_sdk(client, statement, readonly=False,
 
 class DoctorCBAS():
 
-    def __init__(self, cluster):
-        self.cluster = cluster
+    def __init__(self):
         self.log = logger.get("test")
         self.stop_run = False
-        self.client = cluster.SDKClients[0].cluster
-        self.nebula_endpoint = self.cluster.nebula.endpoint
-        self.rest = CBASHelper(self.nebula_endpoint)
 
-    def create_mongo_links(self, data_sources):
+    def create_mongo_links(self, cluster, data_sources):
+        client = cluster.SDKClients[0].cluster
         for dataSource in data_sources:
             dataSource.cbas_queries = list()
             dataSource.cbas_collections = list()
@@ -136,7 +133,7 @@ class DoctorCBAS():
             statement = dataSource.create_link(dataSource.link_name)
             self.log.info(statement)
             try:
-                execute_statement_on_cbas(self.client, statement)
+                execute_statement_on_cbas(client, statement)
             except LinkExistsException:
                 pass
             i, d, q = 0, 0, 0
@@ -152,7 +149,7 @@ class DoctorCBAS():
                     statement = coll_statement.format(coll_name, dataSource.name, collection, dataSource.link_name)
                     self.log.info(statement)
                     try:
-                        execute_statement_on_cbas(self.client, statement)
+                        execute_statement_on_cbas(client, statement)
                     except DatasetExistsException:
                         pass
                     d += 1
@@ -166,36 +163,41 @@ class DoctorCBAS():
                     query_count += 1
                     dataSource.cbas_queries.append((query, queryType[q % len(queryType)]))
                     q += 1
-            self.connect_link(dataSource.link_name)
+            self.connect_link(cluster, dataSource.link_name)
 
-    def connect_link(self, link_name):
+    def connect_link(self, cluster, link_name):
+        client = cluster.SDKClients[0].cluster
         statement = "CONNECT LINK %s" % link_name
-        status, _, _, _, _ = execute_statement_on_cbas(self.client, statement)
+        status, _, _, _, _ = execute_statement_on_cbas(client, statement)
         self.log.info("Connect link %s is %s" % (link_name, status))
 
-    def drop_links(self, databases):
+    def drop_links(self, cluster, databases):
+        client = cluster.SDKClients[0].cluster
         for database in databases:
             statement = "drop link %s" % database.link_name
-            status, _, _, _, _ = execute_statement_on_cbas(self.client, statement)
+            status, _, _, _, _ = execute_statement_on_cbas(client, statement)
             self.log.info("Dropping link %s is %s" % (database.link_name, status))
 
-    def drop_collections(self, databases):
+    def drop_collections(self, cluster, databases):
+        client = cluster.SDKClients[0].cluster
         for database in databases:
             for collection in database.cbas_collections:
                 statement = "drop collection %s" % collection
-                status, _, _, _, _ = execute_statement_on_cbas(self.client, statement)
+                status, _, _, _, _ = execute_statement_on_cbas(client, statement)
                 self.log.info("Dropping Collection %s is %s" % (collection, status))
 
-    def disconnect_link(self, link_name):
+    def disconnect_link(self, cluster, link_name):
+        client = cluster.SDKClients[0].cluster
         statement = "DISCONNECT LINK %s" % link_name
-        status, _, _, _, _ = execute_statement_on_cbas(self.client, statement)
+        status, _, _, _, _ = execute_statement_on_cbas(client, statement)
         self.log.info("Disconnect link %s is %s" % (link_name, status))
 
-    def wait_for_link_disconnect(self, link_name, timeout=3600):
+    def wait_for_link_disconnect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
+        rest = CBASHelper(cluster.nebula.endpoint)
         while time.time() < st_time + timeout:
             time.sleep(10)
-            result, code, content, errors = self.rest.analytics_link_operations(uri="/Default/{}".format(link_name))
+            result, code, content, errors = rest.analytics_link_operations(uri="/Default/{}".format(link_name))
             self.log.info("Link state - %s: %s" %(link_name, content[0]["linkState"]))
             if content[0]["linkState"] == "DISCONNECTING":
                 continue
@@ -204,11 +206,12 @@ class DoctorCBAS():
             else:
                 raise Exception("Link is in bad state: %s" % content[0]["linkState"])
 
-    def wait_for_link_connect(self, link_name, timeout=3600):
+    def wait_for_link_connect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
+        rest = CBASHelper(cluster.nebula.endpoint)
         while time.time() < st_time + timeout:
             time.sleep(10)
-            result, code, content, errors = self.rest.analytics_link_operations(uri="/Default/{}".format(link_name))
+            result, code, content, errors = rest.analytics_link_operations(uri="/Default/{}".format(link_name))
             self.log.info("Link state - %s: %s" %(link_name, content[0]["linkState"]))
             if content[0]["linkState"] == "CONNECTING":
                 continue
@@ -220,7 +223,8 @@ class DoctorCBAS():
     def discharge_CBAS(self):
         self.stop_run = True
 
-    def wait_for_ingestion(self, databases, timeout=86400):
+    def wait_for_ingestion(self, cluster, databases, timeout=86400):
+        client = cluster.SDKClients[0].cluster
         status = False
         for database in databases:
             for collection in database.cbas_collections:
@@ -229,7 +233,7 @@ class DoctorCBAS():
                 while time.time() < stop_time:
                     statement = "select count(*) cnt from {};".format(collection)
                     try:
-                        _status, _, _, results, _ = execute_statement_on_cbas(self.client, statement)
+                        _status, _, _, results, _ = execute_statement_on_cbas(client, statement)
                         self.log.debug("dataset: {}, status: {}, actual count: {}, expected count: {}"
                                        .format(collection, _status,
                                                json.loads(str(results))[0]["cnt"],

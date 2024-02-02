@@ -2,7 +2,7 @@ from TestInput import TestInputSingleton
 
 runtype = TestInputSingleton.input.param("runtype", "default").lower()
 if runtype == "dedicated":
-    from dedicatedbasetestcase import OnCloudBaseTest as CbBaseTest
+    from dedicatedbasetestcase import ProvisionedBaseTestCase as CbBaseTest
     from dedicatedbasetestcase import ClusterSetup as CbClusterSetup
 elif runtype == "serverless":
     from serverlessbasetestcase import OnCloudBaseTest as CbBaseTest

@@ -65,7 +65,7 @@ class GoldfishUtils:
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
                             tenant.api_access_key, tenant.user, tenant.pwd)
         resp = gf_api.delete_goldfish_instance(
-            tenant.id, tenant.project_id, cluster.cluster_id,)
+            tenant.id, tenant.project_id, cluster.id,)
         if resp.status_code != 204:
             self.log.error("Unable to delete goldfish cluster {0}".format(
                 cluster.name))
@@ -78,7 +78,7 @@ class GoldfishUtils:
                             tenant.api_access_key, tenant.user, tenant.pwd)
         gf_instance_info = self.get_cluster_info(pod, tenant, cluster)
         resp = gf_api.update_goldfish_instance(
-            tenant.id, tenant.project_id, cluster.cluster_id,
+            tenant.id, tenant.project_id, cluster.id,
             gf_instance_info["name"], gf_instance_info["description"],
             nodes)
         self.log.info(resp)
@@ -93,11 +93,11 @@ class GoldfishUtils:
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
                             tenant.api_access_key, tenant.user, tenant.pwd)
         resp = gf_api.get_specific_goldfish_instance(
-            tenant.id, tenant.project_id, cluster.cluster_id)
+            tenant.id, tenant.project_id, cluster.id)
         if resp.status_code != 200:
             self.log.error(
                 "Unable to fetch details for goldfish cluster {0} with ID "
-                "{1}".format(cluster.name, cluster.cluster_id))
+                "{1}".format(cluster.name, cluster.id))
             return None
         return json.loads(resp.content)
 
@@ -108,14 +108,14 @@ class GoldfishUtils:
         start_time = time.time()
         while time.time() < start_time + timeout:
             resp = gf_api.get_specific_goldfish_instance(
-                tenant.id, tenant.project_id, cluster.cluster_id)
+                tenant.id, tenant.project_id, cluster.id)
             if resp.status_code != 200:
                 self.log.error(
                     "Unable to fetch details for goldfish cluster {0} with ID "
-                    "{1}".format(cluster.name, cluster.cluster_id))
+                    "{1}".format(cluster.name, cluster.id))
                 continue
             state = json.loads(resp.content)["state"]
-            self.log.info("Cluster %s state: %s" % (cluster.cluster_id, state))
+            self.log.info("Cluster %s state: %s" % (cluster.id, state))
             if state == "deploying":
                 time.sleep(10)
             else:
@@ -158,14 +158,14 @@ class GoldfishUtils:
         start_time = time.time()
         while time.time() < start_time + timeout:
             resp = gf_api.get_specific_goldfish_instance(
-                tenant.id, tenant.project_id, cluster.cluster_id)
+                tenant.id, tenant.project_id, cluster.id)
             if resp.status_code != 200:
                 self.log.error(
                     "Unable to fetch details for goldfish cluster {0} with ID "
-                    "{1}".format(cluster.name, cluster.cluster_id))
+                    "{1}".format(cluster.name, cluster.id))
                 continue
             state = json.loads(resp.content)["state"]
-            self.log.info("Cluster %s state: %s" % (cluster.cluster_id, state))
+            self.log.info("Cluster %s state: %s" % (cluster.id, state))
             if state == "scaling":
                 self.log.info("Cluster is still scaling. Waiting for 10s.")
                 time.sleep(10)
@@ -184,10 +184,10 @@ class GoldfishUtils:
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
                             tenant.api_access_key, tenant.user, tenant.pwd)
         resp = gf_api.create_api_keys(
-            tenant.id, tenant.project_id, cluster.cluster_id)
+            tenant.id, tenant.project_id, cluster.id)
         if resp.status_code != 201:
             self.log.error(
                 "Unable to create API keys for goldfish cluster {0} with ID "
-                "{1}".format(cluster.name, cluster.cluster_id))
+                "{1}".format(cluster.name, cluster.id))
             return None
         return json.loads(resp.content)

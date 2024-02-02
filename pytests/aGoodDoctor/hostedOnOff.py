@@ -6,13 +6,13 @@ import time
 
 class DoctorHostedOnOff:
 
-    def __init__(self, cluster, pod, tenant):
-        self.cluster = cluster
+    def __init__(self, pod, tenant, cluster):
         self.pod = pod
         self.tenant = tenant
-        self.capella_api = dedicatedCapellaAPI(self.cluster.pod.url_public, self.cluster.tenant.api_secret_key,
-                                               self.cluster.tenant.api_access_key, self.cluster.tenant.user,
-                                               self.cluster.tenant.pwd)
+        self.cluster = cluster
+        self.capella_api = dedicatedCapellaAPI(self.pod.url_public, self.tenant.api_secret_key,
+                                               self.tenant.api_access_key, self.tenant.user,
+                                               self.tenant.pwd)
         self.log = logger.get("test")
         self.sleep = sleep
 

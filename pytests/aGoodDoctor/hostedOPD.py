@@ -30,7 +30,7 @@ class OPD:
 
     def threads_calculation(self):
         self.process_concurrency = self.input.param("pc", self.process_concurrency)
-        self.doc_loading_tm = TaskManager(self.process_concurrency)
+        self.doc_loading_tm = TaskManager(self.process_concurrency*self.num_tenants*self.num_clusters*self.num_buckets)
 
     def get_memory_footprint(self):
         out = subprocess.Popen(['ps', 'v', '-p', str(os.getpid())],stdout=subprocess.PIPE).communicate()[0].split(b'\n')
@@ -143,8 +143,8 @@ class OPD:
         self.rest.update_tombstone_purge_age_for_removal(tombstone_purge_age)
         self.rest.disable_tombstone_purger()
 
-    def get_bucket_dgm(self, bucket):
-        self.rest_client = BucketHelper(self.cluster.master)
+    def get_bucket_dgm(self, cluster, bucket):
+        self.rest_client = BucketHelper(cluster.master)
         dgm = self.rest_client.fetch_bucket_stats(
             bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
         self.log.info("Active Resident Threshold of {0} is {1}".format(
@@ -253,10 +253,10 @@ class OPD:
         print "Final End: %s" % bucket.end
         print "================{}=================".format(bucket.name)
 
-    def _loader_dict(self, buckets, overRidePattern=None, cmd={}, skip_default=True):
+    def _loader_dict(self, cluster, buckets, overRidePattern=None, cmd={}, skip_default=True):
         self.loader_map = dict()
         self.default_pattern = [100, 0, 0, 0, 0]
-        buckets = buckets or self.cluster.buckets
+        buckets = buckets or cluster.buckets
         for bucket in buckets:
             process_concurrency = bucket.loadDefn.get("scopes") * bucket.loadDefn.get("collections")
             pattern = overRidePattern or bucket.loadDefn.get("pattern", self.default_pattern)
@@ -305,7 +305,7 @@ class OPD:
                     dg = DocumentGenerator(ws, self.key_type, valType)
                     self.loader_map.update({bucket.name+scope+collection: dg})
 
-    def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
+    def wait_for_doc_load_completion(self, cluster, tasks, wait_for_stats=True):
         self.doc_loading_tm.getAllTaskResult()
         for task in tasks:
             task.result = True
@@ -334,16 +334,14 @@ class OPD:
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster, self.cluster.buckets, timeout=14400)
-                if self.track_failures and self.cluster.type == "default":
-                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items,
+                    cluster, cluster.buckets, timeout=14400)
+                if self.track_failures and cluster.type == "default":
+                    self.bucket_util.verify_stats_all_buckets(cluster, self.final_items,
                                                               timeout=14400)
             except Exception as e:
-                if not self.cluster.type == "default":
-                    self.get_gdb()
                 raise e
 
-    def data_validation(self, skip_default=True):
+    def data_validation(self, cluster, skip_default=True):
         pc = min(self.process_concurrency, 20)
         if self._data_validation:
             self.log.info("Validating Active/Replica Docs")
@@ -353,7 +351,7 @@ class OPD:
             #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
             #                 str(self.cluster.master.memcached_port))
             self.loader_map = dict()
-            for bucket in self.cluster.buckets:
+            for bucket in cluster.buckets:
                 for scope in bucket.scopes.keys():
                     if scope == CbServer.system_scope:
                             continue
@@ -406,7 +404,7 @@ class OPD:
             tasks = list()
             i = pc
             while i > 0:
-                for bucket in self.cluster.buckets:
+                for bucket in cluster.buckets:
                     for scope in bucket.scopes.keys():
                         if scope == CbServer.system_scope:
                             continue
@@ -421,21 +419,14 @@ class OPD:
                                 # self.sleep(1)
                                 taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
                                 task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
-                                                        self.cluster.sdk_client_pool, "NONE",
+                                                        cluster.sdk_client_pool, "NONE",
                                                         self.maxttl, self.time_unit,
                                                         self.track_failures, 0)
                                 task.set_collection_for_load(bucket.name, scope, collection)
                                 tasks.append(task)
                                 self.doc_loading_tm.submit(task)
                                 i -= 1
-        self.doc_loading_tm.getAllTaskResult()
-        # for task in tasks:
-        #     try:
-        #         task.sdk.disconnectCluster()
-        #     except Exception as e:
-        #         print(e)
-        for task in tasks:
-            self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
+            return tasks
 
     def print_crud_stats(self, buckets):
         self.table = TableView(self.log.info)
@@ -457,10 +448,10 @@ class OPD:
         self.table.display("Docs statistics")
 
     def perform_load(self, wait_for_load=True,
-                     validate_data=True, buckets=None, overRidePattern=None, skip_default=True):
+                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True):
         self.get_memory_footprint()
-        buckets = buckets or self.cluster.buckets
-        self._loader_dict(buckets, overRidePattern, skip_default=skip_default)
+        buckets = buckets or cluster.buckets
+        self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default)
         # master = Server(self.cluster.master.ip, self.cluster.master.port,
         #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
         #                 str(self.cluster.master.memcached_port))
@@ -481,7 +472,7 @@ class OPD:
                         # self.sleep(1)
                         taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
-                                                self.cluster.sdk_client_pool, self.esClient,
+                                                cluster.sdk_client_pool, self.esClient,
                                                 self.durability_level,
                                                 self.maxttl, self.time_unit,
                                                 self.track_failures, 0)
@@ -491,7 +482,7 @@ class OPD:
                         i -= 1
 
         if wait_for_load:
-            self.wait_for_doc_load_completion(tasks)
+            self.wait_for_doc_load_completion(cluster, tasks)
             self.get_memory_footprint()
         else:
             return tasks
@@ -499,14 +490,14 @@ class OPD:
         if validate_data:
             self.data_validation(skip_default=skip_default)
 
-        self.print_stats()
+        self.print_stats(cluster)
 
-    def print_stats(self):
-        self.bucket_util.print_bucket_stats(self.cluster)
-        self.cluster_util.print_cluster_stats(self.cluster)
-        self.print_crud_stats(self.cluster.buckets)
-        for bucket in self.cluster.buckets:
-            self.get_bucket_dgm(bucket)
+    def print_stats(self, cluster):
+        self.bucket_util.print_bucket_stats(cluster)
+        self.cluster_util.print_cluster_stats(cluster)
+        self.print_crud_stats(cluster.buckets)
+        for bucket in cluster.buckets:
+            self.get_bucket_dgm(cluster, bucket)
 
     def PrintStep(self, msg=None):
         print "\n"

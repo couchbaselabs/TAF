@@ -8,6 +8,7 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+from constants.cb_constants.CBServer import CbServer
 from aGoodDoctor.opd import OPD
 from basetestcase import BaseTestCase
 from com.couchbase.test.sdk import Server
@@ -19,7 +20,6 @@ from table_view import TableView
 import threading
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from elasticsearch import EsClient
-from constants.cb_constants.CBServer import CbServer
 
 
 class Murphy(BaseTestCase, OPD):
@@ -448,7 +448,6 @@ class Murphy(BaseTestCase, OPD):
 
         self.loop = 0
         while self.loop < self.iterations:
-
             self.rebl_services = self.input.param("rebl_services", ["fts"])
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
 

@@ -7,23 +7,21 @@ from global_vars import logger
 
 class DoctorHostedBackupRestore:
 
-    def __init__(self, cluster, bucket_name, pod, tenant):
-        self.cluster = cluster
-        self.bucket_name = bucket_name
+    def __init__(self, pod):
         self.pod = pod
-        self.tenant = tenant
-        self.capella_api = dedicatedCapellaAPI(self.cluster.pod.url_public, self.cluster.tenant.api_secret_key,
-                                               self.cluster.tenant.api_access_key, self.cluster.tenant.user,
-                                               self.cluster.tenant.pwd)
         self.log = logger.get("test")
 
-    def backup_now(self, timeout=30, wait_for_backup=True):
-        CapellaAPI.backup_now(pod=self.pod, tenant=self.tenant, cluster_id=self.cluster.id,
-                              bucket_name=self.bucket_name)
+    def backup_now(self, tenant, cluster, bucket, timeout=30, wait_for_backup=True):
+        CapellaAPI.backup_now(pod=self.pod, tenant=tenant, cluster_id=cluster.id,
+                              bucket_name=bucket.name)
         time.sleep(180)
+        
         time_now = time.time()
+        capella_api = dedicatedCapellaAPI(self.pod.url_public, tenant.api_secret_key,
+                                          tenant.api_access_key, tenant.user,
+                                          tenant.pwd)
         while time.time() - time_now < timeout * 60:
-            jobs_response = CapellaAPI.jobs(self.capella_api, self.pod, self.tenant, self.cluster.id)
+            jobs_response = CapellaAPI.jobs(capella_api, self.pod, tenant, cluster.id)
             backup_job = False
             for item in jobs_response['data']:
                 if item['data']['jobType'] == 'backup' and item['data']['completionPercentage'] < 100:
@@ -36,13 +34,16 @@ class DoctorHostedBackupRestore:
             if backup_job is False:
                 return
 
-    def restore_from_backup(self, timeout=300):
-        CapellaAPI.restore_from_backup(pod=self.pod, tenant=self.tenant, cluster_id=self.cluster.id,
-                                       bucket_name=self.bucket_name)
+    def restore_from_backup(self, tenant, cluster, bucket, timeout=300):
+        CapellaAPI.restore_from_backup(pod=self.pod, tenant=tenant, cluster_id=cluster.id,
+                                       bucket_name=bucket.name)
         time.sleep(180)
         time_now = time.time()
+        capella_api = dedicatedCapellaAPI(self.pod.url_public, tenant.api_secret_key,
+                                          tenant.api_access_key, tenant.user,
+                                          tenant.pwd)
         while time.time() - time_now < timeout:
-            jobs_response = CapellaAPI.jobs(self.capella_api, self.pod, self.tenant, self.cluster.id)
+            jobs_response = CapellaAPI.jobs(capella_api, self.pod, tenant, cluster.id)
             if not jobs_response['data']:
                 break
             else:
@@ -52,8 +53,8 @@ class DoctorHostedBackupRestore:
                             item['data']['completionPercentage']))
                         time.sleep(60)
 
-    def list_all_backups(self):
-        resp = CapellaAPI.list_all_backups(pod=self.pod, tenant=self.tenant, cluster=self.cluster,
-                                           bucket_name=self.bucket_name)
+    def list_all_backups(self, tenant, cluster, bucket):
+        resp = CapellaAPI.list_all_backups(pod=self.pod, tenant=tenant, cluster=cluster,
+                                           bucket_name=bucket.name)
         self.log.info("List all backups response is {}".format(resp))
         return resp

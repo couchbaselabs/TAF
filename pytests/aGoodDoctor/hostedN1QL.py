@@ -221,9 +221,8 @@ def execute_via_sdk(client, statement, readonly=False,
 
 class DoctorN1QL():
 
-    def __init__(self, cluster, bucket_util):
+    def __init__(self, bucket_util):
         self.bucket_util = bucket_util
-        self.cluster = cluster
         self.sdkClients = dict()
         self.log = logger.get("test")
         self.stop_run = False
@@ -293,7 +292,7 @@ class DoctorN1QL():
                             query = unformatted_q.format(c)
                             print query
                             if unformatted_q not in b.query_map.keys():
-                                b.query_map[unformatted_q] = ["Q%s" % (counter)]
+                                b.query_map[unformatted_q] = ["Q%s" % (counter % len(queryType))]
                                 if queryParams:
                                     b.query_map[unformatted_q].append(queryParams[counter % len(queryParams)])
                                 else:
@@ -311,7 +310,7 @@ class DoctorN1QL():
     def query_result(self):
         return self.query_failure
 
-    def build_indexes(self, buckets,
+    def build_indexes(self, cluster, buckets,
                       wait=False, timeout=86400):
         build = True
         i = 0
@@ -354,7 +353,7 @@ class DoctorN1QL():
                         for key, val in bucket.indexes.items():
                             _, _, _, _, c = val
                             d[c].append(key)
-                        self.rest = GsiHelper(self.cluster.master, logger["test"])
+                        self.rest = GsiHelper(cluster.master, logger["test"])
                         status = False
                         for collection in sorted(d.keys())[i:i+1]:
                             for index_name in sorted(d.get(collection)):
@@ -372,7 +371,7 @@ class DoctorN1QL():
             build_query = "DROP INDEX %s on `%s`" % (index, details[4])
             self.execute_statement_on_n1ql(details[1], build_query)
 
-    def log_index_stats(self, print_duration=300):
+    def log_index_stats(self, cluster, print_duration=300):
         st_time = time.time()
         while not self.stop_run:
             self.table = TableView(self.log.info)
@@ -387,7 +386,7 @@ class DoctorN1QL():
                                     "#rows_scanned",
                                     "#rows_returned"
                                     ])
-            for node in self.cluster.index_nodes:
+            for node in cluster.index_nodes:
                 try:
                     rest = RestConnection(node)
                     resp = rest.urllib_request(rest.indexUrl + "stats")
@@ -412,9 +411,10 @@ class DoctorN1QL():
                 st_time = time.time()
             time.sleep(300)
 
-    def start_index_stats(self):
+    def start_index_stats(self, cluster):
         self.stop_run = False
-        th = threading.Thread(target=self.log_index_stats)
+        th = threading.Thread(target=self.log_index_stats,
+                              kwargs=dict({"cluster": cluster}))
         th.start()
 
 

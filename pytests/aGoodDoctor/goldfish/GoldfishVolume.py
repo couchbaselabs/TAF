@@ -66,11 +66,11 @@ class Columnar(BaseTestCase, OPD):
         self.default_workload = {
             "valType": "Hotel",
             "database": 1,
-            "collections": 10,
+            "collections": 1,
             "scopes": 1,
-            "num_items": self.input.param("num_items", 100000),
+            "num_items": self.input.param("num_items", 10000),
             "start": 0,
-            "end": self.input.param("num_items", 100000),
+            "end": self.input.param("num_items", 10000),
             "ops": self.input.param("ops_rate", 10000),
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
@@ -109,25 +109,31 @@ class Columnar(BaseTestCase, OPD):
                            bucket=mongo)
         self.data_sources["mongo"].append(mongo)
 
-    def setup_sdk_clients(self):
-        self.cluster.SDKClients = list()
-        self.nebula_endpoint = self.cluster.nebula.endpoint
-        master = Server(self.nebula_endpoint.ip, self.nebula_endpoint.port,
-                        self.nebula_endpoint.rest_username, self.nebula_endpoint.rest_password,
-                        str(self.nebula_endpoint.memcached_port))
+    def setup_sdk_clients(self, cluster):
+        cluster.SDKClients = list()
+        nebula_endpoint = cluster.nebula.endpoint
+        master = Server(nebula_endpoint.ip, nebula_endpoint.port,
+                        nebula_endpoint.rest_username, nebula_endpoint.rest_password,
+                        str(nebula_endpoint.memcached_port))
         master.ip = "couchbases://" + master.ip + ":16001"
         client = SDKClient(master, "None")
         client.connectCluster()
-        self.cluster.SDKClients.append(client)
+        cluster.SDKClients.append(client)
 
     def tearDown(self):
-        for data_source in self.data_sources["mongo"]:
-            self.drCBAS.disconnect_link(data_source.link_name)
-        for data_source in self.data_sources["mongo"]:
-            self.drCBAS.wait_for_link_disconnect(data_source.link_name, 3600)
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                for data_source in self.data_sources["mongo"]:
+                    self.drCBAS.disconnect_link(cluster, data_source.link_name)
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                for data_source in self.data_sources["mongo"]:
+                    self.drCBAS.wait_for_link_disconnect(cluster, data_source.link_name, 3600)
 
-        self.drCBAS.drop_collections(self.data_sources["mongo"])
-        self.drCBAS.drop_links(self.data_sources["mongo"])
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                self.drCBAS.drop_collections(cluster, self.data_sources["mongo"])
+                self.drCBAS.drop_links(cluster, self.data_sources["mongo"])
 
         self.check_dump_thread = False
         self.stop_crash = True
@@ -185,24 +191,33 @@ class Columnar(BaseTestCase, OPD):
         self.mongo_workload.perform_load(self.data_sources["mongo"], wait_for_load=True,
                                          overRidePattern=[100, 0, 0, 0, 0],
                                          tm=self.doc_loading_tm)
-        self.setup_sdk_clients()
+        self.drCBAS = DoctorCBAS()
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                self.setup_sdk_clients(cluster)
+                self.drCBAS.create_mongo_links(cluster, self.data_sources["mongo"])
+                self.sleep(60)
 
-        self.drCBAS = DoctorCBAS(self.cluster)
-        self.drCBAS.create_mongo_links(self.data_sources["mongo"])
-        self.sleep(60)
-        for data_source in self.data_sources["mongo"]:
-            self.drCBAS.wait_for_link_connect(data_source.link_name, 3600)
-        for key in self.data_sources.keys():
-            result = self.drCBAS.wait_for_ingestion(
-                self.data_sources[key], self.index_timeout)
-            self.assertTrue(result, "CBAS ingestion couldn't complete in time: %s" % self.index_timeout)
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                for data_source in self.data_sources["mongo"]:
+                    self.drCBAS.wait_for_link_connect(cluster, data_source.link_name, 3600)
 
-        for data_sources in self.data_sources.values():
-            for data_source in data_sources:
-                if data_source.loadDefn.get("cbasQPS", 0) > 0:
-                    ql = CBASQueryLoad(self.cluster, data_source)
-                    ql.start_query_load()
-                    self.cbasQL.append(ql)
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                for key in self.data_sources.keys():
+                    result = self.drCBAS.wait_for_ingestion(
+                        cluster, self.data_sources[key], self.index_timeout)
+                    self.assertTrue(result, "CBAS ingestion couldn't complete in time: %s" % self.index_timeout)
+
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                for data_sources in self.data_sources.values():
+                    for data_source in data_sources:
+                        if data_source.loadDefn.get("cbasQPS", 0) > 0:
+                            ql = CBASQueryLoad(cluster, data_source)
+                            ql.start_query_load()
+                            self.cbasQL.append(ql)
 
     def test_rebalance(self):
         self.initial_setup()
@@ -217,16 +232,26 @@ class Columnar(BaseTestCase, OPD):
                                          tm=self.doc_loading_tm)
         for i in range(2, 6):
             self.PrintStep("Scaling operation: %s" % str(i-1))
-            self.goldfish_utils.scale_cluster(self.pod, self.tenant, self.cluster, i)
-            self.goldfish_utils.wait_for_cluster_scaling(self.pod, self.tenant, self.cluster)
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    self.goldfish_utils.scale_cluster(self.pod, tenant, cluster, i)
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    self.goldfish_utils.wait_for_cluster_scaling(self.pod, tenant, cluster)
             self.sleep(600)
         for i in range(5, 1):
             self.PrintStep("Scaling operation: %s" % str(i-1))
-            self.goldfish_utils.scale_cluster(self.pod, self.tenant, self.cluster, i)
-            self.goldfish_utils.wait_for_cluster_scaling(self.pod, self.tenant, self.cluster)
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    self.goldfish_utils.scale_cluster(self.pod, tenant, cluster, i)
+            for tenant in self.tenants:
+                for cluster in tenant.clusters:
+                    self.goldfish_utils.wait_for_cluster_scaling(self.pod, tenant, cluster)
             self.sleep(600)
-        if self.cluster.cbas_nodes:
-            for ql in self.cbasQL:
-                ql.stop_query_load()
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                for ql in self.cbasQL:
+                    ql.stop_query_load()
+
         self.sleep(10, "Wait for 10s until all the query workload stops.")
         self.assertTrue(self.query_result, "Please check the logs for query failures")

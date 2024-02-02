@@ -12,7 +12,6 @@ from threading import Thread
 import threading
 import time
 
-from constants.cb_constants.CBServer import CbServer
 from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
 from aGoodDoctor.serverlessfts import ftsQueries, ftsIndex, template
@@ -23,9 +22,9 @@ from com.couchbase.client.java.search import SearchQuery
 from global_vars import logger
 from com.couchbase.test.val import Vector
 from com.github.javafaker import Faker
-import pprint
 from java.net import SocketTimeoutException
 from elasticsearch import EsClient
+from constants.cb_constants.CBServer import CbServer
 
 try:
     input = TestInputSingleton.input

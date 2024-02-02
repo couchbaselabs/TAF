@@ -6,14 +6,8 @@ from membase.api.rest_client import RestConnection
 
 class DoctorXDCR:
 
-    def __init__(self, source_cluster, destination_cluster, source_bucket, destination_bucket,
-                 pod, tenant):
-        self.source_cluster = source_cluster
-        self.destination_cluster = destination_cluster
-        self.source_bucket = source_bucket
-        self.destination_bucket = destination_bucket
+    def __init__(self, pod):
         self.pod = pod
-        self.tenant = tenant
 
     def create_payload(self, all_scopes=True, **kwargs):
         """
@@ -53,14 +47,16 @@ class DoctorXDCR:
             payload['settings'] = {"priority": "medium"}
         return payload
 
-    def set_up_replication(self):
-        payload = self.create_payload(direction="one-way", source_bucket=self.source_bucket,
-                                      target_cluster=self.destination_cluster.id,
-                                      target_bucket=self.destination_bucket,
+    def set_up_replication(self, tenant,
+                           source_cluster, destination_cluster,
+                           source_bucket, destination_bucket):
+        payload = self.create_payload(direction="one-way", source_bucket=source_bucket,
+                                      target_cluster=destination_cluster.id,
+                                      target_bucket=destination_bucket,
                                       all_scopes=True)
         CapellaAPI.create_xdcr_replication(pod=self.pod,
-                                           tenant=self.tenant,
-                                           cluster_id=self.source_cluster.id,
+                                           tenant=tenant,
+                                           cluster_id=source_cluster.id,
                                            payload=payload)
 
     def is_replication_complete(self, cluster, item_count, bucket_name):

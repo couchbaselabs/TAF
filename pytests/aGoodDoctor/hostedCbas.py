@@ -119,9 +119,8 @@ def execute_via_sdk(client, statement, readonly=False,
 
 class DoctorCBAS():
 
-    def __init__(self, cluster, bucket_util):
+    def __init__(self, bucket_util):
         self.bucket_util = bucket_util
-        self.cluster = cluster
         self.log = logger.get("test")
         self.stop_run = False
 
