@@ -4,8 +4,6 @@ Created on December 4, 2023
 @author: Vipul Bhardwaj
 """
 
-import base64
-import time
 from pytests.Capella.RestAPIv4.Buckets.get_buckets import GetBucket
 
 

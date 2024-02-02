@@ -4,8 +4,6 @@ Created on December 6, 2023
 @author: Vipul Bhardwaj
 """
 
-import base64
-import time
 from pytests.Capella.RestAPIv4.Buckets.get_buckets import GetBucket
 
 
@@ -405,8 +403,11 @@ class DeleteScope(GetBucket):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
-        # Empty scope name is supplied, to test RATE LIMITING scenario
-        # in case of deletion of Scopes.
+        """
+        Scope deletion requests here have an empty name on purpose.
+        And we want to see the erroneous response and handle it as a
+        success to the API calls sent.
+        """
         api_func_list = [[self.capellaAPI.cluster_ops_apis.delete_scope,
                           (self.organisation_id, self.project_id,
                            self.cluster_id, self.bucket_id, "")]]
@@ -459,8 +460,11 @@ class DeleteScope(GetBucket):
                 self.fail("Some API calls failed")
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
-        # Empty scope name is supplied, to test RATE LIMITING scenario
-        # in case of deletion of Scopes.
+        """
+        Scope deletion requests here have an empty name on purpose.
+        And we want to see the erroneous response and handle it as a
+        success to the API calls sent.
+        """
         api_func_list = [[self.capellaAPI.cluster_ops_apis.delete_scope,
                           (self.organisation_id, self.project_id,
                            self.cluster_id, self.bucket_id, "")]]
