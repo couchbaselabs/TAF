@@ -4,7 +4,6 @@ Created on December 18, 2023
 @author: Vipul Bhardwaj
 """
 
-import base64
 import time
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
