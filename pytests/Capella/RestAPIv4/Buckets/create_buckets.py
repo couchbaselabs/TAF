@@ -27,6 +27,7 @@ class CreateBucket(GetCluster):
             "flush": False,
             "timeToLiveInSeconds": 0,
             "evictionPolicy": "fullEviction",
+            "priority": 0,
             "stats": {
                 "itemCount": None,
                 "opsPerSecond": None,
@@ -158,8 +159,8 @@ class CreateBucket(GetCluster):
                 self.expected_result['durabilityLevel'],
                 self.expected_result['replicas'],
                 self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds']
-            )
+                self.expected_result['timeToLiveInSeconds'],
+                self.expected_result['priority'])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_bucket(
@@ -171,8 +172,8 @@ class CreateBucket(GetCluster):
                     self.expected_result['durabilityLevel'],
                     self.expected_result['replicas'],
                     self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds']
-                )
+                    self.expected_result['timeToLiveInSeconds'],
+                    self.expected_result['priority'])
             if result.status_code == 201 and "expected_error" not in testcase:
                 self.expected_result['id'] = result.json()['id']
                 self.bucket_ids.append(result.json()['id'])
@@ -265,8 +266,8 @@ class CreateBucket(GetCluster):
                 self.expected_result['durabilityLevel'],
                 self.expected_result['replicas'],
                 self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds'], headers=header
-            )
+                self.expected_result['timeToLiveInSeconds'],
+                self.expected_result['priority'], headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_bucket(
@@ -278,8 +279,8 @@ class CreateBucket(GetCluster):
                     self.expected_result['durabilityLevel'],
                     self.expected_result['replicas'],
                     self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds']
-                )
+                    self.expected_result['timeToLiveInSeconds'],
+                    self.expected_result['priority'], headers=header)
             if result.status_code == 201 and "expected_error" not in testcase:
                 self.expected_result['id'] = result.json()['id']
                 self.bucket_ids.append(result.json()['id'])
@@ -424,8 +425,8 @@ class CreateBucket(GetCluster):
                 self.expected_result['durabilityLevel'],
                 self.expected_result['replicas'],
                 self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds'], **kwarg
-            )
+                self.expected_result['timeToLiveInSeconds'],
+                self.expected_result['priority'], **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_bucket(
@@ -438,8 +439,8 @@ class CreateBucket(GetCluster):
                     self.expected_result['durabilityLevel'],
                     self.expected_result['replicas'],
                     self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds'], **kwarg
-                )
+                    self.expected_result['timeToLiveInSeconds'],
+                    self.expected_result['priority'], **kwarg)
             if result.status_code == 201 and "expected_error" not in testcase:
                 self.expected_result['id'] = result.json()['id']
                 self.bucket_ids.append(result.json()['id'])
@@ -709,8 +710,8 @@ class CreateBucket(GetCluster):
                 testcase["memoryAllocationInMb"],
                 testcase["bucketConflictResolution"],
                 testcase["durabilityLevel"], testcase['replicas'],
-                testcase['flush'], testcase['timeToLiveInSeconds']
-            )
+                testcase['flush'], testcase['timeToLiveInSeconds'],
+                testcase['priority'])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_bucket(
@@ -720,8 +721,8 @@ class CreateBucket(GetCluster):
                     testcase["memoryAllocationInMb"],
                     testcase["bucketConflictResolution"],
                     testcase["durabilityLevel"], testcase['replicas'],
-                    testcase['flush'], testcase['timeToLiveInSeconds']
-                )
+                    testcase['flush'], testcase['timeToLiveInSeconds'],
+                    testcase['priority'])
             if result.status_code == 201:
                 self.expected_result['id'] = result.json()['id']
                 self.bucket_ids.append(result.json()['id'])
@@ -763,7 +764,8 @@ class CreateBucket(GetCluster):
              self.expected_result['bucketConflictResolution'],
              self.expected_result['durabilityLevel'],
              self.expected_result['replicas'], self.expected_result['flush'],
-             self.expected_result['timeToLiveInSeconds'])
+             self.expected_result['timeToLiveInSeconds'],
+             self.expected_result['priority'])
         ]]
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
@@ -823,7 +825,8 @@ class CreateBucket(GetCluster):
              self.expected_result['bucketConflictResolution'],
              self.expected_result['durabilityLevel'],
              self.expected_result['replicas'], self.expected_result['flush'],
-             self.expected_result['timeToLiveInSeconds'])
+             self.expected_result['timeToLiveInSeconds'],
+             self.expected_result['priority'])
         ]]
         org_roles = self.input.param("org_roles", "organizationOwner")
         proj_roles = self.input.param("proj_roles", "projectDataReader")

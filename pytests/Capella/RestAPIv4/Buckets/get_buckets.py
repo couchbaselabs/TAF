@@ -28,6 +28,7 @@ class GetBucket(GetCluster):
             "flush": False,
             "timeToLiveInSeconds": 0,
             "evictionPolicy": "fullEviction",
+            "priority": 0,
             "stats": {
                 "itemCount": None,
                 "opsPerSecond": None,

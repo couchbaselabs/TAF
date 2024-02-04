@@ -14,11 +14,11 @@ class UpdateBucket(GetCluster):
 
     def setUp(self, nomenclature="Buckets_Update"):
         GetCluster.setUp(self, nomenclature)
+        self.priority = 1
 
         # Initialise bucket params and create a bucket.
         self.expected_result = {
-            "name": self.generate_random_string(
-                5, False, self.prefix + nomenclature),
+            "name": self.prefix + nomenclature,
             "type": "couchbase",
             "storageBackend": "couchstore",
             "memoryAllocationInMb": 100,
@@ -28,6 +28,7 @@ class UpdateBucket(GetCluster):
             "flush": False,
             "timeToLiveInSeconds": 0,
             "evictionPolicy": "fullEviction",
+            "priority": 0,
             "stats": {
                 "itemCount": None,
                 "opsPerSecond": None,
@@ -161,16 +162,18 @@ class UpdateBucket(GetCluster):
                 org, proj, clus, buck,
                 self.expected_result['memoryAllocationInMb'],
                 self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'], True, 10, False
-            )
+                self.expected_result['replicas'], True, 10,
+                False, self.priority % 1001)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                     org, proj, clus, buck,
                     self.expected_result['memoryAllocationInMb'],
                     self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'], True, 10, False
-                )
+                    self.expected_result['replicas'], True, 10,
+                    False, self.priority % 1001)
+
+            self.priority += 1
             if result.status_code == 204:
                 if "expected_error" in testcase:
                     self.log.error(testcase["description"])
@@ -252,8 +255,8 @@ class UpdateBucket(GetCluster):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.expected_result['memoryAllocationInMb'],
                 self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'], True, 10, False, header
-            )
+                self.expected_result['replicas'], True, 10,
+                False, self.priority % 1001, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
@@ -261,8 +264,10 @@ class UpdateBucket(GetCluster):
                     self.bucket_id,
                     self.expected_result['memoryAllocationInMb'],
                     self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'], True, 10, False
-                )
+                    self.expected_result['replicas'], True, 10,
+                    False, self.priority % 1001, header)
+
+            self.priority += 1
             if result.status_code == 204:
                 if "expected_error" in testcase:
                     self.log.error(testcase["description"])
@@ -422,8 +427,8 @@ class UpdateBucket(GetCluster):
                 testcase["clusterID"], testcase['bucketID'],
                 self.expected_result['memoryAllocationInMb'],
                 self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'], True, 10, False, **kwarg
-            )
+                self.expected_result['replicas'], True, 10,
+                False, self.priority % 1001, **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
@@ -431,8 +436,10 @@ class UpdateBucket(GetCluster):
                     testcase["clusterID"], testcase['bucketID'],
                     self.expected_result['memoryAllocationInMb'],
                     self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'], True, 10, False, **kwarg
-                )
+                    self.expected_result['replicas'], True, 10,
+                    False, self.priority % 1001, **kwarg)
+
+            self.priority += 1
             if result.status_code == 204:
                 if "expected_error" in testcase:
                     self.log.error(testcase["description"])
@@ -615,16 +622,17 @@ class UpdateBucket(GetCluster):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, testcase["memoryAllocationInMb"],
                 testcase["durabilityLevel"], testcase['replicas'],
-                testcase['flush'], testcase['timeToLiveInSeconds'], False
-            )
+                testcase['flush'], testcase['timeToLiveInSeconds'],
+                False, testcase["priority"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_id, testcase["memoryAllocationInMb"],
                     testcase["durabilityLevel"], testcase['replicas'],
-                    testcase['flush'], testcase['timeToLiveInSeconds'], False
-                )
+                    testcase['flush'], testcase['timeToLiveInSeconds'],
+                    False, testcase["priority"])
+
             if result.status_code == 204:
                 if "expected_error" in testcase:
                     self.log.error(testcase["description"])
@@ -677,7 +685,7 @@ class UpdateBucket(GetCluster):
             (self.organisation_id, self.project_id, self.cluster_id,
              self.bucket_id, self.expected_result['memoryAllocationInMb'],
              self.expected_result['durabilityLevel'],
-             self.expected_result['replicas'], True, 10, False)
+             self.expected_result['replicas'], True, 10, False, self.priority)
         ]]
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
@@ -732,7 +740,7 @@ class UpdateBucket(GetCluster):
             (self.organisation_id, self.project_id, self.cluster_id,
              self.bucket_id, self.expected_result['memoryAllocationInMb'],
              self.expected_result['durabilityLevel'],
-             self.expected_result['replicas'], True, 10, False)
+             self.expected_result['replicas'], True, 10, False, self.priority)
         ]]
         org_roles = self.input.param("org_roles", "organizationOwner")
         proj_roles = self.input.param("proj_roles", "projectDataReader")
