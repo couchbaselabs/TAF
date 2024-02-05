@@ -303,7 +303,7 @@ class UpgradeTests(UpgradeBase):
                     sync_load_spec[MetaCrudParams.COLLECTIONS_TO_RECREATE] = 1
                     sync_load_spec["doc_crud"][
                         MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
-                
+
                 if self.include_indexing_query and itr < self.nodes_init-1:
                     sync_load_spec[MetaCrudParams.SCOPES_TO_ADD_PER_BUCKET] =  1
                     sync_load_spec[MetaCrudParams.COLLECTIONS_TO_ADD_FOR_NEW_SCOPES] = 1
@@ -1217,7 +1217,7 @@ class UpgradeTests(UpgradeBase):
 
                 rest = RestConnection(self.cluster.master)
                 services = rest.get_nodes_services()
-                print(services)
+                self.log.info("Services on orchestrator node : {}".format(services))
                 services_on_master = services[(self.cluster.master.ip + ":"
                                                + str(self.cluster.master.port))]
 
@@ -1227,6 +1227,10 @@ class UpgradeTests(UpgradeBase):
                         self.spare_node.port,
                         services=services_on_master)
                 otp_nodes = [node.id for node in rest.node_statuses()]
+
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
+
                 self.log.info("Rebalance starting...")
                 self.log.info("Rebalancing-in the node {0}".format(self.spare_node.ip))
                 rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
@@ -1234,6 +1238,9 @@ class UpgradeTests(UpgradeBase):
 
                 if(rebalance_result):
                     self.log.info("Rebalance-in passed successfully")
+
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
 
                 self.cluster_util.print_cluster_stats(self.cluster)
 
@@ -1255,6 +1262,9 @@ class UpgradeTests(UpgradeBase):
                 if rebalance_passed:
                     self.log.info("Rebalance-out of the node successful")
                     self.cluster_util.print_cluster_stats(self.cluster)
+
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
 
             elif reb_task == "swap_rebalance":
                 self.upgrade_helper.install_version_on_nodes(
@@ -1306,8 +1316,14 @@ class UpgradeTests(UpgradeBase):
                     self.log.info("Failover rebalance passed")
                     self.cluster_util.print_cluster_stats(self.cluster)
 
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
+
                 rest.set_recovery_type(otp_node.id,
                                 recoveryType="delta")
+
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
 
                 delta_recovery_buckets = [bucket.name for bucket in self.cluster.buckets]
                 self.log.info("Rebalance starting...")
@@ -1318,6 +1334,9 @@ class UpgradeTests(UpgradeBase):
                 if(rebalance_passed):
                     self.log.info("Rebalance after recovery completed")
                     self.cluster_util.print_cluster_stats(self.cluster)
+
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
 
             elif(reb_task == "failover_full"):
                 rest = RestConnection(self.cluster.master)
@@ -1341,7 +1360,13 @@ class UpgradeTests(UpgradeBase):
                     self.log.info("Failover rebalance passed")
                     self.cluster_util.print_cluster_stats(self.cluster)
 
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
+
                 rest.set_recovery_type(otp_node.id, recoveryType="full")
+
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
 
                 self.log.info("Rebalance starting...")
                 rest.rebalance(otpNodes=[node.id for node in rest.node_statuses()])
@@ -1350,6 +1375,9 @@ class UpgradeTests(UpgradeBase):
                 if(rebalance_passed):
                     self.log.info("Rebalance after recovery completed")
                     self.cluster_util.print_cluster_stats(self.cluster)
+
+                # Validate orchestrator selection
+                self.cluster_util.validate_orchestrator_selection(self.cluster)
 
             elif(reb_task == "replica_update"):
                 self.log.info("Rebalancing-in the node {0}".format(self.spare_node.ip))
