@@ -1,9 +1,11 @@
-from couchbase_helper.documentgenerator import doc_generator
-from bucket_collections.collections_base import CollectionBase
-from Cb_constants import CbServer, DocLoading
 import copy
 
+from Cb_constants import CbServer, DocLoading
+from bucket_collections.collections_base import CollectionBase
+from cb_tools.cbstats import Cbstats
+from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
+from remote.remote_util import RemoteMachineShellConnection
 
 
 class CollectionsTTL(CollectionBase):
@@ -14,7 +16,6 @@ class CollectionsTTL(CollectionBase):
         self.bucket_util._expiry_pager(self.cluster)
         self.remaining_docs = self.input.param("remaining_docs", 0)
         self.update_max_ttl = self.input.param("update_max_ttl", False)
-        self.max_allowed_ttl = 2147483647
 
     def test_collections_ttl(self):
         wait_time = 200
@@ -287,62 +288,67 @@ class CollectionsTTL(CollectionBase):
             self.fail("update of the docs to had no effect on collections_ttl. Num docs : {0}".format(items))
 
     def test_collections_ttl_max_possible_values(self):
-        self.bucket_util.create_collection(self.cluster.master,
-                                      self.bucket,
-                                      "scope1",
-                                      {"name": "collection_3", "maxTTL" : self.max_allowed_ttl})
+        max_ttl_plus_1 = CbServer.max_ttl_seconds+1
+        self.log.info("Testing TTL with upper range for collection")
         try:
-            self.bucket_util.create_collection(self.cluster.master,
-                                               self.bucket,
-                                               "scope1",
-                                               {"name": "collection_4", "maxTTL": self.max_allowed_ttl+1})
-        except Exception as e:
-            self.log.info("collection creation failed as expected as maxTTL was > {0}".format(self.max_allowed_ttl))
+            self.bucket_util.create_collection(
+                self.cluster.master, self.bucket,
+                "scope1", {"name": "collection_3",
+                           "maxTTL": max_ttl_plus_1})
+        except Exception:
+            self.log.debug("Collection not created with TTL={}"
+                           .format(max_ttl_plus_1))
         else:
-            self.fail("collection creation did not fail even when maxTTL was > {0}".format(self.max_allowed_ttl))
+            self.fail("Collection created with maxTTL={0}"
+                      .format(max_ttl_plus_1))
+
+        self.log.info("Testing TTL with negative range for collection")
         try:
-            self.bucket_util.create_collection(self.cluster.master,
-                                               self.bucket,
-                                               "scope1",
-                                               {"name": "collection_5", "maxTTL": -2})
-        except Exception as e:
-            self.log.info("collection creation failed as expected as maxTTL was < -1")
+            self.bucket_util.create_collection(
+                self.cluster.master, self.bucket,
+                "scope1", {"name": "collection_3", "maxTTL": -2})
+        except Exception:
+            self.log.info("Collection creation failed with maxTTL < -1")
         else:
-            self.fail("collection creation did not fail even when maxTTL was < -1")
+            self.fail("Collection creation succeeded with maxTTL < -1")
+
+        self.bucket_util.create_collection(
+            self.cluster.master, self.bucket,
+            "scope1", {"name": "collection_3",
+                       "maxTTL": CbServer.max_ttl_seconds})
 
         if self.update_max_ttl:
-            self.bucket_util.update_ttl_for_collections(self.cluster, self.bucket, ttl_value=self.max_allowed_ttl)
-            self.bucket_util.update_ttl_for_collections(self.cluster, self.bucket, ttl_value=self.max_allowed_ttl,
-                                                        enable_ttl=True)
-            for scope_name in self.bucket.scopes:
-                if scope_name == "_system":
+            self.log.info("Updating collection ttl to max and validate")
+            for _, scope in self.bucket.scopes.items():
+                if scope.name == "_system":
                     continue
-                for coll_name in self.bucket.scopes[scope_name].collections:
-                    col_ttl = self.bucket.scopes[scope_name].collections[coll_name].maxTTL
-                    if col_ttl != self.max_allowed_ttl:
-                        self.fail("collection maxTTL update to {0} failed".format(self.max_allowed_ttl))
+                for _, col in scope.collections.items():
+                    self.bucket_util.set_maxTTL_for_collection(
+                        self.cluster.master, self.bucket,
+                        scope.name, col.name, maxttl=CbServer.max_ttl_seconds)
 
-            status = self.bucket_util.set_maxTTL_for_collection(self.cluster.master,
-                                                                self.bucket,
-                                                                CbServer.default_scope,
-                                                                CbServer.default_collection,
-                                                                maxttl=self.max_allowed_ttl+1)
-            if status is False:
-                self.log.info("Collection maxTTL update to {0} failed as expected".format(
-                                                                            self.max_allowed_ttl+1))
-            else:
-                self.fail("Collection TTL update did not fail even when maxTTL was > {0}".format(
-                                                                            self.max_allowed_ttl))
+            cbstat = Cbstats(self.cluster.master).get_collections(self.bucket)
+            for scope, collections in cbstat.items():
+                if scope == CbServer.system_scope \
+                        or not isinstance(collections, dict):
+                    continue
+                for col_name, col in collections.items():
+                    self.assertEqual(col["maxTTL"], CbServer.max_ttl_seconds,
+                                     "Collection maxTTL update to {} failed"
+                                     .format(CbServer.max_ttl_seconds))
 
-            status = self.bucket_util.set_maxTTL_for_collection(self.cluster.master,
-                                                                self.bucket,
-                                                                "scope1",
-                                                                "collection_1",
-                                                                maxttl=-2)
-            if status is False:
-                self.log.info("Collection maxTTL update to -2 failed as expected")
-            else:
-                self.fail("Collection TTL update did not fail even when maxTTL was < 0")
+            status = self.bucket_util.set_maxTTL_for_collection(
+                self.cluster.master, self.bucket, CbServer.default_scope,
+                CbServer.default_collection, maxttl=max_ttl_plus_1)
+            if status:
+                self.fail("Collection TTL update did not fail with maxTTL={0}"
+                          .format(CbServer.max_ttl_seconds))
+
+            status = self.bucket_util.set_maxTTL_for_collection(
+                self.cluster.master, self.bucket, "scope1", "collection_1",
+                maxttl=-2)
+            if status:
+                self.fail("Collection TTL update didn't fail with maxTTL < -1")
 
     def test_doc_preserve_ttl(self):
         """
@@ -371,16 +377,16 @@ class CollectionsTTL(CollectionBase):
         rest = RestConnection(self.cluster.master)
         client = self.sdk_client_pool.get_client_for_bucket(bucket)
 
-        key = "doc_preserve_expiry_with_ttl"
-
+        preserve_ttl_key = "doc_preserve_expiry_with_ttl"
         for scope, col in scope_col_list:
             self.log.info("Loading docs in to {}:{}".format(scope, col))
             client.select_collection(scope, col)
 
             # MB-58664
-            client.crud(DocLoading.Bucket.DocOps.UPDATE, key, {},
+            client.crud(DocLoading.Bucket.DocOps.UPDATE, preserve_ttl_key, {},
                         preserve_expiry=True, exp=60)
-            result = client.read(key, populate_value=False, with_expiry=True)
+            result = client.read(preserve_ttl_key, populate_value=False,
+                                 with_expiry=True)
             self.assertTrue(result["ttl_present"], "TTL not present")
 
             # MB-58693
@@ -441,6 +447,7 @@ class CollectionsTTL(CollectionBase):
                 r = client.upsert(key, {}, durability=self.durability_level)
                 self.log.debug("Upsert %s:%s :: %s" % (t_scope, t_col, r["cas"]))
                 self.assertTrue(r["status"], "Insert failed")
+
         def validate_expired_docs(cols_with_expired_doc):
             for t_scope, t_col in scope_col_list:
                 client.select_collection(t_scope, t_col)
@@ -488,9 +495,9 @@ class CollectionsTTL(CollectionBase):
         load_docs_into_each_collection()
         self.sleep(15, "Wait for doc to expire")
         self.log.info("Reading docs to validate doc status")
-        validate_expired_docs(["_default", "c1", "c4"])
+        validate_expired_docs(["_default", "c1", "c2"])
         self.sleep(50, "Wait for doc to expire on collection with TTL")
-        validate_expired_docs(["_default", "c1", "c3", "c4"])
+        validate_expired_docs(["_default", "c1", "c2", "c3"])
 
         self.log.info("Dropping custom created collections")
         for scope, col in scope_col_list[1:]:
@@ -517,9 +524,9 @@ class CollectionsTTL(CollectionBase):
         self.sleep(15, "Wait before no expiry will be triggered and validate")
         validate_expired_docs(list())
         self.sleep(10, "Wait for bucket ttl to get trigger")
-        validate_expired_docs(["_default", "c1", "c4"])
+        validate_expired_docs(["_default", "c1", "c2"])
         self.sleep(40, "Wait for doc to expire on collection with TTL")
-        validate_expired_docs(["_default", "c1", "c3", "c4"])
+        validate_expired_docs(["_default", "c1", "c2", "c3"])
 
         self.log.info("Releasing SDK client")
         client.select_collection(CbServer.default_scope,
@@ -583,8 +590,8 @@ class CollectionsTTL(CollectionBase):
 
     def test_collections_ttl_after_initially_setting_as_0(self):
         self.task.load_gen_docs(
-            self.cluster, self.bucket, self.load_gen, "create", exp=self.maxttl,
-            batch_size=10, process_concurrency=8,
+            self.cluster, self.bucket, self.load_gen, "create",
+            exp=self.maxttl, batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
@@ -600,30 +607,47 @@ class CollectionsTTL(CollectionBase):
         self.bucket_util.validate_doc_count_as_per_collections(
             self.cluster, self.bucket)
 
-        self.bucket_util.update_ttl_for_collections(self.cluster, self.bucket, ttl_value=100,
-                                                    enable_ttl=True)
+        for _, scope in self.bucket.scopes.items():
+            if scope.name == CbServer.system_scope:
+                continue
+            for _, col in scope.collections.items():
+                self.bucket_util.set_maxTTL_for_collection(
+                    self.cluster.master, self.bucket,
+                    scope.name, col.name, maxttl=100)
 
         self.bucket_util._expiry_pager(self.cluster, val=1)
+        self.sleep(5, "Wait for item_pager to run")
 
-        val_status, items = self.wait_time_validation_of_docs_ttl(120, num_docs=self.num_items)
-        if not val_status:
-            self.fail("New collection ttl value was inherited by the existing docs")
+        exp_items = self.bucket.scopes[CbServer.default_scope] \
+            .collections[CbServer.default_collection].num_items
+        curr_items = self.bucket_helper_obj.get_active_key_count("default")
+        self.assertEqual(int(curr_items), exp_items,
+                         "Updated collection ttl inherited by existing docs")
 
         # Update the existing docs
-        update_load_gen = copy.deepcopy(self.load_gen)
         self.task.load_gen_docs(
-            self.cluster, self.bucket, update_load_gen, "update", exp=0,
+            self.cluster, self.bucket, self.load_gen,
+            DocLoading.Bucket.DocOps.UPDATE,
             batch_size=10, process_concurrency=8,
-            replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             scope=CbServer.default_scope,
             collection=CbServer.default_collection)
 
-        val_status, items = self.wait_time_validation_of_docs_ttl(120, num_docs=0)
+        self.bucket.scopes[CbServer.default_scope] \
+            .collections[CbServer.default_collection] \
+            .num_items -= self.num_items
+
+        self.sleep(105, "Wait for docs to expire")
+        self.bucket_util._expiry_pager(self.cluster, val=1)
+
+        exp_items = self.bucket.scopes[CbServer.default_scope] \
+            .collections[CbServer.default_collection].num_items
+        val_status, items = self.wait_time_validation_of_docs_ttl(
+            120, num_docs=exp_items)
         if not val_status:
-            self.fail("New collection ttl value was not inherited by the exisiting docs \
-                                                after the update")
+            self.fail("New collection ttl value was not inherited by "
+                      "the exisiting docs after the update")
 
     def test_collections_ttl_with_non_0_and_then_setting_as_0(self):
         self.task.load_gen_docs(
@@ -698,11 +722,13 @@ class CollectionsTTL(CollectionBase):
         self.log.info("Validating expiry of docs dynamically")
         check_time = 0
         status = False
+        items_in_bucket = 0
 
         while check_time <= wait_time:
             items_in_bucket = self.bucket_helper_obj.get_active_key_count("default")
             if items_in_bucket == num_docs:
                 status = True
+                break
             check_time += time_interval
             self.sleep(time_interval)
 
