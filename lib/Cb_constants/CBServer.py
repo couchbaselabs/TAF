@@ -126,6 +126,9 @@ class CbServer(object):
     max_scopes = 1200
     max_collections = 1200
 
+    # TTL limit
+    max_ttl_seconds = 2147483647
+
     # Max supported system_event_logs
     sys_event_min_logs = 3000
     sys_event_max_logs = 20000
