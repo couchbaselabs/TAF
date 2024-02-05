@@ -3793,12 +3793,6 @@ class OtpNode(object):
         self.status = status
 
 
-class NodeInfo(object):
-    def __init__(self):
-        self.availableStorage = None  # list
-        self.memoryQuota = None
-
-
 class NodeDataStorage(object):
     def __init__(self):
         self.type = ''  # hdd or ssd
@@ -3891,25 +3885,6 @@ class AutoReprovisionSettings(object):
 class RestParser(object):
     def __init__(self, server_type="dedicated"):
         self.server_type = server_type
-
-    def parse_index_status_response(self, parsed):
-        index_map = dict()
-        for index_map in parsed["indexes"]:
-            bucket_name = index_map['bucket'].encode('ascii', 'ignore')
-            if bucket_name not in index_map.keys():
-                index_map[bucket_name] = {}
-            index_name = index_map['index'].encode('ascii', 'ignore')
-            index_map[bucket_name][index_name] = {}
-            index_map[bucket_name][index_name]['status'] = \
-                index_map['status'].encode('ascii', 'ignore')
-            index_map[bucket_name][index_name]['progress'] = \
-                str(index_map['progress']).encode('ascii', 'ignore')
-            index_map[bucket_name][index_name]['definition'] = \
-                index_map['definition'].encode('ascii', 'ignore')
-            index_map[bucket_name][index_name]['hosts'] = \
-                index_map['hosts'][0].encode('ascii', 'ignore')
-            index_map[bucket_name][index_name]['id'] = index_map['id']
-        return index_map
 
     def parse_get_nodes_response(self, parsed):
         node = Node()
