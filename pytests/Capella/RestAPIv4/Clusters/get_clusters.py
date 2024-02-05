@@ -4,8 +4,6 @@ Created on July 13, 2023
 @author: Vipul Bhardwaj
 """
 
-import time
-import base64
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
@@ -20,8 +18,8 @@ class GetCluster(GetProject):
             "name": cluster_name,
             "description": None,
             "cloudProvider": {
-                "type": "azure",
-                "region": "eastus",
+                "type": "aws",
+                "region": "us-east-1",
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
@@ -35,8 +33,9 @@ class GetCluster(GetProject):
                             "ram": 16
                         },
                         "disk": {
-                            "type": "P6",
-                            "autoExpansion": True
+                            "storage": 50,
+                            "type": "gp3",
+                            "iops": 3000
                         }
                     },
                     "numOfNodes": 3,
