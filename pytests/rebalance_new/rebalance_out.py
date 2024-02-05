@@ -82,17 +82,44 @@ class RebalanceOutTests(RebalanceBaseTest):
             self.cluster)
 
     def rebalance_out_with_ops(self):
+        rebalance_out_orchestrator = \
+            self.input.param("rebalance_out_orchestrator", False)
+        verify_MB_57991 = self.input.param("verify_MB_57991", False)
         self.gen_create = doc_generator(self.key, self.num_items,
                                         self.num_items + self.items)
         self.gen_delete = doc_generator(self.key, self.items / 2,
                                         self.items)
-        servs_out = [self.cluster.servers[self.nodes_init - i - 1]
-                     for i in range(self.nodes_out)]
+        servs_out = []
+        if rebalance_out_orchestrator:
+            orchestrator_added_to_rebalance_out = False
+            nodes_out = self.nodes_out
+            _, node = self.cluster_util.get_orchestrator_node(
+                self.cluster.master)
+            for server in self.cluster.servers:
+                if server.ip == node:
+                    orchestrator_added_to_rebalance_out = True
+                    servs_out.append(server)
+                    nodes_out -= 1
+                elif not orchestrator_added_to_rebalance_out and nodes_out > 1:
+                    servs_out.append(server)
+                    nodes_out -= 1
+                elif orchestrator_added_to_rebalance_out and nodes_out > 0:
+                    servs_out.append(server)
+                    nodes_out -= 1
+        else:
+            servs_out = [self.cluster.servers[self.nodes_init - i - 1]
+                         for i in range(self.nodes_out)]
         tasks = list()
         rebalance_task = self.task.async_rebalance(self.cluster, [], servs_out)
         tasks_info = self.loadgen_docs()
         self.sleep(15, "Wait for rebalance to start")
-
+        if verify_MB_57991:
+            status = self.rest.monitorRebalance()
+            self.assertTrue(status, "re-balance failed")
+            for bucket in self.cluster.buckets:
+                status = self.bucket_util.delete_bucket(self.cluster, bucket,
+                                                        wait_for_bucket_deletion=True)
+                self.assertTrue(status, "deletion bucket failed")
         # Wait for rebalance + doc_loading tasks to complete
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if not rebalance_task.result:
@@ -143,9 +170,10 @@ class RebalanceOutTests(RebalanceBaseTest):
                                 batch_size=self.batch_size,
                                 process_concurrency=self.process_concurrency,
                                 check_replica=self.check_replica))
+
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
-        if not self.atomicity:
+        if not self.atomicity and not verify_MB_57991:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
 
