@@ -799,11 +799,14 @@ class UpgradeTests(UpgradeBase):
         self.validate_test_failure()
 
         possible_d_levels = dict()
-        possible_d_levels[Bucket.Type.MEMBASE] = \
-            self.bucket_util.get_supported_durability_levels()
+        possible_d_levels[Bucket.Type.MEMBASE] = [
+            Bucket.DurabilityMinLevel.NONE,
+            Bucket.DurabilityMinLevel.MAJORITY,
+            Bucket.DurabilityMinLevel.MAJORITY_AND_PERSIST_ACTIVE,
+            Bucket.DurabilityMinLevel.PERSIST_TO_MAJORITY]
         possible_d_levels[Bucket.Type.EPHEMERAL] = [
-            SDKConstants.DurabilityLevel.NONE,
-            SDKConstants.DurabilityLevel.MAJORITY]
+            Bucket.DurabilityMinLevel.NONE,
+            Bucket.DurabilityMinLevel.MAJORITY]
         len_possible_d_levels = len(possible_d_levels[self.bucket_type]) - 1
 
         if not sync_write_support:
@@ -2023,7 +2026,6 @@ class UpgradeTests(UpgradeBase):
             error_msg = "Alternate shard ID not present for {}".format(idx_name)
             self.assertTrue(exp, error_msg)
         self.log.info("Alternate shard IDs present for all indexes")
-
 
     def insert_json_docs_sdk(self, num_items):
 
