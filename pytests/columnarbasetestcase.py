@@ -115,22 +115,22 @@ class ColumnarBaseTest(CouchbaseBaseTest):
 
         if self.is_test_failed() and self.get_cbcollect_info:
             # Add code to get goldfish logs.
-            return
+            pass
 
         if self.skip_teardown_cleanup:
             return
+        self.delete_cluster(self.cluster)
+        self.wait_for_cluster_deletion(self.cluster)
 
-        def delete_cluster(user, cluster, result):
-            if not self.goldfish_utils.delete_goldfish_cluster(
-                    self.pod, user, cluster):
-                result.append("Deleting cluster {0} failed".format(cluster.name))
+    def delete_cluster(self, cluster):
+        result = self.goldfish_utils.delete_goldfish_cluster(
+            self.pod, self.tenant, cluster)
+        self.assertTrue(result, "Deleting cluster {0} failed".format(cluster.name))
 
-        def wait_for_cluster_deletion(user, cluster, results):
-            result = self.goldfish_utils.wait_for_cluster_to_be_destroyed(
-                self.pod, user, cluster)
-            if not result:
-                results.append("Cluster {0} failed to be deleted".format(
-                    cluster.name))
+    def wait_for_cluster_deletion(self, cluster):
+        result = self.goldfish_utils.wait_for_cluster_to_be_destroyed(
+            self.pod, self.tenant, cluster)
+        self.assertTrue(result, "Cluster {0} failed to be deleted".format(cluster.name))
 
 
 class ClusterSetup(ColumnarBaseTest):
