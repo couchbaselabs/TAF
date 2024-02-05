@@ -1681,15 +1681,6 @@ class RestConnection(newRC):
             json_parsed = json.loads(content)
             return json_parsed
 
-    def get_pools(self):
-        version = None
-        api = self.baseUrl + 'pools'
-        status, content, header = self._http_request(api)
-        json_parsed = json.loads(content)
-        if status:
-            version = MembaseServerVersion(json_parsed['implementationVersion'], json_parsed['componentsVersion'])
-        return version
-
     def fetch_system_stats(self):
         """Return deserialized system stats."""
         api = self.baseUrl + 'pools/default/'
@@ -3782,12 +3773,6 @@ class RestConnection(newRC):
         api = self.baseUrl + 'settings/saml'
         status, content, header = self._http_request(api, 'DELETE')
         return status, content, header
-
-
-class MembaseServerVersion:
-    def __init__(self, implementationVersion='', componentsVersion=''):
-        self.implementationVersion = implementationVersion
-        self.componentsVersion = componentsVersion
 
 
 # this class will also contain more node related info
