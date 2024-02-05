@@ -193,6 +193,12 @@ class ClusterUtils:
         while retry_index < max_retry:
             status, content = rest.get_terse_cluster_info()
             json_content = json.loads(content)
+            # TODO - Investigate why unknown pool is returned by pools/default/terseClusterInfo
+            if json_content == "unknown pool" or status == 404:
+                sleep(5, message="pools/default/terseClusterInfo returned \
+                      status {} content {}".format(status, json_content))
+                retry_index += 1
+                continue
             orchestrator_node = json_content["orchestrator"]
             if orchestrator_node == "undefined":
                 sleep(2, message="orchestrator='undefined'", log_type="test")
