@@ -4,6 +4,7 @@ Created on 3-January-2024
 @author: abhay.aggrawal@couchbase.com
 """
 import math
+import os.path
 import random
 import time
 
@@ -1370,14 +1371,131 @@ class CopyToS3(GoldFishBaseTest):
                                                                   region=self.aws_region,
                                                                   aws_session_token=self.aws_session_token,
                                                                   bucket_name=self.sink_s3_bucket_name,
-                                                                  get_bucket_objects=True)]
-        _ = perform_S3_operation(aws_access_key=self.aws_access_key,
-                                 aws_secret_key=self.aws_secret_key,
-                                 region=self.aws_region,
-                                 aws_session_token=self.aws_session_token,
-                                 bucket_name=self.sink_s3_bucket_name,
-                                 download_file=True, src_path=verification_file,
-                                 dest_path="/Users/abhayayay/Desktop/")
+                                                                  get_bucket_objects=True)][0]
+        for i in range(len(datasets)):
+            path = "copy_dataset_" + str(i)
+            file_to_download = [x for x in verification_file if x.startswith(path)][0]
+            dest_path = os.path.join(os.path.dirname(__file__), "download.json")
+            _ = perform_S3_operation(aws_access_key=self.aws_access_key,
+                                     aws_secret_key=self.aws_secret_key,
+                                     region=self.aws_region,
+                                     aws_session_token=self.aws_session_token,
+                                     bucket_name=self.sink_s3_bucket_name,
+                                     download_file=True, src_path=file_to_download,
+                                     dest_path=dest_path
+                                     )
+
+            json_data = []
+            with open(dest_path, 'r') as json_file:
+            # Load the JSON data from the file
+                for line in json_file:
+                    data = json.loads(line)
+                    json_data.append(data)
+
+            sorted_data = sorted(json_data, key=lambda x: x['avg_rating'], reverse=True)
+
+            for dict1, dict2 in zip(json_data, sorted_data):
+                if dict1 != dict2:
+                    self.fail("The data is not in sorted order")
+
+        # need to add data in file ordering checks
+        results = []
+        for i in range(len(datasets)):
+            path = "copy_dataset_" + str(i)
+            statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
+            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)[0]
+            if result[0]['$1'] != doc_count_in_dataset:
+                self.log.error("Document count mismatch in S3 dataset {0} and dataset {1}".format(
+                    dataset_obj.full_name, datasets[i].full_name
+                ))
+            results.append(result[0]['$1'] == doc_count_in_dataset)
+        if not all(results):
+            self.fail("The document count does not match in dataset and S3")
+
+    def test_create_copyToS3_from_collection_multiple_order_by_query_drop_standalone_collection(self):
+        # blocked by MB-60394
+        self.base_infra_setup()
+        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        no_of_docs = self.input.param("no_of_docs", 10000)
+
+        jobs = Queue()
+        results = []
+        self.log.info("Adding {} documents in standalone dataset. Default doc size is 1KB".format(no_of_docs))
+        for dataset in datasets:
+            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name
+                          , "no_of_docs": no_of_docs}))
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        if not all(results):
+            self.log.error("Some documents were not inserted")
+
+        results = []
+        for i in range(len(datasets)):
+            path = "copy_dataset_" + str(i)
+            jobs.put((self.cbas_util.copy_to_s3,
+                      {"cluster": self.cluster, "collection_name": datasets[i].name,
+                       "dataverse_name": datasets[i].dataverse_name,
+                       "database_name": datasets[i].database_name,
+                       "alias_identifier": "ally",
+                       "destination_bucket": self.sink_s3_bucket_name,
+                       "order_by": "ally.avg_rating DESC, ally.country DESC",
+                       "destination_link_name": s3_link.full_name, "path": path}))
+
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        if not all(results):
+            self.log.error("Failed to execute copy to statement")
+
+        path_on_external_container = "{copy_dataset:string}"
+        # create external dataset on the S3 bucket
+        dataset_obj = self.cbas_util.create_external_dataset_obj(self.cluster,
+                                                                 external_container_names={
+                                                                     self.sink_s3_bucket_name: self.aws_region},
+                                                                 paths_on_external_container=[
+                                                                     path_on_external_container],
+                                                                 file_format="json")[0]
+
+        if not self.create_external_dataset(dataset_obj):
+            self.fail("Failed to create external dataset on destination S3 bucket")
+
+        verification_file = [str(x) for x in perform_S3_operation(aws_access_key=self.aws_access_key,
+                                                                  aws_secret_key=self.aws_secret_key,
+                                                                  region=self.aws_region,
+                                                                  aws_session_token=self.aws_session_token,
+                                                                  bucket_name=self.sink_s3_bucket_name,
+                                                                  get_bucket_objects=True)][0]
+
+        for i in range(len(datasets)):
+            path = "copy_dataset_" + str(i)
+            file_to_download = [x for x in verification_file if x.startswith(path)][0]
+            dest_path = os.path.join(os.path.dirname(__file__), "download.json")
+            _ = perform_S3_operation(aws_access_key=self.aws_access_key,
+                                     aws_secret_key=self.aws_secret_key,
+                                     region=self.aws_region,
+                                     aws_session_token=self.aws_session_token,
+                                     bucket_name=self.sink_s3_bucket_name,
+                                     download_file=True, src_path=file_to_download,
+                                     dest_path=dest_path
+                                     )
+
+            json_data = []
+            with open(dest_path, 'r') as json_file:
+                # Load the JSON data from the file
+                for line in json_file:
+                    data = json.loads(line)
+                    json_data.append(data)
+
+            sorted_data = sorted(json_data, key=lambda x: (-x['avg_rating'], -x['country']))
+
+            for dict1, dict2 in zip(json_data, sorted_data):
+                if dict1 != dict2:
+                    self.fail("The data is not in sorted order")
 
         # need to add data in file ordering checks
         results = []
