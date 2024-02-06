@@ -78,7 +78,7 @@ class CBASSystemEventLogs(CBASBaseTest):
                 RemoteUtilHelper.enable_firewall(
                     node, bidirectional=False, xdcr=False,
                     action_on_packet="REJECT", block_ips=[self.cluster.cbas_cc_node.ip],
-                    all_interface=True)
+                    all_interface=True, destination_ports="9115")
 
             self.log.info("Rebalancing IN CBAS node to trigger "
                           "topology_change_started event")
