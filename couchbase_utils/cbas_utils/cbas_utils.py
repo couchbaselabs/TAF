@@ -4522,7 +4522,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 return True
 
     def create_standalone_dataset_obj(
-            self, no_of_objs=1, dataset_cardinality=1,
+            self, cluster, no_of_objs=1, dataset_cardinality=1,
             datasource=None, primary_key={},
             link=None, same_dv_for_link_and_dataset=False,
             external_collection_name=None, database_name="Default", dataverse_name=None,
@@ -4579,8 +4579,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 database_name = CBASHelper.unformat_name(database_name)
                 dataverse_obj = self.get_dataverse_obj(dataverse_name, database_name)
                 if not dataverse_obj:
-                    dataverse_obj = Dataverse(dataverse_name, database_name)
-                    self.create_dataverse(dataverse_obj.name, database_name)
+                    self.create_dataverse(cluster, dataverse_name, database_name)
+                    dataverse_obj = self.get_dataverse_obj(dataverse_name, database_name)
             else:
                 dataverse_obj = self.get_dataverse_obj("Default")
 
@@ -4595,7 +4595,6 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 storage_format)
 
             collection_objs.append(dataset_obj)
-
             dataverse_obj.standalone_datasets[dataset_obj.name] = dataset_obj
         return collection_objs
 

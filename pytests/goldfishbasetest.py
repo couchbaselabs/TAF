@@ -37,8 +37,11 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         # initialize pod object
         url = self.capella.get("pod")
         project_id = self.capella.get("project_id") if not self.capella.get("project_id") == "" else None
-        instance_ids = self.capella.get("instance_id").split(',') if not (
-                self.capella.get("instance_id") == "") else None
+        if isinstance(self.capella.get("instance_id"), list):
+            instance_ids = self.capella.get("instance_id")
+        else:
+            instance_ids = self.capella.get("instance_id").split(',') if not (
+                    self.capella.get("instance_id") == "") else None
 
         self.pod = Pod(
             "https://%s" % url, self.capella.get("token", None))

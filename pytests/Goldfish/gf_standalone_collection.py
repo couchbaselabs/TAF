@@ -9,7 +9,7 @@ from Goldfish.goldfish_base import GoldFishBaseTest
 class StandaloneCollection(GoldFishBaseTest):
     def setUp(self):
         super(StandaloneCollection, self).setUp()
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.doc_size = self.input.param("doc_size", 1024)
@@ -30,7 +30,7 @@ class StandaloneCollection(GoldFishBaseTest):
         database_name = self.input.param("database", "Default")
         dataverse_name = self.input.param("dataverse", "Default")
         no_of_collection = self.input.param("num_of_standalone_coll", 1)
-        key = json.loads(self.input.param("key", None))
+        key = json.loads(self.input.param("key", None)) if self.input.param("key", None) != None else None
         primary_key = dict()
         validate_error = self.input.param("validate_error", False)
         error_message = str(self.input.param("error_message", None))
@@ -42,7 +42,7 @@ class StandaloneCollection(GoldFishBaseTest):
         jobs = Queue()
         results = []
         for i in range(no_of_collection):
-            dataset_obj = self.cbas_util.create_standalone_dataset_obj(database_name=database_name,
+            dataset_obj = self.cbas_util.create_standalone_dataset_obj(self.cluster, database_name=database_name,
                                                                        dataverse_name=dataverse_name)
             jobs.put((self.cbas_util.create_standalone_collection,
                       {"cluster": self.cluster, "collection_name": dataset_obj[0].name,
