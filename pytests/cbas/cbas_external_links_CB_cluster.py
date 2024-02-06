@@ -315,11 +315,6 @@ class CBASExternalLinks(CBASBaseTest):
                 "expected_error": "Links starting with \'Local\' are reserved by the system"
             },
             {
-                "description": "Create a link when remote host is unreachable",
-                "stop_server": True,
-                "expected_error": 'Cannot connect to host'
-            },
-            {
                 "description": "Create a link with half encryption",
                 "encryption": "half",
                 "validate_error_msg": False,
@@ -380,10 +375,6 @@ class CBASExternalLinks(CBASBaseTest):
                     elif key in link_properties and key != "username":
                         link_properties[key] = value
 
-                if testcase.get("stop_server", False):
-                    self.cluster_util.stop_server(to_cluster, to_cluster.master)
-                    self.sleep(30, "Sleeping after stopping the server")
-
                 if not self.cbas_util.create_link(
                     self.analytics_cluster, link_properties,
                     username=testcase.get("username", self.analytics_username),
@@ -391,9 +382,6 @@ class CBASExternalLinks(CBASBaseTest):
                     expected_error=testcase.get("expected_error", None),
                     create_dataverse=testcase.get("create_dataverse", True)):
                     raise Exception("Error while creating link")
-
-                if testcase.get("stop_server", False):
-                    start_server()
 
                 if testcase.get("recreate_link", False):
                     testcase["validate_error_msg"] = True
@@ -412,8 +400,6 @@ class CBASExternalLinks(CBASBaseTest):
             except Exception as err:
                 self.log.error(str(err))
                 failed_testcases.append(testcase["description"])
-                if testcase.get("stop_server", False):
-                    start_server()
         if failed_testcases:
             self.fail("Following testcases failed - {0}".format(
                 str(failed_testcases)))

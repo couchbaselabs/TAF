@@ -1618,7 +1618,7 @@ class CBASExternalLinks(CBASBaseTest):
                 self.fail("Expected data does not match actual data")
 
     def test_large_file(self):
-        self.aws_buckets = {"cbas-regression-1":"us-west-1"}
+        self.aws_buckets = {"cbas-regression-1": "us-west-1"}
         object_construction_def = "key1 STRING, key2 STRING, key3 STRING, key4 STRING"
         doc_counts = {
             "json": 13950000,
