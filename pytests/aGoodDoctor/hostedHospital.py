@@ -815,15 +815,11 @@ class Murphy(BaseTestCase, OPD):
                 time.sleep(5*60)
                 if self.rebalance_type == "all" or self.rebalance_type == "disk":
                     # Rebalance 1 - Disk Upgrade
-                    initial_services = self.input.param("services", "data")
-                    for service_group in initial_services.split("-"):
+                    for service_group in self.rebl_services:
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
                             self.disk[service] = self.disk[service] + disk_increment
-                    if self.backup_restore:
-                        self.drBackupRestore.backup_now(wait_for_backup=False)
-                    for service in self.rebl_services:
                         config = self.rebalance_config(service)
                         self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                            config,
@@ -831,6 +827,8 @@ class Murphy(BaseTestCase, OPD):
                         self.monitor_rebalance()
                         self.task_manager.get_task_result(self.rebalance_task)
                         self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
+                    if self.backup_restore:
+                        self.drBackupRestore.backup_now(wait_for_backup=False)
                     disk_increment = disk_increment * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
                     #turn cluster off and back on
@@ -850,18 +848,13 @@ class Murphy(BaseTestCase, OPD):
                 if self.rebalance_type == "all" or self.rebalance_type == "compute":
                     # Rebalance 2 - Compute Upgrade
                     self.restart_query_load(num=10*compute_change)
-                    initial_services = self.input.param("services", "data")
-                    for service_group in initial_services.split("-"):
+                    for service_group in self.rebl_services:
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         comp = computeList.index(self.compute[service])
                         comp = comp + compute_change if len(computeList) > comp + compute_change else comp
                         self.compute[service] = computeList[comp]
-                    config = self.rebalance_config()
-                    if self.backup_restore:
-                        self.drBackupRestore.backup_now(wait_for_backup=False)
-                    for service in self.rebl_services:
-                        config = self.rebalance_config(service)
+                        config = self.rebalance_config()
                         self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                            config,
                                                                            timeout=96*60*60)
@@ -869,6 +862,8 @@ class Murphy(BaseTestCase, OPD):
                         self.task_manager.get_task_result(self.rebalance_task)
                         self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                         self.cluster_util.print_cluster_stats(self.cluster)
+                    if self.backup_restore:
+                        self.drBackupRestore.backup_now(wait_for_backup=False)
                     compute_change = compute_change * -1
                     #turn cluster off and back on
                     if self.turn_cluster_off:
@@ -887,8 +882,7 @@ class Murphy(BaseTestCase, OPD):
                 if self.rebalance_type == "all" or self.rebalance_type == "disk_compute":
                     # Rebalance 3 - Both Disk/Compute Upgrade
                     self.restart_query_load(num=10*compute_change)
-                    initial_services = self.input.param("services", "data")
-                    for service_group in initial_services.split("-"):
+                    for service_group in self.rebl_services:
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
@@ -896,17 +890,15 @@ class Murphy(BaseTestCase, OPD):
                         comp = computeList.index(self.compute[service])
                         comp = comp + compute_change if len(computeList) > comp + compute_change else comp
                         self.compute[service] = computeList[comp]
-                    config = self.rebalance_config()
-                    if self.backup_restore:
-                        self.drBackupRestore.backup_now(wait_for_backup=False)
-                    for service in self.rebl_services:
-                        config = self.rebalance_config(service)
+                        config = self.rebalance_config()
                         self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                            config,
                                                                            timeout=96*60*60)
                         self.monitor_rebalance()
                         self.task_manager.get_task_result(self.rebalance_task)
                         self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
+                    if self.backup_restore:
+                        self.drBackupRestore.backup_now(wait_for_backup=False)
                     disk_increment = disk_increment * -1
                     compute_change = compute_change * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
