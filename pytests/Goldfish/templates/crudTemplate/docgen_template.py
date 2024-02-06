@@ -49,7 +49,7 @@ class Hotel:
         domain = ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(5, 10)))
         self.url = "www.{0}.{1}.com".format(username, domain)
         self.reviews = self.build_review(random.randint(0, 10))
-        self.phone = random.randint(100, 9999)
+        self.phone = random.randint(1000, 9999999)
         self.price = random.choice([1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0,
                                     7000.0, 8000.0, 9000.0, 10000.0])
         self.avg_rating = random.uniform(0, 1)

@@ -247,16 +247,18 @@ class BaseUtil(object):
             else:
                 max_name_len = max_length / name_cardinality
                 if fixed_length:
-                    generated_name = '.'.join(''.join(random.choice(
+                    generated_name = random.choice(
+                        string.ascii_letters) + ('.'.join(''.join(random.choice(
                         string.ascii_letters + string.digits)
-                                                      for _ in range(max_name_len))
-                                              for _ in range(name_cardinality))
+                                                                  for _ in range(max_name_len))
+                                                          for _ in range(name_cardinality)))
                 else:
-                    generated_name = '.'.join(''.join(random.choice(
+                    generated_name = random.choice(
+                        string.ascii_letters) + '.'.join(''.join(random.choice(
                         string.ascii_letters + string.digits)
-                                                      for _ in range(
+                                                                 for _ in range(
                         random.randint(1, max_name_len)))
-                                              for _ in range(name_cardinality))
+                                                         for _ in range(name_cardinality))
             reserved_words = {"at", "in", "for", "by", "which", "select",
                               "from", "like", "or", "and", "to", "if", "else",
                               "as", "with", "on", "where", "is", "all", "end",
@@ -643,6 +645,12 @@ class Dataverse_Util(Database_Util):
                 cluster, database_name, if_not_exists=True,
                 timeout=timeout, analytics_timeout=analytics_timeout):
             return False
+        if dataverse_name == "Default":
+            if database_name == "Default":
+                return True
+            else:
+                self.log.error("Cannot create dataverse Default")
+                return False
         if analytics_scope:
             cmd = "create analytics scope "
         elif scope:
@@ -1860,7 +1868,7 @@ class KafkaLink_Util(ExternalLink_Util):
             for link in kafka_links:
                 link_info = self.get_link_info(
                     cluster, link.dataverse_name,
-                    link.database_name,link.name, link.link_type)
+                    link.database_name, link.name, link.link_type)
                 if ((type(link_info) is not None) and len(link_info) > 0 and
                         "linkState" in link_info[0] and link_info[0][
                             "linkState"] == state):
@@ -1900,9 +1908,9 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         if dataverse_name and dataverse_name != "Default" and not \
                 self.create_dataverse(
-                cluster, dataverse_name=dataverse_name,
-                database_name=database_name, if_not_exists=True,
-                timeout=timeout, analytics_timeout=analytics_timeout):
+                    cluster, dataverse_name=dataverse_name,
+                    database_name=database_name, if_not_exists=True,
+                    timeout=timeout, analytics_timeout=analytics_timeout):
             return False
 
         if dataverse_name:
@@ -3922,10 +3930,10 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 batch_start = i
                 batch_end = min(i + batch_size, no_of_docs)
                 tasks = []
-                
+
                 for j in range(batch_start, batch_end):
                     tasks.append(self.GenerateDocsCallable(self, document_size, country_type, include_country))
-                
+
                 batch_docs = []
                 futures = executor.invokeAll(tasks)
                 for future in futures:
@@ -4515,9 +4523,9 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
 
     def create_standalone_dataset_obj(
             self, no_of_objs=1, dataset_cardinality=1,
-            datasource="shadow_dataset", primary_key={},
+            datasource=None, primary_key={},
             link=None, same_dv_for_link_and_dataset=False,
-            external_collection_name=None,
+            external_collection_name=None, database_name="Default", dataverse_name=None,
             storage_format=None, name_length=30, fixed_length=False):
         """
         Generates standalone dataset objects.
@@ -4541,9 +4549,6 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
 
         collection_objs = list()
         for i in range(no_of_objs):
-
-            dataverse_name = None
-            database_name = None
             if not link:
                 if datasource in ["s3", "azure", "gcp"]:
                     link = random.choice(self.list_all_link_objs(
@@ -4560,10 +4565,11 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 database_name = link.database_name
             else:
                 if dataset_cardinality > 1:
-                    dataverse_name = self.generate_name(
-                        name_cardinality=dataset_cardinality - 1,
-                        max_length=name_length - 1,
-                        fixed_length=fixed_length)
+                    if not dataverse_name:
+                        dataverse_name = self.generate_name(
+                            name_cardinality=dataset_cardinality - 1,
+                            max_length=name_length - 1,
+                            fixed_length=fixed_length)
             dataset_name = self.generate_name(
                 name_cardinality=1, max_length=name_length,
                 fixed_length=fixed_length)
@@ -6777,7 +6783,7 @@ class CbasUtil(CBOUtil):
         return True, "Success"
 
     def delete_cbas_infra_created_from_spec(
-            self, cluster, cbas_spec, expected_index_drop_fail=True,
+            self, cluster, cbas_spec={}, expected_index_drop_fail=True,
             expected_synonym_drop_fail=True, expected_dataset_drop_fail=True,
             expected_link_drop_fail=True, expected_dataverse_drop_fail=True,
             delete_dataverse_object=True, delete_database_object=True, retry_link_disconnect_fail=True):
