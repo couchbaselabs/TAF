@@ -12,14 +12,14 @@ import base64
 from datetime import datetime
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
-from pytests.basetestcase import BaseTestCase
+from pytests.cb_basetest import CouchbaseBaseTest
 import threading
 
 
-class APIBase(BaseTestCase):
+class APIBase(CouchbaseBaseTest):
 
     def setUp(self):
-        BaseTestCase.setUp(self)
+        CouchbaseBaseTest.setUp(self)
 
         self.url = self.input.capella.get("pod")
         self.user = self.input.capella.get("capella_user")
@@ -557,6 +557,34 @@ class APIBase(BaseTestCase):
             self.log.warning("Result : {}".format(result.content))
             failures.append(testcase["description"])
 
+    def validate_onoff_state(self, states, proj, clus, app=None):
+        if not app:
+            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, proj, clus)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, proj, clus)
+        else:
+            res = self.capellaAPI.cluster_ops_apis.get_appservice(
+                self.organisation_id, proj, clus, app)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.capellaAPI.cluster_ops_apis.get_appservice(
+                    self.organisation_id, proj, clus, app)
+
+        if res.status_code != 200:
+            self.log.error("Could not fetch on/off state info : {}"
+                           .format(res.content))
+
+        if res.json()['currentState'] in states:
+            return True
+
+        self.log.error("Current State of the cluster = '{}', "
+                       "Expected States for the Cluster = '{}'"
+                       .format(res["currentState"], states))
+        return False
+
     def validate_cluster_schedule_api_response(self, actual_res, expected_res):
         for key in actual_res:
             if key not in expected_res:
@@ -588,7 +616,7 @@ class APIBase(BaseTestCase):
                     result.json()["message"]:
                 cp["cidr"] = CapellaUtils.get_next_cidr() + "/20"
             if time.time() - start_time >= 1800:
-                self.fail("Couldn't find CIDR within half an hour.")
+                self.log.error("Couldn't find CIDR within half an hour.")
 
     def wait_for_cluster_deployment(self, org_id, proj_id, clus_id, st=None):
         if not st:
