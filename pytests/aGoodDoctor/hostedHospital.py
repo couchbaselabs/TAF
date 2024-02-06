@@ -181,12 +181,10 @@ class Murphy(BaseTestCase, OPD):
         storage_type = self.input.param("type", _type).lower()
 
         specs = []
-        services = self.input.param("services", "data")
-        rebl_services = self.input.param("rebl_services", services).split("-")
-        for service_group in services.split("-"):
+        for service_group in self.services:
             _services = sorted(service_group.split(":"))
             service = _services[0]
-            if service_group in rebl_services and service_group == rebl_service_group:
+            if service_group in self.rebl_services and service_group == rebl_service_group:
                 self.num_nodes[service] = self.num_nodes[service] + num
             spec = {
                 "count": self.num_nodes[service],
@@ -750,6 +748,7 @@ class Murphy(BaseTestCase, OPD):
             computeList = AWS.compute
 
         self.services = self.input.param("services", "data").split("-")
+        self.rebl_services = self.input.param("rebl_services", self.services).split("-")
         if h_scaling or vh_scaling:
             self.loop = 0
             self.rebl_nodes = self.input.param("horizontal_scale", 3)
@@ -758,7 +757,7 @@ class Murphy(BaseTestCase, OPD):
                 ###################################################################
                 self.PrintStep("Step 4.{}: Scale UP with Loading of docs".
                                format(self.loop))
-                for service in self.services:
+                for service in self.rebl_services:
                     config = self.rebalance_config(service, self.rebl_nodes)
                     self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                             config,
@@ -785,7 +784,7 @@ class Murphy(BaseTestCase, OPD):
                 self.restart_query_load(num=-10)
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
-                for service in self.services:
+                for service in self.rebl_services:
                     config = self.rebalance_config(service, self.rebl_nodes)
                     self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
                                                                             config,
@@ -822,15 +821,16 @@ class Murphy(BaseTestCase, OPD):
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
                             self.disk[service] = self.disk[service] + disk_increment
-                    config = self.rebalance_config()
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
-                    self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                       config,
-                                                                       timeout=96*60*60)
-                    self.monitor_rebalance()
-                    self.task_manager.get_task_result(self.rebalance_task)
-                    self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
+                    for service in self.rebl_services:
+                        config = self.rebalance_config(service)
+                        self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                           config,
+                                                                           timeout=96*60*60)
+                        self.monitor_rebalance()
+                        self.task_manager.get_task_result(self.rebalance_task)
+                        self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
                     #turn cluster off and back on
@@ -860,13 +860,15 @@ class Murphy(BaseTestCase, OPD):
                     config = self.rebalance_config()
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
-                    self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                       config,
-                                                                       timeout=96*60*60)
-                    self.monitor_rebalance()
-                    self.task_manager.get_task_result(self.rebalance_task)
-                    self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
-                    self.cluster_util.print_cluster_stats(self.cluster)
+                    for service in self.rebl_services:
+                        config = self.rebalance_config(service)
+                        self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                           config,
+                                                                           timeout=96*60*60)
+                        self.monitor_rebalance()
+                        self.task_manager.get_task_result(self.rebalance_task)
+                        self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
+                        self.cluster_util.print_cluster_stats(self.cluster)
                     compute_change = compute_change * -1
                     #turn cluster off and back on
                     if self.turn_cluster_off:
@@ -897,12 +899,14 @@ class Murphy(BaseTestCase, OPD):
                     config = self.rebalance_config()
                     if self.backup_restore:
                         self.drBackupRestore.backup_now(wait_for_backup=False)
-                    self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
-                                                                       config,
-                                                                       timeout=96*60*60)
-                    self.monitor_rebalance()
-                    self.task_manager.get_task_result(self.rebalance_task)
-                    self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
+                    for service in self.rebl_services:
+                        config = self.rebalance_config(service)
+                        self.rebalance_task = self.task.async_rebalance_capella(self.cluster,
+                                                                           config,
+                                                                           timeout=96*60*60)
+                        self.monitor_rebalance()
+                        self.task_manager.get_task_result(self.rebalance_task)
+                        self.assertTrue(self.rebalance_task.result, "Rebalance Failed")
                     disk_increment = disk_increment * -1
                     compute_change = compute_change * -1
                     self.cluster_util.print_cluster_stats(self.cluster)
