@@ -260,7 +260,8 @@ class RollbackTests(CollectionBase):
 
             for bucket in self.cluster.buckets:
                 self.bucket_util._wait_for_stat(bucket, stat_map,
-                                                timeout=self.wait_timeout)
+                                                timeout=self.wait_timeout,
+                                                stat_cond=">=")
 
             if doc_loading_task_2:
                 self.__rewind_doc_index(doc_loading_task_2)
