@@ -27,12 +27,14 @@ import pprint
 from java.net import SocketTimeoutException
 from elasticsearch import EsClient
 
-
-input = TestInputSingleton.input
-vector = Vector()
-vector.setEmbeddingsModel(input.param("model", "sentence-transformers/all-MiniLM-L6-v2"))
-predictor = vector.predictor
-faker = Faker()
+try:
+    input = TestInputSingleton.input
+    vector = Vector()
+    vector.setEmbeddingsModel(input.param("model", "sentence-transformers/all-MiniLM-L6-v2"))
+    predictor = vector.predictor
+    faker = Faker()
+except Exception as e:
+    print(e)
 
 HotelQueries = [
             SearchQuery.queryString("United Kingdom"),
