@@ -37,7 +37,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
         # initialize pod object
         url = self.capella.get("pod")
         project_id = self.capella.get("project_id") if not self.capella.get("project_id") == "" else None
-        instance_ids = self.capella.get("instance_id") if not (
+        instance_ids = self.capella.get("instance_id").split(',') if not (
                 self.capella.get("instance_id") == "") else None
 
         self.pod = Pod(
@@ -89,10 +89,10 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 self.pod.url_public, self.user.api_secret_key,
                 self.user.api_access_key, self.user.email, self.user.password)
             resp = capella_api.access_project(self.user.org_id, self.user.project.project_id)
-            if resp.status_code != 201:
+            if resp.status_code != 200:
                 self.fail("Unable to fetch project info for {}".format(
                     self.user.project.project_id))
-            self.user.project.name = resp["name"]
+            self.user.project.name = resp.json()["data"]["name"]
 
         threads = list()
         thread_results = list()
@@ -138,7 +138,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 if not resp:
                     thread_results.append("Fetching cluster details for {0} "
                                    "failed".format(cluster.cluster_id))
-                cluster.name = resp
+                cluster.name = str(resp["name"])
                 self.user.project.clusters.append(cluster)
             else:
                 threads.append(Thread(
