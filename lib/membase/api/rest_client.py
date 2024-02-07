@@ -1687,8 +1687,8 @@ class RestConnection(newRC):
         status, content, header = self._http_request(api)
         return json.loads(content)
 
-    def get_nodes(self, inactive_added=False, inactive_failed=False):
-        nodes = []
+    def get_nodes(self, active=True, inactive_added=False,
+                  inactive_failed=False):
         api = self.baseUrl + 'pools/default'
         status, content, header = self._http_request(api)
         count = 0
@@ -1700,8 +1700,11 @@ class RestConnection(newRC):
         if count == 7:
             raise Exception("could not get node info after 30 seconds")
         json_parsed = json.loads(content)
-        nodes_to_consider = ["active"]
-        # this is really useful when we want to do cbcollect on failed over/recovered node
+        nodes = list()
+        nodes_to_consider = list()
+        if active:
+            nodes_to_consider.append("active")
+        # Useful when we want to do cbcollect on failed over/recovered node
         if inactive_added:
             nodes_to_consider.append("inactiveAdded")
         if inactive_failed:

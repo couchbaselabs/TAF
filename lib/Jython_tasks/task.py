@@ -671,11 +671,17 @@ class RebalanceTask(Task):
             self.state = "triggered"
             self.table.display("Rebalance Overview")
 
+            nodes_to_avoid = self.to_remove + []
+            fo_node_ips = [node.ip for node in self.rest.get_nodes(
+                active=False, inactive_failed=True)]
+            for server in self.cluster.servers:
+                if server.ip in fo_node_ips:
+                    nodes_to_avoid.append(server)
             # Pick temp-master if the current one is going out
-            if self.cluster.master in self.to_remove:
+            if self.cluster.master in nodes_to_avoid:
                 retained_nodes = [
                     node for node in self.cluster.nodes_in_cluster
-                    if node not in self.to_remove]
+                    if (node not in nodes_to_avoid)]
                 # In case of swap of all available nodes,
                 # retained nodes will be None. Consider self.to_add nodes here
                 if not retained_nodes:
