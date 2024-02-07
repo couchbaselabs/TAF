@@ -84,6 +84,8 @@ class SDKExceptionTests(CollectionBase):
             self.bucket_durability_level, self.durability_level)
         num_cols_in_bucket = 0
         for _, scope in self.bucket.scopes.items():
+            if scope.name == "_system":
+                continue
             for _, _ in scope.collections.items():
                 num_cols_in_bucket += 1
 
