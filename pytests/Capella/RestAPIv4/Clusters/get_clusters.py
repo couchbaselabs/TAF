@@ -73,7 +73,8 @@ class GetCluster(GetProject):
             self.expected_result['availability'],
             self.expected_result['support'])
         if result.status_code != 202:
-            self.fail("Failed while deploying cluster")
+            self.log.error("Failed while deploying cluster")
+            self.tearDown()
 
         self.cluster_id = result.json()["id"]
         self.expected_result["id"] = self.cluster_id

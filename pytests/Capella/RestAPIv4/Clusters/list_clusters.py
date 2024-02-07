@@ -95,7 +95,8 @@ class ListCluster(GetProject):
             self.expected_result["data"][0]['availability'],
             self.expected_result["data"][0]['support'])
         if result.status_code != 202:
-            self.fail("Failed while deploying cluster")
+            self.log.error("Failed while deploying cluster")
+            self.tearDown()
 
         self.cluster_id = result.json()["id"]
         self.wait_for_cluster_deployment(
