@@ -70,6 +70,7 @@ class DoctorFTS:
         self.bucket_util = bucket_util
         self.input = TestInputSingleton.input
         self.fts_index_partitions = self.input.param("fts_index_partition", 8)
+        self.fts_replicas = self.input.param("fts_replicas", 1)
         self.log = logger.get("test")
         self.fts_helper = FtsHelper(self.cluster.fts_nodes[0])
         self.indexes = dict()
@@ -101,7 +102,8 @@ class DoctorFTS:
                         fts_param_template.update({
                             "name": name, "sourceName": str(b.name)})
                         fts_param_template["planParams"].update({
-                            "indexPartitions": self.fts_index_partitions})
+                            "indexPartitions": self.fts_index_partitions,
+                            "numReplicas": self.fts_replicas})
                         fts_param_template["params"]["mapping"]["types"].update({"%s.%s" % (s, c): indexType})
                         fts_param_template = str(fts_param_template).replace("True", "true")
                         fts_param_template = str(fts_param_template).replace("False", "false")

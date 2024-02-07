@@ -115,7 +115,7 @@ class Murphy(BaseTestCase, OPD):
             "pattern": [50, 0, 0, 50, 0], # CRUDE
             "load_type": ["read", "update"],
             "2iQPS": 0,
-            "ftsQPS": 10,
+            "ftsQPS": 1,
             "cbasQPS": 0,
             "collections_defn": [
                 {
