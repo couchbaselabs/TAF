@@ -628,6 +628,9 @@ class UpgradeBase(BaseTestCase):
                              % node_to_upgrade.ip)
             return
 
+        # Validate orchestrator selection
+        self.cluster_util.validate_orchestrator_selection(self.cluster)
+
         # Install target version on spare node
         if install_on_spare_node:
             self.upgrade_helper.install_version_on_nodes(
