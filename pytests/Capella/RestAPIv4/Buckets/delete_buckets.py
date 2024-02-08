@@ -34,7 +34,7 @@ class DeleteBucket(GetCluster):
                 "memoryUsedInMib": None
             }
         }
-        self.bucket_id = self.capellaAPI.cluster_ops_apis.create_bucket(
+        res = self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_result['name'], self.expected_result['type'],
             self.expected_result['storageBackend'],
@@ -43,8 +43,11 @@ class DeleteBucket(GetCluster):
             self.expected_result['durabilityLevel'],
             self.expected_result['replicas'],
             self.expected_result['flush'],
-            self.expected_result['timeToLiveInSeconds']
-        ).json()['id']
+            self.expected_result['timeToLiveInSeconds'])
+        if res.status_code != 201:
+            self.tearDown()
+            self.fail("!!!..Bucket creation failed...!!!")
+        self.bucket_id = res.json()['id']
         self.expected_result['id'] = self.bucket_id
 
     def tearDown(self):

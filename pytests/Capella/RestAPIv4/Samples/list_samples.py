@@ -39,8 +39,8 @@ class ListSample(GetCluster):
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_res["data"][0]["name"])
         if res.status_code != 201:
-            self.log.error("Error while creating sample bucket: {}"
-                           .format(res.json()))
+            self.tearDown()
+            self.fail("!!!...Sample Bucket creation failed...!!!")
         self.expected_res["data"][0]["id"] = res.json()["bucketId"]
         self.sample_bucket_id = res.json()["bucketId"]
         self.log.info("Wait for data load in sample bucket to complete")

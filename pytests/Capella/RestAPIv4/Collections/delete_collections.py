@@ -19,7 +19,8 @@ class DeleteCollection(GetScope):
             self.organisation_id, self.project_id, self.cluster_id,
             self.bucket_id, self.scope_name, self.collection_name)
         if res.status_code != 201:
-            self.fail("Collection creation failed!")
+            self.tearDown()
+            self.fail("!!!...Collection creation failed...!!!")
         self.log.info("Collection: {} creation successful"
                       .format(self.collection_name))
 

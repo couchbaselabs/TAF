@@ -35,7 +35,8 @@ class GetClusterSchedule(GetCluster):
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_result["timezone"], self.expected_result["days"])
         if res.status_code != 204:
-            self.log.error("Error while creating a schedule.")
+            self.tearDown()
+            self.fail("!!!..Cluster Schedule creation failed...!!!")
         else:
             self.log.info("Schedule created successfully.")
 

@@ -38,7 +38,7 @@ class ListBucket(GetCluster):
                 }
             ]
         }
-        self.bucket_id = self.capellaAPI.cluster_ops_apis.create_bucket(
+        res = self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_result['data'][0]['name'],
             self.expected_result['data'][0]['type'],
@@ -48,8 +48,11 @@ class ListBucket(GetCluster):
             self.expected_result['data'][0]['durabilityLevel'],
             self.expected_result['data'][0]['replicas'],
             self.expected_result['data'][0]['flush'],
-            self.expected_result['data'][0]['timeToLiveInSeconds']
-        ).json()['id']
+            self.expected_result['data'][0]['timeToLiveInSeconds'])
+        if res.status_code != 201:
+            self.tearDown()
+            self.fail("!!!..Bucket creation failed...!!!")
+        self.bucket_id = res.json()['id']
         self.expected_result['data'][0]['id'] = self.bucket_id
 
     def tearDown(self):

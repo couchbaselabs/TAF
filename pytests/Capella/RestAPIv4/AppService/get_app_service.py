@@ -41,6 +41,7 @@ class GetAppService(GetCluster):
             self.log.error("Error while deploying the app service: {}"
                            .format(res.content))
             self.tearDown()
+            self.fail("!!!..AppService creation failed...!!!")
 
         self.app_service_id = res.json()["id"]
         self.expected_result["id"] = self.app_service_id
@@ -49,6 +50,7 @@ class GetAppService(GetCluster):
         if not self.wait_for_deployment(self.project_id, self.cluster_id,
                                         self.app_service_id):
             self.tearDown()
+            self.fail("!!!..AppService deployment failed...!!!")
         self.log.info("Successfully deployed app service.")
 
     def tearDown(self):

@@ -74,6 +74,7 @@ class GetCluster(GetProject):
         if result.status_code != 202:
             self.log.error("Failed while deploying cluster")
             self.tearDown()
+            self.fail("!!!...CIDR selection failed...!!!")
 
         self.cluster_id = result.json()["id"]
         self.expected_result["id"] = self.cluster_id
@@ -81,6 +82,7 @@ class GetCluster(GetProject):
                       .format(self.cluster_id))
         if not self.wait_for_deployment(self.project_id, self.cluster_id):
             self.tearDown()
+            self.fail("!!!...Cluster deployment failed...!!!")
         self.log.info("Successfully deployed Cluster.")
 
     def tearDown(self):

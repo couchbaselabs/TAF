@@ -74,11 +74,13 @@ class ToggleAzureAutoExpansion(GetProject):
                                   self.expected_result['availability'],
                                   self.expected_result['support'])
         if result.status_code != 202:
-            self.fail("Failed while deploying Azure cluster")
+            self.tearDown()
+            self.fail("!!!...Azure cluster creation failed...!!!")
 
         self.cluster_id = result.json()["id"]
-        self.wait_for_cluster_deployment(
-            self.organisation_id, self.project_id, self.cluster_id)
+        if not self.wait_for_deployment(self.project_id, self.cluster_id):
+            self.tearDown()
+            self.fail("!!!...Azure Cluster deployment failed...!!!")
 
     def tearDown(self):
         self.capellaAPI.cluster_ops_apis.delete_cluster(
@@ -93,8 +95,8 @@ class ToggleAzureAutoExpansion(GetProject):
         ).json()["serviceGroups"][0]["node"]["disk"]["autoExpansion"]
 
         # Wait for cluster scaling to finish.
-        self.wait_for_cluster_deployment(self.organisation_id,
-                                         self.project_id, self.cluster_id)
+        if not self.wait_for_deployment(self.project_id, self.cluster_id):
+            self.fail("!!!...Cluster Scaling failed...!!!")
 
         # Set the Auto Expansion back to OFF.
         self.capellaAPI.cluster_ops_apis.update_cluster(
@@ -103,8 +105,8 @@ class ToggleAzureAutoExpansion(GetProject):
             self.expected_result["serviceGroups"], False)
 
         # Wait for cluster scaling to finish.
-        self.wait_for_cluster_deployment(self.organisation_id,
-                                         self.project_id, self.cluster_id)
+        if not self.wait_for_deployment(self.project_id, self.cluster_id):
+            self.fail("!!!...Cluster Scaling failed...!!!")
 
         if not autoExpansion:
             self.log.error("Auto Expansion for cluster {} is {}"
@@ -257,7 +259,7 @@ class ToggleAzureAutoExpansion(GetProject):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases)
+        self.auth_test_extension(testcases, other_project_id)
 
         failures = list()
         for testcase in testcases:

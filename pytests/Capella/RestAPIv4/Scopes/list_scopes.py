@@ -40,7 +40,8 @@ class ListScope(GetBucket):
             self.organisation_id, self.project_id, self.cluster_id,
             self.bucket_id, self.scope_name)
         if res.status_code != 201:
-            self.fail("Scope creation failed!")
+            self.tearDown()
+            self.fail("!!!...Scope creation failed..!!!")
         self.log.info("Scope: {} creation successful".format(self.scope_name))
 
     def tearDown(self):

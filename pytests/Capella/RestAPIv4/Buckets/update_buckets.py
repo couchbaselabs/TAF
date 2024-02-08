@@ -36,10 +36,14 @@ class UpdateBucket(GetCluster):
                 "memoryUsedInMib": None
             }
         }
-        self.bucket_id = self.capellaAPI.cluster_ops_apis.create_bucket(
+        res = self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_result['name'], "couchbase", "couchstore", 100,
-            "seqno", "none", 1, False, 0).json()['id']
+            "seqno", "none", 1, False, 0)
+        if res.status_code != 201:
+            self.tearDown()
+            self.fail("!!!..Bucket creation failed...!!!")
+        self.bucket_id = res.json()['id']
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])

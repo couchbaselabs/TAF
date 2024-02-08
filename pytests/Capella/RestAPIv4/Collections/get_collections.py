@@ -24,9 +24,9 @@ class GetCollection(GetScope):
             self.organisation_id, self.project_id, self.cluster_id,
             self.bucket_id, self.scope_name, self.collection_name)
         if res.status_code != 201:
-            self.fail("Collection creation failed!")
-        self.log.info("Collection: {} creation successful"
-                      .format(self.collection_name))
+            self.tearDown()
+            self.fail("!!!...Collection creation failed...!!!")
+        self.log.info("Collection creation successful")
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])

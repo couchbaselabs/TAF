@@ -129,7 +129,7 @@ class CreateClusterSchedule(GetCluster):
                     self.expected_result["days"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.\
+                result = self.capellaAPI.cluster_ops_apis.\
                     create_cluster_on_off_schedule(
                         org, proj, clus, self.expected_result["timezone"],
                         self.expected_result["days"])
@@ -140,7 +140,7 @@ class CreateClusterSchedule(GetCluster):
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(res, 204, testcase, failures)
+                self.validate_testcase(result, 204, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.cluster_on_off_schedule_endpoint \
                 = "/v4/organisations/{}/projects/{}/clusters/{}/onOffSchedule"
@@ -304,26 +304,6 @@ class CreateClusterSchedule(GetCluster):
                 kwarg = {testcase["param"]: testcase["paramValue"]}
             else:
                 kwarg = dict()
-
-            # Wait for cluster to rebalance (if it is).
-            # self.update_auth_with_api_token(self.org_owner_key['token'])
-            # res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-            #     self.organisation_id, self.project_id, self.cluster_id)
-            # if res.status_code == 429:
-            #     self.handle_rate_limit(int(res.headers["Retry-After"]))
-            #     res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-            #         self.organisation_id, self.project_id, self.cluster_id)
-            # while res.json()["currentState"] != "healthy":
-            #     self.log.warning("Waiting for cluster to rebalance.")
-            #     time.sleep(10)
-            #     res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-            #         self.organisation_id, self.project_id, self.cluster_id)
-            #     if res.status_code == 429:
-            #         self.handle_rate_limit(int(res.headers["Retry-After"]))
-            #         res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-            #             self.organisation_id, self.project_id,
-            #             self.cluster_id)
-            # self.log.debug("Cluster state healthy.")
 
             result = self.capellaAPI.cluster_ops_apis.\
                 create_cluster_on_off_schedule(
