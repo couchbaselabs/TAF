@@ -188,12 +188,13 @@ class ClusterUtils:
         orchestrator_node = None
         status = None
         retry_index = 0
-        max_retry = 10
+        max_retry = 24
         rest = RestConnection(node)
         while retry_index < max_retry:
             status, content = rest.get_terse_cluster_info()
             json_content = json.loads(content)
-            # TODO - Investigate why unknown pool is returned by pools/default/terseClusterInfo
+            # MB-60705 - On adding the node, pools/default is returning unknown for a while
+            # TODO - Remove the retry mechanism once MB-60705 gets resolved
             if json_content == "unknown pool" or status == 404:
                 sleep(5, message="pools/default/terseClusterInfo returned \
                       status {} content {}".format(status, json_content))
@@ -285,6 +286,33 @@ class ClusterUtils:
         highest_version_nodes = list()
         highest_version = ""
         highest_build = ""
+
+        # MB-60705 - On adding the node, pools/default is returning unknown for a while
+        # Adding a retry mechanism in case pools/default returns unknown
+        # TODO - Remove the retry mechanism once MB-60705 gets resolved
+        retry = 0
+        max_retry = 24
+        response_status = True
+        while retry <  max_retry:
+            pools_default_res = RestConnection(cluster.master).get_pools_default()
+            if pools_default_res == "unknown pool":
+                retry += 1
+                sleep(5, message="pools/default returned content {}".format(pools_default_res))
+                response_status = False
+                continue
+            else:
+                response_status = True
+                for node in pools_default_res["nodes"]:
+                    if "version" not in node or node["version"] == "unknown":
+                        sleep(5, message="pools/default returned unknown \
+                              for many fields for {}".format(node["otpNode"]))
+                        response_status = False
+                        break
+                if response_status:
+                    retry = max_retry
+                else:
+                    retry += 1
+
         pools_default_res = RestConnection(cluster.master).get_pools_default()
         for node in pools_default_res["nodes"]:
             version, build, type = node["version"].split("-")
