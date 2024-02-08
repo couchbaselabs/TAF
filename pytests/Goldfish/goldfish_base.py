@@ -68,8 +68,15 @@ class GoldFishBaseTest(BaseTestCase):
             self.doc_loading_server_ip, self.doc_loading_server_port) if (
             self.doc_loading_server_ip) else None
 
+        self.perform_gf_instance_cleanup = self.input.param(
+            "perform_gf_instance_cleanup", True)
+
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 
     def tearDown(self):
+        if self.perform_gf_instance_cleanup:
+            for cluster in self.user.project.clusters:
+                self.cbas_util.cleanup_cbas(cluster)
+
         super(GoldFishBaseTest, self).tearDown()

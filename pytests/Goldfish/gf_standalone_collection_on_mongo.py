@@ -17,7 +17,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
         super(StandaloneCollectionMongo, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.list_all_clusters()[0]
+        self.cluster = self.user.project.clusters[0]
 
         if not self.gf_spec_name:
             self.gf_spec_name = "sanity.standalone_collection_on_external_db"
@@ -187,6 +187,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
 
         return self.get_mongo_collection_doc_count(self.mongo_colletions)
 
+    # Sanity Test
     def test_create_query_drop_standalone_collection_for_mongo(self):
         # start initial data load on mongo atlas or on-prem cluster
         if not self.start_initial_data_load():
@@ -318,6 +319,7 @@ class StandaloneCollectionMongo(GoldFishBaseTest):
                 self.fail("Doc count mismatch. Expected - {}, Actual - {"
                           "}".format(limit_value, len(result[3])))
 
+    # Sanity Test
     def test_data_ingestion_when_collection_created_after_connecting_link(
             self):
         # start initial data load on mongo atlas or on-prem cluster

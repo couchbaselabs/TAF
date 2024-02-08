@@ -60,7 +60,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             "nebula_rest_proxy_port", 18001)
 
         self.num_nodes_in_gf_instance = self.input.param(
-            "num_nodes_in_gf_instance", 1)
+            "num_nodes_in_gf_instance", 0)
 
         # Create control plane users
         self.user = Users(
@@ -74,9 +74,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         # Create project.
         self.user.project = Project(self.user.org_id)
-        """project = Project(
-            user.org_id, "project18018",
-            "6455355a-c1dc-4734-b6a5-bb15d5bdacaa")"""
+
         if not project_id:
             self.log.info("Creating project {}".format(self.user.project.name))
             resp = self.goldfish_utils.create_project(
@@ -114,7 +112,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 db_users=list(), type="goldfish")
             cluster_config = (
                 self.goldfish_utils.generate_goldfish_cluster_configuration(
-                    cluster.name))
+                    cluster.name, nodes=self.num_nodes_in_gf_instance))
             self.log.info("Creating cluster {}".format(cluster.name))
             cluster_id = self.goldfish_utils.create_goldfish_cluster(
                 self.pod, user, user.project, cluster_config)
@@ -124,7 +122,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     "project {1}".format(cluster.name, user.project.name))
             cluster.cluster_id = cluster_id
             user.project.clusters.append(cluster)
-
 
         for i in range(0, self.input.param("num_columnar_instances", 1)):
             if instance_ids and i < len(instance_ids):
@@ -140,7 +137,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     self.pod, self.user, cluster)
                 if not resp:
                     thread_results.append("Fetching cluster details for {0} "
-                                   "failed".format(cluster.cluster_id))
+                                          "failed".format(cluster.cluster_id))
                 cluster.name = str(resp["name"])
                 self.user.project.clusters.append(cluster)
             else:
@@ -149,18 +146,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     name="create_cluster_thread",
                     args=(self.user, thread_results,)
                 ))
-
-            """for user in self.users:
-                for project in user.projects:
-                    cluster = GoldfishCluster(
-                        org_id=project.org_id, project_id=project.project_id,
-                        cluster_name="GFcluster96595", cluster_id="instance-928z1oly1",
-                        cluster_endpoint=None,
-                        nebula_sdk_port=self.nebula_sdk_proxy_port,
-                        nebula_rest_port=self.nebula_rest_proxy_port,
-                        db_users=list(), type="goldfish")
-                    project.clusters.append(cluster)"""
-
 
         if threads:
             self.start_threads(threads)

@@ -553,11 +553,11 @@ class Database_Util(BaseUtil):
                         del self.databases[obj.name]
                 return True
 
-    def get_databases(self, cluster, retries=10):
+    def get_databases(self, cluster):
         databases_created = []
         database_query = ("select value db.DatabaseName from Metadata."
                           "`Database` as db where db.SystemDatabase = false;")
-        while not databases_created and retries:
+        while not databases_created:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, database_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
@@ -565,8 +565,6 @@ class Database_Util(BaseUtil):
                 databases_created = list(
                     map(lambda dv: dv.encode('utf-8'), results))
                 break
-            sleep(12, "Wait for atleast one dataverse to be created")
-            retries -= 1
         return databases_created
 
 
@@ -987,12 +985,12 @@ class Dataverse_Util(Database_Util):
             return all(results)
         return True
 
-    def get_dataverses(self, cluster, retries=10):
+    def get_dataverses(self, cluster):
         dataverses_created = []
         dataverse_query = "select value dv.DatabaseName || \".\" || " \
                           "dv.DataverseName from Metadata.`Dataverse` as dv " \
                           "where dv.DataverseName <> \"Metadata\";"
-        while not dataverses_created and retries:
+        while not dataverses_created:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, dataverse_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
@@ -1000,8 +998,6 @@ class Dataverse_Util(Database_Util):
                 dataverses_created = list(
                     map(lambda dv: dv.encode('utf-8'), results))
                 break
-            sleep(12, "Wait for atleast one dataverse to be created")
-            retries -= 1
         return dataverses_created
 
     def get_all_dataverse_obj(self, database=None):
@@ -1490,6 +1486,23 @@ class Link_Util(Dataverse_Util):
                 break
         return entry_present
 
+    def get_links(self, cluster, link_type=None):
+        links_created = []
+        links_query = "select value lnk.DatabaseName || \".\" || " \
+                      "lnk.DataverseName || \".\" || lnk.Name from Metadata." \
+                      "`Link` as lnk where lnk.Name <> \"Local\""
+        if link_type:
+            links_query += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
+        while not links_created:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, links_query, mode="immediate",
+                timeout=300, analytics_timeout=300)
+            if status.encode('utf-8') == 'success' and results:
+                links_created = list(
+                    map(lambda lnk: lnk.encode('utf-8'), results))
+                break
+        return links_created
+
 
 class RemoteLink_Util(Link_Util):
 
@@ -1859,8 +1872,12 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         super(KafkaLink_Util, self).__init__(server_task, run_query_using_sdk)
 
-    def wait_for_kafka_links(self, cluster, state="CONNECTED", timeout=1200):
-        kafka_links = set(self.list_all_link_objs("kafka"))
+    def wait_for_kafka_links(self, cluster, state="CONNECTED",
+                             links=[], timeout=1200):
+        if not links:
+            kafka_links = set(self.list_all_link_objs("kafka"))
+        else:
+            kafka_links = copy.deepcopy(links)
         end_time = time.time() + timeout
         while len(kafka_links) > 0 and time.time() < end_time:
             self.log.info("Waiting for KAFKA links to be {}".format(state))
@@ -1913,14 +1930,15 @@ class KafkaLink_Util(ExternalLink_Util):
                     timeout=timeout, analytics_timeout=analytics_timeout):
             return False
 
-        if dataverse_name:
-            cmd = "CREATE LINK {0}.{1}.{2} TYPE KAFKA WITH ".format(
-                CBASHelper.format_name(database_name),
-                CBASHelper.format_name(dataverse_name),
-                CBASHelper.format_name(link_name))
+        if database_name:
+            full_link_name = ".".join([database_name, dataverse_name, link_name])
+        elif dataverse_name:
+            full_link_name = ".".join([dataverse_name, link_name])
         else:
-            cmd = "CREATE LINK {0} TYPE KAFKA WITH ".format(
-                CBASHelper.format_name(link_name))
+            full_link_name = link_name
+
+        cmd = "CREATE LINK {0} TYPE KAFKA WITH ".format(
+            CBASHelper.format_name(full_link_name))
 
         source_details = {"sourceDetails": external_db_details}
         cmd += json.dumps(source_details)
@@ -3116,16 +3134,17 @@ class Dataset_Util(KafkaLink_Util):
                         bucket_util.get_scope_obj(dataset.kv_bucket, "_default"),
                         "_default").num_items
 
-    def get_datasets(self, cluster, retries=10, fields=[]):
+    def get_datasets(self, cluster, fields=[]):
         datasets_created = []
-        datasets_query = "select value regexp_replace(ds.DataverseName,\"/\",\".\") || " \
-                         "\".\" || ds.DatasetName from Metadata.`Dataset` as ds " \
-                         "where ds.DataverseName  <> \"Metadata\";"
+        datasets_query = "select value ds.DatabaseName || \".\" || " \
+                         "ds.DataverseName || \".\" || ds.DatasetName from " \
+                         "Metadata.`Dataset` as ds where ds.DataverseName  " \
+                         "<> \"Metadata\";"
         if fields:
             datasets_query = 'SELECT * ' \
                              'FROM Metadata.`Dataset` d ' \
                              'WHERE d.DataverseName <> "Metadata"'
-        while not datasets_created and retries:
+        while not datasets_created:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, datasets_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
@@ -3140,8 +3159,6 @@ class Dataset_Util(KafkaLink_Util):
                     datasets_created = list(
                         map(lambda dv: dv.encode('utf-8'), results))
                 break
-            sleep(12, "Wait for atleast one dataset to be created")
-            retries -= 1
         return datasets_created
 
     def create_datasets_for_tpch(self, cluster):
@@ -5120,12 +5137,13 @@ class Synonym_Util(StandAlone_Collection_Util):
             return all(results)
         return True
 
-    def get_synonyms(self, cluster, retries=10):
+    def get_synonyms(self, cluster):
         synonyms_created = []
-        synonyms_query = "select value regexp_replace(syn.DataverseName,\"/\",\".\") " \
-                         "|| \".\" || syn.SynonymName from Metadata.`Synonym` as syn " \
-                         "where syn.DataverseName <> \"Metadata\";"
-        while not synonyms_created and retries:
+        synonyms_query = "select value syn.DatabaseName || \".\" || " \
+                         "syn.DataverseName || \".\" || syn.SynonymName from " \
+                         "Metadata.`Synonym` as syn where syn.DataverseName " \
+                         "<> \"Metadata\";"
+        while not synonyms_created:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, synonyms_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
@@ -5137,8 +5155,6 @@ class Synonym_Util(StandAlone_Collection_Util):
                     map(lambda result: CBASHelper.format_name(*result),
                         results))
                 break
-            sleep(12, "Wait for atleast one synonym to be created")
-            retries -= 1
         return synonyms_created
 
     def get_dataset_obj_for_synonym(
@@ -5471,12 +5487,13 @@ class Index_Util(Synonym_Util):
 
         return all(results)
 
-    def get_indexes(self, cluster, retries=10):
+    def get_indexes(self, cluster):
         indexes_created = []
-        indexes_query = "select value regexp_replace(idx.DataverseName,\"/\",\".\") " \
-                        "|| \".\" || idx.DatasetName || \".\" || idx.IndexName " \
-                        "from Metadata.`Index` as idx where idx.DataverseName <> \"Metadata\""
-        while not indexes_created and retries:
+        indexes_query = "select value idx.DatabaseName || \".\" || " \
+                        "idx.DataverseName || \".\" || idx.DatasetName || " \
+                        "\".\" || idx.IndexName from Metadata.`Index` as " \
+                        "idx where idx.DataverseName <> \"Metadata\""
+        while not indexes_created:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, indexes_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
@@ -5484,8 +5501,6 @@ class Index_Util(Synonym_Util):
                 indexes_created = list(
                     map(lambda idx: idx.encode('utf-8'), results))
                 break
-            sleep(12, "Wait for atleast one index to be created")
-            retries -= 1
         return indexes_created
 
 
@@ -5792,24 +5807,24 @@ class UDFUtil(Index_Util):
                 else:
                     return True
 
-    def get_udfs(self, cluster, retries=10):
+    def get_udfs(self, cluster):
         udfs_created = []
         udf_query = "select value(fn) from Metadata.`Function` as fn"
-        while not udfs_created and retries:
+        while not udfs_created:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, udf_query, mode="immediate", timeout=300, analytics_timeout=300)
+                cluster, udf_query, mode="immediate",
+                timeout=300, analytics_timeout=300)
             if status.encode('utf-8') == 'success' and results:
                 for r in results:
-                    dv_name = ".".join(r["DataverseName"].split("/"))
+                    udf_full_name = ".".join(
+                        r["DatabaseName"], r["DataverseName"],
+                        r["Name"])
                     if int(r["Arity"]) == -1:
                         param = ["..."]
                     else:
                         param = r["Params"]
-                    udfs_created.append([dv_name, r["Name"], param])
+                    udfs_created.append([udf_full_name, param])
                 break
-            sleep(10, "Wait for atleast one User defined function to be "
-                      "created")
-            retries -= 1
         return udfs_created
 
 
@@ -6982,43 +6997,90 @@ class CbasUtil(CBOUtil):
         self.task.jython_task_manager.add_new_task(links_task)
         return links_task
 
-    def cleanup_cbas(self, cluster, retry=10):
+    def cleanup_cbas(self, cluster):
         """
-        Drops all Dataverses, Datasets, Indexes, UDFs, Synonyms and Links
+        This method will delete all the analytics entities on the specified
+        cluster
         """
         try:
+            # Drop all UDFs
+            for udf in self.get_udfs(cluster):
+                if not self.drop_udf(
+                        cluster, CBASHelper.format_name(udf[0]), None, None, udf[1]):
+                    self.log.error("Unable to drop UDF {0}".format(udf[0]))
+
             # Drop all indexes
-            for idx in self.get_indexes(cluster, retry):
-                idx = idx.split(".")
-                if not self.drop_cbas_index(cluster, idx[-1], ".".join(idx[:-1])):
-                    self.log.error("Unable to drop Index {0}".format(idx))
+            for idx in self.get_indexes(cluster):
+                idx_split = idx.split(".")
+                if not self.drop_cbas_index(cluster, idx_split[-1],
+                                            ".".join(idx_split[:-1])):
+                    self.log.error(
+                        "Unable to drop Index {0}".format(idx))
 
-            # Disconnect all links
-            links = [".".join(l["scope"].split("/") + [l["name"]]) for l in self.get_link_info(
-                cluster)]
-            for lnk in links:
-                if not self.disconnect_link(cluster, lnk):
-                    self.log.error("Unable to disconnect Link {0}".format(lnk))
-
-            for syn in self.get_synonyms(cluster, retry):
+            # Drop all Synonyms
+            for syn in self.get_synonyms(cluster):
                 if not self.drop_analytics_synonym(cluster, syn):
                     self.log.error("Unable to drop Synonym {0}".format(syn))
 
-            for udf in self.get_udfs(cluster, retry):
-                if not self.drop_udf(cluster, udf[1], udf[0], udf[2]):
-                    self.log.error("Unable to drop UDF {0}".format(udf[1]))
+            # Disconnect all remote links
+            remote_links = self.get_links(cluster, "couchbase")
+            for remote_link in remote_links:
+                link_name_parts = remote_link.split(".")
+                result = self.get_link_info(
+                    cluster, link_name_parts[1],link_name_parts[0],
+                    link_name_parts[2])
+                if result[0]["linkState"] == "CONNECTED":
+                    if not self.disconnect_link(cluster, remote_link):
+                        self.log.error(
+                            "Unable to disconnect Link {0}".format(remote_link))
 
-            for ds in self.get_datasets(cluster, retry):
+            # Disconnect all Kafka links
+            kafka_links = self.get_links(cluster, "kafka")
+            kafka_links_to_be_disconnected = list()
+            kafka_link_objs = list()
+
+            for kafka_link in kafka_links:
+                link_name_parts = kafka_link.split(".")
+                link_obj = Kafka_Link(link_name_parts[2], link_name_parts[1],
+                                      link_name_parts[0])
+                result = self.get_link_info(cluster, link_name_parts[1],
+                                            link_name_parts[0], link_name_parts[2])
+                if result[0]["linkState"] in ["CONNECTING", "CONNECTED",
+                                              "CONFIG_UPDATED"]:
+                    kafka_links_to_be_disconnected.append(link_obj)
+                kafka_link_objs.append(link_obj)
+
+            # Wait for kafka link in CONNECTING and CONFIG_UPDATED state to
+            # be in connected state
+            if not self.wait_for_kafka_links(
+                    cluster, "CONNECTED", kafka_links_to_be_disconnected):
+                self.log.error("Some Kafka links were unable to connect")
+
+            for kafka_link in kafka_links_to_be_disconnected:
+                if not self.disconnect_link(cluster, kafka_link.full_name):
+                    self.log.error("Unable to disconnect Link {0}".format(
+                        kafka_link.full_name))
+
+            if not self.wait_for_kafka_links(
+                    cluster, "DISCONNECTED", kafka_link_objs):
+                self.log.error("Some Kafka links were unable to connect")
+
+            # Drop all datasets
+            for ds in self.get_datasets(cluster):
                 if not self.drop_dataset(cluster, ds):
                     self.log.error("Unable to drop Dataset {0}".format(ds))
 
-            for lnk in links:
+            for lnk in self.get_links(cluster):
                 if not self.drop_link(cluster, lnk):
                     self.log.error("Unable to drop Link {0}".format(lnk))
 
-            for dv in self.get_dataverses(cluster, retry).remove("Default"):
+            for dv in self.get_dataverses(cluster).remove("Default"):
                 if not self.drop_dataverse(cluster, dv):
                     self.log.error("Unable to drop Dataverse {0}".format(dv))
+
+            for db in self.get_databases(cluster).remove("Default"):
+                if not self.drop_database(cluster, db):
+                    self.log.error("Unable to drop Database {0}".format(db))
         except Exception as e:
             self.log.info(e.message)
 

@@ -3778,7 +3778,7 @@ class RunQueriesTask(Task):
         self.complete_task()
 
     def prepare_cbas_queries(self):
-        datasets = self.cbas_util.get_datasets(self.cluster, retries=20)
+        datasets = self.cbas_util.get_datasets(self.cluster)
         if not datasets:
             self.set_exception(Exception("Datasets not available"))
         prepared_queries = []
