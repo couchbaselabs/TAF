@@ -338,6 +338,9 @@ class RebalanceStartStopTests(RebalanceBaseTest):
 
         self.shuffle_nodes_between_zones_and_rebalance()
         self.cluster_util.print_cluster_stats(self.cluster)
+        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
+                                                    inactive_added=True,
+                                                    inactive_failed=True)
         self.validate_docs()
         self.sleep(30)
         if self.verify_unacked_bytes:
