@@ -580,8 +580,7 @@ class APIBase(CouchbaseBaseTest):
         if res.json()['currentState'] in states:
             return True
 
-        self.log.error("Current State of the cluster = '{}', "
-                       "Expected States for the Cluster = '{}'"
+        self.log.error("Current State = '{}', Expected States  = '{}'"
                        .format(res["currentState"], states))
         return False
 
@@ -590,9 +589,11 @@ class APIBase(CouchbaseBaseTest):
             if key not in expected_res:
                 return False
             if isinstance(actual_res[key], list):
-                self.validate_cluster_schedule_api_response(actual_res[key][0])
+                self.validate_cluster_schedule_api_response(
+                    actual_res[key][0], expected_res[key][0])
             elif isinstance(actual_res[key], dict):
-                self.validate_cluster_schedule_api_response(actual_res[key])
+                self.validate_cluster_schedule_api_response(
+                    actual_res[key], expected_res[key])
             elif expected_res[key]:
                 if expected_res[key] != actual_res[key]:
                     return True
@@ -618,19 +619,33 @@ class APIBase(CouchbaseBaseTest):
             if time.time() - start_time >= 1800:
                 self.log.error("Couldn't find CIDR within half an hour.")
 
-    def wait_for_cluster_deployment(self, org_id, proj_id, clus_id, st=None):
-        if not st:
-            st = time.time()
+    def wait_for_deployment(self, proj_id, clus_id, app_svc_id=None):
+        start_time = time.time()
+        while start_time + 1800 > time.time():
+            time.sleep(15)
+            if app_svc_id:
+                state = self.capellaAPI.cluster_ops_apis.get_appservice(
+                    self.organisation_id, proj_id, clus_id, app_svc_id)
+            else:
+                state = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, proj_id, clus_id)
+            if state.status_code >= 400:
+                self.log.error("Something went wrong while fetching details."
+                               "\nResult: {}".format(state.content))
+                return False
 
-        self.log.info("Waiting for cluster {} to be deployed.".format(clus_id))
-        time.sleep(20)
-        if st + 1800 > time.time() and \
-            self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                org_id, proj_id, clus_id).json()["currentState"] != "healthy":
-            self.wait_for_cluster_deployment(org_id, proj_id, clus_id, st)
+            state = state.json()["currentState"]
+            self.log.info("Current state: {}".format(state))
 
-        if st + 1800 <= time.time():
-            self.fail("Cluster didn't deploy within half an hour.")
+            if state == "deploymentFailed":
+                self.log.error("!!!Deployment Failed!!!")
+                return False
+            elif state != "healthy":
+                self.log.info("...Waiting further...")
+            else:
+                return True
+        self.log.error("Cluster/App didn't deploy within half an hour.")
+        return False
 
     def verify_project_empty(self, proj_id):
         res = self.capellaAPI.cluster_ops_apis.list_clusters(

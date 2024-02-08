@@ -99,8 +99,11 @@ class ListCluster(GetProject):
             self.tearDown()
 
         self.cluster_id = result.json()["id"]
-        self.wait_for_cluster_deployment(
-            self.organisation_id, self.project_id, self.cluster_id)
+        self.log.info("Waiting for cluster {} to be deployed."
+                      .format(self.cluster_id))
+        if not self.wait_for_deployment(self.project_id, self.cluster_id):
+            self.tearDown()
+        self.log.info("Successfully deployed Cluster.")
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
