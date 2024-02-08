@@ -4,40 +4,13 @@ Created on February 1, 2024
 @author: Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.OnOffSchedule.get_cluster_schedule import GetClusterSchedule
 
 
-class DeleteClusterSchedule(GetCluster):
+class DeleteClusterSchedule(GetClusterSchedule):
 
     def setUp(self, nomenclature="Clusters_Schedule_Delete"):
-        GetCluster.setUp(self, nomenclature)
-        self.expected_result = {
-            "timezone": "Pacific/Midway",
-            "days": [
-                {
-                    "state": "ON",
-                    "day": "sunday",
-                    "from": {
-                        "hour": 0,
-                        "minute": 0
-                    },
-                    "to": {
-                        "hour": 0,
-                        "minute": 3
-                    }
-                }
-            ]
-        }
-
-        # Create the schedule for the cluster.
-        self.log.info("Creating schedule in cluster {}".format(self.cluster_id))
-        res = self.capellaAPI.cluster_ops_apis.create_cluster_on_off_schedule(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_result["timezone"], self.expected_result["days"])
-        if res.status_code != 204:
-            self.log.error("Error while creating a schedule.")
-        else:
-            self.log.info("Schedule created successfully.")
+        GetClusterSchedule.setUp(self, nomenclature)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])

@@ -10,6 +10,9 @@ class ClusterOn(GetCluster):
 
     def setUp(self, nomenclature="Switch_Cluster_On"):
         GetCluster.setUp(self, nomenclature)
+        self.payload = {
+            "turnOnLinkedAppService": True
+        }
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
@@ -91,7 +94,7 @@ class ClusterOn(GetCluster):
             clus = self.cluster_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.switch_cluster_on_endpoint = \
+                self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                     testcase["url"]
             if "invalid_organizationID" in testcase:
                 org = testcase["invalid_organizationID"]
@@ -101,11 +104,11 @@ class ClusterOn(GetCluster):
                 clus = testcase["invalid_clusterID"]
 
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                org, proj, clus)
+                org, proj, clus, self.payload)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                    org, proj, clus)
+                    org, proj, clus, self.payload)
             if result.status_code == 204:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
@@ -117,7 +120,7 @@ class ClusterOn(GetCluster):
             else:
                 self.validate_testcase(result, 204, testcase, failures)
 
-            self.capellaAPI.cluster_ops_apis.switch_cluster_on_endpoint = \
+            self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/on"
 
         if failures:
@@ -167,12 +170,12 @@ class ClusterOn(GetCluster):
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                 self.organisation_id, self.project_id, self.cluster_id,
-                headers=header)
+                self.payload, headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    headers=header)
+                    self.payload, headers=header)
             if result.status_code == 204:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
@@ -277,12 +280,46 @@ class ClusterOn(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], **kwarg)
+                testcase["clusterID"], self.payload, **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], **kwarg)
+                    testcase["clusterID"], self.payload, **kwarg)
+            if result.status_code == 204:
+                if not self.validate_onoff_state(
+                        ["turningOn", "healthy"],
+                        self.project_id, self.cluster_id):
+                    self.log.error("Status == 204, Key validation Failure "
+                                   ": {}".format(testcase["description"]))
+                    self.log.warning("Result : {}".format(result.json()))
+                    failures.append(testcase["description"])
+            else:
+                self.validate_testcase(result, 204, testcase, failures)
+
+        if failures:
+            for fail in failures:
+                self.log.warning(fail)
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), testcases))
+
+    def test_payload(self):
+        failures = list()
+        testcases = 0
+        for val in [False, 100, None, "abc", 1.2, [True], {True}]:
+            testcases += 1
+            testcase = {
+                "description": "Testing payload with value {}".format(val)
+            }
+            self.log.info("Executing test: {}".format(testcase["description"]))
+            result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.payload, val)
+            if result.status_code == 429:
+                self.handle_rate_limit(int(result.headers["Retry-After"]))
+                result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.payload, val)
             if result.status_code == 204:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],

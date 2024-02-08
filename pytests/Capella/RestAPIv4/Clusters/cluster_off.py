@@ -91,7 +91,7 @@ class ClusterOff(GetCluster):
             clus = self.cluster_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.switch_cluster_off_endpoint = \
+                self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                     testcase["url"]
             if "invalid_organizationID" in testcase:
                 org = testcase["invalid_organizationID"]
@@ -117,7 +117,7 @@ class ClusterOff(GetCluster):
             else:
                 self.validate_testcase(result, 204, testcase, failures)
 
-            self.capellaAPI.cluster_ops_apis.switch_cluster_off_endpoint = \
+            self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/off"
 
         if failures:
