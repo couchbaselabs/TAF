@@ -647,6 +647,18 @@ class APIBase(CouchbaseBaseTest):
         self.log.error("Cluster/App didn't deploy within half an hour.")
         return False
 
+    def verify_app_services_empty(self, proj_id):
+        res = self.capellaAPI.cluster_ops_apis.list_appservices(
+            self.organisation_id, projectId=proj_id)
+        if res.status_code == 429:
+            res = self.capellaAPI.cluster_ops_apis.list_appservices(
+                self.organisation_id, projectId=proj_id)
+        if len(res.json()["data"]) != 0:
+            self.log.info("...Waiting further...")
+            time.sleep(30)
+            self.verify_app_services_empty(proj_id)
+        return
+
     def verify_project_empty(self, proj_id):
         res = self.capellaAPI.cluster_ops_apis.list_clusters(
             self.organisation_id, proj_id)
@@ -655,6 +667,7 @@ class APIBase(CouchbaseBaseTest):
             res = self.capellaAPI.cluster_ops_apis.list_clusters(
                 self.organisation_id, proj_id)
         if len(res.json()["data"]) != 0:
+            self.log.info("...Waiting further...")
             time.sleep(30)
             self.verify_project_empty(proj_id)
         return

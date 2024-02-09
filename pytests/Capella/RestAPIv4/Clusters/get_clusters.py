@@ -10,7 +10,7 @@ from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 class GetCluster(GetProject):
 
-    def setUp(self, nomenclature="Clusters_Get"):
+    def setUp(self, nomenclature="Clusters_Get", services=None):
         GetProject.setUp(self, nomenclature)
 
         cluster_name = self.prefix + nomenclature
@@ -62,6 +62,7 @@ class GetCluster(GetProject):
             "connectionString": None,
             "configurationType": None
         }
+        self.expected_result['serviceGroups'][0]["services"].extend(services)
 
         result = self.select_CIDR(
             self.organisation_id, self.project_id,

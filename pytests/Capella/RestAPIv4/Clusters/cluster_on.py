@@ -11,7 +11,7 @@ class ClusterOn(GetCluster):
     def setUp(self, nomenclature="Switch_Cluster_On"):
         GetCluster.setUp(self, nomenclature)
         self.payload = {
-            "turnOnLinkedAppService": True
+            "turnOnLinkedAppService": False
         }
 
     def tearDown(self):
@@ -306,7 +306,7 @@ class ClusterOn(GetCluster):
     def test_payload(self):
         failures = list()
         testcases = 0
-        for val in [False, 100, None, "abc", 1.2, [True], {True}]:
+        for val in [True, 100, None, "abc", 1.2, [True], {True}]:
             testcases += 1
             testcase = {
                 "description": "Testing payload with value {}".format(val)

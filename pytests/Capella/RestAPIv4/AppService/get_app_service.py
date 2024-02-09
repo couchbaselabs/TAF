@@ -9,7 +9,7 @@ from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 class GetAppService(GetCluster):
 
     def setUp(self, nomenclature="App_Service_Get"):
-        GetCluster.setUp(self, nomenclature)
+        GetCluster.setUp(self, nomenclature, ["index", "query"])
 
         self.expected_result = {
             "name": self.prefix + nomenclature,
@@ -62,9 +62,9 @@ class GetAppService(GetCluster):
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id)
         if res.status_code != 202:
-            self.log.error("Error while deleting the app service: {}"
-                           .format(res.content))
-        else:
-            self.log.info("Successfully deleted app service.")
+            self.fail("Error while deleting the app service: {}"
+                      .format(res.content))
 
+        self.log.info("Waiting for app service to be deleted...")
+        self.verify_app_services_empty(self.project_id)
         super(GetAppService, self).tearDown()
