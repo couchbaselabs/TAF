@@ -8,10 +8,10 @@ from com.couchbase.client.java.analytics import AnalyticsOptions,\
     AnalyticsScanConsistency, AnalyticsStatus, AnalyticsMetrics
 from com.couchbase.client.core.error import (
     RequestCanceledException, CouchbaseException, AmbiguousTimeoutException,
-    PlanningFailureException,UnambiguousTimeoutException, TimeoutException,
+    PlanningFailureException, UnambiguousTimeoutException, TimeoutException,
     DatasetExistsException, IndexExistsException, CompilationFailureException,
     InvalidArgumentException, AuthenticationFailureException,
-    LinkExistsException, DataverseNotFoundException)
+    LinkExistsException, DataverseNotFoundException, DecodingFailureException)
 
 from com.couchbase.client.java.manager.analytics import (
     AnalyticsIndexManager, CreateLinkAnalyticsOptions, GetLinksAnalyticsOptions)
@@ -70,8 +70,8 @@ class CBASHelper(object):
             try:
                 output["results"] = [row.toMap() for row in
                                      result.rowsAsObject()]
-            except:
-                output["results"] = None
+            except DecodingFailureException:
+                output["results"] = result.rowsAs(str)
 
         except CompilationFailureException as err:
             output["errors"] = self.parse_error(err)

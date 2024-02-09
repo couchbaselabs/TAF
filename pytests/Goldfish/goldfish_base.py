@@ -4,7 +4,7 @@ Created on 17-Oct-2023
 """
 
 from basetestcase import BaseTestCase
-from TestInput import TestInputSingleton, TestInputServer
+from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils import CbasUtil
 from goldfishAPI.GoldfishAPIs.DocloadingAPIs.DocloadingAPIs import DocloadingAPIs
 

@@ -80,7 +80,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             resp = self.goldfish_utils.create_project(
                 self.pod, self.user, self.user.project.name)
             if not resp:
-                raise ("Error while creating project {0}".format(
+                raise Exception("Error while creating project {0}".format(
                     self.user.project.name))
             self.user.project.project_id = resp
             self.capella["project_id"] = self.user.project.project_id

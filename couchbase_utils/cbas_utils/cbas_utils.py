@@ -561,7 +561,7 @@ class Database_Util(BaseUtil):
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, database_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-            if status.encode('utf-8') == 'success' and results:
+            if status.encode('utf-8') == 'success':
                 databases_created = list(
                     map(lambda dv: dv.encode('utf-8'), results))
                 break
@@ -994,7 +994,7 @@ class Dataverse_Util(Database_Util):
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, dataverse_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-            if status.encode('utf-8') == 'success' and results:
+            if status.encode('utf-8') == 'success':
                 dataverses_created = list(
                     map(lambda dv: dv.encode('utf-8'), results))
                 break
@@ -1228,7 +1228,8 @@ class Link_Util(Dataverse_Util):
                     self.unformat_name(link_name), link_type)
             else:
                 status, content, errors = cbas_helper.get_link_info(
-                    "{}".format(self.unformat_name(dataverse, database)),
+                    "{}".format(
+                        self.metadata_format(database + "." + dataverse)),
                     self.unformat_name(link_name), link_type)
         else:
             params = dict()
@@ -1497,7 +1498,7 @@ class Link_Util(Dataverse_Util):
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, links_query, mode="immediate",
                 timeout=300, analytics_timeout=300)
-            if status.encode('utf-8') == 'success' and results:
+            if status.encode('utf-8') == 'success':
                 links_created = list(
                     map(lambda lnk: lnk.encode('utf-8'), results))
                 break
@@ -2041,29 +2042,27 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         links = list()
         while len(links) < no_of_objs:
-            if link_cardinality > 2:
+            if link_cardinality == 3:
                 if not database:
-                    database_name = CBASHelper.format_name(self.generate_name(
-                        max_length=name_length - 1,
-                        fixed_length=fixed_length))
+                    database = CBASHelper.format_name(self.generate_name())
                     if not self.create_database(
-                            cluster, database_name,
+                            cluster, database,
                             if_not_exists=True):
                         raise Exception("Error while creating database {"
-                                        "}".format(database_name))
+                                        "}".format(database))
                 else:
-                    database_name = CBASHelper.format_name(database)
-            elif link_cardinality == 2:
+                    database = CBASHelper.format_name(database)
+                link_cardinality -= 1
+            if link_cardinality == 2:
+                if not database:
+                    database = "Default"
                 if not dataverse:
-                    dataverse_name = CBASHelper.format_name(self.generate_name(
-                        name_cardinality=link_cardinality - 1,
-                        max_length=name_length - 1,
-                        fixed_length=fixed_length))
+                    dataverse_name = CBASHelper.format_name(self.generate_name())
                     if not self.create_dataverse(
                             cluster, dataverse_name,
-                            database_name, if_not_exists=True):
+                            database, if_not_exists=True):
                         raise Exception("Error while creating dataverse")
-                    dataverse = self.get_dataverse_obj(dataverse_name)
+                    dataverse = self.get_dataverse_obj(dataverse_name, database)
             else:
                 dataverse = self.get_dataverse_obj("Default")
 
@@ -3148,7 +3147,7 @@ class Dataset_Util(KafkaLink_Util):
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, datasets_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-            if status.encode('utf-8') == 'success' and results:
+            if status.encode('utf-8') == 'success':
                 if fields:
                     results = CBASHelper.get_json(json_data=results)
                     for result in results:
@@ -5147,7 +5146,7 @@ class Synonym_Util(StandAlone_Collection_Util):
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, synonyms_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-            if status.encode('utf-8') == 'success' and results:
+            if status.encode('utf-8') == 'success':
                 results = list(
                     map(lambda result: result.encode('utf-8').split("."),
                         results))
@@ -5492,12 +5491,13 @@ class Index_Util(Synonym_Util):
         indexes_query = "select value idx.DatabaseName || \".\" || " \
                         "idx.DataverseName || \".\" || idx.DatasetName || " \
                         "\".\" || idx.IndexName from Metadata.`Index` as " \
-                        "idx where idx.DataverseName <> \"Metadata\""
+                        "idx where idx.DataverseName <> \"Metadata\" and " \
+                        "idx.IsPrimary <> true"
         while not indexes_created:
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, indexes_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-            if status.encode('utf-8') == 'success' and results:
+            if status.encode('utf-8') == 'success':
                 indexes_created = list(
                     map(lambda idx: idx.encode('utf-8'), results))
                 break
@@ -5814,7 +5814,7 @@ class UDFUtil(Index_Util):
             status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, udf_query, mode="immediate",
                 timeout=300, analytics_timeout=300)
-            if status.encode('utf-8') == 'success' and results:
+            if status.encode('utf-8') == 'success':
                 for r in results:
                     udf_full_name = ".".join(
                         r["DatabaseName"], r["DataverseName"],
@@ -7074,13 +7074,15 @@ class CbasUtil(CBOUtil):
                 if not self.drop_link(cluster, lnk):
                     self.log.error("Unable to drop Link {0}".format(lnk))
 
-            for dv in self.get_dataverses(cluster).remove("Default"):
-                if not self.drop_dataverse(cluster, dv):
-                    self.log.error("Unable to drop Dataverse {0}".format(dv))
+            for dv in self.get_dataverses(cluster):
+                if dv != "Default.Default":
+                    if not self.drop_dataverse(cluster, dv):
+                        self.log.error("Unable to drop Dataverse {0}".format(dv))
 
-            for db in self.get_databases(cluster).remove("Default"):
-                if not self.drop_database(cluster, db):
-                    self.log.error("Unable to drop Database {0}".format(db))
+            for db in self.get_databases(cluster):
+                if db != "Default":
+                    if not self.drop_database(cluster, db):
+                        self.log.error("Unable to drop Database {0}".format(db))
         except Exception as e:
             self.log.info(e.message)
 
