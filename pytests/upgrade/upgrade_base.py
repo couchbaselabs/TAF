@@ -39,6 +39,7 @@ class UpgradeBase(BaseTestCase):
         self.tls_level = self.input.param('tls_level', "all")
         self.upgrade_with_data_load = \
             self.input.param("upgrade_with_data_load", True)
+        self.retry_get_process_num = self.input.param("retry_get_process_num", 25)
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
         self.sync_write_abort_pattern = \
@@ -553,6 +554,7 @@ class UpgradeBase(BaseTestCase):
             to_remove=[node_to_upgrade],
             check_vbucket_shuffling=False,
             services=[",".join(services_on_target_node)],
+            retry_get_process_num=self.retry_get_process_num
         )
         self.sleep(10)
 
