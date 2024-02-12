@@ -100,6 +100,7 @@ class EnforceTls(CollectionBase):
         3. Add the other node to master node's cluster and rebalance
         """
         non_strict_node = self.cluster.master
+        self.set_ports_for_server(self.cluster.master, "non_ssl")
         strict_node = self.cluster.servers[self.nodes_init:self.nodes_init + 1][0]
         self.enable_tls_encryption_cli_on_nodes \
             (nodes=self.cluster.servers[self.nodes_init:self.nodes_init + 1])
