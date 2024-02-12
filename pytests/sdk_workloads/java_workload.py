@@ -14,7 +14,6 @@ import time
 from cb_constants.CBServer import CbServer
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from com.couchbase.test.sdk import Server
-from custom_exceptions.exception import ServerUnavailableException
 
 
 class JavaSDKWorkload(BaseTestCase, OPD):
@@ -90,7 +89,7 @@ class JavaSDKWorkload(BaseTestCase, OPD):
         self.cbasQL = list()
         self.stop_run = False
         self.skip_init = self.input.param("skip_init", False)
-        self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
+        self.cluster.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
         self.query_result = True
 
     def tearDown(self):
@@ -116,9 +115,9 @@ class JavaSDKWorkload(BaseTestCase, OPD):
                             self.cluster.master.rest_username,
                             self.cluster.master.rest_password,
                             str(self.cluster.master.memcached_port))
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket.name, server, req_clients_per_bucket)
-            bucket.clients = self.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
+            bucket.clients = self.cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def create_buckets(self):

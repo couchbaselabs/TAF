@@ -964,17 +964,14 @@ class UpgradeBase(BaseTestCase):
         result = []
         self.document_keys = []
         self.log.info("Creating SDK client for inserting new docs")
-        self.sdk_client = SDKClient([self.cluster.master],
-                                    bucket,
+        self.sdk_client = SDKClient(self.cluster, bucket,
                                     scope=CbServer.default_scope,
                                     collection=CbServer.default_collection)
-        new_docs = doc_generator(key=doc_key, start=0,
-                                end=num_docs,
-                                doc_size=1024,
-                                doc_type=self.doc_type,
-                                vbuckets=self.cluster.vbuckets,
-                                key_size=self.key_size,
-                                randomize_value=True)
+        new_docs = doc_generator(key=doc_key, start=0, end=num_docs,
+                                 doc_size=1024, doc_type=self.doc_type,
+                                 vbuckets=self.cluster.vbuckets,
+                                 key_size=self.key_size,
+                                 randomize_value=True)
         self.log.info("Inserting {0} documents into bucket: {1}".format(num_docs, bucket))
         for i in range(num_docs):
             key_obj, val_obj = new_docs.next()

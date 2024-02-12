@@ -943,7 +943,7 @@ class ConfigPurging(CollectionBase):
         rest.set_indexer_storage_mode(storageMode="plasma")
 
         # Open SDK for connection for running n1ql queries
-        self.client = self.sdk_client_pool.get_client_for_bucket(
+        self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
             self.cluster.buckets[0])
 
         # Create required GSI indexes
@@ -995,7 +995,7 @@ class ConfigPurging(CollectionBase):
                                      bucket, scope.name, c_name)
 
         # Release the SDK client
-        self.sdk_client_pool.release_client(self.client)
+        self.cluster.sdk_client_pool.release_client(self.client)
 
         nodes_involved = list()
         for service in self.target_service_nodes:

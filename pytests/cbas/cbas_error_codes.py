@@ -204,7 +204,8 @@ class CBASErrorValidator(CBASBaseTest):
     def test_error_response_type_mismatch_object(self):
         self.setup_dataset()
         self.log.info("Create a reference to SDK client")
-        client = self.sdk_client_pool.clients["lineitem"]["idle_clients"][0]
+        client = self.cluster.sdk_client_pool.clients["lineitem"][
+            "idle_clients"][0]
         self.log.info("Insert documents in KV bucket")
         documents = ['{"address":{"city":"NY"}}']
         client.insert_json_documents("id-", documents)

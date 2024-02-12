@@ -388,7 +388,7 @@ class CollectionsTTL(CollectionBase):
             ("s1", "c3")]
 
         rest = RestConnection(self.cluster.master)
-        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
 
         preserve_ttl_key = "doc_preserve_expiry_with_ttl"
         for scope, col in scope_col_list:
@@ -447,7 +447,7 @@ class CollectionsTTL(CollectionBase):
         self.log.info("Releasing SDK client")
         client.select_collection(CbServer.default_scope,
                                  CbServer.default_collection)
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
 
     def test_collections_inherit_bucket_ttl(self):
         """
@@ -493,7 +493,7 @@ class CollectionsTTL(CollectionBase):
             ("s1", "c4")]
 
         key = "test_doc"
-        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
 
         self.log.info("Load and validate with bucket_ttl=0 and collection TTL")
         load_docs_into_each_collection()
@@ -544,7 +544,7 @@ class CollectionsTTL(CollectionBase):
         self.log.info("Releasing SDK client")
         client.select_collection(CbServer.default_scope,
                                  CbServer.default_collection)
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
 
     def test_collections_ttl_delete_recreate_collections(self):
         self.bucket = self.cluster.buckets[0]

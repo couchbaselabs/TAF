@@ -45,8 +45,8 @@ class volume(AutoFailoverBaseTest):
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         # Close all sdk clients explicitly
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.shutdown()
 
     def check_logs(self):
         result = self.check_coredump_exist(self.servers, force_collect=True)
@@ -204,7 +204,7 @@ class volume(AutoFailoverBaseTest):
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         if not self.skip_validations:
-            self.bucket_util.validate_doc_loading_results(task)
+            self.bucket_util.validate_doc_loading_results(self.cluster, task)
             if task.result is False:
                 self.fail("Doc_loading failed")
 

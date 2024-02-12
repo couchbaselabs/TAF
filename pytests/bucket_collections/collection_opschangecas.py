@@ -39,7 +39,7 @@ class OpsChangeCasTests(CollectionBase):
         can not mutate it because it is expired already.
         """
 
-        client = self.sdk_client_pool.get_client_for_bucket(
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(
             bucket, scope, collection)
         while generator.has_next():
             key, value = generator.next()
@@ -83,7 +83,7 @@ class OpsChangeCasTests(CollectionBase):
                             prev_exp = exp
 
                     if result["status"] is False:
-                        self.sdk_client_pool.release_client(client)
+                        self.cluster.sdk_client_pool.release_client(client)
                         self.log_failure("Touch / replace with cas failed")
                         return
 
@@ -175,7 +175,7 @@ class OpsChangeCasTests(CollectionBase):
                 if SDKException.DocumentNotFoundException \
                         not in result["error"]:
                     self.log_failure("Invalid error after expiry: %s" % result)
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
 
     def ops_change_cas(self):
         """
@@ -272,13 +272,12 @@ class OpsChangeCasTests(CollectionBase):
             timeout_secs=self.sdk_timeout,
             batch_size=10,
             process_concurrency=4,
-            active_resident_threshold=self.active_resident_threshold,
-            sdk_client_pool=self.sdk_client_pool)
+            active_resident_threshold=self.active_resident_threshold)
         self.task_manager.get_task_result(dgm_task)
 
         self.log.info("Touch initial self.num_items docs which are "
                       "residing on disk due to DGM")
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(self.bucket)
         collections = BucketUtils.get_random_collections([self.bucket],
                                                          2, 2, 1)
         for bucket_name, scope_dict in collections.iteritems():
@@ -300,14 +299,14 @@ class OpsChangeCasTests(CollectionBase):
         # since it was changed in the while loop to select different collection
         client.scope_name = CbServer.default_scope
         client.collection_name = CbServer.default_collection
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
         self.validate_test_failure()
 
     def test_key_not_exists(self):
         def run_test(bucket, scope, collection):
             self.log.info("CAS test on %s:%s" % (scope, collection))
 
-            client = self.sdk_client_pool.get_client_for_bucket(
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(
                 bucket, scope, collection)
             for _ in range(1500):
                 result = client.crud(DocLoading.Bucket.DocOps.CREATE, key, val,
@@ -347,7 +346,7 @@ class OpsChangeCasTests(CollectionBase):
                         not in str(result["error"]):
                     self.log_failure("Invalid exception during read "
                                      "for non-exists key: %s" % result)
-            self.sdk_client_pool.release_client(client)
+            self.cluster.sdk_client_pool.release_client(client)
 
         self.key = "test_key_not_exists"
         load_gen = doc_generator(self.key, 0, 1, doc_size=256)

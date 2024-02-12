@@ -245,7 +245,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             self.summary.add_step(step_desc)
 
             # SDK client to perform sub_doc ops
-            client = SDKClient([self.cluster.master], bucket_obj)
+            client = SDKClient(self.cluster, bucket_obj)
 
             result = client.crud("create", key, value)
             verification_dict["ops_create"] += 1
@@ -452,8 +452,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 compression=self.sdk_compression,
                 timeout_secs=self.sdk_timeout,
                 process_concurrency=8,
-                batch_size=200,
-                sdk_client_pool=self.sdk_client_pool)
+                batch_size=200)
             self.task_manager.get_task_result(create_task)
             if create_task.fail:
                 self.log_failure("Failures seen during initial creates")
@@ -469,8 +468,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 process_concurrency=2,
                 batch_size=100,
                 start_task=False,
-                print_ops_rate=False,
-                sdk_client_pool=self.sdk_client_pool)
+                print_ops_rate=False)
             update_task = self.task.async_load_gen_docs(
                 self.cluster, bucket_obj, update_gen, "update",
                 exp=self.maxttl,
@@ -480,8 +478,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 process_concurrency=2,
                 batch_size=100,
                 start_task=False,
-                print_ops_rate=False,
-                sdk_client_pool=self.sdk_client_pool)
+                print_ops_rate=False)
             read_task = self.task.async_load_gen_docs(
                 self.cluster, bucket_obj, update_gen, "read",
                 compression=self.sdk_compression,
@@ -489,8 +486,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 process_concurrency=2,
                 batch_size=100,
                 start_task=False,
-                print_ops_rate=False,
-                sdk_client_pool=self.sdk_client_pool)
+                print_ops_rate=False)
             delete_task = self.task.async_load_gen_docs(
                 self.cluster, bucket_obj, delete_gen, "delete",
                 exp=self.maxttl,
@@ -500,8 +496,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 process_concurrency=2,
                 batch_size=100,
                 start_task=False,
-                print_ops_rate=False,
-                sdk_client_pool=self.sdk_client_pool)
+                print_ops_rate=False)
 
             # Start CRUD and update bucket-durability as specified
             # by config param 'update_during_ops'
@@ -616,8 +611,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 self.cluster, bucket_obj, doc_gen, "update",
                 durability=SDKConstants.DurabilityLevel.NONE,
                 timeout_secs=60,
-                start_task=False,
-                sdk_client_pool=self.sdk_client_pool)
+                start_task=False)
 
             # Simulate target error condition
             error_sim.create(simulate_error)
@@ -735,8 +729,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                     self.cluster, bucket, gen_loader_1, "create", 0,
                     batch_size=crud_batch_size, process_concurrency=1,
                     timeout_secs=10,
-                    print_ops_rate=False,
-                    sdk_client_pool=self.sdk_client_pool)
+                    print_ops_rate=False)
                 self.task_manager.get_task_result(doc_loading_task)
                 if doc_loading_task.fail:
                     self.log_failure("Failure while loading initial docs")
@@ -751,11 +744,10 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 batch_size=crud_batch_size, process_concurrency=8,
                 timeout_secs=60,
                 print_ops_rate=False,
-                start_task=False,
-                sdk_client_pool=self.sdk_client_pool)
+                start_task=False)
 
             # SDK client for performing individual ops
-            client = SDKClient([self.cluster.master], bucket)
+            client = SDKClient(self.cluster, bucket)
 
             # Perform specified action
             for node in target_nodes:
@@ -898,7 +890,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
 
         def perform_crud_ops():
             old_cas = 0
-            client = SDKClient([self.cluster.master], bucket_obj)
+            client = SDKClient(self.cluster, bucket_obj)
 
             for op_type in ["create", "update", "read", "replace", "delete"]:
                 crud_desc = "Key %s, doc_op: %s" % (key, op_type)

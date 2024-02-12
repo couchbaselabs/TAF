@@ -105,7 +105,6 @@ Parameters:
 
 class DocLoaderUtils(object):
     log = logger.get("test")
-    sdk_client_pool = None
 
     @staticmethod
     def __get_required_num_from_percentage(collection_obj, target_percent, op_type):
@@ -314,7 +313,6 @@ class DocLoaderUtils(object):
             loader_spec[bucket] = scope_dict
         task = task_manager.async_load_gen_docs_from_spec(
             cluster, task_manager.jython_task_manager, loader_spec,
-            DocLoaderUtils.sdk_client_pool,
             batch_size=batch_size,
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
@@ -564,7 +562,7 @@ class DocLoaderUtils(object):
         return crud_spec
 
     @staticmethod
-    def validate_crud_task_per_collection(bucket, scope_name,
+    def validate_crud_task_per_collection(cluster, bucket, scope_name,
                                           collection_name, c_data):
         # Table objects to print data
         table_headers = ["Initial exception", "Key"]
@@ -584,9 +582,8 @@ class DocLoaderUtils(object):
         exception_pattern = ".*(com\.[a-zA-Z0-9\.]+)"
 
         # Fetch client for retry operations
-        client = \
-            DocLoaderUtils.sdk_client_pool.get_client_for_bucket(
-                bucket, scope_name, collection_name)
+        client = cluster.sdk_client_pool.get_client_for_bucket(
+            bucket, scope_name, collection_name)
         doc_data = dict()
         subdoc_data = dict()
         for op_type, op_data in c_data.items():
@@ -737,11 +734,12 @@ class DocLoaderUtils(object):
                         "%s unwanted exception keys failed in retry" % gen_str)
 
         # Release the acquired client
-        DocLoaderUtils.sdk_client_pool.release_client(client)
+        cluster.sdk_client_pool.release_client(client)
 
     @staticmethod
-    def validate_doc_loading_results(doc_loading_task):
+    def validate_doc_loading_results(cluster, doc_loading_task):
         """
+        :param cluster: Cluster object holding sdk_client_pool variable
         :param doc_loading_task: Task object returned from
                                  DocLoaderUtils.perform_doc_loading_for_spec
         :return:
@@ -754,7 +752,7 @@ class DocLoaderUtils(object):
                 for c_name, c_dict in collection_dict["collections"].items():
                     c_thread = threading.Thread(
                         target=crud_validation_function,
-                        args=[bucket_obj, s_name, c_name, c_dict])
+                        args=[cluster, bucket_obj, s_name, c_name, c_dict])
                     c_thread.start()
                     c_validation_threads.append(c_thread)
 
@@ -886,7 +884,8 @@ class DocLoaderUtils(object):
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate)
         if not async_load and validate_task:
-            DocLoaderUtils.validate_doc_loading_results(doc_loading_task)
+            DocLoaderUtils.validate_doc_loading_results(cluster,
+                                                        doc_loading_task)
         return doc_loading_task
 
     @staticmethod
@@ -963,7 +962,7 @@ class DocLoaderUtils(object):
                             process_concurrency=1,
                             track_failures=True,
                             async_load=True, validate_results=False,
-                            retries=0, sdk_client_pool=None):
+                            retries=0):
         def get_bucket_obj(b_name):
             for t_bucket in buckets:
                 if t_bucket.name == b_name:
@@ -973,7 +972,7 @@ class DocLoaderUtils(object):
         result = True
         if buckets is None:
             buckets = cluster.buckets
-        if sdk_client_pool is None and cluster.master:
+        if cluster.sdk_client_pool is None and cluster.master:
             master = Server(cluster.master.ip, cluster.master.port,
                             cluster.master.rest_username,
                             cluster.master.rest_password,
@@ -986,9 +985,9 @@ class DocLoaderUtils(object):
                 task_name = "Loader_%s_%s_%s_%s_%s" \
                             % (bucket_name, scope, collection,
                                process_concurrency, "%s" % time())
-                if sdk_client_pool:
+                if cluster.sdk_client_pool:
                     task = WorkLoadGenerate(
-                        task_name, dg, sdk_client_pool,
+                        task_name, dg, cluster.sdk_client_pool,
                         durability_level, maxttl,
                         ttl_time_unit, track_failures, retries)
                     task.set_collection_for_load(
@@ -1019,8 +1018,7 @@ class DocLoaderUtils(object):
             if validate_results:
                 result = DocLoaderUtils.data_validation(
                     task_manager, loader_map, cluster, buckets,
-                    process_concurrency=process_concurrency, ops_rate=100,
-                    sdk_client_pool=sdk_client_pool)
+                    process_concurrency=process_concurrency, ops_rate=100)
 
         return result, tasks
 
@@ -1071,7 +1069,7 @@ class DocLoaderUtils(object):
     def data_validation(task_manager, loader_map, cluster, buckets=None,
                         process_concurrency=1, ops_rate=100,
                         max_ttl=0, ttl_timeunit="seconds",
-                        track_failures=True, sdk_client_pool=None):
+                        track_failures=True):
         def get_bucket_obj(b_name):
             for t_bucket in buckets:
                 if t_bucket.name == b_name:
@@ -1124,7 +1122,7 @@ class DocLoaderUtils(object):
                                       start, end, docs_deleted=True)
 
         log.info("Validating Active/Replica Docs")
-        if sdk_client_pool is None and cluster.master:
+        if cluster.sdk_client_pool is None and cluster.master:
             master = Server(cluster.master.ip, cluster.master.port,
                             cluster.master.rest_username,
                             cluster.master.rest_password,
@@ -1140,9 +1138,9 @@ class DocLoaderUtils(object):
                             % (bucket_name, scope, collection,
                                op_type, str(process_concurrency),
                                time.time())
-                if sdk_client_pool:
+                if cluster.sdk_client_pool:
                     task = WorkLoadGenerate(
-                        task_name, doc_gen, sdk_client_pool, "NONE",
+                        task_name, doc_gen, cluster.sdk_client_pool, "NONE",
                         max_ttl, ttl_timeunit, track_failures, 0)
                     task.set_collection_for_load(bucket_name, scope,
                                                  collection)
@@ -1169,7 +1167,7 @@ class DocLoaderUtils(object):
                 process_concurrency -= 1
         for task in tasks:
             task_manager.getTaskResult(task)
-            if sdk_client_pool is None:
+            if cluster.sdk_client_pool is None:
                 try:
                     task.sdk.disconnectCluster()
                 except Exception as e:
@@ -3575,13 +3573,11 @@ class BucketUtils(ScopeUtils):
                                .format(task_info["unwanted"]["fail"]))
 
     @staticmethod
-    def verify_doc_op_task_exceptions(tasks_info, cluster,
-                                      sdk_client_pool=None):
+    def verify_doc_op_task_exceptions(tasks_info, cluster):
         """
         :param tasks_info:  dict() of dict() of form,
                             tasks_info[task_obj] = get_doc_op_info_dict()
         :param cluster:     Cluster object
-        :param sdk_client_pool: Instance of SDKClientPool
         :return: tasks_info dictionary updated with retried/unwanted docs
         """
         for task, task_info in tasks_info.items():
@@ -3590,16 +3586,13 @@ class BucketUtils(ScopeUtils):
             scope = task_info["scope"]
             collection = task_info["collection"]
 
-            if sdk_client_pool:
-                client = sdk_client_pool.get_client_for_bucket(bucket,
-                                                               scope,
-                                                               collection)
+            if cluster.sdk_client_pool:
+                client = cluster.sdk_client_pool.get_client_for_bucket(
+                    bucket, scope, collection)
 
             if client is None:
-                client = SDKClient([cluster.master],
-                                   bucket,
-                                   scope=scope,
-                                   collection=collection)
+                client = SDKClient(cluster, bucket,
+                                   scope=scope, collection=collection)
 
             for key, failed_doc in task.fail.items():
                 found = False
@@ -3653,8 +3646,8 @@ class BucketUtils(ScopeUtils):
                     tasks_info[task][dict_key]["success"].update(key_value)
                 else:
                     tasks_info[task][dict_key]["fail"].update(key_value)
-            if sdk_client_pool:
-                sdk_client_pool.release_client(client)
+            if cluster.sdk_client_pool:
+                cluster.sdk_client_pool.release_client(client)
             else:
                 # Close client for this task
                 client.close()
@@ -3675,7 +3668,6 @@ class BucketUtils(ScopeUtils):
                           collection=CbServer.default_collection,
                           monitor_stats=["doc_ops"],
                           track_failures=True,
-                          sdk_client_pool=None,
                           sdk_retry_strategy=None,
                           iterations=1):
         return self.task.async_load_gen_docs(
@@ -3694,7 +3686,6 @@ class BucketUtils(ScopeUtils):
             scope=scope, collection=collection,
             monitor_stats=monitor_stats,
             track_failures=track_failures,
-            sdk_client_pool=sdk_client_pool,
             sdk_retry_strategy=sdk_retry_strategy,
             iterations=iterations)
 
@@ -3726,7 +3717,6 @@ class BucketUtils(ScopeUtils):
                         batch_size=batch_size,
                         scope=scope.name,
                         collection=collection.name,
-                        sdk_client_pool=DocLoaderUtils.sdk_client_pool,
                         process_concurrency=process_concurrency,
                         persist_to=persist_to, replicate_to=replicate_to,
                         timeout_secs=timeout_secs)
@@ -3752,7 +3742,6 @@ class BucketUtils(ScopeUtils):
                                 collection=CbServer.default_collection,
                                 monitor_stats=["doc_ops"],
                                 track_failures=True,
-                                sdk_client_pool=None,
                                 sdk_retry_strategy=None,
                                 iterations=1):
 
@@ -3784,7 +3773,6 @@ class BucketUtils(ScopeUtils):
                 scope=scope, collection=collection,
                 monitor_stats=monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy,
                 iterations=iterations)
             tasks_info[task] = self.get_doc_op_info_dict(
@@ -3808,7 +3796,6 @@ class BucketUtils(ScopeUtils):
                              scope=CbServer.default_scope,
                              collection=CbServer.default_collection,
                              suppress_error_table=False,
-                             sdk_client_pool=None,
                              sdk_retry_strategy=None):
         task_info = dict()
         for bucket in cluster.buckets:
@@ -3819,7 +3806,6 @@ class BucketUtils(ScopeUtils):
                 process_concurrency, check_replica,
                 scope, collection,
                 suppress_error_table=suppress_error_table,
-                sdk_client_pool=sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
             task_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
@@ -3846,8 +3832,7 @@ class BucketUtils(ScopeUtils):
                               scope=CbServer.default_scope,
                               collection=CbServer.default_collection,
                               monitor_stats=["doc_ops"],
-                              track_failures=True,
-                              sdk_client_pool=None):
+                              track_failures=True):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -3880,15 +3865,13 @@ class BucketUtils(ScopeUtils):
             dgm_batch=dgm_batch,
             scope=scope, collection=collection,
             monitor_stats=monitor_stats,
-            track_failures=track_failures,
-            sdk_client_pool=sdk_client_pool)
+            track_failures=track_failures)
 
         for task in tasks_info.keys():
             self.task_manager.get_task_result(task)
 
         # Wait for all doc_loading tasks to complete and populate failures
-        self.verify_doc_op_task_exceptions(tasks_info, cluster,
-                                           sdk_client_pool=sdk_client_pool)
+        self.verify_doc_op_task_exceptions(tasks_info, cluster)
         self.log_doc_ops_task_failures(tasks_info)
         return tasks_info
 

@@ -23,7 +23,7 @@ class basic_ops(ClusterSetup):
         self.sleep(10, "Wait for bucket to become ready for ops")
 
         self.def_bucket = self.bucket_util.get_all_buckets(self.cluster)
-        self.client = SDKClient([self.cluster.master], self.def_bucket[0])
+        self.client = SDKClient(self.cluster, self.def_bucket[0])
         self.transaction_options = SDKClient.get_transaction_options(
             TransactionConfig(durability=self.durability_level,
                               timeout=self.transaction_timeout))
@@ -259,7 +259,7 @@ class basic_ops(ClusterSetup):
 
         if self.crash:
             self.client.cluster.disconnect()
-            self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
+            self.client1 = SDKClient(self.cluster, self.def_bucket[0])
             self.sleep(self.transaction_timeout+60,
                        "Wait for transaction cleanup to complete")
             exception = Transaction().RunTransaction(
@@ -311,7 +311,7 @@ class basic_ops(ClusterSetup):
             thread.start()
 
         self.client.cluster.disconnect()
-        self.client1 = SDKClient([self.cluster.master], self.def_bucket[0])
+        self.client1 = SDKClient(self.cluster, self.def_bucket[0])
         self.sleep(self.transaction_timeout+60,
                    "Wait for transaction cleanup to happen")
 

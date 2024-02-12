@@ -6,7 +6,6 @@ from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cb_constants import CbServer
 from com.couchbase.test.docgen import DocumentGenerator
 from BucketLib.BucketOperations import BucketHelper
-from couchbase_helper.documentgenerator import doc_generator
 
 
 class MeteringOnCloud(TenantMgmtOnCloud):
@@ -29,8 +28,8 @@ class MeteringOnCloud(TenantMgmtOnCloud):
             self.bucket_util.get_initial_stats(self.cluster.buckets)
 
         # Create sdk_client_pool
-        self.sdk_client_pool = True
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.create_sdk_client_pool(buckets=self.cluster.buckets,
                                     req_clients_per_bucket=1)
 
@@ -71,12 +70,12 @@ class MeteringOnCloud(TenantMgmtOnCloud):
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
             async_load=False, durability_level=self.durability_level,
-            validate_results=False, sdk_client_pool=self.sdk_client_pool)
+            validate_results=False)
         result = DocLoaderUtils.data_validation(
             self.doc_loading_tm, loader_map, self.cluster,
             buckets=self.cluster.buckets,
             process_concurrency=self.process_concurrency,
-            ops_rate=self.ops_rate, sdk_client_pool=self.sdk_client_pool)
+            ops_rate=self.ops_rate)
         self.assertTrue(result, "Data validation failed")
 
     def validate_stats(self):

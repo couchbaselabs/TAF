@@ -21,7 +21,6 @@ class DiskUsageGuardrails(GuardrailsBase):
         self.log.info("Creating SDK clients for the buckets")
         self.create_sdk_clients_for_buckets()
 
-
     def test_disk_usage_guardrail_with_data_growth(self):
 
         number_of_docs = self.input.param("number_of_docs", 10)

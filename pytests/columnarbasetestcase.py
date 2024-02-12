@@ -110,8 +110,8 @@ class ColumnarBaseTest(CouchbaseBaseTest):
             CapellaUtils.delete_project(self.pod, self.tenant)
 
         self.shutdown_task_manager()
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.shutdown()
 
         if self.is_test_failed() and self.get_cbcollect_info:
             # Add code to get goldfish logs.

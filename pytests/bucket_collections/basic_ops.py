@@ -139,7 +139,7 @@ class BasicOps(CollectionBase):
                       % (CbServer.default_scope,
                          CbServer.default_collection))
         if client_type == "sdk":
-            client = SDKClient([self.cluster.master], self.bucket,
+            client = SDKClient(self.cluster, self.bucket,
                                compression_settings=self.sdk_compression)
             client.drop_collection(CbServer.default_scope,
                                    CbServer.default_collection)
@@ -189,7 +189,7 @@ class BasicOps(CollectionBase):
 
         # SDK connection to default(dropped) collection to validate failure
         try:
-            client = SDKClient([self.cluster.master], self.bucket,
+            client = SDKClient(self.cluster, self.bucket,
                                scope=CbServer.default_scope,
                                collection=CbServer.default_collection,
                                compression_settings=self.sdk_compression)
@@ -241,7 +241,7 @@ class BasicOps(CollectionBase):
                                    key_size=self.key_size)
         self.log.info("Loading %d docs into '_default' collection"
                       % self.num_items)
-        client = SDKClient([self.cluster.master], self.bucket,
+        client = SDKClient(self.cluster, self.bucket,
                            compression_settings=self.sdk_compression)
         while create_gen.has_next():
             key, val = create_gen.next()
@@ -416,10 +416,8 @@ class BasicOps(CollectionBase):
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         self.log.info("Load documents into the created collection")
-        sdk_client = SDKClient([self.cluster.master],
-                               self.bucket,
-                               scope=scope_name,
-                               collection=collection_name,
+        sdk_client = SDKClient(self.cluster, self.bucket,
+                               scope=scope_name, collection=collection_name,
                                compression_settings=self.sdk_compression)
         while gen_add.has_next():
             key, value = gen_add.next()
@@ -480,7 +478,7 @@ class BasicOps(CollectionBase):
         known_cas = dict()
 
         # Client to insert docs under different collections
-        client = SDKClient([self.cluster.master], self.bucket,
+        client = SDKClient(self.cluster, self.bucket,
                            compression_settings=self.sdk_compression)
 
         while doc_gen.has_next():
@@ -551,7 +549,7 @@ class BasicOps(CollectionBase):
         known_cas = dict()
 
         # Client to insert docs under different collections
-        client = SDKClient([self.cluster.master], self.bucket,
+        client = SDKClient(self.cluster, self.bucket,
                            compression_settings=self.sdk_compression)
 
         for doc_gen in [min_doc_gen, max_doc_gen]:
@@ -607,7 +605,7 @@ class BasicOps(CollectionBase):
         known_cas = dict()
 
         # Client to insert docs under different collections
-        client = SDKClient([self.cluster.master], self.bucket,
+        client = SDKClient(self.cluster, self.bucket,
                            compression_settings=self.sdk_compression)
 
         for doc_gen in [min_doc_size_gen, max_doc_size_gen]:
@@ -971,7 +969,6 @@ class BasicOps(CollectionBase):
             batch_size=200, process_concurrency=1,
             scope=scope_name,
             collection=collection_name,
-            sdk_client_pool=self.sdk_client_pool,
             suppress_error_table=True,
             compression=self.sdk_compression,
             print_ops_rate=True, retries=0)
@@ -1043,7 +1040,7 @@ class BasicOps(CollectionBase):
         """
         rand_name = self.bucket_util.get_random_name(max_length=15)
         bucket_helper = BucketHelper(self.cluster.master)
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(self.bucket)
 
         expected_err = "Not allowed on this type of bucket"
         expected_err_sdk = "com.couchbase.client.core.error"
@@ -1090,4 +1087,4 @@ class BasicOps(CollectionBase):
         if result["error"]:
             self.fail("Default collection CRUD failed")
 
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)

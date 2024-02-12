@@ -148,7 +148,7 @@ class CollectionsNegativeTc(CollectionBase):
             self.fail("Creating more than max scopes did not fail")
 
     def test_load_duplicate_key_within_same_collection(self):
-        client = SDKClient([self.cluster.master], self.bucket,
+        client = SDKClient(self.cluster, self.bucket,
                            scope=CbServer.default_scope,
                            collection=CbServer.default_collection,
                            compression_settings=self.sdk_compression)

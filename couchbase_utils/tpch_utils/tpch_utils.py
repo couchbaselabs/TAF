@@ -10,6 +10,7 @@ from global_vars import logger
 from bucket_collections.collections_base import CollectionBase
 from java.lang import Exception as Java_base_exception
 from awsLib.s3_data_helper import perform_S3_operation
+from sdk_client3 import SDKClientPool
 
 
 class TPCHUtil(object):
@@ -38,13 +39,15 @@ class TPCHUtil(object):
             self.basetest_obj.bucket_util.print_bucket_stats(cluster)
 
             # Init sdk_client_pool if not initialized before
-            if self.basetest_obj.sdk_client_pool is None:
-                self.basetest_obj.init_sdk_pool_object()
+            if cluster.sdk_client_pool is None:
+                cluster.sdk_client_pool = SDKClientPool()
 
             self.log.info("Creating required SDK clients for client_pool")
             CollectionBase.create_sdk_clients(
-                self.basetest_obj.task_manager.number_of_threads, cluster.master, cluster.buckets,
-                self.basetest_obj.sdk_client_pool, self.basetest_obj.sdk_compression)
+                cluster,
+                self.basetest_obj.task_manager.number_of_threads,
+                cluster.master, cluster.buckets,
+                self.basetest_obj.sdk_compression)
 
             self.basetest_obj.cluster_util.print_cluster_stats(cluster)
         except Java_base_exception as exception:
@@ -124,4 +127,3 @@ class TPCHUtil(object):
     def get_doc_count_in_tpch_buckets():
         info = TPCHUtil.fetch_info_from_tpch_helper()
         return copy.deepcopy(info.bucket_doc_count)
-

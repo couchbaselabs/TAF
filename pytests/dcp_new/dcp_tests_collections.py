@@ -1,6 +1,5 @@
 from dcp_new.dcp_base import DCPBase
 from dcp_new.constants import *
-from memcacheConstants import *
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 from cb_constants import CbServer

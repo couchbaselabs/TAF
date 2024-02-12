@@ -1,7 +1,6 @@
 import json
 from random import choice
 
-from BucketLib.bucket import Bucket
 from bucket_collections.collections_base import CollectionBase
 from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
@@ -303,7 +302,7 @@ class CollectionDurabilityTests(CollectionBase):
         self.log.info("Performing CRUDs on healthy cluster")
         for server in kv_nodes:
             self.bucket_util.validate_doc_loading_results(
-                load_task[server])
+                self.cluster, load_task[server])
             if load_task[server].result is False:
                 self.log_failure("Doc retry task failed on %s" % server.ip)
 
@@ -346,7 +345,7 @@ class CollectionDurabilityTests(CollectionBase):
         self.__get_d_level_and_error_to_simulate()
 
         # Acquire SDK client from the pool for performing doc_ops locally
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = SDKClient(self.cluster, self.bucket)
 
         target_nodes = DurabilityHelper.getTargetNodes(self.cluster,
                                                        self.nodes_init,
@@ -484,7 +483,8 @@ class CollectionDurabilityTests(CollectionBase):
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Doc CRUDs failed")
 
@@ -594,7 +594,6 @@ class CollectionDurabilityTests(CollectionBase):
                             self.cluster, self.bucket,
                             c_meta[op_type]["doc_gen"], doc_ops[1], 0,
                             scope=s_name, collection=c_name,
-                            sdk_client_pool=self.sdk_client_pool,
                             batch_size=self.crud_batch_size,
                             process_concurrency=1,
                             replicate_to=self.replicate_to,
@@ -629,7 +628,8 @@ class CollectionDurabilityTests(CollectionBase):
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Doc CRUDs failed")
 
@@ -740,7 +740,8 @@ class CollectionDurabilityTests(CollectionBase):
         doc_load_spec[MetaCrudParams.SDK_TIMEOUT] = 60
 
         # Acquire SDK client from the pool for performing doc_ops locally
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(
+            self.bucket)
         # Override the crud_batch_size
         self.crud_batch_size = 5
 
@@ -835,7 +836,8 @@ class CollectionDurabilityTests(CollectionBase):
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Doc CRUDs failed")
 
@@ -863,7 +865,7 @@ class CollectionDurabilityTests(CollectionBase):
                                         % (key, doc_info))
 
         # Release the acquired SDK client
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
 
         # Verify initial doc load count
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,

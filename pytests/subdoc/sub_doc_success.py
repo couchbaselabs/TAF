@@ -939,7 +939,7 @@ class BasicOps(DurabilityTestsBase):
         vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
 
         # Open SDK client
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
 
         # Create Sync_write doc with xattr + doc_ttl=10s
         client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},

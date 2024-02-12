@@ -76,8 +76,7 @@ class AutoCompactionTests(CollectionBase):
                                 batch_size=10,
                                 process_concurrency=8,
                                 scope=scope.name,
-                                collection=collection.name,
-                                sdk_client_pool=self.sdk_client_pool)
+                                collection=collection.name)
                             self.task.jython_task_manager.get_task_result(task)
                             if end_time < time.time() or self.stop_loading_thread:
                                 break
@@ -107,8 +106,7 @@ class AutoCompactionTests(CollectionBase):
                         batch_size=batch_size,
                         process_concurrency=process_concurrency,
                         scope=scope.name,
-                        collection=collection.name,
-                        sdk_client_pool=self.sdk_client_pool)
+                        collection=collection.name)
                     self.task.jython_task_manager.get_task_result(task)
                     bucket.scopes[scope.name] \
                         .collections[collection.name] \
@@ -295,8 +293,7 @@ class AutoCompactionTests(CollectionBase):
             batch_size=300,
             process_concurrency=4,
             scope=scope_name,
-            collection=collection_name,
-            sdk_client_pool=self.sdk_client_pool)
+            collection=collection_name)
         servs_in = self.servers[self.nodes_init:self.nodes_init+self.nodes_in]
         rebalance = self.task.async_rebalance(
             self.cluster,
@@ -438,8 +435,7 @@ class AutoCompactionTests(CollectionBase):
             batch_size=300,
             process_concurrency=4,
             scope=scope_name,
-            collection=collection_name,
-            sdk_client_pool=self.sdk_client_pool)
+            collection=collection_name)
         rebalance = self.task.async_rebalance(self.cluster,
                                               servs_in, servs_out,
                                               check_vbucket_shuffling=False)
@@ -772,8 +768,7 @@ class AutoCompactionTests(CollectionBase):
             batch_size=300,
             process_concurrency=4,
             scope=scope_name,
-            collection=collection_name,
-            sdk_client_pool=self.sdk_client_pool)
+            collection=collection_name)
 
         while monitor_fragm.completed is False:
             if end_time < time.time():

@@ -24,6 +24,7 @@ import global_vars
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux, Mac, Windows
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
+from sdk_client3 import SDKClient
 from table_view import TableView
 from copy import deepcopy
 # import srvlookup
@@ -88,6 +89,12 @@ class CBCluster:
         self.version = None
         self.edition = None
         self.type = "default"
+
+        # SDK related objects
+        self.sdk_client_pool = None
+        # Note: Referenced only for sdk_client3.py SDKClient
+        self.sdk_cluster_env = SDKClient.create_cluster_env()
+        self.sdk_env_built = self.sdk_cluster_env.build()
 
         # Capella specific params
         self.pod = None

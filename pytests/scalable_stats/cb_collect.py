@@ -237,7 +237,8 @@ class CbCollectInfoTests(CollectionBase):
         nodes_in_cluster = self.__get_server_nodes()
 
         for bucket in self.cluster.buckets:
-            self.sdk_client_pool.create_clients(bucket, [self.cluster.master])
+            self.cluster.sdk_client_pool.create_clients(bucket,
+                                                        [self.cluster.master])
 
         # Value in MB
         max_size_threshold = self.input.param("max_threshold", 1024)
@@ -251,7 +252,7 @@ class CbCollectInfoTests(CollectionBase):
         #                         "prometheus_metrics_scrape_interval", 5)
 
         # Create required indexes on the bucket
-        client = self.sdk_client_pool.get_client_for_bucket(def_bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(def_bucket)
         for scope, s_data in def_bucket.scopes.items():
             for collection in s_data.collections.keys():
                 client.cluster.query(
@@ -265,14 +266,13 @@ class CbCollectInfoTests(CollectionBase):
                         'CREATE INDEX `%s` on `%s`.`%s`.`%s`(name,age) '
                         'WHERE age=%d'
                         % (index_name, def_bucket.name, scope, collection, i))
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
 
         doc_load_tasks = list()
         for bucket in self.cluster.buckets:
             task = self.task.async_continuous_doc_ops(
                 self.cluster, bucket, load_gen,
                 op_type="update",
-                sdk_client_pool=self.sdk_client_pool,
                 timeout_secs=60,
                 process_concurrency=1)
             doc_load_tasks.append(task)

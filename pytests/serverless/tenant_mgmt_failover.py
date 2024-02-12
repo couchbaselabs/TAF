@@ -94,10 +94,10 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
             buckets = self.cluster.buckets
         if self.enable_data_load:
             CollectionBase.create_sdk_clients(
+                self.cluster,
                 self.task_manager.number_of_threads,
                 self.cluster.master,
                 buckets,
-                self.sdk_client_pool,
                 self.sdk_compression)
 
     def stop_rebalance(self):
@@ -299,8 +299,8 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
         if self.validate_bucket_creation:
             self.test_bucket_creation()
         if self.enable_data_load and self.async_data_load:
-            self.rebalance_util.wait_for_data_load_to_complete(data_load_task,
-                                                               False)
+            self.rebalance_util.wait_for_data_load_to_complete(
+                self.cluster, data_load_task, False)
         if self.validate_stat:
             for bucket in self.cluster.buckets:
                 self.expected_stat[bucket.name]["wu"] += \
@@ -391,10 +391,11 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                                       wait_for_warmup=True)
         if self.thread_fail_Exception is not None:
             raise Exception(self.thread_fail_Exception)
-        self.rebalance_util.wait_for_data_load_to_complete(data_load_task,
-                                                           False)
+        self.rebalance_util.wait_for_data_load_to_complete(
+            self.cluster, data_load_task, False)
         # assertions
-        self.bucket_util.validate_doc_loading_results(data_load_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      data_load_task)
         bucket_clients = []
         self.create_sdk_clients(buckets=bucket_clients)
         data_spec = self.data_load_spec()
@@ -418,7 +419,7 @@ class TenantManagementOnPremFailover(ServerlessOnPremBaseTest):
                                                            mutation_num=0,
                                                            async_load=True)
             self.task.jython_task_manager.get_task_result(task)
-            self.bucket_util.validate_doc_loading_results(task)
+            self.bucket_util.validate_doc_loading_results(self.cluster, task)
             if task.result is False:
                 raise Exception("doc load/verification failed")
         if self.num_buckets > 0:

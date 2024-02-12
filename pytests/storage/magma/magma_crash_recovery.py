@@ -680,8 +680,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.log.info("==test_crash_during_multi_updates_of_single_doc starts==")
         self.change_swap_space(self.cluster.nodes_in_cluster)
 
-        self.client = SDKClient([self.cluster.master],
-                                self.cluster.buckets[0],
+        self.client = SDKClient(self.cluster, self.cluster.buckets[0],
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection)
 

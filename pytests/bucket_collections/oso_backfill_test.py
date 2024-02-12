@@ -10,6 +10,7 @@ from sdk_client3 import SDKClient
 
 from com.couchbase.client.core.error import InternalServerFailureException
 
+
 class KvOsoBackfillTests(CollectionBase):
     def setUp(self):
         super(KvOsoBackfillTests, self).setUp()
@@ -43,7 +44,7 @@ class KvOsoBackfillTests(CollectionBase):
                 cb_err = CouchbaseError(self.log, self.shell_conns[t_node.ip])
                 err_pattern[index] = (t_node, cb_err)
 
-        sdk_client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+        sdk_client = SDKClient(self.cluster, self.cluster.buckets[0])
         self.log.info("Creating deferred indexes on collections")
         for bucket in self.cluster.buckets:
             for s_name, scope in bucket.scopes.items():

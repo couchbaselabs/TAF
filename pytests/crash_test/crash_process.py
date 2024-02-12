@@ -47,10 +47,10 @@ class CrashTest(ClusterSetup):
             eviction_policy=self.bucket_eviction_policy)
         self.bucket_util.add_rbac_user(self.cluster.master)
 
-        if self.sdk_client_pool:
+        if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK clients for client_pool")
             for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
+                self.cluster.sdk_client_pool.create_clients(
                     bucket,
                     [self.cluster.master],
                     self.sdk_pool_capacity,
@@ -100,8 +100,7 @@ class CrashTest(ClusterSetup):
                         persist_to=self.persist_to,
                         replicate_to=self.replicate_to,
                         durability=self.durability_level,
-                        batch_size=10, process_concurrency=8,
-                        sdk_client_pool=self.sdk_client_pool)
+                        batch_size=10, process_concurrency=8)
                     self.task.jython_task_manager.get_task_result(task)
 
                     self.bucket_util._wait_for_stats_all_buckets(
@@ -212,8 +211,7 @@ class CrashTest(ClusterSetup):
                 self.log_failure("Unwanted exception seen during validation")
 
             # Create SDK connection for CRUD retries
-            sdk_client = SDKClient([self.cluster.master],
-                                   def_bucket)
+            sdk_client = SDKClient(self.cluster, def_bucket)
             for doc_key, crud_result in task.fail.items():
                 result = sdk_client.crud("create",
                                          doc_key,
@@ -413,7 +411,6 @@ class CrashTest(ClusterSetup):
                 persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool,
                 batch_size=10,
                 process_concurrency=1,
                 skip_read_on_error=True,

@@ -258,7 +258,7 @@ class CrashTest(CollectionBase):
         # Select a KV node other than master node from the cluster
         node_to_crash = kv_nodes[sample(range(1, len(kv_nodes)), 1)[0]]
 
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(self.bucket)
         use_client = sample(["sdk", "rest"], 1)[0]
         if action == "remove":
             # Create a scope to be removed
@@ -288,8 +288,7 @@ class CrashTest(CollectionBase):
                 batch_size=200, process_concurrency=4,
                 compression=self.sdk_compression,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
 
         if action == "create":
             create_scope(self.client_type, self.bucket, self.scope_name)
@@ -369,7 +368,7 @@ class CrashTest(CollectionBase):
         # Select a KV node other than master node from the cluster
         node_to_crash = kv_nodes[sample(range(1, len(kv_nodes)), 1)[0]]
 
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(self.bucket)
         use_client = sample(["sdk", "rest"], 1)[0]
 
         if action == "remove" \
@@ -500,7 +499,7 @@ class CrashTest(CollectionBase):
             self.log_failure("Unwanted exception seen during validation")
 
         # Get SDK client for CRUD retries
-        sdk_client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        sdk_client = self.cluster.sdk_client_pool.get_client_for_bucket(self.bucket)
         for doc_key, crud_result in self.doc_loading_task.fail.items():
             result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
                                      doc_key,
@@ -513,7 +512,7 @@ class CrashTest(CollectionBase):
                 self.log_failure("Retry of doc_key %s failed: %s"
                                  % (doc_key, result["error"]))
         # Close the SDK connection
-        self.sdk_client_pool.release_client(sdk_client)
+        self.cluster.sdk_client_pool.release_client(sdk_client)
 
         self.validate_test_failure()
 

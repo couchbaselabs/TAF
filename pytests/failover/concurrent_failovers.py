@@ -9,7 +9,6 @@ from sdk_client3 import SDKClient
 from cb_constants import CbServer, DocLoading
 from Jython_tasks.task import ConcurrentFailoverTask
 from bucket_collections.collections_base import CollectionBase
-from couchbase_helper.tuq_helper import N1QLHelper
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from error_simulation.cb_error import CouchbaseError
@@ -84,12 +83,12 @@ class ConcurrentFailoverTests(AutoFailoverBaseTest):
         self.validate_failover_settings(True, self.timeout, 0, self.max_count)
 
         # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
+        if self.cluster.sdk_client_pool is None:
+            self.cluster.sdk_client_pool = SDKClientPool()
             CollectionBase.create_sdk_clients(
-                self.task_manager.number_of_threads,
+                self.cluster, self.task_manager.number_of_threads,
                 self.cluster.master, self.cluster.buckets,
-                self.sdk_client_pool, self.sdk_compression)
+                self.sdk_compression)
 
         # Perform initial collection load
         self.__load_initial_collection_data()

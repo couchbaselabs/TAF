@@ -225,8 +225,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
         super(SubdocXattrSdkTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = SDKClient([self.cluster.master],
-                                self.cluster.buckets[0])
+        self.client = SDKClient(self.cluster, self.cluster.buckets[0])
 
     def tearDown(self):
         # Delete the inserted doc
@@ -1573,8 +1572,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
         super(SubdocXattrDurabilityTest, self).setUp()
         self.xattr = self.input.param("xattr", True)
         self.doc_id = 'xattrs'
-        self.client = SDKClient([self.cluster.master],
-                                self.cluster.buckets[0],
+        self.client = SDKClient(self.cluster, self.cluster.buckets[0],
                                 scope=self.scope_name,
                                 collection=self.collection_name,
                                 compression_settings=self.sdk_compression)
@@ -1833,7 +1831,7 @@ class XattrTests(SubdocBaseTest):
         self.bucket = self.cluster.buckets[0]
 
         # A client for reading xattributes
-        self.client = SDKClient([self.cluster.master], self.bucket)
+        self.client = SDKClient(self.cluster, self.bucket)
 
         # Parallelism for verifying xattributes
         self.parallelism = self.input.param("parallelism", 5)

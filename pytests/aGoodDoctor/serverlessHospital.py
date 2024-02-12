@@ -252,7 +252,7 @@ class Murphy(BaseTestCase, OPD):
 
             self.drIndex = DoctorN1QL(self.cluster, self.bucket_util)
             self.drFTS = DoctorFTS(self.cluster, self.bucket_util)
-            self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
+            self.cluster.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
             self.stop_run = False
             self.lock = Lock()
         except Exception as e:
@@ -464,9 +464,9 @@ class Murphy(BaseTestCase, OPD):
                             nebula.rest_username,
                             nebula.rest_password,
                             str(nebula.memcached_port))
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket.name, server, req_clients_per_bucket)
-            bucket.clients = self.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
+            bucket.clients = self.cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def create_databases(self, count=1, dataplane_ids=[], load_defn=None):
@@ -574,7 +574,7 @@ class Murphy(BaseTestCase, OPD):
 
         for bucket in self.cluster.buckets:
             try:
-                self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                self.cluster.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
                 self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
             except TimeoutException as e:
                 print e
@@ -665,7 +665,7 @@ class Murphy(BaseTestCase, OPD):
                 self.ftsQL.remove(ql)
             self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
             try:
-                self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                self.cluster.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
                 self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
             except TimeoutException as e:
                 print e
@@ -789,7 +789,7 @@ class Murphy(BaseTestCase, OPD):
                 state = self.get_cluster_balanced_state(self.dataplane_objs[bucket.serverless.dataplane_id])
             self.serverless_util.delete_database(self.pod, self.tenant,
                                                  bucket.name)
-            self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+            self.cluster.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
         self.cluster.buckets = list()
         self.ql = []
         self.ftsQL = []
@@ -971,7 +971,7 @@ class Murphy(BaseTestCase, OPD):
             self.start_initial_load(buckets)
             # try:
             #     for bucket in buckets:
-            #         self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+            #         self.cluster.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
             #         self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
             # except TimeoutException as e:
             #     print e
@@ -1014,7 +1014,7 @@ class Murphy(BaseTestCase, OPD):
                 self.ftsQL.remove(ql)
             self.sleep(2, "Wait for query load to stop: {}".format(bucket.name))
             try:
-                self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                self.cluster.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
                 self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
             except TimeoutException as e:
                 print e
@@ -1125,7 +1125,7 @@ class Murphy(BaseTestCase, OPD):
             if i != 5:
                 try:
                     for bucket in buckets:
-                        self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+                        self.cluster.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
                         self.sleep(2, "Closing SDK connection: {}".format(bucket.name))
                 except TimeoutException as e:
                     print e

@@ -1,6 +1,5 @@
 import random
 import string
-import json
 
 from cb_constants import DocLoading
 from sdk_client3 import SDKClient
@@ -15,7 +14,7 @@ class ServerlessThrottling(LMT):
         self.bucket = self.cluster.buckets[0]
         self.sdk_compression = self.input.param("sdk_compression", False)
         compression_settings = {"enabled": self.sdk_compression}
-        self.client = SDKClient([self.cluster.master], self.bucket,
+        self.client = SDKClient(self.cluster, self.bucket,
                                 compression_settings=compression_settings)
 
     def tearDown(self):
@@ -152,7 +151,6 @@ class ServerlessThrottling(LMT):
                     durability=self.durability_level,
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool,
                     print_ops_rate=False)
                 self.task_manager.get_task_result(load_task)
 
@@ -260,7 +258,6 @@ class ServerlessThrottling(LMT):
                     durability=self.durability_level,
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool,
                     print_ops_rate=False)
                 tasks.append(load_task)
 
@@ -338,7 +335,6 @@ class ServerlessThrottling(LMT):
                     durability=self.durability_level,
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool,
                     print_ops_rate=False)
                 self.task_manager.get_task_result(load_task)
             for task in task_info:

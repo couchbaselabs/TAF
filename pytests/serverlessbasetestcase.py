@@ -226,8 +226,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
     def tearDown(self):
         self.shutdown_task_manager()
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.shutdown()
 
         if self.is_test_failed() and self.get_cbcollect_info:
             for dataplane in self.dataplane_objs.values():
@@ -271,16 +271,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             self.serverless_util.delete_dataplane(dataplane_id)
         if not TestInputSingleton.input.capella.get("project", None):
             DedicatedUtils.delete_project(self.pod, self.tenant)
-
-    def init_sdk_pool_object(self):
-        """
-        Overriding the method from CouchbaseBaseTest class
-        :return:
-        """
-        if self.sdk_client_pool:
-            self.sdk_client_pool = \
-                self.bucket_util.initialize_java_sdk_client_pool()
-            DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
     def generate_dataplane_config(self):
         cb_image = self.input.capella.get("cb_image", "")

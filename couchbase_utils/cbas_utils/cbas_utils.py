@@ -5288,10 +5288,10 @@ class CBASRebalanceUtil(object):
         ignore_exceptions.append(SDKException.DocumentNotFoundException)
         doc_loading_spec[MetaCrudParams.IGNORE_EXCEPTIONS] = ignore_exceptions
 
-    def wait_for_data_load_to_complete(self, task, skip_validations):
+    def wait_for_data_load_to_complete(self, cluster, task, skip_validations):
         self.task.jython_task_manager.get_task_result(task)
         if not skip_validations:
-            self.bucket_util.validate_doc_loading_results(task)
+            self.bucket_util.validate_doc_loading_results(cluster, task)
         return task.result
 
     def data_load_collection(
@@ -5326,7 +5326,7 @@ class CBASRebalanceUtil(object):
             doc_loading_spec, mutation_num=0, async_load=async_load)
         if not async_load:
             if not skip_validations:
-                self.bucket_util.validate_doc_loading_results(task)
+                self.bucket_util.validate_doc_loading_results(cluster, task)
             return task.result
         return task
 

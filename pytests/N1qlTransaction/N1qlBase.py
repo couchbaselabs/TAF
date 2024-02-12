@@ -526,7 +526,7 @@ class N1qlBase(CollectionBase):
         self.log.info("Expected keys: %s, Actual: %s, Deleted: %s"
                       % (len(success.keys()), len(key_value.keys()),
                          len(deleted_key)))
-        DocLoaderUtils.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
 
     def validate_error_during_commit(self, result,
                                       collection_savepoint, savepoint):
@@ -631,9 +631,8 @@ class N1qlBase(CollectionBase):
                 self.buckets = self.cluster.buckets
             bucket = BucketUtils.get_bucket_obj(self.buckets,
                                                 bucket_collection[0])
-            client = \
-                DocLoaderUtils.sdk_client_pool.get_client_for_bucket(
-                    bucket, bucket_collection[1], bucket_collection[2])
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                bucket, bucket_collection[1], bucket_collection[2])
             self.validate_keys(client, self.validate_dict, self.deleted_key)
 
     def thread_txn(self, args):

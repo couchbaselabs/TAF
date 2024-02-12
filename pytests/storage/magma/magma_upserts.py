@@ -705,8 +705,7 @@ class BasicUpsertTests(BasicCrudTests):
         self.log.info("test_update_single_doc_n_times starts")
         self.doc_ops = "update"
 
-        self.client = SDKClient([self.cluster.master],
-                                self.cluster.buckets[0],
+        self.client = SDKClient(self.cluster, self.cluster.buckets[0],
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection)
 

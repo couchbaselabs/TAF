@@ -1,19 +1,13 @@
 from BucketLib.bucket import Bucket
 from cb_constants.CBServer import CbServer
-from Jython_tasks.task import CloudHibernationTask
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
-from collections_helper.collections_spec_constants import MetaConstants
-from pytests.bucket_collections.collections_base import CollectionBase
 from serverless.tenant_mgmt_on_cloud import TenantMgmtOnCloud
-from capella_utils.serverless import CapellaUtils as ServerlessUtils
-from threading import Thread
 
 import time
-from common_lib import sleep
 import random
 
-from com.couchbase.test.sdk import Server
 from com.couchbase.test.docgen import DocumentGenerator
+
 
 class HibernationOnCloud(TenantMgmtOnCloud):
     def setUp(self):
@@ -35,7 +29,8 @@ class HibernationOnCloud(TenantMgmtOnCloud):
 
     def load_data(self):
         loader_map = dict()
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.create_sdk_client_pool(buckets=self.cluster.buckets,
                                     req_clients_per_bucket=1)
 
@@ -57,13 +52,12 @@ class HibernationOnCloud(TenantMgmtOnCloud):
         DocLoaderUtils.perform_doc_loading(
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
-            async_load=False, validate_results=False,
-            sdk_client_pool=self.sdk_client_pool)
+            async_load=False, validate_results=False)
         result = DocLoaderUtils.data_validation(
             self.doc_loading_tm, loader_map, self.cluster,
             buckets=self.cluster.buckets,
             process_concurrency=self.process_concurrency,
-            ops_rate=self.ops_rate, sdk_client_pool=self.sdk_client_pool)
+            ops_rate=self.ops_rate)
         self.assertTrue(result, "Data validation failed")
 
     def test_basic_pause_resume(self):
@@ -319,7 +313,8 @@ class HibernationOnCloud(TenantMgmtOnCloud):
         self.create_required_buckets(buckets_spec=buckets_spec)
 
         loader_map = dict()
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.create_sdk_client_pool(buckets=self.cluster.buckets,
                                     req_clients_per_bucket=1)
 
@@ -342,13 +337,12 @@ class HibernationOnCloud(TenantMgmtOnCloud):
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
             process_concurrency=10,
-            async_load=False, validate_results=False,
-            sdk_client_pool=self.sdk_client_pool)
+            async_load=False, validate_results=False)
         result = DocLoaderUtils.data_validation(
             self.doc_loading_tm, loader_map, self.cluster,
             buckets=self.cluster.buckets,
             process_concurrency=10,
-            ops_rate=self.ops_rate, sdk_client_pool=self.sdk_client_pool)
+            ops_rate=self.ops_rate)
         self.assertTrue(result, "Data validation failed")
 
         for i in range(100):

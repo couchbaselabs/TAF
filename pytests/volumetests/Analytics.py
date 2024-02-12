@@ -29,6 +29,7 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
 from error_simulation.cb_error import CouchbaseError
+from sdk_client3 import SDKClientPool
 
 from sdk_exceptions import SDKException
 
@@ -278,8 +279,8 @@ class volume(BaseTestCase):
 
     # This code will be removed once cbas_base is refactored
     def handle_collection_setup_exception(self, exception_obj):
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.shutdown()
+        if self.cluster.sdk_client_pool is not None:
+            self.cluster.sdk_client_pool.shutdown()
         traceback.print_exc()
         raise exception_obj
 
@@ -325,17 +326,17 @@ class volume(BaseTestCase):
         self.bucket_util.print_bucket_stats(self.cluster)
 
         # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
+        if self.cluster.sdk_client_pool is None:
+            self.cluster.sdk_client_pool = SDKClientPool()
 
         # Create clients in SDK client pool
-        if self.sdk_client_pool:
+        if self.cluster.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
             bucket_count = len(self.cluster.buckets)
             max_clients = self.task_manager.number_of_threads
             clients_per_bucket = int(ceil(max_clients / bucket_count))
             for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
+                self.cluster.sdk_client_pool.create_clients(
                     bucket,
                     [cluster.master],
                     clients_per_bucket,
@@ -453,7 +454,8 @@ class volume(BaseTestCase):
             if rebalance:
                 results.append(cluster.rebalance_util.wait_for_rebalance_task_to_complete(task))
             else:
-                results.append(cluster.rebalance_util.wait_for_data_load_to_complete(task, self.skip_validations))
+                results.append(cluster.rebalance_util.wait_for_data_load_to_complete(
+                    self.cluster, task, self.skip_validations))
         return results
 
     def perform_ops_on_all_clusters(self, operation, params={}):

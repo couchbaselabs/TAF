@@ -252,12 +252,11 @@ class MagmaDiskFull(MagmaBaseTest):
                                                   timeout=300)
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.cluster.buckets[0],
-                self.gen_read, "create", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                sdk_client_pool=self.sdk_client_pool,
-                timeout_secs=self.sdk_timeout)
+            self.cluster, self.cluster.buckets[0],
+            self.gen_read, "create", 0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         shell.disconnect()
@@ -288,11 +287,11 @@ class MagmaDiskFull(MagmaBaseTest):
             tasks_info.update(tem_tasks_info.items())
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.cluster.buckets[0],
-                self.gen_read, "create", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+            self.cluster, self.cluster.buckets[0],
+            self.gen_read, "create", 0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         for task in tasks_info:
@@ -347,11 +346,11 @@ class MagmaDiskFull(MagmaBaseTest):
             tasks_info.update(tem_tasks_info.items())
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.cluster.buckets[0],
-                self.gen_read, "create", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+            self.cluster, self.cluster.buckets[0],
+            self.gen_read, "create", 0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         for task in tasks_info:
@@ -406,11 +405,11 @@ class MagmaDiskFull(MagmaBaseTest):
             tasks_info.update(tem_tasks_info.items())
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.cluster.buckets[0],
-                self.gen_read, "create", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+            self.cluster, self.cluster.buckets[0],
+            self.gen_read, "create", 0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         for task in tasks_info:
@@ -465,11 +464,11 @@ class MagmaDiskFull(MagmaBaseTest):
             tasks_info.update(tem_tasks_info.items())
 
         data_validation = self.task.async_validate_docs(
-                self.cluster, self.cluster.buckets[0],
-                self.gen_read, "create", 0,
-                batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+            self.cluster, self.cluster.buckets[0],
+            self.gen_read, "create", 0,
+            batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         for task in tasks_info:

@@ -286,8 +286,7 @@ class FailoverTests(FailoverBaseTest):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster,
-                sdk_client_pool=self.sdk_client_pool)
+                tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
             # Loading new data post rebalance
@@ -296,8 +295,7 @@ class FailoverTests(FailoverBaseTest):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster,
-                sdk_client_pool=self.sdk_client_pool)
+                tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -384,8 +382,7 @@ class FailoverTests(FailoverBaseTest):
 
         if not self.atomicity:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster,
-                sdk_client_pool=self.sdk_client_pool)
+                tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         # Perform Compaction
@@ -445,8 +442,7 @@ class FailoverTests(FailoverBaseTest):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster,
-                sdk_client_pool=self.sdk_client_pool)
+                tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         # Check if node has to be killed or restarted during rebalance
@@ -463,8 +459,7 @@ class FailoverTests(FailoverBaseTest):
             for task, tasks_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster,
-                sdk_client_pool=self.sdk_client_pool)
+                tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             for task, task_info in tasks_info.items():
                 self.assertFalse(
@@ -746,8 +741,7 @@ class FailoverTests(FailoverBaseTest):
                     batch_size=20,
                     process_concurrency=1,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool))
+                    timeout_secs=self.sdk_timeout))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
 

@@ -98,7 +98,7 @@ class SDKClientPool(object):
                 client.close()
         self.clients = dict()
 
-    def create_clients(self, bucket, servers,
+    def create_clients(self, cluster, bucket, servers=None,
                        req_clients=1,
                        username="Administrator", password="password",
                        compression_settings=None):
@@ -106,6 +106,7 @@ class SDKClientPool(object):
         Create set of clients for the specified bucket and client settings.
         All created clients will be saved under the respective bucket key.
 
+        :param cluster: Cluster object holding sdk_env variable
         :param bucket: Bucket object for which the clients will be created
         :param servers: List of servers for SDK to establish initial
                         connections with
@@ -124,7 +125,7 @@ class SDKClientPool(object):
 
         for _ in range(req_clients):
             self.clients[bucket.name]["idle_clients"].append(SDKClient(
-                servers, bucket,
+                cluster, bucket, servers=servers,
                 username=username, password=password,
                 compression_settings=compression_settings))
 
@@ -195,14 +196,7 @@ class TransactionConfig(object):
 
 class SDKClient(object):
     System.setProperty("com.couchbase.forceIPv4", "false")
-    env = ClusterEnvironment \
-        .builder() \
-        .ioConfig(IoConfig.numKvConnections(25)) \
-        .timeoutConfig(TimeoutConfig.builder()
-                       .connectTimeout(Duration.ofSeconds(20))
-                       .kvDurableTimeout(Duration.ofSeconds(60))
-                       .kvTimeout(Duration.ofSeconds(60)))
-    cluster_env = env.build()
+
     sdk_connections = 0
     sdk_disconnections = 0
     doc_op = doc_op()
@@ -210,6 +204,17 @@ class SDKClient(object):
     """
     Java SDK Client Implementation for testrunner - master branch
     """
+
+    @staticmethod
+    def create_cluster_env(kv_timeout=60, num_kv_connections=25,
+                           connection_timeout=20):
+        return ClusterEnvironment.builder() \
+            .ioConfig(IoConfig.numKvConnections(num_kv_connections)) \
+            .timeoutConfig(
+                TimeoutConfig.builder()
+                .connectTimeout(Duration.ofSeconds(connection_timeout))
+                .kvDurableTimeout(Duration.ofSeconds(kv_timeout))
+                .kvTimeout(Duration.ofSeconds(kv_timeout)))
 
     @staticmethod
     def get_transaction_options(transaction_config_obj):
@@ -224,15 +229,16 @@ class SDKClient(object):
         # transaction_options.metadataCollection(tnx_keyspace)
         return transaction_options
 
-    def __init__(self, servers, bucket,
+    def __init__(self, framework_cb_cluster_obj, bucket, servers=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  username=None, password=None,
                  compression_settings=None, cert_path=None,
                  transaction_config=None):
         """
+        :param framework_cb_cluster_obj: Cluster object holding sdk_env var
         :param servers: List of servers for SDK to establish initial
-                        connections with
+                        connections with. If None, will use cluster.master
         :param bucket: Bucket object to which the SDK connection will happen
         :param scope:  Name of the scope to connect.
                        Default: '_default'
@@ -248,11 +254,15 @@ class SDKClient(object):
                                      }
         :param cert_path: Path of certificate file to establish connection
         """
+        # Following params will be passed to create_conn() and
+        # no need of them post connection. So having these as local variables
         # Used during Cluster.connect() call
-        self.hosts = list()
+        hosts = list()
+        # Cluster_run: Used for cluster connection
+        server_list = list()
 
-        # Used while creating connection for Cluster_run
-        self.servers = list()
+        if not servers:
+            servers = [framework_cb_cluster_obj.master]
 
         self.scope_name = scope
         self.collection_name = collection
@@ -270,33 +280,35 @@ class SDKClient(object):
         if self.bucket is not None:
             if bucket.serverless is not None \
                     and bucket.serverless.nebula_endpoint:
-                self.hosts = [bucket.serverless.nebula_endpoint.srv]
+                hosts = [bucket.serverless.nebula_endpoint.srv]
                 self.log.info("For SDK, Nebula endpoint used for bucket is: %s"
                               % bucket.serverless.nebula_endpoint.ip)
+
         for server in servers:
-            self.servers.append((server.ip, int(server.port)))
+            server_list.append((server.ip, int(server.port)))
             if CbServer.use_https:
                 self.scheme = "couchbases"
             else:
                 self.scheme = "couchbase"
             if not ClusterRun.is_enabled:
-                self.hosts.append(server.ip)
-        strt = time.time()
-        self.__create_conn()
+                hosts.append(server.ip)
+
+        start_time = time.time()
+        self.__create_conn(framework_cb_cluster_obj, servers, hosts)
         if bucket is not None:
             self.log.debug("SDK connection to bucket: {} took {}s".format(
-                bucket.name, time.time()-strt))
+                bucket.name, time.time()-start_time))
         SDKClient.sdk_connections += 1
 
-    def __create_conn(self):
+    def __create_conn(self, cluster, servers, hosts):
         if self.bucket:
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
         # Having 'None' will enable us to test without sending any
         # compression settings and explicitly setting to 'False' as well
         build_env = False
-        t_cluster_env = SDKClient.cluster_env
+        t_cluster_env = cluster.sdk_env_built
         if CbServer.use_https or self.transaction_conf or self.compression:
-            t_cluster_env = SDKClient.env
+            t_cluster_env = cluster.sdk_cluster_env
             build_env = True
 
         if self.compression is not None:
@@ -356,14 +368,14 @@ class SDKClient(object):
                 if ClusterRun.is_enabled:
                     master_seed = HashSet(Collections.singletonList(
                         SeedNode.create(
-                            self.servers[0][0],
+                            servers[0][0],
                             Optional.of(ClusterRun.memcached_port),
-                            Optional.of(int(self.servers[0][1])))))
+                            Optional.of(int(servers[0][1])))))
                     self.cluster = Cluster.connect(master_seed,
                                                    cluster_options)
                 else:
                     connection_string = "{0}://{1}".format(self.scheme, ", ".
-                                                           join(self.hosts).
+                                                           join(hosts).
                                                            replace(" ", ""))
                     self.cluster = Cluster.connect(
                         connection_string,

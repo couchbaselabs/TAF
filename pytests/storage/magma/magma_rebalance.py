@@ -7,6 +7,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from magma_base import MagmaBaseTest
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
 
 
@@ -38,8 +39,8 @@ class MagmaRebalance(MagmaBaseTest):
             self.compaction_tasks = list()
         self.dgm_test = self.input.param("dgm_test", False)
         # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
+        if self.cluster.sdk_client_pool is None:
+            self.cluster.sdk_client_pool = SDKClientPool()
 
         # Create clients in SDK client pool
         self.log.info("Creating required SDK clients for client_pool")
@@ -47,7 +48,7 @@ class MagmaRebalance(MagmaBaseTest):
         max_clients = self.task_manager.number_of_threads
         clients_per_bucket = int(ceil(max_clients / bucket_count))
         for bucket in self.cluster.buckets:
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket,
                 [self.cluster.master],
                 clients_per_bucket,
@@ -610,7 +611,7 @@ class MagmaRebalance(MagmaBaseTest):
     def wait_for_async_data_load_to_complete(self, task):
         self.task.jython_task_manager.get_task_result(task)
         if not self.skip_validations:
-            self.bucket_util.validate_doc_loading_results(task)
+            self.bucket_util.validate_doc_loading_results(self.cluster, task)
             if task.result is False:
                 self.fail("Doc_loading failed")
 

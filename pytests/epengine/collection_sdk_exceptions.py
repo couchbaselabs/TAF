@@ -111,7 +111,7 @@ class SDKExceptionTests(CollectionBase):
         doc_gen = doc_generator("test_col_not_exists", 0, 10)
 
         # Acquire SDK client for mutations
-        client = self.sdk_client_pool.get_client_for_bucket(
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(
             self.bucket,
             self.scope_name,
             self.collection_name)
@@ -245,7 +245,7 @@ class SDKExceptionTests(CollectionBase):
             validate_vb_detail_stats()
 
         # Release the acquired client
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
         self.validate_test_failure()
 
     def test_collections_not_available(self):
@@ -258,7 +258,8 @@ class SDKExceptionTests(CollectionBase):
         3. Perform crud to target collection and validate
         """
         # Acquire SDK client for mutations
-        client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(
+            self.bucket)
 
         scope_name = self.bucket_util.get_random_name()
         col_name = self.bucket_util.get_random_name()
@@ -316,7 +317,7 @@ class SDKExceptionTests(CollectionBase):
         # Release the acquired client
         client.select_collection(CbServer.default_scope,
                                  CbServer.default_collection)
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
         self.validate_test_failure()
 
     def test_timeout_with_successful_crud(self):
@@ -436,7 +437,8 @@ class SDKExceptionTests(CollectionBase):
                                           bucket_name=self.bucket.name)
 
             self.task_manager.get_task_result(doc_loading_task)
-            self.bucket_util.validate_doc_loading_results(doc_loading_task)
+            self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                          doc_loading_task)
             if doc_loading_task.result is False:
                 self.fail("Doc_loading for '%s' failed" % op_type)
 
@@ -573,7 +575,6 @@ class SDKExceptionTests(CollectionBase):
             self.cluster, self.bucket, load_gen, "create", 0,
             scope=self.scope_name,
             collection=self.collection_name,
-            sdk_client_pool=self.sdk_client_pool,
             batch_size=200, process_concurrency=8,
             timeout_secs=60)
         self.task_manager.get_task_result(task)
@@ -588,8 +589,7 @@ class SDKExceptionTests(CollectionBase):
                 batch_size=100,
                 process_concurrency=8,
                 durability=self.durability_level,
-                scope=self.scope_name, collection=self.collection_name,
-                sdk_client_pool=self.sdk_client_pool)
+                scope=self.scope_name, collection=self.collection_name)
             self.task_manager.get_task_result(task)
 
         self.bucket.scopes[self.scope_name].collections[
@@ -673,7 +673,6 @@ class SDKExceptionTests(CollectionBase):
                     self.cluster, self.bucket, doc_gen[op_type], op_type, 0,
                     scope=self.scope_name,
                     collection=self.collection_name,
-                    sdk_client_pool=self.sdk_client_pool,
                     batch_size=1, process_concurrency=8,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,
@@ -685,7 +684,6 @@ class SDKExceptionTests(CollectionBase):
                     self.cluster, self.bucket, doc_gen[op_type], op_type, 0,
                     scope=self.scope_name,
                     collection=self.collection_name,
-                    sdk_client_pool=self.sdk_client_pool,
                     path_create=True,
                     batch_size=1, process_concurrency=8,
                     durability=self.durability_level,
@@ -750,7 +748,7 @@ class SDKExceptionTests(CollectionBase):
         self.validate_test_failure()
 
         # Get SDK Client from client_pool
-        sdk_client = self.sdk_client_pool.get_client_for_bucket(
+        sdk_client = self.cluster.sdk_client_pool.get_client_for_bucket(
             self.bucket,
             self.scope_name,
             self.collection_name)
@@ -798,7 +796,7 @@ class SDKExceptionTests(CollectionBase):
                                          % op_type)
 
         # Release the acquired client
-        self.sdk_client_pool.release_client(sdk_client)
+        self.cluster.sdk_client_pool.release_client(sdk_client)
 
         # Verify doc count after expected CRUD failure
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,

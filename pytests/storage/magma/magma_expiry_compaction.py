@@ -96,12 +96,10 @@ class MagmaExpiryTests(MagmaBaseTest):
                 process_concurrency=1,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
-                )
+                timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
         self.task.jython_task_manager.get_task_result(tasks_info.keys()[0])
         self.sleep(20)
-        self.client = SDKClient([self.cluster.master],
-                                self.cluster.buckets[0],
+        self.client = SDKClient(self.cluster, self.cluster.buckets[0],
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection)
         for i in range(10):

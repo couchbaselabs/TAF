@@ -60,8 +60,7 @@ class DocumentKeysTests(ClusterSetup):
                 self.cluster, bucket, gen_load, op_type, 0, batch_size=20,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
             if op_type == "delete":
                 self.num_items = 0
@@ -81,8 +80,7 @@ class DocumentKeysTests(ClusterSetup):
                                              persist_to=self.persist_to,
                                              replicate_to=self.replicate_to,
                                              durability=self.durability_level,
-                                             timeout_secs=self.sdk_timeout,
-                                             sdk_client_pool=self.sdk_client_pool)
+                                             timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
         self._persist_and_verify()
         self._verify_with_views(self.num_items)
@@ -105,8 +103,7 @@ class DocumentKeysTests(ClusterSetup):
                                              persist_to=self.persist_to,
                                              replicate_to=self.replicate_to,
                                              durability=self.durability_level,
-                                             timeout_secs=self.sdk_timeout,
-                                             sdk_client_pool=self.sdk_client_pool)
+                                             timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
         self._persist_and_verify()
 

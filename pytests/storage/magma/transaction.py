@@ -164,7 +164,7 @@ class TransactionTests(MagmaBaseTest):
             workload["transaction_pattern"],
             workload["workers"])
         work_load.setTransactionRollback(self.rollback)
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
         transaction_obj = transaction_app.createTransaction(client.cluster,
                                                             trans_config)
         for index, load_pattern in enumerate(work_load.transaction_pattern):

@@ -36,7 +36,7 @@ class IsolationDocTest(ClusterSetup):
                                          self.transaction_timeout)
         for bucket in self.cluster.buckets:
             self.sdk_clients[bucket.name] = SDKClient(
-                [self.cluster.master], bucket, transaction_config=trans_config)
+                self.cluster, bucket, transaction_config=trans_config)
 
         self.read_failed = dict()
         self.stop_thread = False
@@ -165,7 +165,7 @@ class IsolationDocTest(ClusterSetup):
         expected_exception = SDKException.DocumentNotFoundException
 
         # Create SDK client for transactions
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
 
         if self.doc_op in ["update", "delete"]:
             for doc in self.docs:
@@ -241,7 +241,7 @@ class IsolationDocTest(ClusterSetup):
         bucket = self.cluster.buckets[0]
 
         # Create SDK client for transactions
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
 
         if self.doc_op in ["update", "delete"]:
             for doc in self.docs:
@@ -321,8 +321,7 @@ class IsolationDocTest(ClusterSetup):
     def test_run_purger_during_transaction(self):
         def perform_create_deletes():
             index = 0
-            client = SDKClient([self.cluster.master],
-                               self.cluster.buckets[0])
+            client = SDKClient(self.cluster, self.cluster.buckets[0])
             self.log.info("Starting ops to create tomb_stones")
             while not self.stop_thread:
                 key = "temp_key--%s" % index

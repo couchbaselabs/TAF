@@ -107,10 +107,10 @@ class AutoFailoverBaseTest(ClusterSetup):
                 ram_quota=self.bucket_size)
             self.sleep(5, "Wait for bucket to accept SDK connections")
 
-            if self.sdk_client_pool:
+            if self.cluster.sdk_client_pool:
                 self.log.info("Creating SDK clients for client_pool")
                 for bucket in self.cluster.buckets:
-                    self.sdk_client_pool.create_clients(
+                    self.cluster.sdk_client_pool.create_clients(
                         bucket,
                         [self.cluster.master],
                         self.sdk_pool_capacity,
@@ -253,8 +253,7 @@ class AutoFailoverBaseTest(ClusterSetup):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 batch_size=batch_size, timeout_secs=self.sdk_timeout,
                 process_concurrency=8, retries=self.sdk_retries,
-                durability=self.durability_level,
-                sdk_client_pool=self.sdk_client_pool)
+                durability=self.durability_level)
             tasks.append(task)
         return tasks
 
@@ -775,7 +774,7 @@ class AutoFailoverBaseTest(ClusterSetup):
                                 .format(failed_docs["read"]))
 
             # Create SDK client for doc CRUD retry
-            client = SDKClient([self.cluster.master], bucket)
+            client = SDKClient(self.cluster, bucket)
 
             # Loop over all failed docs as per their op_types
             for op_type in error_expected_ops:
@@ -848,8 +847,7 @@ class AutoFailoverBaseTest(ClusterSetup):
                 batch_size=10, replicate_to=self.replicate_to,
                 persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
             # Verify there is not failed docs in the task
             if len(task.fail.keys()) != 0:

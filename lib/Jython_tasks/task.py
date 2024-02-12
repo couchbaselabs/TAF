@@ -943,7 +943,7 @@ class GenericLoadingTask(Task):
     def __init__(self, cluster, bucket, client, batch_size=1,
                  timeout_secs=5, time_unit="seconds", compression=None,
                  retries=5,
-                 suppress_error_table=False, sdk_client_pool=None,
+                 suppress_error_table=False,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  preserve_expiry=None, sdk_retry_strategy=None,
@@ -959,7 +959,6 @@ class GenericLoadingTask(Task):
         self.scope = scope
         self.collection = collection
         self.client = client
-        self.sdk_client_pool = sdk_client_pool
         self.random = random.Random()
         self.compression = compression
         self.retries = retries
@@ -1357,7 +1356,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                  proxy_client=None, batch_size=1, timeout_secs=5,
                  compression=None, retries=5,
                  durability="", task_identifier="", skip_read_on_error=False,
-                 suppress_error_table=False, sdk_client_pool=None,
+                 suppress_error_table=False,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  track_failures=True,
@@ -1371,7 +1370,6 @@ class LoadDocumentsTask(GenericLoadingTask):
             time_unit=time_unit,
             compression=compression,
             retries=retries, suppress_error_table=suppress_error_table,
-            sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection,
             preserve_expiry=preserve_expiry,
             sdk_retry_strategy=sdk_retry_strategy,
@@ -1419,11 +1417,9 @@ class LoadDocumentsTask(GenericLoadingTask):
         key_value = doc_gen.next_batch(self.skip_doc_gen_value)
         if self.random_exp:
             self.exp = random.randint(self.abs_exp / 2, self.abs_exp)
-        if self.sdk_client_pool is not None:
-            self.client = \
-                self.sdk_client_pool.get_client_for_bucket(self.bucket,
-                                                           self.scope,
-                                                           self.collection)
+        if self.cluster.sdk_client_pool is not None:
+            self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                self.bucket, self.scope, self.collection)
         if self.op_type == DocLoading.Bucket.DocOps.CREATE:
             success, fail = self.batch_create(
                 key_value,
@@ -1478,8 +1474,8 @@ class LoadDocumentsTask(GenericLoadingTask):
         else:
             self.set_exception(Exception("Bad operation: %s" % self.op_type))
 
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.release_client(self.client)
+        if self.cluster.sdk_client_pool is not None:
+            self.cluster.sdk_client_pool.release_client(self.client)
             self.client = None
 
         self.docs_loaded += len(key_value)
@@ -1494,7 +1490,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
                  batch_size=1, timeout_secs=5,
                  compression=None, retries=5,
                  durability="", task_identifier="",
-                 sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  skip_read_success_results=False,
@@ -1508,7 +1503,6 @@ class LoadSubDocumentsTask(GenericLoadingTask):
             cluster, bucket, client, batch_size=batch_size,
             timeout_secs=timeout_secs,
             time_unit=time_unit, compression=compression,
-            sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection,
             preserve_expiry=preserve_expiry,
             sdk_retry_strategy=sdk_retry_strategy)
@@ -1545,11 +1539,9 @@ class LoadSubDocumentsTask(GenericLoadingTask):
     def next(self, override_generator=None):
         doc_gen = override_generator or self.generator
         key_value = doc_gen.next_batch(self.skip_doc_gen_value)
-        if self.sdk_client_pool is not None:
-            self.client = \
-                self.sdk_client_pool.get_client_for_bucket(self.bucket,
-                                                           self.scope,
-                                                           self.collection)
+        if self.cluster.sdk_client_pool is not None:
+            self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                self.bucket, self.scope, self.collection)
         if self.op_type == DocLoading.Bucket.SubDocOps.INSERT:
             success, fail = self.batch_sub_doc_insert(
                 key_value,
@@ -1618,8 +1610,8 @@ class LoadSubDocumentsTask(GenericLoadingTask):
 
         self.docs_loaded += len(key_value)
 
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.release_client(self.client)
+        if self.cluster.sdk_client_pool is not None:
+            self.cluster.sdk_client_pool.release_client(self.client)
             self.client = None
 
 
@@ -1680,8 +1672,7 @@ class Durability(Task):
         generators = list()
         gen_start = int(self.generator.start)
         gen_end = max(int(self.generator.end), 1)
-        gen_range = max(int((
-                                    self.generator.end - self.generator.start) / self.process_concurrency),
+        gen_range = max(int((self.generator.end - self.generator.start) / self.process_concurrency),
                         1)
         for pos in range(gen_start, gen_end, gen_range):
             partition_gen = copy.deepcopy(self.generator)
@@ -1690,9 +1681,8 @@ class Durability(Task):
             partition_gen.end = pos + gen_range
             if partition_gen.end > self.generator.end:
                 partition_gen.end = self.generator.end
-            batch_gen = BatchedDocumentGenerator(
-                partition_gen,
-                self.batch_size)
+            batch_gen = BatchedDocumentGenerator(partition_gen,
+                                                 self.batch_size)
             generators.append(batch_gen)
         i = 0
         for generator in generators:
@@ -1752,7 +1742,6 @@ class Durability(Task):
                      batch_size=1, timeout_secs=5,
                      compression=None, retries=5,
                      instance_num=0, durability="", check_persistence=False,
-                     sdk_client_pool=None,
                      scope=CbServer.default_scope,
                      collection=CbServer.default_collection,
                      sdk_retry_strategy=None):
@@ -1760,7 +1749,6 @@ class Durability(Task):
                 cluster, bucket, client, batch_size=batch_size,
                 timeout_secs=timeout_secs,
                 compression=compression,
-                sdk_client_pool=sdk_client_pool,
                 scope=scope, collection=collection,
                 sdk_retry_strategy=sdk_retry_strategy)
             self.thread_name = "DurableDocLoaderTask_%d_%s_%d_%d_%s" \
@@ -2110,6 +2098,7 @@ class Durability(Task):
                         break
                     self.read_offset += 1
 
+
 class ContinuousRangeScan(Task):
 
     # creates range scan queries and expected count using data spec file key
@@ -2117,13 +2106,13 @@ class ContinuousRangeScan(Task):
     # collections using RangeScanOnCollection task
 
     def __init__(self,  cluster, task_manager,
-                 sdk_client_pool, items, range_scan_collections,
-                 parallel_task = 8, buckets=None,
-                 include_prefix_scan = True, include_range_scan=True,
-                 skip_scopes = ['_system'], include_start_term=1,
+                 items, range_scan_collections,
+                 parallel_task=8, buckets=None,
+                 include_prefix_scan=True, include_range_scan=True,
+                 skip_scopes=['_system'], include_start_term=1,
                  include_end_term=1, key_size=8, key="test_collections",
-                 expect_exceptions= [],
-                 runs_per_collection=1,timeout=None,
+                 expect_exceptions=[],
+                 runs_per_collection=1, timeout=None,
                  expect_range_scan_failure=True):
         super(ContinuousRangeScan, self).__init__("ContinuousRangeScan task starting")
         self.validation_map = OrderedDict()
@@ -2132,7 +2121,6 @@ class ContinuousRangeScan(Task):
         self.fail_map = []
         self.skip_scopes = skip_scopes
         self.parallel_task = parallel_task
-        self.sdk_client_pool = sdk_client_pool
         self.task_manager = task_manager
         self.include_prefix_scan  = include_prefix_scan
         self.include_range_scan = include_range_scan
@@ -2211,7 +2199,7 @@ class ContinuousRangeScan(Task):
                 self.create_range_scan_terms()
             self.log.debug("Collections selected for range scan %s" %
                            self.range_scan_collections)
-            if self.sdk_client_pool is None:
+            if self.cluster.sdk_client_pool is None:
                 self.log.debug("SDK pool not found creating clients" %
                                self.range_scan_collections)
                 client_for_collection_list = list()
@@ -2224,30 +2212,23 @@ class ContinuousRangeScan(Task):
                                 continue
                             for _ in range(
                                     self.consecutive_runs_per_collection):
-                                if self.sdk_client_pool is not None:
-                                    client_for_collection = self.sdk_client_pool.get_client_for_bucket \
-                                        (bucket, scope, collection)
-                                else:
-                                    client_for_collection = SDKClient(
-                                        [self.cluster.master],
-                                        bucket, scope, collection)
-                                client_for_collection_list.append(
-                                    client_for_collection)
+                                client_for_collection_list.append(SDKClient(
+                                    self.cluster, bucket,
+                                    scope=scope, collection=collection))
             else:
-                client_for_collection_list = self.sdk_client_pool
+                client_for_collection_list = self.cluster.sdk_client_pool
             parallel_scan_task = {key: None for key in
                                   range(self.parallel_task)}
             run_parallel_tasks = True
             iterator = 0
             while run_parallel_tasks:
-                task_triggered = None
                 for task in parallel_scan_task:
-                    if (parallel_scan_task[task] is None or \
-                        parallel_scan_task[task].task_ended == True) and \
+                    if (parallel_scan_task[task] is None or
+                        parallel_scan_task[task].task_ended is True) and \
                             iterator < len(client_for_collection_list):
                         if parallel_scan_task[task] is not None \
-                                and parallel_scan_task[
-                            task].failure_map["failure_in_scan"]:
+                                and parallel_scan_task[task].failure_map[
+                                    "failure_in_scan"]:
                             self.fail_map.append(
                                 parallel_scan_task[task].failure_map)
                         task_triggered = RangeScanOnCollection(
@@ -2261,7 +2242,7 @@ class ContinuousRangeScan(Task):
                         iterator += 1
                 for task in parallel_scan_task:
                     if parallel_scan_task[task] is not None \
-                            and parallel_scan_task[task].task_ended == False:
+                            and parallel_scan_task[task].task_ended is False:
                         break
                 else:
                     break
@@ -2285,6 +2266,7 @@ class ContinuousRangeScan(Task):
                            error)
             self.set_exception(error)
 
+
 class RangeScanOnCollection(Task):
     def __init__(self, clients, scan_terms_map, timeout=60,
                  expect_exceptions=[],sampling_scan_param=0):
@@ -2302,8 +2284,9 @@ class RangeScanOnCollection(Task):
                             "range_scan": {},
                             "sampling_scan":{},
                             "exception": list()}
+
     def call(self):
-        term_result_map  = list()
+        term_result_map = list()
         scan_dictionary_items = list()
         for scan_type in self.scan_terms_map:
             term_result_map.append(('', ''))
@@ -2326,11 +2309,11 @@ class RangeScanOnCollection(Task):
                                        "scope - {1} collection - {2} time "
                                        "taken - {3} expected-count - {4}"
                                        " actual-count - {5}".format(
-                                       str(term_result_map[iterator][0]),
-                                       scope,
-                                       collection, str(result['time_taken']),
-                                       str(term_result_map[iterator][1]),
-                                       str(result['count'])))
+                                           str(term_result_map[iterator][0]),
+                                           scope,
+                                           collection, str(result['time_taken']),
+                                           str(term_result_map[iterator][1]),
+                                           str(result['count'])))
                         self.failure_map["failure_in_scan"] = True
                         self.failure_map["prefix_scan"
                         ][scope + "/" + collection + "/"
@@ -2368,9 +2351,9 @@ class RangeScanOnCollection(Task):
                                   " excep:"+ str(result['exception'])[35:58]
                     iterator += 1
                 limit = random.randint(1, self.sampling_scan_param)
-                seed =  random.randint(1, self.sampling_scan_param)
-                result,bucket, collection, scope  = \
-                self.clients.sampling_scan(limit, seed, timeout=self.timeout)
+                seed = random.randint(1, self.sampling_scan_param)
+                result, bucket, collection, scope = self.clients.sampling_scan(
+                    limit, seed, timeout=self.timeout)
                 if result['count'] != limit:
                     if str(result['exception']) != "" and str(result['exception']) \
                             in self.expect_exceptions:
@@ -2397,6 +2380,7 @@ class RangeScanOnCollection(Task):
         self.clients.close()
         self.task_ended = True
 
+
 class LoadDocumentsGeneratorsTask(Task):
     def __init__(self, cluster, task_manager, bucket, clients, generators,
                  op_type, exp, exp_unit="seconds", random_exp=False, flag=0,
@@ -2406,7 +2390,6 @@ class LoadDocumentsGeneratorsTask(Task):
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier="", skip_read_on_error=False,
                  suppress_error_table=False,
-                 sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  monitor_stats=["doc_ops"],
@@ -2429,7 +2412,6 @@ class LoadDocumentsGeneratorsTask(Task):
         self.compression = compression
         self.process_concurrency = process_concurrency
         self.clients = clients
-        self.sdk_client_pool = sdk_client_pool
         self.task_manager = task_manager
         self.batch_size = batch_size
         self.generators = generators
@@ -2556,7 +2538,7 @@ class LoadDocumentsGeneratorsTask(Task):
                 self.task_manager.stop_task(task)
                 self.log.debug("Task '{0}' complete. Loaded {1} items"
                                .format(task.thread_name, task.docs_loaded))
-            if self.sdk_client_pool is None:
+            if self.cluster.sdk_client_pool is None:
                 for client in self.clients:
                     client.close()
         self.complete_task()
@@ -2594,7 +2576,6 @@ class LoadDocumentsGeneratorsTask(Task):
                 task_identifier=self.thread_name,
                 skip_read_on_error=self.skip_read_on_error,
                 suppress_error_table=self.suppress_error_table,
-                sdk_client_pool=self.sdk_client_pool,
                 scope=self.scope, collection=self.collection,
                 track_failures=self.track_failures,
                 preserve_expiry=self.preserve_expiry,
@@ -2615,7 +2596,6 @@ class LoadSubDocumentsGeneratorsTask(Task):
                  process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier="",
-                 sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  preserve_expiry=None, sdk_retry_strategy=None,
@@ -2651,7 +2631,6 @@ class LoadSubDocumentsGeneratorsTask(Task):
         self.print_ops_rate = print_ops_rate
         self.retries = retries
         self.durability = durability
-        self.sdk_client_pool = sdk_client_pool
         self.scope = scope
         self.collection = collection
         self.preserve_expiry = preserve_expiry
@@ -2735,7 +2714,7 @@ class LoadSubDocumentsGeneratorsTask(Task):
             self.log.debug("=======================================")
             for task in tasks:
                 self.task_manager.stop_task(task)
-            if self.sdk_client_pool is None:
+            if self.cluster.sdk_client_pool is None:
                 for client in self.clients:
                     client.close()
         self.complete_task()
@@ -2782,7 +2761,6 @@ class LoadSubDocumentsGeneratorsTask(Task):
                 durability=self.durability,
                 scope=self.scope,
                 collection=self.collection,
-                sdk_client_pool=self.sdk_client_pool,
                 preserve_expiry=self.preserve_expiry,
                 sdk_retry_strategy=self.sdk_retry_strategy,
                 store_semantics=self.store_semantics,
@@ -2801,7 +2779,7 @@ class ContinuousDocOpsTask(Task):
                  process_concurrency=4,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 sdk_client_pool=None, sdk_retry_strategy=None):
+                 sdk_retry_strategy=None):
         super(ContinuousDocOpsTask, self).__init__(
             "ContDocOps_%s_%s_%s_%s"
             % (bucket.name, scope, collection, time.time()))
@@ -2816,7 +2794,6 @@ class ContinuousDocOpsTask(Task):
         self.compression = compression
         self.process_concurrency = process_concurrency
         self.clients = clients
-        self.sdk_client_pool = sdk_client_pool
         self.task_manager = task_manager
         self.batch_size = batch_size
         self.generator = generator
@@ -2869,7 +2846,6 @@ class ContinuousDocOpsTask(Task):
                     timeout_secs=self.timeout_secs,
                     scope=self.scope,
                     collection=self.collection,
-                    sdk_client_pool=self.sdk_client_pool,
                     skip_read_success_results=True,
                     sdk_retry_strategy=self.sdk_retry_strategy)
                 self.task_manager.add_new_task(task)
@@ -2912,7 +2888,6 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  suppress_error_table=False,
                  track_failures=True,
                  task_identifier="",
-                 sdk_client_pool=None,
                  sdk_retry_strategy=None):
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
@@ -2950,7 +2925,6 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
             self.buckets = [bucket]
         self.scope = scope
         self.collection = collection
-        self.sdk_client_pool = sdk_client_pool
         self.sdk_retry_strategy = sdk_retry_strategy
 
     def _get_bucket_dgm(self, bucket):
@@ -2996,7 +2970,6 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                 skip_read_on_error=self.skip_read_on_error,
                 suppress_error_table=self.suppress_error_table,
                 track_failures=self.track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=self.sdk_retry_strategy)
             self.task_manager.add_new_task(task)
             doc_tasks.append(task)
@@ -3039,7 +3012,7 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                                     self.docs_loaded_per_bucket[bucket])
 
         # Close all SDK clients
-        if self.sdk_client_pool is None:
+        if self.cluster.sdk_client_pool is None:
             for client in self.clients:
                 client.close()
 
@@ -3052,7 +3025,6 @@ class ValidateDocumentsTask(GenericLoadingTask):
                  flag=0, proxy_client=None, batch_size=1,
                  timeout_secs=30, time_unit="seconds",
                  compression=None, check_replica=False,
-                 sdk_client_pool=None,
                  sdk_retry_strategy=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
@@ -3063,7 +3035,6 @@ class ValidateDocumentsTask(GenericLoadingTask):
             timeout_secs=timeout_secs,
             time_unit=time_unit,
             compression=compression,
-            sdk_client_pool=sdk_client_pool,
             sdk_retry_strategy=sdk_retry_strategy,
             scope=scope, collection=collection)
         self.thread_name = "ValidateDocumentsTask-%s_%s_%s_%s_%s_%s_%s" % (
@@ -3101,19 +3072,17 @@ class ValidateDocumentsTask(GenericLoadingTask):
         return self.generator.has_next()
 
     def __validate_sub_docs(self, doc_gen):
-        if self.sdk_client_pool is not None:
-            self.client = \
-                self.sdk_client_pool.get_client_for_bucket(self.bucket,
-                                                           self.scope,
-                                                           self.collection)
+        if self.cluster.sdk_client_pool is not None:
+            self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                self.bucket, self.scope, self.collection)
         key_value = dict(doc_gen.next_batch(self.skip_doc_gen_value))
         self.test_log.info(key_value)
         result_map, self.failed_reads = self.batch_read(key_value.keys())
         self.test_log.info(result_map)
         self.test_log.info(self.failed_reads)
 
-        if self.sdk_client_pool:
-            self.sdk_client_pool.release_client(self.client)
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.release_client(self.client)
             self.client = None
         return
 
@@ -3166,11 +3135,9 @@ class ValidateDocumentsTask(GenericLoadingTask):
             self.fail("Delete failed for few keys")
 
     def __validate_docs(self, doc_gen):
-        if self.sdk_client_pool is not None:
-            self.client = \
-                self.sdk_client_pool.get_client_for_bucket(self.bucket,
-                                                           self.scope,
-                                                           self.collection)
+        if self.cluster.sdk_client_pool is not None:
+            self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                self.bucket, self.scope, self.collection)
         key_value = dict(doc_gen.next_batch(self.skip_doc_gen_value))
         if self.check_replica:
             # change to getFromReplica
@@ -3181,8 +3148,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     result = self.client.get_from_all_replicas(key)
                     if all(_result for _result in result) \
                             and len(result) == min(self.replicas + 1,
-                                                   len(
-                                                       self.cluster.nodes_in_cluster)):
+                                                   len(self.cluster.nodes_in_cluster)):
                         key = key.decode()
                         if result[0]["status"]:
                             result_map[key] = dict()
@@ -3204,8 +3170,8 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     return
         else:
             result_map, self.failed_reads = self.batch_read(key_value.keys())
-        if self.sdk_client_pool:
-            self.sdk_client_pool.release_client(self.client)
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.release_client(self.client)
             self.client = None
 
         if not self.suppress_error_table:
@@ -3285,7 +3251,6 @@ class DocumentsValidatorTask(Task):
                  process_concurrency=4, check_replica=False,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
-                 sdk_client_pool=None,
                  sdk_retry_strategy=None,
                  is_sub_doc=False,
                  suppress_error_table=False):
@@ -3300,7 +3265,6 @@ class DocumentsValidatorTask(Task):
         self.compression = compression
         self.process_concurrency = process_concurrency
         self.clients = clients
-        self.sdk_client_pool = sdk_client_pool
         self.sdk_retry_strategy = sdk_retry_strategy
         self.task_manager = task_manager
         self.batch_size = batch_size
@@ -3363,13 +3327,13 @@ class DocumentsValidatorTask(Task):
                 self.task_manager.stop_task(task)
                 self.log.debug("Task '%s' complete." % (task.thread_name))
             self.test_log.error(e)
-            if not self.sdk_client_pool:
+            if not self.cluster.sdk_client_pool:
                 for client in self.clients:
                     client.close()
             self.set_exception(e)
 
         self.complete_task()
-        if not self.sdk_client_pool:
+        if not self.cluster.sdk_client_pool:
             for client in self.clients:
                 client.close()
         self.complete_task()
@@ -3403,7 +3367,6 @@ class DocumentsValidatorTask(Task):
                 time_unit=self.time_unit,
                 compression=self.compression, check_replica=self.check_replica,
                 scope=self.scope, collection=self.collection,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=self.sdk_retry_strategy,
                 is_sub_doc=self.is_sub_doc,
                 suppress_error_table=self.suppress_error_table)
@@ -5045,7 +5008,6 @@ class BucketCreateFromSpecTask(Task):
 
 class MutateDocsFromSpecTask(Task):
     def __init__(self, cluster, task_manager, loader_spec,
-                 sdk_client_pool,
                  batch_size=500,
                  process_concurrency=1,
                  print_ops_rate=True,
@@ -5065,7 +5027,6 @@ class MutateDocsFromSpecTask(Task):
         self.cont_load_gen_tasks = list()
         self.print_ops_rate_tasks = list()
 
-        self.sdk_client_pool = sdk_client_pool
         self.track_failures = track_failures
 
     def stop_indefinite_doc_loading_tasks(self):
@@ -5222,7 +5183,6 @@ class MutateDocsFromSpecTask(Task):
                         op_type, op_data["doc_ttl"],
                         scope=scope_name, collection=col_name,
                         task_identifier=task_id,
-                        sdk_client_pool=self.sdk_client_pool,
                         batch_size=self.batch_size,
                         durability=op_data["durability_level"],
                         timeout_secs=op_data["sdk_timeout"],
@@ -5242,7 +5202,6 @@ class MutateDocsFromSpecTask(Task):
                         xattr=op_data["xattr_test"],
                         scope=scope_name, collection=col_name,
                         task_identifier=task_id,
-                        sdk_client_pool=self.sdk_client_pool,
                         batch_size=self.batch_size,
                         durability=op_data["durability_level"],
                         timeout_secs=op_data["sdk_timeout"],
@@ -5257,7 +5216,6 @@ class MutateDocsFromSpecTask(Task):
                         op_type.replace("cont_", ""), op_data["doc_ttl"],
                         scope=scope_name, collection=col_name,
                         task_identifier=task_id,
-                        sdk_client_pool=self.sdk_client_pool,
                         batch_size=self.batch_size,
                         durability=op_data["durability_level"],
                         timeout_secs=op_data["sdk_timeout"],
@@ -5285,14 +5243,13 @@ class MutateDocsFromSpecTask(Task):
 
 class CompareIndexKVData(Task):
     def __init__(self, cluster, server, task_manager,
-                 sdk_client_pool, query, bucket, scope, collection, index_name,
+                 query, bucket, scope, collection, index_name,
                  offset, field='body', track_failures=True):
         super(CompareIndexKVData, self).__init__(
             "CompareIndexKVData_%s_%s_%s" % (index_name, offset, time.time()))
         self.cluster = cluster
         self.task_manager = task_manager
         self.result = True
-        self.sdk_client_pool = sdk_client_pool
         self.track_failures = track_failures
         self.query = query
         self.server = server
@@ -5315,10 +5272,8 @@ class CompareIndexKVData(Task):
             newContent = json.loads(content)
             resultList = newContent['results']
 
-            self.client = \
-                self.sdk_client_pool.get_client_for_bucket(self.bucket,
-                                                           self.scope.name,
-                                                           self.collection.name)
+            self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                self.bucket, self.scope.name, self.collection.name)
             keys = self.create_list(resultList, 'id')
             success, fail = self.client.get_multi(
                 keys)
@@ -5330,7 +5285,7 @@ class CompareIndexKVData(Task):
             self.test_log.error(e)
             self.set_exception(e)
         finally:
-            self.sdk_client_pool.release_client(self.client)
+            self.cluster.sdk_client_pool.release_client(self.client)
             self.complete_task()
 
     def compareResult(self, kvList, indexList, field='body'):
@@ -5360,8 +5315,7 @@ class CompareIndexKVData(Task):
 
 class ValidateDocsFromSpecTask(Task):
     def __init__(self, cluster, task_manager, loader_spec,
-                 sdk_client_pool, check_replica=False,
-                 batch_size=500,
+                 check_replica=False, batch_size=500,
                  process_concurrency=1):
         super(ValidateDocsFromSpecTask, self).__init__(
             "ValidateDocsFromSpecTask_%s" % time.time())
@@ -5375,7 +5329,6 @@ class ValidateDocsFromSpecTask(Task):
         self.result = True
         self.validate_data_tasks = list()
         self.validate_data_tasks_lock = Lock()
-        self.sdk_client_pool = sdk_client_pool
 
     def call(self):
         self.start_task()
@@ -5459,7 +5412,6 @@ class ValidateDocsFromSpecTask(Task):
                         timeout_secs=op_data["sdk_timeout"],
                         compression=None, check_replica=self.check_replica,
                         scope=scope_name, collection=col_name,
-                        sdk_client_pool=self.sdk_client_pool,
                         is_sub_doc=False,
                         suppress_error_table=op_data["suppress_error_table"])
                     self.validate_data_tasks.append(task)
@@ -6705,7 +6657,6 @@ class Atomicity(Task):
                      batch_size=1, timeout_secs=5,
                      compression=None, retries=5, instance_num=0,
                      transaction_app=None, commit=True,
-                     sdk_client_pool=None,
                      scope=CbServer.default_scope,
                      collection=CbServer.default_collection):
             super(Atomicity.Loader, self).__init__(
@@ -6713,7 +6664,6 @@ class Atomicity(Task):
                 batch_size=batch_size,
                 timeout_secs=timeout_secs, compression=compression,
                 retries=retries,
-                sdk_client_pool=sdk_client_pool,
                 scope=scope, collection=collection)
 
             self.generator = generator

@@ -43,9 +43,9 @@ class DurabilityTestsBase(ClusterSetup):
         self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool
-        if self.sdk_client_pool:
+        if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 self.bucket,
                 self.cluster.nodes_in_cluster,
                 req_clients=self.sdk_pool_capacity,
@@ -73,8 +73,7 @@ class DurabilityTestsBase(ClusterSetup):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
             # Verify initial doc load count
@@ -285,8 +284,7 @@ class BucketDurabilityBase(ClusterSetup):
                 batch_size=1,
                 skip_read_on_error=True,
                 suppress_error_table=True,
-                start_task=False,
-                sdk_client_pool=self.sdk_client_pool)
+                start_task=False)
 
             self.sleep(5, "Wait for sdk_client to get warmed_up")
             # Simulate target error condition
@@ -323,8 +321,7 @@ class BucketDurabilityBase(ClusterSetup):
             exp=self.maxttl,
             durability=doc_durability,
             timeout_secs=2,
-            batch_size=1,
-            sdk_client_pool=self.sdk_client_pool)
+            batch_size=1)
         self.task_manager.get_task_result(doc_load_task)
         if doc_load_task.fail:
             self.log_failure("Failures seen during CRUD without "

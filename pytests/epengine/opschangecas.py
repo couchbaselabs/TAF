@@ -28,11 +28,11 @@ class OpsChangeCasTests(CasBaseTest):
             self.node_data[node.ip]["replica"] = cb_stat.vbucket_list(
                 self.bucket.name,
                 "replica")
-        if self.sdk_client_pool:
-            self.client = self.sdk_client_pool.get_client_for_bucket(
+        if self.cluster.sdk_client_pool:
+            self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
                 self.bucket)
         else:
-            self.client = SDKClient([self.cluster.master], self.bucket)
+            self.client = SDKClient(self.cluster, self.bucket)
 
     def tearDown(self):
         # Close SDK client connection
@@ -937,8 +937,7 @@ class OpsChangeCasTests(CasBaseTest):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=self.num_items,
-                sdk_client_pool=self.sdk_client_pool)
+                batch_size=self.num_items)
             for task, _ in tasks_info.items():
                 if task.fail:
                     self.log_failure("Failures observed during %s" % op_type)

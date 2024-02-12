@@ -9,13 +9,11 @@ from cb_constants import CbServer
 from Jython_tasks.task_manager import TaskManager
 from SystemEventLogLib.Events import EventHelper
 from TestInput import TestInputSingleton
-from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from constants.sdk_constants.java_client import SDKConstants
 from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks
 from global_vars import logger
 from node_utils.node_ready_functions import NodeUtils
-from sdk_client3 import SDKClientPool
 from test_summary import TestSummary
 
 
@@ -147,7 +145,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.time_unit = self.input.param("time_unit", "seconds")
         self.durability_level = self.input.param("durability", "NONE").upper()
         self.validate_bucket_ranking = self.input.param("validate_bucket_ranking", True)
-        self.sdk_client_pool = self.input.param("sdk_client_pool", None)
+        self.sdk_client_pool = self.input.param("sdk_client_pool", False)
         self.sdk_pool_capacity = self.input.param("sdk_pool_capacity", 1)
         # Client compression settings
         self.sdk_compression = self.input.param("sdk_compression", None)
@@ -197,10 +195,6 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.node_utils = NodeUtils(self.task_manager)
         # End of library object creation
 
-        # SDKClientPool object for creating generic clients across tasks
-        if self.sdk_client_pool is True:
-            CouchbaseBaseTest.init_sdk_pool_object(self)
-
         # Variable for initializing the current (start of test) timestamp
         self.start_timestamp = datetime.now()
 
@@ -225,8 +219,9 @@ class CouchbaseBaseTest(unittest.TestCase):
 
     def handle_setup_exception(self, exception_obj):
         # Shutdown client pool in case of any error before failing
-        if self.sdk_client_pool is not None:
-            self.sdk_client_pool.shutdown()
+        for _, cluster in self.cb_clusters.items():
+            if cluster.sdk_client_pool:
+                cluster.sdk_client_pool.shutdown()
         # print the tracback of the failure
         traceback.print_exc()
         # Throw the exception so that the test will fail at setUp
@@ -250,10 +245,6 @@ class CouchbaseBaseTest(unittest.TestCase):
 
     def get_task_mgr(self):
         return self.task_manager
-
-    def init_sdk_pool_object(self):
-        self.sdk_client_pool = SDKClientPool()
-        DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
 
     def shutdown_task_manager(self):
         self.task_manager.shutdown_task_manager()

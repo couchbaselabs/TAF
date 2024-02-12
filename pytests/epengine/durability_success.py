@@ -101,16 +101,14 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool))
+            timeout_secs=self.sdk_timeout))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update,
             DocLoading.Bucket.DocOps.UPDATE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool))
+            timeout_secs=self.sdk_timeout))
 
         # Wait for document_loader tasks to complete
         for task in tasks:
@@ -126,16 +124,14 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool))
+            timeout_secs=self.sdk_timeout))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_delete,
             DocLoading.Bucket.DocOps.DELETE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool))
+            timeout_secs=self.sdk_timeout))
 
         # Wait for document_loader tasks to complete
         for task in tasks[2:]:
@@ -166,7 +162,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Create a SDK client connection to retry operation
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = SDKClient(self.cluster, self.bucket)
 
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):
@@ -283,8 +279,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            start_task=False,
-            sdk_client_pool=self.sdk_client_pool))
+            start_task=False))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update,
             DocLoading.Bucket.DocOps.UPDATE, 0,
@@ -292,8 +287,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            start_task=False,
-            sdk_client_pool=self.sdk_client_pool))
+            start_task=False))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update,
             DocLoading.Bucket.DocOps.READ, 0,
@@ -301,8 +295,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            start_task=False,
-            sdk_client_pool=self.sdk_client_pool))
+            start_task=False))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_delete,
             DocLoading.Bucket.DocOps.DELETE, 0,
@@ -310,8 +303,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            start_task=False,
-            sdk_client_pool=self.sdk_client_pool))
+            start_task=False))
 
         for task in tasks:
             self.task_manager.add_new_task(task)
@@ -375,7 +367,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         # Create a SDK client connection to retry operation
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = SDKClient(self.cluster, self.bucket)
 
         # Retry failed docs (if any)
         for index, task in enumerate(tasks):
@@ -477,24 +469,21 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.cluster, self.bucket, doc_gen[0], doc_ops, 0,
             batch_size=10, process_concurrency=1,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool))
+            timeout_secs=self.sdk_timeout))
 
         # Non_SyncWrites for doc_ops[1]
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, doc_gen[1], doc_ops, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool))
+            timeout_secs=self.sdk_timeout))
 
         # Generic reader task
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, read_gen,
             DocLoading.Bucket.DocOps.READ, 0,
             batch_size=10, process_concurrency=1,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool))
+            timeout_secs=self.sdk_timeout))
 
         # Wait for all task to complete
         for task in tasks:
@@ -545,16 +534,14 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                     self.cluster, self.bucket, curr_doc_gen, op_type, 0,
                     batch_size=10, process_concurrency=1,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool))
+                    timeout_secs=self.sdk_timeout))
             else:
                 # Non-SyncWrites for last two ops specified in doc_ops
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, self.bucket, curr_doc_gen, op_type, 0,
                     batch_size=10, process_concurrency=1,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
-                    timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool))
+                    timeout_secs=self.sdk_timeout))
 
         # Update num_items according to the CRUD operations
         self.num_items += self.num_items - half_of_num_items
@@ -622,7 +609,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         crud_pattern = crud_pattern.split(":")
         rev_ids = dict()
 
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+        client = SDKClient(self.cluster, self.cluster.buckets[0])
 
         # Async create of keys
         for i in range(self.num_items):

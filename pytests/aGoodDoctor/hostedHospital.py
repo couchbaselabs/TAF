@@ -135,7 +135,8 @@ class Murphy(BaseTestCase, OPD):
         self.cbasQL = list()
         self.stop_run = False
         self.skip_init = self.input.param("skip_init", False)
-        self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.query_result = True
 
         self.vector = self.input.param("vector", False)
@@ -169,9 +170,9 @@ class Murphy(BaseTestCase, OPD):
                             self.cluster.master.rest_username,
                             self.cluster.master.rest_password,
                             str(self.cluster.master.memcached_port))
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket.name, server, req_clients_per_bucket)
-            bucket.clients = self.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
+            bucket.clients = self.cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
         self.sleep(1, "Wait for SDK client pool to warmup")
 
     def rebalance_config(self, rebl_service_group=None, num=0):

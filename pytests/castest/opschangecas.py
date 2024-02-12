@@ -46,7 +46,7 @@ class OpsChangeCasTests(CasBaseTest):
         """
         nodes = [node for node in self.cluster_util.get_kv_nodes(self.cluster)]
         for bucket in self.cluster.buckets:
-            client = SDKClient([self.cluster.master], bucket)
+            client = SDKClient(self.cluster, bucket)
             gen = generator
             while gen.has_next():
                 key, value = gen.next()
@@ -258,8 +258,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         self.log.info("3. Touch intial self.num_items docs which are "
                       "residing on disk due to DGM")
-        client = SDKClient([self.cluster.master],
-                           self.cluster.buckets[0])
+        client = SDKClient(self.cluster, self.cluster.buckets[0])
         while load_gen.has_next():
             key, _ = load_gen.next()
             result = client.crud("touch", key,
@@ -288,7 +287,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         KEY_NAME = 'key1'
 
-        client = SDKClient([self.cluster.master], 'default')
+        client = SDKClient(self.cluster, 'default')
 
         # set a key
         client.memcached(KEY_NAME).set(KEY_NAME, 0, 0,
@@ -322,7 +321,7 @@ class OpsChangeCasTests(CasBaseTest):
         rebalance.result()
 
         # verify the CAS is good
-        client = SDKClient([self.cluster.master], 'default')
+        client = SDKClient(self.cluster, 'default')
         mc_active = client.memcached(KEY_NAME)
         active_CAS = mc_active.getMeta(KEY_NAME)[4]
 
@@ -336,7 +335,7 @@ class OpsChangeCasTests(CasBaseTest):
 
         KEY_NAME = 'key1'
 
-        client = SDKClient([self.cluster.master], 'default')
+        client = SDKClient(self.cluster, 'default')
 
         # set a key
         client.memcached(KEY_NAME).set(KEY_NAME, 0, 0,
@@ -360,7 +359,7 @@ class OpsChangeCasTests(CasBaseTest):
         remote.start_server()
         self.sleep(30, "Wait for server to start")
 
-        client = SDKClient([self.cluster.master], 'default')
+        client = SDKClient(self.cluster, 'default')
         mc_active = client.memcached(KEY_NAME)
 
         maxCas = mc_active.getMeta(KEY_NAME)[4]
@@ -374,7 +373,7 @@ class OpsChangeCasTests(CasBaseTest):
     key not exists error, this test only requires one node
     """
     def key_not_exists_test(self):
-        client = SDKClient([self.cluster.master], self.bucket)
+        client = SDKClient(self.cluster, self.bucket)
         load_gen = doc_generator(self.key, 0, 1,
                                  doc_size=256)
         key, val = load_gen.next()

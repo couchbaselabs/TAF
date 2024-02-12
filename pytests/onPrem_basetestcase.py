@@ -23,6 +23,7 @@ from couchbase_utils.security_utils.security_utils import SecurityUtils
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClientPool
 from security_config import trust_all_certs
 from docker_utils.DockerSDK import DockerClient
 
@@ -205,6 +206,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     shell.disconnect()
                     break
             shell.disconnect()
+
+            # SDKClientPool object for creating generic clients across tasks
+            if self.sdk_client_pool is True:
+                cluster.sdk_client_pool = SDKClientPool()
 
         self.log_setup_status("OnPremBaseTest", "started")
         try:
@@ -538,15 +543,17 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 for server in self.input.servers:
                     self.set_ports_for_server(server, "non_ssl")
 
-        if self.multiple_ca:
-            CbServer.use_https = False
-            for _, cluster in self.cb_clusters.items():
+        for _, cluster in self.cb_clusters.items():
+            if self.multiple_ca:
+                CbServer.use_https = False
                 rest = RestConnection(cluster.master)
                 rest.delete_builtin_user("cbadminbucket")
                 x509 = x509main(host=cluster.master)
                 x509.teardown_certs(servers=cluster.servers)
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
+
+            if cluster.sdk_client_pool:
+                cluster.sdk_client_pool.shutdown()
+
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if self.skip_teardown_cleanup:
             self.log.debug("Skipping tearDownEverything")
@@ -556,7 +563,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.assertFalse(result, msg="Cb_log file validation failed")
         if self.crash_warning and result:
             self.log.warn("CRASH | CRITICAL | WARN messages found in cb_logs")
-        
+
         if self.collect_pcaps:
             self.log.info("Starting Pcaps collection!!")
             self.start_fetch_pcaps(is_test_failed=self.is_test_failed())

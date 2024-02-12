@@ -23,12 +23,10 @@ class SDKCompression(CollectionBase):
 
         # Create required clients
         self.snappy_client = SDKClient(
-            [self.cluster.master],
-            self.bucket,
+            self.cluster, self.bucket,
             compression_settings=self.sdk_compression)
         self.second_client = SDKClient(
-            [self.cluster.master],
-            self.bucket,
+            self.cluster, self.bucket,
             compression_settings=compression_settings)
 
         # Create required doc_generators

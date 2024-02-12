@@ -36,7 +36,7 @@ class TenantManagementOnPremDefragment(ServerlessOnPremBaseTest):
                                                        mutation_num=0,
                                                        async_load=True)
         self.task.jython_task_manager.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(task)
+        self.bucket_util.validate_doc_loading_results(self.cluster, task)
         if task.result is False:
             raise Exception("doc load/verification failed")
 
@@ -75,10 +75,10 @@ class TenantManagementOnPremDefragment(ServerlessOnPremBaseTest):
 
     def create_sdk_clients(self):
         CollectionBase.create_sdk_clients(
+            self.cluster,
             self.task_manager.number_of_threads,
             self.cluster.master,
             self.cluster.buckets,
-            self.sdk_client_pool,
             self.sdk_compression)
 
     def get_zone_bucket_map(self):

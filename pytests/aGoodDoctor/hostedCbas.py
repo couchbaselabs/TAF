@@ -210,7 +210,7 @@ class DoctorCBAS():
         return status
 
     def wait_for_ingestion_on_all_datasets(self, cluster, timeout=86400):
-        n1ql_sdk_client = SDKClient(cluster.query_nodes, None)
+        n1ql_sdk_client = SDKClient(cluster, None, servers=cluster.query_nodes)
         cluster_conn = n1ql_sdk_client.cluster
         n1ql_sdkClients = dict()
         for bucket in cluster.buckets:

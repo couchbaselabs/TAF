@@ -4,6 +4,7 @@ import time
 import re
 from random import choice, sample
 from threading import Thread
+
 from table_view import TableView
 
 from BucketLib.bucket import Bucket
@@ -41,8 +42,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
     def tearDown(self):
         self.clean_sandbox()
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.shutdown()
         super(TenantMgmtOnCloud, self).tearDown()
 
     def _assert_if_not_sandbox_run(self):
@@ -661,7 +662,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                             nebula.rest_username,
                             nebula.rest_password,
                             str(nebula.memcached_port))
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket.name, server, req_clients_per_bucket)
         self.sleep(5, "Wait for SDK client pool to warmup")
 
@@ -680,7 +681,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         loader_map = dict()
         # Create sdk_client_pool
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.create_sdk_client_pool(buckets=self.cluster.buckets,
                                     req_clients_per_bucket=1)
 
@@ -702,13 +704,12 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         DocLoaderUtils.perform_doc_loading(
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
-            async_load=False, validate_results=False,
-            sdk_client_pool=self.sdk_client_pool)
+            async_load=False, validate_results=False)
         result = DocLoaderUtils.data_validation(
             self.doc_loading_tm, loader_map, self.cluster,
             buckets=self.cluster.buckets,
             process_concurrency=self.process_concurrency,
-            ops_rate=self.ops_rate, sdk_client_pool=self.sdk_client_pool)
+            ops_rate=self.ops_rate)
         self.assertTrue(result, "Data validation failed")
 
         new_buckets = list()
@@ -875,7 +876,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             self.expected_stat = self.bucket_util.get_initial_stats(
                 self.cluster.buckets)
         if self.with_data_load:
-            self.init_sdk_pool_object()
+            self.cluster.sdk_client_pool = \
+                self.bucket_util.initialize_java_sdk_client_pool()
             self.create_sdk_client_pool(self.cluster.buckets, 1)
             loader_map = dict()
             for bucket in self.cluster.buckets:
@@ -894,8 +896,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             _, doc_loading_tasks = DocLoaderUtils.perform_doc_loading(
                 self.doc_loading_tm, loader_map,
                 self.cluster, self.cluster.buckets,
-                async_load=True, validate_results=False,
-                sdk_client_pool=self.sdk_client_pool)
+                async_load=True, validate_results=False)
 
         for scenario in scenarios:
             self.__display_bucket_node_info()
@@ -1051,7 +1052,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
         for bucket in target_buckets:
             loading_for_buckets[bucket.name] = True
 
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.create_sdk_client_pool(target_buckets, 1)
         continue_data_load = True
         while continue_data_load:
@@ -1068,8 +1070,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 ws.dr.create_e += batch_size
                 _, tasks = DocLoaderUtils.perform_doc_loading(
                     self.doc_loading_tm, {loader_key: doc_gens[index]},
-                    self.cluster, buckets=[bucket],
-                    sdk_client_pool=self.sdk_client_pool)
+                    self.cluster, buckets=[bucket])
                 loading_tasks.extend(tasks)
 
             DocLoaderUtils.wait_for_doc_load_completion(
@@ -1130,7 +1131,8 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
 
         loader_key = "{}:{}:{}".format(bucket.name, CbServer.default_scope,
                                        CbServer.default_collection)
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.create_sdk_client_pool([bucket], 1)
 
         self.disk, self.ram = get_band_info(self.band)
@@ -1154,7 +1156,6 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
             DocLoaderUtils.perform_doc_loading(
                 self.doc_loading_tm, {loader_key: dg}, self.cluster,
                 buckets=[bucket], async_load=False, validate_results=False,
-                sdk_client_pool=self.sdk_client_pool,
                 process_concurrency=10)
 
             self.sleep(10)
@@ -1592,13 +1593,13 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     loader_map.update(
                         {"%s:%s:%s" % (bucket.name, scope, collection): dg})
 
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.create_sdk_client_pool(buckets=self.cluster.buckets,
                                     req_clients_per_bucket=1)
         DocLoaderUtils.perform_doc_loading(
             self.doc_loading_tm, loader_map, self.cluster,
-            self.cluster.buckets, async_load=False, validate_results=False,
-            sdk_client_pool=self.sdk_client_pool)
+            self.cluster.buckets, async_load=False, validate_results=False)
 
         iteration = 1
         while iteration < 5:
@@ -1656,14 +1657,14 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     loader_map.update(
                         {"%s:%s:%s" % (
                         bucket.name, scope, collection): dg})
-            self.init_sdk_pool_object()
+            self.cluster.sdk_client_pool = \
+                self.bucket_util.initialize_java_sdk_client_pool()
             self.create_sdk_client_pool(buckets=buckets,
                                         req_clients_per_bucket=2)
 
             result, loading_tasks = DocLoaderUtils.perform_doc_loading(
                 self.doc_loading_tm, loader_map, self.cluster,
-                buckets, async_load=True, validate_results=False,
-                sdk_client_pool=self.sdk_client_pool)
+                buckets, async_load=True, validate_results=False)
             return loading_tasks
 
         # test start

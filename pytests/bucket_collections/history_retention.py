@@ -205,7 +205,7 @@ class DocHistoryRetention(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, self.cluster.buckets[0], doc_gen,
             DocLoading.Bucket.DocOps.CREATE, track_failures=False,
-            exp=self.maxttl, sdk_client_pool=self.sdk_client_pool)
+            exp=self.maxttl)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets)
@@ -216,7 +216,7 @@ class DocHistoryRetention(ClusterSetup):
             load_task = self.task.async_load_gen_docs(
                 self.cluster, self.cluster.buckets[0], doc_gen,
                 DocLoading.Bucket.DocOps.UPDATE, track_failures=False,
-                exp=self.maxttl, sdk_client_pool=self.sdk_client_pool)
+                exp=self.maxttl)
             self.task_manager.get_task_result(load_task)
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
@@ -570,8 +570,8 @@ class DocHistoryRetention(ClusterSetup):
         col = choice(self.bucket_util.get_active_collections(
             bucket, CbServer.default_scope, only_names=True))
         self.log.info("_default::{0} Loading 1 doc per vb".format(col))
-        client = self.sdk_client_pool.get_client_for_bucket(bucket,
-                                                            collection=col)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(
+            bucket, collection=col)
         keys = list()
         for vb_num in range(0, self.cluster.vbuckets):
             key, val = doc_generator("test_doc", 0, 1,
@@ -586,9 +586,7 @@ class DocHistoryRetention(ClusterSetup):
                 self.bucket_util.get_vb_details_for_bucket(bucket, kv_nodes)
         for key in keys:
             client.crud(DocLoading.Bucket.DocOps.DELETE, key)
-
-        self.sdk_client_pool.release_client(client)
-
+        self.cluster.sdk_client_pool.release_client(client)
         if not is_history_valid:
             return
 
@@ -790,7 +788,6 @@ class DocHistoryRetention(ClusterSetup):
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 durability=self.durability_level, batch_size=500,
                 process_concurrency=1, iterations=20,
-                sdk_client_pool=self.sdk_client_pool,
                 scope=s_name, collection=c_name)
             load_tasks.append(load_task)
         self.validate_retention_settings_on_all_nodes()
@@ -939,8 +936,7 @@ class DocHistoryRetention(ClusterSetup):
                     self.cluster, bucket, doc_gen,
                     DocLoading.Bucket.DocOps.CREATE,
                     scope=CbServer.default_scope, collection="c1", exp=ttl,
-                    durability=self.durability_level,
-                    sdk_client_pool=self.sdk_client_pool)
+                    durability=self.durability_level)
                 self.task_manager.get_task_result(load_task)
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets)
@@ -969,8 +965,7 @@ class DocHistoryRetention(ClusterSetup):
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 scope=CbServer.default_scope, collection="c1", exp=self.maxttl,
                 durability=self.durability_level, iterations=420,
-                skip_read_on_error=True, print_ops_rate=False,
-                sdk_client_pool=self.sdk_client_pool)
+                skip_read_on_error=True, print_ops_rate=False)
             self.task_manager.get_task_result(load_task)
             cb_err.create(CouchbaseError.KILL_MEMCACHED)
             self.sleep(10, "Wait before next operation")
@@ -1017,8 +1012,7 @@ class DocHistoryRetention(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE,
             scope=CbServer.default_scope, collection="c1",
-            durability=self.durability_level,
-            sdk_client_pool=self.sdk_client_pool, iterations=2)
+            durability=self.durability_level, iterations=2)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets)
@@ -1049,8 +1043,7 @@ class DocHistoryRetention(ClusterSetup):
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             scope=CbServer.default_scope, collection="c1",
             durability=self.durability_level, print_ops_rate=False,
-            iterations=420, skip_read_on_error=True,
-            sdk_client_pool=self.sdk_client_pool)
+            iterations=420, skip_read_on_error=True)
         if target_scenario != CouchbaseError.STOP_MEMCACHED:
             while not load_task.completed:
                 self.log.info("Killing memcached")
@@ -1575,14 +1568,12 @@ class DocHistoryRetention(ClusterSetup):
             load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 exp=1, durability=self.durability_level,
-                collection=col, sdk_client_pool=self.sdk_client_pool,
-                print_ops_rate=False)
+                collection=col, print_ops_rate=False)
             self.task_manager.get_task_result(load_task)
             self.sleep(5, "Wait before reading the keys back")
             load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.READ,
-                collection=col, sdk_client_pool=self.sdk_client_pool,
-                track_failures=False, print_ops_rate=False)
+                collection=col, track_failures=False, print_ops_rate=False)
             self.task_manager.get_task_result(load_task)
             if index != (loop-1):
                 self.sleep(5, "Wait before loading exp docs again")

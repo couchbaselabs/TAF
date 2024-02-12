@@ -621,7 +621,7 @@ class CBASEphemeralBucketOperations(CBASBucketOperations):
         self.log.info("Completed base load with %s items" % item_count)
 
         self.log.info("Load more until we are out of memory")
-        client = SDKClient([self.cluster.master], target_bucket)
+        client = SDKClient(self.cluster, target_bucket)
         i = item_count
         op_result = {"status": True}
         while op_result["status"] is True:
@@ -679,7 +679,7 @@ class CBASEphemeralBucketOperations(CBASBucketOperations):
         self.log.info("Completed base load with %s items" % item_count)
 
         self.log.info("Get initial inserted 100 docs, so they aren't removed")
-        client = SDKClient([self.cluster.master], target_bucket)
+        client = SDKClient(self.cluster, target_bucket)
         for doc_index in range(100):
             doc_key = "test_docs-" + str(doc_index)
             client.read(doc_key)

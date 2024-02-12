@@ -105,7 +105,7 @@ class KVUpgradeTests(UpgradeBase):
         self.upgrade_helper.install_version_on_nodes(
             self.cluster.servers[1:2], self.upgrade_chain[0])
 
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
 
         self.log.info("Creating tombstone '%s' with sys-xattr" % key)
         # Create a document

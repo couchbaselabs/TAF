@@ -81,10 +81,10 @@ class Hibernation(ServerlessOnPremBaseTest):
         if not buckets:
             buckets = self.cluster.buckets
         CollectionBase.create_sdk_clients(
+            self.cluster,
             self.task_manager.number_of_threads,
             self.cluster.master,
             buckets,
-            self.sdk_client_pool,
             self.sdk_compression)
 
     def test_basic_pause_resume(self):

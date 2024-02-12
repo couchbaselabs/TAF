@@ -1,12 +1,10 @@
 from copy import deepcopy
 
 import Jython_tasks.task as jython_tasks
-from BucketLib.bucket import Bucket
 from cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask,ContinuousRangeScan
 from Jython_tasks.task import CompareIndexKVData
 from capella_utils.dedicated import CapellaUtils
-from common_lib import sleep
 from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
@@ -102,7 +100,7 @@ class ServerTasks(object):
         self.jython_task_manager.schedule(_task)
         return _task
 
-    def async_range_scan(self, cluster, task_manager, sdk_client_pool,
+    def async_range_scan(self, cluster, task_manager,
                          range_scan_collections,
                          items_per_collection,
                          include_prefix_scan=True,
@@ -112,7 +110,6 @@ class ServerTasks(object):
                          expect_range_scan_failure=True):
         self.log.debug("Continuous range scan started")
         task = jython_tasks.ContinuousRangeScan(cluster, task_manager,
-                                                sdk_client_pool,
                                                 items_per_collection,
                                                 range_scan_collections=
                                                 range_scan_collections,
@@ -129,7 +126,6 @@ class ServerTasks(object):
         return task
 
     def async_load_gen_docs_from_spec(self, cluster, task_manager, loader_spec,
-                                      sdk_client_pool,
                                       batch_size=200,
                                       process_concurrency=1,
                                       print_ops_rate=True,
@@ -139,7 +135,6 @@ class ServerTasks(object):
         task_manager = task_manager or self.jython_task_manager
         task = MutateDocsFromSpecTask(
             cluster, task_manager, loader_spec,
-            sdk_client_pool,
             batch_size=batch_size,
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
@@ -165,7 +160,6 @@ class ServerTasks(object):
                             dgm_batch=5000,
                             scope=CbServer.default_scope,
                             collection=CbServer.default_collection,
-                            sdk_client_pool=None,
                             monitor_stats=["doc_ops"],
                             track_failures=True,
                             preserve_expiry=None,
@@ -185,9 +179,9 @@ class ServerTasks(object):
                                 / process_concurrency), 1)
             for _ in range(gen_start, gen_end, gen_range):
                 client = None
-                if sdk_client_pool is None:
-                    client = SDKClient([cluster.master], bucket,
-                                       scope, collection)
+                if cluster.sdk_client_pool is None:
+                    client = SDKClient(cluster, bucket,
+                                       scope=scope, collection=collection)
                 clients.append(client)
             if not ryow:
                 _task = jython_tasks.LoadDocumentsGeneratorsTask(
@@ -203,7 +197,6 @@ class ServerTasks(object):
                     durability=durability, task_identifier=task_identifier,
                     skip_read_on_error=skip_read_on_error,
                     suppress_error_table=suppress_error_table,
-                    sdk_client_pool=sdk_client_pool,
                     scope=scope, collection=collection,
                     monitor_stats=monitor_stats,
                     track_failures=track_failures,
@@ -233,9 +226,9 @@ class ServerTasks(object):
         else:
             for _ in range(process_concurrency):
                 client = None
-                if sdk_client_pool is None:
-                    client = SDKClient([cluster.master], bucket,
-                                       scope, collection)
+                if cluster.sdk_client_pool is None:
+                    client = SDKClient(cluster, bucket,
+                                       scope=scope, collection=collection)
                 clients.append(client)
             _task = jython_tasks.LoadDocumentsForDgmTask(
                 cluster, self.jython_task_manager, bucket, clients,
@@ -253,7 +246,6 @@ class ServerTasks(object):
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
                 track_failures=track_failures,
-                sdk_client_pool=sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
@@ -269,7 +261,6 @@ class ServerTasks(object):
                                 durability="",
                                 start_task=True,
                                 task_identifier="",
-                                sdk_client_pool=None,
                                 scope=CbServer.default_scope,
                                 collection=CbServer.default_collection,
                                 preserve_expiry=None,
@@ -288,9 +279,9 @@ class ServerTasks(object):
             (generator.end - generator.start) / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
             client = None
-            if sdk_client_pool is None:
-                client = SDKClient([cluster.master], bucket,
-                                   scope, collection)
+            if cluster.sdk_client_pool is None:
+                client = SDKClient(cluster, bucket,
+                                   scope=scope, collection=collection)
             clients.append(client)
         _task = jython_tasks.LoadSubDocumentsGeneratorsTask(
             cluster,
@@ -306,7 +297,6 @@ class ServerTasks(object):
             flag=flag,
             persist_to=persist_to,
             replicate_to=replicate_to,
-            sdk_client_pool=sdk_client_pool,
             scope=scope, collection=collection,
             batch_size=batch_size,
             timeout_secs=timeout_secs,
@@ -333,12 +323,11 @@ class ServerTasks(object):
                                  process_concurrency=4,
                                  scope=CbServer.default_scope,
                                  collection=CbServer.default_collection,
-                                 sdk_client_pool=None,
                                  sdk_retry_strategy=None):
         clients = list()
         for _ in range(process_concurrency):
-            if sdk_client_pool is None:
-                clients.append(SDKClient([cluster.master], bucket))
+            if cluster.sdk_client_pool is None:
+                clients.append(SDKClient(cluster, bucket))
             else:
                 clients.append(None)
         _task = jython_tasks.ContinuousDocOpsTask(
@@ -351,7 +340,6 @@ class ServerTasks(object):
             batch_size=batch_size,
             timeout_secs=timeout_secs,
             process_concurrency=process_concurrency,
-            sdk_client_pool=sdk_client_pool,
             sdk_retry_strategy=sdk_retry_strategy)
         self.jython_task_manager.add_new_task(_task)
         return _task
@@ -388,7 +376,8 @@ class ServerTasks(object):
             temp_bucket_list = list()
             temp_client_list = list()
             for bucket in buckets:
-                client = SDKClient([cluster.master], bucket, scope, collection,
+                client = SDKClient(cluster, bucket,
+                                   scope=scope, collection=collection,
                                    transaction_config=trans_conf)
                 temp_client_list.append(client)
                 temp_bucket_list.append(client.collection)
@@ -448,15 +437,12 @@ class ServerTasks(object):
                                                          cluster.master)
         return num_items
 
-    def async_validate_docs_using_spec(self, cluster, task_manager, loader_spec,
-                                       check_replica,
-                                       sdk_client_pool,
-                                       batch_size=200,
-                                       process_concurrency=1):
+    def async_validate_docs_using_spec(self, cluster, task_manager,
+                                       loader_spec, check_replica,
+                                       batch_size=200, process_concurrency=1):
         task_manager = task_manager or self.jython_task_manager
         _task = jython_tasks.ValidateDocsFromSpecTask(
             cluster, task_manager, loader_spec,
-            sdk_client_pool=sdk_client_pool,
             check_replica=check_replica,
             batch_size=batch_size,
             process_concurrency=process_concurrency)
@@ -470,7 +456,7 @@ class ServerTasks(object):
                             process_concurrency=4, check_replica=False,
                             scope=CbServer.default_scope,
                             collection=CbServer.default_collection,
-                            sdk_client_pool=None, is_sub_doc=False,
+                            is_sub_doc=False,
                             suppress_error_table=True,
                             sdk_retry_strategy=None):
         clients = list()
@@ -480,9 +466,9 @@ class ServerTasks(object):
                             / process_concurrency), 1)
         for _ in range(gen_start, gen_end, gen_range):
             client = None
-            if sdk_client_pool is None:
-                client = SDKClient([cluster.master], bucket,
-                                   scope, collection)
+            if cluster.sdk_client_pool is None:
+                client = SDKClient(cluster, bucket,
+                                   scope=scope, collection=collection)
             clients.append(client)
         _task = jython_tasks.DocumentsValidatorTask(
             cluster, self.jython_task_manager, bucket, clients, [generator],
@@ -493,7 +479,6 @@ class ServerTasks(object):
             process_concurrency=process_concurrency,
             check_replica=check_replica,
             scope=scope, collection=collection,
-            sdk_client_pool=sdk_client_pool,
             sdk_retry_strategy=sdk_retry_strategy,
             is_sub_doc=is_sub_doc,
             suppress_error_table=suppress_error_table)
@@ -1176,10 +1161,10 @@ class ServerTasks(object):
         self.jython_task_manager.add_new_task(_task)
         return _task
 
-    def compare_KV_Indexer_data(self, cluster, server, task_manager, query, sdk_client_pool, bucket, scope, collection,
+    def compare_KV_Indexer_data(self, cluster, server, task_manager, query, bucket, scope, collection,
                                 index_name, offset, field='body'):
         _task = jython_tasks.CompareIndexKVData(cluster=cluster, server=server, task_manager=task_manager, query=query,
-                                                sdk_client_pool=sdk_client_pool, bucket=bucket, scope=scope,
+                                                bucket=bucket, scope=scope,
                                                 collection=collection, index_name=index_name, offset=offset, field=field)
         self.jython_task_manager.add_new_task(_task)
         return _task

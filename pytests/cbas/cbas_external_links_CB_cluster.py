@@ -844,8 +844,8 @@ class CBASExternalLinks(CBASBaseTest):
                     raise Exception("Error while Disconnecting the link ")
 
                 if testcase.get("load_bucket", False):
-                    if self.sdk_client_pool:
-                        self.sdk_client_pool.shutdown()
+                    if self.cluster.sdk_client_pool:
+                        self.cluster.sdk_client_pool.shutdown()
                     self.collectionSetUp(to_cluster_2)
                 elif testcase.get("new_dataverse", False):
                     if testcase.get("invalid_dataverse", None):
@@ -1846,7 +1846,8 @@ class CBASExternalLinks(CBASBaseTest):
                 self.input.param("rebalance_type", "swap").upper()))
 
         self.log.info("Get KV ops result")
-        if not self.rebalance_util.wait_for_data_load_to_complete(doc_loading_task, False):
+        if not self.rebalance_util.wait_for_data_load_to_complete(
+                self.cluster, doc_loading_task, False):
             self.fail("Error while loading docs in remote cluster while rebalancing")
 
         if run_query:
@@ -1915,7 +1916,8 @@ class CBASExternalLinks(CBASBaseTest):
                 self.input.param("rebalance_type", "swap").upper()))
 
         self.log.info("Get KV ops result")
-        if not self.rebalance_util.wait_for_data_load_to_complete(doc_loading_task, False):
+        if not self.rebalance_util.wait_for_data_load_to_complete(
+                self.cluster, doc_loading_task, False):
             self.fail("Error while loading docs in remote cluster while rebalancing")
 
         if run_query:
@@ -1969,7 +1971,8 @@ class CBASExternalLinks(CBASBaseTest):
             available_servers=self.available_servers, exclude_nodes=[])
 
         self.log.info("Get KV ops result")
-        if not self.rebalance_util.wait_for_data_load_to_complete(doc_loading_task, False):
+        if not self.rebalance_util.wait_for_data_load_to_complete(
+                self.cluster, doc_loading_task, False):
             self.fail("Error while loading docs in remote cluster while rebalancing")
 
         if run_query:

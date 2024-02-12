@@ -12,6 +12,7 @@ from cb_constants import DocLoading, CbServer
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
+from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
 from upgrade.upgrade_base import UpgradeBase
 from bucket_collections.collections_base import CollectionBase
@@ -275,8 +276,7 @@ class UpgradeTests(UpgradeBase):
                 active_resident_threshold=self.active_resident_threshold,
                 timeout_secs=self.sdk_timeout,
                 process_concurrency=8,
-                batch_size=500,
-                sdk_client_pool=self.sdk_client_pool)
+                batch_size=500)
             self.task_manager.get_task_result(async_load_task)
 
             # Update num_items in case of DGM run
@@ -318,8 +318,7 @@ class UpgradeTests(UpgradeBase):
                 active_resident_threshold=self.active_resident_threshold,
                 timeout_secs=self.sdk_timeout,
                 process_concurrency=8,
-                batch_size=500,
-                sdk_client_pool=self.sdk_client_pool)
+                batch_size=500)
             self.task_manager.get_task_result(async_load_task)
 
             # Verify doc load count
@@ -389,8 +388,7 @@ class UpgradeTests(UpgradeBase):
                     active_resident_threshold=self.active_resident_threshold,
                     timeout_secs=self.sdk_timeout,
                     process_concurrency=8,
-                    batch_size=500,
-                    sdk_client_pool=self.sdk_client_pool)
+                    batch_size=500)
                 self.task_manager.get_task_result(async_load_task)
 
                 # Update num_items in case of DGM run
@@ -568,17 +566,17 @@ class UpgradeTests(UpgradeBase):
         self.over_ride_spec_params = self.input.param(
             "override_spec_params", "").split(";")
         # Init sdk_client_pool if not initialized before
-        if self.sdk_client_pool is None:
-            self.init_sdk_pool_object()
+        if self.cluster.sdk_client_pool is None:
+            self.cluster.sdk_client_pool = SDKClientPool()
         self.doc_spec_name = self.input.param("doc_spec", "initial_load")
         # Create clients in SDK client pool
-        if self.sdk_client_pool:
+        if self.cluster.sdk_client_pool:
             self.log.info("Creating required SDK clients for client_pool")
             bucket_count = len(self.cluster.buckets)
             max_clients = self.task_manager.number_of_threads
             clients_per_bucket = int(ceil(max_clients / bucket_count))
             for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
+                self.cluster.sdk_client_pool.create_clients(
                     bucket, [self.cluster.master], clients_per_bucket,
                     compression_settings=self.sdk_compression)
 

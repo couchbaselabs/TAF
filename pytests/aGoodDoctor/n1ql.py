@@ -62,7 +62,7 @@ class DoctorN1QL():
         self.sdkClients = dict()
         self.log = logger.get("test")
 
-        self.sdkClient = SDKClient(cluster.query_nodes, None)
+        self.sdkClient = SDKClient(cluster, None, servers=cluster.query_nodes)
         self.cluster_conn = self.sdkClient.cluster
         self.stop_run = False
         self.query_failure = False

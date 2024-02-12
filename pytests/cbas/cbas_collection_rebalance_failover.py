@@ -93,7 +93,7 @@ class CBASRebalance(CBASBaseTest):
 
         if self.data_load_stage == "during":
             if not self.rebalance_util.wait_for_data_load_to_complete(
-                    data_load_task, self.skip_validations):
+                    self.cluster, data_load_task, self.skip_validations):
                 self.fail("Doc loading failed")
 
         if self.data_load_stage == "after":
@@ -147,7 +147,7 @@ class CBASRebalance(CBASBaseTest):
 
         if self.data_load_stage == "during":
             if not self.rebalance_util.wait_for_data_load_to_complete(
-                    data_load_task, self.skip_validations):
+                    self.cluster, data_load_task, self.skip_validations):
                 self.fail("Doc loading failed")
 
         if self.data_load_stage == "after":

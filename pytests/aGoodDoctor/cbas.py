@@ -46,7 +46,7 @@ class DoctorCBAS():
         self.cluster = cluster
         self.log = logger.get("test")
 
-        self.sdkClient = SDKClient(cluster.cbas_nodes, None)
+        self.sdkClient = SDKClient(cluster, None, servers=cluster.cbas_nodes)
         self.cluster_conn = self.sdkClient.cluster
         self.stop_run = False
         self.queries = list()

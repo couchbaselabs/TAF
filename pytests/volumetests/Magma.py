@@ -187,12 +187,12 @@ class volume(BaseTestCase):
         self.assertTrue(self.rest.update_autofailover_settings(False, 600),
                         "AutoFailover disabling failed")
 
-        if self.sdk_client_pool:
+        if self.cluster.sdk_client_pool:
             max_clients = min(self.task_manager.number_of_threads,
                               20)
             clients_per_bucket = int(ceil(max_clients / self.num_buckets))
             for bucket in self.cluster.buckets:
-                self.sdk_client_pool.create_clients(
+                self.cluster.sdk_client_pool.create_clients(
                     bucket,
                     [self.cluster.master],
                     clients_per_bucket,

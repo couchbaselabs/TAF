@@ -419,7 +419,7 @@ class OPD:
                                 # self.sleep(1)
                                 taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
                                 task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
-                                                        self.sdk_client_pool, "NONE",
+                                                        self.cluster.sdk_client_pool, "NONE",
                                                         self.maxttl, self.time_unit,
                                                         self.track_failures, 0)
                                 task.set_collection_for_load(bucket.name, scope, collection)
@@ -479,7 +479,7 @@ class OPD:
                         # self.sleep(1)
                         taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
-                                                self.sdk_client_pool, self.esClient,
+                                                self.cluster.sdk_client_pool, self.esClient,
                                                 self.durability_level,
                                                 self.maxttl, self.time_unit,
                                                 self.track_failures, 0)

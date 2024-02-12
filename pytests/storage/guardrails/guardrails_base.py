@@ -4,7 +4,7 @@ from cb_constants.CBServer import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.tuq_helper import N1QLHelper
 from membase.api.rest_client import RestConnection
-from sdk_client3 import SDKClient
+from sdk_client3 import SDKClient, SDKClientPool
 from storage.storage_base import StorageBase
 
 
@@ -22,7 +22,6 @@ class GuardrailsBase(StorageBase):
         self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster,
                                                        self.cluster.nodes_in_cluster)
         self.log.info("KV nodes {}".format(self.cluster.kv_nodes))
-
 
     def check_resident_ratio(self, cluster):
         """
@@ -89,17 +88,14 @@ class GuardrailsBase(StorageBase):
         result = []
         self.document_keys = []
         self.log.info("Creating SDK client for inserting new docs")
-        self.sdk_client = SDKClient([self.cluster.master],
-                                    bucket,
+        self.sdk_client = SDKClient(self.cluster, bucket,
                                     scope=CbServer.default_scope,
                                     collection=CbServer.default_collection)
-        new_docs = doc_generator(key=doc_key, start=0,
-                                end=num_docs,
-                                doc_size=1024,
-                                doc_type=self.doc_type,
-                                vbuckets=self.cluster.vbuckets,
-                                key_size=self.key_size,
-                                randomize_value=True)
+        new_docs = doc_generator(key=doc_key, start=0, end=num_docs,
+                                 doc_size=1024, doc_type=self.doc_type,
+                                 vbuckets=self.cluster.vbuckets,
+                                 key_size=self.key_size,
+                                 randomize_value=True)
         self.log.info("Inserting {} documents".format(num_docs))
         for i in range(num_docs):
             key_obj, val_obj = new_docs.next()
@@ -112,8 +108,7 @@ class GuardrailsBase(StorageBase):
 
     def read_docs_sdk(self, bucket, doc_key="initial_docs"):
         self.log.info("Creating SDK client for reading docs")
-        self.sdk_client = SDKClient([self.cluster.master],
-                                    bucket,
+        self.sdk_client = SDKClient(self.cluster, bucket,
                                     scope=CbServer.default_scope,
                                     collection=CbServer.default_collection)
         result = []
@@ -166,13 +161,13 @@ class GuardrailsBase(StorageBase):
         return True
 
     def create_sdk_clients_for_buckets(self):
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = SDKClientPool()
         max_clients = min(self.task_manager.number_of_threads, 20)
         if self.standard_buckets > 20:
             max_clients = self.standard_buckets
         clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
         for bucket in self.cluster.buckets:
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket, [self.cluster.master], clients_per_bucket,
                 compression_settings=self.sdk_compression)
 

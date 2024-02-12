@@ -106,7 +106,8 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Doc CRUDs failed")
         self.validate_test_failure()
@@ -222,7 +223,8 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Wait for doc_loading to complete and validate the doc ops
         self.task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Doc CRUDs failed with persistence issue")
 
@@ -361,7 +363,8 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Wait for document_loader tasks to complete
         self.task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Doc CRUDs failed with process crash")
 
@@ -516,8 +519,10 @@ class CollectionsSuccessTests(CollectionBase):
         self.task.jython_task_manager.get_task_result(sync_write_loading_task)
 
         # Validate CRUD loading results
-        self.bucket_util.validate_doc_loading_results(async_write_loading_task)
-        self.bucket_util.validate_doc_loading_results(sync_write_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      async_write_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      sync_write_loading_task)
 
         if async_write_loading_task.result is False:
             self.log_failure("Doc_ops failed in async_write_task")
@@ -648,7 +653,8 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Doc CRUDs failed")
         self.validate_test_failure()
@@ -692,7 +698,8 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Doc CRUDs failed")
         self.update_verification_dict_from_collection_task(verification_dict,
@@ -782,8 +789,10 @@ class CollectionsSuccessTests(CollectionBase):
         self.task.jython_task_manager.get_task_result(sync_write_loading_task)
 
         # Validate CRUD loading results
-        self.bucket_util.validate_doc_loading_results(async_write_loading_task)
-        self.bucket_util.validate_doc_loading_results(sync_write_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      async_write_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      sync_write_loading_task)
 
         if async_write_loading_task.result is False:
             self.log_failure("Doc_ops failed in async_write_task")
@@ -1011,7 +1020,8 @@ class CollectionsSuccessTests(CollectionBase):
 
         # Wait for document_loader tasks to complete
         self.task_manager.get_task_result(doc_loading_task)
-        self.bucket_util.validate_doc_loading_results(doc_loading_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      doc_loading_task)
         if doc_loading_task.result is False:
             self.log_failure("Sub_doc CRUDs failed with process crash")
 

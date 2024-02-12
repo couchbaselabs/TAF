@@ -63,7 +63,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             workload["transaction_pattern"],
             workload["workers"])
         work_load.setTransactionRollback(True)
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0],
+        client = SDKClient(self.cluster, self.cluster.buckets[0],
                            transaction_config=trans_conf)
         for index, load_pattern in enumerate(work_load.transaction_pattern):
             th_name = "Transaction_%s" % index
@@ -349,8 +349,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         shell.disconnect()
@@ -517,8 +516,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
         shell.disconnect()
@@ -1135,8 +1133,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
 
@@ -1409,8 +1406,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         for task in tasks_info:
             self.task_manager.get_task_result(task)
         self.bucket_util.verify_doc_op_task_exceptions(
-            tasks_info, self.cluster,
-            sdk_client_pool=self.sdk_client_pool)
+            tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
@@ -1494,8 +1490,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     for task in tasks_in:
                         self.task_manager.get_task_result(task)
                     self.bucket_util.verify_doc_op_task_exceptions(
-                        tasks_in, self.cluster,
-                        sdk_client_pool=self.sdk_client_pool)
+                        tasks_in, self.cluster)
                     self.bucket_util.log_doc_ops_task_failures(tasks_in)
 
                     if self.gen_create is not None:
@@ -1667,8 +1662,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         for task in tasks_info:
             self.task_manager.get_task_result(task)
         self.bucket_util.verify_doc_op_task_exceptions(
-            tasks_info, self.cluster,
-            sdk_client_pool=self.sdk_client_pool)
+            tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
@@ -1756,8 +1750,8 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             for task in tasks_in:
                 self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_in, self.cluster,
-                                                           sdk_client_pool=self.sdk_client_pool)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_in, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_in)
 
             if time.time() < time_start + 60:
@@ -1877,8 +1871,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.task_manager.get_task_result(task)
 
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster,
-                sdk_client_pool=self.sdk_client_pool)
+                tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets,
@@ -1957,8 +1950,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         for task in tasks_info:
             self.task_manager.get_task_result(task)
         self.bucket_util.verify_doc_op_task_exceptions(
-            tasks_info, self.cluster,
-            sdk_client_pool=self.sdk_client_pool)
+            tasks_info, self.cluster)
         self.bucket_util.log_doc_ops_task_failures(tasks_info)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets,
@@ -2050,8 +2042,8 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             for task in tasks_in:
                 self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_in, self.cluster,
-                                                           sdk_client_pool=self.sdk_client_pool)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_in, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_in)
 
             if time.time() < time_start + 60:
@@ -2151,8 +2143,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.task_manager.get_task_result(task)
 
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster,
-                sdk_client_pool=self.sdk_client_pool)
+                tasks_info, self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets,

@@ -36,9 +36,9 @@ class CasBaseTest(ClusterSetup):
         self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool
-        if self.sdk_client_pool:
+        if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 self.bucket,
                 self.cluster.nodes_in_cluster,
                 req_clients=self.sdk_pool_capacity,

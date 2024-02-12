@@ -7,14 +7,13 @@ from cb_tools.cbepctl import Cbepctl
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
-from sdk_client3 import SDKClient
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from cb_tools.cbstats import Cbstats
-from sdk_client3 import SDKClient
+from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 
 from com.couchbase.client.core.error import \
@@ -181,8 +180,8 @@ class CollectionBase(ClusterSetup):
             CollectionBase.range_scan_load_setup(self)
 
     @staticmethod
-    def create_sdk_clients(num_threads, master,
-                           buckets, sdk_client_pool, sdk_compression):
+    def create_sdk_clients(cluster, num_threads, servers_to_connect,
+                           buckets, sdk_compression):
         # Fetch num_collections per bucket. Used for 'req_clients' calc
         cols_in_bucket = dict()
         for bucket in buckets:
@@ -203,8 +202,8 @@ class CollectionBase(ClusterSetup):
                 # Work around to hitting the following error on serverless config
                 # Memcached error #50: RATE_LIMITED_MAX_CONNECTIONS
                 req_clients = min(req_clients, 10)
-            sdk_client_pool.create_clients(
-                bucket=bucket, servers=[master],
+            cluster.sdk_client_pool.create_clients(
+                cluster, bucket=bucket, servers=[servers_to_connect],
                 req_clients=req_clients,
                 compression_settings=sdk_compression)
 
@@ -361,7 +360,7 @@ class CollectionBase(ClusterSetup):
     @staticmethod
     def setup_indexing_for_dcp_oso_backfill(test_obj):
         if test_obj.input.param("test_oso_backfill", False):
-            sdk_client = SDKClient([test_obj.cluster.master], None)
+            sdk_client = SDKClient(test_obj.cluster, None)
             CollectionBase.create_indexes_for_all_collections(
                 test_obj, sdk_client, validate_item_count=True)
             sdk_client.close()
@@ -373,7 +372,7 @@ class CollectionBase(ClusterSetup):
         Refer: CBQE-7927
         """
         b_util = test_obj.bucket_util
-        sdk_client = SDKClient([test_obj.cluster.master], None)
+        sdk_client = SDKClient(test_obj.cluster, None)
         for itr in range(1, iterations+1):
             test_obj.log.info("Itr::{}. Dropping existing indexes")
             for bucket in test_obj.cluster.buckets:
@@ -397,7 +396,6 @@ class CollectionBase(ClusterSetup):
         key_size = 8
         sdk_list = []
         include_prefix_scan = True
-        expect_range_scan_failure = True
         include_range_scan = True
         timeout = 60
         expect_exceptions = []
@@ -461,7 +459,7 @@ class CollectionBase(ClusterSetup):
                         for t_bucket in test_obj.cluster.buckets:
                             if t_bucket.name == bucket:
                                 sdk_list.append(SDKClient(
-                                    [test_obj.cluster.master],
+                                    test_obj.cluster,
                                     t_bucket, scope, collection))
                                 collections_created.append(collection)
             if test_obj.skip_range_scan_collection_mutation:
@@ -549,7 +547,7 @@ class CollectionBase(ClusterSetup):
                         crud_spec.pop(crud_name)
         task = test_obj.task.async_load_gen_docs_from_spec(
             test_obj.cluster, test_obj.task_manager,
-            spec_load_task.loader_spec, test_obj.sdk_client_pool,
+            spec_load_task.loader_spec,
             batch_size=1000, process_concurrency=1, track_failures=False,
             print_ops_rate=False, start_task=True)
         test_obj.task_manager.get_task_result(task)
@@ -607,19 +605,19 @@ class CollectionBase(ClusterSetup):
 
     @staticmethod
     def create_clients_for_sdk_pool(test_obj, cluster=None):
-        # Init sdk_client_pool if not initialized before
-        if test_obj.sdk_client_pool is None:
-            test_obj.init_sdk_pool_object()
-
         if not cluster:
             cluster = test_obj.cluster
 
+        # Init sdk_client_pool if not initialized before
+        if test_obj.cluster.sdk_client_pool is None:
+            test_obj.cluster.sdk_client_pool = SDKClientPool()
+
         test_obj.log.info("Creating required SDK clients for client_pool")
         CollectionBase.create_sdk_clients(
+            test_obj.cluster,
             test_obj.task_manager.number_of_threads,
             cluster.master,
             cluster.buckets,
-            test_obj.sdk_client_pool,
             test_obj.sdk_compression)
 
     @staticmethod
@@ -792,7 +790,7 @@ class CollectionBase(ClusterSetup):
     def validate_cruds_from_collection_mutation(self, doc_loading_task):
         # Read all the values to validate the CRUDs
         for bucket, s_dict in doc_loading_task.loader_spec.items():
-            client = self.sdk_client_pool.get_client_for_bucket(bucket)
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
             for s_name, c_dict in s_dict["scopes"].items():
                 for c_name, _ in c_dict["collections"].items():
                     c_crud_data = doc_loading_task.loader_spec[
@@ -810,7 +808,6 @@ class CollectionBase(ClusterSetup):
                             scope=s_name, collection=c_name,
                             batch_size=self.batch_size,
                             process_concurrency=self.process_concurrency,
-                            sdk_client_pool=self.sdk_client_pool,
                             is_sub_doc=is_sub_doc)
                         self.task_manager.get_task_result(task)
 

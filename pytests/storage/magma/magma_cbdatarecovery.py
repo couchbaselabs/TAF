@@ -6,7 +6,6 @@ from remote.remote_util import RemoteMachineShellConnection
 
 
 class MagmaRecovery(BaseTestCase):
-
     def setUp(self):
         super(MagmaRecovery, self).setUp()
 

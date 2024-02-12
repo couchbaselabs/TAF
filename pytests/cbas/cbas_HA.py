@@ -293,7 +293,7 @@ class CBASHighAvailability(CBASBaseTest):
                 self.fail("Unable to connect some Local links")
 
             if not self.rebalance_util.wait_for_data_load_to_complete(
-                    doc_loading_task, False):
+                    self.cluster, doc_loading_task, False):
                 self.log.info("Doc loading failed")
 
         if run_parallel_cbas_queries:
@@ -499,7 +499,7 @@ class CBASHighAvailability(CBASBaseTest):
             exclude_nodes=[], kv_failover_nodes=[], cbas_failover_nodes=[])
 
         if not self.rebalance_util.wait_for_data_load_to_complete(
-                doc_loading_task, False):
+                self.cluster, doc_loading_task, False):
             self.log.info("Doc loading failed")
 
         if not self.cbas_util.wait_for_ingestion_all_datasets(
@@ -589,7 +589,7 @@ class CBASHighAvailability(CBASBaseTest):
         self.fail("Unable to disconnect some Local links")
 
         if not self.rebalance_util.wait_for_data_load_to_complete(
-                doc_loading_task, False):
+                self.cluster, doc_loading_task, False):
             self.log.info("Doc loading failed")
 
         self.rebalance_util.stop_parallel_queries(n1ql_query_task,

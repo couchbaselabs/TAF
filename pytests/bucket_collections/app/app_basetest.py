@@ -264,8 +264,7 @@ class AppBase(BaseTestCase):
             bucket = self.bucket
             if "select_bucket" in role and role["select_bucket"] is False:
                 bucket = None
-            self.sdk_clients[u_name] = SDKClient([self.cluster.master],
-                                                 bucket,
+            self.sdk_clients[u_name] = SDKClient(self.cluster, bucket,
                                                  username=u_name,
                                                  password=password)
 

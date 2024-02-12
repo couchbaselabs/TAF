@@ -355,7 +355,6 @@ class StorageBase(BaseTestCase):
     def doc_loader(self, loader_spec):
         task = self.task.async_load_gen_docs_from_spec(
             self.cluster, self.task_manager, loader_spec,
-            self.sdk_client_pool,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             print_ops_rate=True,
@@ -370,7 +369,7 @@ class StorageBase(BaseTestCase):
 
     def wait_for_doc_load_completion(self, task, wait_for_stats=True):
         self.task_manager.get_task_result(task)
-        self.bucket_util.validate_doc_loading_results(task)
+        self.bucket_util.validate_doc_loading_results(self.cluster, task)
         if not task.result:
             self.assertTrue(task.result,
                             "Doc ops failed for task: {}".format(task.thread_name))
@@ -640,8 +639,7 @@ class StorageBase(BaseTestCase):
                     scope=scope,
                     collection=collection,
                     monitor_stats=self.monitor_stats,
-                    track_failures=track_failures,
-                    sdk_client_pool=self.sdk_client_pool)
+                    track_failures=track_failures)
                 tasks_info.update(task_info.items())
                 task_per_collection[collection] = list(task_info.keys())[0]
             if scope == CbServer.default_scope:
@@ -868,7 +866,6 @@ class StorageBase(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy,
                 iterations=iterations)
             tasks_info.update(tem_tasks_info.items())
@@ -889,7 +886,6 @@ class StorageBase(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
@@ -911,7 +907,6 @@ class StorageBase(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
@@ -927,7 +922,6 @@ class StorageBase(BaseTestCase):
                scope=scope,
                collection=collection,
                suppress_error_table=suppress_error_table,
-               sdk_client_pool=self.sdk_client_pool,
                sdk_retry_strategy=sdk_retry_strategy)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
@@ -947,7 +941,6 @@ class StorageBase(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
@@ -957,8 +950,7 @@ class StorageBase(BaseTestCase):
                 self.task_manager.get_task_result(task)
 
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster,
-                                                           sdk_client_pool=self.sdk_client_pool)
+                                                           self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         if read_task:
@@ -1068,8 +1060,7 @@ class StorageBase(BaseTestCase):
                 scope=CbServer.default_scope,
                 collection=collection,
                 retry_exceptions=self.retry_exceptions,
-                ignore_exceptions=self.ignore_exceptions,
-                sdk_client_pool=self.sdk_client_pool)
+                ignore_exceptions=self.ignore_exceptions)
             validate_tasks_info.update(temp_tasks_info.items())
         if _sync:
             for task in validate_tasks_info:

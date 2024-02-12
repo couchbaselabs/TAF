@@ -1,3 +1,5 @@
+import time
+
 from BucketLib.bucket import Bucket
 import math, time
 from cb_constants import CbServer, DocLoading
@@ -41,7 +43,6 @@ class RRGuardrails(GuardrailsBase):
 
         self.log.info("Creating SDK clients for the buckets")
         self.create_sdk_clients_for_buckets()
-
 
     def test_rr_guardrail_with_data_growth(self):
 
@@ -338,9 +339,7 @@ class RRGuardrails(GuardrailsBase):
             self.assertTrue(exp, "Mutations are still blocked after deleting docs")
         self.log.info("Inserts were successful after deletion of a few items")
 
-
     def test_delete_recreate_bucket_rr_guardrail(self):
-
         number_of_docs = self.input.param("number_of_docs", 10)
         error_code = 'BUCKET_RESIDENT_RATIO_TOO_LOW'
 
@@ -363,7 +362,7 @@ class RRGuardrails(GuardrailsBase):
 
         self.log.info("Deleting existing bucket : {}".format(self.bucket.name))
         self.bucket_util.delete_bucket(self.cluster, self.bucket)
-        self.sdk_client_pool.shutdown()
+        self.cluster.sdk_client_pool.shutdown()
 
         self.log.info("Creating a bucket...")
         self.bucket_util.create_default_bucket(self.cluster, bucket_type=self.bucket_type,
@@ -568,8 +567,7 @@ class RRGuardrails(GuardrailsBase):
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool)
+            timeout_secs=self.sdk_timeout)
 
         current_rr = self.check_resident_ratio(self.cluster)
         end_time = time.time() + self.timeout
@@ -590,11 +588,11 @@ class RRGuardrails(GuardrailsBase):
                 break
 
         self.log.info("Creating SDK client for inserting new docs")
-        self.sdk_client = SDKClient([non_master_node], self.bucket)
-        new_docs = doc_generator(key="temp_docs", start=0,
-                                end=number_of_docs,
-                                target_vbucket=vbucket_list[non_master_node.ip],
-                                randomize_value=True)
+        self.sdk_client = SDKClient(self.cluster, self.bucket,
+                                    servers=[non_master_node])
+        new_docs = doc_generator(key="temp_docs", start=0, end=number_of_docs,
+                                 target_vbucket=vbucket_list[non_master_node.ip],
+                                 randomize_value=True)
         result = []
         self.log.info("Inserting {0} docs into vbuckets on the node {1}".format(
                                                 number_of_docs, non_master_node.ip))
@@ -774,8 +772,7 @@ class RRGuardrails(GuardrailsBase):
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool)
+            timeout_secs=self.sdk_timeout)
 
         current_rr = self.check_resident_ratio(self.cluster)
         end_time = time.time() + self.timeout

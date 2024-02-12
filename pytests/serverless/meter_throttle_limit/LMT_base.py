@@ -1,7 +1,6 @@
 import time
 import copy
 import re
-import json
 
 from cb_tools.mc_stat import McStat
 from remote.remote_util import RemoteMachineShellConnection
@@ -345,7 +344,6 @@ class LMT(ServerlessOnPremBaseTest):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
         if "create" in doc_ops and self.gen_create is not None:
@@ -365,7 +363,6 @@ class LMT(ServerlessOnPremBaseTest):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
@@ -387,7 +384,6 @@ class LMT(ServerlessOnPremBaseTest):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
@@ -403,7 +399,6 @@ class LMT(ServerlessOnPremBaseTest):
                scope=scope,
                collection=collection,
                suppress_error_table=suppress_error_table,
-               sdk_client_pool=self.sdk_client_pool,
                sdk_retry_strategy=sdk_retry_strategy)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
@@ -423,7 +418,6 @@ class LMT(ServerlessOnPremBaseTest):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_client_pool=self.sdk_client_pool,
                 sdk_retry_strategy=sdk_retry_strategy)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
@@ -433,8 +427,7 @@ class LMT(ServerlessOnPremBaseTest):
                 self.task_manager.get_task_result(task)
 
             self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster,
-                                                           sdk_client_pool=self.sdk_client_pool)
+                                                           self.cluster)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         if read_task:

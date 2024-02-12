@@ -92,9 +92,9 @@ class basic_ops(ClusterSetup):
             persist_to=self.persist_to)
 
         # Create sdk_clients for pool
-        if self.sdk_client_pool:
+        if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 self.cluster.buckets[0],
                 [self.cluster.master],
                 req_clients=self.sdk_pool_capacity,
@@ -116,8 +116,7 @@ class basic_ops(ClusterSetup):
         self.log.info('Starting basic ops')
 
         default_bucket = self.bucket_util.get_all_buckets(self.cluster)[0]
-        sdk_client = SDKClient([self.cluster.master],
-                               default_bucket,
+        sdk_client = SDKClient(self.cluster, default_bucket,
                                compression_settings=self.sdk_compression)
         # mcd = client.memcached(KEY_NAME)
 
@@ -256,8 +255,7 @@ class basic_ops(ClusterSetup):
             ryow=self.ryow,
             check_persistence=self.check_persistence,
             scope=self.scope_name,
-            collection=self.collection_name,
-            sdk_client_pool=self.sdk_client_pool)
+            collection=self.collection_name)
         self.task.jython_task_manager.get_task_result(task)
 
         if self.ryow:
@@ -273,9 +271,8 @@ class basic_ops(ClusterSetup):
             timeout=self.sdk_timeout, time_unit="seconds",
             ignore_exceptions=ignore_exceptions,
             retry_exceptions=retry_exceptions)
-        self.bucket_util.verify_doc_op_task_exceptions(doc_op_info_dict,
-                                                       self.cluster,
-                                                       self.sdk_client_pool)
+        self.bucket_util.verify_doc_op_task_exceptions(
+            doc_op_info_dict, self.cluster)
 
         if len(doc_op_info_dict[task]["unwanted"]["fail"].keys()) != 0:
             self.fail("Failures in retry doc CRUDs: {0}"
@@ -337,7 +334,6 @@ class basic_ops(ClusterSetup):
                 check_persistence=self.check_persistence,
                 scope=self.scope_name,
                 collection=self.collection_name,
-                sdk_client_pool=self.sdk_client_pool,
                 iterations=doc_ops_loop)
             if doc_ops_loop == -1:
                 self.sleep(60, "Wait before killing the cont. update load")
@@ -358,8 +354,7 @@ class basic_ops(ClusterSetup):
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     scope=self.scope_name,
-                    collection=self.collection_name,
-                    sdk_client_pool=self.sdk_client_pool)
+                    collection=self.collection_name)
             self.task.jython_task_manager.get_task_result(task)
 
         elif doc_op == DocLoading.Bucket.DocOps.DELETE:
@@ -375,8 +370,7 @@ class basic_ops(ClusterSetup):
                 timeout_secs=self.sdk_timeout,
                 ryow=self.ryow, check_persistence=self.check_persistence,
                 scope=self.scope_name,
-                collection=self.collection_name,
-                sdk_client_pool=self.sdk_client_pool)
+                collection=self.collection_name)
             self.task.jython_task_manager.get_task_result(task)
             if self.collection_name is None:
                 target_scope = CbServer.default_scope
@@ -402,8 +396,7 @@ class basic_ops(ClusterSetup):
                 self.cluster, def_bucket, doc_update,
                 DocLoading.Bucket.DocOps.DELETE, 0,
                 batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency,
-                sdk_client_pool=self.sdk_client_pool)
+                process_concurrency=self.process_concurrency)
             self.task.jython_task_manager.get_task_result(task)
 
         elif doc_op is not None:
@@ -440,8 +433,7 @@ class basic_ops(ClusterSetup):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
 
         # check if all the documents(250) are loaded with default timeout
@@ -463,8 +455,7 @@ class basic_ops(ClusterSetup):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool)
+                timeout_secs=self.sdk_timeout)
             self.task.jython_task_manager.get_task_result(task)
             if self.doc_size > 20:
                 if len(task.fail.keys()) == 0:
@@ -494,8 +485,7 @@ class basic_ops(ClusterSetup):
                     persist_to=self.persist_to,
                     durability=self.durability_level,
                     compression=self.sdk_compression,
-                    timeout_secs=self.sdk_timeout,
-                    sdk_client_pool=self.sdk_client_pool)
+                    timeout_secs=self.sdk_timeout)
                 self.task.jython_task_manager.get_task_result(task)
                 if len(task.fail.keys()) != 1:
                     self.log_failure("Large docs inserted for keys: %s"
@@ -529,8 +519,7 @@ class basic_ops(ClusterSetup):
             DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=100, process_concurrency=8,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
 
         # Create required doc_gens and doc_op task object
@@ -575,7 +564,6 @@ class basic_ops(ClusterSetup):
                 compression=self.sdk_compression,
                 persist_to=persist_to, replicate_to=replicate_to,
                 durability=d_level, timeout_secs=self.sdk_timeout,
-                sdk_client_pool=self.sdk_client_pool,
                 process_concurrency=1, batch_size=1,
                 print_ops_rate=False, start_task=False,
                 task_identifier="%s_%d" % (doc_op, op_index))
@@ -610,7 +598,6 @@ class basic_ops(ClusterSetup):
                     data_op_dict[dict_key]["doc_gen"], doc_op, 0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
-                    sdk_client_pool=self.sdk_client_pool,
                     suppress_error_table=suppress_err_tbl)
                 self.task.jython_task_manager.get_task_result(task)
 
@@ -681,7 +668,7 @@ class basic_ops(ClusterSetup):
         self.log.info("Creating user %s" % uname)
         self.bucket_util.add_rbac_user(self.cluster.master,
                                        testuser=user, rolelist=role_list)
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0],
+        client = SDKClient(self.cluster, self.cluster.buckets[0],
                            username=uname, password="password")
 
         try:
@@ -900,7 +887,7 @@ class basic_ops(ClusterSetup):
                 "cbstats"].vbucket_list(bucket.name, "replica")
 
         bucket_helper = BucketHelper(self.cluster.master)
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
 
         self.log.info("Loading documents until %s%% DGM is achieved"
                       % self.active_resident_threshold)
@@ -1013,7 +1000,7 @@ class basic_ops(ClusterSetup):
                 target_node = node
 
         # Open SDK client for doc_ops
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
 
         self.log.info("Testing using vbucket %s" % target_vb)
         while doc_gen.has_next():
@@ -1113,8 +1100,7 @@ class basic_ops(ClusterSetup):
                 skip_read_on_error=True,
                 suppress_error_table=True,
                 batch_size=1,
-                process_concurrency=1,
-                sdk_client_pool=self.sdk_client_pool)
+                process_concurrency=1)
             self.task_manager.get_task_result(doc_op_task)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
@@ -1266,8 +1252,8 @@ class basic_ops(ClusterSetup):
                                 shell,
                                 node=self.cluster.master)
 
-        client_1 = SDKClient([self.cluster.master], bucket)
-        client_2 = SDKClient([self.cluster.master], bucket)
+        client_1 = SDKClient(self.cluster, bucket)
+        client_2 = SDKClient(self.cluster, bucket)
 
         # Perform create-delete to populate bloom-filter
         client_1.crud(DocLoading.Bucket.DocOps.CREATE, self.key, doc_val)
@@ -1370,7 +1356,6 @@ class basic_ops(ClusterSetup):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool,
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
 
@@ -1386,7 +1371,6 @@ class basic_ops(ClusterSetup):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool,
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task_2)
 
@@ -1448,7 +1432,6 @@ class basic_ops(ClusterSetup):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool,
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -1469,7 +1452,6 @@ class basic_ops(ClusterSetup):
             batch_size=2000, process_concurrency=5,
             durability=self.durability_level,
             timeout_secs=30,
-            sdk_client_pool=self.sdk_client_pool,
             skip_read_on_error=True,
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
@@ -1480,7 +1462,6 @@ class basic_ops(ClusterSetup):
             DocLoading.Bucket.DocOps.READ,
             batch_size=500, process_concurrency=8,
             timeout_secs=30,
-            sdk_client_pool=self.sdk_client_pool,
             suppress_error_table=True,
             start_task=False,
             print_ops_rate=False)
@@ -1571,7 +1552,7 @@ class basic_ops(ClusterSetup):
         in_node = self.cluster.servers[1]
         num_items = 0
 
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
 
         self.log.info("Creating tombstone '%s' with sys-xattr" % key)
         # Create a document
@@ -1701,7 +1682,6 @@ class basic_ops(ClusterSetup):
             timeout_secs=self.sdk_timeout,
             scope=self.scope_name,
             collection=self.collection_name,
-            sdk_client_pool=self.sdk_client_pool,
             print_ops_rate=False)
         self.task.jython_task_manager.get_task_result(task)
         task = self.task.async_load_gen_docs(
@@ -1713,7 +1693,6 @@ class basic_ops(ClusterSetup):
             timeout_secs=self.sdk_timeout,
             scope=self.scope_name,
             collection=self.collection_name,
-            sdk_client_pool=self.sdk_client_pool,
             print_ops_rate=False)
         self.task.jython_task_manager.get_task_result(task)
 
@@ -1779,7 +1758,7 @@ class basic_ops(ClusterSetup):
                     req_key_for_vb.remove(vb_for_key)
 
         # Open SDK client for loading
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+        client = SDKClient(self.cluster, self.cluster.buckets[0])
 
         # Load doc with async writes
         self.log.info("Loading documents to each vbucket")
@@ -1932,8 +1911,7 @@ class basic_ops(ClusterSetup):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -1962,8 +1940,7 @@ class basic_ops(ClusterSetup):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool)
+            timeout_secs=self.sdk_timeout)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -1976,8 +1953,7 @@ class basic_ops(ClusterSetup):
         self.task.rebalance(self.cluster, [self.servers[2]], [],
                             services=["n1ql,index"])
         self.log.info("Creating SDK client connection")
-        client = SDKClient([self.cluster.master],
-                           self.cluster.buckets[0],
+        client = SDKClient(self.cluster, self.cluster.buckets[0],
                            compression_settings=self.sdk_compression)
 
         self.log.info("Stopping memcached on: %s" % node_to_stop)
@@ -2037,7 +2013,7 @@ class basic_ops(ClusterSetup):
 
         key = "test"
         bucket = self.cluster.buckets[0]
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
         insert_option = SDKOptions.get_insert_options()
 
         client.collection.insert(key, "null", insert_option.transcoder(
@@ -2046,7 +2022,7 @@ class basic_ops(ClusterSetup):
                     ["_xattr", "test_val"], xattr=True)
         client.close()
 
-        client = SDKClient([self.cluster.master], bucket, username=user)
+        client = SDKClient(self.cluster, bucket, username=user)
         result = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP, key,
                              "$XTOC", xattr=True)
         client.close()
@@ -2123,7 +2099,7 @@ class basic_ops(ClusterSetup):
         Ref: MB-53898
         """
         def bg_fetch_op(op_type, gen):
-            client = self.sdk_client_pool.get_client_for_bucket(bucket)
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
             while compaction_running and gen.has_next():
                 k, _ = gen.next()
                 result = client.crud(op_type, k, {}, timeout=2)
@@ -2133,7 +2109,7 @@ class basic_ops(ClusterSetup):
                     self.crud_failure = True
                     self.log.critical(result)
                     break
-            self.sdk_client_pool.release_client(client)
+            self.cluster.sdk_client_pool.release_client(client)
 
         exp = 300
         self.crud_failure = False
@@ -2147,14 +2123,12 @@ class basic_ops(ClusterSetup):
         init_load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, init_gen, DocLoading.Bucket.DocOps.CREATE,
             timeout_secs=300, durability=self.durability_level,
-            process_concurrency=10, batch_size=2000, print_ops_rate=False,
-            sdk_client_pool=self.sdk_client_pool)
+            process_concurrency=10, batch_size=2000, print_ops_rate=False)
         self.log.info("Loading ttl documents")
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, exp_gen, DocLoading.Bucket.DocOps.CREATE,
             exp=exp, timeout_secs=300, durability=self.durability_level,
-            process_concurrency=10, batch_size=2000, print_ops_rate=False,
-            sdk_client_pool=self.sdk_client_pool)
+            process_concurrency=10, batch_size=2000, print_ops_rate=False)
         self.log.info("Waiting for doc_loading to complete")
         self.task_manager.get_task_result(init_load_task)
         self.task_manager.get_task_result(load_task)
@@ -2251,7 +2225,7 @@ class basic_ops(ClusterSetup):
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE,
                 collection=c_name, batch_size=1000, process_concurrency=1,
-                sdk_client_pool=self.sdk_client_pool, print_ops_rate=False))
+                print_ops_rate=False))
         for task in tasks:
             self.task_manager.get_task_result(task)
 
@@ -2270,7 +2244,7 @@ class basic_ops(ClusterSetup):
                 set_and_validate_dcp_oso_backfill(kv_node, "auto")
 
         self.log.info("Creating GSI index on collection 'c1'")
-        client = SDKClient([self.cluster.master], bucket)
+        client = SDKClient(self.cluster, bucket)
         _ = client.run_query(
             "CREATE INDEX `c1` ON `{}`.`_default`.`c1`(body) USING GSI"
             .format(bucket.name), timeout=300)
@@ -2339,7 +2313,7 @@ class basic_ops(ClusterSetup):
         key_2 = "test_doc_2"
         key_3 = "test_doc_3"
         bucket = self.cluster.buckets[0]
-        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
 
         not_locked_msgs = ["Requested resource is not locked", "NOT_LOCKED"]
         self.log.info("Test for multiple doc-unlock")
@@ -2382,8 +2356,7 @@ class basic_ops(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             durability=self.durability_level, timeout_secs=self.sdk_timeout,
-            batch_size=100, process_concurrency=4, print_ops_rate=False,
-            sdk_client_pool=self.sdk_client_pool)
+            batch_size=100, process_concurrency=4, print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
         self.log.info("Validating unlock outcome with eviction")
         validate_unlock_exception(key_1, doc_1_cas, not_locked_msgs)
@@ -2414,15 +2387,14 @@ class basic_ops(ClusterSetup):
             l_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen, DocLoading.Bucket.DocOps.UPDATE,
                 batch_size=20, process_concurrency=3, print_ops_rate=False,
-                skip_read_on_error=True, suppress_error_table=True,
-                sdk_client_pool=self.sdk_client_pool)
+                skip_read_on_error=True, suppress_error_table=True)
             self.task_manager.get_task_result(l_task)
 
         cbstat = cb_err = None
         active_vbs = None
         key = "test_key"
         bucket = self.cluster.buckets[0]
-        client = self.sdk_client_pool.get_client_for_bucket(bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
         vb_for_key = self.bucket_util.get_vbucket_num_for_key(
             key, self.cluster.vbuckets)
 
@@ -2453,7 +2425,7 @@ class basic_ops(ClusterSetup):
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             batch_size=20, process_concurrency=3, print_ops_rate=False,
             skip_read_on_error=True, suppress_error_table=True,
-            start_task=False, sdk_client_pool=self.sdk_client_pool)
+            start_task=False)
 
         prepare_mutation_thread = Thread(target=perform_sync_write,
                                          args=[client, key])
@@ -2463,7 +2435,7 @@ class basic_ops(ClusterSetup):
         self.log.info("Starting data load to tigger eviction")
         self.task_manager.add_new_task(load_task)
         self.task_manager.get_task_result(load_task)
-        self.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
         self.log.info("Reverting error condition")
         cb_err.revert(CouchbaseError.STOP_MEMCACHED)
         cbstat.shellConn.disconnect()
@@ -2505,8 +2477,7 @@ class basic_ops(ClusterSetup):
             self.cluster, bucket, load_gen, DocLoading.Bucket.DocOps.UPDATE,
             durability=self.durability_level, batch_size=200, iterations=5,
             process_concurrency=8, print_ops_rate=False,
-            skip_read_on_error=True, suppress_error_table=True,
-            sdk_client_pool=self.sdk_client_pool)
+            skip_read_on_error=True, suppress_error_table=True)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
 
@@ -2552,8 +2523,7 @@ class basic_ops(ClusterSetup):
                 self.cluster, self.cluster.buckets[0], load_gen,
                 DocLoading.Bucket.DocOps.UPDATE,
                 batch_size=20, process_concurrency=8, print_ops_rate=False,
-                skip_read_on_error=True, suppress_error_table=True,
-                sdk_client_pool=self.sdk_client_pool)
+                skip_read_on_error=True, suppress_error_table=True)
             self.task_manager.get_task_result(load_task)
 
         for node in self.cluster.nodes_in_cluster:

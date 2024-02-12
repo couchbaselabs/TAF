@@ -1,4 +1,3 @@
-import copy
 import random
 import string
 import threading
@@ -23,7 +22,7 @@ class ServerlessMetering(LMT):
         self.sdk_compression = self.input.param("sdk_compression", False)
         self.validate_stat = self.input.param("validate_stat", False)
         compression_settings = {"enabled": self.sdk_compression}
-        self.client = SDKClient([self.cluster.master], self.bucket,
+        self.client = SDKClient(self.cluster, self.bucket,
                                 compression_settings=compression_settings)
 
     def tearDown(self):
@@ -140,7 +139,6 @@ class ServerlessMetering(LMT):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool,
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -158,7 +156,6 @@ class ServerlessMetering(LMT):
             batch_size=2000, process_concurrency=5,
             durability=self.durability_level,
             timeout_secs=30,
-            sdk_client_pool=self.sdk_client_pool,
             skip_read_on_error=True,
             print_ops_rate=False)
         self.task_manager.get_task_result(load_task)
@@ -174,7 +171,6 @@ class ServerlessMetering(LMT):
             DocLoading.Bucket.DocOps.READ,
             batch_size=500, process_concurrency=8,
             timeout_secs=30,
-            sdk_client_pool=self.sdk_client_pool,
             suppress_error_table=True,
             start_task=False,
             print_ops_rate=False)

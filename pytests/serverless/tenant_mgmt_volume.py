@@ -1,5 +1,4 @@
 from random import choice, sample
-from threading import Thread
 
 from BucketLib.bucket import Bucket
 from cb_constants import CbServer
@@ -50,9 +49,8 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         self.cont_update_tasks = list()
 
         # Force initialize the pool object
-        self.sdk_client_pool = \
-                self.bucket_util.initialize_java_sdk_client_pool()
-        DocLoaderUtils.sdk_client_pool = self.sdk_client_pool
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.generic_tbl = TableView(self.log.info)
 
     def tearDown(self):
@@ -69,7 +67,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
                 for bucket in self.cluster.buckets:
                     name = bucket.name
                     self.log.info("%s - Closing sdk_clients" % name)
-                    self.sdk_client_pool.force_close_clients_for_bucket(name)
+                    self.cluster.sdk_client_pool.force_close_clients_for_bucket(name)
                     self.log.info("%s - Triggering delete API" % name)
                     self.serverless_util.delete_database(self.pod, self.tenant,
                                                          bucket)
@@ -223,7 +221,8 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
     def __delete_database(self, bucket):
         self.__stop_doc_ops_for_bucket(bucket)
         self.log.info("%s - Force closing sdk_clients" % bucket.name)
-        self.sdk_client_pool.force_close_clients_for_bucket(bucket.name)
+        self.cluster.sdk_client_pool.force_close_clients_for_bucket(
+            bucket.name)
         self.log.info("%s - Triggering delete API" % bucket.name)
         self.serverless_util.delete_database(self.pod, self.tenant,
                                              bucket.name)
@@ -265,8 +264,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         result, tasks = self.bucket_util.perform_doc_loading(
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
-            async_load=True, sdk_client_pool=self.sdk_client_pool,
-            track_failures=False)
+            async_load=True, track_failures=False)
         self.assertTrue(result, "Failed to start doc_ops")
         return loader_map, tasks
 
@@ -356,8 +354,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
 
         result, loading_tasks = self.bucket_util.perform_doc_loading(
             self.doc_loading_tm, loader_map, self.cluster, buckets,
-            async_load=True, sdk_client_pool=self.sdk_client_pool,
-            track_failures=False)
+            async_load=True, track_failures=False)
         self.assertTrue(result, "Starting doc_ops failed")
         return loader_map, loading_tasks
 
@@ -375,8 +372,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
             result = DocLoaderUtils.data_validation(
                 self.doc_loading_tm, loader_map,
                 self.cluster, self.cluster.buckets,
-                process_concurrency=1, ops_rate=ops_rate,
-                sdk_client_pool=self.sdk_client_pool)
+                process_concurrency=1, ops_rate=ops_rate)
             self.assertTrue(result, "Doc validation failed")
 
     def __init_setup(self):
@@ -440,8 +436,7 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         _, self.cont_update_tasks = self.bucket_util.perform_doc_loading(
             self.doc_loading_tm, loader_map,
             self.cluster, self.cluster.buckets,
-            async_load=True, sdk_client_pool=self.sdk_client_pool,
-            track_failures=False)
+            async_load=True, track_failures=False)
         for task in self.cont_update_tasks:
             self.__add_task_to_bucket_map(task)
 
@@ -818,7 +813,8 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
         self.create_required_buckets()
         self.get_servers_for_databases()
 
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = \
+            self.bucket_util.initialize_java_sdk_client_pool()
         self.create_sdk_client_pool(self.cluster.buckets, 1)
 
         start_index = 0
@@ -886,7 +882,6 @@ class TenantMgmtVolumeTest(TenantMgmtOnCloud):
                 self.doc_loading_tm, loader_map, self.cluster,
                 buckets=self.cluster.buckets, async_load=False,
                 validate_results=False, track_failures=False,
-                sdk_client_pool=self.sdk_client_pool,
                 process_concurrency=20)
 
             self.sleep(10)

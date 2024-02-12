@@ -23,7 +23,8 @@ class CBASHelper(CBAS_helper_rest, SDKClient):
     def __init__(self, master, cbas_node):
         self.server = master
         super(CBASHelper, self).__init__(master, cbas_node)
-        SDKClient(self.server).__init__(self.server)
+        SDKClient(self.cluster, None, [self.server]).__init__(
+            self.cluster, None, [self.server])
         self.connectionLive = False
 
     def createConn(self, bucket, username=None, password=None):

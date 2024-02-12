@@ -4,6 +4,7 @@ from decimal import Decimal
 from cb_constants import constants, CbServer, DocLoading
 from index_utils.index_ready_functions import IndexUtils
 from membase.api.rest_client import RestConnection
+from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
 import math
 from security_config import trust_all_certs
@@ -21,17 +22,16 @@ class PlasmaBaseTest(StorageBase):
         self.retry_exceptions = list([SDKException.AmbiguousTimeoutException,
                                       SDKException.DurabilityImpossibleException,
                                       SDKException.DurabilityAmbiguousException])
-        max_clients = min(self.task_manager.number_of_threads, 20)
         self.sdk_timeout = self.input.param("sdk_timeout", 60)
         self.moi_snapshot_interval = self.input.param("moi_snapshot_interval", 120)
         self.manual = self.input.param("manual", False)
         self.purger_enabled = self.input.param("purger_enabled", True)
-        self.init_sdk_pool_object()
+        self.cluster.sdk_client_pool = SDKClientPool()
         self.log.info("Creating SDK clients for client_pool")
         max_clients = min(self.task_manager.number_of_threads, 20)
         clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
         for bucket in self.cluster.buckets:
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket, [self.cluster.master],
                 clients_per_bucket,
                 compression_settings=self.sdk_compression)
@@ -582,7 +582,7 @@ class PlasmaBaseTest(StorageBase):
                             self.log.debug("Query node is".format(self.cluster.query_nodes[query_node_index]))
                             task = self.task.compare_KV_Indexer_data(self.cluster,
                                                                      self.cluster.query_nodes[query_node_index],
-                                                                     self.task_manager, query, self.sdk_client_pool,
+                                                                     self.task_manager, query,
                                                                      bucket, scope, collection,
                                                                      index_name=gsi_index_name,
                                                                      offset=offset, field=field)

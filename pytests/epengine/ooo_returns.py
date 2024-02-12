@@ -9,7 +9,6 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from constants.sdk_constants.java_client import SDKConstants
 
 from com.couchbase.test.transactions import SimpleTransaction as Transaction
 from reactor.util.function import Tuples
@@ -36,9 +35,9 @@ class OutOfOrderReturns(ClusterSetup):
         self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool
-        if self.sdk_client_pool:
+        if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
-            self.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 self.bucket,
                 self.cluster.nodes_in_cluster,
                 req_clients=self.sdk_pool_capacity,
@@ -113,7 +112,6 @@ class OutOfOrderReturns(ClusterSetup):
             replicate_to=self.replicate_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool,
             batch_size=10,
             process_concurrency=1)
         self.task_manager.get_task_result(dgm_task_init)
@@ -126,14 +124,13 @@ class OutOfOrderReturns(ClusterSetup):
             replicate_to=self.replicate_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool,
             batch_size=10,
             process_concurrency=4,
             active_resident_threshold=self.active_resident_threshold)
         self.task_manager.get_task_result(dgm_task)
         self.num_items = dgm_task.doc_index
 
-        client = self.sdk_client_pool.get_client_for_bucket(
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(
             self.bucket, self.scope_name, self.collection_name)
 
         # Fetch evicted doc keys
@@ -206,7 +203,7 @@ class OutOfOrderReturns(ClusterSetup):
             self.key, 0, 2,
             target_vbucket=self.node_data[cluster_node][
                 "%s_vbs" % target_vb_type])
-        client = self.sdk_client_pool.get_client_for_bucket(
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(
             self.bucket, self.scope_name, self.collection_name)
 
         key_1, value_1 = doc_gen.next()
@@ -280,7 +277,7 @@ class OutOfOrderReturns(ClusterSetup):
         trans_obj = Transaction()
         supported_d_levels = self.bucket_util.get_supported_durability_levels()
 
-        self.client = self.sdk_client_pool.get_client_for_bucket(
+        self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
             self.bucket, self.scope_name, self.collection_name)
 
         trans_options = SDKClient.get_transaction_options(
@@ -297,8 +294,7 @@ class OutOfOrderReturns(ClusterSetup):
                 DocLoading.Bucket.DocOps.CREATE,
                 timeout_secs=self.sdk_timeout,
                 process_concurrency=8,
-                batch_size=100,
-                sdk_client_pool=self.sdk_client_pool)
+                batch_size=100)
             self.task_manager.get_task_result(task)
         if transx_op != DocLoading.Bucket.DocOps.CREATE:
             t_doc_gen = self.trans_doc_gen(half_of_num_items, self.num_items,
@@ -324,8 +320,7 @@ class OutOfOrderReturns(ClusterSetup):
             durability=durability,
             timeout_secs=self.sdk_timeout,
             process_concurrency=1,
-            batch_size=1,
-            sdk_client_pool=self.sdk_client_pool)
+            batch_size=1)
         trans_thread.start()
         trans_thread.join()
         self.task_manager.get_task_result(crud_task)
@@ -336,7 +331,7 @@ class OutOfOrderReturns(ClusterSetup):
 
     def test_parallel_transactions(self):
         trans_obj = Transaction()
-        self.client = self.sdk_client_pool.get_client_for_bucket(
+        self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
             self.bucket, self.scope_name, self.collection_name)
         # Create transaction options
         trans_options = SDKClient.get_transaction_options(

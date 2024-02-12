@@ -211,7 +211,7 @@ class ServiceRebalanceTests(RebalanceBaseTest):
         }'
 
         # Open SDK for connection for running n1ql queries
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+        client = SDKClient(self.cluster, self.cluster.buckets[0])
 
         for bucket in self.cluster.buckets[:4]:
             self.log.info("Creating GSI indexes %d::%d for %s"
@@ -301,4 +301,3 @@ class ServiceRebalanceTests(RebalanceBaseTest):
                 num_nodes_run += 1
                 if num_nodes_run >= self.num_nodes_to_run:
                     break
-

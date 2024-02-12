@@ -22,8 +22,7 @@ class basic_ops(ClusterSetup):
         self.sleep(10, "Wait for bucket to become ready for ops")
 
         self.def_bucket = self.bucket_util.get_all_buckets(self.cluster)
-        self.client = SDKClient(RestConnection(self.cluster.master),
-                                self.def_bucket[0])
+        self.client = SDKClient(self.cluster, self.def_bucket[0])
         self.__durability_level()
 
         self.operation = self.input.param("operation", "afterAtrPending")

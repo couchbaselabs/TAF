@@ -102,10 +102,10 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         if not buckets:
             buckets = self.cluster.buckets
         CollectionBase.create_sdk_clients(
+            self.cluster,
             self.task_manager.number_of_threads,
             self.cluster.master,
             buckets,
-            self.sdk_client_pool,
             self.sdk_compression)
 
     def test_cluster_scaling(self):
@@ -413,7 +413,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         def verify_data_load(load_task):
             self.task.jython_task_manager.get_task_result(load_task)
-            self.bucket_util.validate_doc_loading_results(load_task)
+            self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                          load_task)
             if load_task.result is False:
                 raise Exception("doc load/verification failed")
 
@@ -456,10 +457,10 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
 
         if enable_data_load:
             CollectionBase.create_sdk_clients(
+                self.cluster,
                 self.task_manager.number_of_threads,
                 self.cluster.master,
                 buckets,
-                self.sdk_client_pool,
                 self.sdk_compression)
             if async_load:
                 task = data_load()
@@ -544,13 +545,12 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
         self.create_bucket(self.cluster)
 
         bucket = self.cluster.buckets[0]
-        self.sdk_client_pool.create_clients(
+        self.cluster.sdk_client_pool.create_clients(
             bucket=bucket, servers=bucket.servers, req_clients=1)
 
         doc_gen = doc_generator(self.key, 0, self.num_items)
         loading_task = self.task.async_continuous_doc_ops(
-            self.cluster, bucket, doc_gen,
-            sdk_client_pool=self.sdk_client_pool)
+            self.cluster, bucket, doc_gen)
         for i in range(1, num_itr+1):
             self.log.info("Iteration :: %s" % i)
 
@@ -656,7 +656,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             if async_load:
                 return task
             self.task.jython_task_manager.get_task_result(task)
-            self.bucket_util.validate_doc_loading_results(task)
+            self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                          task)
             if task.result is False:
                 raise Exception("doc load/verification failed")
         second_rebalance = self.input.param("second_rebalance", True)
@@ -783,7 +784,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
                                                      self.cluster.buckets,
                                                      timeout=1200)
         self.task.jython_task_manager.get_task_result(data_load_task)
-        self.bucket_util.validate_doc_loading_results(data_load_task)
+        self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                      data_load_task)
         if expect_data_fail is False and data_load_task.result is False:
             self.log_failure("Doc CRUDs failed")
         self.assertTrue(rest.is_cluster_balanced(), "Cluster not balanced!")
@@ -954,7 +956,8 @@ class TenantManagementOnPrem(ServerlessOnPremBaseTest):
             self.assertFalse(isinstance(cont, bool),
                              "bucket not expected to be created")
             self.task_manager.get_task_result(async_load_task)
-            self.bucket_util.validate_doc_loading_results(async_load_task)
+            self.bucket_util.validate_doc_loading_results(self.cluster,
+                                                          async_load_task)
             if async_load_task.result is False:
                 self.log_failure("Doc CRUDs failed")
 

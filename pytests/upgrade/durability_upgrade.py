@@ -5,7 +5,6 @@ from threading import Thread
 import testconstants
 from BucketLib.bucket import Bucket, Collection, Scope
 from cb_constants import DocLoading, CbServer
-from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams, MetaConstants
 from couchbase_helper.documentgenerator import doc_generator
@@ -20,6 +19,7 @@ from upgrade.upgrade_base import UpgradeBase
 from bucket_collections.collections_base import CollectionBase
 from BucketLib.BucketOperations import BucketHelper
 from gsiLib.gsiHelper import GsiHelper
+
 
 class UpgradeTests(UpgradeBase):
     def setUp(self):
@@ -71,18 +71,18 @@ class UpgradeTests(UpgradeBase):
 
     def __play_with_collection(self):
         # MB-44092 - Collection load not working with pre-existing connections
-        DocLoaderUtils.sdk_client_pool = SDKClientPool()
+        self.cluster.sdk_client_pool = SDKClientPool()
         self.log.info("Creating required SDK clients for client_pool")
         clients_per_bucket = \
             int(self.thread_to_use / len(self.cluster.buckets))
         for bucket in self.cluster.buckets:
-            DocLoaderUtils.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket, [self.cluster.master], clients_per_bucket,
                 compression_settings=self.sdk_compression)
 
         # Client based scope/collection crud tests
-        client = \
-            DocLoaderUtils.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client = self.cluster.sdk_client_pool.get_client_for_bucket(
+            self.bucket)
         scope_name = self.bucket_util.get_random_name(
             max_length=CbServer.max_scope_name_len)
         collection_name = self.bucket_util.get_random_name(
@@ -99,7 +99,7 @@ class UpgradeTests(UpgradeBase):
         # Drop created scope using SDK client
         client.drop_scope(scope_name)
         # Release the acquired client
-        DocLoaderUtils.sdk_client_pool.release_client(client)
+        self.cluster.sdk_client_pool.release_client(client)
 
         # Create scopes/collections phase
         collection_load_spec = \
@@ -155,7 +155,7 @@ class UpgradeTests(UpgradeBase):
             if not self.upgrade_with_data_load and self.upgrade_type == "offline":
                 self.__wait_for_persistence_and_validate()
 
-        DocLoaderUtils.sdk_client_pool.shutdown()
+        self.cluster.sdk_client_pool.shutdown()
 
     def verify_custom_path_post_upgrade(self):
         rebalance_out_node = None
@@ -226,7 +226,9 @@ class UpgradeTests(UpgradeBase):
 
                 if self.include_indexing_query:
                     self.indexes = set()
-                    sdk_client = SDKClient([self.cluster.index_nodes[0]], None)
+                    sdk_client = SDKClient(
+                        self.cluster, None,
+                        servers=[self.cluster.index_nodes[0]])
                     query = 'SELECT name FROM system:indexes;'
                     result = sdk_client.cluster.query(query).rowsAsObject()
                     for idx in result:
@@ -720,8 +722,7 @@ class UpgradeTests(UpgradeBase):
                 self.cluster, self.bucket, self.gen_load,
                 op_type=DocLoading.Bucket.DocOps.UPDATE,
                 process_concurrency=1,
-                persist_to=1,
-                replicate_to=1,
+                persist_to=1, replicate_to=1,
                 timeout_secs=30)
 
         self.log.info("Upgrading cluster nodes to target version")
@@ -754,7 +755,6 @@ class UpgradeTests(UpgradeBase):
                     DocLoading.Bucket.DocOps.CREATE,
                     timeout_secs=self.sdk_timeout,
                     process_concurrency=4,
-                    sdk_client_pool=self.sdk_client_pool,
                     skip_read_on_error=True,
                     suppress_error_table=True)
             self.task_manager.get_task_result(sync_write_task)
@@ -817,7 +817,7 @@ class UpgradeTests(UpgradeBase):
 
         # Perform bucket_durability update
         key, value = doc_generator("b_durability_doc", 0, 1).next()
-        client = SDKClient([self.cluster.master], self.cluster.buckets[0])
+        client = SDKClient(self.cluster, self.cluster.buckets[0])
         for index, b_level in enumerate(possible_d_levels[self.bucket_type]):
             self.log.info("Updating bucket_durability=%s" % b_level)
             self.bucket_util.update_bucket_property(
@@ -955,8 +955,7 @@ class UpgradeTests(UpgradeBase):
         update_tasks.append(self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_load,
             op_type=DocLoading.Bucket.DocOps.UPDATE,
-            persist_to=1,
-            replicate_to=1,
+            persist_to=1, replicate_to=1,
             process_concurrency=1,
             batch_size=10,
             timeout_secs=30))
@@ -1124,10 +1123,10 @@ class UpgradeTests(UpgradeBase):
             gen_create, DocLoading.Bucket.DocOps.CREATE, exp=0,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            sdk_client_pool=self.sdk_client_pool,
             process_concurrency=4,
             skip_read_on_error=True,
             suppress_error_table=True)
+        self.task_manager.get_task_result(task)
 
     def update_item_count_after_loading_large_docs(self):
         self.sleep(30, "Wait for items to get reflected")
@@ -1438,12 +1437,12 @@ class UpgradeTests(UpgradeBase):
             if bucket.name == "new-bucket":
                 new_bucket = bucket
 
-        self.sdk_client_pool.shutdown()
-        DocLoaderUtils.sdk_client_pool = SDKClientPool()
+        self.cluster.sdk_client_pool.shutdown()
+        self.cluster.sdk_client_pool = SDKClientPool()
         self.log.info("Creating required SDK clients for the new bucket")
         clients_per_bucket = int(self.thread_to_use / len(self.cluster.buckets))
         for bucket in self.cluster.buckets:
-            DocLoaderUtils.sdk_client_pool.create_clients(
+            self.cluster.sdk_client_pool.create_clients(
                 bucket, [self.cluster.master], clients_per_bucket,
                 compression_settings=self.sdk_compression)
 
@@ -1987,7 +1986,8 @@ class UpgradeTests(UpgradeBase):
         self.indexer_rest = GsiHelper(self.cluster.index_nodes[0], self.log)
 
         self.log.info("Validating index count")
-        sdk_client = SDKClient([self.cluster.index_nodes[0]], None)
+        sdk_client = SDKClient(self.cluster, None,
+                               servers=[self.cluster.index_nodes[0]])
         query = 'SELECT name FROM system:indexes;'
         result = sdk_client.cluster.query(query).rowsAsObject()
         idx_count = 0
@@ -2041,8 +2041,9 @@ class UpgradeTests(UpgradeBase):
                                         "myscope", {"name": "mycoll"})
 
         def insert_docs(server, bucket, num_docs, key_prefix):
-            sdk_client_for_load = SDKClient([server], bucket,
-                                        scope="myscope", collection="mycoll")
+            sdk_client_for_load = SDKClient(
+                self.cluster, bucket, servers=[server],
+                scope="myscope", collection="mycoll")
             hair = ['Burgundy', 'English vermillion', 'Battleship grey', 'Blizzard blue']
             local_item_count = 0
             for j in range(num_docs):
@@ -2130,7 +2131,8 @@ class UpgradeTests(UpgradeBase):
         self.log.info("Setting indexer params")
         if self.redistribute_indexes:
             rest.set_indexer_params(redistributeIndexes='true')
-        sdk_client = SDKClient([index_query_node], None)
+        sdk_client = SDKClient(self.cluster, None,
+                               servers=[index_query_node])
         self.create_primary_indexes()
         if self.create_partitioned_indexes:
             self.create_primary_partitioned_indexes()

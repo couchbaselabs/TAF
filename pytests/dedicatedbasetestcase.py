@@ -230,8 +230,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                 table.display("Cluster: {}".format(cluster.id))
 
         self.shutdown_task_manager()
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
+        if self.cluster.sdk_client_pool:
+            self.cluster.sdk_client_pool.shutdown()
 
         if self.skip_teardown_cleanup:
             return

@@ -321,7 +321,7 @@ class CBASDatasetsAndCollections(CBASBaseTest):
             if verify:
                 # Validate data loaded in parallel
                 DocLoaderUtils.validate_doc_loading_results(
-                    self.data_load_task)
+                    self.cluster, self.data_load_task)
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets)
                 self.bucket_util.validate_docs_per_collections_all_buckets(
