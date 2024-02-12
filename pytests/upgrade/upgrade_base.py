@@ -660,11 +660,9 @@ class UpgradeBase(BaseTestCase):
 
         # Update master node
         self.cluster.master = self.spare_node
-        self.cluster.nodes_in_cluster.append(self.spare_node)
 
         # Update spare node to rebalanced_out node
         self.spare_node = node_to_upgrade
-        self.cluster.nodes_in_cluster.remove(node_to_upgrade)
 
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
