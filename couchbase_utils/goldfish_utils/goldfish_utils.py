@@ -253,7 +253,11 @@ class GoldfishUtils:
             self, pod, user, cluster, timeout=3600):
         end_time = time.time() + timeout
         while time.time() < end_time:
-            state = self.get_cluster_info(pod, user, cluster)["state"]
+            resp = self.get_cluster_info(pod, user, cluster)
+            if not resp:
+                state = None
+                continue
+            state = resp["state"]
             if state == "deploying":
                 self.log.info("Cluster is still deploying. Waiting for 10s.")
                 time.sleep(10)

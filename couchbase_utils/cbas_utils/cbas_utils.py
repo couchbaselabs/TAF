@@ -1328,26 +1328,11 @@ class Link_Util(Dataverse_Util):
         if not with_force:
             cmd_connect_link += " with {'force':false}"
 
-        retry_attempt = 5
-        connect_link_failed = True
-        while connect_link_failed and retry_attempt > 0:
-            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                cluster, cmd_connect_link, username=username,
-                password=password, timeout=timeout,
-                analytics_timeout=analytics_timeout)
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd_connect_link, username=username,
+            password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
 
-            if errors:
-                # Below errors are to be fixed in Alice, until they are fixed retry is only option
-                actual_error = errors[0]["msg"]
-                if "Failover response The vbucket belongs to another server" in actual_error or "Bucket configuration doesn't contain a vbucket map" in actual_error:
-                    retry_attempt -= 1
-                    self.log.debug("Retrying connecting of bucket")
-                    sleep(10)
-                else:
-                    self.log.debug("Not a vbucket error, so don't retry")
-                    connect_link_failed = False
-            else:
-                connect_link_failed = False
         if validate_error_msg:
             return self.validate_error_in_response(
                 status, errors, expected_error, expected_error_code)
