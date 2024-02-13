@@ -1,7 +1,7 @@
 '''
-Created on 3-January-2024
+Created on 10-Dec-2020
 
-@author: abhay.aggrawal@couchbase.com
+@author: couchbase
 '''
 spec = {
     # Accepted values are > 0

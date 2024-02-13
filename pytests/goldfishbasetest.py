@@ -252,6 +252,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     cluster.cluster_id))
 
         def delete_project(user, results):
+            if "cloud.couchbase.com" in self.pod.url_public:
+                return
             result = self.goldfish_utils.delete_project(
                 self.pod, user, user.project)
             if not result:

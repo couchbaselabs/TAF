@@ -18,7 +18,7 @@ def perform_S3_operation(**kwargs):
     """
     aws_util_file_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__), "S3.py"))
-    arguements = ["python", aws_util_file_path, kwargs.get("aws_access_key"),
+    arguements = ["python3", aws_util_file_path, kwargs.get("aws_access_key"),
                   kwargs.get("aws_secret_key"), kwargs.get("aws_session_token", "")]
 
     if kwargs.get("get_regions", False):
@@ -66,6 +66,7 @@ def perform_S3_operation(**kwargs):
     response = subprocess.Popen(arguements, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, error = response.communicate()
+
     if error and "import sitecustomize" not in str(error):
         raise Exception(str(error))
     else:
