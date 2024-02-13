@@ -507,16 +507,34 @@ class ClusterUtils:
         return status
 
     def cluster_cleanup(self, cluster, bucket_util):
-        rest = RestConnection(cluster.master)
-        if rest._rebalance_progress_status() == 'running':
-            self.kill_memcached(cluster)
-            self.log.warning("Rebalance still running, "
-                             "test should be verified")
-            stopped = rest.stop_rebalance()
-            if not stopped:
-                raise Exception("Unable to stop rebalance")
-        bucket_util.delete_all_buckets(cluster)
-        self.cleanup_cluster(cluster, master=cluster.master)
+        for server in cluster.servers:
+            rest = RestConnection(server)
+            terse_info = json.loads(rest.get_terse_cluster_info()[1])
+            if terse_info == "unknown pool":
+                # Possibly there is no cluster under this server to cleanup
+                continue
+
+            self.log.info("Cleaning up node %s" % server.ip)
+            if rest._rebalance_progress_status() == 'running':
+                self.kill_memcached(cluster)
+                self.log.warning("Rebalance still running, "
+                                 "test should be verified")
+                stopped = rest.stop_rebalance()
+                if not stopped:
+                    raise Exception("Unable to stop rebalance")
+
+            buckets = bucket_util.get_all_buckets(cluster, cluster_node=server)
+            for bucket in buckets:
+                self.log.info("Remove bucket %s" % bucket.name)
+                try:
+                    status = bucket_util.delete_bucket(cluster, bucket)
+                except Exception as e:
+                    self.log.error(e)
+                    raise e
+                if not status:
+                    raise Exception("Failed to delete bucket %s" % bucket.name)
+
+            self.cleanup_cluster(cluster, master=server)
         self.wait_for_ns_servers_or_assert(cluster.servers)
 
     # wait_if_warmup=True is useful in tearDown method for (auto)failover tests
