@@ -5,7 +5,6 @@ from bucket_collections.collections_base import CollectionBase
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 
 
 class CollectionsTTL(CollectionBase):
@@ -116,22 +115,36 @@ class CollectionsTTL(CollectionBase):
             self.fail("collections_ttl is not working as expected. Num docs : {0}".format(items))
 
     def test_collections_ttl_greater_than_bucket_ttl(self):
+        col_ttl = self.bucket.scopes["scope1"].collections[
+            "collection_2"].maxTTL
+        self.log.info("Loading docs into collection")
         self.task.load_gen_docs(
-            self.cluster, self.bucket, self.load_gen, "create", exp=self.maxttl,
-            batch_size=10, process_concurrency=8,
+            self.cluster, self.bucket, self.load_gen, "create",
+            exp=self.maxttl, batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            scope="scope1",
-            collection="collection_2")
+            scope="scope1", collection="collection_2")
+        self.sleep(self.bucket.maxTTL + 10,
+                   "Sleep more than bucket ttl of '{}'"
+                   .format(self.bucket.maxTTL))
         self.bucket_util._expiry_pager(self.cluster)
-        # Validate the bucket doc count is '0' after drop collection
-        val_status, items = self.wait_time_validation_of_docs_ttl(200, num_docs=self.num_items)
-        if not val_status:
-            self.fail("bucket_ttl value was considered instead of the collection_ttl. Num docs : {0}".format(items))
-        val_status, items = self.wait_time_validation_of_docs_ttl(400, num_docs=self.remaining_docs)
-        if not val_status:
-            self.fail("bucket_ttl value was considered instead of the collection_ttl. Num docs : {0}".format(items))
+        self.sleep(40, "Wait for item_pager to run")
+        item_count = self.bucket_helper_obj.get_active_key_count(
+            self.bucket.name)
+        self.assertEqual(int(item_count), self.num_items,
+                         "Docs considered BucketTTL. Expected: {}, Actual: {}"
+                         .format(self.num_items, item_count))
+        self.sleep(col_ttl-self.bucket.maxTTL+30,
+                   "Sleep more than collection ttl of '{}'".format(col_ttl))
+        self.bucket_util._expiry_pager(self.cluster)
+        self.sleep(40, "Wait for item_pager to run")
+        item_count = self.bucket_helper_obj.get_active_key_count(
+            self.bucket.name)
+        self.assertEqual(int(item_count), self.remaining_docs,
+                         "Items exists even after collection's maxTTL. "
+                         "Expected: {}, Actual: {}"
+                         .format(self.remaining_docs, item_count))
 
     def test_collections_ttl_lesser_than_doc_expiry(self):
         wait_time = 120
