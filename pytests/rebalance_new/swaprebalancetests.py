@@ -447,19 +447,20 @@ class SwapRebalanceBase(RebalanceBaseTest):
                         msg="rebalance operation failed after adding node {0}"
                         .format(opt_nodes_ids))
 
+        ejected_ips = [eject_node.ip for eject_node in to_eject_nodes]
         self.cluster.nodes_in_cluster = \
             [node for node in self.cluster.nodes_in_cluster
-             if node not in to_eject_nodes]
+             if node.ip not in ejected_ips]
 
         # Make rest connection with node part of cluster
         self.rest = RestConnection(self.cluster.nodes_in_cluster[0])
         self.cluster.master = self.cluster.nodes_in_cluster[0]
 
+        msg = "Unable to add node %s to the cluster"
         for server in to_eject_nodes:
             otp_node = self.rest.add_node(self.creds.rest_username,
                                           self.creds.rest_password,
                                           server.ip, server.port)
-            msg = "Unable to add node %s to the cluster"
             self.assertTrue(otp_node, msg % server.ip)
 
         self.rest.rebalance(
