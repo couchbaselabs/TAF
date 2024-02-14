@@ -768,11 +768,12 @@ class RestConnection(newRC):
             raise Exception("regenerateCertificate API failed")
 
     def __remote_clusters(self, api, op, remoteIp, remotePort, username, password, name, demandEncryption=0,
-                          certificate=''):
+                          certificate='', secureType='none'):
         param_map = {'hostname': "{0}:{1}".format(remoteIp, remotePort),
                      'username': username,
                      'password': password,
-                     'name': name}
+                     'name': name,
+                     'secureType': secureType}
         if demandEncryption:
             param_map['demandEncryption'] = 'on'
             param_map['certificate'] = certificate
@@ -788,7 +789,7 @@ class RestConnection(newRC):
             raise Exception("remoteCluster API '{0} remote cluster' failed".format(op))
         return remoteCluster
 
-    def add_remote_cluster(self, remoteIp, remotePort, username, password, name, demandEncryption=0, certificate=''):
+    def add_remote_cluster(self, remoteIp, remotePort, username, password, name, demandEncryption=0, certificate='', secureType='none'):
         # example : password:password username:Administrator hostname:127.0.0.1:9002 name:two
         msg = "Adding remote cluster hostname:{0}:{1} with username:password {2}:{3} name:{4} to source node: {5}:{6}"
         self.test_log.debug(msg.format(remoteIp, remotePort,
@@ -796,7 +797,7 @@ class RestConnection(newRC):
                                        name, self.ip, self.port))
         api = self.baseUrl + 'pools/default/remoteClusters'
         return self.__remote_clusters(api, 'add', remoteIp, remotePort, username, password, name, demandEncryption,
-                                      certificate)
+                                      certificate, secureType)
 
     def modify_remote_cluster(self, remoteIp, remotePort, username, password, name, demandEncryption=0, certificate=''):
         self.test_log.debug("Modifying remote cluster name:{0}".format(name))
