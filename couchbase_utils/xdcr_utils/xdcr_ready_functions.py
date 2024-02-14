@@ -1,4 +1,6 @@
+import os
 import re
+import shutil
 
 from common_lib import sleep
 from global_vars import logger
@@ -177,17 +179,18 @@ class GO_XDCR_AUDIT_EVENT_ID:
 
 class XDCRUtils:
 
-    def __init__(self, cb_clusters, task, taskmgr):
+    def __init__(self, cb_clusters, task, taskmgr, init_create_buckets=True):
         self.__cb_clusters = cb_clusters
         self.task = task
         self.task_manager = taskmgr
         for cluster in self.__cb_clusters:
-            cluster.cluster_util = ClusterUtils(cluster, self.task_manager)
+            cluster.cluster_util = ClusterUtils(self.task_manager)
             cluster.bucket_util = BucketUtils(cluster.cluster_util, self.task)
         self.input = TestInputSingleton.input
-        self.init_parameters()
-        self.create_buckets()
         self.log = logger.get("test")
+        if init_create_buckets:
+            self.init_parameters()
+            self.create_buckets()
 
     def __is_test_failed(self):
         return (hasattr(self, '_resultForDoCleanups')
@@ -705,6 +708,22 @@ class XDCRUtils:
             for exp in filter_exp:
                 dest_count += self._get_doc_count(dest_master, bucket, exp)
         return dest_count
+
+    def copy_cert_to_slave(self, remoteServer, remotePath, localPath):
+
+        self.log.info("Copying certificates from the remote cluster:{0} dir: {1}".format(
+            remoteServer.ip, remotePath))
+
+        shutil.rmtree(localPath, ignore_errors=True)
+        shell = RemoteMachineShellConnection(remoteServer)
+        shell.get_dir(remotePath, "", todir=localPath)
+
+    def get_cert_value(self, dir_name, cert_name):
+
+        file_path = os.path.join(dir_name, cert_name)
+        f = open(file_path, "r")
+        cert_val = f.read()
+        return cert_val
 
 class ValidateAuditEvent:
     @staticmethod

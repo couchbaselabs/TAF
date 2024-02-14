@@ -708,6 +708,7 @@ class RebalanceTask(Task):
                     self.log.debug("New rebalance status_id: %s"
                                    % server_task["statusId"])
             self.state = "running"
+            sleep(10, "Wait before fetching rebalance stats")
             self.check()
         except Exception as e:
             self.exception = e
