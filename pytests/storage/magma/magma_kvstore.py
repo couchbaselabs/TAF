@@ -1,6 +1,6 @@
 import threading
 
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException

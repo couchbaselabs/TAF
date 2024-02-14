@@ -17,7 +17,7 @@ from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException, AmbiguousTimeoutException
 import traceback
 from global_vars import logger
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 
 queries = ['select name from {} where age between 30 and 50 limit 10;',
            'select age, count(*) from {} where marital = "M" group by age order by age limit 10;',

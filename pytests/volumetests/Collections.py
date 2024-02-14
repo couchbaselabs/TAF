@@ -9,7 +9,7 @@ from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main

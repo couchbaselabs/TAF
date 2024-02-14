@@ -7,8 +7,8 @@ from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 
 from SecurityLib.rbac import RbacUtil
-from Cb_constants import constants, CbServer, DocLoading
 from basetestcase import ClusterSetup
+from cb_constants import constants, CbServer, DocLoading
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from cb_tools.mc_stat import McStat

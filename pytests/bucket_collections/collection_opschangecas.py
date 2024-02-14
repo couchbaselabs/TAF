@@ -1,8 +1,8 @@
 from threading import Thread
 
-from Cb_constants import DocLoading, CbServer
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
+from cb_constants import DocLoading, CbServer
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException

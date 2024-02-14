@@ -6,7 +6,7 @@ from time import time
 from BucketLib.bucket import Bucket
 from custom_exceptions.exception import FailoverFailedException
 from sdk_client3 import SDKClient
-from Cb_constants import CbServer, DocLoading
+from cb_constants import CbServer, DocLoading
 from Jython_tasks.task import ConcurrentFailoverTask
 from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.tuq_helper import N1QLHelper

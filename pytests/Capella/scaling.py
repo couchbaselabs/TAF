@@ -4,7 +4,7 @@ Created on Apr 20, 2022
 @author: ritesh.agarwal
 '''
 from Capella.capella_base import CapellaBase
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 # from TestInput import TestInputServer
 # from capella_utils.capella_utils import CapellaUtils as CapellaAPI
 

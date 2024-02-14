@@ -7,9 +7,9 @@ import copy
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
-from Cb_constants.CBServer import CbServer
 from basetestcase import BaseTestCase
+from cb_constants import DocLoading
+from cb_constants.CBServer import CbServer
 from couchbase_helper.documentgenerator import doc_generator, SubdocDocumentGenerator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection

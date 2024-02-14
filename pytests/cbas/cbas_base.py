@@ -7,7 +7,7 @@ from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
 from cluster_utils.cluster_ready_functions import CBCluster
 from membase.api.rest_client import RestConnection
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from cbas_utils.cbas_utils import CbasUtil
 from java.lang import Exception as Java_base_exception
 from bucket_collections.collections_base import CollectionBase

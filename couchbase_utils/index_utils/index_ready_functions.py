@@ -3,7 +3,7 @@ Created on 07-May-2021
 
 @author: riteshagarwal
 '''
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from global_vars import logger
 import time
 from membase.api.rest_client import RestConnection

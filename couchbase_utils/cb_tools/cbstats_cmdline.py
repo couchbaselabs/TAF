@@ -2,7 +2,7 @@ import re
 import zlib
 import json
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from cb_tools.cb_tools_base import CbCmdBase
 from remote.remote_util import RemoteMachineShellConnection
 

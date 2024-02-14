@@ -12,7 +12,7 @@ import os
 from datetime import datetime,timedelta
 from threading import Lock
 
-from Cb_constants import constants, CbServer, ClusterRun
+from cb_constants import constants, CbServer, ClusterRun
 from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
 from TestInput import TestInputSingleton, TestInputServer
 from cb_tools.cb_collectinfo import CbCollectInfo

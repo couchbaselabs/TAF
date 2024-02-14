@@ -1,7 +1,7 @@
 from EventingLib.EventingOperations_Rest import EventingHelper
 from pytests.cgroup_limits.cgroup_base import CGroupBase
 from membase.api.rest_client import RestConnection
-from Cb_constants import CbServer
+from cb_constants import CbServer
 
 
 class EventingCgroup(CGroupBase):

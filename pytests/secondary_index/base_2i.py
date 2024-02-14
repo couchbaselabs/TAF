@@ -1,7 +1,7 @@
 import random
 import time
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from gsiLib.gsiHelper import GsiHelper
 from newtuq import QueryTests
 from couchbase_helper.tuq_generators import TuqGenerators

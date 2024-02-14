@@ -3,7 +3,7 @@ from copy import deepcopy
 from ruamel.yaml import YAML
 
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
 from backup_lib.backup import BackupHelper
 from basetestcase import BaseTestCase

@@ -1,5 +1,5 @@
 from BucketLib.bucket import TravelSample
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from platform_utils.remote.remote_util import RemoteMachineShellConnection

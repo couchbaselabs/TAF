@@ -12,7 +12,7 @@ from threading import Thread
 import threading
 import time
 
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
 from aGoodDoctor.serverlessfts import ftsQueries, ftsIndex, HotelQueries, \

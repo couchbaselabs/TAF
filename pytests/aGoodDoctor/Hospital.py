@@ -5,7 +5,7 @@ Created on 15-Apr-2021
 '''
 from basetestcase import BaseTestCase
 from remote.remote_util import RemoteMachineShellConnection
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from membase.api.rest_client import RestConnection
 from aGoodDoctor.cbas import DoctorCBAS
 from aGoodDoctor.n1ql import DoctorN1QL

@@ -29,7 +29,7 @@ import os
 import random
 import time
 
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
 from com.couchbase.client.core.error import DocumentUnretrievableException
 from com.couchbase.client.java.kv import GetAnyReplicaOptions

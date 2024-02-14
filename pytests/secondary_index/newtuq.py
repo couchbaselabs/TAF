@@ -1,7 +1,7 @@
 import copy
 import json
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from gsiLib.gsiHelper import GsiHelper
 from couchbase_helper.tuq_generators import TuqGenerators
 from couchbase_helper.tuq_generators import JsonGenerator

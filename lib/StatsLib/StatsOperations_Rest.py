@@ -3,7 +3,7 @@ import urllib
 import re
 import base64
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
 from membase.api.rest_client import RestConnection as RestClientConnection
 from platform_constants.os_constants import Windows

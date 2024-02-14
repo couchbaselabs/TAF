@@ -1,5 +1,5 @@
-from Cb_constants import CbServer
 from basetestcase import ClusterSetup
+from cb_constants import CbServer
 from membase.api.rest_client import RestConnection
 
 

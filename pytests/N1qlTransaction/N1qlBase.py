@@ -5,7 +5,7 @@ import random
 import string
 from threading import Thread
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
 from couchbase_helper.random_query_template import WhereClause

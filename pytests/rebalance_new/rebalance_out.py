@@ -1,6 +1,6 @@
 import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from rebalance_base import RebalanceBaseTest

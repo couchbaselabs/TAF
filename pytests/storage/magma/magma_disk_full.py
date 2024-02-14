@@ -8,7 +8,7 @@ import os
 import threading
 import time
 
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper

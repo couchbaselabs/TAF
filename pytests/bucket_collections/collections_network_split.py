@@ -3,7 +3,7 @@ import math
 from bucket_collections.collections_base import CollectionBase
 
 from BucketLib.BucketOperations_Rest import BucketHelper
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 
 from couchbase_utils.cluster_utils.cluster_ready_functions import CBCluster

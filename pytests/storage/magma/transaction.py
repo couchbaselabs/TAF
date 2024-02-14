@@ -1,6 +1,6 @@
 import time
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from sdk_client3 import SDKClient
 from storage.magma.magma_base import MagmaBaseTest
 from Jython_tasks.task import TimerTask

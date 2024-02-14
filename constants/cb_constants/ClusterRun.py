@@ -1,4 +1,4 @@
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 
 
 class ClusterRun(CbServer):

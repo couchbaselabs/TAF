@@ -17,7 +17,7 @@ from com.couchbase.client.core.error import RequestCanceledException,\
     UnambiguousTimeoutException, TimeoutException, DatasetExistsException,\
     IndexExistsException
 from global_vars import logger
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from hostedN1QL import execute_statement_on_n1ql
 import itertools
 

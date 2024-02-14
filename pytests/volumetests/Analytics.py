@@ -20,7 +20,7 @@ Remote cluster -
 from math import ceil
 import random
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from membase.api.rest_client import RestConnection

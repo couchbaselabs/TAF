@@ -6,7 +6,7 @@ Created on 11-October-2021
 import random
 from cbas.cbas_base import CBASBaseTest
 from security_utils.security_utils import SecurityUtils
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from cbas_utils.cbas_utils import CBASRebalanceUtil, FlushToDiskTask
 import copy
 from rbac_utils.Rbac_ready_functions import RbacUtils

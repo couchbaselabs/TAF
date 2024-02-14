@@ -20,7 +20,7 @@ from com.couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from threading import Thread
 
 

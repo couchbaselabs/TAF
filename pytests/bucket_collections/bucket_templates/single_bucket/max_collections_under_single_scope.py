@@ -1,5 +1,5 @@
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaConstants
 
 spec = {

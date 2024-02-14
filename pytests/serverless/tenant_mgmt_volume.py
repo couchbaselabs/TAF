@@ -2,7 +2,7 @@ from random import choice, sample
 from threading import Thread
 
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from serverless.tenant_mgmt_on_cloud import TenantMgmtOnCloud
 

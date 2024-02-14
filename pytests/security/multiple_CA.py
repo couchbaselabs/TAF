@@ -1,6 +1,6 @@
 import json
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from membase.api.rest_client import RestConnection
 from pytests.basetestcase import ClusterSetup
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main, Validation

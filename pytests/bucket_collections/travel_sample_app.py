@@ -1,7 +1,6 @@
 from random import choice, sample
 from ruamel.yaml import YAML
 
-from Cb_constants import DocLoading
 from bucket_collections.app.app_basetest import AppBase
 from bucket_collections.app.constants import global_vars
 from bucket_collections.app.lib import query_util
@@ -10,6 +9,7 @@ from bucket_collections.app.scenarios.cluster import Cluster
 from bucket_collections.app.scenarios.guest import Guest
 from bucket_collections.app.scenarios.hotel import Hotel
 from bucket_collections.app.scenarios.user import User
+from cb_constants import DocLoading
 
 from com.couchbase.client.java.json import JsonObject
 

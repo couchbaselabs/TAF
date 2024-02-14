@@ -1,13 +1,12 @@
 import copy
 import threading
 import time
-
-from Cb_constants.CBServer import CbServer
 import json as Json
+
+from cb_constants.CBServer import CbServer
 from magma_basic_crud import BasicCrudTests
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-
 
 
 class BasicUpsertTests(BasicCrudTests):

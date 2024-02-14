@@ -1,8 +1,8 @@
 from copy import deepcopy
 
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
 from bucket_collections.collections_base import CollectionBase
+from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
@@ -11,6 +11,7 @@ from error_simulation.cb_error import CouchbaseError
 from error_simulation.disk_error import DiskError
 from remote.remote_util import RemoteMachineShellConnection
 from constants.sdk_constants.java_client import SDKConstants
+
 
 class CollectionsSuccessTests(CollectionBase):
     def setUp(self):

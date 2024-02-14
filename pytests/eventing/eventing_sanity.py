@@ -1,4 +1,4 @@
-from Cb_constants import CbServer, DocLoading
+from cb_constants import CbServer, DocLoading
 from eventing.eventing_constants import HANDLER_CODE
 from eventing.eventing_base import EventingBaseTest
 from membase.helper.cluster_helper import ClusterOperationHelper

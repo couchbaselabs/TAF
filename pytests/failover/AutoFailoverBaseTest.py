@@ -2,9 +2,9 @@
 import time
 
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading, CbServer
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import ClusterSetup
+from cb_constants import DocLoading, CbServer
 from cb_tools.cbstats import Cbstats
 from couchbase_cli import CouchbaseCLI
 from couchbase_helper.documentgenerator import doc_generator

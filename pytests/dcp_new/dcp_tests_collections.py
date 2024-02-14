@@ -3,7 +3,7 @@ from dcp_new.constants import *
 from memcacheConstants import *
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 import json
 from threading import Thread

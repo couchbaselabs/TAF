@@ -3,8 +3,8 @@ from random import sample
 
 import time
 
-from Cb_constants import CbServer
-from Cb_constants.DocLoading import Bucket as Bucket_Op
+from cb_constants import CbServer
+from cb_constants.DocLoading import Bucket as Bucket_Op
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_tools.cbstats import Cbstats

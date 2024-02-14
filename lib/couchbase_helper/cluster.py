@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import Jython_tasks.task as jython_tasks
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask,ContinuousRangeScan
 from Jython_tasks.task import CompareIndexKVData
 from capella_utils.dedicated import CapellaUtils

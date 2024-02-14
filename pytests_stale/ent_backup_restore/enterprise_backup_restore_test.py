@@ -4,7 +4,7 @@ import json
 from random import randrange, randint
 from threading import Thread
 
-from Cb_constants import constants
+from cb_constants import constants
 from couchbase_helper.cluster import Cluster
 from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.documentgenerator import BlobGenerator, DocumentGenerator

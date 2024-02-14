@@ -1,7 +1,7 @@
 import json
 from decimal import Decimal
 
-from Cb_constants import constants, CbServer, DocLoading
+from cb_constants import constants, CbServer, DocLoading
 from index_utils.index_ready_functions import IndexUtils
 from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException

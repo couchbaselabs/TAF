@@ -8,7 +8,7 @@ Number of datasets in <= 6.5.0 should not be more than 8.
 '''
 
 from math import ceil
-from Cb_constants import DocLoading, CbServer
+from cb_constants import DocLoading, CbServer
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
@@ -21,6 +21,7 @@ from BucketLib.BucketOperations import BucketHelper
 from security_utils.security_utils import SecurityUtils
 from security_config import trust_all_certs
 import random
+
 
 class UpgradeTests(UpgradeBase):
 

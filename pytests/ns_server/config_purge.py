@@ -2,7 +2,7 @@ import re
 from random import choice
 from time import time
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from FtsLib.FtsOperations import FtsHelper
 from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.tuq_helper import N1QLHelper

@@ -1,7 +1,7 @@
 import time
 
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from gsiLib.GsiHelper_Rest import GsiHelper
@@ -997,4 +997,3 @@ class PlasmaServerless(PlasmaBaseTest, ServerlessOnPremBaseTest):
                         self.assertTrue(
                             final_storage_stats[buck_ind + '_num_burst_visits'] > init_storage_stats[buck_ind + '_num_burst_visits'],
                             "Burst eviction has not occured")
-                        

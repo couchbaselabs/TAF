@@ -1,8 +1,9 @@
-from Cb_constants.CBServer import CbServer
-from couchbase_helper.documentgenerator import doc_generator
-from magma_base import MagmaBaseTest
 import time
 import math
+
+from cb_constants.CBServer import CbServer
+from couchbase_helper.documentgenerator import doc_generator
+from magma_base import MagmaBaseTest
 from BucketLib.BucketOperations import BucketHelper
 
 

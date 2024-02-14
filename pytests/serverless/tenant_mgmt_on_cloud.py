@@ -13,7 +13,7 @@ from cb_tools.cbstats import Cbstats
 from cluster_utils.cluster_ready_functions import Nebula
 from collections_helper.collections_spec_constants import MetaConstants
 from serverlessbasetestcase import OnCloudBaseTest
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
 
 from com.couchbase.test.docgen import DocumentGenerator

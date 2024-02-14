@@ -4,7 +4,6 @@ Created on 07-May-2021
 @author: riteshagarwal
 '''
 from FtsLib.FtsOperations import FtsHelper
-from Cb_constants.CBServer import CbServer
 from global_vars import logger
 from TestInput import TestInputSingleton
 from BucketLib.bucket import Bucket

@@ -1,7 +1,5 @@
 import logging
 
-from Cb_constants import CbServer
-
 from TestInput import TestInputServer
 
 log = logging.getLogger("x509")

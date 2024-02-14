@@ -2,7 +2,7 @@ import json
 import os
 from math import ceil
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from basetestcase import BaseTestCase
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils

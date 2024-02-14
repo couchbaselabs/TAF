@@ -5,7 +5,7 @@ import requests
 from copy import deepcopy
 from random import choice
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from Rest_Connection import RestConnection
 
 

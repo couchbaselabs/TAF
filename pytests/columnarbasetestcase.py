@@ -1,4 +1,4 @@
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils
 from capella_utils.common_utils import Pod, Tenant

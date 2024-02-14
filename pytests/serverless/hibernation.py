@@ -8,7 +8,7 @@ from Jython_tasks.task import ConcurrentFailoverTask
 from BucketLib.bucket import TravelSample, Bucket
 from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
-from Cb_constants import CbServer
+from cb_constants import CbServer
 
 import json
 import time
@@ -523,4 +523,3 @@ class Hibernation(ServerlessOnPremBaseTest):
                               file_data=aws_cred_file)
             shell.create_file(remote_path='{0}/config'.format(COUCHBASE_AWS_HOME),
                               file_data=aws_conf_file)
-

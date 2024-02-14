@@ -4,7 +4,7 @@ import datetime
 from threading import Thread, Event
 
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import DocLoading, CbServer
+from cb_constants import DocLoading, CbServer
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.documentgenerator import doc_generator

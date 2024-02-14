@@ -1,5 +1,5 @@
-from Cb_constants import CbServer, DocLoading
 from base_2i import BaseSecondaryIndexingTests
+from cb_constants import CbServer, DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper

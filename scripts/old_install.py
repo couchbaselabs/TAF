@@ -18,7 +18,7 @@ sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
 
 import TestInput
 import logging.config
-from Cb_constants import CbServer
+from cb_constants import CbServer
 
 from builds.build_query import BuildQuery
 from custom_exceptions.exception import ServerUnavailableException

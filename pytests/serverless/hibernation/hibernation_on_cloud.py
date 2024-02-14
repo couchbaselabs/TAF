@@ -1,5 +1,5 @@
 from BucketLib.bucket import Bucket
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from Jython_tasks.task import CloudHibernationTask
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from collections_helper.collections_spec_constants import MetaConstants

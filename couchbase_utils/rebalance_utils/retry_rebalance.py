@@ -1,5 +1,5 @@
 import json
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from global_vars import logger
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection

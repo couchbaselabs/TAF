@@ -13,7 +13,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 import os
 from memcached.helper.data_helper import MemcachedClientHelper
 from cb_tools.cbstats import Cbstats

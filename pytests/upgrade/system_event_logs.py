@@ -1,7 +1,7 @@
 from datetime import datetime
 from random import choice
 
-from Cb_constants import DocLoading, CbServer
+from cb_constants import DocLoading, CbServer
 from SystemEventLogLib.Events import Event
 from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from SystemEventLogLib.data_service_events import DataServiceEvents

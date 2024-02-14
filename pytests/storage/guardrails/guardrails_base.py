@@ -1,6 +1,6 @@
 import math
 
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.tuq_helper import N1QLHelper
 from membase.api.rest_client import RestConnection

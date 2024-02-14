@@ -26,7 +26,7 @@ from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
 from custom_exceptions.exception import RebalanceFailedException
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 
 
 class OPD:

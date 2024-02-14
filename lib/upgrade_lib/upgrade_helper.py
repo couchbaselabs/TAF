@@ -1,7 +1,7 @@
 import re
 
-from Cb_constants import CbServer
 from builds.build_query import BuildQuery
+from cb_constants import CbServer
 from membase.api.rest_client import RestConnection
 from scripts.old_install import InstallerJob
 from upgrade_lib.couchbase import features

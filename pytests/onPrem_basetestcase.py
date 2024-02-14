@@ -9,8 +9,8 @@ from ruamel.yaml import YAML
 
 import global_vars
 from BucketLib.bucket import Bucket
-from Cb_constants import ClusterRun, CbServer
-import Cb_constants
+from cb_constants import ClusterRun, CbServer
+import cb_constants
 from SystemEventLogLib.Events import Event
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
@@ -352,7 +352,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 else:
                     for server in self.input.servers:
                         self.set_ports_for_server(server, "ssl")
-            reload(Cb_constants)
+            reload(cb_constants)
 
             # Update initial service map for the master node
             self.cluster_util.update_cluster_nodes_service_list(self.cluster)

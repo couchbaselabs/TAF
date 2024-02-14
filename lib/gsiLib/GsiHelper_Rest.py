@@ -3,7 +3,7 @@ import json
 from Rest_Connection import RestConnection
 from common_lib import sleep
 import urllib
-from Cb_constants import CbServer
+from cb_constants import CbServer
 
 class GsiHelper(RestConnection):
     def __init__(self, server, logger):
