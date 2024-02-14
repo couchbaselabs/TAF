@@ -4,7 +4,7 @@ from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_client3 import SDKClient
-from Cb_constants import CbServer
+from cb_constants import CbServer
 
 
 class SDKCompression(CollectionBase):

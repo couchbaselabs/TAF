@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
-from Cb_constants import CbServer, DocLoading
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
+from cb_constants import CbServer, DocLoading
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection

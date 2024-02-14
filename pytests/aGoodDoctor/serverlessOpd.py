@@ -22,7 +22,7 @@ from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException,\
     RequestCanceledException, CouchbaseException
 import time
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from threading import Thread
 import threading
 from _collections import defaultdict

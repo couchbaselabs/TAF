@@ -1,6 +1,5 @@
 import zlib
 
-from Cb_constants import ClusterRun
 from TestInput import TestInputServer
 
 from BucketLib.BucketOperations import BucketHelper

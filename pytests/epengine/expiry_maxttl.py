@@ -1,7 +1,7 @@
 from random import randint
 from threading import Thread
 
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator

@@ -3,7 +3,7 @@ import time
 
 from TestInput import TestInputSingleton
 from global_vars import logger
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from StatsLib.StatsOperations import StatsHelper
 

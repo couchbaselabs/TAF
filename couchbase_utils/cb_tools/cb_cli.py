@@ -2,7 +2,7 @@ import json
 
 from BucketLib.bucket import Bucket
 from cb_tools.cb_tools_base import CbCmdBase
-from Cb_constants import CbServer, ClusterRun
+from cb_constants import CbServer, ClusterRun
 
 
 class CbCli(CbCmdBase):

@@ -1,5 +1,5 @@
-from Cb_constants import DocLoading
 from bucket_collections.collections_base import CollectionBase
+from cb_constants import DocLoading
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection

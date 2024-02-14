@@ -7,8 +7,8 @@ import re
 from random import choice, shuffle
 
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer, DocLoading
 from basetestcase import ClusterSetup
+from cb_constants import CbServer, DocLoading
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import \

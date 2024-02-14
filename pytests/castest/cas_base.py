@@ -1,7 +1,7 @@
 import re
 import traceback
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from basetestcase import ClusterSetup
 from membase.api.rest_client import RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper

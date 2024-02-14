@@ -3,7 +3,7 @@ import threading
 import random
 import time
 
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from magma_base import MagmaBaseTest

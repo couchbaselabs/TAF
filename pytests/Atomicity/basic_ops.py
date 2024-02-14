@@ -1,5 +1,5 @@
-from Cb_constants import DocLoading
 from basetestcase import ClusterSetup
+from cb_constants import DocLoading
 from couchbase_helper.documentgenerator import \
     DocumentGenerator, \
     doc_generator

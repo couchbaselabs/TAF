@@ -5,7 +5,7 @@ from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 
 from sdk_exceptions import SDKException
-from Cb_constants import constants, CbServer
+from cb_constants import constants, CbServer
 
 
 class AutoFailoverTests(AutoFailoverBaseTest):

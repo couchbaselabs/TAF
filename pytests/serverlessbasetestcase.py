@@ -3,7 +3,7 @@ Created on Feb 16, 2022
 
 @author: ritesh.agarwal
 """
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from Jython_tasks.task import DeployDataplane
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils

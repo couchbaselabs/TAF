@@ -7,7 +7,7 @@ import time
 import os
 
 import testconstants
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from platform_constants.os_constants import Windows
 from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from membase.api.rest_client import RestConnection
@@ -885,4 +885,3 @@ def __get_debug_binary_name(node):
             "amd64",
             node.info.deliverable_type)
     return ""
-

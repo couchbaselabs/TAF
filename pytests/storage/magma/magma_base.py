@@ -5,7 +5,7 @@ import time
 import threading
 import json
 
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
 from remote.remote_util import RemoteMachineShellConnection
 from storage.storage_base import StorageBase

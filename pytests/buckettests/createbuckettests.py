@@ -3,8 +3,8 @@ import urllib
 import copy
 
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import DocLoading, CbServer
 from basetestcase import ClusterSetup
+from cb_constants import DocLoading, CbServer
 from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from custom_exceptions.exception import BucketCreationException

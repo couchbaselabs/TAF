@@ -5,10 +5,10 @@ from random import choice, sample, randint
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading, CbServer
 from datetime import datetime, timedelta
 from basetestcase import ClusterSetup
 from bucket_collections.collections_base import CollectionBase
+from cb_constants import DocLoading, CbServer
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats

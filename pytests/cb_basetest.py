@@ -5,7 +5,7 @@ from datetime import datetime
 
 import global_vars
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from Jython_tasks.task_manager import TaskManager
 from SystemEventLogLib.Events import EventHelper
 from TestInput import TestInputSingleton

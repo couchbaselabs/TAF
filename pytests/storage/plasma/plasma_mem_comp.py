@@ -5,7 +5,7 @@ Created on 22-Aug-2021
 '''
 import time
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from membase.api.rest_client import RestConnection
 from storage.plasma.plasma_base import PlasmaBaseTest
 from gsiLib.gsiHelper import GsiHelper

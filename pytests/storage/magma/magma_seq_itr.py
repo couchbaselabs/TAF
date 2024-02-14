@@ -12,7 +12,7 @@ from storage.magma.magma_base import MagmaBaseTest
 from dcp_new.constants import SUCCESS
 from dcp_utils.dcp_ready_functions import DCPUtils
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from remote.remote_util import RemoteMachineShellConnection
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats

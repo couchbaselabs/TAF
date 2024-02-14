@@ -2,7 +2,7 @@ import threading
 import time
 import random
 
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from gsiLib.gsiHelper import GsiHelper
@@ -1555,4 +1555,3 @@ class PlasmaStatsTest(PlasmaBaseTest):
 
         self.assertTrue(count_after == count_before, "Data corrupted")
         self.assertTrue(docs_after == docs_before, "Data corrupted")
-

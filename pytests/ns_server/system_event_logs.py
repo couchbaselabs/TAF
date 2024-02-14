@@ -8,13 +8,13 @@ from time import time
 
 from BucketLib.BucketOperations_Rest import BucketHelper
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
 from SystemEventLogLib.Events import Event, EventHelper
 from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from SystemEventLogLib.ns_server_events import NsServerEvents
 from basetestcase import ClusterSetup
+from cb_constants import CbServer
 from cb_constants.system_event_log import NsServer, KvEngine
 from cb_tools.cb_collectinfo import CbCollectInfo
 from couchbase_helper.documentgenerator import doc_generator
@@ -23,6 +23,7 @@ from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Windows
 from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
+
 
 class SystemEventLogs(ClusterSetup):
     def setUp(self):

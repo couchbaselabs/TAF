@@ -1,6 +1,6 @@
 from bucket_collections.collections_base import CollectionBase
 from remote.remote_util import RemoteMachineShellConnection
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from error_simulation.cb_error import CouchbaseError
 
 
@@ -118,4 +118,3 @@ class BucketWarmup(CollectionBase):
     def tearDown(self):
         self.error_sim.revert(CouchbaseError.STOP_MEMCACHED)
         super(BucketWarmup, self).tearDown()
-

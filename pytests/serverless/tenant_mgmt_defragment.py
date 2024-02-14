@@ -1,7 +1,7 @@
 from pytests.serverless.serverless_onprem_basetest import \
     ServerlessOnPremBaseTest
 from membase.api.rest_client import RestConnection
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from BucketLib.bucket import Bucket
 from pytests.bucket_collections.collections_base import CollectionBase
 
@@ -203,7 +203,3 @@ class TenantManagementOnPremDefragment(ServerlessOnPremBaseTest):
 
         # verify target weight after re-balance
         self.verify_de_fragmentation(target_node)
-
-
-
-

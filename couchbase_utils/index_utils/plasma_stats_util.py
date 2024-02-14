@@ -5,7 +5,6 @@ Created on 22-Aug-2021
 '''
 import json
 
-from Cb_constants import constants
 from global_vars import logger
 from index_utils.index_ready_functions import IndexUtils
 from membase.api.rest_client import RestConnection

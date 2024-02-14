@@ -1,6 +1,6 @@
 from random import choice
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from bucket_collections.app.lib.common_util import \
     get_all_scenarios
 from global_vars import logger

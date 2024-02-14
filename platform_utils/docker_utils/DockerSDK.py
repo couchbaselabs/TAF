@@ -7,7 +7,7 @@ from java.nio.file import Paths
 from com.spotify.docker.client.messages import ContainerConfig, HostConfig,\
     PortBinding
 from com.spotify.docker.client import DefaultDockerClient
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 
 
 class DockerClient:

@@ -12,7 +12,7 @@ from copy import deepcopy
 from threading import Thread
 
 from BucketLib.bucket import Bucket
-from Cb_constants import constants, CbServer, ClusterRun
+from cb_constants import constants, CbServer, ClusterRun
 from common_lib import sleep
 from global_vars import logger
 from testconstants import IS_CONTAINER

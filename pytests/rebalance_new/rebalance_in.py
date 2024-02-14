@@ -1,7 +1,7 @@
 import time
 
 import Jython_tasks.task as jython_tasks
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection

@@ -4,7 +4,7 @@ from random import choice
 from threading import Thread
 import testconstants
 from BucketLib.bucket import Bucket, Collection, Scope
-from Cb_constants import DocLoading, CbServer
+from cb_constants import DocLoading, CbServer
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams, MetaConstants

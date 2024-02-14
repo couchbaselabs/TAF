@@ -1,4 +1,4 @@
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams

@@ -2,11 +2,12 @@ import random
 import string
 import json
 
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from sdk_client3 import SDKClient
 from LMT_base import LMT
 from couchbase_helper.documentgenerator import \
     doc_generator
+
 
 class ServerlessThrottling(LMT):
     def setUp(self):

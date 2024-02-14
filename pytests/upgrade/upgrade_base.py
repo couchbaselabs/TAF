@@ -1,5 +1,5 @@
-from Cb_constants import CbServer
 from basetestcase import BaseTestCase
+from cb_constants import CbServer
 import Jython_tasks.task as jython_tasks
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator

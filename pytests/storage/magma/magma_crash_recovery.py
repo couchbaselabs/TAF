@@ -7,11 +7,11 @@ Created on Dec 12, 2019
 import copy
 import threading
 import random
+import json as Json
 
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from TestInput import TestInputSingleton
 from couchbase_helper.documentgenerator import doc_generator
-import json as Json
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient

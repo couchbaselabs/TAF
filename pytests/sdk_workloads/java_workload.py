@@ -11,7 +11,7 @@ from aGoodDoctor.hostedEventing import DoctorEventing
 from aGoodDoctor.hostedOPD import OPD
 from table_view import TableView
 import time
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from com.couchbase.test.sdk import Server
 from custom_exceptions.exception import ServerUnavailableException

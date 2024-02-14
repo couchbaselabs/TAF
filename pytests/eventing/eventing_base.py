@@ -4,7 +4,7 @@ import datetime
 import os
 import socket
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from TestInput import TestInputSingleton
 from couchbase_helper.tuq_generators import JsonGenerator
 from membase.api.rest_client import RestConnection

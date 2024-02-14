@@ -1,8 +1,8 @@
 from random import randint, choice
 
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
 from basetestcase import ClusterSetup
+from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper

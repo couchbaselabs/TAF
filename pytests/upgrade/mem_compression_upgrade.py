@@ -4,7 +4,7 @@ Created on 10-Feb-2022
 '''
 
 from math import ceil
-from Cb_constants import CbServer, DocLoading
+from cb_constants import CbServer, DocLoading
 from couchbase_helper.documentgenerator import doc_generator
 from gsiLib.gsiHelper import GsiHelper
 from index_utils.index_ready_functions import IndexUtils

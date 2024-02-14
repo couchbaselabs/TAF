@@ -3,7 +3,7 @@ import threading
 from serverless.tenant_mgmt_on_cloud import TenantMgmtOnCloud
 
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from com.couchbase.test.docgen import DocumentGenerator
 from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator

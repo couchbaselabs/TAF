@@ -6,7 +6,7 @@ from random import choice, randint, sample, randrange
 from BucketLib.BucketOperations import BucketHelper
 from collections_helper.collections_spec_constants import MetaCrudParams
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from threading import Thread
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection

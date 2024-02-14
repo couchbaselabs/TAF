@@ -2,7 +2,7 @@ import threading
 import time
 import json
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection

@@ -1,7 +1,7 @@
 from random import choice
 
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection

@@ -9,7 +9,7 @@ import time
 import copy
 
 from BucketLib.bucket import Bucket
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
 from sdk_exceptions import SDKException

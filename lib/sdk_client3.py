@@ -70,7 +70,7 @@ import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
 from com.couchbase.client.core.deps.io.netty.buffer import Unpooled
 from com.couchbase.client.core.deps.io.netty.util import CharsetUtil
 
-from Cb_constants import ClusterRun, CbServer, DocLoading
+from cb_constants import ClusterRun, CbServer, DocLoading
 from constants.sdk_constants.java_client import SDKConstants
 from global_vars import logger
 from sdk_utils.java_sdk import SDKOptions

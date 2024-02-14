@@ -8,7 +8,7 @@ from constants.platform_constants import os_constants
 from remote.remote_util import RemoteMachineShellConnection
 from security_utils.security_utils import SecurityUtils
 from membase.api.rest_client import RestConnection
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 
 class InternalUserPassword(ClusterSetup):

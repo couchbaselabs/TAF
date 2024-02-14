@@ -1,4 +1,4 @@
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from couchbase_helper.query_definitions import QueryDefinition, \
     FULL_SCAN_TEMPLATE, FULL_SCAN, NO_ORDERBY_GROUPBY, SIMPLE_INDEX
 from secondary_index.base_2i import BaseSecondaryIndexingTests

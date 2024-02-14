@@ -3,7 +3,6 @@ from datetime import timedelta
 from random import choice, randint, randrange
 from threading import Thread
 
-from Cb_constants import DocLoading
 from bucket_collections.app.constants import global_vars
 from bucket_collections.app.constants.global_vars import sdk_clients
 from bucket_collections.app.lib import query_util
@@ -13,6 +12,7 @@ from bucket_collections.app.lib.common_util import \
 from bucket_collections.app.constants.user import \
     COUNTRY, COMMON_KEY, DAYS_BETWEEN_DATES_INT, GENDER, START_DATE, \
     FIRST_NAMES, LAST_NAMES
+from cb_constants import DocLoading
 from global_vars import logger
 from constants.sdk_constants.java_client import SDKConstants
 

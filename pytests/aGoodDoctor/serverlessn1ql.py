@@ -21,7 +21,7 @@ from table_view import TableView
 import itertools
 from _collections import defaultdict
 from membase.api.rest_client import RestConnection
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 
 letters = ascii_uppercase + ascii_lowercase + digits
 

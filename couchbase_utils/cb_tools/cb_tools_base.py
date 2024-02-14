@@ -1,4 +1,4 @@
-from Cb_constants import ClusterRun
+from cb_constants import ClusterRun
 from TestInput import TestInputSingleton
 from platform_constants.os_constants import Linux, Mac, Windows
 import os

@@ -3,7 +3,7 @@ import time
 import json
 
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator

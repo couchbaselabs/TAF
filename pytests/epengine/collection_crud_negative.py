@@ -2,8 +2,8 @@ import json
 from random import choice
 
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
 from bucket_collections.collections_base import CollectionBase
+from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper

@@ -1,5 +1,6 @@
+from cb_constants import CbServer
 from cb_tools.cb_tools_base import CbCmdBase
-from Cb_constants import CbServer
+
 
 class Cbepctl(CbCmdBase):
     def __init__(self, shell_conn, username="Administrator",

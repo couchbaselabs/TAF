@@ -29,7 +29,7 @@ from collections import defaultdict
 import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
-from Cb_constants import CbServer, DocLoading, ClusterRun
+from cb_constants import CbServer, DocLoading, ClusterRun
 from Jython_tasks.task import \
     BucketCreateTask, \
     BucketCreateFromSpecTask, \

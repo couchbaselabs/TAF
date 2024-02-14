@@ -2,7 +2,7 @@ import time
 import Queue
 from threading import Thread
 
-from Cb_constants import constants
+from cb_constants import constants
 from common_lib import sleep
 from global_vars import logger
 import global_vars

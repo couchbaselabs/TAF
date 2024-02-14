@@ -1,7 +1,7 @@
 from _threading import Lock
 
 import Jython_tasks
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from common_lib import Counter
 from constants.sdk_constants.java_client import SDKConstants
 

@@ -2,7 +2,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from SystemEventLogLib.SystemEventOperations import SystemEventRestHelper
 
 

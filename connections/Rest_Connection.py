@@ -9,8 +9,8 @@ import traceback
 import socket
 import time
 
-from Cb_constants import constants, CbServer, ClusterRun
 from TestInput import TestInputSingleton
+from cb_constants import constants, CbServer, ClusterRun
 from common_lib import sleep
 from global_vars import logger
 from membase.api import httplib2

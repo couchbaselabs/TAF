@@ -10,7 +10,7 @@ from TestInput import TestInputSingleton
 from membase.api.rest_client import RestConnection
 import time
 import json
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 
 
 class DoctorFTS:

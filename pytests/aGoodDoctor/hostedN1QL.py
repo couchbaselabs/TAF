@@ -28,7 +28,7 @@ import itertools
 from com.couchbase.client.core.deps.io.netty.handler.codec import string
 from com.couchbase.client.java.json import JsonObject
 from com.github.javafaker import Faker
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from connections.Rest_Connection import RestConnection
 
 letters = ascii_uppercase + ascii_lowercase + digits

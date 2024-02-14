@@ -2,7 +2,7 @@ import json
 import time
 
 from BucketLib.bucket import Bucket
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import \
     doc_generator, \

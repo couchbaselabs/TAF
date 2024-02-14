@@ -2,7 +2,7 @@ import time
 from random import shuffle
 
 from BucketLib.bucket import Bucket
-from Cb_constants import constants
+from cb_constants import constants
 from common_lib import sleep
 from global_vars import logger
 import global_vars

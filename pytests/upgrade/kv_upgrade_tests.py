@@ -1,5 +1,5 @@
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from cluster_utils.cluster_ready_functions import CBCluster
 from couchbase_helper.documentgenerator import doc_generator

@@ -3,7 +3,7 @@ import random
 import string
 import threading
 
-from Cb_constants import DocLoading
+from cb_constants import DocLoading
 from cb_tools.mc_stat import Mcthrottle
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
@@ -674,4 +674,3 @@ class ServerlessMetering(LMT):
             self.task_manager.get_task_result(task)
             num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)
             self.assertEqual(self.expected_wu, wu)
-

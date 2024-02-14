@@ -4,8 +4,8 @@ import json
 import urllib
 
 from BucketLib.bucket import Bucket
-from Cb_constants import CbServer
 from basetestcase import BaseTestCase
+from cb_constants import CbServer
 from couchbase_helper.data_analysis_helper import DataCollector
 from membase.helper.rebalance_helper import RebalanceHelper
 from couchbase_helper.documentgenerator import BlobGenerator,DocumentGenerator

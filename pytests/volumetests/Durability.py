@@ -2,9 +2,8 @@ from com.couchbase.client.java import *
 from com.couchbase.client.java.json import *
 from com.couchbase.client.java.query import *
 
-from Cb_constants import CbServer
 from membase.api.rest_client import RestConnection
-from Cb_constants import constants, CbServer, DocLoading
+from cb_constants import constants, CbServer, DocLoading
 from TestInput import TestInputSingleton
 from memcached.helper.data_helper import MemcachedClientHelper
 from BucketLib.bucket import Bucket

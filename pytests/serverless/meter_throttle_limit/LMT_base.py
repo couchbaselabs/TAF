@@ -11,7 +11,7 @@ from BucketLib.bucket import Bucket
 from membase.api.rest_client import RestConnection
 from StatsLib.StatsOperations import StatsHelper
 from sdk_exceptions import SDKException
-from Cb_constants.CBServer import CbServer
+from cb_constants.CBServer import CbServer
 from com.couchbase.test.taskmanager import TaskManager
 from com.couchbase.test.sdk import Server, SDKClient
 from com.couchbase.test.sdk import SDKClient as NewSDKClient

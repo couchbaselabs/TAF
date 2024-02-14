@@ -5,7 +5,7 @@ import ConfigParser
 import os
 
 from builds.build_query import BuildQuery
-from Cb_constants import constants
+from cb_constants import constants
 
 
 class TestInputSingleton:
