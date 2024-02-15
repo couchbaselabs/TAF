@@ -12,7 +12,7 @@ from threading import Thread
 import threading
 import time
 
-from Cb_constants.CBServer import CbServer
+from constants.cb_constants.CBServer import CbServer
 from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
 from aGoodDoctor.serverlessfts import ftsQueries, ftsIndex, template
@@ -29,7 +29,7 @@ from elasticsearch import EsClient
 
 try:
     input = TestInputSingleton.input
-    vector = Vector()
+    vector = Vector(None)
     vector.setEmbeddingsModel(input.param("model", "sentence-transformers/all-MiniLM-L6-v2"))
     predictor = vector.predictor
     faker = Faker()
@@ -76,7 +76,7 @@ class DoctorFTS:
         self.indexes = dict()
         self.stop_run = False
 
-    def create_fts_indexes(self, buckets):
+    def create_fts_indexes(self, buckets, dims=1536, similarity="l2_norm"):
         status = False
         for b in buckets:
             b.ftsIndexes = dict()
@@ -95,6 +95,8 @@ class DoctorFTS:
                     if valType == "Hotel":
                         queryTypes = HotelQueries
                         indexType = HotelIndex
+                        indexType["properties"]["embedding"]["fields"][0].update({"dims": dims,
+                                                                                "similarity": similarity})
                     i = 0
                     while i < workload.get("FTS")[0]:
                         name = str(b.name).replace("-", "_") + c + "_fts_idx_"+str(i)
@@ -160,7 +162,7 @@ class DoctorFTS:
 
 
 class FTSQueryLoad:
-    def __init__(self, bucket, cluster, esClient):
+    def __init__(self, bucket, cluster, esClient, mockVector, dim):
         self.bucket = bucket
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
@@ -177,6 +179,8 @@ class FTSQueryLoad:
         self.fts_node = random.choice(self.cluster.fts_nodes)
         self.fts_helper = FtsHelper(self.fts_node)
         self.esClient = esClient
+        self.mockVector = mockVector
+        self.dim = dim
 
     def start_query_load(self):
         self.log.info("Starting fts query thread")
@@ -217,12 +221,17 @@ class FTSQueryLoad:
             text_options = random.choice(([vector.colors, vector.clothingType, vector.fashionBrands],
                                  [vector.colors, vector.clothingType],
                                  [vector.clothingType, vector.fashionBrands]))
+            flt_buf = Vector.flt_buf
             text = ""
-            for option in text_options:
-                text += random.choice(option) + " "
-            text_vector = predictor.predict(text)
-            embedding = text_vector.tolist()
             vector_float = []
+            if self.mockVector:
+                _slice = random.randint(0, Vector.flt_buf_length-self.dim)
+                embedding = flt_buf[_slice: _slice+self.dim]
+            else:
+                for option in text_options:
+                    text += random.choice(option) + " "
+                text_vector = predictor.predict(text)
+                embedding = text_vector.tolist()
             for value in embedding:
                 vector_float.append(float(value))
             query["knn"][0].update({"vector": vector_float})

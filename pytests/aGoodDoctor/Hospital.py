@@ -98,6 +98,12 @@ class Murphy(BaseTestCase, OPD):
         ##CDC Params
         self.bucket_history_retention_bytes = int(self.input.param("bucket_history_retention_bytes",0))
         self.bucket_history_retention_seconds = int(self.input.param("bucket_history_retention_seconds",0))
+
+        #Vector Dataload Params
+        self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
+        self.mockVector = self.input.param("mockVector", False)
+        self.dim = self.input.param("dim", 384)
+
         #######################################################################
         self.capella_run = self.input.param("capella_run", False)
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)

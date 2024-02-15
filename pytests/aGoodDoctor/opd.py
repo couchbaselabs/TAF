@@ -389,7 +389,9 @@ class OPD:
                                           cmd.get("gtm", self.gtm),
                                           cmd.get("deleted", False),
                                           cmd.get("mutated", 0),
-                                          cmd.get("model", self.model)
+                                          cmd.get("model", self.model),
+                                          cmd.get("mockVector", self.mockVector),
+                                          cmd.get("dim", self.dim)
                                           )
                     hm = HashMap()
                     hm.putAll({DRConstants.create_s: self.create_start,

@@ -8,7 +8,6 @@ from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-from Cb_constants.CBServer import CbServer
 from aGoodDoctor.opd import OPD
 from basetestcase import BaseTestCase
 from com.couchbase.test.sdk import Server
@@ -20,6 +19,7 @@ from table_view import TableView
 import threading
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from elasticsearch import EsClient
+from constants.cb_constants.CBServer import CbServer
 
 
 class Murphy(BaseTestCase, OPD):
@@ -89,6 +89,11 @@ class Murphy(BaseTestCase, OPD):
         #######################################################################
         self.capella_run = self.input.param("capella_run", False)
         self.sdk_client_pool = self.bucket_util.initialize_java_sdk_client_pool()
+
+        #Vector Dataload Params
+        self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
+        self.mockVector = self.input.param("mockVector", False)
+        self.dim = self.input.param("dim", 384)
 
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
         if self.nodes_init > 1 and not self.skip_setup_cleanup:
@@ -354,7 +359,6 @@ class Murphy(BaseTestCase, OPD):
 
     def ClusterOpsVolume(self):
         self.esClient = None
-        self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
         # self.esHost = self.input.param("esHost", "http://localhost:9200")
         self.esHost = self.input.param("esHost", None)
         self.esAPIKey = self.input.param("esAPIKey", None)
@@ -410,13 +414,14 @@ class Murphy(BaseTestCase, OPD):
             ###################################################################
             if self.loop == 0:
                 if self.fts_nodes:
-                    self.drFTS.create_fts_indexes(self.cluster.buckets)
+                    self.drFTS.create_fts_indexes(self.cluster.buckets, self.dim)
                     status = self.drFTS.wait_for_fts_index_online(self.cluster.buckets,
                                                                 self.index_timeout)
                     self.assertTrue(status, "FTS index build failed.")
                     for bucket in self.cluster.buckets:
                         if bucket.loadDefn.get("ftsQPS", 0) > 0:
-                            ql = FTSQueryLoad(bucket, self.cluster, self.esClient)
+                            ql = FTSQueryLoad(bucket, self.cluster, self.esClient,
+                                              self.mockVector, self.dim)
                             ql.start_query_load()
                             self.ftsQL.append(ql)
             ###################################################################

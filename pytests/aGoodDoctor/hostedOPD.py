@@ -285,7 +285,9 @@ class OPD:
                                           cmd.get("gtm", False),
                                           cmd.get("deleted", False),
                                           cmd.get("mutated", 0),
-                                          cmd.get("model", self.model)
+                                          cmd.get("model", self.model),
+                                          cmd.get("mockVector", self.mockVector),
+                                          cmd.get("dim", self.dim)
                                           )
                     hm = HashMap()
                     hm.putAll({DRConstants.create_s: bucket.create_start,
