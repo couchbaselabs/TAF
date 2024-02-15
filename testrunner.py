@@ -11,8 +11,8 @@ import time
 import unittest
 import urllib2
 import xml.dom.minidom
+from argparse import ArgumentParser
 
-from optparse import OptionParser, OptionGroup
 from os.path import basename, splitext
 from pprint import pprint
 from threading import Thread, Event
@@ -40,83 +40,72 @@ Examples:
     sys.exit(0)
 
 
-def parse_args(argv):
-    parser = OptionParser()
-    parser.add_option("-q", action="store_false", dest="verbose")
-    tgroup = OptionGroup(parser, "TestCase/Runlist Options")
-    tgroup.add_option("-i", "--ini",
-                      dest="ini",
-                      help="Path to .ini file containing server "
-                           "information,e.g -i tmp/local.ini")
-    tgroup.add_option("-c", "--config", dest="conf",
-                      help="Config file name (located in the conf "
-                           "subdirectory), e.g -c py-view.conf")
-    tgroup.add_option("-t", "--test",
-                      dest="testcase",
-                      help="Test name (multiple -t options add more "
-                           "tests) e.g -t "
-                           "performance.perf.DiskDrainRate")
-    tgroup.add_option("-m", "--mode",
-                      dest="mode",
-                      help="Use java for Java SDK, rest for rest APIs.")
-    tgroup.add_option("-d", "--include_tests", dest="include_tests",
-                      help="Value can be 'failed' (or) 'passed' (or) "
-                           "'failed=<junit_xml_path (or) "
-                           "jenkins_build_url>' (or) "
-                           "'passed=<junit_xml_path or "
-                           "jenkins_build_url>' (or) "
-                           "'file=<filename>' (or) '<regular "
-                           "expression>' to include tests in the run. "
-                           "Use -g option to search "
-                           "entire conf files. e.g. -d 'failed' or -d "
-                           "'failed=report.xml' or -d "
-                           "'^2i.*nodes_init=2.*'")
-    tgroup.add_option("-e", "--exclude_tests", dest="exclude_tests",
-                      help="Value can be 'failed' (or) 'passed' (or) "
-                           "'failed=<junit_xml_path (or) "
-                           "jenkins_build_url>' (or) "
-                           "'passed=<junit_xml_path (or) "
-                           "jenkins_build_url>' or 'file=<filename>' "
-                           "(or) '<regular expression>' "
-                           "to exclude tests in the run. Use -g "
-                           "option to search entire conf "
-                           "files. e.g. -e 'passed'")
-    tgroup.add_option("-r", "--rerun", dest="rerun",
-                      help="Rerun fail or pass tests with given "
-                           "=count number of times maximum. "
-                           "\ne.g. -r 'fail=3'")
-    tgroup.add_option("-g", "--globalsearch", dest="globalsearch",
-                      help="Option to get tests from given conf file "
-                           "path pattern, "
-                           "like conf/**/*.conf. Useful for include "
-                           "or exclude conf files to "
-                           "filter tests. e.g. -g 'conf/**/.conf'",
-                      default="")
-    parser.add_option_group(tgroup)
+def parse_args():
+    parser = ArgumentParser(description="TAF - Test Automation Framework")
+    parser.add_argument("-q", action="store_false", dest="verbose")
 
-    parser.add_option("-p", "--params",
-                      dest="params",
-                      help="Optional key=value parameters, "
-                           "comma-separated -p k=v,k2=v2,...",
-                      default="")
-    parser.add_option("-n", "--noop", action="store_true",
-                      help="NO-OP - emit test names, but don't "
-                           "actually run them e.g -n true")
-    parser.add_option("-l", "--log-level",
-                      dest="loglevel", default="INFO",
-                      help="e.g -l debug,info,warning")
-    options, args = parser.parse_args()
+    parser.add_argument("-i", "--ini", dest="ini", required=True,
+                        help="Path to .ini file containing server "
+                             "information,e.g -i tmp/local.ini")
+    parser.add_argument("-c", "--config", dest="conf",
+                        help="Config file name (located in the conf "
+                             "subdirectory), e.g -c py-view.conf")
+    parser.add_argument("-t", "--test", dest="testcase",
+                        help="Test name (multiple -t options add more "
+                             "tests) e.g -t "
+                             "performance.perf.DiskDrainRate")
+    parser.add_argument("-m", "--mode", dest="mode", default="rest",
+                        help="Use java for Java SDK, rest for rest APIs.")
+    parser.add_argument("-d", "--include_tests", dest="include_tests",
+                        help="Value can be 'failed' (or) 'passed' (or) "
+                             "'failed=<junit_xml_path (or) "
+                             "jenkins_build_url>' (or) "
+                             "'passed=<junit_xml_path or "
+                             "jenkins_build_url>' (or) "
+                             "'file=<filename>' (or) '<regular "
+                             "expression>' to include tests in the run. "
+                             "Use -g option to search "
+                             "entire conf files. e.g. -d 'failed' or -d "
+                             "'failed=report.xml' or -d "
+                             "'^2i.*nodes_init=2.*'")
+    parser.add_argument("-e", "--exclude_tests", dest="exclude_tests",
+                        help="Value can be 'failed' (or) 'passed' (or) "
+                             "'failed=<junit_xml_path (or) "
+                             "jenkins_build_url>' (or) "
+                             "'passed=<junit_xml_path (or) "
+                             "jenkins_build_url>' or 'file=<filename>' "
+                             "(or) '<regular expression>' "
+                             "to exclude tests in the run. Use -g "
+                             "option to search entire conf "
+                             "files. e.g. -e 'passed'")
+    parser.add_argument("-r", "--rerun", dest="rerun",
+                        help="Rerun fail or pass tests with given "
+                             "=count number of times maximum. "
+                             "\ne.g. -r 'fail=3'")
+    parser.add_argument("-g", "--globalsearch",
+                        dest="globalsearch", default="",
+                        help="Option to get tests from given conf file "
+                             "path pattern, "
+                             "like conf/**/*.conf. Useful for include "
+                             "or exclude conf files to "
+                             "filter tests. e.g. -g 'conf/**/.conf'")
 
-    tests = []
-    test_params = {}
+    parser.add_argument("-p", "--params", dest="params", default="",
+                        help="Optional key=value parameters, "
+                             "comma-separated -p k=v,k2=v2,...")
+    parser.add_argument("-n", "--noop", action="store_true",
+                        help="NO-OP - emit test names, but don't "
+                             "actually run them e.g -n true")
+    parser.add_argument("-l", "--log-level", dest="loglevel", default="INFO",
+                        choices=["DEBUG", "INFO", "WARNING", "CRITICAL"])
+    options = parser.parse_args()
 
-    if not options.ini:
-        parser.error("please specify an .ini file (-i)")
-        parser.print_help()
-    else:
-        test_params['ini'] = options.ini
-        if not os.path.exists(options.ini):
-            sys.exit("ini file {0} was not found".format(options.ini))
+    tests = list()
+    test_params = dict()
+
+    test_params['ini'] = options.ini
+    if not os.path.exists(options.ini):
+        sys.exit("ini file {0} was not found".format(options.ini))
 
     test_params['cluster_name'] = \
     splitext(os.path.basename(options.ini))[0]
@@ -519,7 +508,7 @@ class StoppableThreadWithResult(Thread):
 
 
 def main():
-    names, runtime_test_params, arg_i, arg_p, options = parse_args(sys.argv)
+    names, runtime_test_params, arg_i, arg_p, options = parse_args()
     # get params from command line
     TestInputSingleton.input = TestInputParser.get_test_input(sys.argv)
     # ensure command line params get higher priority
