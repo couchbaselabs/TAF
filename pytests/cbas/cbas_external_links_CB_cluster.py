@@ -189,7 +189,7 @@ class CBASExternalLinks(CBASBaseTest):
                 remote_dataset=True, link=None,
                 same_dv_for_link_and_dataset=same_dv_for_link_and_dataset,
                 name_length=30, fixed_length=False, exclude_bucket=[],
-                exclude_scope=[], exclude_collection=[],
+                exclude_scope=["_system"], exclude_collection=[],
                 no_of_objs=self.input.param("no_of_datasets", 1))
 
         if create_datasets:
