@@ -49,7 +49,7 @@ class UpdateCollection(GetScope):
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/buckets/"
-                       "{}/scopes/{}/collections/",
+                       "{}/scopes/{}/collections",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -58,13 +58,13 @@ class UpdateCollection(GetScope):
             }, {
                 "description": "Replace collections with collection in URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/bucket/"
-                       "{}/scopes/{}/collection/",
+                       "{}/scopes/{}/collection",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/buckets/"
-                       "{}/scopes/{}/collections/collection/",
+                       "{}/scopes/{}/collections/collection",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -72,43 +72,91 @@ class UpdateCollection(GetScope):
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }, {
                 "description": "Update collection but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }, {
                 "description": "Update collection but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }, {
                 "description": "Update collection but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 400,
+                    "message": "BucketID is invalid."
+                }
             }, {
                 "description": "Update collection but with invalid scopeName",
                 "invalid_scopeName": self.replace_last_character(
                     self.scope_name),
                 "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_error": {
+                    "code": 11002,
+                    "hint": "The requested scope details could not be found "
+                            "or fetched. Please ensure that the correct scope "
+                            "name is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Scope Not Found"
+                }
             }, {
                 "description": "Update collection but with invalid "
                                "collectionName",
                 "invalid_scopeName": self.replace_last_character(
                     self.collection_name),
                 "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_error": {
+                    "code": 11001,
+                    "hint": "The requested collection details could not be "
+                            "found or fetched. Please ensure that the correct "
+                            "collection name is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Collection Not Found"
+                }
             }
         ]
         failures = list()
         for testcase in testcases:
+            self.log.info("Executing test: {}".format(testcase["description"]))
             org = self.organisation_id
             proj = self.project_id
             clus = self.cluster_id
@@ -149,7 +197,7 @@ class UpdateCollection(GetScope):
 
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
-                "/{}/collections/"
+                "/{}/collections"
 
         if failures:
             for fail in failures:
@@ -270,8 +318,9 @@ class UpdateCollection(GetScope):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
-                        "hint": "Check if all the required params are present "
-                                "in the request body.",
+                        "hint": "Check if you have provided a valid URL and "
+                                "all the required params are present in the "
+                                "request body.",
                         "message": "The server cannot or will not process the "
                                    "request due to something that is perceived"
                                    " to be a client error.",
