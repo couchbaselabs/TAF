@@ -141,7 +141,7 @@ class UpdateCollection(GetScope):
             }, {
                 "description": "Update collection but with invalid "
                                "collectionName",
-                "invalid_scopeName": self.replace_last_character(
+                "invalid_collectionName": self.replace_last_character(
                     self.collection_name),
                 "expected_status_code": 404,
                 "expected_error": {
@@ -433,13 +433,47 @@ class UpdateCollection(GetScope):
     def test_payload(self):
         failures = list()
         testcases = 0
-        for value in [-2, -2, 0, 100, 111111111111111, 1.2, "", None, "abc"]:
+        for value in [-2, -1, 0, "1", 2147483648, 1.2, -0.2, "", None, "abc"]:
             testcases += 1
             testcase = {
-                "description": "Testing maxTTL with value `{}`".format(value),
+                "description": "Testing maxTTL with value `{}` with type {}"
+                .format(value, type(value)),
                 "maxTTL": value
             }
-
+            if type(value) is not long and type(value) is not int:
+                testcase["expected_status_code"] = 400
+                testcase["expected_error"] = {
+                    "code": 1000,
+                    "hint": "The request was malformed or invalid.",
+                    "httpStatusCode": 400,
+                    "message": "Bad Request. Error: body contains incorrect "
+                               "JSON type for field \"maxTTL\"."
+                }
+            elif value > 2147483647:
+                testcase["expected_status_code"] = 422
+                testcase["expected_error"] = {
+                    "code": 11013,
+                    "hint": "Returned when the TTL given during collection "
+                            "creation or modification is not valid.",
+                    "httpStatusCode": 422,
+                    "message": "The given TTL for the collection is too "
+                               "large. The maximum allowed TTL is 2147483647 "
+                               "seconds."
+                }
+            elif value < -1:
+                testcase["expected_status_code"] = 422
+                testcase["expected_error"] = {
+                    'code': 11015,
+                    u'message': 'The time to live value provided is not '
+                                'supported for server version 7.6.0 or above. '
+                                'It should be within the range -1 to '
+                                '2147483647 seconds.',
+                    'hint': 'Returned when a time to live unit that is not '
+                            'supported is given during collection creation or '
+                            'modification.',
+                    'httpStatusCode': 422
+                }
+            self.log.info("Executing test: {}".format(testcase["description"]))
             res = self.capellaAPI.cluster_ops_apis.update_collection(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.bucket_id, self.scope_name, self.collection_name,
@@ -454,16 +488,16 @@ class UpdateCollection(GetScope):
                 if "expected_error" in testcase:
                     self.log.error("Status == 204, Key validation Failure : {}"
                                    .format(testcase["description"]))
-                    self.log.warning("Result : {}".format(res.json()))
+                    self.log.warning("Result : {}".format(res.content))
                     failures.append(testcase["description"])
             else:
                 self.validate_testcase(res, 204, testcase, failures)
 
-            if failures:
-                for fail in failures:
-                    self.log.warning(fail)
-                self.fail("{} tests FAILED out of {} TOTAL tests"
-                          .format(len(failures), testcases))
+        if failures:
+            for fail in failures:
+                self.log.warning(fail)
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), testcases))
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
