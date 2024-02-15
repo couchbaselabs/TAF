@@ -15,7 +15,8 @@ class CBASSecondaryIndexes(CBASBaseTest):
             self.cluster, self.bucket_util,
             dataset_cardinality=self.input.param('cardinality', 1),
             bucket_cardinality=self.input.param('bucket_cardinality', 3),
-            no_of_objs=1, exclude_bucket=exclude_bucket)[0]
+            no_of_objs=1, exclude_bucket=exclude_bucket, exclude_scope=[
+                "_system"])[0]
 
         if not self.cbas_util.create_dataset(
                 self.cluster, self.dataset.name, self.dataset.get_fully_qualified_kv_entity_name(
@@ -304,9 +305,6 @@ class CBASSecondaryIndexes(CBASBaseTest):
 
     def test_index_on_nested_fields_same_object(self):
         index_fields = ["geo.lon:double", "geo.lat:double"]
-
-        if not self.bucket_util.load_sample_bucket(self.cluster, BeerSample()):
-            self.fail("Error loading beer-sample bucket")
 
         if not self.cbas_util.create_cbas_index(self.cluster, "idx", index_fields,
                                                 self.dataset.full_name):
