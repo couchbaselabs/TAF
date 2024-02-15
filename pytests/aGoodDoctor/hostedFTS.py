@@ -24,7 +24,10 @@ from com.couchbase.client.java.search import SearchQuery
 from global_vars import logger
 from java.net import SocketTimeoutException
 from elasticsearch import EsClient
-from vectorSearch.vectorFTS import predictor, vector
+try:
+    from vectorSearch.vectorFTS import predictor, vector
+except:
+    pass
 
 
 NimbusPQueries = [
