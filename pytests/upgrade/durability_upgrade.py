@@ -514,6 +514,7 @@ class UpgradeTests(UpgradeBase):
             self.test_index_file_based_rebalance()
             self.validate_index_count_and_status()
 
+        self.sleep(120)
         ### Rebalance/failover tasks after the whole cluster is upgraded ###
         if self.rebalance_op != "None":
             self.PrintStep("Starting rebalance/failover tasks post upgrade...")
@@ -599,6 +600,7 @@ class UpgradeTests(UpgradeBase):
 
         self.cluster_util.print_cluster_stats(self.cluster)
 
+        self.sleep(120)
         ### Rebalance/failover tasks after the whole cluster is upgraded ###
         if self.rebalance_op != "None":
             self.PrintStep("Starting rebalance/failover tasks post upgrade...")
