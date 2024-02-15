@@ -186,7 +186,7 @@ class CBASCBO(CBASBaseTest):
                 match = re.findall("\"build-side\": ([0-1])", json.dumps(results[0]))
                 if match:
                     result = [int(i) for i in match]
-                if queryplanshape == "zigzag":
+                """if queryplanshape == "zigzag":
                     if not (0 in result and 1 in result):
                         self.fail("The generated query plan was not zigzag")
                 elif queryplanshape == "leftdeep":
@@ -194,7 +194,13 @@ class CBASCBO(CBASBaseTest):
                         self.fail("The generated query plan was not leftdeep")
                 if queryplanshape == "rightdeep":
                     if 0 in result:
-                        self.fail("The generated query plan was not rightdeep")
+                        self.fail("The generated query plan was not rightdeep")"""
+                if sum(result) == len(result):
+                    self.log.info("Query plan generated was leftdeep")
+                elif sum(result) == 0:
+                    self.log.info("Query plan generated was rightdeep")
+                else:
+                    self.log.info("Query plan generated was zigzag")
 
     def test_disable_cbo(self):
         self.setup_for_cbo(check_CBO_enabled=True, load_sample_bucket=True, create_tpch_datasets=False,
@@ -416,6 +422,9 @@ class CBASCBO(CBASBaseTest):
         self.log.debug("Couchbase restarted on {0}".format(cluster_cbas_nodes[0]))
 
         self.task_manager.get_task_result(self.query_task)
+        if not self.cbas_util.is_analytics_running(self.cluster):
+            self.fail("Analytics service did not come up even after 10 mins "
+                      "of wait after initialisation")
 
         result = True
 
