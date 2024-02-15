@@ -818,8 +818,7 @@ class UpgradeTests(UpgradeBase):
         # Perform bucket_durability update
         key, value = doc_generator("b_durability_doc", 0, 1).next()
         client = SDKClient([self.cluster.master], self.cluster.buckets[0])
-        for index, d_level in enumerate(possible_d_levels[self.bucket_type]):
-            b_level = getattr(Bucket.DurabilityMinLevel, d_level)
+        for index, b_level in enumerate(possible_d_levels[self.bucket_type]):
             self.log.info("Updating bucket_durability=%s" % b_level)
             self.bucket_util.update_bucket_property(
                 self.cluster.master,
