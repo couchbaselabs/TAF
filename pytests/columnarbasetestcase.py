@@ -123,12 +123,12 @@ class ColumnarBaseTest(CouchbaseBaseTest):
         self.wait_for_cluster_deletion(self.cluster)
 
     def delete_cluster(self, cluster):
-        result = self.goldfish_utils.delete_goldfish_cluster(
+        result = self.goldfish_utils.delete_cluster(
             self.pod, self.tenant, cluster)
         self.assertTrue(result, "Deleting cluster {0} failed".format(cluster.name))
 
     def wait_for_cluster_deletion(self, cluster):
-        result = self.goldfish_utils.wait_for_cluster_to_be_destroyed(
+        result = self.goldfish_utils.wait_for_cluster_destroy(
             self.pod, self.tenant, cluster)
         self.assertTrue(result, "Cluster {0} failed to be deleted".format(cluster.name))
 
