@@ -701,6 +701,7 @@ class UpgradeTests(UpgradeBase):
         self.tasks_post_upgrade()
 
     def test_bucket_durability_upgrade(self):
+        self.key = self.input.param("key", "test_collections")
         update_task = None
         self.sdk_timeout = 60
         create_batch_size = 10000
@@ -715,6 +716,11 @@ class UpgradeTests(UpgradeBase):
         if sync_write_support:
             self.verification_dict["rollback_item_count"] = 0
             self.verification_dict["sync_write_aborted_count"] = 0
+
+        self.gen_load = doc_generator(self.key, 0, self.num_items,
+                                      randomize_doc_size=True,
+                                      randomize_value=True,
+                                      randomize=True)
 
         if self.upgrade_with_data_load:
             self.log.info("Starting async doc updates")
