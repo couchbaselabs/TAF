@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-import base64
-import glob
 import logging
 import logging.config
 import os
@@ -9,127 +7,42 @@ import sys
 import threading
 import time
 import unittest
-import urllib2
-import xml.dom.minidom
-from argparse import ArgumentParser
 
-from os.path import basename, splitext
+from os.path import splitext
 from pprint import pprint
-from threading import Thread, Event
-
-from java.lang import System
 
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "connections", "constants"] + sys.path
+from framework_lib.framework import HelperLib
+from java_lib import java_lang_lib
+
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputParser, TestInputSingleton
 from xunit import XUnitTestResult
 
 
-def usage(err=None):
-    if err is not None:
-        print("Error: %s" % err)
-    print("""\
-Syntax: testrunner [options]
-
-Examples:
-  ./testrunner -i tmp/local.ini -t performance.perf.DiskDrainRate
-  ./testrunner -i tmp/local.ini -t performance.perf.DiskDrainRate.test_9M
-""")
-    sys.exit(0)
-
-
 def parse_args():
-    parser = ArgumentParser(description="TAF - Test Automation Framework")
-    parser.add_argument("-q", action="store_false", dest="verbose")
-
-    parser.add_argument("-i", "--ini", dest="ini", required=True,
-                        help="Path to .ini file containing server "
-                             "information,e.g -i tmp/local.ini")
-    parser.add_argument("-c", "--config", dest="conf",
-                        help="Config file name (located in the conf "
-                             "subdirectory), e.g -c py-view.conf")
-    parser.add_argument("-t", "--test", dest="testcase",
-                        help="Test name (multiple -t options add more "
-                             "tests) e.g -t "
-                             "performance.perf.DiskDrainRate")
-    parser.add_argument("-m", "--mode", dest="mode", default="rest",
-                        help="Use java for Java SDK, rest for rest APIs.")
-    parser.add_argument("-d", "--include_tests", dest="include_tests",
-                        help="Value can be 'failed' (or) 'passed' (or) "
-                             "'failed=<junit_xml_path (or) "
-                             "jenkins_build_url>' (or) "
-                             "'passed=<junit_xml_path or "
-                             "jenkins_build_url>' (or) "
-                             "'file=<filename>' (or) '<regular "
-                             "expression>' to include tests in the run. "
-                             "Use -g option to search "
-                             "entire conf files. e.g. -d 'failed' or -d "
-                             "'failed=report.xml' or -d "
-                             "'^2i.*nodes_init=2.*'")
-    parser.add_argument("-e", "--exclude_tests", dest="exclude_tests",
-                        help="Value can be 'failed' (or) 'passed' (or) "
-                             "'failed=<junit_xml_path (or) "
-                             "jenkins_build_url>' (or) "
-                             "'passed=<junit_xml_path (or) "
-                             "jenkins_build_url>' or 'file=<filename>' "
-                             "(or) '<regular expression>' "
-                             "to exclude tests in the run. Use -g "
-                             "option to search entire conf "
-                             "files. e.g. -e 'passed'")
-    parser.add_argument("-r", "--rerun", dest="rerun",
-                        help="Rerun fail or pass tests with given "
-                             "=count number of times maximum. "
-                             "\ne.g. -r 'fail=3'")
-    parser.add_argument("-g", "--globalsearch",
-                        dest="globalsearch", default="",
-                        help="Option to get tests from given conf file "
-                             "path pattern, "
-                             "like conf/**/*.conf. Useful for include "
-                             "or exclude conf files to "
-                             "filter tests. e.g. -g 'conf/**/.conf'")
-
-    parser.add_argument("-p", "--params", dest="params", default="",
-                        help="Optional key=value parameters, "
-                             "comma-separated -p k=v,k2=v2,...")
-    parser.add_argument("-n", "--noop", action="store_true",
-                        help="NO-OP - emit test names, but don't "
-                             "actually run them e.g -n true")
-    parser.add_argument("-l", "--log-level", dest="loglevel", default="INFO",
-                        choices=["DEBUG", "INFO", "WARNING", "CRITICAL"])
-    options = parser.parse_args()
+    framework_helper = HelperLib()
+    options = framework_helper.parse_cmd_line_options()
 
     tests = list()
-    test_params = dict()
+    test_params = {
+        "ini": options.ini,
+        "cluster_name": splitext(os.path.basename(options.ini))[0]
+    }
 
-    test_params['ini'] = options.ini
-    if not os.path.exists(options.ini):
-        sys.exit("ini file {0} was not found".format(options.ini))
-
-    test_params['cluster_name'] = \
-    splitext(os.path.basename(options.ini))[0]
-
-    if not options.testcase and not options.conf and not \
-            options.globalsearch and not options.include_tests and \
-            not options.exclude_tests:
-        parser.error(
-            "Please specify a configuration file (-c) or a test case "
-            "(-t) or a globalsearch (-g) option.")
-        parser.print_help()
     if options.conf and not options.globalsearch:
-        parse_conf_file(options.conf, tests, test_params)
+        framework_helper.parse_conf_file(options.conf, tests, test_params)
     if options.globalsearch:
-        parse_global_conf_file(options.globalsearch, tests, test_params)
+        framework_helper.parse_global_conf_file(options.globalsearch,
+                                                tests, test_params)
     if options.include_tests:
-        tests = process_include_or_filter_exclude_tests("include",
-                                                        options.include_tests,
-                                                        tests,
-                                                        options)
+        tests = framework_helper.process_include_or_filter_exclude_tests(
+            "include", options.include_tests, tests, options)
     if options.exclude_tests:
-        tests = process_include_or_filter_exclude_tests("exclude",
-                                                        options.exclude_tests,
-                                                        tests, options)
+        tests = framework_helper.process_include_or_filter_exclude_tests(
+            "exclude", options.exclude_tests, tests, options)
 
     if options.testcase:
         tests.append(options.testcase)
@@ -141,7 +54,7 @@ def parse_args():
     return tests, test_params, options.ini, options.params, options
 
 
-def create_log_file(log_config_file_name, log_file_name, level):
+def create_log_file(log_config_file_name, log_file_name):
     tmpl_log_file = open("jython.logging.conf")
     log_file = open(log_config_file_name, "w")
     log_file.truncate()
@@ -150,361 +63,6 @@ def create_log_file(log_config_file_name, log_file_name, level):
         log_file.write(line)
     log_file.close()
     tmpl_log_file.close()
-
-
-def append_test(tests, name):
-    prefix = ".".join(name.split(".")[0:-1])
-    """
-        Some tests carry special chars, need to skip it
-    """
-    if "test_restore_with_filter_regex" not in name and \
-        "test_restore_with_rbac" not in name and \
-        "test_backup_with_rbac" not in name and \
-         name.find('*') > 0:
-        for t in unittest.TestLoader().loadTestsFromName(name.rstrip('.*')):
-            tests.append(prefix + '.' + t._testMethodName)
-    else:
-        tests.append(name)
-
-
-def locate_conf_file(filename):
-    print("Filename: %s" % filename)
-    if filename:
-        if os.path.exists(filename):
-            return file(filename)
-        if os.path.exists("conf{0}{1}".format(os.sep, filename)):
-            return file("conf{0}{1}".format(os.sep, filename))
-        return None
-
-
-def parse_conf_file(filename, tests, params):
-    """Parse a configuration file.
-    Configuration files contain information and parameters about test execution.
-    Should follow the following order:
-
-    Part1: Tests to execute.
-    Part2: Parameters to override the defaults.
-
-    @e.x:
-        TestModuleName1:
-            TestName1
-            TestName2
-            ....
-        TestModuleName2.TestName3
-        TestModuleName2.TestName4
-        ...
-
-        params:
-            items=4000000
-            num_creates=400000
-            ....
-    """
-    f = locate_conf_file(filename)
-    if not f:
-        usage("unable to locate configuration file: " + filename)
-    prefix = None
-    for line in f:
-        stripped = line.strip()
-        if stripped.startswith("#") or len(stripped) <= 0:
-            continue
-        if stripped.endswith(":"):
-            prefix = stripped.split(":")[0]
-            print("Prefix: %s" % prefix)
-            continue
-        name = stripped
-        if prefix and prefix.lower() == "params":
-            args = stripped.split("=", 1)
-            if len(args) == 2:
-                params[args[0]] = args[1]
-            continue
-        elif line.startswith(" ") and prefix:
-            name = prefix + "." + name
-        prefix = ".".join(name.split(",")[0].split('.')[0:-1])
-        append_test(tests, name)
-
-    # If spec parameter isn't defined, testrunner uses the *.conf
-    # filename for
-    # the spec value
-    if 'spec' not in params:
-        params['spec'] = splitext(basename(filename))[0]
-
-    params['conf_file'] = filename
-
-
-def parse_global_conf_file(dirpath, tests, params):
-    print("dirpath=" + dirpath)
-    if os.path.isdir(dirpath):
-        dirpath = dirpath + os.sep + "**" + os.sep + "*.conf"
-        print("Global filespath=" + dirpath)
-
-    conf_files = glob.glob(dirpath)
-    for file in conf_files:
-        parse_conf_file(file, tests, params)
-
-
-def process_include_or_filter_exclude_tests(filtertype, option, tests,
-                                            options):
-    if filtertype == 'include' or filtertype == 'exclude':
-
-        if option.startswith('failed') or option.startswith(
-                'passed') or option.startswith(
-                "http://") or option.startswith("https://"):
-            passfail = option.split("=")
-            tests_list = []
-            if len(passfail) == 2:
-                if passfail[1].startswith("http://") \
-                        or passfail[1].startswith("https://"):
-                    tp, tf = parse_testreport_result_xml(passfail[1])
-                else:
-                    tp, tf = parse_junit_result_xml(passfail[1])
-            elif option.startswith("http://") or option.startswith("https://"):
-                tp, tf = parse_testreport_result_xml(option)
-                tests_list = tp + tf
-            else:
-                tp, tf = parse_junit_result_xml()
-            if tp is None and tf is None:
-                return tests
-            if option.startswith('failed') and tf:
-                tests_list = tf
-            elif option.startswith('passed') and tp:
-                tests_list = tp
-            if filtertype == 'include':
-                tests = tests_list
-            else:
-                for line in tests_list:
-                    isexisted, t = check_if_exists_with_params(tests,
-                                                               line,
-                                                               options.params)
-                    if isexisted:
-                        tests.remove(t)
-        elif option.startswith("file="):
-            filterfile = locate_conf_file(option.split("=")[1])
-            if filtertype == 'include':
-                tests_list = []
-                if filterfile:
-                    for line in filterfile:
-                        tests_list.append(line.strip())
-                tests = tests_list
-            else:
-                for line in filterfile:
-                    isexisted, t = check_if_exists_with_params(tests,
-                                                               line.strip(),
-                                                               options.params)
-                    if isexisted:
-                        tests.remove(t)
-        else:  # pattern
-            if filtertype == 'include':
-                tests = [i for i in tests if re.search(option, i)]
-            else:
-                tests = [i for i in tests if not re.search(option, i)]
-    else:
-        print("Warning: unknown filtertype given (only include/exclude "
-              "supported)!")
-    return tests
-
-
-def parse_testreport_result_xml(filepath=""):
-    if filepath.startswith("http://") or filepath.startswith(
-            "https://"):
-        url_path = filepath + "/testReport/api/xml?pretty=true"
-        jobnamebuild = filepath.split('/')
-        if not os.path.exists('logs'):
-            os.mkdir('logs')
-        newfilepath = 'logs' + ''.join(os.sep) + '_'.join(
-            jobnamebuild[-3:]) + "_testresult.xml"
-        print("Downloading " + url_path + " to " + newfilepath)
-        try:
-            req = urllib2.Request(url_path)
-            filedata = urllib2.urlopen(req)
-            datatowrite = filedata.read()
-            filepath = newfilepath
-            with open(filepath, 'wb') as f:
-                f.write(datatowrite)
-        except Exception as ex:
-            print("Error:: " + str(
-                ex) + "! Please check if " + url_path + " URL is "
-                                                        "accessible!!")
-            print("Running all the tests instead for now.")
-            return None, None
-    if filepath == "":
-        filepath = "logs/**/*.xml"
-    print("Loading result data from " + filepath)
-    xml_files = glob.glob(filepath)
-    passed_tests = []
-    failed_tests = []
-    for xml_file in xml_files:
-        print("-- " + xml_file + " --")
-        doc = xml.dom.minidom.parse(xml_file)
-        testresultelem = doc.getElementsByTagName("testResult")
-        testsuitelem = testresultelem[0].getElementsByTagName("suite")
-        for ts in testsuitelem:
-            testcaseelem = ts.getElementsByTagName("case")
-            for tc in testcaseelem:
-                tcname = getNodeText(
-                    (tc.getElementsByTagName("name")[0]).childNodes)
-                tcstatus = getNodeText(
-                    (tc.getElementsByTagName("status")[0]).childNodes)
-                if tcstatus == 'PASSED':
-                    passed_tests.append(tcname)
-                else:
-                    failed_tests.append(tcname)
-
-    if failed_tests:
-        failed_tests = transform_and_write_to_file(failed_tests,
-                                                   "failed_tests.conf")
-
-    if passed_tests:
-        passed_tests = transform_and_write_to_file(passed_tests,
-                                                   "passed_tests.conf")
-
-    return passed_tests, failed_tests
-
-
-def getNodeText(nodelist):
-    rc = []
-    for node in nodelist:
-        if node.nodeType == node.TEXT_NODE:
-            rc.append(node.data)
-    return ''.join(rc)
-
-
-def parse_junit_result_xml(filepath=""):
-    if filepath.startswith("http://") or filepath.startswith(
-            "https://"):
-        return parse_testreport_result_xml(filepath)
-    if filepath == "":
-        filepath = "logs/**/*.xml"
-    print("Loading result data from " + filepath)
-    xml_files = glob.glob(filepath)
-    passed_tests = []
-    failed_tests = []
-    for xml_file in xml_files:
-        print("-- " + xml_file + " --")
-        doc = xml.dom.minidom.parse(xml_file)
-        testsuitelem = doc.getElementsByTagName("testsuite")
-        for ts in testsuitelem:
-            testcaseelem = ts.getElementsByTagName("testcase")
-            failed = False
-            for tc in testcaseelem:
-                tcname = tc.getAttribute("name")
-                tcerror = tc.getElementsByTagName("error")
-                for tce in tcerror:
-                    failed_tests.append(tcname)
-                    failed = True
-                if not failed:
-                    passed_tests.append(tcname)
-
-    if failed_tests:
-        failed_tests = transform_and_write_to_file(failed_tests,
-                                                   "failed_tests.conf")
-
-    if passed_tests:
-        passed_tests = transform_and_write_to_file(passed_tests,
-                                                   "passed_tests.conf")
-    return passed_tests, failed_tests
-
-
-def transform_and_write_to_file(tests_list, filename):
-    new_test_list = []
-    for test in tests_list:
-        line = filter_fields(test)
-        line = line.rstrip(",")
-        isexisted, _ = check_if_exists(new_test_list, line)
-        if not isexisted:
-            new_test_list.append(line)
-
-    file = open(filename, "w+")
-    for line in new_test_list:
-        file.writelines((line) + "\n")
-    file.close()
-    return new_test_list
-
-
-def filter_fields(testname):
-    if "logs_folder:" in testname:
-        testwords = testname.split(",")
-        line = ""
-        for fw in testwords:
-            if not fw.startswith("logs_folder") and not fw.startswith(
-                    "conf_file") \
-                    and not fw.startswith("cluster_name:") \
-                    and not fw.startswith("ini:") \
-                    and not fw.startswith("case_number:") \
-                    and not fw.startswith("num_nodes:") \
-                    and not fw.startswith("spec:"):
-                line = line + fw.replace(":", "=", 1)
-                if fw != testwords[-1]:
-                    line = line + ","
-        return line
-    else:
-        testwords = testname.split(",")
-        line = []
-        for fw in testwords:
-            if not fw.startswith("logs_folder=") and not fw.startswith("conf_file=") \
-                    and not fw.startswith("cluster_name=") \
-                    and not fw.startswith("ini=") \
-                    and not fw.startswith("case_number=") \
-                    and not fw.startswith("num_nodes=") \
-                    and not fw.startswith("spec="):
-                line.append(fw)
-        return ",".join(line)
-
-
-def check_if_exists(test_list, test_line):
-    new_test_line = ''.join(sorted(test_line))
-    for t in test_list:
-        t1 = ''.join(sorted(t))
-        if t1 == new_test_line:
-            return True, t
-    return False, ""
-
-
-def check_if_exists_with_params(test_list, test_line, test_params):
-    new_test_line = ''.join(sorted(test_line))
-    for t in test_list:
-        if test_params:
-            t1 = ''.join(sorted(t + "," + test_params.strip()))
-        else:
-            t1 = ''.join(sorted(t))
-
-        if t1 == new_test_line:
-            return True, t
-    return False, ""
-
-
-def create_headers(username, password):
-    authorization = base64.encodestring('%s:%s' % (username, password))
-    return {'Content-Type': 'application/x-www-form-urlencoded',
-            'Authorization': 'Basic %s' % authorization,
-            'Accept': '*/*'}
-
-
-class StoppableThreadWithResult(Thread):
-    """Thread class with a stop() method. The thread itself has to check
-    regularly for the stopped() condition."""
-
-    def __init__(self, group=None, target=None, name=None,
-                 args=(), kwargs=None, verbose=None):
-        super(StoppableThreadWithResult, self).__init__(
-            group=group, target=target,
-            name=name, args=args, kwargs=kwargs)
-        self._stop = Event()
-
-    def stop(self):
-        self._stop.set()
-        self._Thread__stop()
-
-    def stopped(self):
-        return self._stop.isSet()
-
-    def run(self):
-        if self._Thread__target is not None:
-            self._return = self._Thread__target(*self._Thread__args,
-                                                **self._Thread__kwargs)
-
-    def join(self, timeout=None):
-        Thread.join(self, timeout=None)
-        return self._return
 
 
 def main():
@@ -591,7 +149,7 @@ def main():
         test_log_file = os.path.join(logs_folder, "test.log")
         log_config_filename = r'{0}'.format(os.path.join(logs_folder,
                                                          "test.logging.conf"))
-        create_log_file(log_config_filename, test_log_file, options.loglevel)
+        create_log_file(log_config_filename, test_log_file)
         logging.config.fileConfig(log_config_filename)
         print("Logs will be stored at %s" % logs_folder)
         print("\nguides/gradlew --refresh-dependencies testrunner "
@@ -628,14 +186,6 @@ def main():
                 print("####### Running test with trace logs enabled #######")
                 TestInputSingleton.input.test_params["log_level"] = "debug"
                 result = unittest.TextTestRunner(verbosity=2).run(suite)
-            # test_timeout = TestInputSingleton.input.param("test_timeout",
-            #                                               None)
-            # t = StoppableThreadWithResult(
-            #    target=unittest.TextTestRunner(verbosity=2).run,
-            #    name="test_thread",
-            #    args=(suite))
-            # t.start()
-            # result = t.join(timeout=test_timeout)
             if not result:
                 for t in threading.enumerate():
                     if t != threading.current_thread():
@@ -710,12 +260,10 @@ def main():
                 test_run_result = result["name"] + " pass"
             print(test_run_result)
         if fail_count > 0:
-            System.exit(1)
-    System.exit(0)
+            java_lang_lib.system_exit(1)
+    java_lang_lib.system_exit(0)
 
 
 if __name__ == "__main__":
-    if sys.hexversion < 0x02060000:
-        usage("Testrunner requires version 2.6+ of python")
-
+    assert HelperLib.validate_python_version(sys.version_info)
     main()
