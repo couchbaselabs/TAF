@@ -392,63 +392,62 @@ class Murphy(BaseTestCase, OPD):
         # crash_check = threading.Thread(target=self.checks_logs)
         # crash_check.start()
 
+        self.create_perc = 100
+        self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
+        for bucket in self.cluster.buckets:
+            self.generate_docs(doc_ops=["create"],
+                               create_start=0,
+                               create_end=bucket.loadDefn.get("num_items")/2,)
+        if not self.skip_setup_cleanup:
+            self.perform_load(validate_data=False)
+
+        self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
+        for bucket in self.cluster.buckets:
+            self.generate_docs(doc_ops=["create"],
+                               create_start=bucket.loadDefn.get("num_items")/2,
+                               create_end=bucket.loadDefn.get("num_items"))
+        if not self.skip_setup_cleanup:
+            self.perform_load(validate_data=False)
+        ###################################################################
+        self.drFTS.create_fts_indexes(self.cluster.buckets, self.dim)
+        status = self.drFTS.wait_for_fts_index_online(self.cluster.buckets,
+                                                    self.index_timeout)
+        self.assertTrue(status, "FTS index build failed.")
+        for bucket in self.cluster.buckets:
+            if bucket.loadDefn.get("ftsQPS", 0) > 0:
+                ql = FTSQueryLoad(bucket, self.cluster, self.esClient,
+                                  self.mockVector, self.dim)
+                ql.start_query_load()
+                self.ftsQL.append(ql)
+        ###################################################################
+        '''
+        Existing:
+        Sequential: 0 - 10M
+        Random: 0 - 20M
+
+        This Step:
+        Create Random: 20 - 30M
+        Delete Random: 10 - 20M
+        Update Random: 0 - 10M
+        Nodes In Cluster = 3 -> 4
+
+        Final Docs = 30M (Random: 0-10M, 20-30M, Sequential: 0-10M)
+        Nodes In Cluster = 4
+        '''
+        self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
+        self.key_type = "CircularKey"
+        self.create_perc = 0
+        self.update_perc = 100
+        self.delete_perc = 0
+        self.expiry_perc = 0
+        self.read_perc = 0
+        self.mutation_perc = self.input.param("mutation_perc", 100)
+        self.generate_docs(self.doc_ops)
+        tasks = self.perform_load(wait_for_load=False)
+        self.sleep(600)
+
         self.loop = 0
         while self.loop < self.iterations:
-            self.create_perc = 100
-            self.PrintStep("Step 1: Create %s items sequentially" % self.num_items)
-            for bucket in self.cluster.buckets:
-                self.generate_docs(doc_ops=["create"],
-                                   create_start=0,
-                                   create_end=bucket.loadDefn.get("num_items")/2,)
-            if not self.skip_setup_cleanup:
-                self.perform_load(validate_data=False)
-
-            self.PrintStep("Step 3: Create %s items sequentially" % self.num_items)
-            for bucket in self.cluster.buckets:
-                self.generate_docs(doc_ops=["create"],
-                                   create_start=bucket.loadDefn.get("num_items")/2,
-                                   create_end=bucket.loadDefn.get("num_items"))
-            if not self.skip_setup_cleanup:
-                self.perform_load(validate_data=False)
-            self.ops_rate = self.input.param("rebl_ops_rate", self.ops_rate)
-            ###################################################################
-            if self.loop == 0:
-                if self.fts_nodes:
-                    self.drFTS.create_fts_indexes(self.cluster.buckets, self.dim)
-                    status = self.drFTS.wait_for_fts_index_online(self.cluster.buckets,
-                                                                self.index_timeout)
-                    self.assertTrue(status, "FTS index build failed.")
-                    for bucket in self.cluster.buckets:
-                        if bucket.loadDefn.get("ftsQPS", 0) > 0:
-                            ql = FTSQueryLoad(bucket, self.cluster, self.esClient,
-                                              self.mockVector, self.dim)
-                            ql.start_query_load()
-                            self.ftsQL.append(ql)
-            ###################################################################
-            self.sleep(600)
-            '''
-            Existing:
-            Sequential: 0 - 10M
-            Random: 0 - 20M
-
-            This Step:
-            Create Random: 20 - 30M
-            Delete Random: 10 - 20M
-            Update Random: 0 - 10M
-            Nodes In Cluster = 3 -> 4
-
-            Final Docs = 30M (Random: 0-10M, 20-30M, Sequential: 0-10M)
-            Nodes In Cluster = 4
-            '''
-            self.key_type = "CircularKey"
-            self.create_perc = 0
-            self.update_perc = 100
-            self.delete_perc = 0
-            self.expiry_perc = 0
-            self.read_perc = 0
-            self.mutation_perc = self.input.param("mutation_perc", 100)
-            self.generate_docs(doc_ops=["update"])
-            tasks = self.perform_load(wait_for_load=False)
 
             self.rebl_services = self.input.param("rebl_services", ["fts"])
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
@@ -650,4 +649,4 @@ class Murphy(BaseTestCase, OPD):
 
         #######################################################################
             self.sleep(600)
-            self.doc_loading_tm.abortAllTasks()
+        self.doc_loading_tm.abortAllTasks()
