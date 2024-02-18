@@ -631,7 +631,8 @@ class UpgradeBase(BaseTestCase):
             return
 
         # Validate orchestrator selection
-        self.cluster_util.validate_orchestrator_selection(self.cluster)
+        self.cluster_util.validate_orchestrator_selection(self.cluster,
+                                                          removed_nodes=[node_to_upgrade])
 
         # Install target version on spare node
         if install_on_spare_node:
