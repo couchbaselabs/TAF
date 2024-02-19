@@ -89,8 +89,6 @@ class UpgradeTests(UpgradeBase):
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
-        self.cluster.master = self.cluster_util.get_kv_nodes(self.cluster)[0]
-        self.cluster_util.cluster_cleanup(self.cluster, self.bucket_util)
         super(UpgradeTests, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
