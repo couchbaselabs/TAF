@@ -1649,6 +1649,7 @@ class basic_ops(ClusterSetup):
         xdcr_cluster.nodes_in_cluster = [in_node]
         xdcr_rest = RestConnection(xdcr_cluster.master)
         xdcr_rest.init_node()
+        xdcr_rest.set_internalSetting("magmaMinMemoryQuota", 256)
         self.create_bucket(xdcr_cluster)
         rest = RestConnection(self.cluster.master)
         rest.add_remote_cluster(xdcr_cluster.master.ip,
