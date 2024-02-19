@@ -293,8 +293,12 @@ class CBASBaseTest(BaseTestCase):
                     host=cluster.master, standard=self.standard,
                     encryption_type=self.encryption_type,
                     passphrase_type=self.passphrase_type)
+                if len(self.cb_clusters) == 1:
+                    servers = self.servers
+                else:
+                    servers = cluster.servers
                 self.generate_and_upload_cert(
-                    cluster.servers, cluster.x509, upload_root_certs=True,
+                    servers, cluster.x509, upload_root_certs=True,
                     upload_node_certs=True, upload_client_certs=True)
                 payload = "name=cbadminbucket&roles=admin&password=password"
                 rest = RestConnection(cluster.master)

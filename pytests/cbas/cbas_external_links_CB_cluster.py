@@ -2095,8 +2095,8 @@ class CBASExternalLinks(CBASBaseTest):
         elif self.input.param("use_invalid_link", False):
             original_link_name = dataset_obj.link_name
             dataset_obj.link_name = "invalid"
-            error_msg = "Link Default.{0} does not exist".format(
-                dataset_obj.link_name)
+            error_msg = "Link {0}.invalid does not exist".format(
+                dataset_obj.dataverse_name)
         # Negative scenario ends
 
         self.log.info("Creating dataset on link to remote cluster")
