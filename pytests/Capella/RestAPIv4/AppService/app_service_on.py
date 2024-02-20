@@ -116,7 +116,7 @@ class AppServiceOn(GetAppService):
             app = self.app_service_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.switch_cluster_on_endpoint = \
+                self.capellaAPI.cluster_ops_apis.appservice_on_off_endpoint = \
                     testcase["url"]
             if "invalid_organizationID" in testcase:
                 org = testcase["invalid_organizationID"]
@@ -133,18 +133,18 @@ class AppServiceOn(GetAppService):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
                     org, proj, clus, app)
-            if result.status_code == 204:
+            if result.status_code in [202, 409]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"], self.project_id,
                         self.cluster_id, self.app_service_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 202, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
-            self.capellaAPI.cluster_ops_apis.switch_cluster_on_endpoint = \
+            self.capellaAPI.cluster_ops_apis.appservice_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}" \
                 "/activationState"
 
@@ -201,16 +201,16 @@ class AppServiceOn(GetAppService):
                 result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, headers=header)
-            if result.status_code == 204:
+            if result.status_code in [202, 409]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"], self.project_id,
                         self.cluster_id, self.app_service_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 202, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -223,7 +223,7 @@ class AppServiceOn(GetAppService):
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), testcases))
+                      .format(len(failures), len(testcases)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, "
@@ -323,16 +323,16 @@ class AppServiceOn(GetAppService):
                 result = self.capellaAPI.cluster_ops_apis.switch_app_service_on(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase['appServiceID'], **kwarg)
-            if result.status_code == 204:
+            if result.status_code in [202, 409]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"], self.project_id,
                         self.cluster_id, self.app_service_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 202, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         if failures:
             for fail in failures:

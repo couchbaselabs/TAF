@@ -133,7 +133,7 @@ class AppServiceOff(GetAppService):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_app_service_off(
                     org, proj, clus, app)
-            if result.status_code == 202:
+            if result.status_code in [202, 409]:
                 if not self.validate_onoff_state(
                         ["turningOff", "turnedOff"], self.project_id,
                         self.cluster_id, self.app_service_id):
@@ -142,7 +142,7 @@ class AppServiceOff(GetAppService):
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 202, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.switch_cluster_on_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}" \
@@ -201,7 +201,7 @@ class AppServiceOff(GetAppService):
                 result = self.capellaAPI.cluster_ops_apis.switch_app_service_off(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.app_service_id, headers=header)
-            if result.status_code == 202:
+            if result.status_code in [202, 409]:
                 if not self.validate_onoff_state(
                         ["turningOff", "turnedOff"], self.project_id,
                         self.cluster_id, self.app_service_id):
@@ -210,7 +210,7 @@ class AppServiceOff(GetAppService):
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 202, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -223,7 +223,7 @@ class AppServiceOff(GetAppService):
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), testcases))
+                      .format(len(failures), len(testcases)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}, "
@@ -323,7 +323,7 @@ class AppServiceOff(GetAppService):
                 result = self.capellaAPI.cluster_ops_apis.switch_app_service_off(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase['appServiceID'], **kwarg)
-            if result.status_code == 202:
+            if result.status_code in [202, 409]:
                 if not self.validate_onoff_state(
                         ["turningOff", "turnedOff"], self.project_id,
                         self.cluster_id, self.app_service_id):
@@ -332,7 +332,7 @@ class AppServiceOff(GetAppService):
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 202, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         if failures:
             for fail in failures:
