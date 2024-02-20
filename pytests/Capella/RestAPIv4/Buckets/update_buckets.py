@@ -474,20 +474,20 @@ class UpdateBucket(GetCluster):
             for value in values:
                 testcase = copy.deepcopy(self.expected_result)
                 testcase[key] = value
-
                 for param in ["name", "stats", "evictionPolicy", "type",
                               "storageBackend", "bucketConflictResolution"]:
                     del testcase[param]
-                testcase["description"] = "Testing '{}' with value: " \
-                                          "{}".format(key, value)
 
+                testcase["description"] = "Testing '{}' with val: `{}` of " \
+                    "type: `{}`".format(key, value, type(value))
                 if (
                         (key in ["memoryAllocationInMb",
                                  "timeToLiveInSeconds", "replicas"]
                             and not isinstance(value, int)) or
                         (key == "durabilityLevel"
-                         and not isinstance(value, str)) or
-                        (key == "flush" and not isinstance(value, bool))
+                            and not isinstance(value, str)) or
+                        (key == "flush" and not isinstance(value, bool)) or
+                        (key == "priority" and not isinstance(value, int))
                 ):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
@@ -499,19 +499,14 @@ class UpdateBucket(GetCluster):
                                    'field "{}".'.format(key)
                     }
                 elif (
-                 (key == 'timeToLiveInSeconds' and (value >= 0))
-                 or
-                 (key == 'replicas' and value in range(0, 4))
-                 or
-                 (key == 'flush' and isinstance(value, bool))
-                 or
-                 (key == 'memoryAllocationInMb' and isinstance(
-                            value, int)
-                         and value >= 100)
-                 or
+                 (key == 'timeToLiveInSeconds' and (value >= 0)) or
+                 (key == 'replicas' and value in range(0, 4)) or
+                 (key == 'flush' and isinstance(value, bool)) or
+                 (key == 'memoryAllocationInMb' and isinstance(value, int)
+                         and value >= 100) or
                  (key == 'durabilityLevel' and value in [
-                            "none", "majority", "majorityAndPersistActive",
-                            "persistToMajority"])
+                    "none", "majority", "majorityAndPersistActive",
+                    "persistToMajority"])
                 ):
                     continue
                 elif key == "durabilityLevel":
@@ -581,17 +576,17 @@ class UpdateBucket(GetCluster):
                                    "supported. It should be a non-negative "
                                    "integer."
                     }
-                else:
-                    testcase["expected_status_code"] = 400
+                elif key == "priority" and value not in range(0, 1000):
+                    testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
-                        "code": 400,
+                        "code": 422,
                         "hint": "Please review your request and ensure that "
                                 "all required parameters are correctly "
                                 "provided.",
-                        "httpStatusCode": 400,
-                        "message": "Bad Request"
+                        "httpStatusCode": 422,
+                        "message": "The bucket priority can be set to a "
+                                   "value between 0 and 1000."
                     }
-
                 testcases.append(testcase)
 
         failures = list()
@@ -640,41 +635,12 @@ class UpdateBucket(GetCluster):
             if result.status_code == 204:
                 if "expected_error" in testcase:
                     self.log.error(testcase["description"])
+                    self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
                 else:
                     self.log.debug("Updation Successful.")
             else:
-                if result.status_code >= 500:
-                    self.log.critical(testcase["description"])
-                    self.log.warning(result.content)
-                    failures.append(testcase["description"])
-                    continue
-                if result.status_code == testcase["expected_status_code"]:
-                    try:
-                        result = result.json()
-                        for key in result:
-                            if result[key] != testcase["expected_error"][key]:
-                                self.log.error("Status != 204, Key validation "
-                                               "failed for Test : {}".format(
-                                                testcase["description"]))
-                                self.log.warning("Failure : {}".format(result))
-                                failures.append(testcase["description"])
-                                break
-                    except (Exception,):
-                        if str(testcase["expected_error"]) \
-                                not in result.content:
-                            self.log.error(
-                                "Response type not JSON, Test : {}".format(
-                                    testcase["description"]))
-                            self.log.warning("Failure : {}".format(result))
-                            failures.append(testcase["description"])
-                else:
-                    self.log.error("Expected HTTP status code {}, Actual "
-                                   "HTTP status code {}".format(
-                                    testcase["expected_status_code"],
-                                    result.status_code))
-                    self.log.warning("Result : {}".format(result.content))
-                    failures.append(testcase["description"])
+                self.validate_testcase(result, 204, testcase, failures)
 
         if failures:
             for fail in failures:

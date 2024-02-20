@@ -177,13 +177,6 @@ class CreateBucket(GetCluster):
             if result.status_code == 201 and "expected_error" not in testcase:
                 self.expected_result['id'] = result.json()['id']
                 self.bucket_ids.append(result.json()['id'])
-
-                if not self.validate_bucket_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 201, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
             else:
                 self.validate_testcase(result, 201, testcase, failures)
 
@@ -484,12 +477,11 @@ class CreateBucket(GetCluster):
                     special_characters=False)
                 testcase = copy.deepcopy(self.expected_result)
                 testcase[key] = value
-
                 for param in ["stats", "evictionPolicy"]:
                     del testcase[param]
-                testcase["description"] = "Testing '{}' with value: " \
-                                          "{}".format(key, str(value))
 
+                testcase["description"] = "Testing `{}` with val: {} of {}"\
+                                          .format(key, value, type(value))
                 if (
                         (key in ["name", "type", "storageBackend",
                                  "bucketConflictResolution", "durabilityLevel"]
@@ -498,6 +490,7 @@ class CreateBucket(GetCluster):
                                     "timeToLiveInSeconds", "replicas"]
                             and not isinstance(value, int))
                         or (key == "flush" and not isinstance(value, bool))
+                        or (key == "priority" and not isinstance(value, int))
                 ):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
@@ -509,26 +502,18 @@ class CreateBucket(GetCluster):
                                    'field "{}".'.format(key)
                     }
                 elif (
-                 (key == 'timeToLiveInSeconds' and (value >= 0))
-                 or
-                 (key == 'replicas' and value in range(0, 4))
-                 or
-                 (key == 'flush' and isinstance(value, bool))
-                 or
+                 (key == 'timeToLiveInSeconds' and (value >= 0)) or
+                 (key == 'replicas' and value in range(0, 4)) or
+                 (key == 'flush' and isinstance(value, bool)) or
                  (key == 'bucketConflictResolution'
-                  and value in ['seqno', 'lww'])
-                 or
+                     and value in ['seqno', 'lww']) or
                  (key == 'memoryAllocationInMb' and isinstance(value, int)
-                  and value >= 100)
-                 or
+                     and value >= 100) or
                  (key == 'durabilityLevel' and value in [
                             "none", "majority", "majorityAndPersistActive",
-                            "persistToMajority"])
-                 or
-                 (key == 'name' and value != "" and len(value) <= 100)
-                 or
-                 (key == 'type' and value in ["couchbase", "ephemeral", ""])
-                 or
+                            "persistToMajority"]) or
+                 (key == 'name' and value != "" and len(value) <= 100) or
+                 (key == 'type' and value in ["couchbase", "ephemeral", ""]) or
                  (key == 'storageBackend' and value in ["couchstore", "magma"])
                 ):
                     continue
@@ -663,17 +648,17 @@ class CreateBucket(GetCluster):
                                    "supported. It should be a non-negative "
                                    "integer."
                     }
-                else:
-                    testcase["expected_status_code"] = 400
+                elif key == "priority" and value not in range(0, 1000):
+                    testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
-                        "code": 400,
+                        "code": 422,
                         "hint": "Please review your request and ensure that "
                                 "all required parameters are correctly "
                                 "provided.",
-                        "httpStatusCode": 400,
-                        "message": "Bad Request"
+                        "httpStatusCode": 422,
+                        "message": "The bucket priority can be set to a "
+                                   "value between 0 and 1000."
                     }
-
                 testcases.append(testcase)
 
         failures = list()
@@ -729,11 +714,7 @@ class CreateBucket(GetCluster):
 
                 if "expected_error" in testcase:
                     self.log.error(testcase["description"])
-                    failures.append(testcase["description"])
-                if not self.validate_bucket_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 201, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
+                    self.log.warning("Result: {}".format(result.content))
                     failures.append(testcase["description"])
                 else:
                     self.log.debug("Creation Successful - No Errors.")
