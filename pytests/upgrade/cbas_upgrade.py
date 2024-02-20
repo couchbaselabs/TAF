@@ -90,9 +90,25 @@ class UpgradeTests(UpgradeBase):
     def tearDown(self):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
+        # Shifting the master to kv node so that cleanup can happen post teardown
+        # This ensures all nodes are removed except the kv node
+        self.cluster.master = self.cluster_util.get_kv_nodes(self.cluster)[0]
+        # Teardown is called before cleanup as we need to collect cbcollect logs
+        # If cleanup is called before teardown, cbcollect will capture only one node logs, with no buckets and no rebalance hangs
         super(UpgradeTests, self).tearDown()
+        # During rebalance tests in upgrades, the first node (which usually has kv service) can be added back as cbas
+        # This causes the setup in the succeeding test case to fail as it cannot rebalance out all nodes
+        # The way to handle that is to cleanup in this test case and then proceed to the next
+        self.cluster_cleanup()
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.tearDown.__name__)
+
+    def cluster_cleanup(self, wait_time=360):
+        self.cluster_util.stop_running_rebalance(self.cluster)
+        self.bucket_util.delete_all_buckets(self.cluster)
+        self.cluster_util.cleanup_cluster(self.cluster, master=self.cluster.master)
+        for server in self.cluster.servers:
+            self.cluster_util.wait_for_ns_servers(server, wait_time)
 
     def pre_upgrade_setup(self):
         """

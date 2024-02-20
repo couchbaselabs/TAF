@@ -514,14 +514,7 @@ class ClusterUtils:
         return status
 
     def cluster_cleanup(self, cluster, bucket_util):
-        rest = RestConnection(cluster.master)
-        if rest._rebalance_progress_status() == 'running':
-            self.kill_memcached(cluster)
-            self.log.warning("Rebalance still running, "
-                             "test should be verified")
-            stopped = rest.stop_rebalance()
-            if not stopped:
-                raise Exception("Unable to stop rebalance")
+        self.stop_running_rebalance(cluster)
         bucket_util.delete_all_buckets(cluster)
         self.cleanup_cluster(cluster, master=cluster.master)
         self.wait_for_ns_servers_or_assert(cluster.servers)
@@ -530,7 +523,7 @@ class ClusterUtils:
     def wait_for_ns_servers_or_assert(self, servers, wait_time=360):
         tasks = []
         for server in servers:
-            task = FunctionCallTask(self._wait_for_ns_servers,
+            task = FunctionCallTask(self.wait_for_ns_servers,
                                     (server, wait_time))
             self.task_manager.schedule(task)
             tasks.append(task)
@@ -541,7 +534,7 @@ class ClusterUtils:
                 return result
         return True
 
-    def _wait_for_ns_servers(self, server, wait_time):
+    def wait_for_ns_servers(self, server, wait_time):
         self.log.debug("Waiting for ns_server @ {0}:{1}"
                        .format(server.ip, server.port))
         if RestConnection(server).is_ns_server_running(wait_time):
@@ -566,6 +559,19 @@ class ClusterUtils:
             return rest.monitorRebalance()
         else:
             return False
+
+    def stop_running_rebalance(self, cluster, master=None):
+        if master is None:
+            master = cluster.master
+        rest = RestConnection(master)
+        if rest._rebalance_progress_status() == 'running':
+            self.kill_memcached(self.cluster)
+            self.log.warning("Rebalance still running, test should be verified")
+            stopped = rest.stop_rebalance()
+            if not stopped:
+                raise Exception("Unable to stop rebalance")
+        else:
+            self.log.warning("Rebalance stop was attempted but there is no ongoing rebalance")
 
     def cleanup_cluster(self, cluster, wait_for_rebalance=True, master=None):
         if master is None:
