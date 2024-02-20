@@ -643,6 +643,10 @@ class CollectionsRebalance(CollectionBase):
                         continue
                     self.wait_for_rebalance_to_complete(operation)
         elif rebalance_operation == "hard_failover_rebalance_out":
+            # During hard failover + non-durability case, there is a chance that
+            # active data in mem. can be lost before replication completes
+            # resulting in less num_items than expected so skipping data
+            # validation for these cases from .conf
             if step_count == -1:
                 self.log.info("failing over nodes {0}".format(failover_nodes))
                 for failover_node in failover_nodes:
