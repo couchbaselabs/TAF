@@ -33,6 +33,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
         self.num_projects = self.input.param("num_projects", 2)
         self.invite_people = self.input.param("invite_people", 2)
         self.num_clusters = self.input.param("num_clusters", 1)
+        self.api_keys = self.input.param("api_keys", 1)
 
         self.pod_table = TableView(self.log.info)
         self.pod_table.set_headers(["Tenant", "Creds", "Cluster"])
@@ -132,13 +133,12 @@ class CapellaBaseTest(CouchbaseBaseTest):
             self.tenants = self.pod.create_tenants(self.num_tenants, email=email)
             for tenant in self.tenants:
                 self.log.info("Creating API keys for tenant...")
-                for i in range(1):
+                for i in range(self.api_keys):
                     resp = CapellaUtils.create_access_secret_key(self.pod, tenant, tenant.name + str(i))
                     tenant.api_secret_key = resp["secret"]
                     tenant.api_access_key = resp["access"]
-                for i in range(self.num_projects):
-                    CapellaUtils.create_project(self.pod, tenant, tenant.name + "_{}".format(i))
                     self.sleep(1)
+                CapellaUtils.create_project(self.pod, tenant, tenant.name, self.num_projects)
                 CapellaUtils.invite_users(self.pod, tenant, self.invite_people)
             self.sleep(600)
         tenant.project_id = tenant.projects[0]

@@ -56,19 +56,20 @@ class CapellaUtils(object):
         }
 
     @staticmethod
-    def create_project(pod, tenant, name):
+    def create_project(pod, tenant, name, num=1):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        resp = capella_api.create_project(tenant.id, name)
-        if resp.status_code != 201:
-            raise Exception("Creating capella_utils project failed: {}".
-                            format(resp.content))
-        project_id = json.loads(resp.content).get("id")
-        tenant.projects.append(project_id)
-        CapellaUtils.log.info("Project {} is created. PID: {}".format(name, project_id))
+        for i in range(num):
+            resp = capella_api.create_project(tenant.id, name+"_{}".format(i))
+            if resp.status_code != 201:
+                raise Exception("Creating capella_utils project failed: {}".
+                                format(resp.content))
+            project_id = json.loads(resp.content).get("id")
+            tenant.projects.append(project_id)
+            CapellaUtils.log.info("Project {} is created. PID: {}".format(name, project_id))
 
     @staticmethod
     def delete_project(pod, tenant, project_id):
