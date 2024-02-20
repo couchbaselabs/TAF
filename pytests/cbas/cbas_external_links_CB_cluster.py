@@ -1342,41 +1342,32 @@ class CBASExternalLinks(CBASBaseTest):
             mutation_num=0, batch_size=self.batch_size,
             async_load=True, validate_task=False)
 
-        if self.input.param("after_timeout", False):
-            # Restoring remote user permission after timeout
+        # Wait until timeout happens and dataset is disconnected
+        retry = 0
+        while retry < 30:
+            retry += 1
+            status, content, response = self.cbas_util.fetch_bucket_state_on_cbas(
+                self.analytics_cluster)
+            if status and json.loads(content)["buckets"][0]["state"] != "connected":
+                break
+            self.sleep(10)
 
-            # Wait until timeout happens and dataset is disconnected
-            retry = 0
-            while retry < 30:
-                retry += 1
-                status, content, response = self.cbas_util.fetch_bucket_state_on_cbas(
-                    self.analytics_cluster)
-                if status and json.loads(content)["buckets"][0]["state"] != "connected":
-                    break
-                self.sleep(10)
+        self.log.info(
+            "Validate not all new data has been ingested into dataset")
+        self.cbas_util.refresh_dataset_item_count(self.bucket_util)
+        if self.cbas_util.validate_cbas_dataset_items_count(
+                self.analytics_cluster, dataset.full_name,
+                dataset.num_of_items, num_tries=1):
+            self.fail(
+                "New data was ingested into dataset even after remote user permission was revoked.")
 
-            self.log.info(
-                "Validate not all new data has been ingested into dataset")
-            self.cbas_util.refresh_dataset_item_count(self.bucket_util)
-            if self.cbas_util.validate_cbas_dataset_items_count(
-                    self.analytics_cluster, dataset.full_name,
-                    dataset.num_of_items, num_tries=1):
-                self.fail(
-                    "New data was ingested into dataset even after remote user permission was revoked.")
-
-            to_cluster.rbac_util._create_user_and_grant_role(new_username,
-                                                             original_user_role)
-            # Reconnecting link.
-            if not self.cbas_util.connect_link(
-                self.analytics_cluster, dataset.link_name,
-                username=self.analytics_username):
-                self.fail("Error while connecting link")
-
-        else:
-            self.log.info("Restoring remote user permission")
-            # Restoring remote user permission before timeout
-            to_cluster.rbac_util._create_user_and_grant_role(new_username,
-                                                             original_user_role)
+        to_cluster.rbac_util._create_user_and_grant_role(new_username,
+                                                         original_user_role)
+        # Reconnecting link.
+        if not self.cbas_util.connect_link(
+            self.analytics_cluster, dataset.link_name,
+            username=self.analytics_username):
+            self.fail("Error while connecting link")
 
         if doc_loading_task.result is False:
             self.fail("Reloading data failed")
