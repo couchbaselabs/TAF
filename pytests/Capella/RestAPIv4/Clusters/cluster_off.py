@@ -18,6 +18,8 @@ class ClusterOff(GetCluster):
     def test_api_path(self):
         testcases = [
             {
+                "description": "Turn off a valid cluster"
+            }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/off",
                 "expected_status_code": 404,
@@ -33,54 +35,27 @@ class ClusterOff(GetCluster):
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/cluster/{}/off",
-                "expected_status_code": 405,
-                "expected_error": ""
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Switch cluster on but with non-hex "
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Switch cluster on but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Switch cluster on but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
@@ -106,16 +81,16 @@ class ClusterOff(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
                     org, proj, clus)
-            if result.status_code == 204:
+            if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOff", "turnedOff"],
                         self.project_id, self.cluster_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 409, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/off"
@@ -173,16 +148,16 @@ class ClusterOff(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
                     self.organisation_id, self.project_id, self.cluster_id,
                     headers=header)
-            if result.status_code == 204:
+            if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOff", "turnedOff"],
                         self.project_id, self.cluster_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 409, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -283,16 +258,16 @@ class ClusterOff(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_off(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], **kwarg)
-            if result.status_code == 204:
+            if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOff", "turnedOff"],
                         self.project_id, self.cluster_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 409, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         if failures:
             for fail in failures:
@@ -346,6 +321,10 @@ class ClusterOff(GetCluster):
             #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # conflicting state of the resource, ie, which give a
+            #   409 response.
+            if "409" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["409"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
@@ -393,6 +372,10 @@ class ClusterOff(GetCluster):
             #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # conflicting state of the resource, ie, which give a
+            #   409 response.
+            if "409" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["409"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:

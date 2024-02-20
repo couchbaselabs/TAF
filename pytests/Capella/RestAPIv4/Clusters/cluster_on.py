@@ -21,6 +21,8 @@ class ClusterOn(GetCluster):
     def test_api_path(self):
         testcases = [
             {
+                "description": "Turn on a valid cluster",
+            }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/on",
                 "expected_status_code": 404,
@@ -36,54 +38,27 @@ class ClusterOn(GetCluster):
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/cluster/{}/on",
-                "expected_status_code": 405,
-                "expected_error": ""
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Switch cluster on but with non-hex "
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Switch cluster on but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Switch cluster on but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
@@ -109,16 +84,16 @@ class ClusterOn(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     org, proj, clus, self.payload)
-            if result.status_code == 204:
+            if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 409, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/on"
@@ -176,16 +151,16 @@ class ClusterOn(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.payload, headers=header)
-            if result.status_code == 204:
+            if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 409, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -286,16 +261,16 @@ class ClusterOn(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], self.payload, **kwarg)
-            if result.status_code == 204:
+            if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):
-                    self.log.error("Status == 204, Key validation Failure "
+                    self.log.error("Status == 409, Key validation Failure "
                                    ": {}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         if failures:
             for fail in failures:
@@ -306,30 +281,40 @@ class ClusterOn(GetCluster):
     def test_payload(self):
         failures = list()
         testcases = 0
-        for val in [True, 100, None, "abc", 1.2, [True], {True}]:
+        for val in [True, 100, None, "abc", 1.2, [True], {True}, -1]:
             testcases += 1
             testcase = {
-                "description": "Testing payload with value {}".format(val)
+                "description": "Testing payload with value `{}` of {}"
+                .format(val, type(val))
             }
+            if type(val) is not bool:
+                testcase["expected_status_code"] = 400
+                testcase["expected_error"] = {
+                    "code": 1000,
+                    "hint": "The request was malformed or invalid.",
+                    "httpStatusCode": 400,
+                    "message": "Bad Request. Error: body contains incorrect "
+                               "JSON type for field "
+                               "\"turnOnLinkedAppService\"."
+                }
             self.log.info("Executing test: {}".format(testcase["description"]))
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.payload, val)
+                self.organisation_id, self.project_id, self.cluster_id, val)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.payload, val)
-            if result.status_code == 204:
+                    self.organisation_id, self.project_id, self.cluster_id, val)
+            if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):
-                    self.log.error("Status == 204, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
+                    self.log.error("Status == {}, Key validation Failure : {}"
+                                   .format(result.status_code,
+                                           testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
             else:
-                self.validate_testcase(result, 204, testcase, failures)
+                self.validate_testcase(result, 409, testcase, failures)
 
         if failures:
             for fail in failures:
@@ -339,10 +324,9 @@ class ClusterOn(GetCluster):
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
-        api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.switch_cluster_on,
-            (self.organisation_id, self.project_id, self.cluster_id)
-        ]]
+        api_func_list = [[self.capellaAPI.cluster_ops_apis.switch_cluster_on,
+                          (self.organisation_id, self.project_id,
+                           self.cluster_id, self.payload)]]
 
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
@@ -383,16 +367,19 @@ class ClusterOn(GetCluster):
             #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # conflicting state of the resource, ie, which give a
+            #   409 response.
+            if "409" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["409"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
                 self.fail("Some API calls failed")
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
-        api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.switch_cluster_on,
-            (self.organisation_id, self.project_id, self.cluster_id)
-        ]]
+        api_func_list = [[self.capellaAPI.cluster_ops_apis.switch_cluster_on,
+                          (self.organisation_id, self.project_id,
+                           self.cluster_id, self.payload)]]
 
         org_roles = self.input.param("org_roles", "organizationOwner")
         proj_roles = self.input.param("proj_roles", "projectDataReader")
@@ -430,6 +417,10 @@ class ClusterOn(GetCluster):
             #   # unauthorized roles, ie, which give a 403 response.
             if "403" in results[result]["4xx_errors"]:
                 del results[result]["4xx_errors"]["403"]
+            #   # conflicting state of the resource, ie, which give a
+            #   409 response.
+            if "409" in results[result]["4xx_errors"]:
+                del results[result]["4xx_errors"]["409"]
 
             if len(results[result]["4xx_errors"]) > 0 or len(
                     results[result]["5xx_errors"]) > 0:
