@@ -6,6 +6,7 @@ Created on Sep 25, 2017
 
 from com.couchbase.client.java.analytics import AnalyticsOptions,\
     AnalyticsScanConsistency, AnalyticsStatus, AnalyticsMetrics
+from com.couchbase.client.java.json import JsonArray
 from com.couchbase.client.core.error import (
     RequestCanceledException, CouchbaseException, AmbiguousTimeoutException,
     PlanningFailureException, UnambiguousTimeoutException, TimeoutException,
@@ -71,7 +72,10 @@ class CBASHelper(object):
                 output["results"] = [row.toMap() for row in
                                      result.rowsAsObject()]
             except DecodingFailureException:
-                output["results"] = result.rowsAs(str)
+                try:
+                    output["results"] = result.rowsAs(str)
+                except DecodingFailureException:
+                    output["results"] = result.rowsAs(JsonArray)
 
         except CompilationFailureException as err:
             output["errors"] = self.parse_error(err)

@@ -58,6 +58,18 @@ class BaseUtil(object):
         else:
             return CBASHelper(cluster.cbas_cc_node)
 
+    def get_all_active_requests(self, cluster, username=None, password=None, timeout=300,
+                                analytics_timeout=300):
+        cmd = "select value active_requests()"
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if status != 'success':
+            return False
+        return results[0]
+
+
     def execute_statement_on_cbas_util(
             self, cluster, statement, mode=None, timeout=300,
             client_context_id=None, username=None, password=None,
@@ -79,7 +91,10 @@ class BaseUtil(object):
         cbas_helper = self.get_cbas_helper_object(cluster)
         pretty = "true"
         try:
-            self.log.debug("Running query on cbas: %s" % statement)
+            if "insert into" not in statement.lower():
+                self.log.debug("Running query on cbas: %s" % statement)
+            else:
+                self.log.debug("Running insert query on cbas")
             response = cbas_helper.execute_statement_on_cbas(
                 statement, mode, pretty, timeout, client_context_id,
                 username, password,
@@ -3962,8 +3977,9 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         return True
 
     def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None,
-                                          database_name=None, username=None,
-                                          password=None, analytics_timeout=300, timeout=300):
+                                          database_name=None, username=None, validate_error_msg=None,
+                                          expected_error=None, expected_error_code=None, password=None,
+                                          analytics_timeout=300, timeout=300):
         """
         Query to insert into standalone collection
         """
@@ -3985,7 +4001,10 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
-        if status != "success":
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        elif status != "success":
             self.log.error(str(errors))
             return False
         else:
@@ -4106,7 +4125,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         # First insert target number of docs/
         while current_docs_count < target_num_docs:
             if not self.load_doc_to_standalone_collection(
-                    cluster, collection_name, dataverse_name,
+                    cluster, collection_name, dataverse_name, database_name,
                     target_num_docs, doc_size):
                 self.log.error("Error while inserting docs in "
                                "collection {}".format(collection_full_name))
@@ -4133,7 +4152,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 self.log.info("Deleting documents in collection: {0}".format(
                     collection_full_name))
                 if not self.delete_from_standalone_collection(
-                        cluster, collection_name, dataverse_name,
+                        cluster, collection_name, dataverse_name, database_name,
                         where_clause_for_delete_op.format(
                             collection_full_name, 5), use_alias):
                     self.log.error(
@@ -4146,7 +4165,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                     collection_full_name))
                 if not self.insert_into_standalone_collection(
                         cluster, collection_name,
-                        [self.generate_docs(doc_size)], dataverse_name):
+                        [self.generate_docs(doc_size)], dataverse_name, database_name):
                     self.log.error(
                         "Error while inserting docs in collection {"
                         "}".format(collection_full_name))
@@ -4157,7 +4176,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                     collection_full_name))
                 if not self.upsert_into_standalone_collection(
                         cluster, collection_name,
-                        [self.generate_docs(doc_size)], dataverse_name):
+                        [self.generate_docs(doc_size)], dataverse_name, database_name):
                     self.log.error(
                         "Error while upserting docs in collection {"
                         "}".format(collection_full_name))
