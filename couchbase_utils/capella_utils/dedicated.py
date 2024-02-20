@@ -78,8 +78,13 @@ class CapellaUtils(object):
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
-        capella_api.delete_project(tenant.id, project_id)
-        CapellaUtils.log.info("Project Deleted: {}".format(project_id))
+        if type(project_id) == list:
+            for _id in project_id:
+                capella_api.delete_project(tenant.id, _id)
+                CapellaUtils.log.info("Project Deleted: {}".format(_id))
+        else:
+            capella_api.delete_project(tenant.id, project_id)
+            CapellaUtils.log.info("Project Deleted: {}".format(project_id))
 
     @staticmethod
     def invite_users(pod, tenant, num):

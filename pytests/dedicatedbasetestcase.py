@@ -21,6 +21,7 @@ import uuid
 from table_view import TableView
 import random
 import string
+import threading
 
 
 class CapellaBaseTest(CouchbaseBaseTest):
@@ -266,14 +267,21 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             return
 
         if not TestInputSingleton.input.capella.get("clusters", None):
+            th = list()
             for tenant in self.tenants:
                 for cluster in tenant.clusters:
                     self.log.info("Destroying cluster: {}".format(cluster.id))
-                    CapellaUtils.destroy_cluster(self.pod, tenant, cluster)
+                    delete_th = threading.Thread(target=CapellaUtils.destroy_cluster,
+                                                 name=cluster.id,
+                                                 args=(self.pod, tenant, cluster))
+                    delete_th.start()
+                    th.append(delete_th)
+            for delete_th in th:
+                delete_th.join()
+
         if not TestInputSingleton.input.capella.get("project", None):
             for tenant in self.tenants:
-                for project_id in tenant.projects:
-                    CapellaUtils.delete_project(self.pod, tenant, project_id)
+                CapellaUtils.delete_project(self.pod, tenant, tenant.projects)
 
     def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1

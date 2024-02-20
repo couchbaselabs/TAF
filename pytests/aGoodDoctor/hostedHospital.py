@@ -630,13 +630,24 @@ class Murphy(BaseTestCase, OPD):
             for cluster in tenant.clusters:
                 if cluster.index_nodes:
                     self.drIndex.create_indexes(cluster.buckets)
-                    self.drIndex.build_indexes(cluster, cluster.buckets, wait=True)
-                    for bucket in cluster.buckets:
-                        if bucket.loadDefn.get("2iQPS", 0) > 0:
-                            ql = QueryLoad(bucket)
-                            ql.start_query_load()
-                            self.ql.append(ql)
-                    self.drIndex.start_index_stats(cluster)
+        th = list()
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                index_th = threading.Thread(self.drIndex.build_indexes, args=(cluster, cluster.buckets, True,))
+                index_th.start()
+                th.append(index_th)
+
+        for index_th in th:
+            th.join()
+
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                for bucket in cluster.buckets:
+                    if bucket.loadDefn.get("2iQPS", 0) > 0:
+                        ql = QueryLoad(bucket)
+                        ql.start_query_load()
+                        self.ql.append(ql)
+                self.drIndex.start_index_stats(cluster)
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
