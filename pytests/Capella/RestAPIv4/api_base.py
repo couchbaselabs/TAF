@@ -644,7 +644,7 @@ class APIBase(CouchbaseBaseTest):
             return True
 
         self.log.error("Current State = '{}', Expected States  = '{}'"
-                       .format(res["currentState"], states))
+                       .format(res.json()["currentState"], states))
         return False
 
     def validate_cluster_schedule_api_response(self, actual_res, expected_res):
