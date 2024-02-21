@@ -51,7 +51,8 @@ class AzureAutoExpansion(GetProject):
         }
 
     def tearDown(self):
-        self.verify_project_empty(self.project_id)
+        if not self.verify_project_empty(self.project_id):
+            self.fail("Cluster could not be destroyed")
         super(AzureAutoExpansion, self).tearDown()
 
     def validate_auto_expansion(self, cluster_id):

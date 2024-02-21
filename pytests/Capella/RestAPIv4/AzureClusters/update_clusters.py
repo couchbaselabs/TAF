@@ -85,7 +85,8 @@ class ToggleAzureAutoExpansion(GetProject):
     def tearDown(self):
         self.capellaAPI.cluster_ops_apis.delete_cluster(
             self.organisation_id, self.project_id, self.cluster_id)
-        self.verify_project_empty(self.project_id)
+        if not self.verify_project_empty(self.project_id):
+            self.fail("Cluster could not be destroyed")
         super(ToggleAzureAutoExpansion, self).tearDown()
 
     def validate_auto_expansion(self, cluster_id):

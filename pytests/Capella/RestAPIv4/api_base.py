@@ -620,7 +620,9 @@ class APIBase(CouchbaseBaseTest):
             self.log.warning("Result : {}".format(result.content))
             failures.append(testcase["description"])
 
-    def validate_onoff_state(self, states, proj, clus, app=None):
+    def validate_onoff_state(self, states, proj, clus, app=None, sleep=None):
+        if sleep:
+            time.sleep(sleep)
         if not app:
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, proj, clus)
@@ -711,29 +713,40 @@ class APIBase(CouchbaseBaseTest):
         return False
 
     def verify_app_services_empty(self, proj_id):
-        res = self.capellaAPI.cluster_ops_apis.list_appservices(
-            self.organisation_id, projectId=proj_id)
-        if res.status_code == 429:
+        start_time = time.time()
+        while start_time + 1800 > time.time():
+            time.sleep(15)
+
             res = self.capellaAPI.cluster_ops_apis.list_appservices(
                 self.organisation_id, projectId=proj_id)
-        if len(res.json()["data"]) != 0:
-            self.log.info("...Waiting further...")
-            time.sleep(30)
-            self.verify_app_services_empty(proj_id)
-        return
+            if res.status_code != 200:
+                self.log.error("Error while retrieving App Services: {}"
+                               .format(res.content))
+                return False
+            if len(res.json()["data"]) != 0:
+                self.log.info("...Waiting further...")
+            else:
+                return True
+        self.log.error("App Service didn't delete within half an hour.")
+        return False
 
     def verify_project_empty(self, proj_id):
-        res = self.capellaAPI.cluster_ops_apis.list_clusters(
-            self.organisation_id, proj_id)
-        if res.status_code == 429:
-            self.handle_rate_limit(int(res.headers["Retry-After"]))
+        start_time = time.time()
+        while start_time + 1800 > time.time():
+            time.sleep(15)
+
             res = self.capellaAPI.cluster_ops_apis.list_clusters(
                 self.organisation_id, proj_id)
-        if len(res.json()["data"]) != 0:
-            self.log.info("...Waiting further...")
-            time.sleep(30)
-            self.verify_project_empty(proj_id)
-        return
+            if res.status_code != 200:
+                self.log.error("Error while retrieving clusters: {}"
+                               .format(res.content))
+                return False
+            if len(res.json()["data"]) != 0:
+                self.log.info("...Waiting further...")
+            else:
+                return True
+        self.log.error("Cluster didn't delete within half an hour")
+        return False
 
     def create_path_combinations(self, *args):
         combination_list = []

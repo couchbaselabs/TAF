@@ -60,7 +60,7 @@ class GetAppService(GetCluster):
         self.log.info("Waiting for AppService to be in a stable state.")
         while not self.validate_onoff_state(["healthy", "turnedOff"],
                                             self.project_id, self.cluster_id,
-                                            self.app_service_id):
+                                            self.app_service_id, 15):
             self.log.info("...Waiting further...")
 
         # Delete App Service
@@ -73,5 +73,6 @@ class GetAppService(GetCluster):
                       .format(res.content))
 
         self.log.info("Waiting for app service to be deleted...")
-        self.verify_app_services_empty(self.project_id)
+        if not self.verify_app_services_empty(self.project_id):
+            self.fail("App Services could not be deleted")
         super(GetAppService, self).tearDown()

@@ -98,7 +98,8 @@ class GetCluster(GetProject):
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
-        self.verify_project_empty(self.project_id)
+        if not self.verify_project_empty(self.project_id):
+            self.fail("Cluster could not be destroyed")
         self.log.info("Cluster destroyed successfully.")
 
         super(GetCluster, self).tearDown()
