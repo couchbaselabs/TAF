@@ -56,6 +56,10 @@ class GetAppService(GetCluster):
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
 
+        # Wait for app_service to  be healthy.
+        self.wait_for_deployment(self.project_id, self.cluster_id,
+                                 self.app_service_id)
+
         # Delete App Service
         self.log.info("Deleting App Service...")
         res = self.capellaAPI.cluster_ops_apis.delete_appservice(

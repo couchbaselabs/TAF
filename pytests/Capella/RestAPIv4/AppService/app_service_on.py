@@ -39,8 +39,8 @@ class AppServiceOn(GetAppService):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/"
                        "appservices/{}/activation/activationState",
-                "expected_status_code": 405,
-                "expected_error": ""
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Switch appService on but with non-hex "
                                "organizationID",
