@@ -265,7 +265,7 @@ class BasicOps(N1qlBase):
         self.check_txid(txid)
         #check timeout
         if self.txtimeout:
-            self.sleep(100)
+            self.sleep(120)
             self.check_txid(txid, True)
         else:
             result = self.n1ql_helper.end_txn(query_params, self.commit)
