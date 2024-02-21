@@ -645,7 +645,7 @@ class APIBase(CouchbaseBaseTest):
         if res.json()['currentState'] in states:
             return True
 
-        self.log.error("Current State = '{}', Expected States  = '{}'"
+        self.log.error("Current State: '{}', Expected States: '{}'"
                        .format(res.json()["currentState"], states))
         return False
 
