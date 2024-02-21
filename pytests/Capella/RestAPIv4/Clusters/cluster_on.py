@@ -10,9 +10,6 @@ class ClusterOn(GetCluster):
 
     def setUp(self, nomenclature="Switch_Cluster_On"):
         GetCluster.setUp(self, nomenclature)
-        self.payload = {
-            "turnOnLinkedAppService": False
-        }
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
@@ -79,11 +76,11 @@ class ClusterOn(GetCluster):
                 clus = testcase["invalid_clusterID"]
 
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                org, proj, clus, self.payload)
+                org, proj, clus, False)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
-                    org, proj, clus, self.payload)
+                    org, proj, clus, False)
             if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
@@ -145,12 +142,12 @@ class ClusterOn(GetCluster):
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.payload, headers=header)
+                False, headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    self.payload, headers=header)
+                    False, headers=header)
             if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
@@ -255,12 +252,12 @@ class ClusterOn(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], self.payload, **kwarg)
+                testcase["clusterID"], False, **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.payload, **kwarg)
+                    testcase["clusterID"], False, **kwarg)
             if result.status_code in [409, 202]:
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
@@ -281,7 +278,7 @@ class ClusterOn(GetCluster):
     def test_payload(self):
         failures = list()
         testcases = 0
-        for val in [True, 100, None, "abc", 1.2, [True], {True}, -1]:
+        for val in [True, 100, None, "abc", 1.2, [True], -1]:
             testcases += 1
             testcase = {
                 "description": "Testing payload with value `{}` of {}"
@@ -326,7 +323,7 @@ class ClusterOn(GetCluster):
             self):
         api_func_list = [[self.capellaAPI.cluster_ops_apis.switch_cluster_on,
                           (self.organisation_id, self.project_id,
-                           self.cluster_id, self.payload)]]
+                           self.cluster_id, False)]]
 
         for i in range(self.input.param("num_api_keys", 1)):
             resp = self.capellaAPI.org_ops_apis.create_api_key(
@@ -379,7 +376,7 @@ class ClusterOn(GetCluster):
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[self.capellaAPI.cluster_ops_apis.switch_cluster_on,
                           (self.organisation_id, self.project_id,
-                           self.cluster_id, self.payload)]]
+                           self.cluster_id, False)]]
 
         org_roles = self.input.param("org_roles", "organizationOwner")
         proj_roles = self.input.param("proj_roles", "projectDataReader")
