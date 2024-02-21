@@ -620,7 +620,7 @@ class APIBase(CouchbaseBaseTest):
             self.log.warning("Result : {}".format(result.content))
             failures.append(testcase["description"])
 
-    def validate_onoff_state(self, states, proj, clus, app=None, sleep=None):
+    def validate_onoff_state(self, states, proj, clus, app=None, sleep=2):
         if sleep:
             time.sleep(sleep)
         if not app:
@@ -645,8 +645,8 @@ class APIBase(CouchbaseBaseTest):
         if res.json()['currentState'] in states:
             return True
 
-        self.log.error("Current State: '{}', Expected States: '{}'"
-                       .format(res.json()["currentState"], states))
+        self.log.warning("Current State: '{}', Expected States: '{}'"
+                         .format(res.json()["currentState"], states))
         return False
 
     def validate_cluster_schedule_api_response(self, actual_res, expected_res):
