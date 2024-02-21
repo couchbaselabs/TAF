@@ -256,7 +256,7 @@ class APIBase(CouchbaseBaseTest):
     """
     def make_parallel_api_calls(
             self, num_of_calls_per_api=100, apis_to_call=[],
-            api_key_dict={}, wait_time=0):
+            api_key_dict={}, batch_size=10, wait_time=0):
         results = dict()
         for role in api_key_dict:
             api_key_dict[role].update({"role": role})
@@ -264,38 +264,50 @@ class APIBase(CouchbaseBaseTest):
 
         threads = list()
 
-        def call_api_with_api_key(api_role, api_func, api_args, results):
+        def call_api_with_api_key(call_batch_per_api, api_role, api_func,
+                                  api_args):
             header = {
                 'Authorization': 'Bearer ' + api_role["token"],
                 'Content-Type': 'application/json'
             }
-            results[api_role["id"]] = {
-                "role": api_role["role"],
-                "rate_limit_hit": False,
-                "total_api_calls_made_to_hit_rate_limit": 0,
-                "2xx_status_code": {},
-                "4xx_errors": {},
-                "5xx_errors": {}
-            }
-            for i in range(num_of_calls_per_api):
+            if api_role["id"] not in results:
+                results[api_role["id"]] = {
+                    "role": api_role["role"],
+                    "rate_limit_hit": False,
+                    "start": datetime.now(),
+                    "end": None,
+                    "total_api_calls_made_to_hit_rate_limit": 0,
+                    "total_calls": 0,
+                    "2xx_status_code": {},
+                    "4xx_errors": {},
+                    "5xx_errors": {}
+                }
+            for i in range(call_batch_per_api):
                 resp = api_func(*api_args, headers=header)
-                results[api_role["id"]][
-                    "total_api_calls_made_to_hit_rate_limit"] += 1
                 if resp.status_code == 429:
                     results[api_role["id"]]["rate_limit_hit"] = True
-                    self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                    break
-                elif str(resp.status_code).startswith("2"):
+                if not results[api_role["id"]]["rate_limit_hit"]:
+                    results[api_role["id"]][
+                        "total_api_calls_made_to_hit_rate_limit"] += 1
+                results[api_role["id"]]["total_calls"] += 1
+                # if (results[api_role["id"]]["total_calls"] ==
+                #         num_of_calls_per_api):
+                results[api_role["id"]]["end"] = datetime.now()
+                # self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                # break
+                if str(resp.status_code).startswith("2"):
                     if str(resp.status_code) in results[
-                        api_role["id"]]["2xx_status_code"]:
+                            api_role["id"]]["2xx_status_code"]:
                         results[api_role["id"]]["2xx_status_code"][
                             str(resp.status_code)] += 1
                     else:
                         results[api_role["id"]]["2xx_status_code"][
                             str(resp.status_code)] = 1
                 elif str(resp.status_code).startswith("4"):
+                    if resp.status_code == 429:
+                        continue
                     if str(resp.status_code) in results[
-                        api_role["id"]]["4xx_errors"]:
+                            api_role["id"]]["4xx_errors"]:
                         results[api_role["id"]]["4xx_errors"][
                             str(resp.status_code)] += 1
                     else:
@@ -303,7 +315,7 @@ class APIBase(CouchbaseBaseTest):
                             str(resp.status_code)] = 1
                 elif str(resp.status_code).startswith("5"):
                     if str(resp.status_code) in results[
-                        api_role["id"]]["5xx_errors"]:
+                            api_role["id"]]["5xx_errors"]:
                         results[api_role["id"]]["5xx_errors"][
                             str(resp.status_code)] += 1
                     else:
@@ -312,14 +324,22 @@ class APIBase(CouchbaseBaseTest):
 
         # Submit API call tasks to the executor
         for i in range(len(api_key_list) * len(apis_to_call)):
-            threads.append(threading.Thread(
-                target=call_api_with_api_key,
-                name="thread_{0}".format(i),
-                args=(
-                    api_key_list[i % len(api_key_list)],
-                    apis_to_call[i % len(apis_to_call)][0],
-                    apis_to_call[i % len(apis_to_call)][1],
-                    results,)))
+            batches = num_of_calls_per_api / batch_size
+            last_batch = num_of_calls_per_api % batch_size
+            for batch in range(batches):
+                threads.append(threading.Thread(
+                    target=call_api_with_api_key,
+                    name="thread_{0}_{1}".format(batch, i),
+                    args=(batch_size, api_key_list[i % len(api_key_list)],
+                          apis_to_call[i % len(apis_to_call)][0],
+                          apis_to_call[i % len(apis_to_call)][1],)))
+            if last_batch > 0:
+                threads.append(threading.Thread(
+                    target=call_api_with_api_key,
+                    name="thread_for_last_batch_{}".format(i),
+                    args=(last_batch, api_key_list[i % len(api_key_list)],
+                          apis_to_call[i % len(apis_to_call)][0],
+                          apis_to_call[i % len(apis_to_call)][1],)))
 
         for thread in threads:
             thread.start()
@@ -346,6 +366,45 @@ class APIBase(CouchbaseBaseTest):
             print_status_code_wise_results(results[result]["4xx_errors"])
             print_status_code_wise_results(results[result]["5xx_errors"])
 
+        return results
+
+    def throttle_test(self, api_func_list, api_keys):
+        """
+        param apis_to_call: (list(list)) List of lists, where inner list
+            is of format [api_function_call, function_args]
+        param api_key_dict: dict API keys to be used while making API
+            calls
+        """
+        if self.input.param("rate_limit", False):
+            results = self.make_parallel_api_calls(
+                150, api_func_list, api_keys)
+            for r in results:
+                self.log.info("**********************************************")
+                self.log.info("Parallel API calls for role {} took {} seconds"
+                               .format(results[r]["role"], (results[r]["end"]
+                                       - results[r]["start"]).total_seconds()))
+                self.log.info("**********************************************")
+            for result in results:
+                if ((not results[result]["rate_limit_hit"])
+                        or results[result][
+                            "total_api_calls_made_to_hit_rate_limit"] > 300):
+                    self.fail(
+                        "Rate limit was hit after {0} API calls. "
+                        "This is definitely an issue.".format(
+                            results[result][
+                                "total_api_calls_made_to_hit_rate_limit"]
+                        ))
+            self.log.info("Sleeping 1 min to let previous rate limit expire")
+            time.sleep(60)
+
+        results = self.make_parallel_api_calls(
+            99, api_func_list, api_keys)
+        for r in results:
+            self.log.info("**********************************************")
+            self.log.info("Parallel API calls for role {} took {} seconds"
+                           .format(results[r]["role"], (results[r]["end"]
+                                   - results[r]["start"]).total_seconds()))
+            self.log.info("**********************************************")
         return results
 
     @staticmethod
@@ -533,6 +592,10 @@ class APIBase(CouchbaseBaseTest):
             self.log.warning(result.content)
             failures.append(testcase["description"])
             return
+        elif "expected_status_code" not in testcase:
+            self.log.warning("Expected NO ERRORS but got {}".format(result))
+            self.log.error(testcase["description"])
+            failures.append(testcase["description"])
         elif result.status_code == testcase["expected_status_code"]:
             try:
                 result = result.json()
