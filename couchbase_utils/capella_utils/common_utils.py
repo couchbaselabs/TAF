@@ -22,7 +22,8 @@ class Pod:
         self.signup_token = signup_token
         self.log = logger.get("test")
         
-    def create_tenants(self, num_tenants, email="random.user@couchbase.com"):
+    def create_tenants(self, num_tenants, email="random.user@couchbase.com",
+                       accountID=None):
         if num_tenants == 0:
             return
 
@@ -55,8 +56,22 @@ class Pod:
                             seed_pwd)
             tenant.name = full_name
             tenants.append(tenant)
+            if accountID:
+                self.activate_resources(tenant, accountID)
         return tenants
 
+    def activate_resources(self, tenant, accountID):
+        self.commonAPI = CommonCapellaAPI(
+            self.url_public, None, None, None, None,
+            TOKEN_FOR_INTERNAL_SUPPORT=self.TOKEN)
+        body = {
+            "tenantId": tenant.id,
+            "accountId": accountID,
+        }
+        self.log.info("Activating aws container resources for tenant: %s" % tenant.id)
+        resp = self.commonAPI.activate_resource_container("aws", body)
+        if resp.status_code != 204:
+            resp.raise_for_status()
 
 class Tenant:
     def __init__(self, id, user, pwd,

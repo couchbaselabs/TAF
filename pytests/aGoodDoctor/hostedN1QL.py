@@ -240,7 +240,7 @@ class DoctorN1QL():
                     continue
                 if b.name+s not in self.sdkClients.keys():
                     self.sdkClients.update({b.name+s: b.clients[0].bucketObj.scope(s)})
-                    time.sleep(5)
+                    time.sleep(1)
                 for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
                     if c == CbServer.default_collection:
                         continue

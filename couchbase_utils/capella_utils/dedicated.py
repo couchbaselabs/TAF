@@ -132,8 +132,8 @@ class CapellaUtils(object):
     @staticmethod
     def create_cluster(pod, tenant, cluster_details, timeout=1800):
         end_time = time.time() + timeout
+        subnet = CapellaUtils.get_next_cidr() + "/20"
         while time.time() < end_time:
-            subnet = CapellaUtils.get_next_cidr() + "/20"
             CapellaUtils.log.info("Trying with cidr: {}".format(subnet))
             capella_api = CapellaAPI(pod.url_public,
                                      tenant.api_secret_key,
@@ -144,20 +144,26 @@ class CapellaUtils(object):
             cluster_details.update({"projectId": tenant.projects[0]})
             CapellaUtils.log.info(cluster_details)
             if cluster_details.get("overRide"):
-                capella_api_resp = capella_api.create_cluster_customAMI(tenant.id, cluster_details)
+                resp = capella_api.create_cluster_customAMI(tenant.id, cluster_details)
             else:
-                capella_api_resp = capella_api.create_cluster_CPUI(tenant.id, cluster_details)
-            if capella_api_resp.status_code == 202:
-                cluster_id = json.loads(capella_api_resp.content).get("id")
+                resp = capella_api.create_cluster_CPUI(tenant.id, cluster_details)
+            if resp.status_code == 202:
+                cluster_id = json.loads(resp.content).get("id")
                 break
-            elif capella_api_resp.status_code == 500:
-                CapellaUtils.log.critical(str(capella_api_resp.content))
-                raise Exception(str(capella_api_resp.content))
-
-            CapellaUtils.log.critical("Create capella_utils cluster failed.")
-            CapellaUtils.log.critical("Capella API returned " + str(
-                capella_api_resp.status_code))
-            CapellaUtils.log.critical(capella_api_resp.json()["message"])
+            elif resp.status_code == 500:
+                CapellaUtils.log.critical(str(resp.content))
+                raise Exception(str(resp.content))
+            elif resp.status_code == 422:
+                if resp.content.find("not allowed based on your activation status") != -1:
+                    CapellaUtils.log.critical("Tenant is not activated yet...retrying")
+                if resp.content.find("CIDR") != -1:
+                    subnet = CapellaUtils.get_next_cidr() + "/20"
+            else:
+                CapellaUtils.log.critical("Create capella_utils cluster failed.")
+                CapellaUtils.log.critical("Capella API returned " + str(
+                    resp.status_code))
+                CapellaUtils.log.critical(resp.json()["message"])
+            time.sleep(5)
 
         CapellaUtils.log.info("Cluster created with cluster ID: {}"\
                               .format(cluster_id))
@@ -263,7 +269,8 @@ class CapellaUtils(object):
                                          tenant.projects[0],
                                          cluster.id, bucket_params)
         if resp.status_code in [200, 201, 202]:
-            CapellaUtils.log.info("Bucket create successfully!")
+            CapellaUtils.log.info("Bucket {} create successfully on cluster {}!".format(
+                bucket_params.get("name"), cluster.id))
         else:
             CapellaUtils.log.critical("Bucket creation failed: {}, {}".
                                       format(resp.status_code, resp.content))

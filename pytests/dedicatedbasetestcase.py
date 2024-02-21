@@ -131,17 +131,36 @@ class CapellaBaseTest(CouchbaseBaseTest):
         else:
             email = self.input.param("tenant_user",
                                      ''.join([random.choice(string.ascii_uppercase + string.ascii_lowercase) for _ in range(10)])+"@couchbase.com")
-            self.tenants = self.pod.create_tenants(self.num_tenants, email=email)
+            accountID = self.input.capella.get("account_id")
+            self.tenants = self.pod.create_tenants(self.num_tenants, email=email,
+                                                   accountID=accountID)
+            self.sleep(600)
             for tenant in self.tenants:
                 self.log.info("Creating API keys for tenant...")
                 for i in range(self.api_keys):
                     resp = CapellaUtils.create_access_secret_key(self.pod, tenant, tenant.name + str(i))
                     tenant.api_secret_key = resp["secret"]
                     tenant.api_access_key = resp["access"]
-                    self.sleep(1)
-                CapellaUtils.create_project(self.pod, tenant, tenant.name, self.num_projects)
-                CapellaUtils.invite_users(self.pod, tenant, self.invite_people)
-            self.sleep(600)
+
+            th = list()
+            for tenant in self.tenants:
+                project_th = threading.Thread(target=CapellaUtils.create_project,
+                                              name=tenant.id,
+                                              args=(self.pod, tenant, tenant.name, self.num_projects))
+                project_th.start()
+                th.append(project_th)
+            for project_th in th:
+                project_th.join()
+
+            th = list()
+            for tenant in self.tenants:
+                invite_th = threading.Thread(target=CapellaUtils.invite_users,
+                                             name=tenant.id,
+                                             args=(self.pod, tenant, self.invite_people))
+                invite_th.start()
+                th.append(invite_th)
+            for invite_th in th:
+                invite_th.join()
         tenant.project_id = tenant.projects[0]
 
 class ProvisionedBaseTestCase(CapellaBaseTest):
@@ -207,13 +226,14 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 self.generate_cluster_config()
                 for task in tasks:
                     self.task_manager.get_task_result(task)
-                    self.assertTrue(task.result, "Cluster deployment failed!")
-                    CapellaUtils.create_db_user(
-                        self.pod, task.tenant, task.cluster_id,
-                        self.rest_username, self.rest_password)
-                    self.__populate_cluster_info(task.tenant, task.cluster_id, task.servers,
-                                                 task.srv, task.name,
-                                                 self.capella_cluster_config)
+                    if task.result:
+                        self.assertTrue(task.result, "Cluster deployment failed!")
+                        CapellaUtils.create_db_user(
+                            self.pod, task.tenant, task.cluster_id,
+                            self.rest_username, self.rest_password)
+                        self.__populate_cluster_info(task.tenant, task.cluster_id, task.servers,
+                                                     task.srv, task.name,
+                                                     self.capella_cluster_config)
             for tenant in self.tenants:
                 for i in range(self.xdcr_remote_clusters):
                     name = "%s_%s_%s" % (
@@ -280,8 +300,15 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 delete_th.join()
 
         if not TestInputSingleton.input.capella.get("project", None):
+            th = list()
             for tenant in self.tenants:
-                CapellaUtils.delete_project(self.pod, tenant, tenant.projects)
+                delete_th = threading.Thread(target=CapellaUtils.delete_project,
+                                                 name=tenant.id,
+                                                 args=(self.pod, tenant, tenant.projects))
+                delete_th.start()
+                th.append(delete_th)
+            for delete_th in th:
+                delete_th.join()
 
     def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1
