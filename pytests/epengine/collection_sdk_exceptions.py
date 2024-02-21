@@ -130,7 +130,7 @@ class SDKExceptionTests(CollectionBase):
             result = client.crud("create", key, value,
                                  exp=doc_ttl,
                                  durability=self.durability_level,
-                                 timeout=30)
+                                 timeout=15)
             if self.collection_name == CbServer.default_collection:
                 if result["status"] is False:
                     self.log_failure("Create doc failed for key: %s" % key)
@@ -146,13 +146,12 @@ class SDKExceptionTests(CollectionBase):
                                  % key)
             elif (SDKException.AmbiguousTimeoutException
                     not in str(result["error"])
-                    or retry_reason.COLLECTION_NOT_FOUND
-                    not in str(result["error"])) \
-                    and (
-                    SDKException.RequestCanceledException
-                    not in str(result["error"])
-                    or retry_reason.COLLECTION_MAP_REFRESH_IN_PROGRESS
-                    not in str(result["error"])):
+                    and (SDKException.RequestCanceledException
+                         not in str(result["error"]))
+                  or (retry_reason.COLLECTION_NOT_FOUND
+                      not in str(result["error"])
+                      and (retry_reason.COLLECTION_MAP_REFRESH_IN_PROGRESS
+                           not in str(result["error"])))):
                 self.log_failure("Invalid exception for key %s: %s"
                                  % (key, result["error"]))
 
