@@ -56,9 +56,12 @@ class GetAppService(GetCluster):
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
 
-        # Wait for app_service to  be healthy.
-        self.wait_for_deployment(self.project_id, self.cluster_id,
-                                 self.app_service_id)
+        # Wait for app_service to be turned off.
+        self.log.info("Waiting for AppService to be in a stable state.")
+        while not self.validate_onoff_state(["healthy", "turnedOff"],
+                                            self.project_id, self.cluster_id,
+                                            self.app_service_id):
+            self.log.info("...Waiting further...")
 
         # Delete App Service
         self.log.info("Deleting App Service...")

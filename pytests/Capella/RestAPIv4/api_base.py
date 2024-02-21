@@ -593,8 +593,8 @@ class APIBase(CouchbaseBaseTest):
             failures.append(testcase["description"])
             return
         elif "expected_status_code" not in testcase:
-            self.log.warning("Expected NO ERRORS but got {}".format(result))
-            self.log.error(testcase["description"])
+            self.log.error("Expected NO ERRORS but got {}".format(result))
+            self.log.warning(result.content)
             failures.append(testcase["description"])
         elif result.status_code == testcase["expected_status_code"]:
             try:

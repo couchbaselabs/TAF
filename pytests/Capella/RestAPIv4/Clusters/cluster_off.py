@@ -170,7 +170,7 @@ class ClusterOff(GetCluster):
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), testcases))
+                      .format(len(failures), len(testcases)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, ClusID: {}"
