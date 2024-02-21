@@ -27,7 +27,7 @@ class CreateBucket(GetCluster):
             "flush": False,
             "timeToLiveInSeconds": 0,
             "evictionPolicy": "fullEviction",
-            "priority": 0,
+            "priority": None, #will be changed once maxTTL feature is merged to main
             "stats": {
                 "itemCount": None,
                 "opsPerSecond": None,
