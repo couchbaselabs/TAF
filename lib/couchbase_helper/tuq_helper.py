@@ -155,7 +155,7 @@ class N1QLHelper:
                                    % ex.message)
                     self.log.error("INCORRECT DOCUMENT IS: " + str(result1))
             else:
-                self.log.info("query_params is %s"%query_params)
+                self.log.info("query_params is %s" % query_params)
                 result = rest.query_tool(query, self.n1ql_port,
                                          query_params=query_params,
                                          is_prepared=is_prepared,
