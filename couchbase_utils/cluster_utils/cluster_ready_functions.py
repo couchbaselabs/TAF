@@ -27,20 +27,6 @@ from copy import deepcopy
 # import srvlookup
 
 
-class Nebula(object):
-
-    def __init__(self, nebula_endpoint, nebula_port):
-        self.endpoint = nebula_endpoint
-        self.port = nebula_port
-        self.cluster_portmap = dict()
-
-    def redirect_server_ports_to_nebula_ports(self, cluster_UUID, server):
-        server.port = self.cluster_portmap[cluster_UUID]["kv"]
-        server.cbas_port = self.cluster_portmap[cluster_UUID]["cbas"]
-        server.ssl_port = self.cluster_portmap[cluster_UUID]["kv_ssl"]
-        server.ssl_cbas_port = self.cluster_portmap[cluster_UUID]["cbas_ssl"]
-
-
 class CBCluster:
     def __init__(self, name="default", username="Administrator",
                  password="password", paths=None, servers=None, vbuckets=1024):

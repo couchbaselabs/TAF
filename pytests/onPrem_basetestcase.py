@@ -17,13 +17,11 @@ from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import BucketUtils
 from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest
-from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster, \
-    Nebula
+from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from security_config import trust_all_certs
-from nebula_utils.nebula_utils import NebulaUtils
 from awsLib.s3_data_helper import perform_S3_operation
 
 
@@ -256,14 +254,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.case_number -= 1000
                 self.tearDownEverything(reset_cluster_env_vars=False)
 
-            # Create a nebula object if use_nebula is True.
-            self.use_nebula = self.input.param("use_nebula", False)
-            if self.use_nebula:
-                self.nebula = Nebula(
-                    self.input.param("nebula_ip", "0.0.0.0"),
-                    self.input.param("nebula_port", 8500))
-                self.nebula_util = NebulaUtils(self.nebula)
-
             for cluster_name, cluster in self.cb_clusters.items():
                 if not self.skip_cluster_reset:
                     services = None
@@ -277,17 +267,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 # Set this unconditionally
                 RestConnection(cluster.master).set_internalSetting(
                     "magmaMinMemoryQuota", 256)
-
-                if hasattr(self, 'nebula') and CbServer.cluster_profile == "serverless":
-                    cluster_registration_config = self.nebula_util.generate_cluster_registration_config(
-                        cluster, tls_skip_verify=True,
-                        disable_proxy_nontls=True)
-                    if not self.nebula_util.register_cluster_on_nebula(
-                            cluster_registration_config):
-                        self.fail("Unable to register cluster {0} on "
-                                  "nebula".format(cluster_name))
-                    self.nebula.redirect_server_ports_to_nebula_ports(
-                        cluster.name, cluster.master)
 
             # Enable dp_version
             if self.enable_dp:
