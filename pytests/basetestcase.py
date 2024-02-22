@@ -7,9 +7,9 @@ if runtype == "dedicated":
 elif runtype == "serverless":
     from serverlessbasetestcase import OnCloudBaseTest as CbBaseTest
     from serverlessbasetestcase import ClusterSetup as CbClusterSetup
-elif runtype == "goldfish":
-    from goldfishbasetest import OnCloudBaseTest as CbBaseTest
-    from goldfishbasetest import ClusterSetup as CbClusterSetup
+elif runtype == "columnar":
+    from columnarbasetest import OnCloudBaseTest as CbBaseTest
+    from columnarbasetest import ClusterSetup as CbClusterSetup
 else:
     from onPrem_basetestcase import OnPremBaseTest as CbBaseTest
     from onPrem_basetestcase import ClusterSetup as CbClusterSetup
