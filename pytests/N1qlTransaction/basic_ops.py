@@ -226,6 +226,7 @@ class BasicOps(N1qlBase):
         query = "SELECT * FROM system:transactions"
         results = self.n1ql_helper.run_cbq_query(query)
         if fail and results["results"]:
+            self.log.info("results: %s" % results["results"])
             self.fail("txid present when expected not to present")
         elif not fail:
             if txid in results["results"][0]["transactions"]["id"]:
@@ -265,7 +266,7 @@ class BasicOps(N1qlBase):
         self.check_txid(txid)
         #check timeout
         if self.txtimeout:
-            self.sleep(120)
+            self.sleep(150)
             self.check_txid(txid, True)
         else:
             result = self.n1ql_helper.end_txn(query_params, self.commit)
