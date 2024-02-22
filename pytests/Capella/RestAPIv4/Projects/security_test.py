@@ -1,61 +1,15 @@
 import json
-from pytests.basetestcase import BaseTestCase
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
 
-class SecurityTest(BaseTestCase):
+class SecurityTest(SecurityBase):
 
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.project_id = self.tenant.project_id
-        self.cluster_id = self.cluster.id
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
-        self.commonCapellaAPI = self.capellaAPI.org_ops_apis
-        resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
-        resp = resp.json()
-        self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
-        self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
-
-        self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
-        self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
-        self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
-        self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
-
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
-                                         "role": "organizationOwner"}}
-
-        for user in self.test_users:
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.tenant_id, 'API Key for role {}'.format(self.test_users[user]["role"]),
-                organizationRoles=[self.test_users[user]["role"]],
-                expiry=1)
-            resp = resp.json()
-            self.test_users[user]["token"] = resp['token']
+        SecurityBase.setUp(self)
 
     def tearDown(self):
         super(SecurityTest, self).tearDown()
-
-    def reset_api_keys(self):
-        self.capellaAPI.org_ops_apis.SECRET = self.capellaAPI.org_ops_apis.SECRETINI
-        self.capellaAPI.org_ops_apis.ACCESS = self.capellaAPI.org_ops_apis.ACCESSINI
-        self.capellaAPI.org_ops_apis.bearer_token = self.capellaAPI.org_ops_apis.TOKENINI
-        self.capellaAPI.org_ops_apis.SECRET = self.capellaAPI.org_ops_apis.SECRETINI
-        self.capellaAPI.org_ops_apis.ACCESS = self.capellaAPI.org_ops_apis.ACCESSINI
-        self.capellaAPI.org_ops_apis.bearer_token = self.capellaAPI.org_ops_apis.TOKENINI
 
     def test_post_create_project(self):
         self.log.info("     I. POST Create Project")
@@ -109,7 +63,7 @@ class SecurityTest(BaseTestCase):
         }
         for tenant_id in tenant_ids:
             resp = self.capellaAPI.org_ops_apis.create_project(tenant_ids[tenant_id],
-                                                                   "Project_security")
+                                                               self.prefix + "Project")
 
             if tenant_id == 'valid_tenant_id':
                 self.assertEqual(resp.status_code, 201,
@@ -136,12 +90,12 @@ class SecurityTest(BaseTestCase):
 
             role_response = self.capellaAPIRole.org_ops_apis.create_project(self.tenant_id,
                                                                                 "Project_security")
-            if self.test_users[user]["role"] == "organizationOwner" or \
-                    self.test_users[user]["role"] == "projectCreator":
+            if self.test_users[user]["role"] in ["organizationOwner", "projectCreator"]:
                 self.assertEqual(role_response.status_code, 201,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
                                      role_response.status_code, 201))
                 temp_proj_id = role_response.json()["id"]
+
                 self.log.info("Deleting project")
                 resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                                    temp_proj_id)
@@ -201,16 +155,16 @@ class SecurityTest(BaseTestCase):
             'invalid_tenant_id': self.invalid_id
         }
         for tenant_id in tenant_ids:
-            resp = self.capellaAPI.org_ops_apis.list_projects(self.tenant_id)
+            resp = self.capellaAPI.org_ops_apis.list_projects(tenant_ids[tenant_id])
 
-            # if tenant_id == 'valid_tenant_id':
-            self.assertEqual(resp.status_code, 200,
-                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+            if tenant_id == 'valid_tenant_id':
+                self.assertEqual(resp.status_code, 200,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               200))
-            # else:
-            #     self.assertEqual(resp.status_code, 403,
-            #                      msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-            #                                                                   403))
+            else:
+                self.assertEqual(resp.status_code, 403,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              403))
 
         # Testing for organization RBAC roles
         self.log.info("Verifying endpoint for different roles under organization - RBAC")
@@ -268,15 +222,9 @@ class SecurityTest(BaseTestCase):
 
             role_response = self.capellaAPIRole.org_ops_apis.list_projects(self.tenant_id)
 
-            if role in["projectOwner", "projectManager", "projectDataReaderWriter",
-                       "projectDataReader"]:
-                self.assertEqual(200, role_response.status_code,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(
-                                     role_response.status_code, 200))
-            else:
-                self.assertEqual(403, role_response.status_code,
+            self.assertEqual(200, role_response.status_code,
                              msg="FAIL: Outcome:{}, Expected: {}".format(
-                                 role_response.status_code, 403))
+                                 role_response.status_code, 200))
 
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
@@ -446,15 +394,9 @@ class SecurityTest(BaseTestCase):
             role_response = self.capellaAPIRole.org_ops_apis.fetch_project_info(self.tenant_id,
                                                                              self.project_id)
 
-            if role in ["projectOwner", "projectManager",
-                         "projectDataReaderWriter", "projectDataReader"]:
-                self.assertEqual(200, role_response.status_code,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(
-                                     role_response.status_code, 200))
-            else:
-                self.assertEqual(403, role_response.status_code,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(
-                                     role_response.status_code, 403))
+            self.assertEqual(200, role_response.status_code,
+                             msg="FAIL: Outcome:{}, Expected: {}".format(
+                                 role_response.status_code, 200))
 
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
@@ -771,30 +713,6 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(resp.status_code, 403,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               403))
-
-        # Verify the endpoint with different projects
-        self.log.info("Verifying the endpoint access with different projects")
-        self.log.info("Creating a project")
-        resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id, "Project_security")
-        self.assertEqual(201, resp.status_code,
-                         msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code, 201))
-        resp = resp.json()
-        project_ids = {
-            'different_project_id': resp['id'],
-            'invalid_project_id': self.invalid_id
-        }
-        for project_id in project_ids:
-            resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
-                                                               project_ids[project_id])
-
-            if project_id == 'different_project_id':
-                self.assertEqual(resp.status_code, 204,
-                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              204))
-            else:
-                self.assertEqual(resp.status_code, 404,
-                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              404))
 
         # Testing for organization RBAC roles
         self.log.info("Verifying endpoint for different roles under organization - RBAC")

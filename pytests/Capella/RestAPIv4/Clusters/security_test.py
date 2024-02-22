@@ -1,244 +1,17 @@
 import time
 import json
 import random
-from pytests.basetestcase import BaseTestCase
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
-class SecurityTest(BaseTestCase):
+class SecurityTest(SecurityBase):
     cidr = "10.0.0.0"
 
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.project_id = self.tenant.project_id
-        self.cluster_id = self.cluster.id
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
-        resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
-        resp = resp.json()
-        self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
-        self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
-
-        self.capellaAPI.cluster_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['id']
-        self.capellaAPI.cluster_ops_apis.TOKENINI = resp['token']
-        self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
-        self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
-
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
-                                         "role": "organizationOwner"}}
-
-        for user in self.test_users:
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.tenant_id, 'API Key for role {}'.format(
-                self.test_users[user]["role"]), organizationRoles=[self.test_users[user]["role"]],
-                expiry=1)
-            resp = resp.json()
-            self.test_users[user]["token"] = resp['token']
+        SecurityBase.setUp(self)
 
     def tearDown(self):
         super(SecurityTest, self).tearDown()
-
-    def reset_api_keys(self):
-        self.capellaAPI.cluster_ops_apis.SECRET = self.capellaAPI.cluster_ops_apis.SECRETINI
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.capellaAPI.cluster_ops_apis.ACCESSINI
-        self.capellaAPI.cluster_ops_apis.bearer_token = self.capellaAPI.cluster_ops_apis.TOKENINI
-        self.capellaAPI.org_ops_apis.SECRET = self.capellaAPI.org_ops_apis.SECRETINI
-        self.capellaAPI.org_ops_apis.ACCESS = self.capellaAPI.org_ops_apis.ACCESSINI
-        self.capellaAPI.org_ops_apis.bearer_token = self.capellaAPI.org_ops_apis.TOKENINI
-
-    def generate_random_cidr(self):
-        return '.'.join(
-            str(random.randint(0, 255)) for _ in range(4)
-        ) + '/23'
-
-    @staticmethod
-    def get_next_cidr():
-        addr = SecurityTest.cidr.split(".")
-        if int(addr[1]) < 255:
-            addr[1] = str(int(addr[1]) + 1)
-        elif int(addr[2]) < 255:
-            addr[2] = str(int(addr[2]) + 1)
-        SecurityTest.cidr = ".".join(addr)
-        return SecurityTest.cidr
-
-    def get_cluster_payload(self, cloud_provider):
-        cluster_payloads = {
-                "AWS": {
-                    "name": "AWS-Test-Cluster-V4-Koushal-",
-                    "description": "My first test aws cluster for multiple services.",
-                    "cloudProvider": {
-                        "type": "aws",
-                        "region": "us-east-1",
-                        "cidr": "10.7.22.0/23"
-                    },
-                    "couchbaseServer": {
-                        "version": "7.1"
-                    },
-                    "serviceGroups": [
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 16
-                                },
-                                "disk": {
-                                    "storage": 50,
-                                    "type": "gp3",
-                                    "iops": 3000
-                                }
-                            },
-                            "numOfNodes": 3,
-                            "services": [
-                                "data",
-                                "query",
-                                "index",
-                                "search"
-                            ]
-                        },
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 32
-                                },
-                                "disk": {
-                                    "storage": 50,
-                                    "type": "io2",
-                                    "iops": 3005
-                                }
-                            },
-                            "numOfNodes": 2,
-                            "services": [
-                                "analytics"
-                            ]
-                        }
-                    ],
-                    "availability": {
-                        "type": "multi"
-                    },
-                    "support": {
-                        "plan": "developer pro",
-                        "timezone": "PT"
-                    }
-                },
-                "Azure": {
-                    "name": "Azure-Test-Cluster-V4-Koushal",
-                    "description": "My first test azure cluster.",
-                    "cloudProvider": {
-                        "type": "azure",
-                        "region": "eastus",
-                        "cidr": "10.1.35.0/23"
-                    },
-                    "couchbaseServer": {
-                        "version": "7.1"
-                    },
-                    "serviceGroups": [
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 16
-                                },
-                                "disk": {
-                                    "storage": 64,
-                                    "type": "P6",
-                                    "iops": 240
-                                }
-                            },
-                            "numOfNodes": 3,
-                            "services": [
-                                "data",
-                                "query",
-                                "index",
-                                "search"
-                            ]
-                        },
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 32
-                                },
-                                "disk": {
-                                    "storage": 64,
-                                    "type": "P10",
-                                    "iops": 240
-                                }
-                            },
-                            "numOfNodes": 4,
-                            "services": [
-                                "analytics"
-                            ]
-                        }
-                    ],
-                    "availability": {
-                        "type": "single"
-                    },
-                    "support": {
-                        "plan": "basic",
-                        "timezone": "ET"
-                    }
-                },
-                "GCP": {
-                    "name": "GCP-Test-Cluster-V4-Koushal",
-                    "description": "My first test gcp cluster.",
-                    "cloudProvider": {
-                        "type": "gcp",
-                        "region": "us-east1",
-                        "cidr": "10.9.82.0/23"
-                    },
-                    "couchbaseServer": {
-                        "version": "7.1"
-                    },
-                    "serviceGroups": [
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 16
-                                },
-                                "disk": {
-                                    "storage": 64,
-                                    "type": "pd-ssd"
-                                }
-                            },
-                            "numOfNodes": 3,
-                            "services": [
-                                "data",
-                                "query",
-                                "index",
-                                "search"
-                            ]
-                        }
-                    ],
-                    "availability": {
-                        "type": "single"
-                    },
-                    "support": {
-                        "plan": "basic",
-                        "timezone": "ET"
-                    }
-                }
-        }
-
-        if cloud_provider == "AWS":
-            return cluster_payloads["AWS"]
-        elif cloud_provider == "Azure":
-            return cluster_payloads["Azure"]
-        elif cloud_provider == "GCP":
-            return cluster_payloads["GCP"]
 
     def deploy_clusters(self, num_clusters=1):
         self.log.info("Deploying clusters for the test")
@@ -281,29 +54,17 @@ class SecurityTest(BaseTestCase):
 
         return cluster_ids
 
-    def get_cluster_status(self, cluster_id):
-        status = "Unknown"
-        while status != 'healthy':
-            self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
-                       .format(status))
-            cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                                                                                self.tenant_id,
-                                                                                self.project_id,
-                                                                                cluster_id)
-            cluster_ready_resp = cluster_ready_resp.json()
-            status = cluster_ready_resp["currentState"]
-
-        return status
-
     def test_create_cluster(self):
         self.log.info("Verify creating clusters for v4 APIs")
+
+        payload = self.get_cluster_payload("AWS")
+        payload["couchbaseServer"]["version"] = self.server_version
 
         self.log.info("Verifying the create cluster endpoint authentication with different test "
                       "cases")
         self.log.info("     1. Empty AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = ""
         self.capellaAPI.cluster_ops_apis.bearer_token = ""
-        payload = self.get_cluster_payload("AWS")
 
         resp = self.capellaAPI.cluster_ops_apis.create_cluster(self.tenant_id,
                                                                self.project_id,
@@ -743,16 +504,16 @@ class SecurityTest(BaseTestCase):
             resp = self.capellaAPI.cluster_ops_apis.list_clusters(self.tenant_id,
                                                                   project_ids[project_id])
 
-            if project_id == "valid_project_id":
+            if project_id in ["valid_project_id", "different_project_id"]:
                 self.assertEqual(resp.status_code, 200,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(
                                      resp.status_code,
                                      200))
             else:
-                self.assertEqual(resp.status_code, 422,
+                self.assertEqual(resp.status_code, 404,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(
                                      resp.status_code,
-                                     422))
+                                     404))
 
         self.log.info("Deleting project")
         resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
@@ -1042,7 +803,7 @@ class SecurityTest(BaseTestCase):
         self.test_cluster_ids = self.deploy_clusters(5)
 
         update_payload = {
-          "name": "AWS-Test-Cluster-V4-Koushal",
+          "name": self.prefix + "Updated_Cluster",
           "description": "Testing update cluster with v4 apis",
           "availability": {
             "type": "multi"
@@ -1346,55 +1107,13 @@ class SecurityTest(BaseTestCase):
     def test_delete_cluster(self):
         self.log.info("Verify delete cluster v4 API")
 
-        # Deploying a cluster
-        self.log.info("Deploying a cluster")
-        payload = self.get_cluster_payload("AWS")
-        self.test_cluster_id = ""
-
-        end_time = time.time() + 1800
-        while time.time() < end_time:
-            subnet = SecurityTest.get_next_cidr() + "/20"
-            payload["cloudProvider"]["cidr"] = subnet
-            self.log.info("Trying out with cidr {}".format(subnet))
-            resp = self.capellaAPI.cluster_ops_apis.create_cluster(self.tenant_id,
-                                                                   self.project_id,
-                                                                   payload["name"],
-                                                                   payload["cloudProvider"],
-                                                                   payload["couchbaseServer"],
-                                                                   payload["serviceGroups"],
-                                                                   payload["availability"],
-                                                                   payload["support"])
-            temp_resp = resp.json()
-
-            if resp.status_code == 202:
-                self.test_cluster_id = temp_resp["id"]
-                break
-
-            elif "Please ensure you are passing a unique CIDR block and try again" \
-                    in temp_resp["message"]:
-                continue
-
-            else:
-                self.assertFalse(resp.status_code, "Failed to create a cluster with error "
-                                                   "as {}".format(resp.content))
-        status = "deploying"
-        while status != 'healthy':
-            self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
-                       .format(status))
-            cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.tenant_id,
-                self.project_id,
-                self.test_cluster_id)
-            cluster_ready_resp = cluster_ready_resp.json()
-            status = cluster_ready_resp["currentState"]
-
         self.log.info("Verifying the endpoint authentication with different test cases")
         self.log.info("     1. Empty AccessKey")
         self.capellaAPI.cluster_ops_apis.ACCESS = ""
         self.capellaAPI.cluster_ops_apis.bearer_token = ""
         resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
                                                                self.project_id,
-                                                               self.test_cluster_id)
+                                                               self.cluster_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -1404,7 +1123,7 @@ class SecurityTest(BaseTestCase):
         self.capellaAPI.cluster_ops_apis.bearer_token = ""
         resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
                                                                self.project_id,
-                                                               self.test_cluster_id)
+                                                               self.cluster_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -1414,7 +1133,7 @@ class SecurityTest(BaseTestCase):
         self.capellaAPI.cluster_ops_apis.bearer_token = ""
         resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
                                                                self.project_id,
-                                                               self.test_cluster_id)
+                                                               self.cluster_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -1424,7 +1143,7 @@ class SecurityTest(BaseTestCase):
         self.capellaAPI.cluster_ops_apis.bearer_token = ""
         resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
                                                                self.project_id,
-                                                               self.test_cluster_id)
+                                                               self.cluster_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -1438,56 +1157,19 @@ class SecurityTest(BaseTestCase):
         for tenant_id in tenant_ids:
             resp = self.capellaAPI.cluster_ops_apis.delete_cluster(tenant_ids[tenant_id],
                                                                    self.project_id,
-                                                                   self.test_cluster_id)
+                                                                   self.cluster_id)
             if tenant_id == 'valid_tenant_id':
                 self.assertEqual(resp.status_code, 202,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               202))
 
-                end_time = time.time() + 1800
-                while time.time() < end_time:
-                    subnet = SecurityTest.get_next_cidr() + "/20"
-                    payload["cloudProvider"]["cidr"] = subnet
-                    self.log.info("Trying out with cidr {}".format(subnet))
-                    resp = self.capellaAPI.cluster_ops_apis.create_cluster(
-                                                                   self.tenant_id,
-                                                                   self.project_id,
-                                                                   payload["name"],
-                                                                   payload["cloudProvider"],
-                                                                   payload["couchbaseServer"],
-                                                                   payload["serviceGroups"],
-                                                                   payload["availability"],
-                                                                   payload["support"])
-                    temp_resp = resp.json()
-
-                    if resp.status_code == 202:
-                        self.test_cluster_id = temp_resp["id"]
-                        break
-
-                    elif "Please ensure you are passing a unique CIDR block and try again" \
-                            in temp_resp["message"]:
-                        continue
-
-                    else:
-                        self.assertFalse(resp.status_code, "Failed to create a cluster with error "
-                                                           "as {}".format(resp.content))
+                self.create_cluster(self.prefix + "Cluster", self.server_version)
 
             else:
                 # For now the response is 403. Later change it to 404.
                 self.assertEqual(resp.status_code, 403,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               403))
-
-        status = "deploying"
-        while status != 'healthy':
-            self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
-                       .format(status))
-            cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                                                                            self.tenant_id,
-                                                                            self.project_id,
-                                                                            self.test_cluster_id)
-            cluster_ready_resp = cluster_ready_resp.json()
-            status = cluster_ready_resp["currentState"]
 
         # Verify the endpoint with different projects
         self.log.info("Verifying the endpoint access with different projects")
@@ -1509,40 +1191,14 @@ class SecurityTest(BaseTestCase):
         for project_id in project_ids:
             resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
                                                                    project_ids[project_id],
-                                                                   self.test_cluster_id)
+                                                                   self.cluster_id)
 
             if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 202,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               202))
 
-                end_time = time.time() + 1800
-                while time.time() < end_time:
-                    subnet = SecurityTest.get_next_cidr() + "/20"
-                    payload["cloudProvider"]["cidr"] = subnet
-                    self.log.info("Trying out with cidr {}".format(subnet))
-                    resp = self.capellaAPI.cluster_ops_apis.create_cluster(
-                                                                        self.tenant_id,
-                                                                        self.project_id,
-                                                                        payload["name"],
-                                                                        payload["cloudProvider"],
-                                                                        payload["couchbaseServer"],
-                                                                        payload["serviceGroups"],
-                                                                        payload["availability"],
-                                                                        payload["support"])
-                    temp_resp = resp.json()
-
-                    if resp.status_code == 202:
-                        self.test_cluster_id = temp_resp["id"]
-                        break
-
-                    elif "Please ensure you are passing a unique CIDR block and try again" \
-                            in temp_resp["message"]:
-                        continue
-
-                    else:
-                        self.assertFalse(resp.status_code, "Failed to create a cluster with error "
-                                                           "as {}".format(resp.content))
+                self.create_cluster(self.prefix + "Cluster", self.server_version)
 
             else:
                 self.assertEqual(resp.status_code, 422,
@@ -1566,40 +1222,14 @@ class SecurityTest(BaseTestCase):
             role_response = self.capellaAPIRole.cluster_ops_apis.delete_cluster(
                                                                             self.tenant_id,
                                                                             self.project_id,
-                                                                            self.test_cluster_id)
+                                                                            self.cluster_id)
 
             if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(role_response.status_code, 202,
                                  msg='FAIL: Outcome:{}, Expected:{}'.format(
                                      role_response.status_code, 202))
 
-                end_time = time.time() + 1800
-                while time.time() < end_time:
-                    subnet = SecurityTest.get_next_cidr() + "/20"
-                    payload["cloudProvider"]["cidr"] = subnet
-                    self.log.info("Trying out with cidr {}".format(subnet))
-                    resp = self.capellaAPI.cluster_ops_apis.create_cluster(
-                                                                        self.tenant_id,
-                                                                        self.project_id,
-                                                                        payload["name"],
-                                                                        payload["cloudProvider"],
-                                                                        payload["couchbaseServer"],
-                                                                        payload["serviceGroups"],
-                                                                        payload["availability"],
-                                                                        payload["support"])
-                    temp_resp = resp.json()
-
-                    if resp.status_code == 202:
-                        self.test_cluster_id = temp_resp["id"]
-                        break
-
-                    elif "Please ensure you are passing a unique CIDR block and try again" \
-                            in temp_resp["message"]:
-                        continue
-
-                    else:
-                        self.assertFalse(resp.status_code, "Failed to create a cluster with error "
-                                                           "as {}".format(resp.content))
+                self.create_cluster(self.prefix + "Cluster", self.server_version)
 
             else:
                 self.assertEqual(role_response.status_code, 403,
@@ -1650,12 +1280,15 @@ class SecurityTest(BaseTestCase):
             role_response = self.capellaAPIRole.cluster_ops_apis.delete_cluster(
                                                                             self.tenant_id,
                                                                             self.project_id,
-                                                                            self.test_cluster_id)
+                                                                            self.cluster_id)
 
             if role in ["projectOwner", "projectManager"]:
                 self.assertEqual(202, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(
                                  role_response.status_code, 202))
+
+                self.create_cluster(self.prefix + "Cluster", self.server_version)
+
             else:
                 self.assertEqual(403, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(

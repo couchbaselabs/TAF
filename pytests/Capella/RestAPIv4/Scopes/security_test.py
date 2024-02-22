@@ -1,251 +1,20 @@
 import time
 # import json
 import random
-from pytests.basetestcase import BaseTestCase
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 
-class SecurityTest(BaseTestCase):
+class SecurityTest(SecurityBase):
     cidr = "10.0.0.0"
 
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.project_id = self.tenant.project_id
-        self.cluster_id = self.cluster.id
-        self.secret_key = self.input.capella.get("secret_key")
-        self.access_key = self.input.capella.get("access_key")
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
-        resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
-        resp = resp.json()
-        self.set_api_keys(resp)
+        SecurityBase.setUp(self)
 
-        self.test_users = {}
-        roles = ["organizationOwner", "projectCreator", "organizationMember"]
-        setup_capella_api = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
-                                       self.user, self.passwd)
-
-        num = 1
-        for role in roles:
-            usrname = self.user.split('@')
-            username = usrname[0] + "+" + str(num) + "@" + usrname[1]
-            name = "Test_User_" + str(num)
-            create_user_resp = setup_capella_api.create_user(self.tenant_id,
-                                                             name,
-                                                             username,
-                                                             "Password@123",
-                                                             [role])
-            if create_user_resp.status_code == 200:
-                self.test_users["User" + str(num)] = {
-                    "name": create_user_resp.json()["data"]["name"],
-                    "mailid": create_user_resp.json()["data"]["email"],
-                    "role": role,
-                    "password": "Password@123",
-                    "userid": create_user_resp.json()["data"]["id"]
-                }
-
-            elif create_user_resp.status_code == 422:
-                msg = "is already in use. Please sign-in."
-                if msg in create_user_resp.json()["message"]:
-                    num = num + 1
-                    continue
-                else:
-                    self.fail("Not able to create user. Reason -".format(create_user_resp.content))
-
-            else:
-                self.fail("Not able to create user. Reason -".format(create_user_resp.content))
-
-            num = num + 1
-
-        for user in self.test_users:
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.tenant_id, 'API Key for role {}'.format(
-                self.test_users[user]["role"]), organizationRoles=[self.test_users[user]["role"]],
-                expiry=1)
-            resp = resp.json()
-            self.test_users[user]["token"] = resp['token']
-
-        # self.cluster_id = self.deploy_cluster()
         self.create_test_bucket()
-        self.scopes = list()
 
     def tearDown(self):
-        for user in self.test_users:
-            resp = self.capellaAPI.org_ops_apis.delete_user(self.tenant_id,
-                                                            self.test_users[user]['userid'])
-            self.assertEqual(204, resp.status_code,
-                             msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 204))
-
-        for scope in self.scopes:
-            self.capellaAPI.cluster_ops_apis.delete_scope(self.tenant_id,
-                                                          self.project_id,
-                                                          self.cluster_id,
-                                                          self.bucket_id,
-                                                          scope)
-
-        resp = self.capellaAPI.cluster_ops_apis.delete_bucket(self.tenant_id,
-                                                              self.project_id,
-                                                              self.cluster_id,
-                                                              self.bucket_id)
-        self.assertEqual(resp.status_code, 204,
-                         msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
         super(SecurityTest, self).tearDown()
-
-    def set_api_keys(self, resp):
-        self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
-        self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
-
-        self.capellaAPI.cluster_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['id']
-        self.capellaAPI.cluster_ops_apis.TOKENINI = resp['token']
-        self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
-        self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
-
-    def reset_api_keys(self):
-        self.capellaAPI.cluster_ops_apis.SECRET = self.capellaAPI.cluster_ops_apis.SECRETINI
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.capellaAPI.cluster_ops_apis.ACCESSINI
-        self.capellaAPI.cluster_ops_apis.bearer_token = self.capellaAPI.cluster_ops_apis.TOKENINI
-        self.capellaAPI.org_ops_apis.SECRET = self.capellaAPI.org_ops_apis.SECRETINI
-        self.capellaAPI.org_ops_apis.ACCESS = self.capellaAPI.org_ops_apis.ACCESSINI
-        self.capellaAPI.org_ops_apis.bearer_token = self.capellaAPI.org_ops_apis.TOKENINI
-
-    def generate_random_cidr(self):
-        return '.'.join(
-            str(random.randint(0, 255)) for _ in range(4)
-        ) + '/23'
-
-    @staticmethod
-    def get_next_cidr():
-        addr = SecurityTest.cidr.split(".")
-        if int(addr[1]) < 255:
-            addr[1] = str(int(addr[1]) + 1)
-        elif int(addr[2]) < 255:
-            addr[2] = str(int(addr[2]) + 1)
-        SecurityTest.cidr = ".".join(addr)
-        return SecurityTest.cidr
-
-    def get_cluster_payload(self, cloud_provider):
-        cluster_payloads = {
-            "AWS": {
-                "name": "AWS-Test-Cluster-V4-Scopes-",
-                "description": "My first test aws cluster for multiple services.",
-                "cloudProvider": {
-                    "type": "aws",
-                    "region": "us-east-1",
-                    "cidr": "10.7.22.0/23"
-                },
-                "couchbaseServer": {
-                    "version": "7.1"
-                },
-                "serviceGroups": [
-                    {
-                        "node": {
-                            "compute": {
-                                "cpu": 4,
-                                "ram": 16
-                            },
-                            "disk": {
-                                "storage": 50,
-                                "type": "gp3",
-                                "iops": 3000
-                            }
-                        },
-                        "numOfNodes": 3,
-                        "services": [
-                            "data",
-                            "query",
-                            "index",
-                            "search"
-                        ]
-                    },
-                    {
-                        "node": {
-                            "compute": {
-                                "cpu": 4,
-                                "ram": 32
-                            },
-                            "disk": {
-                                "storage": 50,
-                                "type": "io2",
-                                "iops": 3005
-                            }
-                        },
-                        "numOfNodes": 2,
-                        "services": [
-                            "analytics"
-                        ]
-                    }
-                ],
-                "availability": {
-                    "type": "multi"
-                },
-                "support": {
-                    "plan": "developer pro",
-                    "timezone": "PT"
-                }
-            }
-        }
-
-        return cluster_payloads[cloud_provider]
-
-    def deploy_cluster(self):
-        self.log.info("Deploying clusters for the test")
-
-        payload = self.get_cluster_payload("AWS")
-        self.log.info("Deploying cluster for the test")
-        payload["name"] = payload["name"]
-
-        end_time = time.time() + 1800
-        while time.time() < end_time:
-            subnet = SecurityTest.get_next_cidr() + "/20"
-            payload["cloudProvider"]["cidr"] = subnet
-            self.log.info("Trying out with cidr {}".format(subnet))
-            resp = self.capellaAPI.cluster_ops_apis.create_cluster(self.tenant_id,
-                                                                   self.project_id,
-                                                                   payload["name"],
-                                                                   payload["cloudProvider"],
-                                                                   payload["couchbaseServer"],
-                                                                   payload["serviceGroups"],
-                                                                   payload["availability"],
-                                                                   payload["support"])
-            temp_resp = resp.json()
-
-            if resp.status_code == 202:
-                self.cluster_id = temp_resp["id"]
-                break
-            elif "Please ensure you are passing a unique CIDR block and try again" \
-                     in temp_resp["message"]:
-                continue
-            else:
-                self.assertFalse(resp.status_code, "Failed to create a cluster with error "
-                                                   "as {}".format(resp.content))
-
-        status = self.get_cluster_status(self.cluster_id)
-        self.assertEqual(status, "healthy",
-                         msg="FAIL, Outcome: {}, Expected: {}".format(status, "healthy"))
-
-    def get_cluster_status(self, cluster_id):
-        status = "Unknown"
-        while status != 'healthy':
-            self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
-                       .format(status))
-            cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                                                                                self.tenant_id,
-                                                                                self.project_id,
-                                                                                cluster_id)
-            cluster_ready_resp = cluster_ready_resp.json()
-            status = cluster_ready_resp["currentState"]
-
-        return status
 
     @staticmethod
     def get_bucket_payload():
@@ -283,7 +52,7 @@ class SecurityTest(BaseTestCase):
         else:
             self.fail("Unable to create bucket due to error -".format(resp.json()["message"]))
 
-        self.sleep(10, "Waiting for bucket to be loaded")
+        self.sleep(20, "Waiting for bucket to be loaded")
 
     def test_create_scopes(self):
         self.log.info("Verify creating scopes for v4 APIs")
@@ -355,7 +124,7 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
-                self.scopes.append("Test_Scope_1")
+
 
             else:
                 self.assertEqual(403, resp.status_code,
@@ -389,7 +158,6 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
-                self.scopes.append("Test_Scope_2")
 
             else:
                 self.assertEqual(422, resp.status_code,
@@ -420,7 +188,6 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
-                self.scopes.append("Test_Scope_3")
 
             else:
                 self.assertEqual(404, resp.status_code,
@@ -446,7 +213,6 @@ class SecurityTest(BaseTestCase):
                                  msg='FAIL, Outcome: {}, Expected: {}'.format(
                                      resp.status_code,
                                      201))
-                self.scopes.append("Test_Scope_4")
 
             else:
                 self.assertEqual(404, resp.status_code,
@@ -472,7 +238,7 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
-                self.scopes.append("Test_Scope_5")
+
             else:
                 self.assertEqual(403, resp.status_code,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
@@ -534,7 +300,6 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
-                self.scopes.append(scope_name)
 
             else:
                 self.assertEqual(403, resp.status_code,
@@ -566,7 +331,6 @@ class SecurityTest(BaseTestCase):
 
         self.log.info("Creating scopes in the bucket")
         num = 1
-        self.scopes = list()
         for i in range(0, 5):
             scope_name = "Test_Scope_" + str(num)
             resp = self.capellaAPI.cluster_ops_apis.create_scope(self.tenant_id,
@@ -578,7 +342,6 @@ class SecurityTest(BaseTestCase):
                              msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                           201))
 
-            self.scopes.append(scope_name)
             num = num + 1
 
         self.log.info("Verifying the list scope endpoint authentication with different test "
@@ -843,7 +606,6 @@ class SecurityTest(BaseTestCase):
         self.assertEqual(201, resp.status_code,
                          msg='FAIL, Outcome: {}, Expected: {} Fail to create a bucket'.format(
                              resp.status_code, 201))
-        self.scopes.append("Test_Scope")
 
         self.log.info("Verifying the get scope endpoint authentication with different test "
                       "cases")
@@ -1108,6 +870,7 @@ class SecurityTest(BaseTestCase):
         self.log.info("Verify delete scopes endpoints for v4 APIs")
 
         self.log.info("Creating scopes in the bucket")
+        self.scopes = list()
         num = 1
         for i in range(0, 7):
             scope_name = "Test_Scope_" + str(num)

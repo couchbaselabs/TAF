@@ -9,18 +9,9 @@ class SecurityTest(SecurityBase):
 
     def setUp(self):
         SecurityBase.setUp(self)
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
 
     def tearDown(self):
         super(SecurityTest, self).tearDown()
-
-    def reset_api_keys(self):
-        self.capellaAPI.cluster_ops_apis.SECRET = self.capellaAPI.cluster_ops_apis.SECRETINI
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.capellaAPI.cluster_ops_apis.ACCESSINI
-        self.capellaAPI.cluster_ops_apis.bearer_token = self.capellaAPI.cluster_ops_apis.TOKENINI
-        self.capellaAPI.org_ops_apis.SECRET = self.capellaAPI.org_ops_apis.SECRETINI
-        self.capellaAPI.org_ops_apis.ACCESS = self.capellaAPI.org_ops_apis.ACCESSINI
-        self.capellaAPI.org_ops_apis.bearer_token = self.capellaAPI.org_ops_apis.TOKENINI
 
     def generate_random_cidr(self):
         return '.'.join(
