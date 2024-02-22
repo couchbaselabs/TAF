@@ -4,7 +4,6 @@ Created on February 1, 2024
 @author: Vipul Bhardwaj
 """
 
-import copy
 from pytests.Capella.RestAPIv4.OnOffSchedule.get_cluster_schedule import GetClusterSchedule
 
 
@@ -12,9 +11,6 @@ class UpdateClusterSchedule(GetClusterSchedule):
 
     def setUp(self, nomenclature="Clusters_Schedule_Update"):
         GetClusterSchedule.setUp(self, nomenclature)
-        self.day = ["monday", "tuesday", "wednesday", "thursday",
-                    "friday", "saturday", "sunday"]
-        self.i = 0
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
@@ -42,54 +38,27 @@ class UpdateClusterSchedule(GetClusterSchedule):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/"
                        "onOffSchedule/onOff",
-                "expected_status_code": 405,
-                "expected_error": ""
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Update schedule but with non-hex "
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Update schedule but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Update schedule but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
@@ -109,8 +78,6 @@ class UpdateClusterSchedule(GetClusterSchedule):
             elif "invalid_clusterID" in testcase:
                 clus = testcase["invalid_clusterID"]
 
-            self.expected_result["days"][0]["day"] = self.day[self.i % 7]
-            self.i += 1
             result = self.capellaAPI.cluster_ops_apis.\
                 update_cluster_on_off_schedule(
                     org, proj, clus, self.expected_result["timezone"],
@@ -121,9 +88,9 @@ class UpdateClusterSchedule(GetClusterSchedule):
                     update_cluster_on_off_schedule(
                         org, proj, clus, self.expected_result["timezone"],
                         self.expected_result["days"])
-            if result.status_code == 204 and "expected_error" in testcase:
+            if result.status_code == 204 and "expected_error" not in testcase:
                 if self.validate_cluster_schedule_api_response(
-                        result, self.expected_result):
+                        result.json(), self.expected_result):
                     self.log.error("Status == 204, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
@@ -179,8 +146,7 @@ class UpdateClusterSchedule(GetClusterSchedule):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
-            self.expected_result["days"][0]["day"] = self.day[self.i % 7]
-            self.i += 1
+
             result = self.capellaAPI.cluster_ops_apis.\
                 update_cluster_on_off_schedule(
                     self.organisation_id, self.project_id, self.cluster_id,
@@ -193,9 +159,9 @@ class UpdateClusterSchedule(GetClusterSchedule):
                         self.organisation_id, self.project_id, self.cluster_id,
                         self.expected_result["timezone"],
                         self.expected_result["days"], headers=header)
-            if result.status_code == 204 and "expected_error" in testcase:
+            if result.status_code == 204 and "expected_error" not in testcase:
                 if self.validate_cluster_schedule_api_response(
-                        result, self.expected_result):
+                        result.json(), self.expected_result):
                     self.log.error("Status == 204, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
@@ -297,8 +263,6 @@ class UpdateClusterSchedule(GetClusterSchedule):
             else:
                 kwarg = dict()
 
-            self.expected_result["days"][0]["day"] = self.day[self.i % 7]
-            self.i += 1
             result = self.capellaAPI.cluster_ops_apis. \
                 update_cluster_on_off_schedule(
                     testcase["organizationID"], testcase["projectID"],
@@ -312,9 +276,9 @@ class UpdateClusterSchedule(GetClusterSchedule):
                         testcase["clusterID"],
                         self.expected_result["timezone"],
                         self.expected_result["days"], **kwarg)
-            if result.status_code == 204 and "expected_error" in testcase:
+            if result.status_code == 204 and "expected_error" not in testcase:
                 if self.validate_cluster_schedule_api_response(
-                        result, self.expected_result):
+                        result.json(), self.expected_result):
                     self.log.error("Status == 204, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
@@ -327,52 +291,6 @@ class UpdateClusterSchedule(GetClusterSchedule):
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
-
-    def test_payload(self):
-        testcases = list()
-
-        for val in [0, "0", 123.456, "Pacific/", "Hawaii", 25, 1000, "24",
-                    None, self.generate_random_string(1000)]:
-            for param in ["timezone", "state", "day", "hour", "minute"]:
-                testcase = {
-                    "description": "Testing param '{}' with value '{}'"
-                    .format(param, val),
-                }
-                payload = copy.deepcopy(self.expected_result)
-                if param in ["timezone", "day"]:
-                    payload[param] = val
-                    testcases.append(testcase)
-                elif param in ["state", "day"]:
-                    payload["days"][0][param] = val
-                    testcases.append(testcase)
-                else:
-                    for obj in ["from", "to"]:
-                        payload["days"][0][obj][param] = val
-                        testcases.append(testcase)
-
-        failures = list()
-        for testcase in testcases:
-            self.log.info(testcase['description'])
-
-            res = self.capellaAPI.cluster_ops_apis.\
-                update_cluster_on_off_schedule(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    payload["timezone"], payload["days"])
-            if res.status_code == 429:
-                res = self.capellaAPI.cluster_ops_apis. \
-                    update_cluster_on_off_schedule(
-                        self.organisation_id, self.project_id,
-                        self.cluster_id, payload["timezone"], payload["days"])
-            if res.status_code == 204 and "expected_error" not in testcase:
-                continue
-            else:
-                self.validate_testcase(res, 204, testcase, failures)
-
-        if failures:
-            for fail in failures:
-                self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):

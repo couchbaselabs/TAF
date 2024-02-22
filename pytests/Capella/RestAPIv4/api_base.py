@@ -654,14 +654,15 @@ class APIBase(CouchbaseBaseTest):
             if key not in expected_res:
                 return False
             if isinstance(actual_res[key], list):
-                self.validate_cluster_schedule_api_response(
-                    actual_res[key][0], expected_res[key][0])
+                for i in range(len(actual_res[key])):
+                    self.validate_cluster_schedule_api_response(
+                        actual_res[key][i], expected_res[key][i])
             elif isinstance(actual_res[key], dict):
                 self.validate_cluster_schedule_api_response(
                     actual_res[key], expected_res[key])
             elif expected_res[key]:
                 if expected_res[key] != actual_res[key]:
-                    return True
+                    return False
         return True
 
     def select_CIDR(self, org, proj, name, cp, cs, sg, av, sp,

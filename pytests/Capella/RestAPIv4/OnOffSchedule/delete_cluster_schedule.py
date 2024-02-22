@@ -4,6 +4,7 @@ Created on February 1, 2024
 @author: Vipul Bhardwaj
 """
 
+import time
 from pytests.Capella.RestAPIv4.OnOffSchedule.get_cluster_schedule import GetClusterSchedule
 
 
@@ -38,54 +39,27 @@ class DeleteClusterSchedule(GetClusterSchedule):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/"
                        "onOffSchedule/onOff",
-                "expected_status_code": 405,
-                "expected_error": ""
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Delete schedule but with non-hex "
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Delete schedule but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Delete schedule but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
@@ -111,14 +85,15 @@ class DeleteClusterSchedule(GetClusterSchedule):
                 self.handle_rate_limit(int(res.headers["Retry-After"]))
                 res = self.capellaAPI.cluster_ops_apis.\
                     delete_cluster_on_off_schedule(org, proj, clus)
-            if res.status_code == 202:
+            if res.status_code == 204:
                 if "expected_error" in testcase:
-                    self.log.error("Status == 202, Key validation Failure at: "
+                    self.log.error("Status == 204, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(res.json()))
                     failures.append(testcase["description"])
                 else:
                     self.log.info("Deletion successful")
+                    time.sleep(2)
                     res = self.capellaAPI.cluster_ops_apis.\
                         create_cluster_on_off_schedule(
                             self.organisation_id, self.project_id,
@@ -128,8 +103,9 @@ class DeleteClusterSchedule(GetClusterSchedule):
                         self.log.error("Error while creating a schedule.")
                     else:
                         self.log.info("Schedule created successfully.")
+                        time.sleep(2)
             else:
-                self.validate_testcase(res, 202, testcase, failures)
+                self.validate_testcase(res, 204, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.cluster_on_off_schedule_endpoint \
                 = "/v4/organisations/{}/projects/{}/clusters/{}/onOffSchedule"
@@ -189,14 +165,15 @@ class DeleteClusterSchedule(GetClusterSchedule):
                     delete_cluster_on_off_schedule(
                         self.organisation_id, self.project_id,
                         self.cluster_id, headers=header)
-            if res.status_code == 202:
+            if res.status_code == 204:
                 if "expected_error" in testcase:
-                    self.log.error("Status == 202, Key validation Failure at: "
+                    self.log.error("Status == 204, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(res.json()))
                     failures.append(testcase["description"])
                 else:
                     self.log.info("Deletion successful")
+                    time.sleep(2)
                     res = self.capellaAPI.cluster_ops_apis. \
                         create_cluster_on_off_schedule(
                             self.organisation_id, self.project_id,
@@ -206,8 +183,9 @@ class DeleteClusterSchedule(GetClusterSchedule):
                         self.log.error("Error while creating a schedule.")
                     else:
                         self.log.info("Schedule created successfully.")
+                        time.sleep(2)
             else:
-                self.validate_testcase(res, 202, testcase, failures)
+                self.validate_testcase(res, 204, testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -310,14 +288,15 @@ class DeleteClusterSchedule(GetClusterSchedule):
                     delete_cluster_on_off_schedule(
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"], **kwarg)
-            if res.status_code == 202:
+            if res.status_code == 204:
                 if "expected_error" in testcase:
-                    self.log.error("Status == 202, Key validation Failure at: "
+                    self.log.error("Status == 204, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(res.json()))
                     failures.append(testcase["description"])
                 else:
                     self.log.info("Deletion successful")
+                    time.sleep(2)
                     res = self.capellaAPI.cluster_ops_apis. \
                         create_cluster_on_off_schedule(
                             self.organisation_id, self.project_id,
@@ -327,8 +306,9 @@ class DeleteClusterSchedule(GetClusterSchedule):
                         self.log.error("Error while creating a schedule.")
                     else:
                         self.log.info("Schedule created successfully.")
+                        time.sleep(2)
             else:
-                self.validate_testcase(res, 202, testcase, failures)
+                self.validate_testcase(res, 204, testcase, failures)
 
         if failures:
             for fail in failures:

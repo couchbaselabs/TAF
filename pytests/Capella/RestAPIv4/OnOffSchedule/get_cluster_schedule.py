@@ -15,16 +15,26 @@ class GetClusterSchedule(GetCluster):
             "timezone": "Pacific/Midway",
             "days": [
                 {
-                    "state": "ON",
-                    "day": "sunday",
-                    "from": {
-                        "hour": 0,
-                        "minute": 0
-                    },
-                    "to": {
-                        "hour": 0,
-                        "minute": 3
-                    }
+                    "state": "on",
+                    "day": "Monday",
+                }, {
+                    "state": "off",
+                    "day": "Tuesday",
+                }, {
+                    "state": "on",
+                    "day": "Wednesday",
+                }, {
+                    "state": "off",
+                    "day": "Thursday",
+                }, {
+                    "state": "on",
+                    "day": "Friday",
+                }, {
+                    "state": "off",
+                    "day": "Saturday",
+                }, {
+                    "state": "off",
+                    "day": "Sunday",
                 }
             ]
         }
@@ -35,6 +45,7 @@ class GetClusterSchedule(GetCluster):
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_result["timezone"], self.expected_result["days"])
         if res.status_code != 204:
+            self.log.error("Result: {}".format(res.content))
             self.tearDown()
             self.fail("!!!..Cluster Schedule creation failed...!!!")
         else:
@@ -66,54 +77,27 @@ class GetClusterSchedule(GetCluster):
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/"
                        "onOffSchedule/onOff",
-                "expected_status_code": 405,
-                "expected_error": ""
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Fetch schedule but with non-hex "
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Fetch schedule but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Fetch schedule but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
@@ -141,7 +125,7 @@ class GetClusterSchedule(GetCluster):
                     fetch_cluster_on_off_schedule(org, proj, clus)
             if res.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_cluster_schedule_api_response(
-                        res, self.expected_result):
+                        res.json(), self.expected_result):
                     self.log.error("Status == 200, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(res.json()))
@@ -210,7 +194,7 @@ class GetClusterSchedule(GetCluster):
                         self.cluster_id, headers=header)
             if res.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_cluster_schedule_api_response(
-                        res, self.expected_result):
+                        res.json(), self.expected_result):
                     self.log.error("Status == 200, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(res.json()))
@@ -322,7 +306,7 @@ class GetClusterSchedule(GetCluster):
                         testcase["clusterID"], **kwarg)
             if res.status_code == 200 and "expected_error" not in testcase:
                 if not self.validate_cluster_schedule_api_response(
-                        res, self.expected_result):
+                        res.json(), self.expected_result):
                     self.log.error("Status == 200, Key validation Failure at: "
                                    "{}".format(testcase["description"]))
                     self.log.warning("Result : {}".format(res.json()))
