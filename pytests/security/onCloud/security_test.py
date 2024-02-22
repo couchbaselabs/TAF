@@ -4,10 +4,11 @@ import base64
 import random
 import string
 import requests
-from pytests.basetestcase import BaseTestCase
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
+from TestInput import TestInputSingleton
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 
 
@@ -29,61 +30,20 @@ class ServerInfo:
         self.remote_info = None
 
 
-class SecurityTest(BaseTestCase):
+class SecurityTest(SecurityBase):
     SLAVE_HOST = ServerInfo('127.0.0.1', 22, 'root', 'couchbase', 18091)
 
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.secret_key = self.input.capella.get("secret_key")
-        self.access_key = self.input.capella.get("access_key")
-        self.project_id = self.tenant.project_id
-        self.cluster_id = self.cluster.id
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.test_users = {}
-        roles = ["organizationOwner", "projectCreator", "cloudManager", "organizationMember"]
-        setup_capella_api = CapellaAPI("https://" + self.url, self.secret_key, self.access_key,
-                                       self.user, self.passwd)
+        SecurityBase.setUp(self)
 
-        num = 1
-        for role in roles:
-            usrname = self.user.split('@')
-            username = usrname[0] + "+" + str(num) + "@" + usrname[1]
-            name = "Test_User_"  + str(num)
-            create_user_resp = setup_capella_api.create_user(self.tenant_id,
-                                                             name,
-                                                             username,
-                                                             "Password@123",
-                                                             [role])
-            if create_user_resp.status_code == 200:
-                self.test_users["User" + str(num)] = {
-                    "name": create_user_resp.json()["data"]["name"],
-                    "mailid": create_user_resp.json()["data"]["email"],
-                    "role": role,
-                    "password": "Password@123",
-                    "userid": create_user_resp.json()["data"]["id"]
-                }
-
-            elif create_user_resp.status_code == 422:
-                msg = "is already in use. Please sign-in."
-                if msg in create_user_resp.json()["message"]:
-                    continue
-                else:
-                    self.fail("Not able to create user. Reason -".format(create_user_resp.content))
-
-            else:
-                self.fail("Not able to create user. Reason -".format(create_user_resp.content))
-
-            num = num + 1
+        self.rest_username = TestInputSingleton.input.membase_settings.rest_username
+        self.rest_password = TestInputSingleton.input.membase_settings.rest_password
 
     def tearDown(self):
         super(SecurityTest, self).tearDown()
 
     @staticmethod
-    def create_cluster(base_url, tenant_id, capella_api, cluster_details, timeout=1800):
+    def create_cluster_(base_url, tenant_id, capella_api, cluster_details, timeout=1800):
         end_time = time.time() + timeout
         while time.time() < end_time:
             subnet = CapellaUtils.get_next_cidr() + "/20"
@@ -243,7 +203,7 @@ class SecurityTest(BaseTestCase):
                                           "plan": "Developer Pro",
                                           "projectId": self.project_id, "timezone": "PT",
                                           "description": "", "provider": "aws"}
-                resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
+                resp = self.create_cluster_(self.url.replace("cloud", "", 1), self.tenant_id,
                                            capella_api,
                                            capella_cluster_config)
                 self.assertEqual(expected_response_code[self.test_users[user]["role"]],
@@ -445,7 +405,7 @@ class SecurityTest(BaseTestCase):
                                   "plan": "Developer Pro",
                                   "projectId": self.project_id, "timezone": "PT",
                                   "description": "", "provider": "aws"}
-        resp = self.create_cluster(self.url.replace("cloud", "", 1), diff_tenant_id, capella_api,
+        resp = self.create_cluster_(self.url.replace("cloud", "", 1), diff_tenant_id, capella_api,
                                    capella_cluster_config, timeout=30)
         self.assertEqual(404, resp.status_code,
                          msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 404))
@@ -484,7 +444,7 @@ class SecurityTest(BaseTestCase):
                                       "plan": "Developer Pro",
                                       "projectId": self.project_id, "timezone": "PT",
                                       "description": "", "provider": "hostedAzure"}
-            resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
+            resp = self.create_cluster_(self.url.replace("cloud", "", 1), self.tenant_id,
                                        capella_api, capella_cluster_config, timeout=100)
             self.assertEqual(422, resp.status_code, msg="FAIL, Outcome: {0}, Expected: {1}"
                              .format(resp.status_code, 422))
@@ -514,7 +474,7 @@ class SecurityTest(BaseTestCase):
                                       "plan": "Developer Pro", "projectId": self.project_id,
                                       "timezone": "PT", "description": "",
                                       "provider": "hostedAzure"}
-            resp = self.create_cluster(self.url.replace("cloud", "", 1), self.tenant_id,
+            resp = self.create_cluster_(self.url.replace("cloud", "", 1), self.tenant_id,
                                        capella_api, capella_cluster_config, timeout=100)
             self.assertEqual(422, resp.status_code,
                              msg="FAIL, Outcome: {0}, Expected: {1}".format(resp.status_code, 422))
