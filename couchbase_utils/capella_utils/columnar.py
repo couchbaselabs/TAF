@@ -49,7 +49,7 @@ class GoldfishUtils:
                             tenant.api_access_key, tenant.user, tenant.pwd)
         if not cluster_config:
             cluster_config = self.generate_goldfish_cluster_configuration()
-        resp = gf_api.create_goldfish_instance(
+        resp = gf_api.create_columnar_instance(
             tenant.id, tenant.project_id, cluster_config["name"],
             cluster_config["description"], cluster_config["provider"],
             cluster_config["region"], cluster_config["nodes"]
@@ -64,7 +64,7 @@ class GoldfishUtils:
     def delete_cluster(self, pod, tenant, cluster):
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
                             tenant.api_access_key, tenant.user, tenant.pwd)
-        resp = gf_api.delete_goldfish_instance(
+        resp = gf_api.delete_columnar_instance(
             tenant.id, tenant.project_id, cluster.id,)
         if resp.status_code != 204:
             self.log.error("Unable to delete goldfish cluster {0}".format(
@@ -77,7 +77,7 @@ class GoldfishUtils:
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
                             tenant.api_access_key, tenant.user, tenant.pwd)
         gf_instance_info = self.get_cluster_info(pod, tenant, cluster)
-        resp = gf_api.update_goldfish_instance(
+        resp = gf_api.update_columnar_instance(
             tenant.id, tenant.project_id, cluster.id,
             gf_instance_info["name"], gf_instance_info["description"],
             nodes)
@@ -92,7 +92,7 @@ class GoldfishUtils:
     def get_cluster_info(self, pod, tenant, cluster):
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
                             tenant.api_access_key, tenant.user, tenant.pwd)
-        resp = gf_api.get_specific_goldfish_instance(
+        resp = gf_api.get_specific_columnar_instance(
             tenant.id, tenant.project_id, cluster.id)
         if resp.status_code != 200:
             self.log.error(
@@ -107,7 +107,7 @@ class GoldfishUtils:
                             tenant.api_access_key, tenant.user, tenant.pwd)
         start_time = time.time()
         while time.time() < start_time + timeout:
-            resp = gf_api.get_specific_goldfish_instance(
+            resp = gf_api.get_specific_columnar_instance(
                 tenant.id, tenant.project_id, cluster.id)
             if resp.status_code != 200:
                 self.log.error(
@@ -157,7 +157,7 @@ class GoldfishUtils:
                             tenant.api_access_key, tenant.user, tenant.pwd)
         start_time = time.time()
         while time.time() < start_time + timeout:
-            resp = gf_api.get_specific_goldfish_instance(
+            resp = gf_api.get_specific_columnar_instance(
                 tenant.id, tenant.project_id, cluster.id)
             if resp.status_code != 200:
                 self.log.error(
