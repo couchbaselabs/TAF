@@ -4,7 +4,7 @@ import base64
 import random
 import string
 import requests
-from pytests.Capella.RestAPIv4.security_base import SecurityBase
+from pytests.security.security_base import SecurityBase
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
