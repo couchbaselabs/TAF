@@ -796,7 +796,9 @@ class BasicOps(CollectionBase):
             self.cluster)
 
         # Delete collections
-        while collection_count > 1:
+        num_sys_cols = len(self.bucket_util.get_active_collections(
+            self.cluster.buckets[0], CbServer.system_scope, only_names=True))
+        while collection_count > num_sys_cols:
             doc_loading_spec = \
                 self.bucket_util.get_crud_template_from_package(
                     "def_drop_collection")
