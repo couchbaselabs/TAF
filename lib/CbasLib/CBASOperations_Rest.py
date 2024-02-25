@@ -16,7 +16,7 @@ from membase.api import httplib2
 class CBASHelper(RestConnection):
     def __init__(self, cbas_node):
         super(CBASHelper, self).__init__(cbas_node)
-        if cbas_node.type == "goldfish":
+        if cbas_node.type == "columnar":
             self.cbas_base_url = "https://{0}:{1}".format(
                 self.ip, cbas_node.nebula_rest_port)
         else:

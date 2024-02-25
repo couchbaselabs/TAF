@@ -115,7 +115,7 @@ class RestConnection(object):
                 if int(self.port) < ClusterRun.ssl_port:
                     self.port = int(self.port) + 10000
             else:
-                if self.type != "goldfish":
+                if self.type != "columnar":
                     self.port = CbServer.ssl_port
                     index_port = CbServer.ssl_index_port
                     query_port = CbServer.ssl_n1ql_port
@@ -143,7 +143,7 @@ class RestConnection(object):
         self.ftsUrl = generic_url.format(url_host, fts_port)
         self.eventing_baseUrl = generic_url.format(url_host, eventing_port)
         self.backup_url = generic_url.format(url_host, backup_port)
-        if self.type != "goldfish":
+        if self.type != "columnar":
             if self.type != "default" or self.type == "nebula":
                 nodes_self_url = self.baseUrl + "pools/default"
             else:

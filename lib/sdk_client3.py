@@ -300,7 +300,7 @@ class SDKClient(object):
             else:
                 self.scheme = "couchbase"
             if not ClusterRun.is_enabled:
-                if server.type == "goldfish":
+                if server.type == "columnar":
                     self.hosts.append(server.ip + ":" + str(
                         server.nebula_sdk_port))
                 else:
