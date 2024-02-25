@@ -8,23 +8,23 @@ from Queue import Queue
 import time
 
 from CbasLib.cbas_entity import ExternalDB
-from Goldfish.goldfish_base import GoldFishBaseTest
+from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from awsLib.s3_data_helper import perform_S3_operation
 
 
-class StandaloneCollectionDynamo(GoldFishBaseTest):
+class StandaloneCollectionDynamo(ColumnarBaseTest):
 
     def setUp(self):
         super(StandaloneCollectionDynamo, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.user.project.clusters[0]
+        self.instance = self.project.instances[0]
 
-        if not self.gf_spec_name:
-            self.gf_spec_name = "sanity.standalone_collection_on_external_db"
-        self.gf_spec = self.cbas_util.get_goldfish_spec(
-            self.gf_spec_name)
+        if not self.columnar_spec_name:
+            self.columnar_spec_name = "sanity.standalone_collection_on_external_db"
+        self.columnar_spec = self.cbas_util.get_columnar_spec(
+            self.columnar_spec_name)
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.doc_size = self.input.param("doc_size", 1024)
@@ -46,7 +46,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
             selected_region = random.choice(selected_regions)
             if selected_region not in self.dynomo_region_table_dict:
                 self.dynomo_region_table_dict[selected_region] = []
-            table_name = "sanity-test-{}".format(
+            table_name = "Sanity-Test-{}".format(
                 self.cbas_util.generate_name(max_length=5))
             self.dynomo_region_table_dict[selected_region].append(table_name)
             self.dynamo_tables.append((selected_region, table_name))
@@ -76,7 +76,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
                         table_name))
 
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.cluster, self.gf_spec):
+                self.instance, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
 
         super(StandaloneCollectionDynamo, self).tearDown()
@@ -193,35 +193,35 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         if not self.start_initial_data_load():
             self.fail("Failed to start initial data load on Dynamo.")
 
-        # Update goldfish spec based on conf file params
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        # Update Columnar spec based on conf file params
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["kafka_link"]["no_of_kafka_links"] = self.input.param(
+        self.columnar_spec["kafka_link"]["no_of_kafka_links"] = self.input.param(
             "no_of_links", 1)
-        self.gf_spec["kafka_link"]["database_type"] = ["dynamo"]
-        self.gf_spec["kafka_link"]["external_database_details"][
+        self.columnar_spec["kafka_link"]["database_type"] = ["dynamo"]
+        self.columnar_spec["kafka_link"]["external_database_details"][
             "dynamo"] = list()
         for region in self.dynomo_region_table_dict:
             dynamo_obj = ExternalDB(
                 db_type="dynamo", dynamo_access_key=self.dynamo_access_key,
                 dynamo_secret_key=self.dynamo_secret_key,
                 dynamo_region=region)
-            self.gf_spec["kafka_link"]["external_database_details"][
+            self.columnar_spec["kafka_link"]["external_database_details"][
                 "dynamo"].append(
                 dynamo_obj.get_source_db_detail_object_for_kafka_links())
 
-        self.gf_spec["kafka_dataset"][
+        self.columnar_spec["kafka_dataset"][
             "num_of_ds_on_external_db"] = self.input.param(
             "num_of_ds_on_external_db", 1)
-        self.gf_spec["kafka_dataset"]["data_source"] = ["dynamo"]
+        self.columnar_spec["kafka_dataset"]["data_source"] = ["dynamo"]
 
-        self.gf_spec["kafka_dataset"]["include_external_collections"][
+        self.columnar_spec["kafka_dataset"]["include_external_collections"][
             "dynamo"] = self.dynamo_tables
-        self.gf_spec["kafka_dataset"]["primary_key"] = [{"id": "string"}]
+        self.columnar_spec["kafka_dataset"]["primary_key"] = [{"id": "string"}]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.instance, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -233,7 +233,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         # validate doc count on datasets
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
-                    self.cluster, dataset.full_name, self.initial_doc_count,
+                    self.instance, dataset.full_name, self.initial_doc_count,
                     600):
                 self.fail("Ingestion failed from Dynamo into standalone "
                           "collection.")
@@ -243,7 +243,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         # validate doc count on datasets
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
-                    self.cluster, dataset.full_name,
+                    self.instance, dataset.full_name,
                     doc_counts_after_crud[dataset.external_collection_name],
                     600):
                 self.fail("Ingestion failed from Dynamo into standalone "
@@ -259,7 +259,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
 
         for link in links:
             jobs.put((self.cbas_util.disconnect_link,
-                      {"cluster": self.cluster, "link_name": link.full_name}))
+                      {"cluster": self.instance, "link_name": link.full_name}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -267,20 +267,20 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
             self.fail("Error while disconnecting kafka links")
 
         if not self.cbas_util.wait_for_kafka_links(
-                self.cluster, state="DISCONNECTED"):
+                self.instance, state="DISCONNECTED"):
             self.fail("Kafka Link was unable to diconnect")
 
         results = []
         for link in links:
             jobs.put((self.cbas_util.connect_link,
-                      {"cluster": self.cluster, "link_name": link.full_name}))
+                      {"cluster": self.instance, "link_name": link.full_name}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
             self.fail("Error while connecting kafka links")
 
         if not self.cbas_util.wait_for_kafka_links(
-                self.cluster, state="CONNECTED"):
+                self.instance, state="CONNECTED"):
             self.fail("Kafka Link was unable to diconnect")
 
         if not self.stop_CRUD(self.loader_ids):
@@ -295,7 +295,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
 
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
-                    self.cluster, dataset.full_name,
+                    self.instance, dataset.full_name,
                     doc_counts_after_connect_disconnect[
                         dataset.external_collection_name], 600):
                 self.fail("Ingestion failed from Dynamo into standalone "
@@ -310,7 +310,7 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         for dataset in datasets:
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
-                {"cluster": self.cluster,
+                {"cluster": self.instance,
                  "statement": query.format(dataset.full_name, limit_value)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -328,35 +328,35 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         if not self.start_initial_data_load():
             self.fail("Failed to start initial data load on Dynamo.")
 
-            # Update goldfish spec based on conf file params
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        # Update columnar spec based on conf file params
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["kafka_link"]["no_of_kafka_links"] = self.input.param(
+        self.columnar_spec["kafka_link"]["no_of_kafka_links"] = self.input.param(
             "no_of_links", 1)
-        self.gf_spec["kafka_link"]["database_type"] = ["dynamo"]
-        self.gf_spec["kafka_link"]["external_database_details"][
+        self.columnar_spec["kafka_link"]["database_type"] = ["dynamo"]
+        self.columnar_spec["kafka_link"]["external_database_details"][
             "dynamo"] = list()
         for region in self.dynomo_region_table_dict:
             dynamo_obj = ExternalDB(
                 db_type="dynamo", dynamo_access_key=self.dynamo_access_key,
                 dynamo_secret_key=self.dynamo_secret_key,
                 dynamo_region=region)
-            self.gf_spec["kafka_link"]["external_database_details"][
+            self.columnar_spec["kafka_link"]["external_database_details"][
                 "dynamo"].append(
                 dynamo_obj.get_source_db_detail_object_for_kafka_links())
 
-        self.gf_spec["kafka_dataset"][
+        self.columnar_spec["kafka_dataset"][
             "num_of_ds_on_external_db"] = self.input.param(
             "num_of_ds_on_external_db", 1)
-        self.gf_spec["kafka_dataset"]["data_source"] = ["dynamo"]
+        self.columnar_spec["kafka_dataset"]["data_source"] = ["dynamo"]
 
-        self.gf_spec["kafka_dataset"]["include_external_collections"][
+        self.columnar_spec["kafka_dataset"]["include_external_collections"][
             "dynamo"] = self.dynamo_tables
-        self.gf_spec["kafka_dataset"]["primary_key"] = [{"id": "string"}]
+        self.columnar_spec["kafka_dataset"]["primary_key"] = [{"id": "string"}]
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False, None, True)
+            self.instance, self.columnar_spec, self.bucket_util, False, None, True)
         if not result:
             self.fail(msg)
 
@@ -364,14 +364,14 @@ class StandaloneCollectionDynamo(GoldFishBaseTest):
         if not self.wait_for_initial_data_load(self.initial_doc_count, 3600):
             self.fail("Initial doc loading into Dynamo failed.")
 
-        if not self.cbas_util.wait_for_kafka_links(self.cluster, "CONNECTED"):
+        if not self.cbas_util.wait_for_kafka_links(self.instance, "CONNECTED"):
             self.fail("Kafka link did not connect within timeout.")
 
         datasets = self.cbas_util.list_all_dataset_objs()
         # validate doc count on datasets
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
-                    self.cluster, dataset.full_name, self.initial_doc_count,
+                    self.instance, dataset.full_name, self.initial_doc_count,
                     600):
                 self.fail("Ingestion failed from Dynamo into standalone "
                           "collection.")

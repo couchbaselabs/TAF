@@ -44,7 +44,7 @@ from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import ExternalDB
-from Goldfish.goldfish_base import GoldFishBaseTest
+from Goldfish.columnar_base import GoldFishBaseTest
 from cbas_utils.cbas_utils import StandaloneCollectionLoader
 from cbas_utils.cbas_utils import CbasUtil, External_Dataset, Standalone_Dataset, Remote_Dataset
 from goldfish_utils.goldfish_utils import GoldfishUtils
@@ -64,7 +64,7 @@ class GoldfishE2E(GoldFishBaseTest):
         if not self.gf_spec_name:
             self.gf_spec_name = "end2end.privatePreviewSpec"
 
-        self.gf_spec = self.cbas_util.get_goldfish_spec(self.gf_spec_name)
+        self.gf_spec = self.cbas_util.get_columnar_spec(self.gf_spec_name)
         self.doc_loader_url = self.input.param("doc_loader_url", None)
         self.doc_loader_port = self.input.param("doc_loader_port", None)
         self.external_db_doc = self.input.param("external_db_doc", 10000)
@@ -649,7 +649,7 @@ class GoldfishE2E(GoldFishBaseTest):
 
     def update_goldfish_spec(self):
         """
-        Update the goldfish spec.
+        Update the columnar spec.
         """
         # self.generate_bucket_obj_for_remote_cluster_obj()
         self.update_external_link_spec(self.gf_spec)

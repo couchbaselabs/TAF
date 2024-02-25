@@ -358,7 +358,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.aws_session_token = self.input.param("aws_session_token", "")
             for i in range(5):
                 try:
-                    self.sink_S3_bucket_name = "goldfish-qe-" + str(
+                    self.sink_S3_bucket_name = "columnar-qe-" + str(
                         random.randint(1, 100000))
                     self.log.info("Creating S3 bucket: {}".format(
                         self.sink_S3_bucket_name))

@@ -10,34 +10,28 @@ import requests
 from Queue import Queue
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
-from CbasLib.cbas_entity import (
-    Database, Dataverse, Remote_Link, External_Link, Kafka_Link, Dataset,
-    Remote_Dataset, External_Dataset, Standalone_Dataset, Synonym,
-    CBAS_Index)
-
-from CbasLib.cbas_entity import Synonym
-from Goldfish.goldfish_base import GoldFishBaseTest
+from Columnar.columnar_base import ColumnarBaseTest
 
 
-class StandaloneCollection(GoldFishBaseTest):
+class StandaloneCollection(ColumnarBaseTest):
     def setUp(self):
         super(StandaloneCollection, self).setUp()
-        self.cluster = self.user.project.clusters[0]
+        self.cluster = self.project.instances[0]
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.doc_size = self.input.param("doc_size", 1024)
 
-        if not self.gf_spec_name:
-            self.gf_spec_name = "regressions.standalone_collection"
-        self.gf_spec = self.cbas_util.get_goldfish_spec(self.gf_spec_name)
+        if not self.columnar_spec_name:
+            self.columnar_spec_name = "regressions.standalone_collection"
+        self.columnar_spec = self.cbas_util.get_columnar_spec(self.columnar_spec_name)
 
-        self.gf_spec["database"]["no_of_databases"] = self.input.param("no_of_databases", 1)
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param("no_of_databases", 1)
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_dataverses", 1)
-        self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 0)
-        self.gf_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
         self.remote_cluster_id = None
 
         self.log_setup_status(self.__class__.__name__, "Finished",
@@ -67,7 +61,7 @@ class StandaloneCollection(GoldFishBaseTest):
         else:
             self.fail("Error while creating API key for organization owner")
 
-        cluster_name = "goldfish-regression-cluster-" + str(random.randint(1, 1000))
+        cluster_name = "columnar-regression-cluster-" + str(random.randint(1, 1000))
         self.expected_result = {
             "name": cluster_name,
             "description": None,
@@ -224,7 +218,7 @@ class StandaloneCollection(GoldFishBaseTest):
                 self.cluster):
             self.fail("Error while deleting cbas entities")
 
-        super(StandaloneCollection, self).tearDown()
+        # super(StandaloneCollection, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def start_source_ingestion(self, no_of_docs=1000000, doc_size=100000):
@@ -415,10 +409,10 @@ class StandaloneCollection(GoldFishBaseTest):
             self.fail("Some non-existing collections were deleted")
 
     def test_synonym_standalone_collection(self):
-        self.gf_spec["synonym"]["no_of_synonyms"] = self.input.param(
+        self.columnar_spec["synonym"]["no_of_synonyms"] = self.input.param(
             "num_of_synonyms", 1)
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
         jobs = Queue()
@@ -452,7 +446,7 @@ class StandaloneCollection(GoldFishBaseTest):
 
     def test_insert_document_size(self):
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
         jobs = Queue()
@@ -475,7 +469,7 @@ class StandaloneCollection(GoldFishBaseTest):
         self.capella_provisioned_cluster_setup()
         self.start_source_ingestion(self.initial_doc_count, self.doc_size)
         self.wait_for_source_ingestion(self.initial_doc_count)
-        self.gf_spec["remote_link"]["no_of_remote_links"] = self.input.param(
+        self.columnar_spec["remote_link"]["no_of_remote_links"] = self.input.param(
             "no_of_remote_links", 1)
 
         remote_link_properties = list()
@@ -485,12 +479,12 @@ class StandaloneCollection(GoldFishBaseTest):
              "password": self.remote_cluster_password,
              "encryption": "full",
              "certificate": self.remote_cluster_certificate})
-        self.gf_spec["remote_link"]["properties"] = remote_link_properties
-        self.gf_spec["remote_dataset"]["include_collections"] = [self.remote_collection]
-        self.gf_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
+        self.columnar_spec["remote_link"]["properties"] = remote_link_properties
+        self.columnar_spec["remote_dataset"]["include_collections"] = [self.remote_collection]
+        self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
         remote_dataset = self.cbas_util.list_all_dataset_objs("remote")[0]
@@ -525,7 +519,7 @@ class StandaloneCollection(GoldFishBaseTest):
 
     def test_insert_duplicate_doc(self):
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
         docs_to_insert = []
@@ -567,7 +561,7 @@ class StandaloneCollection(GoldFishBaseTest):
 
     def test_insert_with_missing_primary_key(self):
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
         docs_to_insert = []
@@ -597,7 +591,7 @@ class StandaloneCollection(GoldFishBaseTest):
 
     def test_crud_during_scaling(self):
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
         jobs = Queue()
@@ -611,7 +605,7 @@ class StandaloneCollection(GoldFishBaseTest):
                        "doc_size": self.doc_size, "where_clause_for_delete_op": "alias.id in (SELECT VALUE "
                                                                                 "x.id FROM {0} as x limit {1})"}))
 
-        jobs.put((self.goldfish_utils.scale_goldfish_cluster,
+        jobs.put((self.columnar_utils.scale_columnar_instance,
                   {"pod": self.pod, "user": self.user, "cluster": self.cluster,
                    "nodes": 2}))
 
@@ -619,7 +613,7 @@ class StandaloneCollection(GoldFishBaseTest):
             jobs, results, self.sdk_clients_per_user, async_run=False
         )
 
-        self.goldfish_utils.wait_for_cluster_scaling_operation_to_complete(
+        self.columnar_utils.wait_for_cluster_scaling_operation_to_complete(
             self.pod, self.user, self.cluster)
 
         if not all(results):
@@ -632,3 +626,134 @@ class StandaloneCollection(GoldFishBaseTest):
 
         if not all(results):
             self.fail("Doc count mismatch after scaling")
+
+    def test_insert_atomicity(self):
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            self.cluster, self.columnar_spec, self.bucket_util, False)
+        if not result:
+            self.fail(msg)
+        data_to_add = []
+        for i in range(self.initial_doc_count):
+            data_to_add.append(self.cbas_util.generate_docs(self.doc_size))
+
+        jobs = Queue()
+        results = []
+
+        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        for dataset in datasets:
+            jobs.put((self.cbas_util.insert_into_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "document": data_to_add, "dataverse_name": dataset.dataverse_name,
+                       "database_name": dataset.database_name}))
+
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=True
+        )
+
+        active_requests = self.cbas_util.get_all_active_requests(self.cluster)
+        for request in active_requests:
+            if str(request['statement']).startswith("INSERT INTO"):
+                context_id = str(request['clientContextID'])
+                self.cbas_util.delete_request(self.cluster, context_id)
+
+        for dataset in datasets:
+            doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)
+            if doc_count[0] != 0:
+                self.fail("Some documents were inserted after statement is aborted")
+
+    def test_delete_atomicity(self):
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            self.cluster, self.columnar_spec, self.bucket_util, False)
+        if not result:
+            self.fail(msg)
+
+        jobs = Queue()
+        results = []
+
+        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        for dataset in datasets:
+            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
+                       "database_name": dataset.database_name, "no_of_docs": self.initial_doc_count,
+                       "document_size": self.doc_size}))
+
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False
+        )
+
+        for dataset in datasets:
+            jobs.put((self.cbas_util.delete_from_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name}))
+
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=True
+        )
+
+        active_requests = self.cbas_util.get_all_active_requests(self.cluster)
+        for request in active_requests:
+            if str(request['statement']).startswith("DELETE FROM"):
+                context_id = str(request['clientContextID'])
+                self.cbas_util.delete_request(self.cluster, context_id)
+
+        for dataset in datasets:
+            doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)
+            if doc_count[0] != self.initial_doc_count:
+                self.fail("Some documents were deleted after statement is aborted")
+
+    def test_upsert_atomicity(self):
+        result, msg = self.cbas_util.create_cbas_infra_from_spec(
+            self.cluster, self.columnar_spec, self.bucket_util, False)
+        if not result:
+            self.fail(msg)
+
+        data_to_add = []
+        for i in range(self.initial_doc_count):
+            data_to_add.append(self.cbas_util.generate_docs(self.doc_size))
+
+        jobs = Queue()
+        results = []
+
+        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        for dataset in datasets:
+            jobs.put((self.cbas_util.insert_into_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "document": data_to_add, "dataverse_name": dataset.dataverse_name,
+                       "database_name": dataset.database_name}))
+
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False
+        )
+        data_to_modify = data_to_add
+        for data in data_to_modify:
+            data['phone'] = random.randint(1, 10000)
+
+        for dataset in datasets:
+            jobs.put((self.cbas_util.upsert_into_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "new_item": data_to_modify, "dataverse_name": dataset.dataverse_name,
+                       "database_name": dataset.database_name}))
+
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=True
+        )
+        time.sleep(2)
+        active_request = self.cbas_util.get_all_active_requests(self.cluster)
+        for request in active_request:
+            if str(request['statement']).startswith("UPSERT INTO"):
+                context_id = str(request['clientContextID'])
+                self.cbas_util.delete_request(self.cluster, context_id, username=self.cluster.api_access_key,
+                                              password=self.cluster.api_secret_key)
+
+        for dataset in datasets:
+            doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)
+            if doc_count[0] != self.initial_doc_count:
+                self.fail("Some documents are missing")
+            else:
+                statement = "Select * from {}".format(dataset.full_name)
+                status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
+                    self.cluster, statement)
+                if status == "success":
+                    for dicts in data_to_add:
+                        if dicts not in results:
+                            self.fail("Few docs were updated")

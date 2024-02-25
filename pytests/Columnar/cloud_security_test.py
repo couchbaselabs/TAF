@@ -5,15 +5,15 @@ import socket
 import time
 
 import requests
-from goldfish_base import GoldFishBaseTest
+from Columnar.columnar_base import ColumnarBaseTest
 from goldfishAPI.GoldfishAPIs.ServerlessAnalytics.ServerlessAnalytics import GoldfishAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
 from uuid import uuid4
 
-class SecurityTest(GoldFishBaseTest):
+class SecurityTest(ColumnarBaseTest):
 
     def setUp(self):
-        GoldFishBaseTest.setUp(self)
+        ColumnarBaseTest.setUp(self)
         self.url = self.input.capella.get("pod")
         self.user = self.input.capella.get("capella_user")
         self.passwd = self.input.capella.get("capella_pwd")
@@ -585,7 +585,7 @@ class SecurityTest(GoldFishBaseTest):
         resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
                                                   provider="aws", region="us-east-2", nodes=3)
         if resp.status_code != 201:
-            self.fail("Failed to create goldfish isntance")
+            self.fail("Failed to create columnar isntance")
         resp = resp.json()
         cluster_id = resp["id"]
         self.wait_for_cluster_to_be_healty(cluster_id)
@@ -627,7 +627,7 @@ class SecurityTest(GoldFishBaseTest):
                 resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
                                                   provider="aws", region="us-east-2", nodes=3)
                 if resp.status_code != 201:
-                    self.fail("Failed to create goldfish isntance")
+                    self.fail("Failed to create columnar isntance")
                 resp = resp.json()
                 cluster_id = resp["id"]
                 self.wait_for_cluster_to_be_healty(cluster_id)
@@ -660,7 +660,7 @@ class SecurityTest(GoldFishBaseTest):
                 resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
                                                   provider="aws", region="us-east-2", nodes=3)
                 if resp.status_code != 201:
-                    self.fail("Failed to create goldfish isntance")
+                    self.fail("Failed to create columnar isntance")
                 resp = resp.json()
                 cluster_id = resp["id"]
                 self.wait_for_cluster_to_be_healty(cluster_id)
@@ -692,7 +692,7 @@ class SecurityTest(GoldFishBaseTest):
                 resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
                                                   provider="aws", region="us-east-2", nodes=3)
                 if resp.status_code != 201:
-                    self.fail("Failed to create goldfish isntance")
+                    self.fail("Failed to create columnar isntance")
                 resp = resp.json()
                 cluster_id = resp["id"]
                 self.wait_for_cluster_to_be_healty(cluster_id)
@@ -739,7 +739,7 @@ class SecurityTest(GoldFishBaseTest):
                 resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
                                                   provider="aws", region="us-east-2", nodes=3)
                 if resp.status_code != 201:
-                    self.fail("Failed to create goldfish isntance")
+                    self.fail("Failed to create columnar isntance")
                 resp = resp.json()
                 cluster_id = resp["id"]
                 self.wait_for_cluster_to_be_healty(cluster_id)

@@ -4,18 +4,18 @@ Created on 25-OCTOBER-2023
 @author: umang.agrawal
 """
 
-from Goldfish.goldfish_base import GoldFishBaseTest
+from Columnar.columnar_base import ColumnarBaseTest
 from Queue import Queue
 from CbasLib.CBASOperations import CBASHelper
 
 
-class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
+class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
     def setUp(self):
         super(CopyIntoStandaloneCollectionFromS3, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.user.project.clusters[0]
+        self.instance = self.project.instances[0]
 
         self.aws_access_key = self.input.param("aws_access_key")
         self.aws_secret_key = self.input.param("aws_secret_key")
@@ -24,13 +24,13 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         # For sanity tests we are hard coding the bucket from which the data
         # will be read. This will ensure stable and consistent test runs.
         self.aws_region = "us-west-1"
-        self.aws_bucket_name = "goldfish-sanity-test-data"
+        self.aws_bucket_name = "columnar-sanity-test-data"
 
-        if not self.gf_spec_name:
-            self.gf_spec_name = "sanity.copy_into_standalone_collection_from_s3"
+        if not self.columnar_spec_name:
+            self.columnar_spec_name = "sanity.copy_into_standalone_collection_from_s3"
 
-        self.gf_spec = self.cbas_util.get_goldfish_spec(
-            self.gf_spec_name)
+        self.columnar_spec = self.cbas_util.get_columnar_spec(
+            self.columnar_spec_name)
 
         self.doc_count_per_format = {
             "json": 7400000, "parquet": 7300000,
@@ -51,32 +51,32 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.cluster, self.gf_spec):
+                self.instance, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
         super(CopyIntoStandaloneCollectionFromS3, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def test_create_copyinto_query_using_path_drop_standalone_collection(self):
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["external_link"][
+        self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
             "no_of_links", 1)
-        self.gf_spec["external_link"]["properties"] = [{
+        self.columnar_spec["external_link"]["properties"] = [{
             "type": "s3",
             "region": self.aws_region,
             "accessKeyId": self.aws_access_key,
             "secretAccessKey": self.aws_secret_key,
             "serviceEndpoint": None
         }]
-        self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.gf_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
         file_format = self.input.param("file_format", "json")
-        dataset_properties = self.gf_spec["standalone_dataset"][
+        dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.aws_bucket_name
         dataset_properties["file_format"] = file_format
@@ -104,7 +104,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.instance, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -115,7 +115,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for standalone_coll in datasets:
             jobs.put((self.cbas_util.copy_from_external_resource_into_standalone_collection,
                       {
-                          "cluster": self.cluster, "collection_name": standalone_coll.name,
+                          "cluster": self.instance, "collection_name": standalone_coll.name,
                           "aws_bucket_name": standalone_coll.dataset_properties["external_container_name"],
                           "external_link_name":  standalone_coll.link_name,
                           "dataverse_name": standalone_coll.dataverse_name,
@@ -147,7 +147,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.cluster, "dataset_name": dataset.full_name,
+                {"cluster": self.instance, "dataset_name": dataset.full_name,
                  "timeout": 3600, "analytics_timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -161,7 +161,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
-                {"cluster": self.cluster,
+                {"cluster": self.instance,
                  "statement": query.format(dataset.full_name)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -173,14 +173,14 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
                 self.fail("Doc count mismatch. Expected - 1000, Actual - {0}".format(len(result[3])))
 
     def test_create_copyinto_query_drop_standalone_collection(self):
-        # Update goldfish spec based on conf file params
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        # Update columnar spec based on conf file params
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["external_link"][
+        self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
             "no_of_links", 1)
-        self.gf_spec["external_link"]["properties"] = [{
+        self.columnar_spec["external_link"]["properties"] = [{
             "type": "s3",
             "region": self.aws_region,
             "accessKeyId": self.aws_access_key,
@@ -188,13 +188,13 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             "serviceEndpoint": None
         }]
 
-        self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.gf_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
         file_format = self.input.param("file_format", "json")
-        dataset_properties = self.gf_spec["standalone_dataset"][
+        dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.aws_bucket_name
         dataset_properties["file_format"] = file_format
@@ -221,7 +221,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.instance, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -230,7 +230,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.cluster, standalone_coll.name,
+                        self.instance, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,
@@ -254,7 +254,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.cluster, "dataset_name": dataset.full_name,
+                {"cluster": self.instance, "dataset_name": dataset.full_name,
                  "timeout": 3600, "analytics_timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -273,7 +273,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
-                {"cluster": self.cluster,
+                {"cluster": self.instance,
                  "statement": query.format(dataset.full_name)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -285,14 +285,14 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
                 self.fail("Doc count mismatch. Expected - 1000, Actual - {0}".format(len(result[3])))
 
     def test_create_copyinto_query_missing_field_typedef_drop_standalone_collection(self):
-        # Update goldfish spec based on conf file params
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        # Update columnar spec based on conf file params
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["external_link"][
+        self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
             "no_of_links", 1)
-        self.gf_spec["external_link"]["properties"] = [{
+        self.columnar_spec["external_link"]["properties"] = [{
             "type": "s3",
             "region": self.aws_region,
             "accessKeyId": self.aws_access_key,
@@ -300,13 +300,13 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             "serviceEndpoint": None
         }]
 
-        self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.gf_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
         file_format = self.input.param("file_format", "json")
-        dataset_properties = self.gf_spec["standalone_dataset"][
+        dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.aws_bucket_name
         dataset_properties["file_format"] = file_format
@@ -333,7 +333,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.instance, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -342,7 +342,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.cluster, standalone_coll.name,
+                        self.instance, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,
@@ -362,7 +362,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
 
         for standalone_coll in datasets:
             statement = "select * from {0} limit 1".format(standalone_coll.full_name)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.instance,
                                                                                                statement)
             doc_retrived = dict((result[0])[CBASHelper.unformat_name(standalone_coll.name)])
             if 'freeparking' in doc_retrived:
@@ -374,7 +374,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.cluster, "dataset_name": dataset.full_name,
+                {"cluster": self.instance, "dataset_name": dataset.full_name,
                  "timeout": 3600, "analytics_timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -393,7 +393,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
-                {"cluster": self.cluster,
+                {"cluster": self.instance,
                  "statement": query.format(dataset.full_name)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -405,14 +405,14 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
                 self.fail("Doc count mismatch. Expected - 1000, Actual - {0}".format(len(result[3])))
 
     def test_create_copyinto_query_missing_typedef_drop_standalone_collection(self):
-        # Update goldfish spec based on conf file params
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        # Update columnar spec based on conf file params
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["external_link"][
+        self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
             "no_of_links", 1)
-        self.gf_spec["external_link"]["properties"] = [{
+        self.columnar_spec["external_link"]["properties"] = [{
             "type": "s3",
             "region": self.aws_region,
             "accessKeyId": self.aws_access_key,
@@ -420,13 +420,13 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             "serviceEndpoint": None
         }]
 
-        self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.gf_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
         file_format = self.input.param("file_format", "json")
-        dataset_properties = self.gf_spec["standalone_dataset"][
+        dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.aws_bucket_name
         dataset_properties["file_format"] = file_format
@@ -449,7 +449,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.instance, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -458,7 +458,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.cluster, standalone_coll.name,
+                        self.instance, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,
@@ -479,14 +479,14 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
                           "standalone collection".format(standalone_coll.full_name))
 
     def test_create_copyinto_query_missing_with_clause_drop_standalone_collection(self):
-        # Update goldfish spec based on conf file params
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        # Update columnar spec based on conf file params
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["external_link"][
+        self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
             "no_of_links", 1)
-        self.gf_spec["external_link"]["properties"] = [{
+        self.columnar_spec["external_link"]["properties"] = [{
             "type": "s3",
             "region": self.aws_region,
             "accessKeyId": self.aws_access_key,
@@ -494,17 +494,17 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             "serviceEndpoint": None
         }]
 
-        self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.gf_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
-        dataset_properties = self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.aws_bucket_name
         dataset_properties["region"] = self.aws_region
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.instance, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -513,7 +513,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.cluster, standalone_coll.name,
+                        self.instance, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,
@@ -534,14 +534,14 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
                           "standalone collection".format(standalone_coll.full_name))
 
     def test_create_copyinto_query_incorrect_file_format_clause_drop_standalone_collection(self):
-        # Update goldfish spec based on conf file params
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        # Update columnar spec based on conf file params
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["external_link"][
+        self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
             "no_of_links", 1)
-        self.gf_spec["external_link"]["properties"] = [{
+        self.columnar_spec["external_link"]["properties"] = [{
             "type": "s3",
             "region": self.aws_region,
             "accessKeyId": self.aws_access_key,
@@ -549,18 +549,18 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
             "serviceEndpoint": None
         }]
 
-        self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.gf_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
-        dataset_properties = self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.aws_bucket_name
         dataset_properties["region"] = self.aws_region
         dataset_properties["file_format"] = "null"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.instance, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -569,7 +569,7 @@ class CopyIntoStandaloneCollectionFromS3(GoldFishBaseTest):
         for standalone_coll in datasets:
             if not (
                     self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.cluster, standalone_coll.name,
+                        self.instance, standalone_coll.name,
                         standalone_coll.dataset_properties["external_container_name"],
                         standalone_coll.link_name, standalone_coll.dataverse_name,
                         standalone_coll.database_name,

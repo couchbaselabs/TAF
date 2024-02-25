@@ -288,7 +288,7 @@ class GoldFish(CBASBaseTest):
         """
         Process and create entities based on cbas_spec template
         """
-        cbas_spec_name = self.input.param("cbas_spec", 'goldfish')
+        cbas_spec_name = self.input.param("cbas_spec", 'columnar')
         cbas_spec = self.cbas_util.get_cbas_spec(cbas_spec_name)
         self.generate_bucket_obj_for_remote_cluster_obj()
         self.update_external_link_spec(cbas_spec)

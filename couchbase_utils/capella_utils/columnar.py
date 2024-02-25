@@ -227,7 +227,7 @@ class ColumnarUtils:
         if not instance_config:
             instance_config = self.generate_cloumnar_instance_configuration()
         resp = columnar_api.create_columnar_instance(
-            user.org_id, project.project_id, instance_config["name"],
+            project.org_id, project.project_id, instance_config["name"],
             instance_config["description"], instance_config["provider"],
             instance_config["region"], instance_config["nodes"]
         )
@@ -368,7 +368,7 @@ class ColumnarUtils:
                 self.log.error("Following error recieved {}".format(resp.text))
             return None
         return json.loads(resp.content)
-    
+
     def delete_columnar_instance_api_keys(
             self, instance, api_key, pod=None, user=None):
         if pod and user:

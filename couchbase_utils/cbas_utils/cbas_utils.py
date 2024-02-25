@@ -20,7 +20,7 @@ import importlib
 import copy
 import requests
 
-from Goldfish.templates.crudTemplate.docgen_template import Hotel
+from Columnar.templates.crudTemplate.docgen_template import Hotel
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
@@ -67,7 +67,7 @@ class BaseUtil(object):
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if status != 'success':
             return False
-        return results[0]
+        return json.loads(str(results[0]))
 
 
     def execute_statement_on_cbas_util(
@@ -299,13 +299,13 @@ class BaseUtil(object):
         return copy.deepcopy(spec_package.spec)
 
     @staticmethod
-    def get_goldfish_spec(module_name):
+    def get_columnar_spec(module_name):
         """
-        Fetches the goldfish_specs from spec file mentioned.
+        Fetches the columnar_specs from spec file mentioned.
         :param module_name str, name of the module from where the specs have to be fetched
         """
         spec_package = importlib.import_module(
-            'pytests.Goldfish.templates.' + module_name)
+            'pytests.Columnar.templates.' + module_name)
         return copy.deepcopy(spec_package.spec)
 
     @staticmethod
@@ -648,7 +648,7 @@ class Dataverse_Util(Database_Util):
         if a dataverse exists the query return successfully without creating any dataverse.
         :param analytics_scope bool, If True, will use create analytics scope syntax
         :param scope bool, If True, will use create scope syntax (cuurently
-        only supported on goldfish)
+        only supported on columnar)
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
@@ -722,7 +722,7 @@ class Dataverse_Util(Database_Util):
         if a dataverse does not exists the query return successfully without deleting any dataverse.
         :param analytics_scope bool, If True, will use create analytics scope syntax
         :param scope bool, If True, will use drop scope syntax (cuurently
-        only supported on goldfish)
+        only supported on columnar)
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         :param delete_dataverse_obj bool, deletes dropped dataverse's object from dataverse list
@@ -2513,17 +2513,17 @@ class Dataset_Util(KafkaLink_Util):
     def wait_for_ingestion_complete(
             self, cluster, dataset_name, num_items, timeout=300):
 
-        counter = 0
-        while timeout > counter:
+        start_time = time.time()
+        end_time = start_time + timeout
+        while end_time > time.time():
             self.log.debug("Total items in KV Bucket to be ingested "
                            "in CBAS datasets %s" % num_items)
             if num_items == self.get_num_items_in_cbas_dataset(cluster, dataset_name)[0]:
                 self.log.debug("Data ingestion completed in %s seconds." %
-                               counter)
+                               (time.time() - start_time))
                 return True
             else:
                 sleep(2)
-                counter += 2
 
         self.log.error("Dataset: {0} kv-items: {1} ds-items: {2}".format(
             dataset_name, num_items,

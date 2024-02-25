@@ -77,7 +77,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         if not project_id:
             self.log.info("Creating project {}".format(self.project.name))
-            resp = self.columnar_utils.create_project(self.project.name)
+            resp = self.columnar_utils.create_project(self.project)
             if not resp:
                 raise Exception("Error while creating project {0}".format(
                     self.project.name))
@@ -85,9 +85,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             self.capella["project_id"] = self.project.project_id
         else:
             self.project.project_id = project_id
-            capella_api = CommonCapellaAPI(
-                self.pod.url_public, self.user.api_secret_key,
-                self.user.api_access_key, self.user.email, self.user.password)
             resp = self.columnar_utils.capella_api.access_project(
                 self.user.org_id, self.project.project_id)
             if resp.status_code != 200:
@@ -169,7 +166,7 @@ class OnCloudBaseTest(CouchbaseBaseTest):
             if not resp:
                 result.append("Fetching Instance details for {0} "
                               "failed".format(instance.instance_id))
-            instance.endpoint = resp["config"]["endpoint"]
+            instance.endpoint = str(resp["config"]["endpoint"])
             instance.master.ip = instance.endpoint
 
         fetch_instance_conn_str_threads = list()
@@ -205,8 +202,8 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     instance)
                 count += 1
                 time.sleep(10)
-            instance.api_access_key = resp["apikeyId"]
-            instance.api_secret_key = resp["secret"]
+            instance.api_access_key = str(resp["apikeyId"])
+            instance.api_secret_key = str(resp["secret"])
 
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)

@@ -133,8 +133,9 @@ class CBASHelper(RestConnection):
             password = self.password
 
         api = self.cbas_base_url + "/analytics/admin/active_requests"
+        headers = self._create_headers(username, password)
         status, content, response = self._http_request(
-            api, 'DELETE',params=payload, timeout=60)
+            api, 'DELETE', params=payload, headers=headers, timeout=600)
 
         if hasattr(response, "status"):
             status_code = response.status

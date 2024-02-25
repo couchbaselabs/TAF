@@ -11,7 +11,7 @@ import time
 import json
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
-from Goldfish.goldfish_base import GoldFishBaseTest
+from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils import External_Dataset, Standalone_Dataset, Remote_Dataset
 from goldfishAPI.GoldfishAPIs.DocloadingAPIs.DocloadingAPIs import DocloadingAPIs
@@ -22,7 +22,7 @@ from Queue import Queue
 from awsLib.s3_data_helper import perform_S3_operation
 
 
-class CopyToS3(GoldFishBaseTest):
+class CopyToS3(ColumnarBaseTest):
     def setUp(self):
         super(CopyToS3, self).setUp()
         self.cluster = self.user.project.clusters[0]
@@ -36,7 +36,7 @@ class CopyToS3(GoldFishBaseTest):
             self.doc_loader = DocloadingAPIs(self.doc_loader_url, self.doc_loader_port)
 
         self.aws_region = "ap-south-1"
-        self.aws_bucket_name = "goldfish-sanity-test-data"
+        self.aws_bucket_name = "columnar-sanity-test-data"
         self.sink_s3_bucket_name = None
         for i in range(5):
             try:
@@ -58,11 +58,11 @@ class CopyToS3(GoldFishBaseTest):
                     self.sink_s3_bucket_name = None
                     self.fail("Unable to create S3 bucket even after 5 retries")
 
-        if not self.gf_spec_name:
-            self.gf_spec_name = "regressions.copy_to_s3"
+        if not self.columnar_spec_name:
+            self.columnar_spec_name = "regressions.copy_to_s3"
 
-        self.gf_spec = self.cbas_util.get_goldfish_spec(
-            self.gf_spec_name)
+        self.columnar_spec = self.cbas_util.get_columnar_spec(
+            self.columnar_spec_name)
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -137,7 +137,7 @@ class CopyToS3(GoldFishBaseTest):
         else:
             self.fail("Error while creating API key for organization owner")
 
-        cluster_name = "goldfish-regression-cluster-" + str(random.randint(1, 1000))
+        cluster_name = "columnar-regression-cluster-" + str(random.randint(1, 1000))
         self.expected_result = {
             "name": cluster_name,
             "description": None,
@@ -284,7 +284,7 @@ class CopyToS3(GoldFishBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.cluster, self.gf_spec):
+                self.cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
 
         if self.sink_s3_bucket_name:
@@ -457,7 +457,7 @@ class CopyToS3(GoldFishBaseTest):
 
         for collection in dynamo_collections:
             status = (self.doc_loader.start_dynamo_loader(self.dynamo_access_key_id, self.dynamo_security_access_key,
-                                                          self.gf_spec["kafka_dataset"]["primary_key"], collection,
+                                                          self.columnar_spec["kafka_dataset"]["primary_key"], collection,
                                                           self.dynamo_regions, no_of_docs, doc_size).json())["status"]
             if status != 'running':
                 self.log.error("Failed to start loader for DynamoDB collection")
@@ -478,10 +478,10 @@ class CopyToS3(GoldFishBaseTest):
                 self.log.error("Failed to start loader for RDS collection")
 
     def base_infra_setup(self):
-        self.gf_spec["dataverse"]["no_of_dataverses"] = self.input.param(
+        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
-        self.gf_spec["remote_link"]["no_of_remote_links"] = self.input.param(
+        self.columnar_spec["remote_link"]["no_of_remote_links"] = self.input.param(
             "no_of_remote_links", 0)
 
         if self.input.param("no_of_remote_links", 0):
@@ -492,17 +492,17 @@ class CopyToS3(GoldFishBaseTest):
                  "password": self.remote_cluster_password,
                  "encryption": "full",
                  "certificate": self.remote_cluster_certificate})
-            self.gf_spec["remote_link"]["properties"] = remote_link_properties
+            self.columnar_spec["remote_link"]["properties"] = remote_link_properties
             self.include_external_collections = dict()
             remote_collection = [self.remote_collection]
             self.include_external_collections["remote"] = remote_collection
-            self.gf_spec["remote_dataset"]["include_collections"] = remote_collection
-            self.gf_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
+            self.columnar_spec["remote_dataset"]["include_collections"] = remote_collection
+            self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
 
-        self.gf_spec["external_link"][
+        self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
             "no_of_external_links", 1)
-        self.gf_spec["external_link"]["properties"] = [{
+        self.columnar_spec["external_link"]["properties"] = [{
             "type": "s3",
             "region": self.aws_region,
             "accessKeyId": self.aws_access_key,
@@ -510,12 +510,12 @@ class CopyToS3(GoldFishBaseTest):
             "serviceEndpoint": None
         }]
 
-        self.gf_spec["standalone_dataset"][
+        self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 0)
-        self.gf_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
-        self.gf_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
+        self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
         if self.input.param("num_of_external_coll", 0):
             external_dataset_properties = [{
                 "external_container_name": self.input.param("s3_source_bucket", None),
@@ -532,10 +532,10 @@ class CopyToS3(GoldFishBaseTest):
                 "convert_decimal_to_double": 0,
                 "timezone": ""
             }]
-            self.gf_spec["external_dataset"][
+            self.columnar_spec["external_dataset"][
                 "external_dataset_properties"] = external_dataset_properties
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.gf_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -676,7 +676,7 @@ class CopyToS3(GoldFishBaseTest):
 
     def test_create_copyToS3_from_remote_collection_query_drop_standalone_collection(self):
         self.capella_provisioned_cluster_setup()
-        self.gf_spec["remote_link"]["no_of_remote_links"] = self.input.param(
+        self.columnar_spec["remote_link"]["no_of_remote_links"] = self.input.param(
             "no_of_remote_links", 1)
         remote_link_properties = list()
         remote_link_properties.append(
@@ -685,12 +685,12 @@ class CopyToS3(GoldFishBaseTest):
              "password": self.remote_cluster_password,
              "encryption": "full",
              "certificate": self.remote_cluster_certificate})
-        self.gf_spec["remote_link"]["properties"] = remote_link_properties
+        self.columnar_spec["remote_link"]["properties"] = remote_link_properties
         self.include_external_collections = dict()
         remote_collection = [self.remote_collection]
         self.include_external_collections["remote"] = remote_collection
-        self.gf_spec["remote_dataset"]["include_collections"] = remote_collection
-        self.gf_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
+        self.columnar_spec["remote_dataset"]["include_collections"] = remote_collection
+        self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
         self.base_infra_setup()
         no_of_docs = self.input.param("no_of_docs", 10000)
         self.start_source_ingestion(no_of_docs=no_of_docs, doc_size=1024)
