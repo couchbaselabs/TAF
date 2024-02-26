@@ -66,12 +66,11 @@ class GoldfishUtils:
                             tenant.api_access_key, tenant.user, tenant.pwd)
         resp = gf_api.delete_columnar_instance(
             tenant.id, tenant.project_id, cluster.id,)
-        if resp.status_code != 204:
+        if resp.status_code != 202:
             self.log.error("Unable to delete goldfish cluster {0}: {1}".format(
                 cluster.id, resp.content))
-            return None
-        resp = json.loads(resp.content)
-        return resp["id"]
+            return False
+        return True
 
     def scale_cluster(self, pod, tenant, cluster, nodes):
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
