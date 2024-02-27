@@ -5,28 +5,27 @@ Created on May 2, 2022
 '''
 import random
 
-from basetestcase import BaseTestCase
 from membase.api.rest_client import RestConnection
 import threading
-from aGoodDoctor.bkrs import DoctorBKRS
-import os
 from BucketLib.bucket import Bucket
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
-from aGoodDoctor.hostedFTS import DoctorFTS, FTSQueryLoad
-from aGoodDoctor.hostedN1QL import QueryLoad, DoctorN1QL
-from aGoodDoctor.hostedCbas import DoctorCBAS, CBASQueryLoad
-from aGoodDoctor.hostedXDCR import DoctorXDCR
-from aGoodDoctor.hostedBackupRestore import DoctorHostedBackupRestore
-from aGoodDoctor.hostedOnOff import DoctorHostedOnOff
-from aGoodDoctor.hostedEventing import DoctorEventing
-from aGoodDoctor.hostedOPD import OPD
+from pytests.basetestcase import BaseTestCase
+from constants.cb_constants.CBServer import CbServer
+try:
+    from fts import DoctorFTS, FTSQueryLoad
+except:
+    pass
+from n1ql import QueryLoad, DoctorN1QL
+from cbas import DoctorCBAS, CBASQueryLoad
+from hostedXDCR import DoctorXDCR
+from hostedBackupRestore import DoctorHostedBackupRestore
+from hostedOnOff import DoctorHostedOnOff
+from hostedEventing import DoctorEventing
 from constants.cloud_constants.capella_constants import AWS, GCP
 from table_view import TableView
 import time
-from cb_constants.CBServer import CbServer
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from com.couchbase.test.sdk import Server
-from constants.cloud_constants import capella_constants
 from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
@@ -34,9 +33,10 @@ from custom_exceptions.exception import ServerUnavailableException
 from exceptions import IndexError
 from elasticsearch import EsClient
 import string
+from hostedOPD import hostedOPD
 
 
-class Murphy(BaseTestCase, OPD):
+class Murphy(BaseTestCase, hostedOPD):
 
     def init_doc_params(self):
         self.create_perc = self.input.param("create_perc", 100)
@@ -142,8 +142,7 @@ class Murphy(BaseTestCase, OPD):
                             cluster.master.rest_username,
                             cluster.master.rest_password,
                             str(cluster.master.memcached_port))
-            cluster.sdk_client_pool.create_clients(
-                bucket.name, server, req_clients_per_bucket)
+            cluster.sdk_client_pool.create_clients(bucket.name, server, req_clients_per_bucket)
             bucket.clients = cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
         self.sleep(1, "Wait for SDK client pool to warmup")
 
@@ -665,7 +664,7 @@ class Murphy(BaseTestCase, OPD):
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 for bucket in cluster.buckets:
-                    self.original_ops = bucket.loadDefn["ops"]
+                    bucket.original_ops = bucket.loadDefn["ops"]
                     bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
                     self.generate_docs(bucket=bucket)
                 self.tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets))

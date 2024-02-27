@@ -14,8 +14,8 @@ from table_view import TableView
 from membase.api.rest_client import RestConnection
 from cb_tools.cbstats import Cbstats
 from com.couchbase.test.taskmanager import TaskManager
-from com.couchbase.test.sdk import Server, SDKClient
-from com.couchbase.test.sdk import SDKClient as NewSDKClient
+from com.couchbase.test.sdk import Server, SDKClientPool
+# from com.couchbase.test.sdk import SDKClient as NewSDKClient
 from com.couchbase.test.docgen import WorkLoadSettings
 from com.couchbase.test.docgen import DocumentGenerator
 from com.couchbase.test.loadgen import WorkLoadGenerate
@@ -26,7 +26,9 @@ from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
 from custom_exceptions.exception import RebalanceFailedException
-from cb_constants.CBServer import CbServer
+from constants.cb_constants.CBServer import CbServer
+from threading import Thread
+import threading
 
 
 class OPD:
@@ -44,7 +46,7 @@ class OPD:
         self.PrintStep("RAM FootPrint: %s" % str(mem))
         return mem
 
-    def create_required_buckets(self, cluster):
+    def create_required_buckets(self, cluster, sdk_init=True):
         self.log.info("Get the available memory quota")
         rest = RestConnection(cluster.master)
         self.info = rest.get_nodes_self()
@@ -78,9 +80,7 @@ class OPD:
                  Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
 
             self.bucket_util.create_bucket(cluster, bucket)
-            if bucket.serverless and self.nebula_details.get(cluster):
-                self.bucket_util.update_bucket_nebula_servers(cluster, bucket)
-                bucket.serverless.nebula_endpoint = self.nebula_details[cluster].endpoint
+            bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
 
         # rebalance the new buckets across all nodes.
         self.log.info("Rebalance Starts")
@@ -89,45 +89,74 @@ class OPD:
                        ejectedNodes=[])
         rest.monitorRebalance()
 
-    def create_required_collections(self, cluster, num_scopes, num_collections):
-        self.scope_name = self.input.param("scope_name", "_default")
-        if self.scope_name != "_default":
-            self.bucket_util.create_scope(cluster,
-                                          self.bucket,
-                                          {"name": self.scope_name})
-        if num_scopes > 1:
-            self.scope_prefix = self.input.param("scope_prefix",
-                                                 "VolumeScope")
+        if sdk_init:
+            cluster.sdk_client_pool = SDKClientPool()
+            num_clients = self.input.param("clients_per_db",
+                                           min(5, bucket.loadDefn.get("collections")))
             for bucket in cluster.buckets:
-                node = cluster.master or bucket.nebula_endpoint
-                for i in range(num_scopes):
+                self.create_sdk_client_pool(cluster, [bucket],
+                                            num_clients)
+        self.create_required_collections(cluster)
+
+    def create_required_collections(self, cluster, buckets=None):
+        buckets = buckets or cluster.buckets
+        self.scope_name = self.input.param("scope_name", "_default")
+
+        def create_collections(bucket):
+            node = cluster.master
+            for scope in bucket.scopes.keys():
+                if scope == CbServer.system_scope:
+                    continue
+                if bucket.loadDefn.get("collections") > 0:
+                    self.collection_prefix = self.input.param("collection_prefix",
+                                                              "VolumeCollection")
+
+                    for i in range(bucket.loadDefn.get("collections")):
+                        collection_name = self.collection_prefix + str(i)
+                        self.bucket_util.create_collection(node,
+                                                           bucket,
+                                                           scope,
+                                                           {"name": collection_name})
+                        self.sleep(0.1)
+
+                collections = bucket.scopes[scope].collections.keys()
+                self.log.debug("Collections list == {}".format(collections))
+
+        for bucket in buckets:
+            if bucket.loadDefn.get("scopes") > 1:
+                self.scope_prefix = self.input.param("scope_prefix",
+                                                     "VolumeScope")
+                node = cluster.master
+                for i in range(bucket.loadDefn.get("scopes")):
                     scope_name = self.scope_prefix + str(i)
                     self.log.info("Creating scope: %s"
                                   % (scope_name))
                     self.bucket_util.create_scope(node,
                                                   bucket,
                                                   {"name": scope_name})
-                    self.sleep(0.5)
-            self.num_scopes += 1
-        for bucket in cluster.buckets:
-            node = cluster.master or bucket.serverless.nebula_endpoint
-            for scope in bucket.scopes.keys():
-                if scope == CbServer.system_scope:
-                    continue
-                if num_collections > 0:
-                    self.collection_prefix = self.input.param("collection_prefix",
-                                                              "VolumeCollection")
+                    self.sleep(0.1)
+        threads = []
+        for bucket in buckets:
+            th = Thread(
+                    target=create_collections,
+                    name="{}_create_collection".format(bucket.name),
+                    args=(bucket,))
+            threads.append(th)
+            th.start()
+        for thread in threads:
+            thread.join()
 
-                    for i in range(num_collections):
-                        collection_name = self.collection_prefix + str(i)
-                        self.bucket_util.create_collection(node,
-                                                           bucket,
-                                                           scope,
-                                                           {"name": collection_name})
-                        self.sleep(0.5)
-
-        self.collections = cluster.buckets[0].scopes[self.scope_name].collections.keys()
-        self.log.debug("Collections list == {}".format(self.collections))
+    def create_sdk_client_pool(self, cluster, buckets, req_clients_per_bucket):
+        for bucket in buckets:
+            self.log.info("Using SDK endpoint %s" % cluster.master.ip)
+            server = Server(cluster.master.ip, cluster.master.port,
+                            cluster.master.rest_username,
+                            cluster.master.rest_password,
+                            str(cluster.master.memcached_port))
+            cluster.sdk_client_pool.create_clients(
+                bucket.name, server, req_clients_per_bucket)
+            bucket.clients = cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
+        self.sleep(1, "Wait for SDK client pool to warmup")
 
     def stop_purger(self, tombstone_purge_age=60):
         """
@@ -143,8 +172,8 @@ class OPD:
         self.rest.update_tombstone_purge_age_for_removal(tombstone_purge_age)
         self.rest.disable_tombstone_purger()
 
-    def get_bucket_dgm(self, bucket):
-        self.rest_client = BucketHelper(self.cluster.master)
+    def get_bucket_dgm(self, cluster, bucket):
+        self.rest_client = BucketHelper(cluster.master)
         dgm = self.rest_client.fetch_bucket_stats(
             bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
         self.log.info("Active Resident Threshold of {0} is {1}".format(
@@ -265,7 +294,8 @@ class OPD:
             self.cluster, self.servs_in, self.servs_out,
             services=services,
             check_vbucket_shuffling=self.vbucket_check,
-            retry_get_process_num=retry_get_process_num)
+            retry_get_process_num=retry_get_process_num,
+            validate_bucket_ranking=False)
 
         return rebalance_task
 
@@ -274,119 +304,132 @@ class OPD:
                       update_end=None, update_start=None,
                       delete_end=None, delete_start=None,
                       expire_end=None, expire_start=None,
-                      read_end=None, read_start=None):
-        self.create_end = 0
-        self.create_start = 0
-        self.read_end = 0
-        self.read_start = 0
-        self.update_end = 0
-        self.update_start = 0
-        self.delete_end = 0
-        self.delete_start = 0
-        self.expire_end = 0
-        self.expire_start = 0
-        self.initial_items = self.final_items
+                      read_end=None, read_start=None,
+                      bucket=None):
+        bucket.create_end = 0
+        bucket.create_start = 0
+        bucket.read_end = 0
+        bucket.read_start = 0
+        bucket.update_end = 0
+        bucket.update_start = 0
+        bucket.delete_end = 0
+        bucket.delete_start = 0
+        bucket.expire_end = 0
+        bucket.expire_start = 0
+        try:
+            bucket.final_items
+        except:
+            bucket.final_items = 0
+        bucket.initial_items = bucket.final_items
 
-        doc_ops = doc_ops or self.doc_ops
+        doc_ops = doc_ops or bucket.loadDefn.get("load_type")
         self.mutations_to_validate = doc_ops
 
         if "read" in doc_ops:
             if read_start is not None:
-                self.read_start = read_start
+                bucket.read_start = read_start
             else:
-                self.read_start = 0
+                bucket.read_start = 0
             if read_end is not None:
-                self.read_end = read_end
+                bucket.read_end = read_end
             else:
-                self.read_end = self.num_items * self.mutation_perc/100
+                bucket.read_end = bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
 
         if "update" in doc_ops:
             if update_start is not None:
-                self.update_start = update_start
+                bucket.update_start = update_start
             else:
-                self.update_start = 0
+                bucket.update_start = 0
             if update_end is not None:
-                self.update_end = update_end
+                bucket.update_end = update_end
             else:
-                self.update_end = self.num_items * self.mutation_perc/100
+                bucket.update_end = bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
             self.mutate += 1
 
         if "delete" in doc_ops:
             if delete_start is not None:
-                self.delete_start = delete_start
+                bucket.delete_start = delete_start
             else:
-                self.delete_start = self.start
+                bucket.delete_start = bucket.start
             if delete_end is not None:
-                self.delete_end = delete_end
+                bucket.delete_end = delete_end
             else:
-                self.delete_end = self.start + self.num_items * self.mutation_perc/100
-            self.final_items -= (self.delete_end - self.delete_start) * self.num_collections * self.num_scopes
+                bucket.delete_end = bucket.start + bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
+            bucket.final_items -= (bucket.delete_end - bucket.delete_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
 
         if "expiry" in doc_ops:
             if self.maxttl == 0:
                 self.maxttl = self.input.param("maxttl", 10)
             if expire_start is not None:
-                self.expire_start = expire_start
+                bucket.expire_start = expire_start
             else:
-                self.expire_start = self.delete_end
+                bucket.expire_start = bucket.end
+            bucket.start = bucket.expire_start
             if expire_end is not None:
-                self.expire_end = expire_end
+                bucket.expire_end = expire_end
             else:
-                self.expire_end = self.expire_start + self.num_items * self.mutation_perc/100
-            self.final_items -= (self.expire_end - self.expire_start) * self.num_collections * self.num_scopes
+                bucket.expire_end = bucket.expire_start + bucket.loadDefn.get("num_items")/2 * self.mutation_perc/100
+            bucket.end = bucket.expire_end
+            # bucket.final_items -= (bucket.expire_end - bucket.expire_start) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
 
         if "create" in doc_ops:
             if create_start is not None:
-                self.create_start = create_start
+                bucket.create_start = create_start
             else:
-                self.create_start = self.end
-            self.start = self.create_start
+                bucket.create_start = bucket.end
+            bucket.start = bucket.create_start
 
             if create_end is not None:
-                self.create_end = create_end
+                bucket.create_end = create_end
             else:
-                self.create_end = self.end + (self.expire_end - self.expire_start) + (self.delete_end - self.delete_start)
-            self.end = self.create_end
+                bucket.create_end = bucket.end + (bucket.expire_end - bucket.expire_start) + (bucket.delete_end - bucket.delete_start)
+            bucket.end = bucket.create_end
 
-            self.final_items += (abs(self.create_end - self.create_start)) * self.num_collections * self.num_scopes
+            bucket.final_items += (abs(bucket.create_end - bucket.create_start)) * bucket.loadDefn.get("collections") * bucket.loadDefn.get("scopes")
+        print "================{}=================".format(bucket.name)
+        print "Read Start: %s" % bucket.read_start
+        print "Read End: %s" % bucket.read_end
+        print "Update Start: %s" % bucket.update_start
+        print "Update End: %s" % bucket.update_end
+        print "Expiry Start: %s" % bucket.expire_start
+        print "Expiry End: %s" % bucket.expire_end
+        print "Delete Start: %s" % bucket.delete_start
+        print "Delete End: %s" % bucket.delete_end
+        print "Create Start: %s" % bucket.create_start
+        print "Create End: %s" % bucket.create_end
+        print "Final Start: %s" % bucket.start
+        print "Final End: %s" % bucket.end
+        print "================{}=================".format(bucket.name)
 
-        print "Read Start: %s" % self.read_start
-        print "Read End: %s" % self.read_end
-        print "Update Start: %s" % self.update_start
-        print "Update End: %s" % self.update_end
-        print "Expiry Start: %s" % self.expire_start
-        print "Expiry End: %s" % self.expire_end
-        print "Delete Start: %s" % self.delete_start
-        print "Delete End: %s" % self.delete_end
-        print "Create Start: %s" % self.create_start
-        print "Create End: %s" % self.create_end
-        print "Final Start: %s" % self.start
-        print "Final End: %s" % self.end
-
-    def _loader_dict(self, cmd={}):
+    def _loader_dict(self, cluster, buckets, overRidePattern=None, cmd={}, skip_default=True):
         self.loader_map = dict()
-        for bucket in self.cluster.buckets:
+        self.default_pattern = [100, 0, 0, 0, 0]
+        buckets = buckets or cluster.buckets
+        for bucket in buckets:
+            pattern = overRidePattern or bucket.loadDefn.get("pattern", self.default_pattern)
             for scope in bucket.scopes.keys():
-                for collection in bucket.scopes[scope].collections.keys():
+                for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
+                    workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                    valType = workloads[i % len(workloads)]["valType"]
                     if scope == CbServer.system_scope:
                         continue
-                    if collection == "_default" and scope == "_default":
+                    if collection == "_default" and scope == "_default" and skip_default:
                         continue
                     ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
                                           cmd.get("keySize", self.key_size),
-                                          cmd.get("docSize", self.doc_size),
-                                          cmd.get("cr", self.create_perc),
-                                          cmd.get("rd", self.read_perc),
-                                          cmd.get("up", self.update_perc),
-                                          cmd.get("dl", self.delete_perc),
-                                          cmd.get("ex", self.expiry_perc),
+                                          cmd.get("docSize", bucket.loadDefn.get("doc_size")),
+                                          cmd.get("cr", pattern[0]),
+                                          cmd.get("rd", pattern[1]),
+                                          cmd.get("up", pattern[2]),
+                                          cmd.get("dl", pattern[3]),
+                                          cmd.get("ex", pattern[4]),
                                           cmd.get("workers", self.process_concurrency),
-                                          cmd.get("ops", self.ops_rate),
+                                          cmd.get("ops", bucket.loadDefn.get("ops")),
                                           cmd.get("loadType", None),
                                           cmd.get("keyType", self.key_type),
-                                          cmd.get("valueType", self.val_type),
+                                          cmd.get("valueType", valType),
                                           cmd.get("validate", False),
-                                          cmd.get("gtm", self.gtm),
+                                          cmd.get("gtm", False),
                                           cmd.get("deleted", False),
                                           cmd.get("mutated", 0),
                                           cmd.get("model", self.model),
@@ -394,22 +437,22 @@ class OPD:
                                           cmd.get("dim", self.dim)
                                           )
                     hm = HashMap()
-                    hm.putAll({DRConstants.create_s: self.create_start,
-                               DRConstants.create_e: self.create_end,
-                               DRConstants.update_s: self.update_start,
-                               DRConstants.update_e: self.update_end,
-                               DRConstants.expiry_s: self.expire_start,
-                               DRConstants.expiry_e: self.expire_end,
-                               DRConstants.delete_s: self.delete_start,
-                               DRConstants.delete_e: self.delete_end,
-                               DRConstants.read_s: self.read_start,
-                               DRConstants.read_e: self.read_end})
+                    hm.putAll({DRConstants.create_s: bucket.create_start,
+                               DRConstants.create_e: bucket.create_end,
+                               DRConstants.update_s: bucket.update_start,
+                               DRConstants.update_e: bucket.update_end,
+                               DRConstants.expiry_s: bucket.expire_start,
+                               DRConstants.expiry_e: bucket.expire_end,
+                               DRConstants.delete_s: bucket.delete_start,
+                               DRConstants.delete_e: bucket.delete_end,
+                               DRConstants.read_s: bucket.read_start,
+                               DRConstants.read_e: bucket.read_end})
                     dr = DocRange(hm)
                     ws.dr = dr
-                    dg = DocumentGenerator(ws, self.key_type, self.val_type)
+                    dg = DocumentGenerator(ws, self.key_type, valType)
                     self.loader_map.update({bucket.name+scope+collection: dg})
 
-    def wait_for_doc_load_completion(self, tasks, wait_for_stats=True):
+    def wait_for_doc_load_completion(self, cluster, tasks, wait_for_stats=True):
         self.doc_loading_tm.getAllTaskResult()
         for task in tasks:
             task.result = True
@@ -430,128 +473,121 @@ class OPD:
                             task.result = False
                         except (DocumentNotFoundException, DocumentExistsException) as e:
                             pass
-            try:
-                task.sdk.disconnectCluster()
-            except Exception as e:
-                print(e)
+            # try:
+            #     task.sdk.disconnectCluster()
+            # except Exception as e:
+            #     print(e)
             self.assertTrue(task.result, "Task Failed: {}".format(task.taskName))
         if wait_for_stats:
             try:
                 self.bucket_util._wait_for_stats_all_buckets(
-                    self.cluster, self.cluster.buckets, timeout=28800)
-                if self.track_failures and self.cluster.type == "default":
-                    self.bucket_util.verify_stats_all_buckets(self.cluster, self.final_items,
-                                                              timeout=28800)
+                    cluster, cluster.buckets, timeout=28800)
+                if self.track_failures and cluster.type == "default":
+                    for bucket in cluster.buckets:
+                        self.bucket_util.verify_stats_all_buckets(
+                            cluster, bucket.final_items, timeout=28800,
+                            buckets=[bucket])
             except Exception as e:
-                if not self.cluster.type == "default":
+                if self.cluster.type == "default":
                     self.get_gdb()
                 raise e
 
     def get_gdb(self):
-        for node in self.cluster.nodes_in_cluster:
+        for node in self.cluster.kv_nodes:
             gdb_shell = RemoteMachineShellConnection(node)
             gdb_out = gdb_shell.execute_command('gdb -p `(pidof memcached)` -ex "thread apply all bt" -ex detach -ex quit')[0]
             print node.ip
             print gdb_out
             gdb_shell.disconnect()
 
-    def data_validation(self):
-        doc_ops = self.mutations_to_validate
+    def data_validation(self, cluster, skip_default=True):
         pc = min(self.process_concurrency, 20)
         if self._data_validation:
             self.log.info("Validating Active/Replica Docs")
             cmd = dict()
             self.ops_rate = self.input.param("ops_rate", 2000)
-            if self.cluster.master:
-                master = Server(self.cluster.master.ip, self.cluster.master.port,
-                                self.cluster.master.rest_username, self.cluster.master.rest_password,
-                                str(self.cluster.master.memcached_port))
+            # master = Server(self.cluster.master.ip, self.cluster.master.port,
+            #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
+            #                 str(self.cluster.master.memcached_port))
             self.loader_map = dict()
-            for bucket in self.cluster.buckets:
+            for bucket in cluster.buckets:
                 for scope in bucket.scopes.keys():
                     if scope == CbServer.system_scope:
                             continue
-                    for collection in bucket.scopes[scope].collections.keys():
-                        if collection == "_default" and scope == "_default":
+                    for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
+                        workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
+                        valType = workloads[i % len(workloads)]["valType"]
+                        if collection == "_default" and scope == "_default" and skip_default:
                             continue
-                        for op_type in doc_ops:
+                        for op_type in bucket.loadDefn.get("load_type"):
                             cmd.update({"deleted": False})
                             hm = HashMap()
                             if op_type == "create":
-                                hm.putAll({DRConstants.read_s: self.create_start,
-                                           DRConstants.read_e: self.create_end})
+                                hm.putAll({DRConstants.read_s: bucket.create_start,
+                                           DRConstants.read_e: bucket.create_end})
                             elif op_type == "update":
-                                hm.putAll({DRConstants.read_s: self.update_start,
-                                           DRConstants.read_e: self.update_end})
+                                hm.putAll({DRConstants.read_s: bucket.update_start,
+                                           DRConstants.read_e: bucket.update_end})
                             elif op_type == "delete":
-                                hm.putAll({DRConstants.read_s: self.delete_start,
-                                           DRConstants.read_e: self.delete_end})
+                                hm.putAll({DRConstants.read_s: bucket.delete_start,
+                                           DRConstants.read_e: bucket.delete_end})
+                                cmd.update({"deleted": True})
+                            elif op_type == "expiry":
+                                hm.putAll({DRConstants.read_s: bucket.expire_start,
+                                           DRConstants.read_e: bucket.expire_end})
                                 cmd.update({"deleted": True})
                             else:
                                 continue
                             dr = DocRange(hm)
                             ws = WorkLoadSettings(cmd.get("keyPrefix", self.key),
                                                   cmd.get("keySize", self.key_size),
-                                                  cmd.get("docSize", self.doc_size),
+                                                  cmd.get("docSize", bucket.loadDefn.get("doc_size")),
                                                   cmd.get("cr", 0),
                                                   cmd.get("rd", 100),
                                                   cmd.get("up", 0),
                                                   cmd.get("dl", 0),
                                                   cmd.get("ex", 0),
                                                   cmd.get("workers", pc),
-                                                  cmd.get("ops", self.ops_rate),
+                                                  cmd.get("ops", bucket.original_ops),
                                                   cmd.get("loadType", None),
                                                   cmd.get("keyType", self.key_type),
-                                                  cmd.get("valueType", self.val_type),
+                                                  cmd.get("valueType", valType),
                                                   cmd.get("validate", True),
-                                                  cmd.get("gtm", True),
+                                                  cmd.get("gtm", False),
                                                   cmd.get("deleted", False),
                                                   cmd.get("mutated", 0))
                             ws.dr = dr
-                            dg = DocumentGenerator(ws, self.key_type, self.val_type)
+                            dg = DocumentGenerator(ws, self.key_type, valType)
                             self.loader_map.update({bucket.name+scope+collection+op_type: dg})
 
             tasks = list()
             i = pc
             while i > 0:
-                for bucket in self.cluster.buckets:
-                    if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
-                        nebula = bucket.serverless.nebula_endpoint
-                        print "Serverless Mode, Nebula will be used for SDK operations: %s" % nebula.srv
-                        master = Server(nebula.srv, nebula.port,
-                                        nebula.rest_username,
-                                        nebula.rest_password,
-                                        str(nebula.memcached_port))
+                for bucket in cluster.buckets:
                     for scope in bucket.scopes.keys():
                         if scope == CbServer.system_scope:
                             continue
                         for collection in bucket.scopes[scope].collections.keys():
-                            if collection == "_default" and scope == "_default":
+                            if collection == "_default" and scope == "_default" and skip_default:
                                 continue
-                            for op_type in doc_ops:
-                                if op_type not in ["create", "update", "delete"]:
+                            for op_type in bucket.loadDefn.get("load_type"):
+                                if op_type not in ["create", "update", "delete", "expiry"]:
                                     continue
-                                client = NewSDKClient(master, bucket.name, scope, collection)
-                                client.initialiseSDK()
-                                self.sleep(1)
+                                # client = NewSDKClient(master, bucket.name, scope, collection)
+                                # client.initialiseSDK()
+                                # self.sleep(1)
                                 taskName = "Validate_%s_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, op_type, str(i), time.time())
                                 task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection+op_type],
-                                                        client, "NONE",
+                                                        cluster.sdk_client_pool, "NONE",
                                                         self.maxttl, self.time_unit,
                                                         self.track_failures, 0)
+                                task.set_collection_for_load(bucket.name, scope, collection)
                                 tasks.append(task)
                                 self.doc_loading_tm.submit(task)
                                 i -= 1
-        self.doc_loading_tm.getAllTaskResult()
-        for task in tasks:
-            try:
-                task.sdk.disconnectCluster()
-            except Exception as e:
-                print(e)
-        for task in tasks:
-            self.assertTrue(task.result, "Validation Failed for: %s" % task.taskName)
+            return tasks
 
-    def print_crud_stats(self):
+    def print_crud_stats(self, buckets):
         self.table = TableView(self.log.info)
         self.table.set_headers(["Initial Items",
                                 "Current Items",
@@ -559,80 +595,72 @@ class OPD:
                                 "Items Created",
                                 "Items Deleted",
                                 "Items Expired"])
-        self.table.add_row([
-            str(self.initial_items),
-            str(self.final_items),
-            str(abs(self.update_start)) + "-" + str(abs(self.update_end)),
-            str(abs(self.create_start)) + "-" + str(abs(self.create_end)),
-            str(abs(self.delete_start)) + "-" + str(abs(self.delete_end)),
-            str(abs(self.expire_start)) + "-" + str(abs(self.expire_end))
-            ])
+        for bucket in buckets:
+            self.table.add_row([
+                str(bucket.initial_items),
+                str(bucket.final_items),
+                str(abs(bucket.update_start)) + "-" + str(abs(bucket.update_end)),
+                str(abs(bucket.create_start)) + "-" + str(abs(bucket.create_end)),
+                str(abs(bucket.delete_start)) + "-" + str(abs(bucket.delete_end)),
+                str(abs(bucket.expire_start)) + "-" + str(abs(bucket.expire_end))
+                ])
         self.table.display("Docs statistics")
 
-    def perform_load(self, crash=False, num_kills=1, wait_for_load=True,
-                     validate_data=True):
+    def perform_load(self, wait_for_load=True,
+                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True):
         self.get_memory_footprint()
-        self._loader_dict()
-        if self.cluster.master:
-            master = Server(self.cluster.master.ip, self.cluster.master.port,
-                            self.cluster.master.rest_username, self.cluster.master.rest_password,
-                            str(self.cluster.master.memcached_port))
+        buckets = buckets or cluster.buckets
+        self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default)
+        # master = Server(self.cluster.master.ip, self.cluster.master.port,
+        #                 self.cluster.master.rest_username, self.cluster.master.rest_password,
+        #                 str(self.cluster.master.memcached_port))
         tasks = list()
         i = self.process_concurrency
         while i > 0:
-            for bucket in self.cluster.buckets:
-                if bucket.serverless is not None and bucket.serverless.nebula_endpoint:
-                    nebula = bucket.serverless.nebula_endpoint
-                    print "Serverless Mode, Nebula will be used for SDK operations: %s" % nebula.srv
-                    master = Server(nebula.srv, nebula.port,
-                                    nebula.rest_username,
-                                    nebula.rest_password,
-                                    str(nebula.memcached_port))
+            for bucket in buckets:
                 for scope in bucket.scopes.keys():
                     if scope == CbServer.system_scope:
                         continue
                     for collection in bucket.scopes[scope].collections.keys():
                         if scope == CbServer.system_scope:
                             continue
-                        if collection == "_default" and scope == "_default":
+                        if collection == "_default" and scope == "_default" and skip_default:
                             continue
-                        client = NewSDKClient(master, bucket.name, scope, collection)
-                        client.initialiseSDK()
-                        self.sleep(1)
-                        taskName = "Loader_%s_%s_%s_%s_%s" % (bucket.name, scope, collection, str(i), time.time())
+                        # client = NewSDKClient(master, bucket.name, scope, collection)
+                        # client.initialiseSDK()
+                        # self.sleep(1)
+                        taskName = "Loader_%s_%s_%s_%s" % (bucket.name, scope, collection, time.time())
                         task = WorkLoadGenerate(taskName, self.loader_map[bucket.name+scope+collection],
-                                                client, self.esClient,
+                                                cluster.sdk_client_pool, self.esClient,
                                                 self.durability_level,
                                                 self.maxttl, self.time_unit,
                                                 self.track_failures, 0)
+                        task.set_collection_for_load(bucket.name, scope, collection)
                         tasks.append(task)
                         self.doc_loading_tm.submit(task)
                         i -= 1
 
         if wait_for_load:
-            self.wait_for_doc_load_completion(tasks)
+            self.wait_for_doc_load_completion(cluster, tasks)
             self.get_memory_footprint()
         else:
             return tasks
 
-        if crash:
-            self.kill_memcached(num_kills=num_kills)
-
         if validate_data:
-            self.data_validation()
+            self.data_validation(cluster, skip_default=skip_default)
 
-        self.print_stats()
+        self.print_stats(cluster)
 
         if self.cluster.type != "default":
             return
 
-        # result = self.check_coredump_exist(self.cluster.nodes_in_cluster)
-        # if result:
-        #     self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
-        #     if self.assert_crashes_on_load:
-        #         self.task_manager.abort_all_tasks()
-        #         self.doc_loading_tm.abortAllTasks()
-        #         self.assertFalse(result)
+        result = self.check_coredump_exist(cluster.nodes_in_cluster)
+        if result:
+            self.PrintStep("CRASH | CRITICAL | WARN messages found in cb_logs")
+            if self.assert_crashes_on_load:
+                self.task_manager.abort_all_tasks()
+                self.doc_loading_tm.abortAllTasks()
+                self.assertFalse(result)
 
     def get_magma_disk_usage(self, bucket=None):
         if bucket is None:
@@ -671,16 +699,14 @@ class OPD:
         self.log.debug("Total Disk usage for seqTree is {}MB".format(seqTree))
         return kvstore, wal, keyTree, seqTree
 
-    def print_stats(self):
-        if self.cluster.type != "serverless":
-            self.bucket_util.print_bucket_stats(self.cluster)
-            self.cluster_util.print_cluster_stats(self.cluster)
-        self.print_crud_stats()
-        for bucket in self.cluster.buckets:
-            if self.cluster.type != "serverless":
-                self.get_bucket_dgm(bucket)
+    def print_stats(self, cluster):
+        self.bucket_util.print_bucket_stats(cluster)
+        self.cluster_util.print_cluster_stats(cluster)
+        self.print_crud_stats(cluster.buckets)
+        for bucket in cluster.buckets:
+            self.get_bucket_dgm(cluster, bucket)
             if bucket.storageBackend == Bucket.StorageBackend.magma and \
-                self.cluster.type == "default":
+                cluster.type == "default":
                     self.get_magma_disk_usage(bucket)
                     # self.check_fragmentation_using_magma_stats(bucket)
                     self.check_fragmentation_using_kv_stats(bucket)
@@ -908,3 +934,127 @@ class OPD:
             else:
                 self.log.info("Bucket:%s warm-up completed in %s." %
                               (bucket.name, str(time.time() - start_time)))
+
+    def restart_query_load(self, cluster, num=10):
+        self.log.info("Changing query load by: {}".format(num))
+        for ql in self.ql:
+            ql.stop_query_load()
+        for ql in self.ftsQL:
+            ql.stop_query_load()
+        for ql in self.cbasQL:
+            ql.stop_query_load()
+        self.sleep(10)
+        for bucket in cluster.buckets:
+            services = self.input.param("services", "data")
+            if (cluster.index_nodes or "index" in services) and bucket.loadDefn.get("2iQPS", 0) > 0:
+                bucket.loadDefn["2iQPS"] = bucket.loadDefn["2iQPS"] + num
+                ql = [ql for ql in self.ql if ql.bucket == bucket][0]
+                ql.start_query_load()
+            if (cluster.fts_nodes or "search" in services) and bucket.loadDefn.get("ftsQPS", 0) > 0:
+                bucket.loadDefn["ftsQPS"] = bucket.loadDefn["ftsQPS"] + num
+                ql = [ql for ql in self.ftsQL if ql.bucket == bucket][0]
+                ql.start_query_load()
+            if (cluster.cbas_nodes or "analytics" in services) and bucket.loadDefn.get("cbasQPS", 0) > 0:
+                bucket.loadDefn["cbasQPS"] = bucket.loadDefn["cbasQPS"] + num
+                ql = [ql for ql in self.cbasQL if ql.bucket == bucket][0]
+                ql.start_query_load()
+
+    def monitor_query_status(self, print_duration=120):
+        self.query_result = True
+
+        def check_query_stats():
+            st_time = time.time()
+            while not self.stop_run:
+                if st_time + print_duration < time.time():
+                    self.query_table = TableView(self.log.info)
+                    self.table = TableView(self.log.info)
+                    self.table.set_headers(["Bucket",
+                                            "Total Queries",
+                                            "Failed Queries",
+                                            "Success Queries",
+                                            "Rejected Queries",
+                                            "Cancelled Queries",
+                                            "Timeout Queries",
+                                            "Errored Queries"])
+                    for ql in self.ql:
+                        self.query_table.set_headers(["Bucket",
+                                                      "Query",
+                                                      "Count",
+                                                      "Avg Execution Time(ms)"])
+                        try:
+                            for query in sorted(ql.query_stats.keys()):
+                                if ql.query_stats[query][1] > 0:
+                                    self.query_table.add_row([str(ql.bucket.name),
+                                                              ql.bucket.query_map[query][0],
+                                                              ql.query_stats[query][1],
+                                                              ql.query_stats[query][0]/ql.query_stats[query][1]])
+                        except Exception as e:
+                            print(e)
+                        self.table.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                        if ql.failures > 0:
+                            self.query_result = False
+                    self.table.display("N1QL Query Statistics")
+                    self.query_table.display("N1QL Query Execution Stats")
+
+                    self.FTStable = TableView(self.log.info)
+                    self.FTStable.set_headers(["Bucket",
+                                               "Total Queries",
+                                               "Failed Queries",
+                                               "Success Queries",
+                                               "Rejected Queries",
+                                               "Cancelled Queries",
+                                               "Timeout Queries",
+                                               "Errored Queries"])
+                    for ql in self.ftsQL:
+                        self.FTStable.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                        if ql.failures > 0:
+                            self.query_result = False
+                    self.FTStable.display("FTS Query Statistics")
+
+                    self.CBAStable = TableView(self.log.info)
+                    self.CBAStable.set_headers(["Bucket",
+                                                "Total Queries",
+                                                "Failed Queries",
+                                                "Success Queries",
+                                                "Rejected Queries",
+                                                "Cancelled Queries",
+                                                "Timeout Queries",
+                                                "Errored Queries"])
+                    for ql in self.cbasQL:
+                        self.CBAStable.add_row([
+                            str(ql.bucket.name),
+                            str(ql.total_query_count),
+                            str(ql.failed_count),
+                            str(ql.success_count),
+                            str(ql.rejected_count),
+                            str(ql.cancel_count),
+                            str(ql.timeout_count),
+                            str(ql.error_count),
+                            ])
+                        if ql.failures > 0:
+                            self.query_result = False
+                    self.CBAStable.display("CBAS Query Statistics")
+
+                    st_time = time.time()
+                    time.sleep(10)
+
+        query_monitor = threading.Thread(target=check_query_stats)
+        query_monitor.start()
