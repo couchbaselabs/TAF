@@ -10,379 +10,509 @@ from threading import Thread
 import threading
 import time
 
-from common_lib import sleep
-from sdk_client3 import SDKClient
 from com.couchbase.client.java.query import QueryOptions,\
     QueryScanConsistency, QueryStatus
 from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutException
 from com.couchbase.client.core.error import RequestCanceledException,\
     CouchbaseException, InternalServerFailureException,\
-    AmbiguousTimeoutException
+    AmbiguousTimeoutException, PlanningFailureException,\
+    UnambiguousTimeoutException, IndexNotFoundException, IndexExistsException
 from string import ascii_uppercase, ascii_lowercase
 from encodings.punycode import digits
-from remote.remote_util import RemoteMachineShellConnection
 from gsiLib.gsiHelper import GsiHelper
-import traceback
 from global_vars import logger
+from _collections import defaultdict
+from table_view import TableView
+import itertools
+from com.couchbase.client.java.json import JsonObject
+from com.github.javafaker import Faker
+from constants.cb_constants.CBServer import CbServer
+from connections.Rest_Connection import RestConnection
 
 letters = ascii_uppercase + ascii_lowercase + digits
+faker = Faker()
 
-queries = ['select name from {} where age between 30 and 50 limit 10;',
-           'select age, count(*) from {} where marital = "M" group by age order by age limit 10;',
-           'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
-           'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 10;',
-           'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 10;']
-indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}(marital,age) WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}(ALL `animals`,`attributes`.`hair`,`name`) where attributes.hair = "Burgundy" WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'CREATE INDEX {}{} ON {}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true, "num_replica": 0 }};',
-           'create index {}{} on {}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true, "num_replica": 0 }};']
+queries = ['select name from {} where age between 30 and 50 limit 100;',
+           'select name from {} where body is not null and age between 0 and 50 limit 100;',
+           'select age, count(*) from {} where marital = "M" group by age order by age limit 100;',
+           'select v.name, animal from {} as v unnest animals as animal where v.attributes.hair = "Burgundy" and animal is not null limit 100;',
+           'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM {} as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 100;',
+           'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from {} WHERE gender is not MISSING limit 100;']
+
+indexes = ['create index {}{} on {}(age) where age between 30 and 50 WITH {{ "defer_build": true}};',
+           'create index {}{} on {}(body) where age between 0 and 50 WITH {{ "defer_build": true}};',
+           'create index {}{} on {}(marital,age) WITH {{ "defer_build": true}};',
+           'create index {}{} on {}(ALL `animals`,`attributes`.`hair`,`name`) where attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
+           'CREATE INDEX {}{} ON {}(`gender`,`attributes`.`hair`, DISTINCT ARRAY `hobby`.`type` FOR hobby in `attributes`.`hobbies` END) where gender="F" and attributes.hair = "Burgundy" WITH {{ "defer_build": true}};',
+           'create index {}{} on {}(`gender`,`attributes`.`dimensions`.`weight`, `attributes`.`dimensions`.`height`,`name`) WITH {{ "defer_build": true}};']
+
+_HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`price`,`city`,`name`)  PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(DISTINCT ARRAY FLATTEN_KEYS(`r`.`author`,`r`.`ratings`.`Cleanliness`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `country`, `email`, `free_parking`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
+
+_HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
+                "select avg(price) as AvgPrice, min(price) as MinPrice, max(price) as MaxPrice from {} where free_breakfast=True and free_parking=True and price is not null and array_count(public_likes)>5 and `type`='Hotel' group by country limit 100",
+                "select city,country,count(*) from {} where free_breakfast=True and free_parking=True group by country,city order by country,city limit 100",
+                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE price IS NOT NULL GROUP BY city) SELECT h.name, h.price FROM {0} h JOIN city_avg ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.price IS NOT NULL limit 100",
+                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms < 2 AND h.avg_rating >= 3 limit 100",
+                "SELECT COUNT(*) FILTER (WHERE free_breakfast = TRUE) AS count_free_breakfast, COUNT(*) FILTER (WHERE free_parking = TRUE) AS count_free_parking, COUNT(*) FILTER (WHERE free_breakfast = TRUE AND free_parking = TRUE) AS count_free_parking_and_breakfast FROM {} WHERE city LIKE 'North%' ORDER BY count_free_parking_and_breakfast DESC  limit 100",
+                "SELECT h.name,h.country,h.city,h.price,DENSE_RANK() OVER (window1) AS `rank` FROM {} AS h WHERE h.price IS NOT NULL WINDOW window1 AS ( PARTITION BY h.country ORDER BY h.price NULLS LAST) limit 100",
+                "SELECT * from {} where `type` is not null limit 100",
+                "SELECT * from {} where phone like \"4%\" limit 100",
+                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country IS NOT NULL limit 100"]
+
+HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                'CREATE INDEX {}{} ON {}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
+
+
+HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
+                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`='Hotel' limit 100",
+                "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
+                "WITH city_price AS (SELECT city, price FROM {} WHERE country = 'Bulgaria' and price > 500 limit 1000) SELECT h.city, h.price FROM city_price as h;",
+                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
+                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
+                "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
+                "SELECT * from {} where `name` is not null limit 100",
+                "SELECT * from {} where phone like \"San%\" limit 100",
+                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = 'Bulgaria' limit 100"]
+
+HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`Check in / front desk` FOR r in `reviews` END,array_count((`public_likes`)),array_count((`reviews`)) DESC,`type`,`phone`,`price`,`email`,`address`,`name`,`url`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`free_breakfast`,`free_parking`,`country`,`city`)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`country`, `city`,`price`,`name`)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(ALL ARRAY `r`.`ratings`.`Rooms` FOR r IN `reviews` END,`avg_rating`)  PARTITION BY HASH (avg_rating) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`city`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`name` INCLUDE MISSING DESC,`phone`,`type`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true}};',
+                'CREATE INDEX {}{} ON {}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true}};']
+
+
+HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
+                "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`= $type limit 100",
+                "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
+                "WITH city_avg AS (SELECT city, AVG(price) AS avgprice FROM {0} WHERE country = $country GROUP BY city limit 10) SELECT h.name, h.price FROM city_avg JOIN {0} h ON h.city = city_avg.city WHERE h.price < city_avg.avgprice AND h.country=$country limit 100",
+                "SELECT h.name, h.city, r.author FROM {} h UNNEST reviews AS r WHERE r.ratings.Rooms = 2 AND h.avg_rating >= 3 limit 100",
+                "SELECT COUNT(1) AS cnt FROM {} WHERE city LIKE 'North%'",
+                "SELECT h.name,h.country,h.city,h.price FROM {} AS h WHERE h.price IS NOT NULL limit 100",
+                "SELECT * from {} where `name` is not null limit 100",
+                "SELECT * from {} where city like \"San%\" limit 100",
+                "SELECT * FROM {} AS d WHERE ANY r IN d.reviews SATISFIES r.author LIKE 'M%' AND r.ratings.Cleanliness = 3 END AND free_parking = TRUE AND country = $country limit 100"]
+
+HotelQueriesParams = [{},
+                      {"type": "random.choice(['Inn', 'Hostel', 'Place', 'Center', 'Hotel', 'Motel', 'Suites'])"},
+                      {},
+                      {"country": "faker.address().country()"},
+                      {},
+                      {},
+                      {},
+                      {},
+                      {},
+                      {"country": "faker.address().country()"}
+                      ]
+
+NimbusPIndexes = ['CREATE INDEX {}{} ON {}(`uid`, `lastMessageDate` DESC,`unreadCount`, `lastReadDate`, `conversationId`) PARTITION BY hash(`uid`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                  'CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
+
+NimbusPQueries = ['SELECT meta().id, conversationId, lastMessageDate, lastReadDate, unreadCount FROM {} WHERE uid = $uid ORDER BY lastMessageDate DESC LIMIT $N;',
+                  'SELECT uid, conversationId FROM {} WHERE conversationId IN [$conversationId1, $conversationId2]',
+                  'SELECT COUNT(*) AS nb FROM {}  WHERE uid=$uid AND unreadCount>0']
+NimbusPQueriesParams = [{"uid":"str(random.randint(0,1000000)).zfill(32)", "N":"random.randint(100, 1000)"},
+                        {"conversationId1":"str(random.randint(0,1000000)).zfill(36)", "conversationId2":"str(random.randint(0,1000000)).zfill(36)"},
+                        {"uid":"str(random.randint(0,1000000)).zfill(36)"}]
+
+NimbusMIndexes = ['CREATE INDEX {}{} ON {}(`conversationId`, `uid`) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
+                  'CREATE INDEX {}{} ON {}(`conversationId`, (distinct (array `u` for `u` in `showTo` end)), `timestamp` DESC) PARTITION BY hash(`conversationId`) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
+
+NimbusMQueries = ['SELECT meta().id AS _id, uid, type, content, url, timestamp, width, height, clickable, roomId, roomTitle, roomStreamers, actions, pixel FROM {} WHERE conversationId = $conversationId ORDER BY timestamp DESC LIMIT $N',
+                  'SELECT COUNT(*) AS nb FROM {} WHERE conversationId = $conversationId']
+NimbusMQueriesParams = [{"conversationId":"str(random.randint(0,1000000)).zfill(36)", "N":"random.randint(100, 1000)"},
+                        {"conversationId":"str(random.randint(0,1000000)).zfill(36)"}]
+
+
+def execute_statement_on_n1ql(client, statement, client_context_id=None,
+                              query_params=None, validate=True):
+    """
+    Executes a statement on CBAS using the REST API using REST Client
+    """
+    response = execute_via_sdk(client, statement, False, client_context_id, query_params, validate)
+    if type(response) == str:
+        response = json.loads(response)
+    if "errors" in response:
+        errors = response["errors"]
+    else:
+        errors = None
+
+    if validate and "results" in response:
+        results = response["results"]
+    else:
+        results = None
+
+    if "handle" in response:
+        handle = response["handle"]
+    else:
+        handle = None
+
+    if "metrics" in response:
+        metrics = response["metrics"]
+    else:
+        metrics = None
+    if "status" in response:
+        status = response["status"]
+    else:
+        status = None
+    return status, metrics, errors, results, handle
+
+
+def execute_via_sdk(client, statement, readonly=False,
+                    client_context_id=None,
+                    query_params=None, validate=True):
+    options = QueryOptions.queryOptions()
+    options.scanConsistency(QueryScanConsistency.NOT_BOUNDED)
+    options.readonly(readonly)
+    options.metrics(True)
+    if client_context_id:
+        options.clientContextId(client_context_id)
+    if query_params:
+        json = JsonObject.create()
+        for k, v in query_params.items():
+            json.put(k, eval(v))
+        options.parameters(json)
+
+    output = {}
+    result = client.query(statement, options)
+    output["status"] = result.metaData().status()
+    output["metrics"] = result.metaData().metrics().get()
+
+    if validate:
+        try:
+            output["results"] = result.rowsAsObject()
+        except:
+            output["results"] = None
+
+    if str(output['status']) == QueryStatus.FATAL:
+        msg = output['errors'][0]['msg']
+        if "Job requirement" in msg and "exceeds capacity" in msg:
+            raise Exception("Capacity cannot meet job requirement")
+    elif output['status'] == QueryStatus.SUCCESS:
+        output["errors"] = None
+    else:
+        raise Exception("N1QL query failed")
+
+    return output
 
 
 class DoctorN1QL():
 
-    def __init__(self, cluster, bucket_util, num_idx=10,
-                 server_port=8095,
-                 querycount=100, batch_size=50, num_query=10, query_without_index=False):
-        self.port = server_port
-        self.failed_count = 0
-        self.success_count = 0
-        self.rejected_count = 0
-        self.error_count = 0
-        self.cancel_count = 0
-        self.timeout_count = 0
-        self.total_query_count = 0
-        self.concurrent_batch_size = batch_size
-        self.total_count = querycount
-        self.num_indexes = num_idx
-        # num_query is used when queries are run without index creation
-        self.num_query = num_query
+    def __init__(self, bucket_util):
         self.bucket_util = bucket_util
-        self.cluster = cluster
         self.sdkClients = dict()
         self.log = logger.get("test")
-
-        self.sdkClient = SDKClient(cluster, None, servers=cluster.query_nodes)
-        self.cluster_conn = self.sdkClient.cluster
         self.stop_run = False
         self.query_failure = False
-        self.queries = list()
-        i = 0
-        if query_without_index:
-            while i < self.num_query:
-                for b in self.cluster.buckets:
-                    for s in self.bucket_util.get_active_scopes(b, only_names=True):
-                        if b.name+s not in self.sdkClients.keys():
-                            self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
-                        for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
-                            if c == "_default":
-                                continue
-                            self.queries.append((queries[i % len(queries)].format(c), self.sdkClients[b.name+s]))
-                            i+=1
-                            if i >= self.num_query:
-                                break
-                        if i >= self.num_query:
-                            break
-                    if i >= self.num_query:
-                        break
-        self.indexes = dict()
-        while i < self.num_indexes:
-            for b in self.cluster.buckets:
-                for s in self.bucket_util.get_active_scopes(b, only_names=True):
-                    if b.name+s not in self.sdkClients.keys():
-                        self.sdkClients.update({b.name+s: self.cluster_conn.bucket(b.name).scope(s)})
-                    for c in sorted(self.bucket_util.get_active_collections(b, s, only_names=True)):
-                        self.idx_q = indexes[i % len(indexes)].format("idx", i, c)
-                        self.indexes.update({"idx"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
-                        self.queries.append((queries[i % len(indexes)].format(c), self.sdkClients[b.name+s]))
-                        i += 1
-                        if i >= self.num_indexes:
-                            break
-                    if i >= self.num_indexes:
-                        break
-                if i >= self.num_indexes:
-                    break
+
+    def create_indexes(self, buckets, skip_index=False):
+        counter = 0
+        for b in buckets:
+            b.indexes = dict()
+            b.queries = list()
+            b.query_map = dict()
+            self.log.info("Creating GSI indexes on {}".format(b.name))
+            for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                if s == CbServer.system_scope:
+                    continue
+                if b.name+s not in self.sdkClients.keys():
+                    self.sdkClients.update({b.name+s: b.clients[0].bucketObj.scope(s)})
+                    time.sleep(1)
+                for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
+                    if c == CbServer.default_collection:
+                        continue
+                    workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
+                    workload = workloads[collection_num % len(workloads)]
+                    valType = workload["valType"]
+                    indexType = indexes
+                    queryType = queries
+                    queryParams = []
+                    if valType == "Hotel":
+                        indexType = HotelIndexes
+                        queryType = HotelQueries
+                        queryParams = HotelQueriesParams
+                    if valType == "NimbusP":
+                        indexType = NimbusPIndexes
+                        queryType = NimbusPQueries
+                        queryParams = NimbusPQueriesParams
+                    if valType == "NimbusM":
+                        indexType = NimbusMIndexes
+                        queryType = NimbusMQueries
+                        queryParams = NimbusMQueriesParams
+                    i = 0
+                    q = 0
+                    while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
+                        if i < workload.get("2i")[0]:
+                            self.idx_q = indexType[counter % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
+                            print self.idx_q
+                            b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
+                            retry = 5
+                            if not skip_index:
+                                while retry > 0:
+                                    try:
+                                        execute_statement_on_n1ql(self.sdkClients[b.name+s], self.idx_q)
+                                        break
+                                    except PlanningFailureException or CouchbaseException or UnambiguousTimeoutException or TimeoutException or AmbiguousTimeoutException or RequestCanceledException as e:
+                                        print(e)
+                                        retry -= 1
+                                        time.sleep(10)
+                                        continue
+                                    except IndexNotFoundException as e:
+                                        print "Returning from here as we get IndexNotFoundException"
+                                        print(e)
+                                        return False
+                                    except IndexExistsException:
+                                        break
+                            i += 1
+                        if q < workload.get("2i")[1]:
+                            unformatted_q = queryType[counter % len(queryType)]
+                            query = unformatted_q.format(c)
+                            print query
+                            if unformatted_q not in b.query_map.keys():
+                                b.query_map[unformatted_q] = ["Q%s" % (counter % len(queryType))]
+                                if queryParams:
+                                    b.query_map[unformatted_q].append(queryParams[counter % len(queryParams)])
+                                else:
+                                    b.query_map[unformatted_q].append("")
+                                b.queries.append((query, self.sdkClients[b.name+s], unformatted_q))
+                            q += 1
+                        counter += 1
+
+            print [v[0] + " == " + k for k, v in b.query_map.items()]
+        return True
 
     def discharge_N1QL(self):
         self.stop_run = True
+
     def query_result(self):
         return self.query_failure
 
-    def create_indexes(self):
-        for details in self.indexes.values():
-            time.sleep(1)
-            self.execute_statement_on_n1ql(details[1], details[0])
-
-    def wait_for_indexes_online(self, logger, indexes, timeout=86400):
-        self.rest = GsiHelper(self.cluster.master, logger)
-        status = False
-        for index_name, details in indexes.items():
-            stop_time = time.time() + timeout
-            while time.time() < stop_time:
-                bucket = [bucket for bucket in self.cluster.buckets if bucket.name == details[2]]
-                status = self.rest.polling_create_index_status(bucket[0], index_name)
-                print("index: {}, status: {}".format(index_name, status))
-                if status is True:
-                    self.log.info("2i index is ready: {}".format(index_name))
-                    break
-                time.sleep(5)
-            if status is False:
-                return status
-        return status
-
-    def build_indexes(self):
-        for index_name, details in self.indexes.items():
-            build_query = "BUILD INDEX on `%s`(%s) USING GSI" % (details[4], index_name)
-            time.sleep(1)
-            try:
-                self.execute_statement_on_n1ql(details[1], build_query)
-            except Exception as e:
-                print(e)
-                print("Failed %s" % build_query)
+    def build_indexes(self, cluster, buckets,
+                      wait=False, timeout=86400):
+        build = True
+        i = 0
+        while build:
+            build = False
+            k = 0
+            while buckets[k*10:(k+1)*10]:
+                _buckets = buckets[k*10:(k+1)*10]
+                for bucket in _buckets:
+                    d = defaultdict(list)
+                    for key, val in bucket.indexes.items():
+                        _, _, _, _, c = val
+                        d[c].append(key)
+                    for collection in sorted(d.keys())[i:i+1]:
+                        details = bucket.indexes[d.get(collection)[0]]
+                        build = True
+                        build_query = "BUILD INDEX on `%s`(%s) USING GSI" % (
+                            collection, ",".join(sorted(d.get(collection))))
+                        time.sleep(1)
+                        start = time.time()
+                        while time.time() < start + 600:
+                            try:
+                                execute_statement_on_n1ql(details[1], build_query)
+                                break
+                            except Exception as e:
+                                print(e)
+                                break
+                            except InternalServerFailureException as e:
+                                print(e)
+                                break
+                            except PlanningFailureException as e:
+                                print(e)
+                                time.sleep(10)
+                            except AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+                                print(e)
+                                time.sleep(10)
+                if wait:
+                    for bucket in _buckets:
+                        d = defaultdict(list)
+                        for key, val in bucket.indexes.items():
+                            _, _, _, _, c = val
+                            d[c].append(key)
+                        self.rest = GsiHelper(cluster.master, logger["test"])
+                        status = False
+                        for collection in sorted(d.keys())[i:i+1]:
+                            for index_name in sorted(d.get(collection)):
+                                details = bucket.indexes[index_name]
+                                status = self.rest.polling_create_index_status(
+                                    bucket, index_name, timeout=timeout/10)
+                                print("index: {}, status: {}".format(index_name, status))
+                                if status is True:
+                                    self.log.info("2i index is ready: {}".format(index_name))
+                k += 1
+            i += 1
 
     def drop_indexes(self):
         for index, details in self.indexes.items():
             build_query = "DROP INDEX %s on `%s`" % (index, details[4])
             self.execute_statement_on_n1ql(details[1], build_query)
 
-    def start_query_load(self):
-        th = threading.Thread(target=self._run_concurrent_queries,
-                              kwargs=dict(num_queries=self.num_indexes))
+    def log_index_stats(self, cluster, print_duration=300):
+        st_time = time.time()
+        while not self.stop_run:
+            self.table = TableView(self.log.info)
+            self.table.set_headers(["Node",
+                                    "mem_quota",
+                                    "mem_used",
+                                    "avg_rr",
+                                    "avg_dr",
+                                    "#data_size",
+                                    "#disk_size",
+                                    "#requests",
+                                    "#rows_scanned",
+                                    "#rows_returned"
+                                    ])
+            for node in cluster.index_nodes:
+                try:
+                    rest = RestConnection(node)
+                    resp = rest.urllib_request(rest.indexUrl + "stats")
+                    content = json.loads(resp.content)
+                    self.table.add_row([
+                        node.ip,
+                        content["memory_quota"]/1024/1024/1024,
+                        content["memory_used"]/1024/1024/1024,
+                        content["avg_resident_percent"],
+                        content["avg_drain_rate"],
+                        content["total_data_size"]/1024/1024/1024,
+                        content["total_disk_size"]/1024/1024/1024,
+                        content["total_requests"],
+                        content["total_rows_scanned"],
+                        content["total_rows_returned"]
+                        ])
+                except Exception as e:
+                    self.log.critical(e)
+
+            if st_time + print_duration < time.time():
+                self.table.display("Index Statistics")
+                st_time = time.time()
+            time.sleep(300)
+
+    def start_index_stats(self, cluster):
+        self.stop_run = False
+        th = threading.Thread(target=self.log_index_stats,
+                              kwargs=dict({"cluster": cluster}))
         th.start()
 
-        monitor = threading.Thread(target=self.monitor_query_status,
-                                   kwargs=dict(duration=0,
-                                               print_duration=60))
-        monitor.start()
 
-    def _run_concurrent_queries(self, num_queries):
+class QueryLoad:
+    def __init__(self, bucket):
+        self.bucket = bucket
+        self.queries = bucket.queries
+        self.failed_count = itertools.count()
+        self.success_count = itertools.count()
+        self.rejected_count = itertools.count()
+        self.error_count = itertools.count()
+        self.cancel_count = itertools.count()
+        self.timeout_count = itertools.count()
+        self.total_query_count = itertools.count()
+        self.stop_run = False
+        self.log = logger.get("infra")
+        self.cluster_conn = self.queries[0][1]
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
+        self.query_stats = {key[2]: [0, 0] for key in self.queries}
+        self.failures = 0
+        self.timeout_failures = 0
+
+    def start_query_load(self):
+        self.stop_run = False
+        self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
+        th = threading.Thread(target=self._run_concurrent_queries)
+        th.start()
+
+    def stop_query_load(self):
+        self.stop_run = True
+
+    def _run_concurrent_queries(self):
         threads = []
-        self.total_query_count = 0
-        query_count = 0
-        for i in range(0, num_queries):
-            self.total_query_count += 1
-            query = random.choice(self.queries)
+        for i in range(0, self.concurrent_queries_to_run):
             threads.append(Thread(
                 target=self._run_query,
-                name="query_thread_{0}".format(self.total_query_count),
-                args=(query[1], query[0], False, 0)))
+                name="query_thread_{0}".format(self.bucket.name + str(i)),
+                args=(False, 0)))
 
-        i = 0
         for thread in threads:
-            i += 1
-            if i % self.concurrent_batch_size == 0:
-                time.sleep(5)
             thread.start()
-            query_count += 1
 
-        i = 0
-        while not self.stop_run:
-            threads = []
-            new_queries_to_run = self.total_count - num_queries
-            for i in range(0, new_queries_to_run):
-                query = random.choice(self.queries)
-                self.total_query_count += 1
-                threads.append(Thread(
-                    target=self._run_query,
-                    name="query_thread_{0}".format(self.total_query_count),
-                    args=(query[1], query[0], False, 0)))
-            i = 0
-            self.total_count += new_queries_to_run
-            for thread in threads:
-                i += 1
-                thread.start()
+        for thread in threads:
+            thread.join()
 
-            time.sleep(2)
-        if self.failed_count + self.error_count != 0:
-            raise Exception("Queries Failed:%s , Queries Error Out:%s" %
-                            (self.failed_count, self.error_count))
-
-    def run_concurrent_queries(self, num_queries):
-        self.query_failure = False
-        while not self.stop_run:
-            threads = []
-            self.total_query_count = 0
-            self.failed_count = 0
-            self.error_count = 0
-
-            for i in range(0, num_queries):
-                self.total_query_count += 1
-                query = random.choice(self.queries)
-                threads.append(Thread(
-                    target=self._run_query,
-                    name="query_thread_{0}".format(self.total_query_count),
-                    args=(query[1], query[0], False, 0)))
-            i = 0
-            for thread in threads:
-                i += 1
-                if i % self.concurrent_batch_size == 0:
-                    time.sleep(5)
-                thread.start()
-
-            time.sleep(2)
-            if self.failed_count + self.error_count != 0:
-                self.stop_run = True
-                self.query_failure = True
-                msg = "Queries Failed:{} , Queries Error Out:{}".format
-                (self.failed_count, self.error_count)
-                self.log.critical(msg)
-
-    def _run_query(self, client, query, validate_item_count=False, expected_count=0):
+    def _run_query(self, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
-        client_context_id = name
-        try:
-            status, _, _, results, _ = self.execute_statement_on_n1ql(
-                client, query, client_context_id=client_context_id)
-            if status == QueryStatus.SUCCESS:
-                if validate_item_count:
-                    if results[0]['$1'] != expected_count:
-                        self.failed_count += 1
-                        self.total_count -= 1
-                    else:
-                        self.success_count += 1
-                        self.total_count -= 1
-                else:
-                    self.success_count += 1
-                    self.total_count -= 1
-            else:
-                self.failed_count += 1
-                self.total_count -= 1
-        except Exception as e:
-            if e == TimeoutException or e == AmbiguousTimeoutException:
-                self.timeout_count += 1
-                self.total_count -= 1
-            elif e == RequestCanceledException:
-                self.cancel_count += 1
-                self.total_count -= 1
-            elif e == CouchbaseException:
-                self.rejected_count += 1
-                self.total_count -= 1
-            else:
-                self.error_count += 1
-                self.total_count -= 1
-
-    def execute_statement_on_n1ql(self, client, statement, client_context_id=None):
-        """
-        Executes a statement on CBAS using the REST API using REST Client
-        """
-        try:
-            response = self.execute_via_sdk(client, statement, False, client_context_id)
-            if type(response) == str:
-                response = json.loads(response)
-            if "errors" in response:
-                errors = response["errors"]
-            else:
-                errors = None
-
-            if "results" in response:
-                results = response["results"]
-            else:
-                results = None
-
-            if "handle" in response:
-                handle = response["handle"]
-            else:
-                handle = None
-
-            if "metrics" in response:
-                metrics = response["metrics"]
-            else:
-                metrics = None
-            if "status" in response:
-                status = response["status"]
-            else:
-                status = None
-            return status, metrics, errors, results, handle
-
-        except Exception as e:
-            raise Exception(str(e))
-
-    def execute_via_sdk(self, client, statement, readonly=False,
-                        client_context_id=None):
-        options = QueryOptions.queryOptions()
-        options.scanConsistency(QueryScanConsistency.NOT_BOUNDED)
-        options.readonly(readonly)
-        if client_context_id:
-            options.clientContextId(client_context_id)
-
-        output = {}
-        try:
-            result = client.query(statement)
-
-            output["status"] = result.metaData().status()
-            output["metrics"] = result.metaData().metrics()
-
-            try:
-                output["results"] = result.rowsAsObject()
-            except:
-                output["results"] = None
-
-            if str(output['status']) == QueryStatus.FATAL:
-                msg = output['errors'][0]['msg']
-                if "Job requirement" in msg and "exceeds capacity" in msg:
-                    raise Exception("Capacity cannot meet job requirement")
-            elif output['status'] == QueryStatus.SUCCESS:
-                output["errors"] = None
-            else:
-                raise Exception("N1QL query failed")
-
-        except InternalServerFailureException as e:
-            print(e)
-            traceback.print_exc()
-            raise Exception(e)
-        except TimeoutException | AmbiguousTimeoutException as e:
-            raise Exception(e)
-        except RequestCanceledException as e:
-            raise Exception(e)
-        except CouchbaseException as e:
-            raise Exception(e)
-        except Exception as e:
-            print(e)
-            traceback.print_exc()
-        return output
-
-    def monitor_query_status(self, duration=0, print_duration=600):
-        st_time = time.time()
-        update_time = time.time()
-        if duration == 0:
-            while not self.stop_run:
-                if st_time + print_duration < time.time():
-                    print("%s N1QL queries submitted, %s failed, \
-                        %s passed, %s rejected, \
-                        %s cancelled, %s timeout, %s errored" % (
-                        self.total_query_count, self.failed_count,
-                        self.success_count, self.rejected_count,
-                        self.cancel_count, self.timeout_count,
-                        self.error_count))
-                    st_time = time.time()
-        else:
-            while st_time + duration > time.time():
-                if update_time + print_duration < time.time():
-                    print("%s N1QL queries submitted, %s failed, \
-                        %s passed, %s rejected, \
-                        %s cancelled, %s timeout, %s errored" % (
-                        self.total_query_count, self.failed_count,
-                        self.success_count, self.rejected_count,
-                        self.cancel_count, self.timeout_count,
-                        self.error_count))
-                    update_time = time.time()
-
-    def crash_index_plasma(self, nodes=None):
-        self.crash_count = 0
-        if not nodes:
-            nodes = self.cluster.index_nodes
-        shells = list()
-        for node in nodes:
-            shells.append(RemoteMachineShellConnection(node))
+        counter = 0
         while not self.stop_run:
-            sleep = random.randint(120, 240)
-            self.sleep(sleep,
-                       "Iteration:{} waiting to kill indexer on nodes: {}".format(self.crash_count, nodes))
-            for shell in shells:
-                shell.kill_indexer()
-            self.crash_count += 1
-            if self.crash_count > self.crashes:
-                break
-        for shell in shells:
-            shell.disconnect()
-        self.sleep(300)
+            client_context_id = name + str(counter)
+            counter += 1
+            start = time.time()
+            e = ""
+            try:
+                self.total_query_count.next()
+                query_tuple = random.choice(self.queries)
+                query = query_tuple[0]
+                original_query = query_tuple[2]
+                # print query
+                # print original_query
+                q_param = self.bucket.query_map[original_query][1]
+                status, metrics, _, results, _ = execute_statement_on_n1ql(
+                    self.cluster_conn, query, client_context_id,
+                    q_param, validate=validate_item_count)
+                self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
+                self.query_stats[original_query][1] += 1
+                if status == QueryStatus.SUCCESS:
+                    if validate_item_count:
+                        if results[0]['$1'] != expected_count:
+                            self.failed_count.next()
+                        else:
+                            self.success_count.next()
+                    else:
+                        self.success_count.next()
+                else:
+                    self.failed_count.next()
+            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+                pass
+            except RequestCanceledException as e:
+                pass
+            except CouchbaseException as e:
+                pass
+            except (Exception, PlanningFailureException) as e:
+                print e
+                self.error_count.next()
+            if str(e).find("TimeoutException") != -1\
+                or str(e).find("AmbiguousTimeoutException") != -1\
+                    or str(e).find("UnambiguousTimeoutException") != -1:
+                self.timeout_failures += self.timeout_count.next()
+                if self.timeout_failures % 50 == 0 or str(e).find("UnambiguousTimeoutException") != -1:
+                    self.log.critical(client_context_id + ":" + query)
+                    self.log.critical(e)
+            elif str(e).find("RequestCanceledException") != -1:
+                self.failures += self.cancel_count.next()
+            elif str(e).find("InternalServerFailureException") != -1 or str(e).find("CouchbaseException") != -1:
+                self.failures += self.error_count.next()
+
+            if e and (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1):
+                self.log.critical(client_context_id + ":" + query)
+                self.log.critical(e)
+            end = time.time()
+            if end - start < 1:
+                time.sleep(end - start)
