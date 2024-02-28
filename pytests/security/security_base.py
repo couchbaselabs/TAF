@@ -1,3 +1,4 @@
+import json
 import time
 import string
 import random
@@ -6,6 +7,7 @@ import random
 # from datetime import datetime
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
+from constants.cloud_constants.capella_constants import AWS
 from TestInput import TestInputSingleton
 # from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.cb_basetest import CouchbaseBaseTest
@@ -28,6 +30,48 @@ class SecurityBase(CouchbaseBaseTest):
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         self.count = 0
         self.server_version = self.input.capella.get("server_version", "7.2")
+        self.provider = self.input.param("provider", AWS.__str__).lower()
+        self.num_nodes = {
+            "data": self.input.param("kv_nodes", 3),
+            "query": self.input.param("n1ql_nodes", 2),
+            "index": self.input.param("gsi_nodes", 2),
+            "search": self.input.param("fts_nodes", 2),
+            "analytics": self.input.param("cbas_nodes", 2),
+            "eventing": self.input.param("eventing_nodes", 2)
+        }
+        self.compute_cpu = {
+            "data": self.input.param("kv_cpu", 4),
+            "query": self.input.param("n1ql_cpu", 4),
+            "index": self.input.param("gsi_cpu", 4),
+            "search": self.input.param("fts_cpu", 4),
+            "analytics": self.input.param("cbas_cpu", 4),
+            "eventing": self.input.param("eventing_cpu", 4)
+        }
+        self.compute_ram = {
+            "data": self.input.param("kv_ram", 16),
+            "query": self.input.param("n1ql_ram", 16),
+            "index": self.input.param("gsi_ram", 16),
+            "search": self.input.param("fts_ram", 16),
+            "analytics": self.input.param("cbas_ram", 16),
+            "eventing": self.input.param("eventing_ram", 16)
+        }
+        self.disk = {
+            "data": self.input.param("kv_disk", 64),
+            "query": self.input.param("n1ql_disk", 64),
+            "index": self.input.param("gsi_disk", 64),
+            "search": self.input.param("fts_disk", 64),
+            "analytics": self.input.param("cbas_disk", 64),
+            "eventing": self.input.param("eventing_disk", 64)
+        }
+        self.disk_type = {
+            "aws": "gp3",
+            "azure": "P6",
+            "gcp": "pd-ssd"
+        }
+        self.iops = {
+            "aws": 3000,
+            "azure": 240
+        }
         self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
         self.create_initial_v4_api_keys()
         self.create_different_organization_roles()
@@ -39,6 +83,8 @@ class SecurityBase(CouchbaseBaseTest):
         self.cluster_id = self.input.capella.get("cluster_id", None)
         if self.cluster_id is None:
             self.create_cluster(self.prefix + "Cluster", self.server_version)
+        if self.cluster_id is not None:
+            self.allow_ip(self.cluster_id, self.project_id)
 
         self.log.info("-------Setup finished for CouchbaseBaseTest-------")
 
@@ -55,6 +101,18 @@ class SecurityBase(CouchbaseBaseTest):
         self.delete_different_organization_roles()
 
         self.log.info("-------Teardown finished for SecurityBase-------")
+
+    def allow_ip(self, cluster_id, project_id):
+        resp = self.capellaAPI.allow_my_ip(self.tenant_id, project_id,
+                                           cluster_id)
+        if resp.status_code != 202:
+            result = json.loads(resp.content)
+            if result["errorType"] == "ErrAllowListsCreateDuplicateCIDR":
+                self.log.warn("IP is already added: %s" % result["message"])
+                return
+            self.log.critical(resp.content)
+            raise Exception("Adding allowed IP failed.")
+        self.log.info("IP added successfully")
 
     def create_project(self, project_name):
         self.log.info("Creating Project for Security test")
@@ -202,41 +260,46 @@ class SecurityBase(CouchbaseBaseTest):
         SecurityBase.cidr = ".".join(addr)
         return SecurityBase.cidr
 
+    def get_service_groups(self, provider="aws"):
+        service_groups = self.input.param("services", "data:query:index:search")
+
+        service_groups_payload = []
+        for service_group in service_groups.split("-"):
+            services = sorted(service_group.split(":"))
+
+            service_group_payload = {}
+            service_group_payload["node"] = {
+                "compute": {
+                    "cpu": self.compute_cpu[services[0]],
+                    "ram": self.compute_ram[services[0]]
+                },
+                "disk": {
+                    "storage": self.disk[services[0]],
+                    "type": self.disk_type[provider],
+                    "iops": self.iops[provider] if provider != "gcp" else None
+                }
+            }
+            service_group_payload["services"] = services
+            service_group_payload["numOfNodes"] = self.num_nodes[services[0]]
+
+            service_groups_payload.append(service_group_payload)
+
+        return service_groups_payload
+
     def get_cluster_payload(self, cloud_provider):
         cluster_payloads = {
                 "AWS": {
                     "name": self.prefix + "Cluster",
                     "description": "Security Cluster v4",
                     "cloudProvider": {
-                        "type": "aws",
+                        "type": self.provider,
                         "region": "us-east-1",
                         "cidr": "10.7.22.0/23"
                     },
                     "couchbaseServer": {
                         "version": self.server_version
                     },
-                    "serviceGroups": [
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 16
-                                },
-                                "disk": {
-                                    "storage": 50,
-                                    "type": "gp3",
-                                    "iops": 3000
-                                }
-                            },
-                            "numOfNodes": 3,
-                            "services": [
-                                "data",
-                                "query",
-                                "index",
-                                "search"
-                            ]
-                        }
-                    ],
+                    "serviceGroups": self.get_service_groups("aws"),
                     "availability": {
                         "type": "multi"
                     },
@@ -256,45 +319,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "couchbaseServer": {
                         "version": self.server_version
                     },
-                    "serviceGroups": [
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 16
-                                },
-                                "disk": {
-                                    "storage": 64,
-                                    "type": "P6",
-                                    "iops": 240
-                                }
-                            },
-                            "numOfNodes": 3,
-                            "services": [
-                                "data",
-                                "query",
-                                "index",
-                                "search"
-                            ]
-                        },
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 32
-                                },
-                                "disk": {
-                                    "storage": 64,
-                                    "type": "P10",
-                                    "iops": 240
-                                }
-                            },
-                            "numOfNodes": 4,
-                            "services": [
-                                "analytics"
-                            ]
-                        }
-                    ],
+                    "serviceGroups": self.get_service_groups("azure"),
                     "availability": {
                         "type": "single"
                     },
@@ -314,27 +339,7 @@ class SecurityBase(CouchbaseBaseTest):
                     "couchbaseServer": {
                         "version": self.server_version
                     },
-                    "serviceGroups": [
-                        {
-                            "node": {
-                                "compute": {
-                                    "cpu": 4,
-                                    "ram": 16
-                                },
-                                "disk": {
-                                    "storage": 64,
-                                    "type": "pd-ssd"
-                                }
-                            },
-                            "numOfNodes": 3,
-                            "services": [
-                                "data",
-                                "query",
-                                "index",
-                                "search"
-                            ]
-                        }
-                    ],
+                    "serviceGroups": self.get_service_groups("gcp"),
                     "availability": {
                         "type": "single"
                     },
@@ -522,8 +527,7 @@ class SecurityBase(CouchbaseBaseTest):
                                                             user_id)
 
             if resp.status_code != 204:
-                self.log.info("Failed to delete user with user id: {}. Reason: {} {}".format(
-                    user_id, resp.json()["message"], resp.json()["hint"]))
+                self.log.info("Failed to delete use with user id :{}.Reason {}".format(user_id, resp.text))
                 raise Exception("Failed to delete user")
 
         self.log.info("Deleted all the Organization Roles successfully")

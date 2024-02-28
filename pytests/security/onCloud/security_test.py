@@ -310,6 +310,11 @@ class SecurityTest(SecurityBase):
                                  self.user, self.passwd)
         resp = capella_api.get_nodes(self.tenant_id, self.project_id, self.cluster_id)
         node = json.loads(resp.content)["data"][0]["data"]["hostname"]
+        resp = capella_api.create_db_user(self.tenant_id, self.project_id, self.cluster_id,
+                                        self.rest_username, self.rest_password)
+        self.assertEqual(200, resp.status_code, "Failed to create db user, Expected: {}, Returned: {}".
+                         format(200, resp.status_code))
+        self.log.info("Successfully created db user")
         api = "https://" + node + ':18091/pools/default'
         self.log.info("Connecting to {0}".format(api))
         usernames = [self.rest_username, self.rest_username + random.choice(string.ascii_letters)]
