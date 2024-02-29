@@ -5,6 +5,8 @@ Created on Aug 10, 2022
 '''
 from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from global_vars import logger
+import json
+import time
 
 
 class Fleet:
@@ -22,8 +24,7 @@ class Pod:
         self.signup_token = signup_token
         self.log = logger.get("test")
         
-    def create_tenants(self, num_tenants, email="random.user@couchbase.com",
-                       accountID=None):
+    def create_tenants(self, num_tenants, email="random.user@couchbase.com"):
         if num_tenants == 0:
             return
 
@@ -56,9 +57,26 @@ class Pod:
                             seed_pwd)
             tenant.name = full_name
             tenants.append(tenant)
-            if accountID:
-                self.activate_resources(tenant, accountID)
         return tenants
+
+    def wait_for_tenant_activation(self, tenant, snaplogic_token):
+        self.commonAPI = CommonCapellaAPI(
+            self.url_public, None, None, None, None,
+            TOKEN_FOR_SNAPLOGIC=snaplogic_token)
+        self.log.info("Waiting for tenant activation: %s" % tenant.id)
+        while True:
+            resp = self.commonAPI.tenant_activation()
+            if resp.status_code != 200:
+                resp.raise_for_status()
+            tenants = json.loads(resp.content)
+            _tenant = [_tenant for _tenant in tenants if _tenant["tenantId"] == tenant.id]
+            if _tenant:
+                if _tenant[0]["status"] == "Active":
+                    self.log.info("Tenant {} is ACTIVE".format(tenant.id))
+                    return
+                else:
+                    self.log.info("Tenant {} is {}".format(tenant.id), _tenant[0]["status"])
+            time.sleep(10)
 
     def activate_resources(self, tenant, accountID):
         self.commonAPI = CommonCapellaAPI(

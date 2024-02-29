@@ -131,10 +131,28 @@ class CapellaBaseTest(CouchbaseBaseTest):
         else:
             email = self.input.param("tenant_user",
                                      ''.join([random.choice(string.ascii_uppercase + string.ascii_lowercase) for _ in range(10)])+"@couchbase.com")
+            self.tenants = self.pod.create_tenants(self.num_tenants, email=email)
+
             accountID = self.input.capella.get("account_id")
-            self.tenants = self.pod.create_tenants(self.num_tenants, email=email,
-                                                   accountID=accountID)
-            self.sleep(600)
+            snaplogic_token=self.input.capella.get("snaplogic_token")
+            ths = list()
+            if snaplogic_token:
+                for tenant in self.tenants:
+                    th = threading.Thread(target=self.pod.wait_for_tenant_activation,
+                                          args=(tenant, snaplogic_token))
+                    ths.append(th)
+                    th.start()
+            for th in ths:
+                th.join()
+            ths = list()
+            if accountID:
+                for tenant in self.tenants:
+                    th = threading.Thread(target=self.pod.activate_resources,
+                                          args=(tenant, accountID))
+                    ths.append(th)
+                    th.start()
+            for th in ths:
+                th.join()
             for tenant in self.tenants:
                 self.log.info("Creating API keys for tenant...")
                 for i in range(self.api_keys):
@@ -161,7 +179,8 @@ class CapellaBaseTest(CouchbaseBaseTest):
                 th.append(invite_th)
             for invite_th in th:
                 invite_th.join()
-        tenant.project_id = tenant.projects[0]
+            for tenant in self.tenants:
+                tenant.project_id = tenant.projects[0]
 
 class ProvisionedBaseTestCase(CapellaBaseTest):
     def setUp(self):
