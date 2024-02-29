@@ -82,6 +82,16 @@ class ColumnarBaseTest(CapellaBaseTest):
         if self.skip_teardown_cleanup:
             return
 
+        self.shutdown_task_manager()
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                if cluster.sdk_client_pool:
+                    cluster.sdk_client_pool.shutdown()
+
+        if self.is_test_failed() and self.get_cbcollect_info:
+            # Add code to get goldfish logs.
+            pass
+
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 self.delete_cluster(tenant, cluster)
@@ -94,13 +104,6 @@ class ColumnarBaseTest(CapellaBaseTest):
                 for project_id in tenant.projects:
                     CapellaUtils.delete_project(self.pod, tenant, project_id)
 
-        self.shutdown_task_manager()
-        if self.cluster.sdk_client_pool:
-            self.cluster.sdk_client_pool.shutdown()
-
-        if self.is_test_failed() and self.get_cbcollect_info:
-            # Add code to get goldfish logs.
-            pass
 
     def delete_cluster(self, tenant, cluster):
         result = self.goldfish_utils.delete_cluster(
