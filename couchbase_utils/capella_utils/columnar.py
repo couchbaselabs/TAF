@@ -130,25 +130,27 @@ class GoldfishUtils:
 
     def wait_for_cluster_destroy(
             self, pod, tenant, cluster, timeout=3600):
+        gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
+                            tenant.api_access_key, tenant.user, tenant.pwd)
         start_time = time.time()
         while time.time() < start_time + timeout:
-            resp = self.get_cluster_info(pod, tenant, cluster)
-            if not resp:
-                state = None
-                break
-            state = resp["state"]
-            if state == "destroying":
-                self.log.info("Cluster is still deleting. Waiting for 10s.")
+            resp = gf_api.get_specific_columnar_instance(
+                tenant.id, tenant.project_id, cluster.id)
+            if resp.status_code != 200:
+                self.log.info("Columnar instance is deleted successfully in %s s" % str((time.time() - start_time)))
+                return True
+            content = json.loads(resp.content)
+            state = content["state"]
+            self.log.info("Cluster %s current state: %s" % (cluster.id, state))
+            if state == "destroying" or state == "healthy":
                 time.sleep(10)
             else:
-                break
-        if state == "destroying":
-            self.log.error("Cluster {0} deletion failed even after {1} "
-                           "seconds".format(cluster.name, timeout))
-            return False
-        elif not state:
-            self.log.info("Columnar instance is deleted successfully in %s s" % str((time.time() - start_time)))
-            return True
+                raise Exception("Incorrect cluster state found during cluster deletion: {}".format(
+                    state))
+
+        self.log.error("Cluster {0} deletion failed even after {1} "
+                       "seconds".format(cluster.name, timeout))
+        return False
 
     def wait_for_cluster_scaling(
             self, pod, tenant, cluster, timeout=3600):

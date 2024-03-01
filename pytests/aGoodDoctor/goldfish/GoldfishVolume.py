@@ -109,6 +109,13 @@ class Columnar(BaseTestCase, OPD):
                            bucket=mongo)
         self.data_sources["mongo"].append(mongo)
 
+    def teardownMongo(self):
+        for task in self.mongo_workload.tasks:
+            task.sdk.dropDatabase()
+            break
+        for task in self.mongo_workload.tasks:
+            task.sdk.disconnectCluster()
+
     def setup_sdk_clients(self, cluster):
         cluster.SDKClients = list()
         nebula_endpoint = cluster.nebula.endpoint
@@ -230,7 +237,8 @@ class Columnar(BaseTestCase, OPD):
         self.mongo_workload.perform_load(self.data_sources["mongo"],
                                          wait_for_load=False,
                                          tm=self.doc_loading_tm)
-        for i in range(2, 6):
+        self.iterations = self.input.param("iterations", 1) + 2
+        for i in range(2, self.iterations):
             self.PrintStep("Scaling operation: %s" % str(i-1))
             for tenant in self.tenants:
                 for cluster in tenant.clusters:
@@ -239,7 +247,7 @@ class Columnar(BaseTestCase, OPD):
                 for cluster in tenant.clusters:
                     self.goldfish_utils.wait_for_cluster_scaling(self.pod, tenant, cluster)
             self.sleep(600)
-        for i in range(5, 1):
+        for i in range(self.iterations-1, 1):
             self.PrintStep("Scaling operation: %s" % str(i-1))
             for tenant in self.tenants:
                 for cluster in tenant.clusters:
@@ -253,5 +261,6 @@ class Columnar(BaseTestCase, OPD):
                 for ql in self.cbasQL:
                     ql.stop_query_load()
 
+        self.teardownMongo()
         self.sleep(10, "Wait for 10s until all the query workload stops.")
         self.assertTrue(self.query_result, "Please check the logs for query failures")

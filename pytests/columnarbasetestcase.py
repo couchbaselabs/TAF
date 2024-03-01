@@ -94,6 +94,7 @@ class ColumnarBaseTest(CapellaBaseTest):
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:
+                self.log.info("Deleting columnar cluster: {}".format(cluster.id))
                 self.delete_cluster(tenant, cluster)
         for tenant in self.tenants:
             for cluster in tenant.clusters:

@@ -93,7 +93,7 @@ class MongoWorkload():
     def perform_load(self, databases=None, wait_for_load=True, overRidePattern=None, tm=None):
         self.doc_loading_tm = tm
         self._loader_dict(databases, overRidePattern)
-        tasks = list()
+        self.tasks = list()
         i = self.workers
         while i > 0:
             for database in databases:
@@ -106,19 +106,14 @@ class MongoWorkload():
                     time.sleep(1)
                     taskName = "Loader_%s_%s_%s" % (database.name, collection, time.time())
                     task = WorkLoadGenerate(taskName, self.loader_map[database.name+collection], client)
-                    tasks.append(task)
+                    self.tasks.append(task)
                     self.doc_loading_tm.submit(task)
                     i -= 1
 
         if wait_for_load:
             self.wait_for_doc_load_completion()
-            # for task in tasks:
-            #     task.sdk.dropDatabase()
-            #     break
-            for task in tasks:
-                task.sdk.disconnectCluster()
         else:
-            return tasks
+            return self.tasks
 
     def wait_for_doc_load_completion(self):
         self.doc_loading_tm.getAllTaskResult()
