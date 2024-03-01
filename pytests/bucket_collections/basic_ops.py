@@ -6,6 +6,8 @@ from cb_constants import CbServer, DocLoading
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from constants.sdk_constants.java_client import SDKConstants
+from sdk_utils.java_sdk import SDKOptions
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from BucketLib.BucketOperations import BucketHelper
@@ -1037,7 +1039,7 @@ class BasicOps(CollectionBase):
 
     def test_with_memcached_bucket(self):
         """
-        Validates MB-35696
+        Validates MB-35696 and MB-60987
         1. Create Memcached bucket
         2. Perform create scope/collection using REST API
         3. Perform create scope/collection using SDK client
@@ -1046,6 +1048,8 @@ class BasicOps(CollectionBase):
         rand_name = self.bucket_util.get_random_name(max_length=15)
         bucket_helper = BucketHelper(self.cluster.master)
         client = self.sdk_client_pool.get_client_for_bucket(self.bucket)
+        client.bucketObj.waitUntilReady(
+                    SDKOptions.get_duration(10, SDKConstants.TimeUnit.SECONDS))
 
         expected_err = "Not allowed on this type of bucket"
         expected_err_sdk = "com.couchbase.client.core.error"
@@ -1093,3 +1097,13 @@ class BasicOps(CollectionBase):
             self.fail("Default collection CRUD failed")
 
         self.sdk_client_pool.release_client(client)
+        rest = RestConnection(self.cluster.master)
+        status = rest.update_autofailover_settings(enabled=True, timeout=5, maxCount=1)
+        self.assertTrue(status)
+        self.sleep(30, "waiting for AFO to get triggered")
+        settings = rest.get_autofailover_settings()
+        self.assertTrue(settings.count == 0, "Unexpected AFO triggered!")
+        for bucket in self.cluster.buckets:
+            status = self.bucket_util.delete_bucket(self.cluster, bucket,
+                                                    wait_for_bucket_deletion=True)
+            self.assertTrue(status, "bucket deletion failed")
