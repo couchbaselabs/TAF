@@ -158,6 +158,9 @@ class CapellaUtils(object):
                     CapellaUtils.log.critical("Tenant is not activated yet...retrying")
                 if resp.content.find("CIDR") != -1:
                     subnet = CapellaUtils.get_next_cidr() + "/20"
+                else:
+                    CapellaUtils.log.critical(resp.content)
+                    raise Exception("Cluster deployment failed.")
             else:
                 CapellaUtils.log.critical("Create capella_utils cluster failed.")
                 CapellaUtils.log.critical("Capella API returned " + str(

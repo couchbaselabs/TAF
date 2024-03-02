@@ -245,14 +245,13 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 self.generate_cluster_config()
                 for task in tasks:
                     self.task_manager.get_task_result(task)
-                    if task.result:
-                        self.assertTrue(task.result, "Cluster deployment failed!")
-                        CapellaUtils.create_db_user(
-                            self.pod, task.tenant, task.cluster_id,
-                            self.rest_username, self.rest_password)
-                        self.__populate_cluster_info(task.tenant, task.cluster_id, task.servers,
-                                                     task.srv, task.name,
-                                                     self.capella_cluster_config)
+                    self.assertTrue(task.result, "Cluster deployment failed!")
+                    CapellaUtils.create_db_user(
+                        self.pod, task.tenant, task.cluster_id,
+                        self.rest_username, self.rest_password)
+                    self.__populate_cluster_info(task.tenant, task.cluster_id, task.servers,
+                                                 task.srv, task.name,
+                                                 self.capella_cluster_config)
             for tenant in self.tenants:
                 for i in range(self.xdcr_remote_clusters):
                     name = "%s_%s_%s" % (
