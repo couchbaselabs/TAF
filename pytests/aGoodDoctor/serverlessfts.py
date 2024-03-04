@@ -123,8 +123,7 @@ template = {
        }
       },
       "store": {
-       "indexType": "scorch",
-       "segmentVersion": 16
+       "indexType": "scorch"
       }
      },
      "sourceType": "gocbcore",
@@ -171,8 +170,7 @@ template = {
             "types": {}
             },
         "store": {
-            "indexType": "scorch",
-            "segmentVersion": 16
+            "indexType": "scorch"
             }
         },
     "sourceParams": {}

@@ -432,10 +432,13 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         for service_group in services.split("-"):
             service_group = sorted(service_group.split(":"))
             service = service_group[0]
+            count = self.num_nodes[service]
+            if "data" in service_group:
+                count = max(3, self.num_nodes["data"])
             service_config = CapellaUtils.get_cluster_config_spec(
                 provider=self.provider,
                 services=[self.services_map[_service.lower()] for _service in service_group],
-                count=self.num_nodes[service],
+                count=count,
                 compute=self.compute[service],
                 storage_type=self.input.param("type", AWS.StorageType.GP3).lower(),
                 storage_size_gb=self.disk[service],
