@@ -160,8 +160,7 @@ class Kafka_Link(Link):
 class Dataset(object):
 
     def __init__(self, name, dataverse_name="Dafault", database_name="Default",
-                 bucket=None, scope=None, collection=None,
-                 enabled_from_KV=False, num_of_items=0, storage_format="row"):
+                 bucket=None, scope=None, collection=None, storage_format="row"):
         """
         :param name <str> name of the dataset
         :param dataverse_name <str> dataverse where the dataset is present.
@@ -181,7 +180,6 @@ class Dataset(object):
         self.full_name = CBASHelper.format_name(
             self.database_name, self.dataverse_name, self.name)
         self.indexes = dict()
-        self.enabled_from_KV = enabled_from_KV
         self.kv_bucket = bucket
         self.kv_scope = scope
         self.kv_collection = collection
@@ -197,7 +195,6 @@ class Dataset(object):
                     self.get_fully_qualified_kv_entity_name(cardinality=1))
             else:
                 self.full_kv_entity_name = None
-        self.num_of_items = num_of_items
         self.storage_format = storage_format
 
     def __str__(self):
@@ -227,7 +224,7 @@ class Remote_Dataset(Dataset):
 
     def __init__(self, name, link_name, dataverse_name="Dafault",
                  database_name="Default", bucket=None, scope=None,
-                 collection=None, num_of_items=0, storage_format="row"):
+                 collection=None, storage_format="row", capella=False):
         """
         :param name <str> name of the dataset
         :param link_name <str> name of the remote link to which dataset is
@@ -244,8 +241,9 @@ class Remote_Dataset(Dataset):
         """
         super(Remote_Dataset, self).__init__(
             name, dataverse_name, database_name, bucket, scope,
-            collection, False,num_of_items, storage_format)
+            collection, False, storage_format)
 
+        self.capella_cluster = capella
         self.link_name = CBASHelper.format_name(link_name)
 
 

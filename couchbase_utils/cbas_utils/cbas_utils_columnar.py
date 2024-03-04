@@ -3262,18 +3262,59 @@ class Remote_Dataset_Util(Dataset_Util):
         return cbas_spec.get("remote_dataset", {})
 
     def create_remote_dataset_obj(
-            self, remote_cluster, bucket_util, dataset_cardinality=1,
-            bucket_cardinality=1, for_all_kv_entities=False,
-            link=None, same_dv_for_link_and_dataset=False,
+            self, bucket, scope, collection, link, bucket_util, dataset_cardinality=1
+            , same_dv_for_link_and_dataset=False,
             storage_format=None, name_length=30, fixed_length=False,
-            exclude_bucket=[], exclude_scope=[], exclude_collection=[],
-            no_of_objs=1):
+            no_of_objs=1, capella=False):
         """
         Generates remote dataset objects.
         """
 
         if storage_format == "mixed":
             storage_format = random.choice(["row", "column"])
+
+        def create_object_capella(cluster, bucket, scope, collection, link):
+            if not (bucket or scope or collection):
+                self.log.error("Please provide bucket, scope and collection")
+                return False
+
+            if not link:
+                link = random.choice(self.list_all_link_objs("couchbase"))
+
+            if same_dv_for_link_and_dataset and link:
+                dataverse = self.get_dataverse_obj(link.dataverse_name, link.database_name)
+            else:
+                exclude_dataverse = self.get_dataverse_obj(link.dataverse_name, link.database_name)
+                while True:
+                    dataverse = random.choice(self.get_all_dataverse_obj())
+                    if exclude_dataverse != dataverse or len(self.get_all_dataverse_obj()) == 1:
+                        break
+
+            if not dataverse:
+                database_name = self.generate_name()
+                if self.create_database(cluster, database_name):
+                    dataverse_name = self.generate_name()
+                    if not self.create_dataverse(cluster, dataverse_name, database_name):
+                        self.log.error("Failed to create dataverse {}".format(dataverse_name))
+                        return False
+                    else:
+                        dataverse = self.get_dataverse_obj(dataverse_name, database_name)
+                else:
+                    self.log.error("Failed to create database {}".format(database_name))
+                    return False
+
+            dataset_name = self.generate_name(
+                name_cardinality=1, max_length=name_length,
+                fixed_length=fixed_length)
+            dataset_obj = Remote_Dataset(name=dataset_name, dataverse_name=dataverse.name,
+                                         database_name=dataverse.database_name, bucket=bucket,
+                                         scope=scope, collection=collection, storage_format=storage_format)
+            self.log.info("Adding Remote Dataset object for - {0}".format(
+                dataset_obj.full_name))
+            dataverse.remote_datasets[dataset_obj.name] = dataset_obj
+
+            return dataset_obj
+
 
         def create_object(bucket, scope, collection, link):
 
@@ -3333,49 +3374,11 @@ class Remote_Dataset_Util(Dataset_Util):
             return dataset_obj
 
         dataset_objs = list()
-        if for_all_kv_entities:
-            for bucket in remote_cluster.buckets:
-
-                if bucket.name in exclude_bucket:
-                    continue
-
-                if bucket_cardinality == 1:
-                    dataset_objs.append(create_object(bucket, None, None, link))
-                else:
-                    active_scopes = bucket_util.get_active_scopes(bucket)
-                    for scope in active_scopes:
-                        if scope.is_dropped or scope.name in exclude_scope:
-                            continue
-
-                        active_collections = bucket_util.get_active_collections(
-                            bucket, scope.name, only_names=False)
-                        for collection in active_collections:
-                            if collection.is_dropped or collection.name in exclude_collection:
-                                continue
-                            dataset_objs.append(create_object(
-                                bucket, scope, collection, link))
-        else:
-            for _ in range(no_of_objs):
-                bucket = random.choice(remote_cluster.buckets)
-                while bucket.name in exclude_bucket:
-                    bucket = random.choice(remote_cluster.buckets)
-
-                if bucket_cardinality == 1:
-                    dataset_objs.append(create_object(bucket, None, None, link))
-                else:
-                    active_scopes = bucket_util.get_active_scopes(bucket)
-                    scope = random.choice(active_scopes)
-                    while scope.is_dropped or (scope.name in exclude_scope):
-                        scope = random.choice(active_scopes)
-
-                    active_collections = bucket_util.get_active_collections(
-                        bucket, scope.name, only_names=False)
-                    collection = random.choice(active_collections)
-                    while collection.is_dropped or (
-                            collection.name in exclude_collection):
-                        collection = random.choice(active_collections)
-
-                    dataset_objs.append(create_object(bucket, scope, collection, link))
+        for _ in range(no_of_objs):
+            if capella:
+                dataset_objs.append((create_object_capella(bucket, scope, collection, link)))
+            else:
+                dataset_objs.append(create_object(bucket, scope, collection, link))
         return dataset_objs
 
     def create_remote_dataset_from_spec(self, cluster, remote_clusters,
@@ -3444,9 +3447,7 @@ class Remote_Dataset_Util(Dataset_Util):
                 bucket = my_collection[0]
                 scope = my_collection[1]
                 collection = my_collection[2]
-
             else:
-
                 for tmp_cluster in remote_clusters:
                     if tmp_cluster.master.ip == link.properties["hostname"]:
                         remote_cluster = tmp_cluster

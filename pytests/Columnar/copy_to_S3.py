@@ -189,7 +189,7 @@ class CopyToS3(ColumnarBaseTest):
         cluster_created = False
         while not cluster_created:
             resp = self.capellaAPI.cluster_ops_apis.create_cluster(
-                self.user.org_id, self.user.project.project_id, cluster_name,
+                self.user.org_id, self.project.project_id, cluster_name,
                 self.expected_result['cloudProvider'],
                 self.expected_result['couchbaseServer'],
                 self.expected_result['serviceGroups'],
