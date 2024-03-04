@@ -12,9 +12,9 @@ from os.path import splitext
 from pprint import pprint
 
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
-            "platform_utils", "connections", "constants"] + sys.path
+            "platform_utils", "platform_utils/ssh_util",
+            "connections", "constants"] + sys.path
 from framework_lib.framework import HelperLib
-from java_lib import java_lang_lib
 
 from sdk_client3 import SDKClient
 from remote.remote_util import RemoteMachineShellConnection
@@ -260,8 +260,8 @@ def main():
                 test_run_result = result["name"] + " pass"
             print(test_run_result)
         if fail_count > 0:
-            java_lang_lib.system_exit(1)
-    java_lang_lib.system_exit(0)
+            sys.exit(1)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
