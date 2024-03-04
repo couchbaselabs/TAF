@@ -31,8 +31,8 @@ class CapellaBaseTest(CouchbaseBaseTest):
         # Cluster level info settings
         self.capella = self.input.capella
         self.num_tenants = self.input.param("num_tenants", 1)
-        self.num_projects = self.input.param("num_projects", 2)
-        self.invite_people = self.input.param("invite_people", 2)
+        self.num_projects = self.input.param("num_projects", 1)
+        self.invite_people = self.input.param("invite_people", 1)
         self.num_clusters = self.input.param("num_clusters", 1)
         self.api_keys = self.input.param("api_keys", 1)
 
