@@ -134,8 +134,9 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                     thread_results.append(
                         "Fetching instance details for {0} failed".format(
                             instance.instance_id))
-                instance.name = str(resp["name"])
-                self.project.instances.append(instance)
+                else:
+                    instance.name = str(resp["name"])
+                    self.project.instances.append(instance)
             else:
                 threads.append(Thread(
                     target=create_columnar_instance,

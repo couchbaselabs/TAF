@@ -75,7 +75,7 @@ class ColumnarBaseTest(BaseTestCase):
 
     def tearDown(self):
         if self.perform_gf_instance_cleanup:
-            for instance in self.project.instance:
+            for instance in self.project.instances:
                 self.cbas_util.cleanup_cbas(instance)
 
         super(ColumnarBaseTest, self).tearDown()
