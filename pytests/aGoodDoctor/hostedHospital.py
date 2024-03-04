@@ -841,7 +841,9 @@ class Murphy(BaseTestCase, hostedOPD):
             computeList = AWS.compute
 
         self.services = self.input.param("services", "data").split("-")
-        self.rebl_services = self.input.param("rebl_services", self.services).split("-")
+        self.rebl_services = self.input.param("rebl_services",
+                                              self.input.param("services", "data")
+                                              ).split("-")
         if h_scaling or vh_scaling:
             self.loop = 0
             self.rebl_nodes = self.input.param("horizontal_scale", 3)
