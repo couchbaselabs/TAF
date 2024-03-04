@@ -741,7 +741,7 @@ class JsonDocGenerator(KVGenerator):
             self.end = int(kwargs['end'])
 
         if op_type == "create":
-            for count in xrange(self.start+1, self.end+1, 1):
+            for count in range(self.start+1, self.end+1, 1):
                 emp_name = self.generate_name()
                 doc_dict = {
                             'emp_id': str(10000000+int(count)),
@@ -759,13 +759,13 @@ class JsonDocGenerator(KVGenerator):
                 if doc_dict["is_manager"]:
                     doc_dict['manages'] = {'team_size': random.randint(5, 10)}
                     doc_dict['manages']['reports'] = []
-                    for _ in xrange(0, doc_dict['manages']['team_size']):
+                    for _ in range(0, doc_dict['manages']['team_size']):
                         doc_dict['manages']['reports'] \
                             .append(self.generate_name())
                 self.gen_docs[count-1] = doc_dict
         elif op_type == "delete":
             # for deletes, just keep/return empty docs with just type field
-            for count in xrange(self.start, self.end):
+            for count in range(self.start, self.end):
                 self.gen_docs[count] = {'type': 'emp'}
 
     def update(self, fields_to_update=None):
@@ -776,7 +776,7 @@ class JsonDocGenerator(KVGenerator):
                    default for this dataset, 'salary' field is regenerated.
         """
         random.seed(1)
-        for count in xrange(self.start, self.end):
+        for count in range(self.start, self.end):
             doc_dict = self.gen_docs[count]
             if fields_to_update is None:
                 doc_dict['salary'] = self.generate_salary()
@@ -790,7 +790,7 @@ class JsonDocGenerator(KVGenerator):
                     if doc_dict["is_manager"]:
                         doc_dict['manages'] = {'team_size': random.randint(5, 10)}
                         doc_dict['manages']['reports'] = []
-                        for _ in xrange(0, doc_dict['manages']['team_size']):
+                        for _ in range(0, doc_dict['manages']['team_size']):
                             doc_dict['manages']['reports'] \
                                 .append(self.generate_name())
                 if 'languages_known' in fields_to_update:
@@ -805,7 +805,7 @@ class JsonDocGenerator(KVGenerator):
                     doc_dict['manages'] = {}
                     doc_dict['manages']['team_size'] = random.randint(5, 10)
                     doc_dict['manages']['reports'] = []
-                    for _ in xrange(0, doc_dict['manages']['team_size']):
+                    for _ in range(0, doc_dict['manages']['team_size']):
                         doc_dict['manages']['reports'] \
                             .append(self.generate_name())
             self.gen_docs[count] = doc_dict
@@ -919,7 +919,7 @@ class WikiJSONGenerator(KVGenerator):
             self.read_from_wiki_dump()
         elif op_type == "delete":
             # for deletes, just keep/return empty docs with just type field
-            for count in xrange(self.start, self.end):
+            for count in range(self.start, self.end):
                 self.gen_docs[count] = {'type': 'wiki'}
 
     def read_from_wiki_dump(self):

@@ -3680,7 +3680,7 @@ class ViewCreateTask(Task):
                            "username": self.rest.username,
                            "password": self.rest.password}
 
-            for count in xrange(retry_count):
+            for count in range(retry_count):
                 try:
                     rest_node = RestConnection(server_info)
                     content, meta = rest_node.get_ddoc(self.bucket,
@@ -7148,7 +7148,7 @@ class ViewCompactionTask(Task):
                 else:
                     self.set_result(True)
             else:
-                for i in xrange(20):
+                for i in range(20):
                     self.test_log.debug("Wait for compaction to start")
                     sleep(2)
                     if self._is_compacting():

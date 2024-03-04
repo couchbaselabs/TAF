@@ -189,9 +189,9 @@ class DcpTestCase(DCPBase):
 
     def test_open_n_consumer_producers(self):
         n = 16
-        conns = [DcpClient(self.cluster.master.ip,  self.cluster.master.port) for i in xrange(2 * n)]
+        conns = [DcpClient(self.cluster.master.ip,  self.cluster.master.port) for i in range(2 * n)]
         ops = []
-        for i in xrange(n):
+        for i in range(n):
             op = conns[i].open_consumer("consumer{0}".format(i))
             ops.append(op)
             op = conns[n + i].open_producer("producer{0}".format(n + i))
@@ -340,8 +340,8 @@ class DcpTestCase(DCPBase):
         n = 16
         self.verification_seqno = n
 
-        conns = [DcpClient(self.cluster.master.ip,  self.cluster.master.port) for i in xrange(n)]
-        for i in xrange(n):
+        conns = [DcpClient(self.cluster.master.ip,  self.cluster.master.port) for i in range(n)]
+        for i in range(n):
             response = self.mcd_client.set('key' + str(i), 0, 0, 'value', 0)
 
             stream = "mystream{0}".format(i)
@@ -367,8 +367,8 @@ class DcpTestCase(DCPBase):
         self.verification_seqno = n
 
         vb_ids = self.all_vbucket_ids()
-        conns = [DcpClient(self.cluster.master.ip,  self.cluster.master.port) for i in xrange(n)]
-        for i in xrange(n):
+        conns = [DcpClient(self.cluster.master.ip,  self.cluster.master.port) for i in range(n)]
+        for i in range(n):
             self.mcd_client.set('key' + str(i), 0, 0, 'value', 0)
 
             stream = "mystream{0}".format(i)
@@ -673,7 +673,7 @@ class DcpTestCase(DCPBase):
     def test_close_stream_n_consumers(self):
 
         n = 16
-        for i in xrange(100):
+        for i in range(100):
             self.mcd_client.set('key' + str(i), 0, 0, 'value', 0)
         self.wait_for_persistence(self.mcd_client)
 
@@ -683,9 +683,9 @@ class DcpTestCase(DCPBase):
         client2.open_consumer(closestream)
         client2.add_stream(0, 0)
 
-        conns = [DcpClient(self.cluster.master.ip,  self.cluster.master.port) for i in xrange(n)]
+        conns = [DcpClient(self.cluster.master.ip,  self.cluster.master.port) for i in range(n)]
 
-        for i in xrange(n):
+        for i in range(n):
 
             stream = "mystream{0}".format(i)
             conns[i].open_consumer(stream)
@@ -700,7 +700,7 @@ class DcpTestCase(DCPBase):
         key = "eq_dcpq:{0}:stream_0_state".format(closestream)
         assert stats[key] == 'dead'
 
-        for i in xrange(n):
+        for i in range(n):
             key = "eq_dcpq:mystream{0}:stream_0_state".format(i)
             assert stats[key] in ('reading', 'pending')
 
@@ -1437,7 +1437,7 @@ class DcpTestCase(DCPBase):
         doc_count = 100
         self.dcp_client.open_producer("mystream")
 
-        for i in xrange(doc_count):
+        for i in range(doc_count):
             self.mcd_client.set('key' + str(i), 0, 0, 'value', 0)
         self.sleep(2)
         self.wait_for_persistence(self.mcd_client)
@@ -1673,12 +1673,12 @@ class DcpTestCase(DCPBase):
     def test_stream_request_client_per_vb(self):
         """ stream request muataions from each vbucket with a new client """
 
-        for vb in xrange(8):
+        for vb in range(8):
             for i in range(1000):
                 self.mcd_client.set('key' + str(i), 0, 0, 'value', vb)
 
         num_vbs = len(self.all_vbucket_ids())
-        for vb in xrange(8):
+        for vb in range(8):
 
             dcp_client = DcpClient(self.cluster.master.ip,  self.cluster.master.port)
             dcp_client.open_producer("producerstream")
@@ -1987,7 +1987,7 @@ class DcpTestCase(DCPBase):
         # response = dcp_client2.add_stream(0, 0)
         # assert response['status'] == SUCCESS
 
-        for i in xrange(1000):
+        for i in range(1000):
             self.mcd_client.set('key%s' % i, 0, 0, 'value', 0)
 
         stream.run()
@@ -2000,7 +2000,7 @@ class DcpTestCase(DCPBase):
 
         n = 5
         response = self.dcp_client.open_producer("producer")
-        for i in xrange(n):
+        for i in range(n):
             self.mcd_client.set('key' + str(i), 0, 0, 'value', 0)
 
         for i in range(n):
@@ -2040,7 +2040,7 @@ class DcpTestCase(DCPBase):
         response = self.dcp_client.general_control('enable_ext_metadata', 'true')
         assert response['status'] == SUCCESS
 
-        for i in xrange(n):
+        for i in range(n):
             self.mcd_client.set('key' + str(i), 0, 0, 'value', 0)
 
         stream = self.dcp_client.stream_req(0, 0, 0, n, 0)
@@ -2067,7 +2067,7 @@ class DcpTestCase(DCPBase):
         # set time synchronization
         self.mcd_client.set_time_drift_counter_state(0, 0, 1)
 
-        for i in xrange(n):
+        for i in range(n):
             self.mcd_client.set('key' + str(i), 0, 0, 'value', 0)
 
         stream = self.dcp_client.stream_req(0, 0, 0, n, 0)

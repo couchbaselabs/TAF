@@ -324,7 +324,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
             times = 2
             if self.cluster_run:
                 times = 20
-            for _ in xrange(times):
+            for _ in range(times):
                 try:
                     shell = RemoteMachineShellConnection(self.cluster.master)
                     pid = shell.get_memcache_pid()

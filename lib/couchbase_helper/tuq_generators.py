@@ -45,9 +45,9 @@ class TuqGenerators(object):
                                                                                     if isinstance(attr[1], str) or isinstance(attr[1], unicode)]
             self.type_args['_list_obj%s_int'% (self.type_args['list_obj'].index(obj))] = [attr[0] for attr in full_set[0][obj][0].iteritems()
                                                                                     if isinstance(attr[1], int)]
-        for i in xrange(2, 5):
+        for i in range(2, 5):
             self.type_args['nested_%sl' % i] = [attr for attr in self.nests if len(attr.split('.')) == i]
-        for i in xrange(2, 5):
+        for i in range(2, 5):
             self.type_args['nested_list_%sl' % i] = [attr[0] for attr in self.nests.iteritems() if len(attr[0].split('.')) == i and isinstance(attr[1], list)]
         self._clear_current_query()
 
@@ -579,8 +579,8 @@ class JsonGenerator:
         types = ['Engineer', 'Sales', 'Support']
         skills = ['Python', 'Java', 'C++', 'Testing', 'Development']
         join_yr = [2010, 2011,2012,2013,2014,2015,2016]
-        join_mo = xrange(1, 12 + 1)
-        join_day = xrange(1, 28 + 1)
+        join_mo = range(1, 12 + 1)
+        join_day = range(1, 28 + 1)
         templates = []
         for i in range(start, docs_per_day):
             random.seed(i)
@@ -629,8 +629,8 @@ class JsonGenerator:
                             "Spanish", "French", "Nepalese", "Dutch", "Vietnamese", "Arabic",
                             "Japanese"]
         join_yr = [2010, 2011,2012,2013,2014,2015,2016]
-        join_mo = xrange(1, 12 + 1)
-        join_day = xrange(1, 28 + 1)
+        join_mo = range(1, 12 + 1)
+        join_day = range(1, 28 + 1)
         is_manager = [True,False]
         salary = range(10000, 200000)
         emp_id = range(0, 10000)
@@ -692,8 +692,8 @@ class JsonGenerator:
         sport = ['Badminton','Cricket','Football','Basketball','American Football','ski']
         dance = ['classical','bollywood','salsa','hip hop','contemporary','bhangra']
         join_yr = [2010, 2011,2012,2013,2014,2015,2016]
-        join_mo = xrange(1, 12 + 1)
-        join_day = xrange(1, 28 + 1)
+        join_mo = range(1, 12 + 1)
+        join_day = range(1, 28 + 1)
         engineer = ["Query","Search","Indexing","Storage","Android","IOS"]
         marketing = ["East","West","North","South","International"]
         cities = ['Mumbai','Delhi','New York','San Francisco']
@@ -754,9 +754,9 @@ class JsonGenerator:
         all_airports = ["ABR", "ABI", "ATL","BOS", "BUR", "CHI", "MDW", "DAL", "SFO", "SAN", "SJC", "LGA", "JFK", "MSP",
                         "MSQ", "MIA", "LON", "DUB"]
         dests = [all_airports[i] for i in indexes]
-        join_yr = self._shuffle(xrange(2010, 2010 + years), isShuffle)
-        join_mo = self._shuffle(xrange(1, 12 + 1),isShuffle)
-        join_day = self._shuffle(xrange(1, 28 + 1),isShuffle)
+        join_yr = self._shuffle(range(2010, 2010 + years), isShuffle)
+        join_mo = self._shuffle(range(1, 12 + 1),isShuffle)
+        join_day = self._shuffle(range(1, 28 + 1),isShuffle)
         count = 1
         templates = []
         for i in range(start, docs_per_day):
@@ -889,8 +889,8 @@ class JsonGenerator:
     def generate_docs_sales(self, key_prefix = "sales_dataset", test_data_type = True, start=0, docs_per_day=None, isShuffle = False):
         end = docs_per_day
         join_yr = [2010, 2011,2012,2013,2014,2015,2016]
-        join_mo = xrange(1, 12 + 1)
-        join_day = xrange(1, 28 + 1)
+        join_mo = range(1, 12 + 1)
+        join_day = range(1, 28 + 1)
         is_support = ['true', 'false']
         is_priority = ['true', 'false']
         count = 1
@@ -945,7 +945,7 @@ class JsonGenerator:
         end = docs_per_day
         age = self._shuffle(range(start, end), isShuffle)
         name = [key_prefix + '-' + str(i)
-                for i in self._shuffle(xrange(start, end), isShuffle)]
+                for i in self._shuffle(range(start, end), isShuffle)]
         template = JsonObject.create()
         template.put("age", age)
         template.put("name", name)
@@ -1147,8 +1147,8 @@ class JsonGenerator:
         join_yr = self._shuffle(range(2008, 2008 + self.years),isShuffle)
         join_mo = self._shuffle(range(1, self.months + 1),isShuffle)
         join_day = self._shuffle(range(1, self.days + 1),isShuffle)
-        name = ["employee-%s-%s" % (key_prefix, str(i)) for i in xrange(start, end)]
-        email = ["%s-mail@couchbase.com" % str(i) for i in xrange(start, end)]
+        name = ["employee-%s-%s" % (key_prefix, str(i)) for i in range(start, end)]
+        email = ["%s-mail@couchbase.com" % str(i) for i in range(start, end)]
         template = '{{ "name":"{0}", "join_yr":{1}, "join_mo":{2}, "join_day":{3},'
         template += ' "email":"{4}", "job_title":"{5}", "type":"{6}", "desc":"{7}"}}'
         for info in data_sets:

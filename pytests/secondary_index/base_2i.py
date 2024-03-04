@@ -665,7 +665,7 @@ class BaseSecondaryIndexingTests(QueryTests):
                 vbuckets_number_list = range(0, total)
                 if use_random:
                     vbuckets_number_list = random.sample(
-                        xrange(0, self.cluster.vbuckets),
+                        range(0, self.cluster.vbuckets),
                         total)
                 self.log.debug("analyzing for bucket {0}".format(bucket.name))
                 map = sequence_bucket_map[bucket.name]

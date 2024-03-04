@@ -450,7 +450,7 @@ class RebalanceOutTests(RebalanceBaseTest):
     def rebalance_out_get_random_key(self):
         servs_out = [self.cluster.servers[self.nodes_init - i - 1] for i in range(self.nodes_out)]
         # get random keys for new added nodes
-        rest_cons = [RestConnection(self.cluster.servers[i]) for i in xrange(self.nodes_init - self.nodes_out)]
+        rest_cons = [RestConnection(self.cluster.servers[i]) for i in range(self.nodes_init - self.nodes_out)]
         rebalance = self.task.async_rebalance(self.cluster, [], servs_out)
         self.sleep(2)
         result = []
@@ -673,7 +673,7 @@ class RebalanceOutTests(RebalanceBaseTest):
             # run queries to create indexes
             self.bucket_util.query_view(self.cluster.master, prefix + ddoc_name, view.name, query, timeout=self.wait_timeout * 2)
 
-        for i in xrange(3):
+        for i in range(3):
             active_tasks = self.cluster_util.async_monitor_active_task(self.cluster.servers, "indexer",
                                                                   "_design/" + prefix + ddoc_name, wait_task=False)
             for active_task in active_tasks:

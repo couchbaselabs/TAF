@@ -2082,7 +2082,7 @@ class RestConnection(newRC):
         api = self.baseUrl + 'controller/stopRebalance'
         status, content, header = self._http_request(api, 'POST')
         if status:
-            for i in xrange(wait_timeout):
+            for i in range(wait_timeout):
                 if self._rebalance_progress_status() == 'running':
                     self.test_log.warn("Rebalance not stopped after {0} sec"
                                        .format(i + 1))
@@ -2649,7 +2649,7 @@ class RestConnection(newRC):
         logs = json_parsed['list']
         logs.reverse()
         result = []
-        for i in xrange(min(last_n, len(logs))):
+        for i in range(min(last_n, len(logs))):
             result.append(logs[i])
             if contains_text is not None and contains_text in logs[i]["text"]:
                 break

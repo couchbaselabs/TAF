@@ -699,7 +699,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
 
     def test_recreate_xattr(self):
         self.__upsert_document_and_validate("update", {})
-        for i in xrange(5):
+        for i in range(5):
             self.log.info("Create iteration: %d" % (i+1))
             # Try to upsert a single xattr
             self.__insert_sub_doc_and_validate("subdoc_insert",
@@ -728,7 +728,7 @@ class SubdocXattrSdkTest(SubdocBaseTest):
     def test_update_xattr(self):
         self.__upsert_document_and_validate("update", {})
         # use xattr like a counters
-        for i in xrange(5):
+        for i in range(5):
             self.log.info("Update iteration: %d" % (i+1))
             self.__insert_sub_doc_and_validate("subdoc_upsert",
                                                "my_attr", i)
@@ -1014,10 +1014,10 @@ class SubdocXattrSdkTest(SubdocBaseTest):
     def test_upsert_nums(self):
         k = 'xattr'
         self.client.upsert(k, {})
-        for i in xrange(100):
+        for i in range(100):
             rv = self.client.mutate_in(k, SD.upsert('n' + str(i), i, xattr=True))
             self.assertTrue(rv.success)
-        for i in xrange(100):
+        for i in range(100):
             rv = self.client.lookup_in(k, SD.get('n' + str(i), xattr=True))
             self.assertTrue(rv.exists('n' + str(i)))
             self.assertEqual(i, rv['n' + str(i)])

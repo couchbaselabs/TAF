@@ -868,7 +868,7 @@ class OPD:
             servers = self.cluster.kv_nodes + [self.cluster.master]
 
         for server in servers:
-            for _ in xrange(num_kills):
+            for _ in range(num_kills):
                 if num_kills > 1:
                     self.sleep(2, "Sleep for 2 seconds b/w cont memc kill on same node.")
                 shell = RemoteMachineShellConnection(server)

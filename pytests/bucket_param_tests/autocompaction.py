@@ -42,7 +42,7 @@ class AutoCompactionTests(CollectionBase):
     def insert_key(node, bucket_name, count, size):
         rest = RestConnection(node)
         smart = VBucketAwareMemcached(rest, bucket_name)
-        for i in xrange(count * 1000):
+        for i in range(count * 1000):
             key = "key_" + str(i)
             value = {"value": MemcachedClientHelper.create_value("*", size)}
             smart.memcached(key).set(key, 0, 0, json.dumps(value))
@@ -469,7 +469,7 @@ class AutoCompactionTests(CollectionBase):
             allowedTimePeriodAbort="false")
         self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
-        for i in xrange(10):
+        for i in range(10):
             active_tasks = self.cluster.async_monitor_active_task(
                 self.cluster.master,
                 "bucket_compaction",
@@ -516,7 +516,7 @@ class AutoCompactionTests(CollectionBase):
             allowedTimePeriodAbort="false")
         self._load_all_buckets(self.gen_load, "create", items=self.num_items)
         self._monitor_DB_fragmentation(self.bucket)
-        for i in xrange(10):
+        for i in range(10):
             active_tasks = self.cluster.async_monitor_active_task(
                 self.cluster.master,
                 "bucket_compaction",

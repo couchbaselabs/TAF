@@ -584,7 +584,7 @@ class ClusterUtils:
         nodes = rest.node_statuses()
         master_id = rest.get_nodes_self().id
         for node in nodes:
-            if int(node.port) in xrange(9091, 9991):
+            if int(node.port) in range(9091, 9991):
                 rest.eject_node(node)
                 nodes.remove(node)
 
@@ -1258,7 +1258,7 @@ class ClusterUtils:
         progress = 0
         previous_progress = 0
         retry = 0
-        while progress is not -1 and progress < percentage and retry < num_retry:
+        while progress != -1 and progress < percentage and retry < num_retry:
             # -1 is error , -100 means could not retrieve progress
             progress = rest._rebalance_progress()
             if progress == -100:

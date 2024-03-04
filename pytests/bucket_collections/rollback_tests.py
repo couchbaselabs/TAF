@@ -166,7 +166,7 @@ class RollbackTests(CollectionBase):
         cb_stats = self.node_shells[target_node]["cbstat"]
         self.target_vbuckets = cb_stats.vbucket_list(self.bucket.name)
 
-        for _ in xrange(1, self.num_rollbacks + 1):
+        for _ in range(1, self.num_rollbacks + 1):
             self.total_rollback_items = 0
             error_sim.create(CouchbaseError.STOP_PERSISTENCE, self.bucket.name)
             doc_loading_task_1 = self.load_docs(self.doc_ops)
@@ -240,7 +240,7 @@ class RollbackTests(CollectionBase):
         cbstats = self.node_shells[target_node]["cbstat"]
         self.target_vbuckets = cbstats.vbucket_list(self.bucket.name)
 
-        for i in xrange(1, self.num_rollbacks + 1):
+        for i in range(1, self.num_rollbacks + 1):
             self.total_rollback_items = 0
             self.log.info("Stopping persistence on %s" % target_node.ip)
             Cbepctl(shell).persistence(self.bucket.name, "stop")

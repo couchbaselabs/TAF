@@ -193,7 +193,7 @@ class DCPUtils(object):
         else:
             filter_json.append('')
         for f in filter_json:
-            for index in xrange(0, len(self.vb_list)):
+            for index in range(0, len(self.vb_list)):
                 if self.stream_req_info:
                     self.log.info('Stream to vbucket %s on node %s with seq no %s and uuid %s' \
                                   % (self.vb_list[index], self.get_node_of_dcp_client_connection(

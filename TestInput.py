@@ -151,7 +151,7 @@ class TestInputParser:
                 argument_split = [a.strip() for a in re.split("[,]?([^,=]+)=",
                                                               argument)[1:]]
                 pairs = dict(zip(argument_split[::2], argument_split[1::2]))
-                for pair in pairs.iteritems():
+                for pair in pairs.items():
                     argument_list = [a.strip() for a in pair[1].split(",")]
                     if len(argument_list) > 1:
                         # if the parameter had multiple entries separated

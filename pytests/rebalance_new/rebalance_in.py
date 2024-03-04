@@ -596,7 +596,7 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
         self.sleep(5)
-        rest_cons = [RestConnection(self.cluster.servers[i]) for i in xrange(self.nodes_init)]
+        rest_cons = [RestConnection(self.cluster.servers[i]) for i in range(self.nodes_init)]
         result = []
         num_iter = 0
         # get random keys for each node during rebalancing
@@ -621,7 +621,7 @@ class RebalanceInTests(RebalanceBaseTest):
             current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
             self.num_items = current_items
         # get random keys for new added nodes
-        rest_cons = [RestConnection(self.cluster.servers[i]) for i in xrange(self.nodes_init + self.nodes_in)]
+        rest_cons = [RestConnection(self.cluster.servers[i]) for i in range(self.nodes_init + self.nodes_in)]
         for rest in rest_cons:
             result = rest.get_random_key('default')
         self.bucket_util.verify_cluster_stats(self.cluster, self.num_items,
@@ -880,7 +880,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 bucket=bucket, wait_time=timeout)
             self.assertTrue(result, "Failure in view query")
 
-        for i in xrange(iterations_to_try):
+        for i in range(iterations_to_try):
             servs_in = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
             rebalance = self.task.async_rebalance(self.cluster, servs_in, [])
             self.sleep(self.wait_timeout / 5)
@@ -1122,7 +1122,7 @@ class RebalanceInTests(RebalanceBaseTest):
                         "unable to reach compaction value {0} after {1} sec"
                         .format(fragmentation_value, time.time()-end_time))
 
-        for _ in xrange(3):
+        for _ in range(3):
             active_tasks = self.cluster_util.async_monitor_active_task(
                 self.cluster.master, "indexer",
                 "_design/" + prefix + ddoc_name, wait_task=False)

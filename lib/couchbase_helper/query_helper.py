@@ -293,7 +293,7 @@ class QueryHelper(object):
         if "MYSQL_CLOSED_PAR" in new_sql:
             new_sql = new_sql.replace("MYSQL_CLOSED_PAR", ")")
             new_n1ql = new_n1ql.replace("MYSQL_CLOSED_PAR", " ")
-        for x in xrange(0, randint(0, 5)):
+        for x in range(0, randint(0, 5)):
             alias_name = "tb_"+self._random_char() + str(count1)
             print("alias name is %s" % alias_name)
             new_n1ql = "SELECT {0}.* FROM ({1}) {0}".format(alias_name, new_n1ql)
@@ -437,7 +437,7 @@ class QueryHelper(object):
         if "MYSQL_CLOSED_PAR" in new_sql:
                 new_sql = new_sql.replace("MYSQL_CLOSED_PAR", ")")
                 new_n1ql = new_n1ql.replace("MYSQL_CLOSED_PAR", " ")
-        for _ in xrange(0, randint(0, 5)):
+        for _ in range(0, randint(0, 5)):
             alias_name = "tb_"+self._random_char() + str(count1)
             new_n1ql = "SELECT {0}.* FROM ({1}) {0}".format(alias_name,new_n1ql)
         new_sql = new_sql.replace("NOT_EQUALS", " NOT IN ")
@@ -818,7 +818,7 @@ class QueryHelper(object):
 
     def _generate_random_range(self, list):
         num_to_gen = randrange(1, len(list)+1)
-        rand_sample = [list[i] for i in sorted(random.sample(xrange(len(list)), num_to_gen))]
+        rand_sample = [list[i] for i in sorted(random.sample(range(len(list)), num_to_gen))]
         return rand_sample
 
     def _random_alphanumeric(self, limit=10):

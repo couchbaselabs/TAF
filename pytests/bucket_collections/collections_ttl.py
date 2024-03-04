@@ -211,7 +211,7 @@ class CollectionsTTL(CollectionBase):
             collection="collection_1")
         self.bucket_util._expiry_pager(self.cluster)
         self.sleep(60, "Sleep for sometime before we update")
-        for i in xrange(1, 5):
+        for i in range(1, 5):
             if self.update_max_ttl:
                 self.update_maxTTL_mutliple_times(self.bucket)
                 final_wait_time += 25
@@ -275,7 +275,7 @@ class CollectionsTTL(CollectionBase):
             self.bucket_util.update_ttl_for_collections(self.cluster, self.bucket, ttl_value=86400)
         self.bucket_util._expiry_pager(self.cluster)
         self.sleep(60, "Sleep for sometime before we update")
-        for i in xrange(1, 5):
+        for i in range(1, 5):
             update_load_gen = copy.deepcopy(self.load_gen)
             self.task.load_gen_docs(
                 self.cluster, self.bucket, update_load_gen, "update", exp=200,

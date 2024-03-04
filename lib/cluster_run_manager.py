@@ -71,7 +71,7 @@ class CRManager:
     def __init__(self, num_nodes, start_index=0):
         self.num_nodes = num_nodes
         self.nodes = {}
-        for i in xrange(num_nodes):
+        for i in range(num_nodes):
             self.nodes[start_index] = None
             start_index += 1
 

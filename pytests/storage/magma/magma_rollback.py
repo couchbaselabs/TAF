@@ -298,7 +298,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                                                    name)
         start = self.num_items
         self.gen_read = copy.deepcopy(self.gen_create)
-        for _ in xrange(1, self.num_rollbacks+1):
+        for _ in range(1, self.num_rollbacks+1):
             # Stopping persistence on NodeA
             mem_client = MemcachedClientHelper.direct_client(
                 self.cluster.nodes_in_cluster[0], self.cluster.buckets[0])

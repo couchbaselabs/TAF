@@ -5398,7 +5398,7 @@ class BucketUtils(ScopeUtils):
                                retry_time=2):
         tasks = []
         result = True
-        for i in xrange(num_views):
+        for i in range(num_views):
             tasks.append(self.async_query_view(
                 server, prefix + ddoc_name, view_name + str(i), query,
                 expected_rows, bucket, retry_time))
@@ -5424,7 +5424,7 @@ class BucketUtils(ScopeUtils):
         ref_view.name = (prefix, ref_view.name)[prefix is None]
         if different_map:
             views = []
-            for i in xrange(count):
+            for i in range(count):
                 views.append(View(ref_view.name + str(i),
                                   'function (doc, meta) {'
                                   'emit(meta.id, "emitted_value%s");}'
@@ -5434,7 +5434,7 @@ class BucketUtils(ScopeUtils):
             return [
                 View("{0}{1}".format(ref_view.name, i),
                      ref_view.map_func, None, is_dev_ddoc)
-                for i in xrange(count)
+                for i in range(count)
             ]
 
     @staticmethod

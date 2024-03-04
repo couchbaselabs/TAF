@@ -116,10 +116,10 @@ class S3DataHelper():
         if not no_of_folder or not max_depth:
             return folder_paths
         else:
-            for i in xrange(0, no_of_folder):
+            for i in range(0, no_of_folder):
                 depth = random.randint(1, max_depth)
                 path = copy.deepcopy(root_path)
-                for j in xrange(0, depth):
+                for j in range(0, depth):
                     path += "folder{0}/".format(str(random.randint(0, no_of_folder)))
                 folder_paths.append(path)
             return folder_paths
@@ -134,7 +134,7 @@ class S3DataHelper():
         :return: list of file names.
         """
         filenames = list()
-        for i in xrange(0, no_of_files):
+        for i in range(0, no_of_files):
             # filenames.append("file_%03d.%s" % (i, random.choice(formats)))
             filenames.append("file_{0}.{1}".format(str(i), random.choice(formats)))
         return filenames
@@ -236,7 +236,7 @@ class S3DataHelper():
         files_per_thread = abs(len(item_list) / self.max_thread_count) + 1
         start = 0
         count = 0
-        for i in xrange(0, len(item_list)):
+        for i in range(0, len(item_list)):
             if count > self.max_thread_count or start >= len(item_list):
                 break
             else:
