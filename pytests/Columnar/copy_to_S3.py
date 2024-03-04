@@ -25,7 +25,7 @@ from awsLib.s3_data_helper import perform_S3_operation
 class CopyToS3(ColumnarBaseTest):
     def setUp(self):
         super(CopyToS3, self).setUp()
-        self.cluster = self.user.project.clusters[0]
+        self.cluster = self.project.instances[0]
         self.remote_cluster_id = None
         self.aws_access_key = self.input.param("aws_access_key")
         self.aws_secret_key = self.input.param("aws_secret_key")

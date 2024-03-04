@@ -17,7 +17,7 @@ class KafkaLinks(GoldFishBaseTest):
         super(KafkaLinks, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.cluster = self.user.project.clusters[0]
+        self.cluster = self.project.instances[0]
         self.cbas_util.cleanup_cbas(self.cluster)
 
         self.mongo_connection_string = self.input.param("mongo_on_prem_url",
