@@ -1,7 +1,7 @@
 import getopt
 import re
 import logging
-import ConfigParser
+import configparser
 import os
 
 from builds.build_query import BuildQuery
@@ -183,7 +183,7 @@ class TestInputParser:
         servers = []
         ips = []
         t_input = TestInput()
-        config = ConfigParser.ConfigParser()
+        config = configparser.ConfigParser()
         config.read(input_file)
         sections = config.sections()
         global_properties = {}
