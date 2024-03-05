@@ -370,10 +370,11 @@ class APIBase(CouchbaseBaseTest):
 
     def throttle_test(self, api_func_list, api_keys):
         """
-        param apis_to_call: (list(list)) List of lists, where inner list
-            is of format [api_function_call, function_args]
-        param api_key_dict: dict API keys to be used while making API
-            calls
+        param api_func_list: (list(list)) List of lists, where inner list is of
+                            format [api_function_call, function_args]
+
+        param api_keys: dict of all API keys that are to be used while making
+                        API calls.
         """
         if self.input.param("rate_limit", False):
             results = self.make_parallel_api_calls(
@@ -381,8 +382,8 @@ class APIBase(CouchbaseBaseTest):
             for r in results:
                 self.log.info("**********************************************")
                 self.log.info("Parallel API calls for role {} took {} seconds"
-                               .format(results[r]["role"], (results[r]["end"]
-                                       - results[r]["start"]).total_seconds()))
+                              .format(results[r]["role"], (results[r]["end"]
+                                      - results[r]["start"]).total_seconds()))
                 self.log.info("**********************************************")
             for result in results:
                 if ((not results[result]["rate_limit_hit"])
@@ -402,8 +403,8 @@ class APIBase(CouchbaseBaseTest):
         for r in results:
             self.log.info("**********************************************")
             self.log.info("Parallel API calls for role {} took {} seconds"
-                           .format(results[r]["role"], (results[r]["end"]
-                                   - results[r]["start"]).total_seconds()))
+                          .format(results[r]["role"], (results[r]["end"]
+                                  - results[r]["start"]).total_seconds()))
             self.log.info("**********************************************")
         return results
 
@@ -527,15 +528,15 @@ class APIBase(CouchbaseBaseTest):
             # create a new API key with expiry of approx 2 mins
             resp = self.capellaAPI.org_ops_apis.create_api_key(
                 self.organisation_id, "Expiry_Key", ["organizationOwner"],
-                expiry=0.001)
+                expiry=0.0001)
             if resp.status_code == 201:
                 self.api_keys["organizationOwner_new"] = resp.json()
             else:
                 self.fail("Error while creating API key for organization "
                           "owner with expiry of 0.001 days")
             # wait for key to expire
-            self.log.debug("Sleeping 3 minutes for key to expire")
-            time.sleep(180)
+            self.log.debug("Sleeping 10 seconds for key to expire")
+            time.sleep(10)
             self.update_auth_with_api_token(
                 self.api_keys["organizationOwner_new"]["token"])
             del self.api_keys["organizationOwner_new"]
@@ -586,12 +587,29 @@ class APIBase(CouchbaseBaseTest):
         else:
             self.update_auth_with_api_token(testcase["token"])
 
-    def validate_testcase(self, result, success_code, testcase, failures):
-        if result.status_code >= 500:
+    def validate_testcase(self, result, success_codes, testcase, failures,
+                          validate_response=False, expected_res=None,
+                          resource_id=None):
+        if result.status_code in success_codes:
+            if "expected_error" in testcase:
+                self.log.error("NO ERRORS in Response, But Test expected "
+                               "error: {}".format(testcase["expected_error"]))
+                self.log.warning("Result : {}".format(result.json()))
+                failures.append(testcase["description"])
+            if validate_response:
+                if not self.validate_api_response(
+                        expected_res, result.json(), resource_id):
+                    self.log.error("Status == {}, Key validation Failure : {}"
+                                   .format(result.status_code,
+                                           testcase["description"]))
+                    self.log.warning("Result : {}".format(result.content))
+                    failures.append(testcase["description"])
+            else:
+                return True
+        elif result.status_code >= 500:
             self.log.critical(testcase["description"])
             self.log.warning(result.content)
             failures.append(testcase["description"])
-            return
         elif "expected_status_code" not in testcase:
             self.log.error("Expected NO ERRORS but got {}".format(result))
             self.log.warning(result.content)
@@ -601,9 +619,9 @@ class APIBase(CouchbaseBaseTest):
                 result = result.json()
                 for key in result:
                     if result[key] != testcase["expected_error"][key]:
-                        self.log.error("Status != {}, Key validation "
-                                       "Failure : {}".format(
-                                        success_code, testcase["description"]))
+                        self.log.error(
+                            "Status != {}, Error validation Failure : {}"
+                            .format(success_codes, testcase["description"]))
                         self.log.warning("Failure : {}".format(result))
                         failures.append(testcase["description"])
                         break
@@ -619,6 +637,7 @@ class APIBase(CouchbaseBaseTest):
                                             result.status_code))
             self.log.warning("Result : {}".format(result.content))
             failures.append(testcase["description"])
+        return False
 
     def validate_onoff_state(self, states, proj, clus, app=None, sleep=2):
         if sleep:
@@ -662,6 +681,33 @@ class APIBase(CouchbaseBaseTest):
                     actual_res[key], expected_res[key])
             elif expected_res[key]:
                 if expected_res[key] != actual_res[key]:
+                    return False
+        return True
+
+    def validate_api_response(self, expected_res, actual_res, id):
+        for key in actual_res:
+            if key not in expected_res:
+                return False
+            if isinstance(expected_res[key], dict):
+                self.validate_api_response(
+                    expected_res[key], actual_res[key], id)
+            elif isinstance(expected_res[key], list):
+                if key == "services":
+                    for service in expected_res[key]:
+                        if service not in actual_res[key]:
+                            return False
+                    continue
+                for i in range(len(expected_res[key])):
+                    if (actual_res[key] is "data" and
+                            actual_res[key][i]["id"] != id):
+                        continue
+                    self.validate_api_response(
+                        expected_res[key][i], actual_res[key][i], id)
+            elif expected_res[key]:
+                if expected_res[key] == "version":
+                    if expected_res[key] not in actual_res[key]:
+                        return False
+                elif expected_res[key] != actual_res[key]:
                     return False
         return True
 
@@ -814,6 +860,21 @@ class APIBase(CouchbaseBaseTest):
                 project_deletion_failed = project_deletion_failed or True
         return project_deletion_failed
 
+    def create_alert_to_be_tested(self, proj_id, kind, name, config):
+        self.update_auth_with_api_token(self.org_owner_key['token'])
+        res = self.capellaAPI.cluster_ops_apis.create_alert(
+            self.organisation_id, proj_id, kind, name, config)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+            res = self.capellaAPI.cluster_ops_apis.create_alert(
+                self.organisation_id, proj_id, kind, name, config)
+        if res.status_code == 201:
+            alert_id = res.json()['id']
+            self.log.info("New alert ID: {}".format(alert_id))
+            return alert_id
+        self.log.error(res.content)
+        self.fail("!!!...New alert creation failed...!!!")
+
     def create_bucket_to_be_tested(self, org_id, proj_id, clus_id, buck_name):
         # Wait for cluster to rebalance (if it is).
         self.update_auth_with_api_token(self.org_owner_key['token'])
@@ -844,10 +905,10 @@ class APIBase(CouchbaseBaseTest):
                 100, "seqno", "none", 1, False, 0)
         if resp.status_code == 201:
             buck_id = resp.json()['id']
-            self.log.debug("New bucket created, ID: {}".format(buck_id))
+            self.log.debug("New bucket ID: {}".format(buck_id))
             return buck_id
-        self.log.error(resp)
-        self.fail("New bucket creation failed.")
+        self.log.error(resp.content)
+        self.fail("!!!...New bucket creation failed...!!!")
 
     def delete_buckets(self, org_id, proj_id, clus_id, bucket_ids):
         bucket_deletion_failed = False
@@ -897,8 +958,10 @@ class APIBase(CouchbaseBaseTest):
             res = self.capellaAPI.cluster_ops_apis.create_scope(
                 org_id, proj_id, clus_id, buck_id, new_scope_name)
         if res.status_code == 201:
+            self.log.debug("New scope Name: {}".format(new_scope_name))
             return new_scope_name
-        self.fail("Scope creation unsuccessful.")
+        self.log.error(res.content)
+        self.fail("!!!...Scope creation unsuccessful...!!!")
 
     def create_collection_to_be_tested(self, org_id, proj_id, clus_id,
                                        buck_id, scope_name):
@@ -912,8 +975,30 @@ class APIBase(CouchbaseBaseTest):
             res = self.capellaAPI.cluster_ops_apis.create_collection(
                 org_id, proj_id, clus_id, buck_id, scope_name, new_coll_name)
         if res.status_code == 201:
+            self.log.debug("New collection Name: {}".format(new_coll_name))
             return new_coll_name
-        self.fail("Collection creation unsuccessful.")
+        self.log.error(res.content)
+        self.fail("!!!...Collection creation unsuccessful...!!!")
+
+    def flush_alerts(self, project_id, alerts):
+        self.update_auth_with_api_token(self.org_owner_key['token'])
+
+        alert_deletion_failed = False
+        for alert in alerts:
+            res = self.capellaAPI.cluster_ops_apis.delete_alert(
+                self.organisation_id, project_id, alert)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers["Retry-After"]))
+                res = self.capellaAPI.cluster_ops_apis.delete_alert(
+                    self.organisation_id, project_id, alert)
+            if res.status_code != 200:
+                self.log.warning("Error while deleting alert {}".format(alert))
+                self.log.error("Response: {}".format(res.content))
+                alert_deletion_failed = True
+            else:
+                alerts.remove(alert)
+
+        return alert_deletion_failed
 
     def flush_scopes(self, org_id, proj_id, clus_id, buck_id, scopes):
         self.update_auth_with_api_token(self.org_owner_key['token'])
@@ -927,7 +1012,8 @@ class APIBase(CouchbaseBaseTest):
                 res = self.capellaAPI.cluster_ops_apis.delete_scope(
                     org_id, proj_id, clus_id, buck_id, scope)
             if res.status_code != 200:
-                self.log.error("Error while deleting scope {}".format(scope))
+                self.log.warning("Error while deleting scope {}".format(scope))
+                self.log.error("Response: {}".format(res.content))
                 scopes_deletion_failed = True
             else:
                 scopes.remove(scope)
@@ -947,8 +1033,9 @@ class APIBase(CouchbaseBaseTest):
                 res = self.capellaAPI.cluster_ops_apis.delete_collection(
                     org_id, proj_id, clus_id, buck_id, scope, collection)
             if res.status_code != 200:
-                self.log.error("Error while deleting collection {}"
-                               .format(collection))
+                self.log.warning("Error while deleting collection {}"
+                                 .format(collection))
+                self.log.error("Response: {}".format(res.content))
                 collections_deletion_failed = True
             else:
                 collections.remove(collection)
