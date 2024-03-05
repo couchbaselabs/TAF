@@ -734,7 +734,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
 
         self.retry_get_process_num = self.input.param("retry_get_process_num", 40)
 
-        rebalance_in_task_result = self.task.rebalance([self.cluster.master],
+        rebalance_in_task_result = self.task.rebalance(self.cluster,
                                                        nodes_in,
                                                        [],
                                                        services=services)
@@ -745,7 +745,7 @@ class PlasmaStatsTest(PlasmaBaseTest):
         self.log.info("Rebalance in task completed, starting Rebalance-out task")
         self.num_failed_nodes = self.input.param("num_failed_nodes", 1)
         self.nodes_out = indexer_nodes_list[:self.num_failed_nodes]
-        rebalance_out_task_result = self.task.rebalance([self.cluster.master],
+        rebalance_out_task_result = self.task.rebalance(self.cluster,
                                                         [],
                                                         to_remove=self.nodes_out)
         self.assertTrue(rebalance_out_task_result, "Rebalance out task failed")
