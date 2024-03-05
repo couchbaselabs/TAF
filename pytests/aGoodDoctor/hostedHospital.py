@@ -413,7 +413,7 @@ class Murphy(BaseTestCase, hostedOPD):
             "collections_defn": [
                 {
                     "valType": "NimbusP",
-                    "2i": [2, 2],
+                    "2i": [2, 3],
                     "FTS": [0, 0],
                     "cbas": [0, 0, 0]
                 },

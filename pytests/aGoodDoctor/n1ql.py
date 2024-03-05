@@ -227,8 +227,8 @@ class DoctorN1QL():
         self.query_failure = False
 
     def create_indexes(self, buckets, skip_index=False):
-        counter = 0
         for b in buckets:
+            counter = 0
             b.indexes = dict()
             b.queries = list()
             b.query_map = dict()
@@ -290,7 +290,7 @@ class DoctorN1QL():
                             query = unformatted_q.format(c)
                             print query
                             if unformatted_q not in b.query_map.keys():
-                                b.query_map[unformatted_q] = ["Q%s" % (counter % len(queryType))]
+                                b.query_map[unformatted_q] = ["Q%s" % counter]
                                 if queryParams:
                                     b.query_map[unformatted_q].append(queryParams[counter % len(queryParams)])
                                 else:
