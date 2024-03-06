@@ -999,9 +999,9 @@ class SecurityTest(SecurityBase):
                                                                       self.collections[num])
 
             if tenant_id == "valid_tenant_id":
-                self.assertEqual(200, resp.status_code,
+                self.assertEqual(204, resp.status_code,
                                  msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                              200))
+                                                                              204))
                 num = num + 1
 
             else:

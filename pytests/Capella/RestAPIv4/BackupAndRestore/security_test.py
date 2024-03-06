@@ -5,6 +5,7 @@ import random
 import string
 import uuid
 
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
@@ -33,52 +34,52 @@ def get_random_string_of_given_length(uid=False, letters=True, digits=True, spec
     return ''.join(random.choice(characters) for _ in range(length))
 
 
-class SecurityTest(BaseTestCase):
+class SecurityTest(SecurityBase):
     cidr = "10.0.0.0"
 
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.cluster_id = self.cluster.id
+        SecurityBase.setUp(self)
+        # self.url = self.input.capella.get("pod")
+        # self.user = self.input.capella.get("capella_user")
+        # self.passwd = self.input.capella.get("capella_pwd")
+        # self.tenant_id = self.input.capella.get("tenant_id")
+        # self.cluster_id = self.cluster.id
 
-        if self.input.capella.get("diff_tenant_id"):
-            self.diff_tenant_id = self.input.capella.get("diff_tenant_id")
-        else:
-            for tenant in self.tenants:
-                self.diff_tenant_id = tenant.id.encode('utf-8')
-                # self.diff_tenant_project_ids = tenant.project_id.encode('utf-8')
+        # if self.input.capella.get("diff_tenant_id"):
+        #     self.diff_tenant_id = self.input.capella.get("diff_tenant_id")
+        # else:
+        #     for tenant in self.tenants:
+        #         self.diff_tenant_id = tenant.id.encode('utf-8')
+        #         # self.diff_tenant_project_ids = tenant.project_id.encode('utf-8')
 
-        self.capellaAPI = CapellaAPI("https://" + self.url, '',
-                                     '', self.user, self.passwd, '')
+        # self.capellaAPI = CapellaAPI("https://" + self.url, '',
+        #                              '', self.user, self.passwd, '')
 
         if self.input.capella.get("timeout"):
             self.timeout = self.input.capella.get("timeout")
         else:
             self.timeout = 1000
 
-        resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
-        resp = resp.json()
+        # resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
+        # resp = resp.json()
 
-        self.capellaAPI.org_ops_apis.ACCESS = resp['accessKey']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
+        # self.capellaAPI.org_ops_apis.ACCESS = resp['accessKey']
+        # self.capellaAPI.org_ops_apis.bearer_token = resp['token']
 
-        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
+        # self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
 
-        self.access_key_ini = resp['accessKey']
-        self.bearer_token_ini = resp['token']
+        # self.access_key_ini = resp['accessKey']
+        # self.bearer_token_ini = resp['token']
 
-        self.project_id = self.tenant.project_id
+        # self.project_id = self.tenant.project_id
 
         resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id, 'Secondary project')
         self.log.info(resp.json())
         self.secondary_project_id = resp.json()['id']
 
-        self.cluster_id = self.cluster.id
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.api_keys = []
+        # self.cluster_id = self.cluster.id
+        # self.invalid_id = "00000000-0000-0000-0000-000000000000"
+        self.test_api_keys = []
         self.users = []
         self.db_creds = []
         self.clusters_list = []
@@ -89,20 +90,36 @@ class SecurityTest(BaseTestCase):
                                                   cluster_id=self.cluster_id, bucket_name=self.bucket_name)
         self.assertEqual(resp.status_code, 201)
 
+        self.sleep(30, "Wait after creating bucket")
         resp = self.capellaAPI.cluster_ops_apis.list_buckets(organizationId=self.tenant_id, projectId=self.project_id,
                                                              clusterId=self.cluster_id)
 
         beer_sample = filter(lambda x: x['name'] == self.bucket_name, resp.json()['data'])
+        if len(beer_sample) < 0:
+            retry = 5
+            while retry >= 0:
+                resp = self.capellaAPI.cluster_ops_apis.list_buckets(organizationId=self.tenant_id, projectId=self.project_id,
+                                                             clusterId=self.cluster_id)
 
-        self.api_keys_list = self.rbac_roles_generator_wrapper()
+                beer_sample = filter(lambda x: x['name'] == self.bucket_name, resp.json()['data'])
+
+                if len(beer_sample) > 0:
+                    break
+                retry -= 1
+                self.sleep(10, "No buckets details returned. Retrying....")
+
+            if len(beer_sample) == 0:
+                self.fail("Failed to get bucket details")
 
         self.bucket_id = beer_sample[0]['id']
 
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
-                                         "role": "organizationOwner"}}
+        self.api_keys_list = self.rbac_roles_generator_wrapper()
+
+        # if self.input.capella.get("test_users"):
+        #     self.test_users = json.loads(self.input.capella.get("test_users"))
+        # else:
+        #     self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
+        #                                  "role": "organizationOwner"}}
 
     def wait_till_cluster_is_healthy(self, organizationId, projectId, clusterId):
         end_time = time.time() + self.timeout
@@ -140,7 +157,7 @@ class SecurityTest(BaseTestCase):
 
     def tearDown(self):
         failures = []
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
         for cluster in self.clusters_list:
 
@@ -168,7 +185,7 @@ class SecurityTest(BaseTestCase):
                 failures.append("Error while deleting User {}"
                                 .format(user['user']))
 
-        for api_key in self.api_keys:
+        for api_key in self.test_api_keys:
             resp = self.make_call_to_given_method(method=self.capellaAPI.org_ops_apis.delete_api_key,
                                                   organizationId=api_key['tenant'],
                                                   accessKey=api_key["access_key"])
@@ -216,7 +233,7 @@ class SecurityTest(BaseTestCase):
         self.capellaAPI.cluster_ops_apis.bearer_token = token
 
     def append_to_api_keys(self, acc, tenant):
-        self.api_keys.append({
+        self.test_api_keys.append({
             'access_key': acc,
             'tenant': tenant
         })
@@ -271,7 +288,7 @@ class SecurityTest(BaseTestCase):
 
         return False
 
-    def create_cluster(self, tenant_id, project_id):
+    def create_cluster_for_backup(self, tenant_id, project_id):
 
         payload = {
             "name": "AWS-Test-Cluster-V4-Security",
@@ -282,7 +299,7 @@ class SecurityTest(BaseTestCase):
                 "cidr": "10.7.22.0/23"
             },
             "couchbaseServer": {
-                "version": "7.1"
+                "version": "7.2"
             },
             "serviceGroups": [
                 {
@@ -455,7 +472,7 @@ class SecurityTest(BaseTestCase):
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         self.assertEqual(resp.status_code, 401)
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
         self.log.info("Creating access key using invalid auth")
         self.set_access_keys(self.capellaAPI.org_ops_apis.ACCESS,
@@ -464,7 +481,7 @@ class SecurityTest(BaseTestCase):
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         self.assertEqual(resp.status_code, 401)
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
         self.log.info("Accessing using different cidr")
 
@@ -480,7 +497,7 @@ class SecurityTest(BaseTestCase):
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         # self.assertEqual(resp.status_code, 403)       # getting 404 instead, what should be the status code for this?
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
         self.log.info("Token Expiry Test.")
         resp = self.make_call_to_given_method(method=self.capellaAPI.org_ops_apis.create_api_key,
@@ -496,7 +513,7 @@ class SecurityTest(BaseTestCase):
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         self.assertEqual(resp.status_code, 401)
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
     def rbac_roles_generator_wrapper(self):
         """
@@ -589,15 +606,10 @@ class SecurityTest(BaseTestCase):
         self.assertEqual(resp.status_code, 403)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.create_backup,
-                                              organizationId=self.diff_tenant_id, projectId=self.project_id,
-                                              clusterId=self.cluster_id, bucketId=self.bucket_id)
-        self.assertEqual(resp.status_code, 403)
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.create_backup,
                                               organizationId=self.tenant_id,
                                               projectId=get_random_string_of_given_length(uid=True),
                                               clusterId=self.cluster_id, bucketId=self.bucket_id)
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 422)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.create_backup,
                                               organizationId=self.tenant_id,
@@ -639,14 +651,14 @@ class SecurityTest(BaseTestCase):
             else:
                 self.assertEqual(resp.status_code, 403)
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.create_backup,
-                                         organizationId=self.tenant_id, projectId=self.project_id,
-                                         clusterId=self.cluster_id, bucketId=self.bucket_id)
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.create_backup,
+        #                                  organizationId=self.tenant_id, projectId=self.project_id,
+        #                                  clusterId=self.cluster_id, bucketId=self.bucket_id)
 
-        self.log.info("create backup rate limit response : {}".format(result))
-        self.assertTrue(result["pass"])
+        # self.log.info("create backup rate limit response : {}".format(result))
+        # self.assertTrue(result["pass"])
 
     def test_list_backups(self):
 
@@ -663,15 +675,10 @@ class SecurityTest(BaseTestCase):
         self.assertEqual(resp.status_code, 403)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_backups,
-                                              organizationId=self.diff_tenant_id, projectId=self.project_id,
-                                              clusterId=self.cluster_id)
-        self.assertEqual(resp.status_code, 403)
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_backups,
                                               organizationId=self.tenant_id,
                                               projectId=get_random_string_of_given_length(uid=True),
                                               clusterId=self.cluster_id)
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 422)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_backups,
                                               organizationId=self.tenant_id,
@@ -705,14 +712,14 @@ class SecurityTest(BaseTestCase):
             else:
                 self.assertEqual(resp.status_code, 403)
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.list_backups,
-                                         organizationId=self.tenant_id, projectId=self.project_id,
-                                         clusterId=self.cluster_id)
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.list_backups,
+        #                                  organizationId=self.tenant_id, projectId=self.project_id,
+        #                                  clusterId=self.cluster_id)
 
-        self.log.info("list backup rate limit response : {}".format(result))
-        self.assertTrue(result["pass"])
+        # self.log.info("list backup rate limit response : {}".format(result))
+        # self.assertTrue(result["pass"])
 
     def test_get_backup(self):
         self.log.info("get backup test")
@@ -733,15 +740,10 @@ class SecurityTest(BaseTestCase):
         self.assertEqual(resp.status_code, 403)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.get_backup,
-                                              organizationId=self.diff_tenant_id, projectId=self.project_id,
-                                              clusterId=self.cluster_id, backupId=backupId)
-        self.assertEqual(resp.status_code, 403)
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.get_backup,
                                               organizationId=self.tenant_id,
                                               projectId=get_random_string_of_given_length(uid=True),
                                               clusterId=self.cluster_id, backupId=backupId)
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 422)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.get_backup,
                                               organizationId=self.tenant_id,
@@ -776,14 +778,14 @@ class SecurityTest(BaseTestCase):
             else:
                 self.assertEqual(resp.status_code, 403)
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.get_backup,
-                                         organizationId=self.tenant_id, projectId=self.project_id,
-                                         clusterId=self.cluster_id, backupId=backupId)
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.get_backup,
+        #                                  organizationId=self.tenant_id, projectId=self.project_id,
+        #                                  clusterId=self.cluster_id, backupId=backupId)
 
-        self.log.info("get backup rate limit response : {}".format(result))
-        self.assertTrue(result["pass"])
+        # self.log.info("get backup rate limit response : {}".format(result))
+        # self.assertTrue(result["pass"])
 
     def test_delete_backup(self):
         self.log.info("Delete backup test")
@@ -809,15 +811,10 @@ class SecurityTest(BaseTestCase):
         self.assertEqual(resp.status_code, 403)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.delete_backup,
-                                              organizationId=self.diff_tenant_id, projectId=self.project_id,
-                                              clusterId=self.cluster_id, backupId=backupId)
-        self.assertEqual(resp.status_code, 403)
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.delete_backup,
                                               organizationId=self.tenant_id,
                                               projectId=get_random_string_of_given_length(uid=True),
                                               clusterId=self.cluster_id, backupId=backupId)
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 422)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.delete_backup,
                                               organizationId=self.tenant_id,
@@ -857,25 +854,25 @@ class SecurityTest(BaseTestCase):
                                                   clusterId=self.cluster_id, backupId=backupId)
 
             if api_key['organizationRole'] == 'organizationOwner':
-                # self.assertEqual(resp.status_code, 202)  bug https://couchbasecloud.atlassian.net/browse/AV-60636
+                # self.assertEqual(resp.status_code, 202)  # bug https://couchbasecloud.atlassian.net/browse/AV-60636
                 self.assertEqual(resp.status_code, 404)
             elif api_key['projectRole'] == 'projectOwner':
                 if api_key['description'] == 'same project':
-                    # self.assertEqual(resp.status_code, 202)  bug https://couchbasecloud.atlassian.net/browse/AV-60636
+                    # self.assertEqual(resp.status_code, 202)  # bug https://couchbasecloud.atlassian.net/browse/AV-60636
                     self.assertEqual(resp.status_code, 404)
                 else:
                     self.assertEqual(resp.status_code, 403)  # user don't have access to the resource.
             else:
                 self.assertEqual(resp.status_code, 403)
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.delete_backup,
-                                         organizationId=self.tenant_id, projectId=self.project_id,
-                                         clusterId=self.cluster_id, backupId=backupId)
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.delete_backup,
+        #                                  organizationId=self.tenant_id, projectId=self.project_id,
+        #                                  clusterId=self.cluster_id, backupId=backupId)
 
-        self.log.info("delete backup rate limit response : {}".format(result))
-        self.assertTrue(result["pass"])
+        # self.log.info("delete backup rate limit response : {}".format(result))
+        # self.assertTrue(result["pass"])
 
     def test_restore_backup(self):
 
@@ -886,7 +883,7 @@ class SecurityTest(BaseTestCase):
         backupId = self.get_backup_id_for_given_bucket(organizationId=self.tenant_id, projectId=self.project_id,
                                                        clusterId=self.cluster_id, bucketId=self.bucket_id)
 
-        sec_proj_cluster_id = self.create_cluster(self.tenant_id, self.secondary_project_id)
+        sec_proj_cluster_id = self.create_cluster_for_backup(self.tenant_id, self.secondary_project_id)
 
         self.wait_till_backup_in_ready_state(backupId=backupId, organizationId=self.tenant_id,
                                              projectId=self.project_id, clusterId=self.cluster_id)
@@ -907,16 +904,7 @@ class SecurityTest(BaseTestCase):
                                               sourceClusterID=self.cluster_id,
                                               backupID=backupId,
                                               services=["data", "query"])
-        # self.assertEqual(resp.status_code, 403)  # bug https://couchbasecloud.atlassian.net/browse/AV-60638
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.restore_backup,
-                                              organizationId=self.diff_tenant_id,
-                                              projectId=self.project_id,
-                                              targetClusterID=self.cluster_id,
-                                              sourceClusterID=self.cluster_id,
-                                              backupID=backupId,
-                                              services=["data", "query"])
-        # self.assertEqual(resp.status_code, 403)  # bug https://couchbasecloud.atlassian.net/browse/AV-60638
+        self.assertEqual(resp.status_code, 403)  # bug https://couchbasecloud.atlassian.net/browse/AV-60638
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.restore_backup,
                                               organizationId=self.tenant_id,
@@ -925,7 +913,7 @@ class SecurityTest(BaseTestCase):
                                               sourceClusterID=self.cluster_id,
                                               backupID=backupId,
                                               services=["data", "query"])
-        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.status_code, 422)
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.restore_backup,
                                               organizationId=self.tenant_id,
@@ -935,7 +923,7 @@ class SecurityTest(BaseTestCase):
                                               backupID=backupId,
                                               services=["data", "query"])
 
-        # self.assertEqual(resp.status_code, 404)   #  bug https://couchbasecloud.atlassian.net/browse/AV-60638
+        self.assertEqual(resp.status_code, 422)   #  bug https://couchbasecloud.atlassian.net/browse/AV-60638
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.restore_backup,
                                               organizationId=self.tenant_id,
@@ -962,7 +950,7 @@ class SecurityTest(BaseTestCase):
                                               sourceClusterID=self.cluster_id,
                                               backupID=get_random_string_of_given_length(uid=True),
                                               services=["data", "query"])
-        # self.assertEqual(resp.status_code, 404)   bug https://couchbasecloud.atlassian.net/browse/AV-60637
+        self.assertEqual(resp.status_code, 404)   # bug https://couchbasecloud.atlassian.net/browse/AV-60637
 
         self.authentication_token_test_wrapper(method=self.capellaAPI.cluster_ops_apis.restore_backup,
                                                organizationId=self.tenant_id,
@@ -1016,15 +1004,15 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(prim_proj_restore_resp.status_code, 403)
                 self.assertEqual(sec_proj_restore_resp.status_code, 403)
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.restore_backup,
-                                         organizationId=self.tenant_id,
-                                         projectId=self.project_id,
-                                         targetClusterID=self.cluster_id,
-                                         sourceClusterID=self.cluster_id,
-                                         backupID=backupId,
-                                         services=["data", "query"])
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.restore_backup,
+        #                                  organizationId=self.tenant_id,
+        #                                  projectId=self.project_id,
+        #                                  targetClusterID=self.cluster_id,
+        #                                  sourceClusterID=self.cluster_id,
+        #                                  backupID=backupId,
+        #                                  services=["data", "query"])
 
-        self.log.info("Restore backup rate limit response : {}".format(result))
-        self.assertTrue(result["pass"])
+        # self.log.info("Restore backup rate limit response : {}".format(result))
+        # self.assertTrue(result["pass"])

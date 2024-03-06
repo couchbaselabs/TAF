@@ -1,53 +1,32 @@
 import json
 import time
 import random
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
-class SecurityTest(BaseTestCase):
+class SecurityTest(SecurityBase):
     cidr = "10.0.0.0"
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.project_id = self.tenant.project_id
-        self.cluster_id = self.cluster.id
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
-        self.commonCapellaAPI = self.capellaAPI.org_ops_apis
-        resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
-        resp = resp.json()
-        self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
-        self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
-        self.capellaAPI.cluster_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['id']
-        self.capellaAPI.cluster_ops_apis.TOKENINI = resp['token']
-        self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
-        self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
-
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
-                                         "role": "organizationOwner"}}
-        for user in self.test_users:
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.tenant_id, 'API Key for role {}'.format(self.test_users[user]["role"]),
-                organizationRoles=[self.test_users[user]["role"]],
-                expiry=1)
-            resp = resp.json()
-            self.test_users[user]["token"] = resp['token']
-        self.app_service_ids = []
+        SecurityBase.setUp(self)
+        self.app_services_payload = {
+            "name": "App_service_security",
+            "description": "Testing App Service",
+            "nodes": 2,
+            "compute":
+            {
+                "cpu": 2,
+                "ram": 4
+            },
+            "version": "3.0"
+        }
         self.test_cluster_ids = []
+        self.app_service_ids = []
+        # self.test_cluster_ids = []
 
     def tearDown(self):
+        self.tear_app_services()
+        self.delete_clusters()
         super(SecurityTest, self).tearDown()
 
     def tear_app_services(self):
@@ -80,14 +59,6 @@ class SecurityTest(BaseTestCase):
             self.assertEqual(202, resp.status_code,
                              msg='FAIL, Outcome: {}, Expected: {} Failed to delete the '
                                  'cluster'.format(resp.status_code, 202))
-
-    def reset_api_keys(self):
-        self.capellaAPI.cluster_ops_apis.SECRET = self.capellaAPI.cluster_ops_apis.SECRETINI
-        self.capellaAPI.cluster_ops_apis.ACCESS = self.capellaAPI.cluster_ops_apis.ACCESSINI
-        self.capellaAPI.cluster_ops_apis.bearer_token = self.capellaAPI.cluster_ops_apis.TOKENINI
-        self.capellaAPI.org_ops_apis.SECRET = self.capellaAPI.org_ops_apis.SECRETINI
-        self.capellaAPI.org_ops_apis.ACCESS = self.capellaAPI.org_ops_apis.ACCESSINI
-        self.capellaAPI.org_ops_apis.bearer_token = self.capellaAPI.org_ops_apis.TOKENINI
 
     def generate_random_cidr(self):
         return '.'.join(
@@ -125,7 +96,7 @@ class SecurityTest(BaseTestCase):
                 "cidr": "10.7.22.0/23"
             },
             "couchbaseServer": {
-                "version": "7.1"
+                "version": "7.2"
             },
             "serviceGroups": [
                 {
@@ -226,7 +197,7 @@ class SecurityTest(BaseTestCase):
             "name": "MyAppSyncService",
             "description": "My app sync service.",
             "nodes": 2,
-            "compute": 
+            "compute":
             {
                 "cpu": 2,
                 "ram": 4
@@ -245,9 +216,10 @@ class SecurityTest(BaseTestCase):
         resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
                                                                   self.project_id,
                                                                   self.cluster_id,
-                                                                  "App_service_security",
-                                                                  "Testing App Service",
-                                                                  2, 2, 4, "3.0")
+                                                                  appservice_name=self.app_services_payload["name"],
+                                                                  compute=self.app_services_payload["compute"],
+                                                                  nodes=self.app_services_payload["nodes"],
+                                                                  version=self.app_services_payload["version"])
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
         self.reset_api_keys()
@@ -262,15 +234,16 @@ class SecurityTest(BaseTestCase):
             resp = self.capellaAPI.cluster_ops_apis.create_appservice(tenant_ids[tenant_id],
                                                       self.project_id,
                                                       self.test_cluster_ids[0],
-                                                      "App_service_security",
-                                                      "Testing App Service",
-                                                      2, 2, 4, "3.0")
+                                                      appservice_name=self.app_services_payload["name"],
+                                                      compute=self.app_services_payload["compute"],
+                                                      nodes=self.app_services_payload["nodes"],
+                                                      version=self.app_services_payload["version"])
             if tenant_id == 'valid_tenant_id':
                 self.assertEqual(resp.status_code, 201,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,201))
 
                 temp_app_service_id = resp.json()["id"]
-                self.app_service_ids.append(temp_app_service_id)
+                self.app_service_ids.append([self.test_cluster_ids[0], temp_app_service_id])
 
             else:
                 self.assertEqual(resp.status_code, 403,
@@ -292,16 +265,17 @@ class SecurityTest(BaseTestCase):
             resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
                                                                      project_ids[project_id],
                                                                      self.test_cluster_ids[1],
-                                                                     "App_service_security",
-                                                                     "Testing App Service",
-                                                                     2, 2, 4, "3.0")
+                                                                     appservice_name=self.app_services_payload["name"],
+                                                                     compute=self.app_services_payload["compute"],
+                                                                     nodes=self.app_services_payload["nodes"],
+                                                                     version=self.app_services_payload["version"])
             if project_id == 'valid_project_id':
                 self.assertEqual(resp.status_code, 201,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
 
                 temp_app_service_id = resp.json()["id"]
-                self.app_service_ids.append(temp_app_service_id)
+                self.app_service_ids.append([self.test_cluster_ids[1], temp_app_service_id])
 
             else:
                 self.assertEqual(resp.status_code, 422,
@@ -323,16 +297,17 @@ class SecurityTest(BaseTestCase):
             resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
                                                                      self.project_id,
                                                                      cluster_ids[cluster_id],
-                                                                     "App_service_security",
-                                                                     "Testing App Service",
-                                                                     2, 2, 4, "3.0")
+                                                                     appservice_name=self.app_services_payload["name"],
+                                                                     compute=self.app_services_payload["compute"],
+                                                                     nodes=self.app_services_payload["nodes"],
+                                                                     version=self.app_services_payload["version"])
             if cluster_id == 'valid_cluster_id':
                 self.assertEqual(resp.status_code, 201,
                                  msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                               201))
 
                 temp_app_service_id = resp.json()["id"]
-                self.app_service_ids.append(temp_app_service_id)
+                self.app_service_ids.append([cluster_ids[cluster_id], temp_app_service_id])
 
             else:
                 self.assertEqual(resp.status_code, 404,
@@ -349,9 +324,10 @@ class SecurityTest(BaseTestCase):
             role_response = self.capellaAPIRole.cluster_ops_apis.create_appservice(self.tenant_id,
                                                                  self.project_id,
                                                                  self.test_cluster_ids[3],
-                                                                 "App_service_security",
-                                                                 "Testing App Service",
-                                                                 2, 2, 4, "3.0")
+                                                                 appservice_name=self.app_services_payload["name"],
+                                                                 compute=self.app_services_payload["compute"],
+                                                                 nodes=self.app_services_payload["nodes"],
+                                                                 version=self.app_services_payload["version"])
 
             if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(role_response.status_code, 201,
@@ -359,7 +335,7 @@ class SecurityTest(BaseTestCase):
                                      role_response.status_code, 201))
 
                 temp_app_service_id = role_response.json()["id"]
-                self.app_service_ids.append(temp_app_service_id)
+                self.app_service_ids.append([self.test_cluster_ids[3], temp_app_service_id])
 
             else:
                 self.assertEqual(role_response.status_code, 403,
@@ -410,9 +386,10 @@ class SecurityTest(BaseTestCase):
                                                                  self.tenant_id,
                                                                  self.project_id,
                                                                  self.test_cluster_ids[num],
-                                                                 "App_service_security",
-                                                                 "Testing App Service",
-                                                                 2, 2, 4, "3.0")
+                                                                 appservice_name=self.app_services_payload["name"],
+                                                                 compute=self.app_services_payload["compute"],
+                                                                 nodes=self.app_services_payload["nodes"],
+                                                                 version=self.app_services_payload["version"])
             if role in ['projectOwner', 'projectManager']:
                 self.assertEqual(201, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(
@@ -420,7 +397,7 @@ class SecurityTest(BaseTestCase):
                 num = num + 1
                 num = num % 6
                 temp_app_service_id = role_response.json()["id"]
-                self.app_service_ids.append(temp_app_service_id)
+                self.app_service_ids.append([self.test_cluster_ids[num], temp_app_service_id])
 
             else:
                 self.assertEqual(403, role_response.status_code,
@@ -444,8 +421,8 @@ class SecurityTest(BaseTestCase):
             self.assertEqual(204, resp.status_code,
                              msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
 
-        self.tear_app_services()
-        self.delete_clusters()
+        # self.tear_app_services()
+        # self.delete_clusters()
 
     def test_get_list_appservices(self):
         self.log.info("     II. GET List App Services")
@@ -597,9 +574,10 @@ class SecurityTest(BaseTestCase):
                                                                  self.tenant_id,
                                                                  self.project_id,
                                                                  self.cluster_id,
-                                                                 "App_service_security",
-                                                                 "Testing App Service",
-                                                                 2, 2, 4, "3.0")
+                                                                 appservice_name=self.app_services_payload["name"],
+                                                                 compute=self.app_services_payload["compute"],
+                                                                 nodes=self.app_services_payload["nodes"],
+                                                                 version=self.app_services_payload["version"])
         self.assertEqual(resp.status_code, 201,
                          msg='FAIL: Outcome:{}, Expected:{}'.format(resp.status_code, 201))
         app_service_id = resp.json()["id"]
@@ -840,7 +818,7 @@ class SecurityTest(BaseTestCase):
         /v4/organizations/{organizationId}/projects/{projectId}/clusters/{clusterId}/appservices/{appServiceId}
         {
             "nodes": 2,
-            "compute": 
+            "compute":
             {
                 "cpu": 2,
                 "ram": 4
@@ -856,9 +834,10 @@ class SecurityTest(BaseTestCase):
             resp = self.capellaAPI.cluster_ops_apis.create_appservice(self.tenant_id,
                                                                       self.project_id,
                                                                       test_cluster_id,
-                                                                      "App_service_security",
-                                                                      "Testing App Service",
-                                                                      2, 2, 4, "3.0")
+                                                                      appservice_name=self.app_services_payload["name"],
+                                                                      compute=self.app_services_payload["compute"],
+                                                                      nodes=self.app_services_payload["nodes"],
+                                                                      version=self.app_services_payload["version"])
             self.assertEqual(resp.status_code, 201,
                              msg='FAIL: Outcome:{}, Expected:{}'.format(
                                  resp.status_code, 201))
