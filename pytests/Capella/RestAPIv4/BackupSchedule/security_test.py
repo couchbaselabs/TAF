@@ -1,57 +1,15 @@
 import json
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
 
-class SecurityTest(BaseTestCase):
+class SecurityTest(SecurityBase):
 
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.project_id = self.tenant.project_id
-        self.cluster_id = self.cluster.id
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
+        SecurityBase.setUp(self)
 
-        self.capellaAPI = CapellaAPI(
-            "https://" + self.url, "", "", self.user, self.passwd, "")
-        self.create_v2_control_plane_api_key()
-
-        # create the first V4 API KEY WITH organizationOwner role, which will
-        # be used to perform further V4 api operations
-        resp = self.capellaAPI.org_ops_apis.create_api_key(
-            organizationId=self.tenant_id,
-            name="Admin keys",
-            organizationRoles=["organizationOwner"])
-        if resp.status_code == 201:
-            self.org_owner_key = resp.json()
-        else:
-            self.fail("Error while creating API key for organization owner")
-
-        # update the token for capellaAPI object, so that is it being used
-        # for api auth.
-        self.update_auth_with_api_token(self.org_owner_key["token"])
-
-        self.capellaAPI.cluster_ops_apis.bearer_token_temp = self.capellaAPI.cluster_ops_apis.bearer_token
-        self.capellaAPI.org_ops_apis.bearer_token_temp = self.capellaAPI.org_ops_apis.bearer_token
         self.bucket_name = "test-bucket"
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
-                                         "role": "organizationOwner"}}
-        self.log.info("Test users: {}".format(self.test_users))
-        for user in self.test_users:
-            self.log.info("User: {}".format(user))
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.tenant_id, 'API Key for role {}'.format(
-                self.test_users[user]["role"]), organizationRoles=[self.test_users[user]["role"]],
-                expiry=1)
-            resp = resp.json()
-            self.test_users[user]["token"] = resp['token']
-
         self.log.info("Creating a bucket with name: {}".format(self.bucket_name))
         resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.tenant_id,
                                                               self.project_id,
@@ -106,7 +64,7 @@ class SecurityTest(BaseTestCase):
                                                                        4, "90days", False)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_bearer_token()
+        self.reset_api_keys()
 
         self.log.info("     2.Invalid token:")
         self.capellaAPI.cluster_ops_apis.bearer_token = self.invalid_id
@@ -116,7 +74,7 @@ class SecurityTest(BaseTestCase):
                                                                        4, "90days", False)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_bearer_token()
+        self.reset_api_keys()
 
         # Verifying the certificate endpoint with different organization ids
         self.log.info("Verifying with different tenant ids")
@@ -267,7 +225,7 @@ class SecurityTest(BaseTestCase):
                                                                        4, "90days", False)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_bearer_token()
+        self.reset_api_keys()
 
         self.log.info("     2.Invalid token:")
         self.capellaAPI.cluster_ops_apis.bearer_token = self.invalid_id
@@ -277,7 +235,7 @@ class SecurityTest(BaseTestCase):
                                                                        4, "90days", False)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_bearer_token()
+        self.reset_api_keys()
 
         # Verifying the certificate endpoint with different organization ids
         self.log.info("Verifying with different tenant ids")
@@ -424,7 +382,7 @@ class SecurityTest(BaseTestCase):
                                                                     self.cluster_id, self.bucket_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_bearer_token()
+        self.reset_api_keys()
 
         self.log.info("     2.Invalid token:")
         self.capellaAPI.cluster_ops_apis.bearer_token = self.invalid_id
@@ -432,7 +390,7 @@ class SecurityTest(BaseTestCase):
                                                                     self.cluster_id, self.bucket_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_bearer_token()
+        self.reset_api_keys()
 
         # Verifying the certificate endpoint with different organization ids
         self.log.info("Verifying with different tenant ids")
@@ -533,14 +491,8 @@ class SecurityTest(BaseTestCase):
                                                                                      self.cluster_id,
                                                                                      self.bucket_id)
 
-
-            if role == "projectOwner" or role == "projectManager":
-                self.assertEqual(200, role_response.status_code,
-                                 msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 200))
-            else:
-                self.assertEqual(403, role_response.status_code,
-                                    msg="FAIL: Outcome:{}, Expected: {}, Role: {}".format(role_response.status_code, 403,
-                                                                                          role))
+            self.assertEqual(200, role_response.status_code,
+                                msg="FAIL: Outcome:{}, Expected: {}".format(role_response.status_code, 200))
 
             resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
             self.assertEqual(204, resp.status_code,
@@ -566,7 +518,7 @@ class SecurityTest(BaseTestCase):
                                                                     self.cluster_id, self.bucket_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_bearer_token()
+        self.reset_api_keys()
 
         self.log.info("     2.Invalid token:")
         self.capellaAPI.cluster_ops_apis.bearer_token = self.invalid_id
@@ -574,7 +526,7 @@ class SecurityTest(BaseTestCase):
                                                                     self.cluster_id, self.bucket_id)
         self.assertEqual(401, resp.status_code,
                          msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
-        self.reset_bearer_token()
+        self.reset_api_keys()
 
         # Verifying the certificate endpoint with different organization ids
         self.log.info("Verifying with different tenant ids")

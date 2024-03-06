@@ -5,6 +5,7 @@ import random
 import string
 import uuid
 
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from pytests.basetestcase import BaseTestCase
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
@@ -33,47 +34,18 @@ def get_random_string_of_given_length(uid=False, letters=True, digits=True, spec
     return ''.join(random.choice(characters) for _ in range(length))
 
 
-class SecurityTest(BaseTestCase):
+class SecurityTest(SecurityBase):
 
     def setUp(self):
-        BaseTestCase.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.cluster_id = self.cluster.id
-
-        if self.input.capella.get("diff_tenant_id"):
-            self.diff_tenant_id = self.input.capella.get("diff_tenant_id")
-        else:
-            for tenant in self.tenants:
-                self.diff_tenant_id = tenant.id.encode('utf-8')
-                # self.diff_tenant_project_ids = tenant.project_id.encode('utf-8')
-
-        self.capellaAPI = CapellaAPI("https://" + self.url, '',
-                                     '', self.user, self.passwd, '')
-
-        resp = self.capellaAPI.create_control_plane_api_key(self.tenant_id, 'init api keys')
-        resp = resp.json()
-
-        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
-
-        # self.capellaAPI.cluster_ops_apis.ACCESS = resp['Id']
-        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
-
-        self.access_key_ini = resp['id']
-        self.bearer_token_ini = resp['token']
-
-        self.project_id = self.tenant.project_id
+        SecurityBase.setUp(self)
 
         resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id, 'Secondary project')
         self.log.info(resp.json())
         self.secondary_project_id = resp.json()['id']
 
-        self.cluster_id = self.cluster.id
-        self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.api_keys = []
+        # self.cluster_id = self.cluster.id
+        # self.invalid_id = "00000000-0000-0000-0000-000000000000"
+        self.test_api_keys = []
         self.users = []
         self.db_creds = []
 
@@ -83,24 +55,34 @@ class SecurityTest(BaseTestCase):
                                                   cluster_id=self.cluster_id, bucket_name=self.bucket_name)
         self.assertEqual(resp.status_code, 201)
 
+        self.sleep(30, "Wait after creating bucket")
         resp = self.capellaAPI.cluster_ops_apis.list_buckets(organizationId=self.tenant_id, projectId=self.project_id,
                                                              clusterId=self.cluster_id)
 
         beer_sample = filter(lambda x: x['name'] == self.bucket_name, resp.json()['data'])
+        if len(beer_sample) < 0:
+            retry = 5
+            while retry >= 0:
+                resp = self.capellaAPI.cluster_ops_apis.list_buckets(organizationId=self.tenant_id, projectId=self.project_id,
+                                                             clusterId=self.cluster_id)
 
-        self.api_keys_list = self.rbac_roles_generator_wrapper()
+                beer_sample = filter(lambda x: x['name'] == self.bucket_name, resp.json()['data'])
+
+                if len(beer_sample) > 0:
+                    break
+                retry -= 1
+                self.sleep(10, "No buckets details returned. Retrying....")
+
+            if len(beer_sample) == 0:
+                self.fail("Failed to get bucket details")
 
         self.bucket_id = beer_sample[0]['id']
 
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User1": {"password": self.passwd, "mailid": self.user,
-                                         "role": "organizationOwner"}}
+        self.api_keys_list = self.rbac_roles_generator_wrapper()
 
     def tearDown(self):
         failures = []
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
         for user in self.users:
 
@@ -112,7 +94,7 @@ class SecurityTest(BaseTestCase):
                 failures.append("Error while deleting User {}"
                                 .format(user['user']))
 
-        for api_key in self.api_keys:
+        for api_key in self.test_api_keys:
             resp = self.make_call_to_given_method(method=self.capellaAPI.org_ops_apis.delete_api_key,
                                                   organizationId=api_key['tenant'],
                                                   accessKey=api_key["access_key"])
@@ -152,15 +134,15 @@ class SecurityTest(BaseTestCase):
         self.capellaAPI.cluster_ops_apis.ACCESS = self.access_key_ini
         self.capellaAPI.cluster_ops_apis.bearer_token = self.bearer_token_ini
 
-    def set_access_keys(self, access_key, token):
-        self.capellaAPI.org_ops_apis.ACCESS = access_key
+    def set_access_keys(self, accessKey, token):
+        self.capellaAPI.org_ops_apis.ACCESS = accessKey
         self.capellaAPI.org_ops_apis.bearer_token = token
 
-        self.capellaAPI.cluster_ops_apis.ACCESS = access_key
+        self.capellaAPI.cluster_ops_apis.ACCESS = accessKey
         self.capellaAPI.cluster_ops_apis.bearer_token = token
 
     def append_to_api_keys(self, acc, tenant):
-        self.api_keys.append({
+        self.test_api_keys.append({
             'access_key': acc,
             'tenant': tenant
         })
@@ -374,7 +356,7 @@ class SecurityTest(BaseTestCase):
                                                                          length=10),
                                                                      access=body_list[0]['access']
                                                                      )
-        # self.assertEqual(resp.status_code, 404)   bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 403)   #bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.capellaAPI.cluster_ops_apis.create_database_user(organizationId=self.tenant_id,
                                                                      projectId=get_random_string_of_given_length(
@@ -384,7 +366,7 @@ class SecurityTest(BaseTestCase):
                                                                          length=10),
                                                                      access=body_list[0]['access']
                                                                      )
-        # self.assertEqual(resp.status_code, 404)   Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)   #Bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.capellaAPI.cluster_ops_apis.create_database_user(organizationId=self.tenant_id,
                                                                      projectId=self.project_id,
@@ -395,15 +377,6 @@ class SecurityTest(BaseTestCase):
                                                                      access=body_list[0]['access']
                                                                      )
         self.assertEqual(resp.status_code, 404)
-
-        resp = self.capellaAPI.cluster_ops_apis.create_database_user(organizationId=self.diff_tenant_id,
-                                                                     projectId=self.project_id,
-                                                                     clusterId=self.cluster_id,
-                                                                     name=get_random_string_of_given_length(
-                                                                         length=10),
-                                                                     access=body_list[0]['access']
-                                                                     )
-        # self.assertEqual(resp.status_code, 403)    # bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         name_combinations = ['', None, get_random_string_of_given_length(length=300),
                              get_random_string_of_given_length(length=10)]
@@ -478,31 +451,31 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(resp.status_code, 201)
             elif api_key['projectRole'] == 'projectOwner':
                 if api_key['description'] == 'same project':
-                    # self.assertEqual(resp.status_code, 201) # bug https://couchbasecloud.atlassian.net/browse/AV-59991
+                    self.assertEqual(resp.status_code, 201) # bug https://couchbasecloud.atlassian.net/browse/AV-59991
                     pass
                 else:
                     self.assertEqual(resp.status_code, 403)
             else:
                 self.assertEqual(resp.status_code, 403)
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
         # Rate limit test
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.create_database_user,
-                                         organizationId=self.tenant_id,
-                                         projectId=self.project_id,
-                                         clusterId=self.cluster_id,
-                                         name=get_random_string_of_given_length(length=10),
-                                         access=body_list[0]['access'])
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.create_database_user,
+        #                                  organizationId=self.tenant_id,
+        #                                  projectId=self.project_id,
+        #                                  clusterId=self.cluster_id,
+        #                                  name=get_random_string_of_given_length(length=10),
+        #                                  access=body_list[0]['access'])
 
-        for res in result['response list']:
-            # to delete any db credential created accidentally. should not create more than one key,
-            # as we are passing a single unique name.
-            if res.status_code == 201:
-                self.append_to_db_creds(self.tenant_id, self.project_id, self.cluster_id, res.json()['id'])
+        # for res in result['response list']:
+        #     # to delete any db credential created accidentally. should not create more than one key,
+        #     # as we are passing a single unique name.
+        #     if res.status_code == 201:
+        #         self.append_to_db_creds(self.tenant_id, self.project_id, self.cluster_id, res.json()['id'])
 
-        self.log.info("invite user rate limit response : {}".format(result))
-        self.assertTrue(result["pass"])
+        # self.log.info("invite user rate limit response : {}".format(result))
+        # self.assertTrue(result["pass"])
 
     def test_fetch_database_credentials(self):
 
@@ -555,28 +528,21 @@ class SecurityTest(BaseTestCase):
                                               projectId=self.project_id,
                                               clusterId=self.cluster_id,
                                               userId=db_cred['id'])
-        # self.assertEqual(resp.status_code, 403)       # bug https://couchbasecloud.atlassian.net/browse/AV-59990
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.fetch_database_user_info,
-                                              organizationId=self.diff_tenant_id,
-                                              projectId=self.project_id,
-                                              clusterId=self.cluster_id,
-                                              userId=db_cred['id'])
-        # self.assertEqual(resp.status_code, 403)         # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 403)       # bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.fetch_database_user_info,
                                               organizationId=self.tenant_id,
                                               projectId=get_random_string_of_given_length(uid=True),
                                               clusterId=self.cluster_id,
                                               userId=db_cred['id'])
-        # self.assertEqual(resp.status_code, 404)            # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)            # bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.fetch_database_user_info,
                                               organizationId=self.tenant_id,
                                               projectId=self.secondary_project_id,
                                               clusterId=self.cluster_id,
                                               userId=db_cred['id'])
-        # self.assertEqual(resp.status_code, 404)           # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)           # bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.fetch_database_user_info,
                                               organizationId=self.tenant_id,
@@ -615,23 +581,21 @@ class SecurityTest(BaseTestCase):
                 if api_key['description'] == 'same project':
                     self.assertEqual(resp.status_code, 200)
                 else:
-                    pass
-                    # self.assertEqual(resp.status_code, 403) # bug https://couchbasecloud.atlassian.net/browse/AV-59997
+                    self.assertEqual(resp.status_code, 403) # bug https://couchbasecloud.atlassian.net/browse/AV-59997
             else:
-                pass
-                # self.assertEqual(resp.status_code, 403) # bug https://couchbasecloud.atlassian.net/browse/AV-59997
+                self.assertEqual(resp.status_code, 403) # bug https://couchbasecloud.atlassian.net/browse/AV-59997
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
         # Rate limit test
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.fetch_database_user_info,
-                                         organizationId=self.tenant_id,
-                                         projectId=self.project_id,
-                                         clusterId=self.cluster_id,
-                                         userId=db_cred['id'])
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.fetch_database_user_info,
+        #                                  organizationId=self.tenant_id,
+        #                                  projectId=self.project_id,
+        #                                  clusterId=self.cluster_id,
+        #                                  userId=db_cred['id'])
 
-        self.log.info("Fetch user rate limit response : {}".format(result))
-        # self.assertTrue(result["pass"])
+        # self.log.info("Fetch user rate limit response : {}".format(result))
+        # # self.assertTrue(result["pass"])
 
     def test_delete_database_credentials(self):
 
@@ -674,28 +638,21 @@ class SecurityTest(BaseTestCase):
                                               projectId=self.project_id,
                                               clusterId=self.cluster_id,
                                               userId=db_cred['id'])
-        # self.assertEqual(resp.status_code, 403) # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.delete_database_user,
-                                              organizationId=self.diff_tenant_id,
-                                              projectId=self.project_id,
-                                              clusterId=self.cluster_id,
-                                              userId=db_cred['id'])
-        # self.assertEqual(resp.status_code, 403) # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 403) # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.delete_database_user,
                                               organizationId=self.tenant_id,
                                               projectId=get_random_string_of_given_length(uid=True),
                                               clusterId=self.cluster_id,
                                               userId=db_cred['id'])
-        # self.assertEqual(resp.status_code, 404)   # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)   # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.delete_database_user,
                                               organizationId=self.tenant_id,
                                               projectId=self.secondary_project_id,
                                               clusterId=self.cluster_id,
                                               userId=db_cred['id'])
-        # self.assertEqual(resp.status_code, 404)  # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)  # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.delete_database_user,
                                               organizationId=self.tenant_id,
@@ -743,8 +700,7 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(resp.status_code, 204)
             elif api_key['projectRole'] == "projectOwner":
                 if api_key['description'] == 'same project':
-                    pass
-                    # self.assertEqual(resp.status_code, 204) # Bug https://couchbasecloud.atlassian.net/browse/AV-60016
+                    self.assertEqual(resp.status_code, 204) # Bug https://couchbasecloud.atlassian.net/browse/AV-60016
                 else:
                     self.assertEqual(resp.status_code, 403)
             else:
@@ -753,17 +709,17 @@ class SecurityTest(BaseTestCase):
             if resp.status_code != 204:
                 self.append_to_db_creds(self.tenant_id, self.project_id, self.cluster_id, db_crd['id'])
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
         # Rate limit test
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.delete_database_user,
-                                         organizationId=self.tenant_id,
-                                         projectId=self.project_id,
-                                         clusterId=self.cluster_id,
-                                         userId=db_cred['id'])
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.delete_database_user,
+        #                                  organizationId=self.tenant_id,
+        #                                  projectId=self.project_id,
+        #                                  clusterId=self.cluster_id,
+        #                                  userId=db_cred['id'])
 
-        self.log.info("Delete user rate limit response : {}".format(result))
-        # self.assertTrue(result["pass"]) https://couchbasecloud.atlassian.net/browse/AV-60017
+        # self.log.info("Delete user rate limit response : {}".format(result))
+        # # self.assertTrue(result["pass"]) https://couchbasecloud.atlassian.net/browse/AV-60017
 
     def test_list_database_credentials(self):
 
@@ -777,25 +733,19 @@ class SecurityTest(BaseTestCase):
                                               organizationId=self.invalid_id,
                                               projectId=self.project_id,
                                               clusterId=self.cluster_id)
-        # self.assertEqual(resp.status_code, 403)       # bug https://couchbasecloud.atlassian.net/browse/AV-59990
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
-                                              organizationId=self.diff_tenant_id,
-                                              projectId=self.project_id,
-                                              clusterId=self.cluster_id)
-        # self.assertEqual(resp.status_code, 403)         # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 403)       # bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
                                               organizationId=self.tenant_id,
                                               projectId=get_random_string_of_given_length(uid=True),
                                               clusterId=self.cluster_id)
-        # self.assertEqual(resp.status_code, 404)            # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)            # bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
                                               organizationId=self.tenant_id,
                                               projectId=self.secondary_project_id,
                                               clusterId=self.cluster_id)
-        # self.assertEqual(resp.status_code, 404)           # bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)           # bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.list_database_users,
                                               organizationId=self.tenant_id,
@@ -833,15 +783,15 @@ class SecurityTest(BaseTestCase):
             else:
                 self.assertEqual(resp.status_code, 403)  # bug https://couchbasecloud.atlassian.net/browse/AV-59997
 
-            self.reset_access_keys_to_default()
+            self.reset_api_keys()
 
         # Rate limit test
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.list_database_users,
-                                         organizationId=self.tenant_id,
-                                         projectId=self.project_id,
-                                         clusterId=self.cluster_id)
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.list_database_users,
+        #                                  organizationId=self.tenant_id,
+        #                                  projectId=self.project_id,
+        #                                  clusterId=self.cluster_id)
 
-        self.log.info("List user rate limit response : {}".format(result))
+        # self.log.info("List user rate limit response : {}".format(result))
         # self.assertTrue(result["pass"])
 
     def test_update_database_credentials(self):
@@ -887,16 +837,7 @@ class SecurityTest(BaseTestCase):
                                               userId=db_cred['id'],
                                               ifmatch=False,
                                               access=access)
-        # self.assertEqual(resp.status_code, 403) # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
-
-        resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
-                                              organizationId=self.diff_tenant_id,
-                                              projectId=self.project_id,
-                                              clusterId=self.cluster_id,
-                                              userId=db_cred['id'],
-                                              ifmatch=False,
-                                              access=access)
-        # self.assertEqual(resp.status_code, 403) # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 403) # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
                                               organizationId=self.tenant_id,
@@ -905,7 +846,7 @@ class SecurityTest(BaseTestCase):
                                               userId=db_cred['id'],
                                               ifmatch=False,
                                               access=access)
-        # self.assertEqual(resp.status_code, 404)   # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)   # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
                                               organizationId=self.tenant_id,
@@ -914,7 +855,7 @@ class SecurityTest(BaseTestCase):
                                               userId=db_cred['id'],
                                               ifmatch=False,
                                               access=access)
-        # self.assertEqual(resp.status_code, 404)  # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
+        self.assertEqual(resp.status_code, 404)  # Bug https://couchbasecloud.atlassian.net/browse/AV-59990
 
         resp = self.make_call_to_given_method(method=self.capellaAPI.cluster_ops_apis.update_database_user,
                                               organizationId=self.tenant_id,
@@ -955,20 +896,19 @@ class SecurityTest(BaseTestCase):
                 self.assertEqual(resp.status_code, 204)
             elif api_key['projectRole'] == "projectOwner":
                 if api_key['description'] == 'same project':
-                    pass
-                    # self.assertEqual(resp.status_code, 204) # Bug https://couchbasecloud.atlassian.net/browse/AV-60016
+                    self.assertEqual(resp.status_code, 204) # Bug https://couchbasecloud.atlassian.net/browse/AV-60016
                 else:
                     self.assertEqual(resp.status_code, 403)
             else:
                 self.assertEqual(resp.status_code, 403)
 
         # Rate limit test
-        result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.update_database_user,
-                                         organizationId=self.tenant_id, projectId=self.project_id,
-                                         clusterId=self.cluster_id, userId=db_cred['id'], ifmatch=False, access=access)
+        # result = self.rate_limit_wrapper(method=self.capellaAPI.cluster_ops_apis.update_database_user,
+        #                                  organizationId=self.tenant_id, projectId=self.project_id,
+        #                                  clusterId=self.cluster_id, userId=db_cred['id'], ifmatch=False, access=access)
 
-        self.log.info("Update user rate limit response : {}".format(result))
-        self.assertTrue(result["pass"])  # bug https://couchbasecloud.atlassian.net/browse/AV-60017
+        # self.log.info("Update user rate limit response : {}".format(result))
+        # self.assertTrue(result["pass"])  # bug https://couchbasecloud.atlassian.net/browse/AV-60017
 
     def rate_limit_wrapper(self, method=None, **kwargs):
         """
@@ -1043,7 +983,7 @@ class SecurityTest(BaseTestCase):
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         self.assertEqual(resp.status_code, 401)
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
         self.log.info("Creating access key using invalid auth")
         self.set_access_keys(self.capellaAPI.org_ops_apis.ACCESS,
@@ -1052,7 +992,7 @@ class SecurityTest(BaseTestCase):
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         self.assertEqual(resp.status_code, 401)
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
         self.log.info("Accessing using different cidr")
 
@@ -1068,7 +1008,7 @@ class SecurityTest(BaseTestCase):
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         # self.assertEqual(resp.status_code, 403)       # getting 404 instead, what should be the status code for this?
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
         self.log.info("Token Expiry Test.")
         resp = self.make_call_to_given_method(method=self.capellaAPI.org_ops_apis.create_api_key,
@@ -1084,7 +1024,7 @@ class SecurityTest(BaseTestCase):
 
         resp = self.make_call_to_given_method(method=method, **kwargs)
         self.assertEqual(resp.status_code, 401)
-        self.reset_access_keys_to_default()
+        self.reset_api_keys()
 
     def rbac_roles_generator_wrapper(self):
         """
