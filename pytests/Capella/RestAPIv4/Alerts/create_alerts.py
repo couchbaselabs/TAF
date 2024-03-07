@@ -251,9 +251,6 @@ class CreateAlert(GetAlert):
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
 
-    # def test_payload(self):
-    #     testcases = list()
-
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[

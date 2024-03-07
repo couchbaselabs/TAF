@@ -991,7 +991,7 @@ class APIBase(CouchbaseBaseTest):
                 self.handle_rate_limit(int(res.headers["Retry-After"]))
                 res = self.capellaAPI.cluster_ops_apis.delete_alert(
                     self.organisation_id, project_id, alert)
-            if res.status_code != 200:
+            if res.status_code != 204:
                 self.log.warning("Error while deleting alert {}".format(alert))
                 self.log.error("Response: {}".format(res.content))
                 alert_deletion_failed = True
