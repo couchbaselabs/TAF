@@ -5,7 +5,6 @@ Created on August 22, 2023
 """
 
 import copy
-import base64
 import time
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
@@ -178,17 +177,10 @@ class UpdateBucket(GetCluster):
                     False, self.priority % 1001)
 
             self.priority += 1
-            if result.status_code == 204:
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Updation Successful.")
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
-
             self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
+
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -272,14 +264,7 @@ class UpdateBucket(GetCluster):
                     False, self.priority % 1001, header)
 
             self.priority += 1
-            if result.status_code == 204:
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Updation Successful.")
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -444,14 +429,7 @@ class UpdateBucket(GetCluster):
                     False, self.priority % 1001, **kwarg)
 
             self.priority += 1
-            if result.status_code == 204:
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Updation Successful.")
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -632,15 +610,7 @@ class UpdateBucket(GetCluster):
                     testcase['flush'], testcase['timeToLiveInSeconds'],
                     False, testcase["priority"])
 
-            if result.status_code == 204:
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    self.log.warning("Result: {}".format(result.content))
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Updation Successful.")
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -674,22 +644,7 @@ class UpdateBucket(GetCluster):
                 self.fail("Error while creating API key for "
                           "organizationOwner_{}".format(i))
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
@@ -726,22 +681,7 @@ class UpdateBucket(GetCluster):
             else:
                 self.api_keys[api_key] = api_key_dict[api_key]
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
