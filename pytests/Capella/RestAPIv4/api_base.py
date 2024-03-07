@@ -591,7 +591,8 @@ class APIBase(CouchbaseBaseTest):
                           validate_response=False, expected_res=None,
                           resource_id=None):
         if result.status_code in success_codes:
-            if "expected_error" in testcase:
+            if ("expected_error" in testcase and
+                    testcase["expected_status_code"] != 404):
                 self.log.error("NO ERRORS in Response, But Test expected "
                                "error: {}".format(testcase["expected_error"]))
                 self.log.warning("Result : {}".format(result.json()))
