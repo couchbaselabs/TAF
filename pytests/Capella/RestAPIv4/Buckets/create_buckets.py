@@ -5,7 +5,6 @@ Created on August 18, 2023
 """
 
 import copy
-import base64
 import time
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
@@ -47,18 +46,6 @@ class CreateBucket(GetCluster):
         self.log.info("Successfully deleted buckets.")
 
         super(CreateBucket, self).tearDown()
-
-    def validate_bucket_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(actual_res[key], dict):
-                self.validate_bucket_api_response(
-                    expected_res[key], actual_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
 
     def test_api_path(self):
         testcases = [
@@ -174,15 +161,12 @@ class CreateBucket(GetCluster):
                     self.expected_result['flush'],
                     self.expected_result['timeToLiveInSeconds'],
                     self.expected_result['priority'])
-            if result.status_code == 201 and "expected_error" not in testcase:
-                self.expected_result['id'] = result.json()['id']
-                self.bucket_ids.append(result.json()['id'])
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
 
+            if self.validate_testcase(result, [201], testcase, failures):
+                self.bucket_ids.append(result.json()['id'])
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -274,20 +258,9 @@ class CreateBucket(GetCluster):
                     self.expected_result['flush'],
                     self.expected_result['timeToLiveInSeconds'],
                     self.expected_result['priority'], headers=header)
-            if result.status_code == 201 and "expected_error" not in testcase:
-                self.expected_result['id'] = result.json()['id']
+
+            if self.validate_testcase(result, [201], testcase, failures):
                 self.bucket_ids.append(result.json()['id'])
-
-                if not self.validate_bucket_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 201, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Creation Successful - No Errors.")
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
-
             if len(self.bucket_ids) >= 30:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
@@ -434,20 +407,9 @@ class CreateBucket(GetCluster):
                     self.expected_result['flush'],
                     self.expected_result['timeToLiveInSeconds'],
                     self.expected_result['priority'], **kwarg)
-            if result.status_code == 201 and "expected_error" not in testcase:
-                self.expected_result['id'] = result.json()['id']
+
+            if self.validate_testcase(result, [201], testcase, failures):
                 self.bucket_ids.append(result.json()['id'])
-
-                if not self.validate_bucket_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 201, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Creation Successful - No Errors.")
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
-
             if len(self.bucket_ids) >= 30:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
@@ -708,19 +670,9 @@ class CreateBucket(GetCluster):
                     testcase["durabilityLevel"], testcase['replicas'],
                     testcase['flush'], testcase['timeToLiveInSeconds'],
                     testcase['priority'])
-            if result.status_code == 201:
-                self.expected_result['id'] = result.json()['id']
+
+            if self.validate_testcase(result, [201], testcase, failures):
                 self.bucket_ids.append(result.json()['id'])
-
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    self.log.warning("Result: {}".format(result.content))
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Creation Successful - No Errors.")
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
-
             if len(self.bucket_ids) >= 30:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
@@ -765,22 +717,7 @@ class CreateBucket(GetCluster):
                 self.fail("Error while creating API key for "
                           "organizationOwner_{}".format(i))
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
@@ -823,22 +760,7 @@ class CreateBucket(GetCluster):
             else:
                 self.api_keys[api_key] = api_key_dict[api_key]
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
