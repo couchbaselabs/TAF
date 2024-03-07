@@ -5,8 +5,6 @@ Created on September 1, 2023
 """
 
 from pytests.Capella.RestAPIv4.api_base import APIBase
-import time
-import base64
 
 
 class ListProject(APIBase):
@@ -68,25 +66,6 @@ class ListProject(APIBase):
             self.log.info("Project deleted successfully")
 
         super(ListProject, self).tearDown()
-
-    def validate_project_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(expected_res[key], dict):
-                self.validate_project_api_response(
-                    expected_res[key], actual_res[key])
-            elif isinstance(expected_res[key], list):
-                for i in range(len(expected_res[key])):
-                    if (actual_res[key] is "data" and
-                            actual_res[key][i]["name"] != self.project_name):
-                        continue
-                    self.validate_project_api_response(
-                        expected_res[key][i], actual_res[key][i])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
 
     def test_api_path(self):
         testcases = [
@@ -150,17 +129,12 @@ class ListProject(APIBase):
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.list_projects(org)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_project_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
 
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.project_id)
 
         if failures:
             for fail in failures:
@@ -206,14 +180,9 @@ class ListProject(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.list_projects(
                     self.organisation_id, headers=header)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_project_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.project_id)
 
         if failures:
             for fail in failures:
@@ -283,14 +252,9 @@ class ListProject(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.list_projects(
                     testcase["organizationID"], **kwarg)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_project_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.project_id)
 
         if failures:
             for fail in failures:
@@ -320,22 +284,7 @@ class ListProject(APIBase):
                 self.fail("Error while creating API key for "
                           "organizationOwner_{}".format(i))
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
             # unauthorized roles, ie, which give a 403 response.
@@ -364,22 +313,7 @@ class ListProject(APIBase):
             else:
                 self.api_keys[api_key] = api_key_dict[api_key]
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
             # unauthorized roles, ie, which give a 403 response.

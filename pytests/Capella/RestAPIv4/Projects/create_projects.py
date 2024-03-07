@@ -6,8 +6,6 @@ Created on September 4, 2023
 
 import copy
 from pytests.Capella.RestAPIv4.api_base import APIBase
-import time
-import base64
 
 
 class CreateProject(APIBase):
@@ -92,27 +90,22 @@ class CreateProject(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_project(
                     org, self.project_name)
-            if result.status_code == 201:
-                project_id = result.json()['id']
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Creation Successful.")
-                    res = self.capellaAPI.org_ops_apis.delete_project(
-                        self.organisation_id, project_id)
-                    if res.status_code == 429:
-                        self.handle_rate_limit(int(res.headers["Retry-After"]))
-                        res = self.capellaAPI.org_ops_apis.delete_project(
-                            self.organisation_id, project_id)
-                    if res.status_code != 204:
-                        self.fail("Failure while deleting project: {}"
-                                  .format(project_id))
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
 
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
+
+            if self.validate_testcase(result, [201], testcase, failures):
+                project_id = result.json()["id"]
+                self.log.debug("Creation Successful.")
+                res = self.capellaAPI.org_ops_apis.delete_project(
+                    self.organisation_id, project_id)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers["Retry-After"]))
+                    res = self.capellaAPI.org_ops_apis.delete_project(
+                        self.organisation_id, project_id)
+                if res.status_code != 204:
+                    self.fail("Failure while deleting project: {}"
+                              .format(project_id))
 
         if failures:
             for fail in failures:
@@ -156,24 +149,19 @@ class CreateProject(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_project(
                     self.organisation_id, self.project_name, headers=header)
-            if result.status_code == 201:
-                project_id = result.json()['id']
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Creation Successful.")
+
+            if self.validate_testcase(result, [201], testcase, failures):
+                project_id = result.json()["id"]
+                self.log.debug("Creation Successful.")
+                res = self.capellaAPI.org_ops_apis.delete_project(
+                    self.organisation_id, project_id)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers["Retry-After"]))
                     res = self.capellaAPI.org_ops_apis.delete_project(
                         self.organisation_id, project_id)
-                    if res.status_code == 429:
-                        self.handle_rate_limit(int(res.headers["Retry-After"]))
-                        res = self.capellaAPI.org_ops_apis.delete_project(
-                            self.organisation_id, project_id)
-                    if res.status_code != 204:
-                        self.fail("Failure while deleting project: {}"
-                                  .format(project_id))
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
+                if res.status_code != 204:
+                    self.fail("Failure while deleting project: {}"
+                              .format(project_id))
 
         if failures:
             for fail in failures:
@@ -246,24 +234,19 @@ class CreateProject(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_project(
                     testcase["organizationID"], self.project_name, **kwarg)
-            if result.status_code == 201:
-                project_id = result.json()['id']
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Creation Successful.")
+
+            if self.validate_testcase(result, [201], testcase, failures):
+                project_id = result.json()["id"]
+                self.log.debug("Creation Successful.")
+                res = self.capellaAPI.org_ops_apis.delete_project(
+                    self.organisation_id, project_id)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers["Retry-After"]))
                     res = self.capellaAPI.org_ops_apis.delete_project(
                         self.organisation_id, project_id)
-                    if res.status_code == 429:
-                        self.handle_rate_limit(int(res.headers["Retry-After"]))
-                        res = self.capellaAPI.org_ops_apis.delete_project(
-                            self.organisation_id, project_id)
-                    if res.status_code != 204:
-                        self.fail("Failure while deleting project: {}"
-                                  .format(project_id))
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
+                if res.status_code != 204:
+                    self.fail("Failure while deleting project: {}"
+                              .format(project_id))
 
         if failures:
             for fail in failures:
@@ -349,24 +332,19 @@ class CreateProject(APIBase):
                 result = self.capellaAPI.org_ops_apis.create_project(
                     self.organisation_id, testcase["name"],
                     testcase["desc"])
-            if result.status_code == 201:
-                project_id = result.json()['id']
-                if "expected_error" in testcase:
-                    self.log.error(testcase["desc"])
-                    failures.append(testcase["desc"])
-                else:
-                    self.log.debug("Creation Successful.")
+
+            if self.validate_testcase(result, [201], testcase, failures):
+                project_id = result.json()["id"]
+                self.log.debug("Creation Successful.")
+                res = self.capellaAPI.org_ops_apis.delete_project(
+                    self.organisation_id, project_id)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers["Retry-After"]))
                     res = self.capellaAPI.org_ops_apis.delete_project(
                         self.organisation_id, project_id)
-                    if res.status_code == 429:
-                        self.handle_rate_limit(int(res.headers["Retry-After"]))
-                        res = self.capellaAPI.org_ops_apis.delete_project(
-                            self.organisation_id, project_id)
-                    if res.status_code != 204:
-                        self.fail("Failure while deleting project: {}"
-                                  .format(project_id))
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
+                if res.status_code != 204:
+                    self.fail("Failure while deleting project: {}"
+                              .format(project_id))
 
         if failures:
             for fail in failures:
@@ -396,22 +374,7 @@ class CreateProject(APIBase):
                 self.fail("Error while creating API key for "
                           "organizationOwner_{}".format(i))
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
@@ -444,22 +407,7 @@ class CreateProject(APIBase):
             else:
                 self.api_keys[api_key] = api_key_dict[api_key]
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
