@@ -23,7 +23,7 @@ class GetCluster(GetProject):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": str(self.input.param("server_version", 7.2))
+                "version": str(self.input.param("server_version", 7.6))
             },
             "serviceGroups": [
                 {
@@ -104,31 +104,6 @@ class GetCluster(GetProject):
 
         super(GetCluster, self).tearDown()
 
-    def validate_cluster_api_response(self, expected_res, actual_res):
-        failure_key = None
-        for key in actual_res:
-            if key not in expected_res:
-                return key
-            if isinstance(expected_res[key], dict):
-                failure_key = self.validate_cluster_api_response(
-                    expected_res[key], actual_res[key])
-            elif isinstance(expected_res[key], list):
-                if key == "services":
-                    for service in expected_res[key]:
-                        if service not in actual_res[key]:
-                            return key
-                    continue
-                for i in range(len(expected_res[key])):
-                    failure_key = self.validate_cluster_api_response(
-                        expected_res[key][i], actual_res[key][i])
-            elif expected_res[key]:
-                if expected_res[key] == "version":
-                    if expected_res[key] not in actual_res[key]:
-                        return key
-                elif expected_res[key] != actual_res[key]:
-                    return key
-        return failure_key
-
     def test_api_path(self):
         testcases = [
             {
@@ -201,40 +176,32 @@ class GetCluster(GetProject):
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-            org = self.organisation_id
-            proj = self.project_id
-            clus = self.cluster_id
+            organization = self.organisation_id
+            project = self.project_id
+            cluster = self.cluster_id
 
             if "url" in testcase:
                 self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                     testcase["url"]
             if "invalid_organizationID" in testcase:
-                org = testcase["invalid_organizationID"]
+                organization = testcase["invalid_organizationID"]
             elif "invalid_projectID" in testcase:
-                proj = testcase["invalid_projectID"]
+                project = testcase["invalid_projectID"]
             elif "invalid_clusterID" in testcase:
-                clus = testcase["invalid_clusterID"]
+                cluster = testcase["invalid_clusterID"]
 
             result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                org, proj, clus)
+                organization, project, cluster)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    org, proj, clus)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                failure_key = self.validate_cluster_api_response(
-                        self.expected_result, result.json())
-                if failure_key:
-                    self.log.error("Status == 200, Key : `{}` "
-                                   "validation Failure at: {}".format(
-                                    failure_key, testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+                    organization, project, cluster)
 
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.cluster_id)
 
         if failures:
             for fail in failures:
@@ -289,17 +256,9 @@ class GetCluster(GetProject):
                 result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id,
                     header)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                failure_key = self.validate_cluster_api_response(
-                    self.expected_result, result.json())
-                if failure_key:
-                    self.log.error("Status == 200, Key : `{}` "
-                                   "validation Failure at: {}".format(
-                                    failure_key, testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.cluster_id)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -400,17 +359,9 @@ class GetCluster(GetProject):
                 result = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], **kwarg)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                failure_key = self.validate_cluster_api_response(
-                    self.expected_result, result.json())
-                if failure_key:
-                    self.log.error("Status == 200, Key : `{}` "
-                                   "validation Failure at: {}".format(
-                                    failure_key, testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.cluster_id)
 
         if failures:
             for fail in failures:
@@ -441,22 +392,7 @@ class GetCluster(GetProject):
                 self.fail("Error while creating API key for "
                           "organizationOwner_{}".format(i))
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
             # unauthorized roles, ie, which give a 403 response.
@@ -486,22 +422,7 @@ class GetCluster(GetProject):
             else:
                 self.api_keys[api_key] = api_key_dict[api_key]
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
             # unauthorized roles, ie, which give a 403 response.
