@@ -56,22 +56,6 @@ class ListOrganization(APIBase):
 
         super(ListOrganization, self).tearDown()
 
-    def validate_org_api_response(self, expected_resp, actual_resp):
-        for key in actual_resp:
-            if key not in expected_resp:
-                return False
-            elif isinstance(expected_resp[key], dict):
-                self.validate_org_api_response(
-                    expected_resp[key], actual_resp[key])
-            elif isinstance(expected_resp[key], list):
-                for i in range(len(expected_resp[key])):
-                    self.validate_org_api_response(
-                        expected_resp[key][i], actual_resp[key][i])
-            elif expected_resp[key]:
-                if expected_resp[key] != actual_resp[key]:
-                    return False
-        return True
-
     def test_api_path(self):
         testcases = [
             {
@@ -118,17 +102,12 @@ class ListOrganization(APIBase):
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.list_organizations()
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_org_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
 
             self.capellaAPI.org_ops_apis.organization_endpoint = \
                 "/v4/organizations"
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.organisation_id)
 
         if failures:
             for fail in failures:
@@ -173,14 +152,9 @@ class ListOrganization(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.list_organizations(
                     header)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_org_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.organisation_id)
 
         if failures:
             for fail in failures:
