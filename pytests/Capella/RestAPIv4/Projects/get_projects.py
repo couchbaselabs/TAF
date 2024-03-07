@@ -5,9 +5,6 @@ Created on September 1, 2023
 """
 
 from pytests.Capella.RestAPIv4.api_base import APIBase
-import time
-import base64
-
 
 class GetProject(APIBase):
 
@@ -49,22 +46,10 @@ class GetProject(APIBase):
 
         super(GetProject, self).tearDown()
 
-    def validate_project_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(expected_res[key], dict):
-                self.validate_project_api_response(
-                    expected_res[key], actual_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
-
     def test_api_path(self):
         testcases = [
             {
-                "description": "Fetch info for a valid project"
+                "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects",
@@ -74,7 +59,7 @@ class GetProject(APIBase):
                     "message": "Not found"
                 }
             }, {
-                "description": "Replace projects with project in URI",
+                "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/project",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
@@ -84,7 +69,7 @@ class GetProject(APIBase):
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
-                "description": "Fetch project but with non-hex organizationID",
+                "description": "Send call with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
                 "expected_status_code": 400,
@@ -99,7 +84,7 @@ class GetProject(APIBase):
                                "be a client error."
                 }
             }, {
-                "description": "Fetch project but with non-hex projectID",
+                "description": "Send call with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
                 "expected_status_code": 400,
@@ -118,32 +103,28 @@ class GetProject(APIBase):
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-            org = self.organisation_id
-            proj = self.project_id
+            organisation = self.organisation_id
+            project = self.project_id
 
             if "url" in testcase:
                 self.capellaAPI.org_ops_apis.project_endpoint = testcase["url"]
             if "invalid_organizationID" in testcase:
-                org = testcase["invalid_organizationID"]
+                organisation = testcase["invalid_organizationID"]
             elif "invalid_projectID" in testcase:
-                proj = testcase["invalid_projectID"]
+                project = testcase["invalid_projectID"]
 
-            result = self.capellaAPI.org_ops_apis.fetch_project_info(org, proj)
+            result = self.capellaAPI.org_ops_apis.fetch_project_info(
+                organisation, project)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_project_info(
-                    org, proj)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_project_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+                    organisation, project)
 
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.project_id)
 
         if failures:
             for fail in failures:
@@ -199,14 +180,9 @@ class GetProject(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_project_info(
                     self.organisation_id, self.project_id, header)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_project_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.project_id)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -287,14 +263,9 @@ class GetProject(APIBase):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.fetch_project_info(
                     testcase["organizationID"], testcase["projectID"], **kwarg)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_project_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.project_id)
 
         if failures:
             for fail in failures:
@@ -324,22 +295,7 @@ class GetProject(APIBase):
                 self.fail("Error while creating API key for "
                           "organizationOwner_{}".format(i))
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
             # unauthorized roles, ie, which give a 403 response.
@@ -368,22 +324,7 @@ class GetProject(APIBase):
             else:
                 self.api_keys[api_key] = api_key_dict[api_key]
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran for
             # unauthorized roles, ie, which give a 403 response.

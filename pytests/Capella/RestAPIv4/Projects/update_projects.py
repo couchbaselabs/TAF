@@ -5,8 +5,6 @@ Created on September 1, 2023
 """
 
 from pytests.Capella.RestAPIv4.api_base import APIBase
-import time
-import base64
 import copy
 
 
@@ -49,20 +47,6 @@ class UpdateProject(APIBase):
             self.log.info("Project deleted successfully")
 
         super(UpdateProject, self).tearDown()
-
-    def validate_project_api_response(self, expected_res, actual_res):
-        self.expected_result["name"] = self.project_name + str(
-            self.name_iteration)
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(expected_res[key], dict):
-                self.validate_project_api_response(
-                    expected_res[key], actual_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
 
     def test_api_path(self):
         testcases = [
@@ -140,25 +124,11 @@ class UpdateProject(APIBase):
                 result = self.capellaAPI.org_ops_apis.update_project(
                     org, proj, self.project_name + str(self.name_iteration),
                     "", False)
-            if result.status_code == 204 and "expected_error" not in testcase:
-                validate = self.capellaAPI.org_ops_apis.fetch_project_info(
-                    self.organisation_id, self.project_id)
-                if validate.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    validate = self.capellaAPI.org_ops_apis.fetch_project_info(
-                        self.organisation_id, self.project_id)
-                if not self.validate_project_api_response(
-                        self.expected_result, validate.json()):
-                    self.log.error("Status == 204, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-                else:
-                    self.name_iteration += 1
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
 
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
+
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -215,22 +185,8 @@ class UpdateProject(APIBase):
                     self.organisation_id, self.project_id,
                     self.project_name + str(self.name_iteration), "", False,
                     header)
-            if result.status_code == 204 and "expected_error" not in testcase:
-                validate = self.capellaAPI.org_ops_apis.fetch_project_info(
-                    self.organisation_id, self.project_id)
-                if validate.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    validate = self.capellaAPI.org_ops_apis.fetch_project_info(
-                        self.organisation_id, self.project_id)
-                if not self.validate_project_api_response(
-                        self.expected_result, validate.json()):
-                    self.log.error("Status == 204, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-                else:
-                    self.name_iteration += 1
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
+
+            self.validate_testcase(result, [204], testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -298,10 +254,7 @@ class UpdateProject(APIBase):
                         "message": "The server cannot find a project by its "
                                    "ID."
                     }
-            testcases.append(testcase)
 
-        failures = list()
-        for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}
@@ -318,59 +271,14 @@ class UpdateProject(APIBase):
                     testcase["organizationID"], testcase["projectID"],
                     self.project_name + str(self.name_iteration), "", False,
                     **kwarg)
-            if result.status_code == 204 and "expected_error" not in testcase:
-                validate = self.capellaAPI.org_ops_apis.fetch_project_info(
-                    self.organisation_id, self.project_id)
-                if validate.status_code == 429:
-                    self.handle_rate_limit(int(result.headers["Retry-After"]))
-                    validate = self.capellaAPI.org_ops_apis.fetch_project_info(
-                        self.organisation_id, self.project_id)
-                if not self.validate_project_api_response(
-                        self.expected_result, validate.json()):
-                    self.log.error("Status == 204, Key validation Failure "
-                                   ": {}".format(testcase["description"]))
-                    failures.append(testcase["description"])
-                else:
-                    self.name_iteration += 1
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
-            # elif result.status_code >= 500:
-            #     self.log.critical(testcase["description"])
-            #     self.log.warning(result.content)
-            #     failures.append(testcase["description"])
-            #     continue
-            # elif result.status_code == testcase["expected_status_code"]:
-            #     try:
-            #         result = result.json()
-            #         for key in result:
-            #             if result[key] != testcase["expected_error"][key]:
-            #                 self.log.error("Status != 200, Err validation "
-            #                                "Failure : {}".format(
-            #                                 testcase["description"]))
-            #                 self.log.warning("Result : {}".format(result))
-            #                 failures.append(testcase["description"])
-            #                 break
-            #     except (Exception,):
-            #         if str(testcase["expected_error"]) not in \
-            #                 result.content:
-            #             self.log.error(
-            #                 "Response type not JSON, Failure : {}".format(
-            #                     testcase["description"]))
-            #             self.log.warning(result.content)
-            #             failures.append(testcase["description"])
-            # else:
-            #     self.log.error("Expected HTTP status code {}, Actual "
-            #                    "HTTP status code {}".format(
-            #                     testcase["expected_status_code"],
-            #                     result.status_code))
-            #     self.log.warning("Result : {}".format(result.content))
-            #     failures.append(testcase["description"])
+
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests".format(
-                len(failures), len(testcases)))
+                len(failures), testcases))
 
     def test_payload(self):
         testcases = list()
@@ -435,44 +343,8 @@ class UpdateProject(APIBase):
                 result = self.capellaAPI.org_ops_apis.update_project(
                     self.organisation_id, self.project_id, testcase["name"],
                     testcase["description"], False)
-            if result.status_code == 204:
-                if "expected_error" in testcase:
-                    self.log.error(testcase["desc"])
-                    failures.append(testcase["desc"])
-                else:
-                    self.log.debug("Updation Successful - No Errors.")
-            else:
-                if result.status_code >= 500:
-                    self.log.critical(testcase["desc"])
-                    self.log.warning(result.content)
-                    failures.append(testcase["desc"])
-                    continue
-                if result.status_code == testcase["expected_status_code"]:
-                    try:
-                        result = result.json()
-                        for key in result:
-                            if result[key] != testcase["expected_error"][key]:
-                                self.log.error("Status != 204, Key validation "
-                                               "failed for Test : {}".format(
-                                                testcase["desc"]))
-                                self.log.warning("Failure : {}".format(result))
-                                failures.append(testcase["desc"])
-                                break
-                    except (Exception,):
-                        if str(testcase["expected_error"]) \
-                                not in result.content:
-                            self.log.error(
-                                "Response type not JSON, Test : {}".format(
-                                    testcase["desc"]))
-                            self.log.warning("Failure : {}".format(result))
-                            failures.append(testcase["desc"])
-                else:
-                    self.log.error("Expected HTTP status code {}, Actual "
-                                   "HTTP status code {}".format(
-                                    testcase["expected_status_code"],
-                                    result.status_code))
-                    self.log.warning("Result : {}".format(result.content))
-                    failures.append(testcase["desc"])
+
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -503,22 +375,7 @@ class UpdateProject(APIBase):
                 self.fail("Error while creating API key for "
                           "organizationOwner_{}".format(i))
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
@@ -552,22 +409,7 @@ class UpdateProject(APIBase):
             else:
                 self.api_keys[api_key] = api_key_dict[api_key]
 
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
+        results = self.throttle_test(api_func_list, self.api_keys)
         for result in results:
             # Removing failure for tests which are intentionally ran
             # for :
