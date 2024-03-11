@@ -3,10 +3,6 @@ Created on Jul 7, 2022
 
 @author: ritesh.agarwal
 '''
-from java.nio.file import Paths
-from com.spotify.docker.client.messages import ContainerConfig, HostConfig,\
-    PortBinding
-from com.spotify.docker.client import DefaultDockerClient
 from cb_constants.CBServer import CbServer
 
 

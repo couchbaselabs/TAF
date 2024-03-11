@@ -17,7 +17,6 @@ from time import time
 import requests
 import concurrent.futures
 
-import exceptions
 import json
 import random
 import string
@@ -73,17 +72,6 @@ from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.tuq_generators import JsonGenerator
 from StatsLib.StatsOperations import StatsHelper
 
-from com.couchbase.client.core.error import DocumentExistsException, \
-    TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
-from com.couchbase.test.docgen import \
-    WorkLoadSettings, DocumentGenerator, DocRange
-from com.couchbase.test.loadgen import WorkLoadGenerate
-from com.couchbase.test.sdk import Server
-from com.couchbase.test.sdk import SDKClient as NewSDKClient
-from com.couchbase.test.sdk import SDKClientPool
-from com.couchbase.test.docgen import DRConstants
-
-from java.util import HashMap
 
 """
 Create a set of bucket_parameters to be sent to all bucket_creation methods

@@ -6,10 +6,8 @@ import random
 import re
 import string
 
-from documentgenerator import DocumentGenerator
-from data import COUNTRIES, COUNTRY_CODE, FIRST_NAMES, LAST_NAMES
-
-from com.couchbase.client.java.json import JsonObject
+from couchbase_helper.data import COUNTRIES, COUNTRY_CODE, FIRST_NAMES, LAST_NAMES
+from couchbase_helper.documentgenerator import DocumentGenerator
 
 
 class TuqGenerators(object):

@@ -1,22 +1,3 @@
-from com.couchbase.client.core.retry import \
-    BestEffortRetryStrategy, FailFastRetryStrategy
-from com.couchbase.client.core.msg.kv import DurabilityLevel as KVDurabilityLevel
-
-from com.couchbase.client.java.kv import \
-    GetAllReplicasOptions, \
-    GetOptions, \
-    InsertOptions, \
-    MutateInOptions, \
-    PersistTo, \
-    RemoveOptions, \
-    ReplaceOptions, \
-    ReplicateTo, \
-    TouchOptions, \
-    UpsertOptions, \
-    ScanOptions
-
-from java.time import Duration
-from java.time.temporal import ChronoUnit
 from constants.sdk_constants.java_client import SDKConstants
 
 

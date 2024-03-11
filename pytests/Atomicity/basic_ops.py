@@ -7,8 +7,6 @@ from couchbase_helper.tuq_generators import JsonGenerator
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
-from com.couchbase.client.java.json import JsonObject
-
 """
 Basic test cases with commit,rollback scenarios
 """

@@ -9,15 +9,17 @@ from BucketLib.bucket import Bucket
 from SecurityLib.rbac import RbacUtil
 from basetestcase import ClusterSetup
 from cb_constants import constants, CbServer, DocLoading
+from cb_server_rest_util.rest_client import RestConnection
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from cb_tools.mc_stat import McStat
+from cluster_utils.cluster_ready_functions import CBCluster
+from constants.sdk_constants.java_client import SDKConstants
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from gsiLib.gsiHelper import GsiHelper
 
-from constants.sdk_constants.java_client import SDKConstants
 from mc_bin_client import MemcachedClient, MemcachedError
 from platform_constants.os_constants import Linux
 from remote.remote_util import RemoteMachineShellConnection
@@ -26,13 +28,6 @@ from sdk_exceptions import SDKException
 from sdk_utils.java_sdk import SDKOptions
 from table_view import TableView
 
-from java.lang import RuntimeException
-from com.couchbase.client.java.codec import RawJsonTranscoder
-from com.couchbase.client.core.error import AmbiguousTimeoutException, \
-    CouchbaseException
-
-from couchbase_utils.cluster_utils.cluster_ready_functions import CBCluster
-from membase.api.rest_client import RestConnection
 
 
 """

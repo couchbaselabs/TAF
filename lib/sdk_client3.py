@@ -8,73 +8,25 @@ Created on Mar 14, 2019
 import json as pyJson
 import subprocess
 import os
-import com.couchbase.client.core.deps.io.netty.handler.ssl.util.InsecureTrustManagerFactory \
-    as InsecureTrustManagerFactory
 import time
 
-from _threading import Lock
+from threading import Lock
 
-
-from com.couchbase.client.core.env import \
-    CompressionConfig, \
-    SeedNode, \
-    TimeoutConfig, IoConfig, \
-    SecurityConfig
-from com.couchbase.client.core.error import \
-    CasMismatchException, \
-    ConfigException, \
-    CouchbaseException, \
-    DocumentExistsException, \
-    DocumentNotFoundException, \
-    DurabilityAmbiguousException, \
-    DurabilityImpossibleException, \
-    FeatureNotAvailableException, \
-    ReplicaNotConfiguredException, \
-    RequestCanceledException, \
-    ServerOutOfMemoryException, \
-    TemporaryFailureException, \
-    TimeoutException
-from com.couchbase.client.core.msg.kv import DurabilityLevel as KVDurabilityLevel
-from com.couchbase.client.core.service import ServiceType
-from com.couchbase.client.java import Cluster, ClusterOptions
-from com.couchbase.client.java.codec import RawBinaryTranscoder,\
-    RawStringTranscoder
-from com.couchbase.client.java.diagnostics import WaitUntilReadyOptions
-from com.couchbase.client.java.env import ClusterEnvironment
-from com.couchbase.client.java.json import JsonObject
-from com.couchbase.client.java.manager.collection import CollectionSpec
-from com.couchbase.client.java.kv import GetAllReplicasOptions
-from com.couchbase.client.java.query import QueryOptions
-
-# Transaction dependencies
-from com.couchbase.client.java.transactions.config import \
-    TransactionsCleanupConfig, \
-    TransactionsConfig, \
-    TransactionOptions
-from com.couchbase.client.java.transactions import TransactionKeyspace
-# End of transaction dependencies
-
-from java.time import Duration
-from java.nio.charset import StandardCharsets
-from java.lang import Exception as Java_base_exception
-from java.lang import RuntimeException
-from java.lang import System, String
-from java.util import \
-    Collections, \
-    HashSet, \
-    Optional
-from reactor.util.function import Tuples
-
-import com.couchbase.test.doc_operations_sdk3.doc_ops as doc_op
-import com.couchbase.test.doc_operations_sdk3.SubDocOperations as sub_doc_op
-from com.couchbase.client.core.deps.io.netty.buffer import Unpooled
-from com.couchbase.client.core.deps.io.netty.util import CharsetUtil
 
 from cb_constants import ClusterRun, CbServer, DocLoading
 from constants.sdk_constants.java_client import SDKConstants
 from global_vars import logger
 from sdk_utils.java_sdk import SDKOptions
 from sdk_exceptions import SDKException
+
+from datetime import timedelta
+
+# needed for any cluster connection
+from couchbase.auth import PasswordAuthenticator
+from couchbase.cluster import Cluster
+# needed for options -- cluster, timeout, SQL++ (N1QL) query, etc.
+from couchbase.options import (ClusterOptions, ClusterTimeoutOptions,
+                               QueryOptions)
 
 
 class SDKClientPool(object):
@@ -195,12 +147,8 @@ class TransactionConfig(object):
 
 
 class SDKClient(object):
-    System.setProperty("com.couchbase.forceIPv4", "false")
-
     sdk_connections = 0
     sdk_disconnections = 0
-    doc_op = doc_op()
-    sub_doc_op = sub_doc_op()
     """
     Java SDK Client Implementation for testrunner - master branch
     """
@@ -208,16 +156,18 @@ class SDKClient(object):
     @staticmethod
     def create_cluster_env(kv_timeout=60, num_kv_connections=25,
                            connection_timeout=20):
-        return ClusterEnvironment.builder() \
-            .ioConfig(IoConfig.numKvConnections(num_kv_connections)) \
-            .timeoutConfig(
-                TimeoutConfig.builder()
-                .connectTimeout(Duration.ofSeconds(connection_timeout))
-                .kvDurableTimeout(Duration.ofSeconds(kv_timeout))
-                .kvTimeout(Duration.ofSeconds(kv_timeout)))
+        return None
+        ClusterEnvironment.builder() \
+        .ioConfig(IoConfig.numKvConnections(num_kv_connections)) \
+        .timeoutConfig(
+            TimeoutConfig.builder()
+            .connectTimeout(Duration.ofSeconds(connection_timeout))
+            .kvDurableTimeout(Duration.ofSeconds(kv_timeout))
+            .kvTimeout(Duration.ofSeconds(kv_timeout)))
 
     @staticmethod
     def get_transaction_options(transaction_config_obj):
+        return None
         transaction_options = TransactionOptions.transactionOptions()
         if transaction_config_obj.timeout is not None:
             transaction_options.timeout(Duration.ofSeconds(

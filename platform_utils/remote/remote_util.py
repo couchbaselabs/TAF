@@ -28,11 +28,6 @@ from testconstants import NR_INSTALL_LOCATION_FILE
 import scripts.install_constants as install_constants
 
 from membase.api.rest_client import RestConnection
-from com.jcraft.jsch import JSchException, JSchAuthCancelException, \
-    JSchPartialAuthException, SftpException
-
-from com.jcraft.jsch import JSch
-from org.python.core.util import FileUtil
 
 
 class COMMAND:
@@ -4165,7 +4160,7 @@ class RemoteMachineShellConnection(KeepRefs):
             backup_command = "%scbbackup" % Mac.COUCHBASE_BIN_PATH
 
         command_options_string = ""
-        if command_options is not '':
+        if command_options != '':
             if "-b" not in command_options:
                 command_options_string = ' '.join(command_options)
             else:

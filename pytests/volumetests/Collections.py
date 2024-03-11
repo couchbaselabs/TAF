@@ -1,13 +1,10 @@
-import threading
 import time
 import random
 import math
+from threading import Thread
 
 from FtsLib.FtsOperations import FtsHelper
 from backup_service import BackupServiceTest
-from com.couchbase.client.java import *
-from com.couchbase.client.java.json import *
-from com.couchbase.client.java.query import *
 
 from cb_constants import CbServer
 from collections_helper.collections_spec_constants import MetaCrudParams
