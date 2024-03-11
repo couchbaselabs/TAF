@@ -4,7 +4,6 @@ Created on Nov 3, 2017
 @author: riteshagarwal
 '''
 import copy
-import exceptions
 import time
 import zlib
 import mc_bin_client
@@ -19,7 +18,7 @@ from memcached.helper.data_helper import MemcachedClientHelper, \
                                          VBucketAwareMemcached
 from mc_bin_client import MemcachedClient
 from threading import Thread
-import Queue
+import queue
 from collections import defaultdict
 from BucketLib.BucketOperations import BucketHelper
 
@@ -80,7 +79,7 @@ class MemcachedHelper:
                             continue
                         log.error("%s: %s" % (log_msg, ex_msg))
                         continue
-                    except exceptions.EOFError:
+                    except EOFError:
                         # The client was disconnected for some reason. This can
                         # happen just after the bucket REST API is returned (before
                         # the buckets are created in each of the memcached processes.)
@@ -182,7 +181,7 @@ class MemcachedHelper:
     @staticmethod
     def keys_exist_or_assert_in_parallel(keys, server, bucket_name, test, concurrency=2):
         verification_threads = []
-        queue = Queue.Queue()
+        queue = queue.Queue()
         log = logger.get("infra")
         for i in range(concurrency):
             keys_chunk = MemcachedHelper.chunks(keys, len(keys) / concurrency)

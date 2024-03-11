@@ -1,6 +1,6 @@
 import os
-import urllib2
 import re
+import requests
 import sys
 from argparse import ArgumentParser
 from os.path import basename, exists, isdir, sep, splitext
@@ -23,10 +23,18 @@ class HelperLib(object):
 
     @staticmethod
     def validate_python_version(current_version):
-        current_version = float("%s.%s" % (current_version.major,
-                                           current_version.minor))
-        if (taf.min_python_version > current_version) or (
-                current_version > taf.max_python_version):
+        min_sup_maj_ver, min_sup_minor_ver = taf.min_python_version.split(".")
+        max_sup_maj_ver, max_sup_minor_ver = taf.max_python_version.split(".")
+        min_sup_maj_ver = int(min_sup_maj_ver)
+        min_sup_minor_ver = int(min_sup_minor_ver)
+        max_sup_maj_ver = int(max_sup_maj_ver)
+        max_sup_minor_ver = int(max_sup_minor_ver)
+        curr_maj_ver = int(current_version.major)
+        curr_minor_ver = int(current_version.minor)
+        if curr_maj_ver < min_sup_maj_ver or curr_maj_ver > max_sup_maj_ver:
+            return False
+        if curr_maj_ver == min_sup_maj_ver \
+                and curr_minor_ver < min_sup_minor_ver:
             return False
         return True
 
@@ -110,9 +118,9 @@ class HelperLib(object):
         print("Filename: %s" % filename)
         if filename:
             if exists(filename):
-                return file(filename)
+                return open(filename)
             if exists("conf{0}{1}".format(sep, filename)):
-                return file("conf{0}{1}".format(sep, filename))
+                return open("conf{0}{1}".format(sep, filename))
             return None
 
     def append_test(self, tests, name):
@@ -296,12 +304,10 @@ class HelperLib(object):
                 jobnamebuild[-3:]) + "_testresult.xml"
             print("Downloading " + url_path + " to " + newfilepath)
             try:
-                req = urllib2.Request(url_path)
-                filedata = urllib2.urlopen(req)
-                datatowrite = filedata.read()
+                req = requests.get(url_path, allow_redirects=True)
                 filepath = newfilepath
-                with open(filepath, 'wb') as f:
-                    f.write(datatowrite)
+                with open(filepath, 'wb') as fp:
+                    fp.write(req.content)
             except Exception as ex:
                 print("Error:: " + str(
                     ex) + "! Please check if " + url_path + " URL is "

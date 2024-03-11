@@ -1,5 +1,5 @@
 import time
-import Queue
+from queue import Queue
 from threading import Thread
 
 from cb_constants import constants
@@ -110,7 +110,7 @@ class ClusterOperationHelper(object):
     def persistence_verification(servers, bucket, timeout_in_seconds=1260):
         verification_threads = []
         log = logger.get("infra")
-        queue = Queue.Queue()
+        queue = Queue()
         rest = RestConnection(servers[0])
         nodes = rest.get_nodes()
         nodes_ip = []

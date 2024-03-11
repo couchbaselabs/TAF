@@ -345,7 +345,7 @@ class x509main:
                     header = {'Content-type': 'Content-Type: application/json'}
                     r = requests.delete(final_url, verify=x509main.CERT_FILE, cert=(x509main.CLIENT_CERT_PEM, x509main.CLIENT_CERT_KEY), headers=header)
                 return r.status_code, r.text
-            except Exception, ex:
+            except Exception as ex:
                 log.info ("into exception form validate_ssl_login with client cert")
                 log.info (" Exception is {0}".format(ex))
                 return 'error'
@@ -357,7 +357,7 @@ class x509main:
                     params = urllib.urlencode({'user':'{0}'.format(username), 'password':'{0}'.format(password)})
                     r = requests.post("https://"+str(self.host.ip)+":18091/uilogin",data=params,headers=header,verify=x509main.CERT_FILE)
                     return r.status_code
-            except Exception, ex:
+            except Exception as ex:
                 log.info ("into exception form validate_ssl_login")
                 log.info (" Exception is {0}".format(ex))
                 return 'error'

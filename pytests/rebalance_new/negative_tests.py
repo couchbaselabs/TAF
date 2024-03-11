@@ -15,7 +15,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
             self.rest = RestConnection(self.cluster.master)
             status, _ = self.rest.rebalance(otpNodes=[], ejectedNodes=[])
             self.assertFalse(status, "Rebalance did not fail as expected")
-        except Exception, ex:
+        except Exception as ex:
             self.assertTrue(("empty_known_nodes" in str(ex)),
                             "Rebalance did not fail as expected, Exception {0}"
                             .format(ex))
@@ -32,7 +32,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
             nodes = self.get_nodes()
             status, _ = self.rest.rebalance(otpNodes=nodes, ejectedNodes=nodes)
             self.assertTrue(status, "Rebalance did not fail as expected")
-        except Exception, ex:
+        except Exception as ex:
             self.assertTrue(("No active nodes" in str(ex)),
                             "Rebalance did not fail as expected, Exception {0}"
                             .format(ex))
@@ -43,7 +43,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
             status, _ = self.rest.rebalance(otpNodes=['non-existant'],
                                          ejectedNodes=['non-existant'])
             self.assertFalse(status, "Rebalance did not fail as expected")
-        except Exception, ex:
+        except Exception as ex:
             self.assertTrue(("mismatch" in str(ex)),
                             "Rebalance did not fail as expected, Exception {0}"
                             .format(ex))
@@ -65,7 +65,7 @@ class NegativeRebalanceTests(RebalanceBaseTest):
                                          ejectedNodes=nodes[1:],
                                          deltaRecoveryBuckets=['non-existant'])
             self.assertFalse(status, "Rebalance did not fail as expected")
-        except Exception, ex:
+        except Exception as ex:
             self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),
                             "Rebalance did not fail as expected, Exception {0}"
                             .format(ex))

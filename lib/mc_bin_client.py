@@ -6,7 +6,6 @@ Copyright (c) 2007  Dustin Sallings <dustin@spy.net>
 """
 
 import array
-import exceptions
 import hmac
 import json
 import random
@@ -41,11 +40,11 @@ def decodeCollectionID(key):
         end = end + 1
         if end == len(data):
             #  We should of stopped for a stop byte, not the end of the buffer
-            raise exceptions.ValueError("encoded key did not contain a stop byte")
+            raise ValueError("encoded key did not contain a stop byte")
     return cid, key[end:]
 
 
-class MemcachedError(exceptions.Exception):
+class MemcachedError(Exception):
     """Error raised when a command fails."""
 
     def __init__(self, status, msg=None):
@@ -53,7 +52,7 @@ class MemcachedError(exceptions.Exception):
         supermsg = 'Memcached error #' + repr(status) + ' ' + repr(error_msg)
         msg = str(msg)
         if msg: supermsg += ":  " + msg
-        exceptions.Exception.__init__(self, supermsg)
+        Exception.__init__(self, supermsg)
 
         self.status = status
         self.msg = msg
@@ -159,7 +158,7 @@ class MemcachedClient(KeepRefs):
         while len(response) < MIN_RECV_PACKET:
             data = self.s.recv(MIN_RECV_PACKET - len(response))
             if data == b'':
-                raise exceptions.EOFError("Got empty data (remote died?). from {0}".format(self.host))
+                raise EOFError("Got empty data (remote died?). from {0}".format(self.host))
             response += data
 
         assert len(response) == MIN_RECV_PACKET
@@ -181,7 +180,7 @@ class MemcachedClient(KeepRefs):
         while remaining > 0:
             data = self.s.recv(remaining)
             if data == b'':
-                raise exceptions.EOFError("Got empty data (remote died?). from {0}".format(self.host))
+                raise EOFError("Got empty data (remote died?). from {0}".format(self.host))
             rv += data
             remaining -= len(data)
 
@@ -1077,7 +1076,7 @@ class MemcachedClient(KeepRefs):
     # @return a string with the binary encoding
     def _encodeCollectionId(self, key, scope, collection):
         if not self.is_collections_supported():
-            raise exceptions.RuntimeError("Collections are not enabled")
+            raise RuntimeError("Collections are not enabled")
 
         if type(collection) == str:
             # expect scope.collection for name API

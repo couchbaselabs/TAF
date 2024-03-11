@@ -1,9 +1,8 @@
-from _threading import Lock
+from threading import Lock
 
 import Jython_tasks
 from cb_constants import CbServer
 from common_lib import Counter
-from constants.sdk_constants.java_client import SDKConstants
 
 
 class BucketStats(object):

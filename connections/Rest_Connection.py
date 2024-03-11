@@ -18,14 +18,6 @@ from custom_exceptions.exception import ServerUnavailableException
 
 import requests
 
-try:
-    requests.packages.urllib3.disable_warnings()
-except:
-    pass
-import urllib3
-
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
 
 class RestConnection(object):
     DELETE = "DELETE"
@@ -47,13 +39,13 @@ class RestConnection(object):
         if not port:
             port = constants.port
 
-        if int(port) in xrange(9091, 9100):
+        if int(port) in range(9091, 9100):
             # return elastic search rest connection
             from membase.api.esrest_client import EsRestConnection
             obj = object.__new__(EsRestConnection, serverInfo)
         else:
             # default
-            obj = object.__new__(self, serverInfo)
+            obj = object.__new__(self)
         return obj
 
     def __init__(self, serverInfo, timeout=300):
@@ -154,7 +146,7 @@ class RestConnection(object):
         # for Node is unknown to this cluster error
         node_unknown_msg = "Node is unknown to this cluster"
         unexpected_server_err_msg = "Unexpected server error, request logged"
-        for iteration in xrange(5):
+        for iteration in range(5):
             http_res, success = \
                 self.init_http_request(nodes_self_url, timeout)
             if not success and type(http_res) == unicode \
@@ -365,7 +357,7 @@ class RestConnection(object):
                                "Error {1}".format(api, e))
                 if time.time() > end_time:
                     raise ServerUnavailableException(ip=self.ip)
-            except httplib2.ServerNotFoundError as e:
+            except Exception as e:
                 self.log.error("ServerNotFoundError while connecting to {0}. "
                                "Error {1}".format(api, e))
                 if time.time() > end_time:
