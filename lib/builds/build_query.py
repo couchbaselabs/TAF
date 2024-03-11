@@ -1,13 +1,13 @@
 # Contains methods which we
 # use later to map a version # -> rpm url
-from datetime import datetime
-import urllib2
 import re
+import requests
 import socket
-import BeautifulSoup
 import testconstants
 import traceback
 import sys
+from bs4 import BeautifulSoup
+from datetime import datetime
 
 import scripts.install_constants as install_constants
 from common_lib import sleep
@@ -431,8 +431,8 @@ class BuildQuery(object):
         elif repo is not None and edition_type is not None and \
              architecture_type is not None and deliverable_type is not None:
             query = BuildQuery()
-            build = query.create_build_url(version, deliverable_type, architecture_type, \
-                                           edition_type, repo, toy, distribution_version, \
+            build = query.create_build_url(version, deliverable_type, architecture_type,
+                                           edition_type, repo, toy, distribution_version,
                                            distribution_type)
             return build, changes
         else:
@@ -452,7 +452,7 @@ class BuildQuery(object):
                 try:
                     if timeout:
                         socket.setdefaulttimeout(timeout)
-                    page = urllib2.urlopen(build_page + index_url)
+                    page = requests.get(build_page + index_url)
                     soup = BeautifulSoup.BeautifulSoup(page)
                     break
                 except:
@@ -677,7 +677,7 @@ class BuildQuery(object):
             os_name = "debian7_"
         joint_char = "_"
         version_join_char = "_"
-        if toy is not "":
+        if toy != "":
             joint_char = "-"
         if "exe" in deliverable_type:
             joint_char = "-"
@@ -778,7 +778,7 @@ class BuildQuery(object):
                    joint_char + os_name + "_" +  build.architecture_type + \
                    "." + build.deliverable_type
             build.url = repo + build_number + "/" + build.name
-        elif toy is not "":
+        elif toy != "":
             centos_version = "centos6"
             build_info = version.split("-")
             build_number = build_info[1]
