@@ -368,17 +368,71 @@ class APIBase(CouchbaseBaseTest):
 
         return results
 
-    def throttle_test(self, api_func_list, api_keys):
+    def throttle_test(self, api_func_list, multi_key=False, proj_id=None):
         """
-        param api_func_list: (list(list)) List of lists, where inner list is of
-                            format [api_function_call, function_args]
+        param api_func_list: (list(list)) List of lists, where inner
+        list is of format :
+            [api_function_call, function_args]
 
-        param api_keys: dict of all API keys that are to be used while making
-                        API calls.
+        param multi_key: a boolean value which is used to get to know
+        whether the test is being run with a single key (which has
+        proper access to the resource),  or multiple keys (which might
+        or might not have access to the resource) being tested via
+        throttling.
+
+        param proj_id: The UUID of the project that will be used in case
+        of multiple keys throttle testing with different roles.
         """
+        exclude_codes = self.input.param("exclude_codes", "")
+        if exclude_codes:
+            exclude_codes = str(exclude_codes)
+            exclude_codes = exclude_codes.split('-')
+        else:
+            exclude_codes = []
+        exclude_codes.append("403")
+
+        if (not multi_key and proj_id) or (multi_key and not proj_id):
+            self.fail("Please provide the project ID in the testcase while "
+                      "calling the throttling function in case of multiple "
+                      "keys scenario (which may or may not have access to the "
+                      "resource")
+
+        if multi_key:
+            org_roles = self.input.param("org_roles", "organizationOwner")
+            proj_roles = self.input.param("proj_roles", "projectDataReader")
+            org_roles = org_roles.split(":")
+            proj_roles = proj_roles.split(":")
+
+            api_key_dict = self.create_api_keys_for_all_combinations_of_roles(
+                [proj_id], proj_roles, org_roles)
+            for i, api_key in enumerate(api_key_dict):
+                if api_key in self.api_keys:
+                    self.api_keys["{}_{}".format(api_key_dict[api_key], i)] = \
+                        api_key_dict[api_key]
+                else:
+                    self.api_keys[api_key] = api_key_dict[api_key]
+        else:
+            for i in range(self.input.param("num_api_keys", 1)):
+                resp = self.capellaAPI.org_ops_apis.create_api_key(
+                    self.organisation_id,
+                    self.generate_random_string(prefix=self.prefix),
+                    ["organizationOwner"], self.generate_random_string(50))
+                if resp.status_code == 429:
+                    self.handle_rate_limit(int(resp.headers["Retry-After"]))
+                    resp = self.capellaAPI.org_ops_apis.create_api_key(
+                        self.organisation_id,
+                        self.generate_random_string(prefix=self.prefix),
+                        ["organizationOwner"], self.generate_random_string(50))
+                if resp.status_code == 201:
+                    self.api_keys[
+                        "organizationOwner_{}".format(i)] = resp.json()
+                else:
+                    self.fail("Error while creating API key for "
+                              "organizationOwner_{}".format(i))
+
         if self.input.param("rate_limit", False):
             results = self.make_parallel_api_calls(
-                150, api_func_list, api_keys)
+                150, api_func_list, self.api_keys)
             for r in results:
                 self.log.info("**********************************************")
                 self.log.info("Parallel API calls for role {} took {} seconds"
@@ -399,14 +453,22 @@ class APIBase(CouchbaseBaseTest):
             time.sleep(60)
 
         results = self.make_parallel_api_calls(
-            99, api_func_list, api_keys)
+            99, api_func_list, self.api_keys)
         for r in results:
             self.log.info("**********************************************")
             self.log.info("Parallel API calls for role {} took {} seconds"
                           .format(results[r]["role"], (results[r]["end"]
                                   - results[r]["start"]).total_seconds()))
             self.log.info("**********************************************")
-        return results
+
+        for r in results:
+            for status_code in exclude_codes:
+                if status_code in results[r]["4xx_errors"]:
+                    del results[r]["4xx_errors"][status_code]
+
+            if (len(results[r]["4xx_errors"]) > 0 or
+                    len(results[r]["5xx_errors"]) > 0):
+                self.fail("Some API calls failed")
 
     @staticmethod
     def replace_last_character(id, non_hex=False):
