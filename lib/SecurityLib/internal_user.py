@@ -1,5 +1,6 @@
+from SecurityLib.user_base_abc import UserBase
+from cb_server_rest_util.security.security_api import SecurityRestAPI
 from global_vars import logger
-from user_base_abc import UserBase
 from membase.api.rest_client import RestConnection
 
 
@@ -16,19 +17,22 @@ class InternalUser(UserBase):
     if roles=<empty> user will be created with no roles
     '''
     def create_user(self):
-        rest = RestConnection(self.host)
-        response = rest.add_set_builtin_user(self.user_id, self.payload)
+        rest = SecurityRestAPI(self.host)
+        status, response = rest.create_local_user(self.user_id, self.payload)
+        if status is False:
+            self.log.critical(f"Create user failed with msg: {response}")
         return response
 
     def delete_user(self):
+        status = False
         try:
-            rest = RestConnection(self.host)
-            response = rest.delete_builtin_user(self.user_id)
+            rest = SecurityRestAPI(self.host)
+            status, resp = rest.delete_local_user(self.user_id)
+            if status is False:
+                raise Exception(f"Delete user '{self.user_id}' failed: '{resp}'")
         except Exception as e:
-            self.log.error("Exception while deleting user. Exception - {0}"
-                           .format(e))
-            response = False
-        return response
+            self.log.error(f"Exception while deleting user. {str(e)}")
+        return status
 
     def change_password(self, user_id=None, password=None, host=None):
         if user_id:
@@ -44,14 +48,15 @@ class InternalUser(UserBase):
         return response
 
     def exists_users(self):
+        json_output = dict()
         try:
-            rest = RestConnection(self.host)
-            response = rest.retrieve_user_roles()
+            rest = SecurityRestAPI(self.host)
+            status, json_output = rest.list_current_users_and_roles()
+            if status is False:
+                raise Exception(str(json_output))
         except Exception as e:
-            self.log.error("Exception while getting user roles. Exception - {0}"
-                           .format(e))
-            response = False
-        return response
+            self.log.error(f"Get users API failed: {str(e)}")
+        return json_output
 
     def user_setup(self, user_id=None, host=None, payload=None):
         if user_id:
@@ -72,9 +77,9 @@ class InternalUser(UserBase):
         #                   "RBAC is a spock feature."
         #     return
         # check if the atleast some users exist before running
-        resp = self.exists_users()
-        if resp:
-            for user_role in resp:
+        json_output = self.exists_users()
+        if json_output:
+            for user_role in json_output:
                 if user_role["id"] == self.user_id:
                     self.delete_user()
         self.create_user()

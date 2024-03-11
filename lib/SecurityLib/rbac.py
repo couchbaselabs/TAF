@@ -1,7 +1,8 @@
-from ldap_user import LdapUser
-from internal_user import InternalUser
 import urllib
 import json
+
+from SecurityLib.ldap_user import LdapUser
+from SecurityLib.internal_user import InternalUser
 
 
 class RbacUtil:
@@ -55,10 +56,11 @@ class RbacUtil:
                 for role in user_role_param:
                     final_roles = role + "," + final_roles
             payload = "name=" + username + "&roles=" + final_roles
+            response = None
             if self.source == "ldap":
                 response = rest.set_user_roles(userid, payload)
             elif self.source == 'builtin':
-                response = rest.add_set_builtin_user(userid, payload)
+                status, response = rest.create_local_user(userid, payload)
             response_return.append({'id': userid, 'reponse': response})
         return response_return
 
