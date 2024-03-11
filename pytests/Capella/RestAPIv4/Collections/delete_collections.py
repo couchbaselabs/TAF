@@ -4,40 +4,16 @@ Created on December 29, 2023
 @author: Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.Scopes.get_scopes import GetScope
+from pytests.Capella.RestAPIv4.Collections.get_collections import GetCollection
 
 
-class DeleteCollection(GetScope):
+class DeleteCollection(GetCollection):
 
     def setUp(self, nomenclature="Collections_Delete"):
-        GetScope.setUp(self, nomenclature)
-
-        # Create a collection inside the scope.
-        self.collection_name = self.generate_random_string(
-            5, False, self.prefix)
-        res = self.capellaAPI.cluster_ops_apis.create_collection(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.bucket_id, self.scope_name, self.collection_name)
-        if res.status_code != 201:
-            self.tearDown()
-            self.fail("!!!...Collection creation failed...!!!")
-        self.log.info("Collection: {} creation successful"
-                      .format(self.collection_name))
+        GetCollection.setUp(self, nomenclature)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
-
-        # Delete Collection.
-        self.log.info("Deleting collection: {}".format(self.collection_name))
-        if self.capellaAPI.cluster_ops_apis.delete_collection(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name,
-                self.collection_name).status_code != 200:
-            self.log.error("Error while deleting Collection: {}"
-                           .format(self.collection_name))
-        else:
-            self.log.info("Collection deletion successful.")
-
         super(DeleteCollection, self).tearDown()
 
     def test_api_path(self):
@@ -181,21 +157,16 @@ class DeleteCollection(GetScope):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.delete_collection(
                     org, proj, clus, buck, scope, coll)
-            if result.status_code == 200:
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Deletion Successful.")
-                    self.collection_name = self.create_collection_to_be_tested(
-                        self.organisation_id, self.project_id,
-                        self.cluster_id, self.bucket_id, self.scope_name)
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
                 "/{}/collections/"
+
+            if self.validate_testcase(result, [204], testcase, failures):
+                self.log.debug("Deletion Successful.")
+                self.collection_name = self.create_collection_to_be_tested(
+                    self.organisation_id, self.project_id,
+                    self.cluster_id, self.bucket_id, self.scope_name)
 
         if failures:
             for fail in failures:
@@ -251,18 +222,12 @@ class DeleteCollection(GetScope):
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_id, self.scope_name,
                     self.collection_name, header)
-            if result.status_code == 200:
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    self.log.warning("Result: {}".format(result.json()))
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Deletion Successful.")
-                    self.collection_name = self.create_collection_to_be_tested(
-                        self.organisation_id, self.project_id,
-                        self.cluster_id, self.bucket_id, self.scope_name)
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            if self.validate_testcase(result, [204], testcase, failures):
+                self.log.debug("Deletion Successful.")
+                self.collection_name = self.create_collection_to_be_tested(
+                    self.organisation_id, self.project_id,
+                    self.cluster_id, self.bucket_id, self.scope_name)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -414,18 +379,12 @@ class DeleteCollection(GetScope):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["bucketID"],
                     testcase["scopeName"], testcase["collectionName"], **kwarg)
-            if result.status_code == 200:
-                if "expected_error" in testcase:
-                    self.log.error(testcase["description"])
-                    self.log.warning("Result: {}".format(result.json()))
-                    failures.append(testcase["description"])
-                else:
-                    self.log.debug("Deletion Successful.")
-                    self.collection_name = self.create_collection_to_be_tested(
-                        self.organisation_id, self.project_id,
-                        self.cluster_id, self.bucket_id, self.scope_name)
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            if self.validate_testcase(result, [204], testcase, failures):
+                self.log.debug("Deletion Successful.")
+                self.collection_name = self.create_collection_to_be_tested(
+                    self.organisation_id, self.project_id,
+                    self.cluster_id, self.bucket_id, self.scope_name)
 
         if failures:
             for fail in failures:
@@ -445,50 +404,7 @@ class DeleteCollection(GetScope):
             (self.organisation_id, self.project_id, self.cluster_id,
              self.bucket_id, self.scope_name, "")
         ]]
-
-        for i in range(self.input.param("num_api_keys", 1)):
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id,
-                self.generate_random_string(prefix=self.prefix),
-                ["organizationOwner"], self.generate_random_string(50))
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id,
-                    self.generate_random_string(prefix=self.prefix),
-                    ["organizationOwner"], self.generate_random_string(50))
-            if resp.status_code == 201:
-                self.api_keys["organizationOwner_{}".format(i)] = resp.json()
-            else:
-                self.fail("Error while creating API key for "
-                          "organizationOwner_{}".format(i))
-
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail("Rate limit was hit after {0} API calls. This is"
-                              " definitely an issue.".format(results[result][
-                                                                 "total_api_calls_made_to_hit_rate_limit"]))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
-        for result in results:
-            # Removing failure for tests which are intentionally ran
-            # for :
-            #   # empty name dummies, ie, which give a 404 response.
-            if "404" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["404"]
-            #   # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
-
-            if len(results[result]["4xx_errors"]) > 0 or len(
-                    results[result]["5xx_errors"]) > 0:
-                self.fail("Some API calls failed")
+        self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         """
@@ -501,44 +417,4 @@ class DeleteCollection(GetScope):
             (self.organisation_id, self.project_id, self.cluster_id,
              self.bucket_id, self.scope_name, "")
         ]]
-
-        org_roles = self.input.param("org_roles", "organizationOwner")
-        proj_roles = self.input.param("proj_roles", "projectDataReader")
-        org_roles = org_roles.split(":")
-        proj_roles = proj_roles.split(":")
-
-        api_key_dict = self.create_api_keys_for_all_combinations_of_roles(
-            [self.project_id], proj_roles, org_roles)
-        for i, api_key in enumerate(api_key_dict):
-            if api_key in self.api_keys:
-                self.api_keys["{}_{}".format(api_key_dict[api_key], i)] = \
-                    api_key_dict[api_key]
-            else:
-                self.api_keys[api_key] = api_key_dict[api_key]
-
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail("Rate limit was hit after {0} API calls. This is"
-                              " definitely an issue.".format(results[result][
-                                                                 "total_api_calls_made_to_hit_rate_limit"]))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
-        for result in results:
-            # Removing failure for tests which are intentionally ran
-            # for :
-            #   # empty name dummies, ie, which give a 404 response.
-            if "404" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["404"]
-            #   # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
-
-            if len(results[result]["4xx_errors"]) > 0 or len(
-                    results[result]["5xx_errors"]) > 0:
-                self.fail("Some API calls failed")
+        self.throttle_test(api_func_list, True, self.project_id)
