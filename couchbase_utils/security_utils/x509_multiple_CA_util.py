@@ -9,7 +9,6 @@ from ast import literal_eval
 
 import requests
 from global_vars import logger
-import commands
 from membase.api.rest_client import RestConnection
 
 from shutil import copyfile

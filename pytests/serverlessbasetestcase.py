@@ -15,7 +15,6 @@ from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Dataplane
 from constants.cloud_constants.capella_constants import AWS
-from security_config import trust_all_certs
 from threading import Thread
 import global_vars
 from uuid import uuid4
@@ -40,7 +39,6 @@ class OnCloudBaseTest(CouchbaseBaseTest):
 
         self.wait_timeout = self.input.param("wait_timeout", 1800)
         CbServer.use_https = True
-        trust_all_certs()
 
         # initialize pod object
         url = self.input.capella.get("pod")

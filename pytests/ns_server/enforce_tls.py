@@ -5,7 +5,6 @@ from couchbase_utils.rbac_utils.Rbac_ready_functions import RbacUtils
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from pytests.bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
-from security_config import trust_all_certs
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 
 
@@ -28,7 +27,6 @@ class EnforceTls(CollectionBase):
                 .update_autofailover_settings(False, 120)
             self.assertTrue(status)
         self.log.info("Changing security settings to trust all CAs")
-        trust_all_certs()
         self.bucket_util.load_sample_bucket(self.cluster, TravelSample())
         shell = RemoteMachineShellConnection(self.cluster.master)
         self.curl_path = "/opt/couchbase/bin/curl"

@@ -3,7 +3,6 @@ from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils
 from capella_utils.common_utils import Pod, Tenant
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster, GoldfishNebula
-from security_config import trust_all_certs
 
 import global_vars
 from capella_utils.columnar import GoldfishUtils

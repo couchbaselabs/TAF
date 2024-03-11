@@ -7,7 +7,6 @@ from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
 import math
-from security_config import trust_all_certs
 
 from index_utils.plasma_stats_util import PlasmaStatsUtil
 from storage.storage_base import StorageBase
@@ -171,7 +170,6 @@ class PlasmaBaseTest(StorageBase):
             generic_url = "http://%s:%s/"
             port = constants.index_port
             if CbServer.use_https == True:
-                trust_all_certs()
                 generic_url = "https://%s:%s/"
                 port = constants.ssl_index_port
             while indexCounter < time_out:

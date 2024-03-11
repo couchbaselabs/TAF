@@ -20,7 +20,6 @@ from cbas_utils.cbas_utils import CbasUtil, CBASRebalanceUtil
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from security_utils.security_utils import SecurityUtils
-from security_config import trust_all_certs
 import random
 
 
@@ -36,7 +35,6 @@ class UpgradeTests(UpgradeBase):
 
         if self.input.param("n2n_encryption", False):
             CbServer.use_https = True
-            trust_all_certs()
 
             self.security_util = SecurityUtils(self.log)
 

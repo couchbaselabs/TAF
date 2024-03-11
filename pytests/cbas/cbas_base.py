@@ -9,13 +9,11 @@ from cluster_utils.cluster_ready_functions import CBCluster
 from membase.api.rest_client import RestConnection
 from cb_constants import CbServer
 from cbas_utils.cbas_utils import CbasUtil
-from java.lang import Exception as Java_base_exception
 from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaConstants
 from BucketLib.bucket import Bucket
 from security_utils.security_utils import SecurityUtils
 from tpch_utils.tpch_utils import TPCHUtil
-from security_config import trust_all_certs
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 
 
@@ -147,7 +145,6 @@ class CBASBaseTest(BaseTestCase):
         for server in self.servers:
             self.set_ports_for_server(server, "ssl")
         CbServer.use_https = True
-        trust_all_certs()
 
         self.available_servers = self.servers[end:]
 

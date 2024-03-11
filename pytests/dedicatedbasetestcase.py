@@ -15,7 +15,6 @@ from capella_utils.common_utils import Pod, Tenant
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
 from constants.cloud_constants.capella_constants import AWS, Cluster
-from security_config import trust_all_certs
 from Jython_tasks.task import DeployCloud
 import uuid
 from table_view import TableView
@@ -98,7 +97,6 @@ class CapellaBaseTest(CouchbaseBaseTest):
             "eventing": self.input.param("eventing_nodes", 2)
             }
         CbServer.use_https = True
-        trust_all_certs()
 
         # initialise pod object
         url = self.input.capella.get("pod")
