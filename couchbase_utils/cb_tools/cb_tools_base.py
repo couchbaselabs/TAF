@@ -10,7 +10,7 @@ class CbCmdBase:
 
         self.shellConn = shell_conn
         self.port = int(shell_conn.port)
-        self.mc_port = shell_conn.memcached_port
+        self.mc_port = shell_conn.server.memcached_port
         self.username = username
         self.password = password
         self.binaryName = binary_name
@@ -25,15 +25,15 @@ class CbCmdBase:
             self.cbstatCmd = os.path.join(
                 TestInputSingleton.input.servers[0].cli_path,
                 "build", target_dir, self.binaryName)
-        elif self.shellConn.extract_remote_info().type.lower() == 'windows':
+        elif self.shellConn.info.type.lower() == 'windows':
             # Windows case
             self.cbstatCmd = "%s%s.exe" % (Windows.COUCHBASE_BIN_PATH,
                                            self.binaryName)
-        elif self.shellConn.extract_remote_info().type.lower() == 'mac':
+        elif self.shellConn.info.type.lower() == 'mac':
             # MacOS case
             self.cbstatCmd = "%s%s" % (Mac.COUCHBASE_BIN_PATH,
                                        self.binaryName)
-        elif self.shellConn.username != "root":
+        elif self.shellConn.server.ssh_username != "root":
             # Linux non-root case
             self.cbstatCmd = "%s%s" % (Linux.NONROOT_CB_BIN_PATH,
                                        self.binaryName)

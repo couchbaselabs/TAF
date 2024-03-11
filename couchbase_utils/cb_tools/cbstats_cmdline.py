@@ -4,7 +4,7 @@ import json
 
 from cb_constants import CbServer
 from cb_tools.cb_tools_base import CbCmdBase
-from remote.remote_util import RemoteMachineShellConnection
+from ssh_util.shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class Cbstats(CbCmdBase):

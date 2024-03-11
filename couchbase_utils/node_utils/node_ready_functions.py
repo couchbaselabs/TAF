@@ -6,11 +6,12 @@ Created on Jan 10, 2022
 import os
 
 import Jython_tasks.task as jython_tasks
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_cli import CouchbaseCLI
 from global_vars import logger
-from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from membase.api.rest_client import RestConnection
 from cb_tools.cb_cli import CbCli
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 """
 An API for scheduling tasks for performing node related operations.
@@ -65,10 +66,12 @@ class NodeUtils(object):
         self.log.info("Resetting cluster_nodes")
         tasks = list()
         for node in cluster.servers:
-            rest = RestConnection(node)
-            version = rest.get_pools_info()
-            if float(version["implementationVersion"][:3]) >= 7.6:
-                rest.reset_node()
+            rest = ClusterRestAPI(node)
+            version = rest.cluster_info()[1]["implementationVersion"][:3]
+            if float(version) >= 7.6:
+                status, _ = rest.reset_node()
+                if not status:
+                    raise Exception(f"Reset node {node.ip} failed")
                 if '.com' in node.ip:
                     rest.rename_node(node.ip)
             else:
@@ -185,7 +188,7 @@ class NodeUtils(object):
                     shell.cleanup_data_config(core_path)
 
                 cluster_util.start_server(cluster, node)
-                if not RestConnection(node).is_ns_server_running():
+                if not cluster_util.is_ns_server_running(node):
                     self.log.error("%s ns_server not running" % node.ip)
         except Exception as e:
             self.log.critical(e)
