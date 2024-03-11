@@ -327,101 +327,10 @@ class ClusterOn(GetCluster):
         api_func_list = [[self.capellaAPI.cluster_ops_apis.switch_cluster_on,
                           (self.organisation_id, self.project_id,
                            self.cluster_id, False)]]
-
-        for i in range(self.input.param("num_api_keys", 1)):
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id,
-                self.generate_random_string(prefix=self.prefix),
-                ["organizationOwner"], self.generate_random_string(50))
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id,
-                    self.generate_random_string(prefix=self.prefix),
-                    ["organizationOwner"], self.generate_random_string(50))
-            if resp.status_code == 201:
-                self.api_keys["organizationOwner_{}".format(i)] = resp.json()
-            else:
-                self.fail("Error while creating API key for "
-                          "organizationOwner_{}".format(i))
-
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
-        for result in results:
-            # Removing failure for tests which are intentionally ran
-            # for :
-            #   # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
-            #   # conflicting state of the resource, ie, which give a
-            #   409 response.
-            if "409" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["409"]
-
-            if len(results[result]["4xx_errors"]) > 0 or len(
-                    results[result]["5xx_errors"]) > 0:
-                self.fail("Some API calls failed")
+        self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[self.capellaAPI.cluster_ops_apis.switch_cluster_on,
                           (self.organisation_id, self.project_id,
                            self.cluster_id, False)]]
-
-        org_roles = self.input.param("org_roles", "organizationOwner")
-        proj_roles = self.input.param("proj_roles", "projectDataReader")
-        org_roles = org_roles.split(":")
-        proj_roles = proj_roles.split(":")
-
-        api_key_dict = self.create_api_keys_for_all_combinations_of_roles(
-            [self.project_id], proj_roles, org_roles)
-        for i, api_key in enumerate(api_key_dict):
-            if api_key in self.api_keys:
-                self.api_keys["{}_{}".format(api_key_dict[api_key], i)] = \
-                    api_key_dict[api_key]
-            else:
-                self.api_keys[api_key] = api_key_dict[api_key]
-
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail(
-                        "Rate limit was hit after {0} API calls. "
-                        "This is definitely an issue.".format(
-                            results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]
-                        ))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
-        for result in results:
-            # Removing failure for tests which are intentionally ran
-            # for :
-            #   # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
-            #   # conflicting state of the resource, ie, which give a
-            #   409 response.
-            if "409" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["409"]
-
-            if len(results[result]["4xx_errors"]) > 0 or len(
-                    results[result]["5xx_errors"]) > 0:
-                self.fail("Some API calls failed")
+        self.throttle_test(api_func_list, True, self.project_id)
