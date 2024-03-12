@@ -1054,7 +1054,7 @@ class CBASHighAvailability(CBASBaseTest):
 
             self.log.info("Checking if server is running on {0}".format(
                 selected_node.ip))
-            if not rest.is_ns_server_running():
+            if not self.cluster_util.is_ns_server_running(selected_node):
                 self.fail("Server failed to come up after timeout on node {0}"
                           .format(selected_node.ip))
 
@@ -1206,10 +1206,6 @@ class CBASHighAvailability(CBASBaseTest):
                     selected_nodes.append(node)
                     break
 
-        selected_node_rest_conns = list()
-        for node in selected_nodes:
-            selected_node_rest_conns.append(RestConnection(node))
-
         server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
                 self.cluster, selected_nodes)
 
@@ -1243,12 +1239,12 @@ class CBASHighAvailability(CBASBaseTest):
                 self.fail("Error while starting couchbase server on one "
                           "of the cbas nodes")
 
-            for rest_conn in selected_node_rest_conns:
+            for node in selected_nodes:
                 self.log.info("Checking if server is running on {0}".format(
-                    rest_conn.ip))
-                if not rest_conn.is_ns_server_running():
+                    node.ip))
+                if not self.cluster_util.is_ns_server_running(node):
                     self.fail("Server failed to come up after timeout on node "
-                              "{0}".format(rest_conn.ip))
+                              "{0}".format(node.ip))
 
             if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 360):
                 self.fail("Cbas service failed to come up")
@@ -1571,10 +1567,6 @@ class CBASHighAvailability(CBASBaseTest):
                         selected_nodes[node.ip] = node
                         break
 
-        selected_node_rest_conns = list()
-        for node in selected_nodes.values():
-            selected_node_rest_conns.append(RestConnection(node))
-
         server_stopped = self.wait_for_rebalance_to_start_before_killing_server(
             self.cluster, selected_nodes.values())
 
@@ -1608,12 +1600,12 @@ class CBASHighAvailability(CBASBaseTest):
                 self.fail("Error while starting couchbase server on one "
                           "of the cbas nodes")
 
-            for rest_conn in selected_node_rest_conns:
+            for node in selected_nodes:
                 self.log.info("Checking if server is running on {0}".format(
-                    rest_conn.ip))
-                if not rest_conn.is_ns_server_running():
+                    node.ip))
+                if not self.cluster_util.is_ns_server_running(node):
                     self.fail("Server failed to come up after timeout on node "
-                              "{0}".format(rest_conn.ip))
+                              "{0}".format(node.ip))
 
             if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 360):
                 self.fail("Cbas service failed to come up")

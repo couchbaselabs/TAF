@@ -126,7 +126,8 @@ class CollectionsNetworkSplit(CollectionBase):
         for node in removed_nodes:
             rest = RestConnection(node)
             rest.reset_node()
-            if rest.is_ns_server_running(timeout_in_seconds=60) is False:
+            if self.cluster_util.is_ns_server_running(
+                    node, timeout_in_seconds=60) is False:
                 self.log.critical("Ns_server not up on {}".format(node.ip))
 
     def populate_uids(self, base_name="pre_qf"):

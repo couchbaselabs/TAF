@@ -148,7 +148,7 @@ class UpgradeBase(BaseTestCase):
             cluster_profile=self.cluster_profile)
         for node in self.cluster.servers[0:self.nodes_init]:
             self.assertTrue(
-                RestConnection(node).is_ns_server_running(30),
+                self.cluster_util.is_ns_server_running(node, 30),
                 "{} - Server REST endpoint unreachable after 30 seconds"
                 .format(node.ip))
 
@@ -532,7 +532,7 @@ class UpgradeBase(BaseTestCase):
                 vbuckets=self.cluster.vbuckets,
                 cluster_profile=self.cluster_profile)
             self.assertTrue(
-                RestConnection(self.spare_node).is_ns_server_running(30),
+                self.cluster_util.is_ns_server_running(self.spare_node, 30),
                 "{} - REST endpoint unreachable after 30 seconds"
                 .format(self.spare_node.ip))
 
@@ -802,7 +802,8 @@ class UpgradeBase(BaseTestCase):
             return
 
         self.log.info("Wait for ns_server to accept connections")
-        if not rest.is_ns_server_running(timeout_in_seconds=120):
+        if not self.cluster_util.is_ns_server_running(node_to_upgrade,
+                                                      timeout_in_seconds=120):
             self.log_failure("Server not started post upgrade")
             return
 
@@ -842,7 +843,8 @@ class UpgradeBase(BaseTestCase):
                 self.log.info("Upgrade of {0} completed".format(node))
 
             self.log.info("Wait for ns_server to accept connections")
-            if not rest.is_ns_server_running(timeout_in_seconds=120):
+            if not self.cluster_util.is_ns_server_running(
+                    node, timeout_in_seconds=120):
                 self.log_failure("Server not started post upgrade")
                 return
 
@@ -1065,12 +1067,11 @@ class UpgradeBase(BaseTestCase):
         self.log.info("Number of failed queries = {}".format(total_queries - success_query_count))
         self.log.info("Failed queries = {}".format(failed_queries))
 
-
     def PrintStep(self, msg=None):
-        print "\n"
-        print "\t", "#"*60
-        print "\t", "#"
-        print "\t", "#  %s" % msg
-        print "\t", "#"
-        print "\t", "#"*60
-        print "\n"
+        print("\n")
+        print("\t", "#"*60)
+        print("\t", "#")
+        print("\t", "#  %s" % msg)
+        print("\t", "#")
+        print("\t", "#"*60)
+        print("\n")

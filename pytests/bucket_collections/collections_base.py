@@ -347,7 +347,7 @@ class CollectionBase(ClusterSetup):
                     shell = RemoteMachineShellConnection(node)
                     shell.restart_couchbase()
                 for node in test_obj.cluster.kv_nodes:
-                    RestConnection(node).is_ns_server_running(300)
+                    test_obj.cluster_util.is_ns_server_running(node, 300)
             else:
                 test_obj.fail("Invalid value '{}'" % set_oso_config_using)
 

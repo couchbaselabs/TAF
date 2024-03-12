@@ -506,8 +506,8 @@ class volume(CollectionBase):
         for node in remove_nodes:
             RestConnection(node).reset_node()
         for node in remove_nodes:
-            if not RestConnection(node).is_ns_server_running(
-                    timeout_in_seconds=120):
+            if not self.cluster_util.is_ns_server_running(
+                    node, timeout_in_seconds=120):
                 self.log.error("ns_server {0} is not running.".format(node.ip))
 
     def rebalance(self, nodes_in=0, nodes_out=0):

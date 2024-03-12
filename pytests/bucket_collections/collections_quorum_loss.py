@@ -218,7 +218,7 @@ class CollectionsQuorumLoss(CollectionBase):
             RestConnection(node).reset_node()
         self.sleep(5, "Wait for nodes to respond")
         for node in removed_nodes:
-            if not RestConnection(node).is_ns_server_running():
+            if not self.cluster_util.is_ns_server_running(node):
                 self.log.error("ns_server {0} is not running.".format(node.ip))
 
     def populate_uids(self, base_name="pre_qf"):

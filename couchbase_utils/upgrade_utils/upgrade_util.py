@@ -2,6 +2,7 @@ import re
 
 from builds.build_query import BuildQuery
 from cb_constants import CbServer
+from global_vars import cluster_util
 from membase.api.rest_client import RestConnection
 from scripts.old_install import InstallerJob
 from upgrade_lib.couchbase import features
@@ -107,7 +108,8 @@ class CbServerUpgrade(object):
             return False
 
         self.log.info("Wait for ns_server to accept connections")
-        if not rest.is_ns_server_running(timeout_in_seconds=120):
+        if not cluster_util.is_ns_server_running(node_to_upgrade,
+                                                 timeout_in_seconds=120):
             self.log.critical("Server not started post upgrade")
             return False
 
