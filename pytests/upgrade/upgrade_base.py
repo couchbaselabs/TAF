@@ -1,3 +1,5 @@
+import threading
+
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
 import Jython_tasks.task as jython_tasks
@@ -14,8 +16,7 @@ from bucket_collections.collections_base import CollectionBase
 from BucketLib.bucket import Bucket
 import testconstants
 from upgrade_lib.couchbase import upgrade_chains
-from upgrade_lib.upgrade_helper import CbServerUpgrade
-import threading
+from upgrade_utils.upgrade_util import CbServerUpgrade
 
 
 class UpgradeBase(BaseTestCase):
