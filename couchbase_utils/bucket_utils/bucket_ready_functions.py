@@ -25,6 +25,7 @@ import zlib
 from subprocess import call
 from collections import defaultdict
 
+import global_vars
 import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
@@ -41,6 +42,8 @@ from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
 from capella_utils.dedicated import CapellaUtils as DedicatedCapellaUtils
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from cb_server_rest_util.security.security_api import SecurityRestAPI
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
@@ -2077,18 +2080,11 @@ class BucketUtils(ScopeUtils):
     def delete_bucket(self, cluster, bucket, wait_for_bucket_deletion=True):
         self.log.debug('Deleting existing bucket {0} on {1}'
                        .format(bucket, cluster.master))
-        bucket_conn = BucketHelper(cluster.master)
+        bucket_rest = BucketRestApi(cluster.master)
         if self.bucket_exists(cluster, bucket):
-            status = bucket_conn.delete_bucket(bucket.name)
+            status, _ = bucket_rest.delete_bucket(bucket.name)
             if not status:
-                try:
-                    self.print_dataStorage_content([cluster.master])
-                    self.log.debug(StatsCommon.get_stats([cluster.master],
-                                                         bucket,
-                                                         "timings"))
-                except Exception as ex:
-                    self.log.error("Unable to get timings for bucket: {0}"
-                                   .format(ex))
+                self.log.critical("Delete bucket failed")
             else:
                 # Pop bucket object from cluster.buckets
                 for index, t_bucket in enumerate(cluster.buckets):
@@ -2097,22 +2093,10 @@ class BucketUtils(ScopeUtils):
 
             self.log.debug('Deleted bucket: {0} from {1}'
                            .format(bucket, cluster.master.ip))
-        msg = 'Bucket "{0}" not deleted even after waiting for two minutes' \
-            .format(bucket)
         if wait_for_bucket_deletion:
             if not self.wait_for_bucket_deletion(cluster, bucket, 200):
-                try:
-                    self.print_dataStorage_content([cluster.master])
-                    self.log.debug(StatsCommon.get_stats([cluster.master],
-                                                         bucket,
-                                                         "timings"))
-                except Exception as ex:
-                    self.log.error("Unable to get timings for bucket: {0}"
-                                   .format(ex))
-                self.log.error(msg)
                 return False
-            else:
-                return True
+            return True
 
     def wait_for_bucket_deletion(self, cluster, bucket,
                                  timeout_in_seconds=120):
@@ -2180,7 +2164,7 @@ class BucketUtils(ScopeUtils):
             magma_key_tree_data_block_size=4096,
             magma_seq_tree_data_block_size=4096,
             vbuckets=None, weight=None, width=None):
-        node_info = RestConnection(cluster.master).get_nodes_self()
+        node_info = global_vars.cluster_util.get_nodes_self(cluster.master)
         if ram_quota:
             ram_quota_mb = ram_quota
         elif node_info.memoryQuota and int(node_info.memoryQuota) > 0:
@@ -2264,7 +2248,7 @@ class BucketUtils(ScopeUtils):
             # Reset the known servers list
             bucket_obj.servers = list()
             try:
-                b_stat = helper.get_bucket_json(bucket_obj.name)
+                b_stat = helper.get_buckets_json(bucket_obj.name)
                 self.log.debug("%s - Server list::%s"
                                % (bucket_obj.name,
                                   b_stat["vBucketServerMap"]["serverList"]))
@@ -2306,7 +2290,7 @@ class BucketUtils(ScopeUtils):
         nebula_servers = list()
         nebula = bucket_obj.serverless.nebula_obj
         b_stats = BucketHelper(nebula.endpoint)\
-            .get_bucket_json(bucket_obj.name)
+            .get_buckets_json(bucket_obj.name)
         for server in b_stats["nodes"]:
             nebula_servers.append(nebula.servers[server["hostname"]])
         cluster.bucketDNNodes[bucket_obj] = nebula_servers
@@ -2899,7 +2883,7 @@ class BucketUtils(ScopeUtils):
 
     @staticmethod
     def get_bucket_compressionMode(cluster_node, bucket='default'):
-        b_info = BucketHelper(cluster_node).get_bucket_json(bucket_name=bucket)
+        b_info = BucketHelper(cluster_node).get_buckets_json(bucket_name=bucket)
         return b_info[Bucket.compressionMode]
 
     def create_multiple_buckets(
@@ -4628,7 +4612,7 @@ class BucketUtils(ScopeUtils):
                             continue
                         self.log.error("%s: %s" % (log_msg, ex_msg))
                         continue
-                    except exceptions.EOFError:
+                    except EOFError:
                         # The client was disconnected for some reason. This can
                         # happen just after the bucket REST API is returned
                         # (before the buckets are created in each of the
@@ -4810,11 +4794,9 @@ class BucketUtils(ScopeUtils):
         return errors
 
     def get_all_buckets(self, cluster, cluster_node=None):
-        if cluster_node is not None:
-            rest = BucketHelper(cluster_node)
-        else:
-            rest = BucketHelper(cluster.master)
-        json_parsed = rest.get_buckets_json()
+        node = cluster_node or cluster.master
+        bucket_rest = BucketRestApi(node)
+        _, json_parsed = bucket_rest.get_bucket_info()
         bucket_list = list()
         for item in json_parsed:
             bucket_list.append(self.parse_get_bucket_json(cluster.buckets,
@@ -5217,7 +5199,7 @@ class BucketUtils(ScopeUtils):
         self.log.debug("**** Add '%s' role to '%s' user ****"
                        % (rolelist[0]["roles"], testuser[0]["name"]))
         status = RbacUtil().add_user_role(rolelist,
-                                          RestConnection(cluster_node),
+                                          SecurityRestAPI(cluster_node),
                                           'builtin')
         return status
 
@@ -6308,22 +6290,22 @@ class BucketUtils(ScopeUtils):
 
     def get_throttle_limit(self, bucket):
         bucket_helper = BucketHelper(bucket.servers[0])
-        output = bucket_helper.get_bucket_json(bucket.name)
+        output = bucket_helper.get_buckets_json(bucket.name)
         return output["dataThrottleLimit"]
 
     def get_storage_limit(self, bucket):
         bucket_helper = BucketHelper(bucket.servers[0])
-        output = bucket_helper.get_bucket_json(bucket.name)
+        output = bucket_helper.get_buckets_json(bucket.name)
         return output["dataStorageLimit"]
 
     def get_disk_used(self, bucket):
         bucket_helper = BucketHelper(bucket.servers[0])
-        output = bucket_helper.get_bucket_json(bucket.name)
+        output = bucket_helper.get_buckets_json(bucket.name)
         return output["basicStats"]["diskUsed"]
 
     def get_items_count(self, bucket):
         bucket_helper = BucketHelper(bucket.servers[0])
-        output = bucket_helper.get_bucket_json(bucket.name)
+        output = bucket_helper.get_buckets_json(bucket.name)
         return output["basicStats"]["itemCount"]
 
     def get_storage_quota(self, bucket):

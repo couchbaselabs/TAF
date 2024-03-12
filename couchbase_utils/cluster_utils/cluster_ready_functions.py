@@ -9,25 +9,31 @@ import json
 import re
 import time
 import os
+from copy import deepcopy
 from datetime import datetime,timedelta
 from threading import Lock
 
 from cb_constants import constants, CbServer, ClusterRun
 from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
 from TestInput import TestInputSingleton, TestInputServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_collectinfo import CbCollectInfo
 from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI
+from couchbase_helper.class_definitions import CouchbaseCluster, OtpNode, Node, \
+    NodeDiskStorage, NodeDataStorage
 from couchbase_utils.cb_tools.cb_cli import CbCli
+from custom_exceptions.exception import ServerUnavailableException
 from global_vars import logger
 import global_vars
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux, Mac, Windows
-from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
-from sdk_client3 import SDKClient
+from rebalance_utils.rebalance_util import RebalanceUtil
+from remote.remote_util import RemoteUtilHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
-from copy import deepcopy
-# import srvlookup
+from testconstants import IS_CONTAINER
+from xdcr_utils.xdcr_util import XDCRUtils
 
 
 class GoldfishNebula:
@@ -61,49 +67,12 @@ class Nebula:
             self.servers[str(temp.ip) + ":" + str(temp.port)] = temp
 
 
-class CBCluster:
+class CBCluster(CouchbaseCluster):
     def __init__(self, name="default", username="Administrator",
                  password="password", paths=None, servers=None, vbuckets=1024):
-        self.name = name
-        self.username = username
-        self.password = password
-        self.paths = paths
-        self.master = servers[0]
-        self.ram_settings = dict()
-        self.servers = servers
-        self.kv_nodes = list()
-        self.fts_nodes = list()
-        self.cbas_nodes = list()
-        self.index_nodes = list()
-        self.query_nodes = list()
-        self.eventing_nodes = list()
-        self.backup_nodes = list()
-        self.serviceless_nodes = list()
-        self.nodes_in_cluster = list()
-        self.xdcr_remote_clusters = list()
-        self.buckets = list()
-        self.vbuckets = vbuckets
-        # version = 9.9.9-9999
-        # edition = community / enterprise
-        # type = default / serverless / dedicated
-        self.version = None
-        self.edition = None
-        self.type = "default"
-
-        # SDK related objects
-        self.sdk_client_pool = None
-        # Note: Referenced only for sdk_client3.py SDKClient
-        self.sdk_cluster_env = SDKClient.create_cluster_env()
-        self.sdk_env_built = self.sdk_cluster_env.build()
-
-        # Capella specific params
-        self.pod = None
-        self.tenant = None
-        self.cluster_config = None
-
-        # Bucket Serverless Topology
-        self.bucketDNNodes = dict()
-        self.bucketNodes = dict()
+        super(CBCluster, self).__init__(
+            name=name, username=username, password=password, paths=paths,
+            servers=servers, vbuckets=vbuckets)
 
     def __str__(self):
         return "Couchbase Cluster: %s, Nodes: %s" % (
@@ -180,15 +149,13 @@ class ClusterUtils:
         self.log = logger.get("test")
 
     @staticmethod
-    def flush_network_rules(node):
-        shell = RemoteMachineShellConnection(node)
+    def flush_network_rules(shell_conn):
         for command in ["iptables -F",
                         "nft flush ruleset",
                         "nft add table ip filter",
                         "nft add chain ip filter INPUT '{ type filter hook "
                         "input priority 0; }'"]:
-            shell.execute_command(command)
-        shell.disconnect()
+            shell_conn.execute_command(command)
 
     @staticmethod
     def get_orchestrator_node(node):
@@ -250,17 +217,21 @@ class ClusterUtils:
         return metakv_key_count, metakv_dict
 
     @staticmethod
-    def is_enterprise_edition(cluster):
+    def is_enterprise_edition(cluster, server=None):
         """
         :param cluster: Cluster object
+        :param server: Any node running CB server
         :return: True if the cluster is enterprise edition
         """
-        rest = RestConnection(cluster.master)
-        api = rest.baseUrl + "pools"
-        http_res, success = rest.init_http_request(api)
-        if not success:
+        server = server or cluster.master
+        rest = ClusterRestAPI(server)
+        status, result = rest.cluster_details()
+        if not status:
             raise Exception("Unable to read /pools API")
-        return http_res["isEnterprise"]
+        for node in result["nodes"]:
+            if node["version"].split("-")[-1] != "enterprise":
+                return False
+        return True
 
     def get_server_profile_type(self, servers):
         """
@@ -269,9 +240,9 @@ class ClusterUtils:
         """
         profiles = []
         for server in servers:
-            rest = RestConnection(server)
-            result = rest.get_pools_info()
-            version = RestConnection(server).get_nodes_self(10).version[:5]
+            rest = ClusterRestAPI(server)
+            result = rest.cluster_info()[1]
+            version = rest.node_details()[1]["version"][:5]
             if not ClusterRun.is_enabled and version < '7.5.0':
                 profiles.append("default")
             else:
@@ -537,7 +508,7 @@ class ClusterUtils:
     def wait_for_ns_servers(self, server, wait_time):
         self.log.debug("Waiting for ns_server @ {0}:{1}"
                        .format(server.ip, server.port))
-        if RestConnection(server).is_ns_server_running(wait_time):
+        if self.is_ns_server_running(server, wait_time):
             self.log.debug("ns_server @ {0}:{1} is running"
                            .format(server.ip, server.port))
         else:
@@ -563,73 +534,132 @@ class ClusterUtils:
     def stop_running_rebalance(self, cluster, master=None):
         if master is None:
             master = cluster.master
-        rest = RestConnection(master)
-        if rest._rebalance_progress_status() == 'running':
-            self.kill_memcached(self.cluster)
+        reb_util = RebalanceUtil(master)
+        reb_util.get_rebalance_status()
+        if reb_util.get_rebalance_status() == 'running':
+            self.kill_memcached(cluster)
             self.log.warning("Rebalance still running, test should be verified")
-            stopped = rest.stop_rebalance()
+            stopped = reb_util.stop_rebalance()
             if not stopped:
                 raise Exception("Unable to stop rebalance")
         else:
             self.log.warning("Rebalance stop was attempted but there is no ongoing rebalance")
 
-    def cleanup_cluster(self, cluster, wait_for_rebalance=True, master=None):
-        if master is None:
-            master = cluster.master
-        rest = RestConnection(master)
-        rest.remove_all_replications()
-        rest.remove_all_remote_clusters()
-        rest.remove_all_recoveries()
-        rest.is_ns_server_running(timeout_in_seconds=120)
-        nodes = rest.node_statuses()
-        master_id = rest.get_nodes_self().id
+    def extract_nodes_self_from_pools_default(self, pools_default):
+        return next(iter(filter(lambda node: "thisNode" in node and node["thisNode"],
+                                pools_default["nodes"])), None)
+
+    def is_ns_server_running(self, server, timeout_in_seconds=360):
+        try:
+            server_type = server.type
+        except:
+            server_type = "default"
+
+        cluster_rest = ClusterRestAPI(server)
+        end_time = time.time() + timeout_in_seconds
+        while time.time() <= end_time:
+            node_status = "NA"
+            try:
+                if server_type == "dedicated":
+                    status, content = cluster_rest.cluster_details()
+                    if status:
+                        if "nodes" in content:
+                            node = self.extract_nodes_self_from_pools_default(
+                                content)
+                            node_status = node["status"]
+                else:
+                    status, content = cluster_rest.node_details()
+                    if status:
+                        node_status = content["status"]
+                if node_status == 'healthy':
+                    return True
+            except ServerUnavailableException:
+                self.log.error(f"{server.ip}:{server.port} is unavailable")
+            # Wait before next retry
+            sleep(2)
+        msg = 'Unable to connect to the node {0} even after waiting {1} secs'
+        self.log.fatal(msg.format(server.ip, timeout_in_seconds))
+        return False
+
+    def get_otp_nodes(self, server):
+        nodes = list()
+        cluster_rest = ClusterRestAPI(server)
+        status, json_parsed = cluster_rest.get_node_statuses()
+        if status:
+            for key in json_parsed:
+                # each key contain node info
+                value = json_parsed[key]
+                # get otp,get status
+                node = OtpNode(id=value['otpNode'],
+                               status=value['status'])
+                if node.ip == '127.0.0.1' or node.ip == 'cb.local':
+                    node.ip = server.ip
+                node.port = int(key[key.rfind(":") + 1:])
+                if CbServer.use_https:
+                    if ClusterRun.is_enabled:
+                        node.port = node.port + 10000
+                    else:
+                        node.port = CbServer.ssl_port
+                node.replication = value['replication']
+                if 'gracefulFailoverPossible' in value.keys():
+                    node.gracefulFailoverPossible = value['gracefulFailoverPossible']
+                else:
+                    node.gracefulFailoverPossible = False
+                nodes.append(node)
+        return nodes
+
+    def cleanup_cluster(self, cluster, master=None):
+        master = master or cluster.master
+        xdcr_helper = XDCRUtils(master)
+        xdcr_helper.remove_all_replications()
+        xdcr_helper.remove_all_remote_clusters()
+        xdcr_helper.remove_all_recoveries()
+        self.is_ns_server_running(master, timeout_in_seconds=120)
+        nodes = self.get_otp_nodes(master)
+        cluster_rest = ClusterRestAPI(master)
+        master_id = cluster_rest.node_details()[1]["otpNode"]
         for node in nodes:
             if int(node.port) in range(9091, 9991):
-                rest.eject_node(node)
+                cluster_rest.eject_node(node)
                 nodes.remove(node)
 
         if len(nodes) > 1:
             self.log.debug("Rebalancing all nodes in order to remove nodes")
-            rest.log_client_error("Starting rebalance from test, ejected nodes %s" %
-                                  [node.id for node in nodes if node.id != master_id])
-            _ = self.remove_nodes(
-                rest,
-                knownNodes=[node.id for node in nodes],
-                ejectedNodes=[node.id for node in nodes
-                              if node.id != master_id],
-                wait_for_rebalance=wait_for_rebalance)
-
+            cluster_rest.rebalance(known_nodes=[node.id for node in nodes],
+                                   eject_nodes=[node.id for node in nodes
+                                                if node.id != master_id])
+            RebalanceUtil(master).monitor_rebalance()
             success_cleaned = []
             for removed in [node for node in nodes if (node.id != master_id)]:
                 removed.rest_password = cluster.master.rest_password
                 removed.rest_username = cluster.master.rest_username
                 removed.type = "default"
                 try:
-                    rest = RestConnection(removed)
+                    rest = ClusterRestAPI(removed)
                 except Exception as ex:
                     self.log.error("Can't create rest connection after "
                                    "rebalance out for ejected nodes, will "
                                    "retry after 10 seconds according to "
                                    "MB-8430: {0}".format(ex))
                     sleep(10, "MB-8430 [Won't fix]")
-                    rest = RestConnection(removed)
+                    rest = ClusterRestAPI(removed)
                 start = time.time()
                 while time.time() - start < 30:
-                    if len(rest.get_pools_info()["pools"]) == 0:
+                    if len(rest.cluster_info()[1]["pools"]) == 0:
                         success_cleaned.append(removed)
                         break
                     sleep(1)
                 if time.time() - start > 10:
                     self.log.error("'pools' on node {0}:{1} - {2}"
                                    .format(removed.ip, removed.port,
-                                           rest.get_pools_info()["pools"]))
+                                           rest.cluster_info()[1]["pools"]))
             for node in set([node for node in nodes
                              if (node.id != master_id)])-set(success_cleaned):
                 self.log.error("Node {0}:{1} was not cleaned after "
                                "removing from cluster"
                                .format(removed.ip, removed.port))
                 try:
-                    rest = RestConnection(node)
+                    rest = ClusterRestAPI(node)
                     rest.force_eject_node()
                 except Exception as ex:
                     self.log.error("Force_eject_node {0}:{1} failed: {2}"
@@ -640,7 +670,8 @@ class ClusterUtils:
 
             self.log.debug("Removed all the nodes from cluster associated with {0} ? {1}"
                            .format(cluster.master,
-                                   [(node.id, node.port) for node in nodes if (node.id != master_id)]))
+                                   [(node.id, node.port) for node in nodes
+                                    if (node.id != master_id)]))
 
     @staticmethod
     def get_nodes_in_cluster(cluster):
@@ -873,9 +904,37 @@ class ClusterUtils:
             remote_client.disconnect()
 
     @staticmethod
-    def get_nodes(cluster_node):
-        """ Get Nodes from list of server """
-        return RestConnection(cluster_node).get_nodes()
+    def get_nodes(server, inactive_added=False, inactive_failed=False):
+        cluster_rest = ClusterRestAPI(server)
+        count = 0
+        while count < 7:
+            status, json_parsed = cluster_rest.cluster_details()
+            if status:
+                break
+            count += 1
+            time.sleep(5)
+        else:
+            raise Exception("could not get node info after 30 seconds")
+
+        nodes = list()
+        nodes_to_consider = ["active"]
+        # Useful when we want to do cbcollect on failed over/recovered node
+        if inactive_added:
+            nodes_to_consider.append("inactiveAdded")
+        if inactive_failed:
+            nodes_to_consider.append("inactiveFailed")
+        if status:
+            if "nodes" in json_parsed:
+                for json_node in json_parsed["nodes"]:
+                    node = ClusterUtils.parse_get_nodes_response(json_node)
+                    node.rest_username = server.rest_username
+                    node.rest_password = server.rest_password
+                    if node.ip == "127.0.0.1":
+                        node.ip = server.ip
+                    # Only add nodes which are active on cluster
+                    if node.clusterMembership in nodes_to_consider:
+                        nodes.append(node)
+        return nodes
 
     def stop_server(self, cluster, node):
         """ Method to stop a server which is subject to failover """
@@ -1046,9 +1105,9 @@ class ClusterUtils:
     @staticmethod
     def get_services_map(cluster, inactive_added=False, inactive_failed=False):
         services_map = dict()
-        rest = RestConnection(cluster.master)
-        tem_map = rest.get_nodes_services(inactive_added=inactive_added,
-                                          inactive_failed=inactive_failed)
+        tem_map = ClusterUtils.get_nodes_services(
+            cluster.master,
+            inactive_added=inactive_added, inactive_failed=inactive_failed)
         for key, val in tem_map.items():
             if not val:
                 # None means service-less node
@@ -1303,10 +1362,6 @@ class ClusterUtils:
         self.log.critical("Can't define if cluster balanced")
         return None
 
-    def remove_all_nodes_then_rebalance(self, cluster, otpnodes=None,
-                                        rebalance=True):
-        return self.remove_node(cluster, otpnodes, rebalance)
-
     def add_node(self, cluster, node, services=None, rebalance=True,
                  wait_for_rebalance_completion=True):
         if not services:
@@ -1320,48 +1375,6 @@ class ClusterUtils:
             self.rebalance(cluster,
                            wait_for_completion=wait_for_rebalance_completion)
         return otpnode
-
-    def remove_node(self, cluster, otpnode=None, wait_for_rebalance=True, validate_bucket_ranking=True):
-        rest = RestConnection(cluster.master)
-        nodes = rest.node_statuses()
-        '''This is the case when master node is running cbas service as well'''
-        if len(nodes) <= len(otpnode):
-            return
-
-        try:
-            _ = self.remove_nodes(
-                rest,
-                knownNodes=[node.id for node in nodes],
-                ejectedNodes=[node.id for node in otpnode],
-                wait_for_rebalance=wait_for_rebalance)
-        except Exception as e:
-            self.log.error("First time rebalance failed on Removal. "
-                           "Wait and try again. THIS IS A BUG.")
-            sleep(5)
-
-            if validate_bucket_ranking:
-                # Validating bucket ranking post rebalance
-                validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(cluster)
-                if not validate_ranking_res:
-                    self.log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
-                    raise Exception("Vbucket movement during rebalance did not occur as per bucket ranking")
-
-            _ = self.remove_nodes(
-                rest,
-                knownNodes=[node.id for node in nodes],
-                ejectedNodes=[node.id for node in otpnode],
-                wait_for_rebalance=wait_for_rebalance)
-            if validate_bucket_ranking:
-                # Validating bucket ranking post rebalance
-                validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(cluster)
-                if not validate_ranking_res:
-                    self.log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
-                    raise Exception("Vbucket movement during rebalance did not occur as per bucket ranking")
-
-        # if wait_for_rebalance:
-        #     self.assertTrue(
-        #         removed,
-        #         "Rebalance operation failed while removing %s," % otpnode)
 
     def wait_for_node_status(self, node, rest, expected_status,
                              timeout_in_seconds):
@@ -1395,6 +1408,41 @@ class ClusterUtils:
             victim_nodes = victim_nodes[:victim_count]
         return victim_nodes
 
+    def get_cluster_stats(self, server):
+        """
+        Reads cluster nodes statistics using `pools/default` rest GET method
+        :return stat_dict: Dictionary of CPU & Memory status each cluster node
+        """
+        stat_dict = dict()
+        status, json_output = ClusterRestAPI(server).cluster_details()
+        if not status:
+            return stat_dict
+
+        if 'nodes' in json_output:
+            for node_stat in json_output['nodes']:
+                stat_dict[node_stat['hostname']] = dict()
+                stat_dict[node_stat['hostname']]['version'] = node_stat['version']
+                stat_dict[node_stat['hostname']]['services'] = node_stat['services']
+                stat_dict[node_stat['hostname']]['cpu_utilization'] = node_stat['systemStats'].get(
+                    'cpu_utilization_rate')
+                stat_dict[node_stat['hostname']]['clusterMembership'] = node_stat['clusterMembership']
+                stat_dict[node_stat['hostname']]['recoveryType'] = node_stat['recoveryType']
+                stat_dict[node_stat['hostname']]['mem_free'] = node_stat['systemStats'].get('mem_free')
+                stat_dict[node_stat['hostname']]['mem_total'] = node_stat['systemStats'].get('mem_total')
+                stat_dict[node_stat['hostname']]['swap_mem_used'] = node_stat['systemStats'].get('swap_used')
+                stat_dict[node_stat['hostname']]['swap_mem_total'] = node_stat['systemStats'].get('swap_total')
+                stat_dict[node_stat['hostname']]['active_item_count'] = 0
+                stat_dict[node_stat['hostname']]['replica_item_count'] = 0
+                if node_stat['version'][:5] >= '7.5.0' and 'serverGroup' in node_stat:
+                    stat_dict[node_stat['hostname']]['serverGroup'] = \
+                        node_stat['serverGroup']
+                if 'curr_items' in node_stat['interestingStats']:
+                    stat_dict[node_stat['hostname']]['active_item_count'] = node_stat['interestingStats']['curr_items']
+                if 'vb_replica_curr_items' in node_stat['interestingStats']:
+                    stat_dict[node_stat['hostname']]['replica_item_count'] = node_stat['interestingStats'][
+                        'vb_replica_curr_items']
+        return stat_dict
+
     def print_cluster_stats(self, cluster):
         if cluster.type in ["serverless"]:
             return
@@ -1403,9 +1451,8 @@ class ClusterUtils:
                            "Mem_total", "Mem_free",
                            "Swap_mem_used",
                            "Active / Replica ", "Version / Config"])
-        rest = RestConnection(cluster.master)
-        cluster_stat = rest.get_cluster_stats()
-        for cluster_node, node_stats in cluster_stat.items():
+        stat_dict = self.get_cluster_stats(cluster.master)
+        for cluster_node, node_stats in stat_dict.items():
             row = list()
             row.append(cluster_node.split(':')[0])
             if "serverGroup" in node_stats:
@@ -1434,20 +1481,19 @@ class ClusterUtils:
         """
         shell = RemoteMachineShellConnection(cluster.master)
         rest = RestConnection(cluster.master)
-        info = shell.extract_remote_info().type.lower()
-        if info == Linux.NAME:
+        os_name = shell.info.type.lower()
+        if os_name == Linux.NAME:
             cbstat_command = "{0:s}cbstats".format(Linux.COUCHBASE_BIN_PATH)
-        elif info == Windows.NAME:
+        elif os_name == Windows.NAME:
             cbstat_command = "{0:s}cbstats".format(Windows.COUCHBASE_BIN_PATH)
-        elif info == Mac.NAME:
+        elif os_name == Mac.NAME:
             cbstat_command = "{0:s}cbstats".format(Mac.COUCHBASE_BIN_PATH)
         else:
             raise Exception("OS not supported.")
-        versions = rest.get_nodes_versions()
         for group in nodes:
             for node in nodes[group]:
                 command = "dcp"
-                if not info == Windows.NAME:
+                if os_name != Windows.NAME:
                     commands = "%s %s:%s -u %s -p \"%s\" %s -b %s  | grep :replication:ns_1@%s |  grep vb_uuid | \
                                 awk '{print $1}' | sed 's/eq_dcpq:replication:ns_1@%s->ns_1@//g' | \
                                 sed 's/:.*//g' | sort -u | xargs \
@@ -1616,8 +1662,7 @@ class ClusterUtils:
                                                        format(panic_str, log))
                 self.log.error("\n {0}".format(panic_trace))
                 panic_count = count
-            os_info = shell.extract_remote_info()
-            if os_info.type.lower() == Windows.NAME:
+            if shell.info.type.lower() == Windows.NAME:
                 # This is a fixed path in all windows systems inside couchbase
                 dir_name_crash = 'c://CrashDumps'
             else:
@@ -1920,3 +1965,152 @@ class ClusterUtils:
             except ValueError:
                 self.log.error("Issue with rest connection with plasma")
                 pass
+
+    @staticmethod
+    def parse_get_nodes_response(parsed):
+        node = Node()
+        node.uptime = parsed['uptime']
+        node.memoryFree = parsed['memoryFree']
+        node.memoryTotal = parsed['memoryTotal']
+        node.mcdMemoryAllocated = parsed['mcdMemoryAllocated']
+        node.mcdMemoryReserved = parsed['mcdMemoryReserved']
+        node.cpuCount = parsed["cpuCount"]
+
+        if CbServer.Settings.INDEX_MEM_QUOTA in parsed:
+            node.indexMemoryQuota = parsed[CbServer.Settings.INDEX_MEM_QUOTA]
+        if CbServer.Settings.FTS_MEM_QUOTA in parsed:
+            node.ftsMemoryQuota = parsed[CbServer.Settings.FTS_MEM_QUOTA]
+        if CbServer.Settings.CBAS_MEM_QUOTA in parsed:
+            node.cbasMemoryQuota = parsed[CbServer.Settings.CBAS_MEM_QUOTA]
+        if CbServer.Settings.EVENTING_MEM_QUOTA in parsed:
+            node.eventingMemoryQuota = parsed[CbServer.Settings.EVENTING_MEM_QUOTA]
+
+        node.status = parsed['status']
+        node.hostname = parsed['hostname']
+        node.clusterCompatibility = parsed['clusterCompatibility']
+        node.clusterMembership = parsed['clusterMembership']
+        node.version = parsed['version']
+        node.curr_items = 0
+        if 'interestingStats' in parsed \
+                and 'curr_items' in parsed['interestingStats']:
+            node.curr_items = parsed['interestingStats']['curr_items']
+        node.port = parsed["hostname"][parsed["hostname"].rfind(":") + 1:]
+        node.os = parsed['os']
+
+        if "serverGroup" in parsed:
+            node.server_group = parsed["serverGroup"]
+        if "services" in parsed:
+            node.services = parsed["services"]
+        if "otpNode" in parsed:
+            node.id = parsed["otpNode"]
+        if "hostname" in parsed:
+            # should work for both: ipv4 and ipv6
+            node.ip, node.port = parsed["hostname"].rsplit(":", 1)
+            if CbServer.use_https:
+                node.port = int(node.port) + 10000
+
+        # memoryQuota
+        if CbServer.Settings.KV_MEM_QUOTA in parsed:
+            node.memoryQuota = parsed[CbServer.Settings.KV_MEM_QUOTA]
+        if 'availableStorage' in parsed:
+            available_storage = parsed['availableStorage']
+            for key in available_storage:
+                # let's assume there is only one disk in each node
+                storage_list = available_storage[key]
+                for dict_parsed in storage_list:
+                    if 'path' in dict_parsed and 'sizeKBytes' in dict_parsed \
+                            and 'usagePercent' in dict_parsed:
+                        disk_storage = NodeDiskStorage()
+                        disk_storage.path = dict_parsed['path']
+                        disk_storage.sizeKBytes = dict_parsed['sizeKBytes']
+                        disk_storage.type = key
+                        disk_storage.usagePercent = dict_parsed['usagePercent']
+                        node.availableStorage.append(disk_storage)
+
+        if 'storage' in parsed:
+            storage = parsed['storage']
+            for key in storage:
+                disk_storage_list = storage[key]
+                for dict_parsed in disk_storage_list:
+                    if 'path' in dict_parsed and 'state' in dict_parsed \
+                            and 'quotaMb' in dict_parsed:
+                        data_storage = NodeDataStorage()
+                        data_storage.path = dict_parsed['path']
+                        data_storage.index_path = dict_parsed.get('index_path',
+                                                                  '')
+                        data_storage.quotaMb = dict_parsed['quotaMb']
+                        data_storage.state = dict_parsed['state']
+                        data_storage.type = key
+                        node.storage.append(data_storage)
+
+        # Format: ports={"proxy":11211,"direct":11210}
+        if "ports" in parsed:
+            ports = parsed["ports"]
+            if "direct" in ports:
+                node.memcached = ports["direct"]
+
+        if "storageTotals" in parsed:
+            storage_totals = parsed["storageTotals"]
+            if storage_totals.get("hdd"):
+                if storage_totals["hdd"].get("total"):
+                    hdd_bytes = storage_totals["hdd"]["total"]
+                    node.storageTotalDisk = hdd_bytes / (1024 * 1024)
+                if storage_totals["hdd"].get("used"):
+                    hdd_bytes = storage_totals["hdd"]["used"]
+                    node.storageUsedDisk = hdd_bytes / (1024 * 1024)
+
+            if storage_totals.get("ram"):
+                if storage_totals["ram"].get("total"):
+                    ram_kb = storage_totals["ram"]["total"]
+                    node.storageTotalRam = ram_kb / (1024 * 1024)
+
+                    if IS_CONTAINER:
+                        # the storage total values are more accurate than
+                        # mcdMemoryReserved - which is container host memory
+                        node.mcdMemoryReserved = node.storageTotalRam * 0.70
+
+        # Serverless specific stat
+        if "limits" in parsed:
+            node.limits = dict()
+            node.utilization = dict()
+            for service in node.services:
+                node.limits[service] = dict()
+                node.utilization[service] = dict()
+
+                if service == CbServer.Services.KV:
+                    limits = parsed["limits"][service]
+                    utilised = parsed["utilization"][service]
+                    for field in ["buckets", "memory", "weight"]:
+                        node.limits[service][field] = limits[field]
+                        node.utilization[service][field] = utilised[field]
+
+        return node
+
+    @staticmethod
+    def get_nodes_self(server):
+        cluster_rest = ClusterRestAPI(server)
+        if server.type == "dedicated":
+            status, pools_default = cluster_rest.cluster_details()
+            if status and "nodes" in pools_default:
+                # extract_nodes_self_from_pools_default
+                node = next(iter(filter(lambda t_node: "thisNode" in t_node
+                                                       and t_node["thisNode"],
+                                        pools_default["nodes"])), None)
+                node["memoryQuota"] = pools_default["memoryQuota"]
+                node["storageTotals"] = pools_default["storageTotals"]
+                return ClusterUtils.parse_get_nodes_response(node)
+            return None
+        status, json_parsed = cluster_rest.node_details()
+        return ClusterUtils.parse_get_nodes_response(json_parsed)
+
+    @staticmethod
+    def get_nodes_services(server, inactive_added=False,
+                           inactive_failed=False):
+        nodes = ClusterUtils.get_nodes(server,
+                                       inactive_added=inactive_added,
+                                       inactive_failed=inactive_failed)
+        n_map = dict()
+        for node in nodes:
+            key = "{0}:{1}".format(node.ip, node.port)
+            n_map[key] = node.services
+        return n_map
