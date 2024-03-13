@@ -9,7 +9,7 @@ import json
 import time
 import get_jenkins_params as jenkins_api
 
-host = '172.23.121.84'
+host = '172.23.97.153'
 bucket_name = 'rerun_jobs'
 
 
@@ -207,7 +207,7 @@ def find_rerun_job(args):
         version_build = args['build_version']
     if not name or not version_build:
         return False, {}
-    cluster = Cluster.connect(host, 'Administrator', 'password')
+    cluster = Cluster.connect(host, 'Administrator', 'esabhcuoc')
     rerun_jobs = cluster.bucket(bucket_name)
     collection = rerun_jobs.defaultCollection()
     time.sleep(10)
