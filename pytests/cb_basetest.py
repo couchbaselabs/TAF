@@ -190,7 +190,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.sleep = sleep
 
         # Support lib objects for testcase execution
-        self.task_manager = TaskManager(self.thread_to_use)
+        self.task_manager = TaskManager(max_workers=self.thread_to_use)
         self.task = ServerTasks(self.task_manager)
         self.node_utils = NodeUtils(self.task_manager)
         # End of library object creation
@@ -211,11 +211,11 @@ class CouchbaseBaseTest(unittest.TestCase):
                self._testMethodName))
 
     def is_test_failed(self):
-        return (hasattr(self, '_resultForDoCleanups')
-                and len(self._resultForDoCleanups.failures
-                        or self._resultForDoCleanups.errors)) \
-               or (hasattr(self, '_exc_info')
-                   and self._exc_info()[1] is not None)
+        if hasattr(self, "_outcome") and len(self._outcome.errors) > 0:
+            for i in self._outcome.errors:
+                if i[1] is not None:
+                    return True
+        return False
 
     def handle_setup_exception(self, exception_obj):
         # Shutdown client pool in case of any error before failing
@@ -247,6 +247,6 @@ class CouchbaseBaseTest(unittest.TestCase):
         return self.task_manager
 
     def shutdown_task_manager(self):
-        self.task_manager.shutdown_task_manager()
+        self.task_manager.shutdown()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()

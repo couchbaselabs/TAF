@@ -41,7 +41,7 @@ class volume(AutoFailoverBaseTest):
         if not self.skip_check_logs:
             self.check_logs()
         # Close all tasks explicitly
-        self.task_manager.shutdown_task_manager()
+        self.task_manager.shutdown()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         # Close all sdk clients explicitly

@@ -4,25 +4,23 @@ Created on Sep 14, 2017
 @author: riteshagarwal
 """
 import copy
+import itertools
 import json
-import json as Json
 import os
 import random
 import socket
 import threading
 import time
+from concurrent.futures import Future
 from copy import deepcopy
+
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.index.index_api import IndexRestAPI
 from sdk_client3 import SDKClient
 import zlib
-from httplib import IncompleteRead
 
-import com.couchbase.test.transactions.SimpleTransaction as Transaction
-from _threading import Lock
-from com.couchbase.client.java.json import JsonObject
-from java.lang import Thread
+from threading import Lock
 from collections import OrderedDict
-from java.util.concurrent import Callable
-from reactor.util.function import Tuples
 
 import common_lib
 import global_vars
@@ -36,7 +34,7 @@ from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
-from collections_helper.collections_spec_constants import MetaConstants,MetaCrudParams
+from collections_helper.collections_spec_constants import MetaConstants
 from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
@@ -62,16 +60,12 @@ from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 from constants.cloud_constants.capella_constants import AWS
 
-from java.util.concurrent.atomic import AtomicInteger
-from org.xbill.DNS import Lookup, Type
 
-
-class Task(Callable):
-    serial_number = AtomicInteger(0)
+class Task(Future):
+    serial_number = itertools.count()
 
     def __init__(self, thread_name):
-        self.thread_name = "{}_{}".format(thread_name,
-                                          Task.serial_number.incrementAndGet())
+        self.thread_name = "{}_{}".format(thread_name, next(Task.serial_number))
         self.exception = None
         self.completed = False
         self.started = False
@@ -109,7 +103,7 @@ class Task(Callable):
     def set_exception(self, exception):
         self.exception = exception
         self.complete_task()
-        raise BaseException(self.exception)
+        raise Exception(self.exception)
 
     def set_warn(self, exception):
         self.exception = exception
@@ -477,7 +471,7 @@ class RebalanceTask(Task):
 
         try:
             self.rest = RestConnection(self.cluster.master)
-        except ServerUnavailableException, e:
+        except ServerUnavailableException as e:
             self.test_log.error(e)
             raise e
 
@@ -918,7 +912,7 @@ class RebalanceTask(Task):
                 for removed in self.to_remove:
                     try:
                         rest = RestConnection(removed)
-                    except ServerUnavailableException, e:
+                    except ServerUnavailableException as e:
                         self.test_log.error(e)
                         continue
                     start = time.time()
@@ -928,7 +922,7 @@ class RebalanceTask(Task):
                                     (len(rest.get_pools_info()["pools"]) == 0):
                                 success_cleaned.append(removed)
                                 break
-                        except (ServerUnavailableException, IncompleteRead), e:
+                        except (ServerUnavailableException, IncompleteRead) as e:
                             self.test_log.error(e)
 
                 for node in set(self.to_remove) - set(success_cleaned):
@@ -1036,14 +1030,15 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.log.debug(
                         "Sleep before reading the doc for verification")
-                    Thread.sleep(self.timeout)
+                    self.sleep(self.timeout)
                     # self.test_log.debug("Reading values {0} after failure"
                     # .format(fail.keys()))
-                    read_map, _ = self.batch_read(fail.keys())
+                    read_map, read_fail = self.batch_read(list(fail.keys()))
+                    self.log.critical("read OVER")
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0:
                             success[key] = value
-                            success[key].pop("error")
+                            success[key].pop("error", None)
                             fail.pop(key)
                         elif not self.suppress_error_table:
                             failed_item_table.add_row([key, value['error']])
@@ -1203,6 +1198,8 @@ class GenericLoadingTask(Task):
             keys, timeout=self.timeout,
             time_unit=self.time_unit,
             sdk_retry_strategy=self.sdk_retry_strategy)
+        print(success)
+        print(fail)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Read Key", "Exception"])
@@ -3105,7 +3102,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                 op_failed_tbl.add_row(failed_row)
             elif doc_value[3] != "CityUpdate":
                 op_failed_tbl.add_row(failed_row)
-            elif Json.loads(str(doc_value[4])) \
+            elif json.loads(str(doc_value[4])) \
                     != ["get", "up"]:
                 op_failed_tbl.add_row(failed_row)
 
@@ -3223,11 +3220,11 @@ class ValidateDocumentsTask(GenericLoadingTask):
         for key, value in key_value.items():
             if key in map:
                 if type(value) == JsonObject:
-                    expected_val = Json.loads(value.toString())
+                    expected_val = json.loads(value.toString())
                 else:
-                    expected_val = Json.loads(value)
+                    expected_val = json.loads(value)
                 if map[key]['cas'] != 0:
-                    actual_val = Json.loads(map[key][
+                    actual_val = json.loads(map[key][
                                                 'value'].toString())
                 elif map[key]['error'] is not None:
                     actual_val = map[key]['error'].toString()
@@ -4822,6 +4819,7 @@ class BucketCreateTask(Task):
             self.test_log.error(str(e))
         Bucket.set_defaults(self.bucket)
         self.complete_task()
+        return self.result
 
     def check(self):
         try:
@@ -6889,10 +6887,10 @@ class Atomicity(Task):
                     if self.op_type == "time_out":
                         expected_val = {}
                     else:
-                        expected_val = Json.loads(value.toString())
+                        expected_val = json.loads(value.toString())
                     actual_val = {}
                     if map[key]['cas'] != 0:
-                        actual_val = Json.loads(map[key]['value'].toString())
+                        actual_val = json.loads(map[key]['value'].toString())
                     elif map[key]['error'] is not None:
                         actual_val = map[key]['error'].toString()
                     if expected_val == actual_val or map[key]['cas'] == 0:
@@ -7420,31 +7418,36 @@ class NodeInitializeTask(Task):
         rest = None
         service_quota = dict()
         try:
-            rest = RestConnection(self.server)
+            rest = ClusterRestAPI(self.server)
         except ServerUnavailableException as error:
             self.set_exception(error)
 
         # Change timeout back to 10 after
         # https://issues.couchbase.com/browse/MB-40670 is resolved
-        info = Task.wait_until(lambda: rest.get_nodes_self(),
-                               lambda x: x.memoryTotal > 0 or x.storageTotalRam > 0, 30)
-        self.test_log.debug("server: %s, nodes/self: %s", self.server,
-                            info.__dict__)
+        end_time = time.time() + 30
+        while time.time() < end_time:
+            node = global_vars.cluster_util.get_nodes_self(self.server)
+            if node.memoryTotal > 0 or node.storageTotalRam > 0:
+                break
+            time.sleep(1)
+        else:
+            raise Exception("Timeout to reach expected nodes_self values")
 
         # Cluster-run case check
-        if int(info.port) in range(9091, 9991):
+        if ClusterRun.is_enabled:
             self.set_result(True)
-            return
+            return True
 
         timeout = time.time() + 300
+        mcd_mem_reserved = 0
         while self.total_memory <= 0 and time.time() < timeout:
-            info = rest.get_nodes_self()
-            self.total_memory = int(info.mcdMemoryReserved - 100)
+            _, info = rest.node_details()
+            mcd_mem_reserved = int(info["mcdMemoryReserved"])
+            self.total_memory = int(mcd_mem_reserved - 100)
         self.log.critical("mcdMemoryReserved reported in nodes/self is: %s"
-                          % info.mcdMemoryReserved)
+                          % mcd_mem_reserved)
         if self.quota_percent:
-            self.total_memory = int(self.total_memory * self.quota_percent
-                                    / 100)
+            self.total_memory = int(self.total_memory*self.quota_percent / 100)
 
         override_kv_mem = True \
             if CbServer.Services.KV not in self.services_mem_quota_percent \
@@ -7495,47 +7498,47 @@ class NodeInitializeTask(Task):
         username = self.server.rest_username
         password = self.server.rest_password
 
-        rest.set_service_mem_quota(service_quota)
-        rest.set_indexer_storage_mode(self.gsi_type)
+        rest.configure_memory(service_quota)
+        IndexRestAPI(self.server).set_gsi_settings({"storageMode": self.gsi_type})
 
         if self.services:
-            status = rest.init_node_services(
-                username=username,
-                password=password,
-                port=self.port,
-                hostname=self.server.ip,
-                services=self.services)
+            status = rest.setup_services(self.services)
             if not status:
                 self.set_exception(
                     Exception('unable to set services for server %s'
                               % self.server.ip))
         if self.disable_consistent_view is not None:
-            rest.set_reb_cons_view(self.disable_consistent_view)
+            rest.set_internal_settings(
+                "indexAwareRebalanceDisabled",
+                str(self.disable_consistent_view).lower())
         if self.rebalanceIndexWaitingDisabled is not None:
-            rest.set_reb_index_waiting(self.rebalanceIndexWaitingDisabled)
+            rest.set_internal_settings(
+                "rebalanceIndexWaitingDisabled",
+                str(self.rebalanceIndexWaitingDisabled).lower())
         if self.rebalanceIndexPausingDisabled is not None:
-            rest.set_rebalance_index_pausing(
-                self.rebalanceIndexPausingDisabled)
+            rest.set_internal_settings(
+                "rebalanceIndexPausingDisabled",
+                str(self.rebalanceIndexPausingDisabled).lower())
         if self.maxParallelIndexers is not None:
-            rest.set_max_parallel_indexers(self.maxParallelIndexers)
+            rest.set_internal_settings(
+                "maxParallelIndexers", str(self.maxParallelIndexers).lower())
         if self.maxParallelReplicaIndexers is not None:
-            rest.set_max_parallel_replica_indexers(
-                self.maxParallelReplicaIndexers)
+            rest.set_internal_settings(
+                "maxParallelReplicaIndexers",
+                str(self.maxParallelReplicaIndexers).lower())
 
-        rest.init_cluster(username, password, self.port)
+        rest.establish_credentials(username, password, self.port)
         self.server.port = self.port
         try:
-            rest = RestConnection(self.server)
+            rest = ClusterRestAPI(self.server)
         except ServerUnavailableException as error:
             self.set_exception(error)
-        info = rest.get_nodes_self()
-
-        if info is None:
+        status, info = rest.node_details()
+        if status is False or not info:
             self.set_exception(
-                Exception(
-                    'unable to get information on a server %s, it is available?'
-                    % self.server.ip))
+                Exception(f"Failed to get info on a server {self.server.ip}"))
         self.set_result(self.total_memory)
+        return self.total_memory
 
 
 class FailoverTask(Task):

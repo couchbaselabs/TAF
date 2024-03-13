@@ -174,7 +174,7 @@ class volume(CollectionBase):
         if not self.skip_check_logs:
             self.check_logs()
         # Close all tasks explicitly
-        self.task_manager.shutdown_task_manager()
+        self.task_manager.shutdown()
         self.task.shutdown(force=True)
         self.task_manager.abort_all_tasks()
         # Close all sdk clients explicitly
@@ -694,11 +694,11 @@ class volume(CollectionBase):
         # self.cluster_utils.set_metadata_purge_interval()
         if self.number_of_indexes > 0:
             # start running select queries thread
-            self.query_thread = threading.Thread(target=self.run_select_query)
+            self.query_thread = Thread(target=self.run_select_query)
             self.query_thread_flag = True
             self.query_thread.start()
             # Start running ui stats queries thread
-            self.ui_stats_thread = threading.Thread(target=self.run_ui_stats_queries)
+            self.ui_stats_thread = Thread(target=self.run_ui_stats_queries)
             self.ui_stats_thread_flag = True
             self.ui_stats_thread.start()
         self.log.info("Finished steps 1-4 successfully in setup")

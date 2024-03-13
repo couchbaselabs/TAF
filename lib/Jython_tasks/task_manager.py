@@ -1,22 +1,21 @@
-import threading
-from java.util.concurrent import Executors, TimeUnit, CancellationException
-from threading import InterruptedException
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from common_lib import sleep
 from global_vars import logger
 
 
-class TaskManager:
-    def __init__(self, number_of_threads=10):
+class TaskManager(object):
+    def __init__(self, max_workers=100):
         self.log = logger.get("infra")
-        self.log.info("Initiating TaskManager with %d threads"
-                      % number_of_threads)
-        self.number_of_threads = number_of_threads
-        self.pool = Executors.newFixedThreadPool(self.number_of_threads)
+        self.log.info(f"Initiating TaskManager with {max_workers} threads")
+        self.number_of_threads = max_workers
+        self.pool = ThreadPoolExecutor(self.number_of_threads,
+                                       thread_name_prefix="ThreadPool")
         self.futures = dict()
 
     def add_new_task(self, task):
-        future = self.pool.submit(task)
+        future = self.pool.submit(task.call)
         self.futures[task.thread_name] = future
         self.log.info("Added new task: %s" % task.thread_name)
 
@@ -25,8 +24,11 @@ class TaskManager:
         future = self.futures[task.thread_name]
         result = False
         try:
-            result = future.get()
-        except CancellationException:
+            result = future.result()
+            exception = future.exception()
+            if exception:
+                self.log.critical(f"Exception in {task.thread_name}: {exception}")
+        except Exception:
             self.log.warning("%s is already cancelled" % task.thread_name)
 
         self.futures.pop(task.thread_name)
@@ -57,24 +59,11 @@ class TaskManager:
             self.log.debug("Stopping task %s" % task.thread_name)
             future.cancel(True)
 
-    def shutdown_task_manager(self, timeout=5):
-        self.shutdown(timeout)
-
-    def shutdown(self, timeout):
+    def shutdown(self, timeout=5):
         self.log.info("Running TaskManager shutdown")
         self.pool.shutdown()
-        try:
-            if not self.pool.awaitTermination(timeout, TimeUnit.SECONDS):
-                self.pool.shutdownNow()
-                self.log.debug("TaskManager shutdown forcefully")
-                if not self.pool.awaitTermination(timeout, TimeUnit.SECONDS):
-                    self.log.error("Pool did not terminate")
-        except InterruptedException as ex:
-            self.log.error(ex)
-            # (Re-)Cancel if current thread also interrupted
-            self.pool.shutdownNow()
-            # Preserve interrupt status
-            threading.currentThread().interrupt()
+        time.sleep(5)
+        self.pool.shutdown(wait=True)
 
     def print_tasks_in_pool(self):
         for task_name, future in self.futures.items():
