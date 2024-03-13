@@ -429,7 +429,7 @@ class OPD:
                                           cmd.get("keyType", self.key_type),
                                           cmd.get("valueType", valType),
                                           cmd.get("validate", False),
-                                          cmd.get("gtm", False),
+                                          cmd.get("gtm", self.gtm),
                                           cmd.get("deleted", False),
                                           cmd.get("mutated", 0),
                                           cmd.get("model", self.model),

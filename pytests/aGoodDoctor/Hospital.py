@@ -166,14 +166,14 @@ class Murphy(BaseTestCase, OPD):
                 ]
             }
         self.default = {
-            "valType": "Hotel",
+            "valType": self.val_type,
             "scopes": 1,
             "collections": self.input.param("collections", 2),
             "num_items": self.input.param("num_items", 50000000),
             "start": 0,
             "end": self.input.param("num_items", 50000000),
             "ops": self.input.param("ops_rate", 50000),
-            "doc_size": 1024,
+            "doc_size": self.input.param("doc_size", 1024),
             "pattern": [0, 50, 50, 0, 0], # CRUDE
             "load_type": ["read", "update"],
             "2iQPS": 10,
@@ -181,7 +181,7 @@ class Murphy(BaseTestCase, OPD):
             "cbasQPS": 10,
             "collections_defn": [
                 {
-                    "valType": "Hotel",
+                    "valType": self.val_type,
                     "2i": [self.input.param("gsi_indexes", 2),
                            self.input.param("gsi_queries", 2)],
                     "FTS": [self.input.param("fts_indexes", 2),
@@ -590,6 +590,18 @@ class Murphy(BaseTestCase, OPD):
                 self.rebl_nodes = 1
             for service in self.rebl_services:
                 ###################################################################
+                self.PrintStep("Step 6.{}: Rebalance SWAP with Loading of docs".
+                               format(self.loop))
+                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
+                                                nodes_out=self.rebl_nodes,
+                                                services=[service]*self.rebl_nodes,
+                                                retry_get_process_num=3000)
+                self.sleep(60, "Sleep for 60s for rebalance to start")
+                self.task_manager.get_task_result(rebalance_task)
+                self.assertTrue(rebalance_task.result, "Rebalance Failed")
+                self.print_stats(self.cluster)
+                self.sleep(10, "Sleep for 60s after rebalance")
+
                 self.PrintStep("Step 4.{}: Rebalance IN with Loading of docs".
                                format(self.loop))
                 rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
@@ -614,17 +626,6 @@ class Murphy(BaseTestCase, OPD):
                 self.print_stats(self.cluster)
                 self.sleep(10, "Sleep for 60s after rebalance")
 
-                self.PrintStep("Step 6.{}: Rebalance SWAP with Loading of docs".
-                               format(self.loop))
-                rebalance_task = self.rebalance(nodes_in=self.rebl_nodes,
-                                                nodes_out=self.rebl_nodes,
-                                                services=[service]*self.rebl_nodes,
-                                                retry_get_process_num=3000)
-                self.sleep(60, "Sleep for 60s for rebalance to start")
-                self.task_manager.get_task_result(rebalance_task)
-                self.assertTrue(rebalance_task.result, "Rebalance Failed")
-                self.print_stats(self.cluster)
-                self.sleep(10, "Sleep for 60s after rebalance")
 
                 self.PrintStep("Step 7.{}: Rebalance IN/OUT with Loading of docs".
                                format(self.loop))
