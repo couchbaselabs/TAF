@@ -10,7 +10,7 @@ from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 class GetCluster(GetProject):
 
-    def setUp(self, nomenclature="Clusters_Get", services=[]):
+    def setUp(self, nomenclature="Clusters_Get", services=[], plan="basic"):
         GetProject.setUp(self, nomenclature)
 
         cluster_name = self.prefix + nomenclature
@@ -48,7 +48,7 @@ class GetCluster(GetProject):
                 "type": "single"
             },
             "support": {
-                "plan": "basic",
+                "plan": plan,
                 "timezone": "GMT"
             },
             "currentState": None,
