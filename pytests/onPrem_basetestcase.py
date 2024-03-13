@@ -1,11 +1,11 @@
-from datetime import datetime
 import os
 import re
 import socket
 import traceback
 import random
-
-from ruamel.yaml import YAML
+import yaml
+from datetime import datetime
+from imp import reload
 
 import global_vars
 from BucketLib.bucket import Bucket
@@ -15,16 +15,17 @@ from SystemEventLogLib.Events import Event
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import BucketUtils
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.security.security_api import SecurityRestAPI
 from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Nebula
-from couchbase_utils.security_utils.security_utils import SecurityUtils
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from ssh_util.shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
-from security_config import trust_all_certs
 from docker_utils.DockerSDK import DockerClient
 
 
@@ -180,7 +181,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         if self.use_https:
             CbServer.use_https = True
-            trust_all_certs()
 
         # Initialize self.cluster with first available cluster as default
         self.cluster = self.cb_clusters[cluster_name_format
@@ -199,7 +199,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             cluster.nodes_in_cluster.append(cluster.master)
 
             shell = RemoteMachineShellConnection(cluster.master)
-            self.os_info = shell.extract_remote_info().type.lower()
+            self.os_info = shell.info.type.lower()
             if self.os_info != 'windows':
                 if cluster.master.ssh_username != "root":
                     self.nonroot = True
@@ -236,8 +236,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 mem_quota_percent = None
 
             # Rotate the internal user's password at the specified interval
-            self.security_util = SecurityUtils(self.log)
-            self.security_util.set_internal_creds_rotation_interval(self.cluster, self.int_pwd_rotn)
+            self.security_util = SecurityRestAPI(self.cluster.master)
+            self.security_util.set_internal_password_rotation_interval(
+                self.int_pwd_rotn)
 
             if self.skip_setup_cleanup:
                 # Update current server/service map and buckets for the cluster
@@ -267,10 +268,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
             self.nebula = self.input.param("nebula", False)
             self.nebula_details = dict()
+            self.docker_containers = list()
+            self.docker = None
+            self.image_id = None
             for cluster_name, cluster in self.cb_clusters.items():
                 # Check if the master node is initialized. If not, force reset
                 # the cluster to avoid initial rebalance failure
-                result = RestConnection(cluster.master).get_pools_default()
+                result = ClusterRestAPI(cluster.master).cluster_details()[1]
                 if result == "unknown pool":
                     self.skip_cluster_reset = False
                 if not self.skip_cluster_reset:
@@ -283,11 +287,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         services_mem_quota_percent=mem_quota_percent)
 
                 # Set this unconditionally
-                RestConnection(cluster.master).set_internalSetting(
+                ClusterRestAPI(cluster.master).set_internal_settings(
                     "magmaMinMemoryQuota", 256)
-                self.docker_containers = []
-                self.docker = None
-                self.image_id = None
                 if self.nebula and CbServer.cluster_profile == "serverless":
                     try:
                         # Check out nebula git repo
@@ -596,10 +597,10 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     else:
                         self.log.critical("Skipping get_trace !!")
 
-                rest = RestConnection(cluster.master)
-                alerts = rest.get_alerts()
-                if alerts:
-                    self.log.warn("Alerts found: {0}".format(alerts))
+                rest = ClusterRestAPI(cluster.master)
+                status, content = rest.cluster_details()
+                if status and "alerts" in content and content["alerts"]:
+                    self.log.warn(f"Alerts found: {content['alerts']}")
             except BaseException as e:
                 # kill memcached
                 traceback.print_exc()
@@ -618,7 +619,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         try:
             msg = "{0}: {1} {2}" \
                 .format(datetime.now(), self._testMethodName, status)
-            RestConnection(self.servers[0]).log_client_error(msg)
+            ClusterRestAPI(self.servers[0]).log_client_error(msg)
         except Exception as e:
             self.log.warning("Exception during REST log_client_error: %s" % e)
 
@@ -639,7 +640,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
 
         for server in cluster.servers:
             # Make sure that data_and index_path are writable by couchbase user
-            ClusterUtils.flush_network_rules(server)
+            ClusterUtils.flush_network_rules(ssh_sessions[server.ip])
             if not server.index_path:
                 server.index_path = server.data_path
             if not server.cbas_path:
@@ -651,10 +652,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 for cmd in ("rm -rf {0}/*".format(path),
                             "chown -R couchbase:couchbase {0}".format(path)):
                     ssh_sessions[server.ip].execute_command(cmd)
-                rest = RestConnection(server)
-                rest.set_data_path(data_path=server.data_path,
-                                   index_path=server.index_path,
-                                   cbas_path=server.cbas_path)
+                rest = ClusterRestAPI(server)
+                rest.initialize_node(rest.username, rest.password,
+                                     data_path=server.data_path,
+                                     index_path=server.index_path,
+                                     cbas_path=server.cbas_path)
 
             if cluster.master != server:
                 continue
@@ -826,9 +828,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     "ns_server", "logs", "n_%s" % str(idx))
 
             # Perform log file searching based on the input yaml config
-            yaml = YAML()
             with open("lib/couchbase_helper/error_log_config.yaml", "r") as fp:
-                y_data = yaml.load(fp.read())
+                y_data = yaml.safe_load(fp)
 
             for file_data in y_data["file_name_patterns"]:
                 log_files = shell.execute_command(
@@ -1078,10 +1079,6 @@ class ClusterSetup(OnPremBaseTest):
     def tearDown(self):
         super(ClusterSetup, self).tearDown()
 
-        self.log.info("Closing all ssh connections")
-        for active_shell in RemoteMachineShellConnection.get_instances():
-            active_shell.disconnect()
-
     def __initial_rebalance(self):
         services = None
         if self.services_init:
@@ -1119,10 +1116,11 @@ class ClusterSetup(OnPremBaseTest):
 
         if CbServer.cluster_profile == "serverless":
             # Workaround to hitting throttling on serverless config
-            RestConnection(self.cluster.master).set_internalSetting("dataThrottleLimit",
-                                                                    self.kv_throttling_limit)
-            RestConnection(self.cluster.master).set_internalSetting("dataStorageLimit",
-                                                                    self.kv_storage_limit)
+            rest = ClusterRestAPI(self.cluster.master)
+            rest.set_internal_settings("dataThrottleLimit",
+                                       self.kv_throttling_limit)
+            rest.set_internal_settings("dataStorageLimit",
+                                       self.kv_storage_limit)
 
         # Used to track spare nodes.
         # Test case can use this for further rebalance
