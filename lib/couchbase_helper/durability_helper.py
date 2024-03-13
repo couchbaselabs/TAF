@@ -89,7 +89,7 @@ class DurabilityHelper:
         :return durability_succeeds: Durability status for the bucket (bool)
         """
         durability_succeeds = True
-        bucket = BucketHelper(master).get_bucket_json(bucket_name)
+        bucket = BucketHelper(master).get_buckets_json(bucket_name)
         min_nodes_req = bucket["replicaNumber"] + 1
         majority_value = floor(min_nodes_req/2) + 1
 

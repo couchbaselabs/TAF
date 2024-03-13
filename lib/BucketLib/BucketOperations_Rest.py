@@ -8,18 +8,21 @@ import json
 import time
 import urllib
 
-from bucket import Bucket
+import requests.utils
+
+import global_vars
+from BucketLib.bucket import Bucket
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from common_lib import sleep
 from custom_exceptions.exception import \
     GetBucketInfoFailed, \
     BucketCompactionException
-from Rest_Connection import RestConnection
-from membase.api.rest_client import RestConnection as RC
 
 
-class BucketHelper(RestConnection):
+class BucketHelper(BucketRestApi):
     def __init__(self, server):
         super(BucketHelper, self).__init__(server)
+        self.server = server
 
     def bucket_exists(self, bucket):
         try:
@@ -94,14 +97,12 @@ class BucketHelper(RestConnection):
             bucket.rank = parsed.get("rank")
         return bucket
 
-    def get_buckets_json(self):
-        api = '{0}{1}'.format(self.baseUrl,
-                              'pools/default/buckets?basic_stats=true')
-        status, content, _ = self._http_request(api)
+    def get_buckets_json(self, bucket_name=None):
+        status, content = self.get_bucket_info(bucket_name)
         if not status:
-            self.log.error("Error while getting {0}. Please retry".format(api))
-            raise GetBucketInfoFailed("all_buckets", content)
-        return json.loads(content)
+            self.log.error(f"Failed to get {bucket_name} info")
+            raise GetBucketInfoFailed(bucket_name, content)
+        return content
 
     def vbucket_map_ready(self, bucket, timeout_in_seconds=360):
         end_time = time.time() + timeout_in_seconds
@@ -216,12 +217,11 @@ class BucketHelper(RestConnection):
         bucket -- bucket name
         zoom -- stats zoom level (minute | hour | day | week | month | year)
         """
-        api = self.baseUrl + 'pools/default/buckets/{0}/stats?zoom={1}' \
-                             .format(urllib.quote_plus("%s" % bucket), zoom)
-        status, content, _ = self._http_request(api)
+        status, content = BucketRestApi.get_bucket_stats(self, bucket,
+                                                         zoom=zoom)
         if not status:
             raise Exception(content)
-        return json.loads(content)
+        return content
 
     def fetch_bucket_xdcr_stats(self, bucket='default', zoom='minute'):
         """Return deserialized bucket xdcr stats.
@@ -255,15 +255,6 @@ class BucketHelper(RestConnection):
         status, content, _ = self._http_request(api)
         json_parsed = json.loads(content)
         return status, json_parsed
-
-    def get_bucket_json(self, bucket_name='default'):
-        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
-                                 urllib.quote_plus("%s" % bucket_name))
-        status, content, _ = self._http_request(api)
-        if not status:
-            self.log.error("Error while getting {0}. Please retry".format(api))
-            raise GetBucketInfoFailed(bucket_name, content)
-        return json.loads(content)
 
     def pause_bucket(self, bucket, s3_path=None, blob_storage_region=None, rate_limit=1024):
         api = '{0}{1}'.format(self.baseUrl, 'controller/pause')
@@ -324,14 +315,13 @@ class BucketHelper(RestConnection):
         return status, json_parsed
 
     def delete_bucket(self, bucket):
-        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
-                          urllib.quote_plus("{0}".format(bucket)))
-        status, _, header = self._http_request(api, 'DELETE')
-        if "status" in header:
-            status_code = header['status']
-        else:
-            status_code = header.status_code
-        if int(status_code) == 500:
+
+        b_name = requests.utils.quote(bucket.name)
+        api = f"{self.base_url}/pools/default/buckets/{b_name}"
+        status, content, response = self.http_request(api, self.DELETE)
+        if not status:
+            pass
+        if int(response.status_code) == 500:
             # According to http://docs.couchbase.com/couchbase-manual-2.5/cb-rest-api/#deleting-buckets
             # the cluster will return with 500 if it failed to nuke
             # the bucket on all of the nodes within 30 secs
@@ -341,14 +331,11 @@ class BucketHelper(RestConnection):
 
     '''Load any of the three sample buckets'''
     def load_sample(self, sample_name):
-        api = '{0}{1}'.format(self.baseUrl, "sampleBuckets/install")
-        data = '["{0}"]'.format(sample_name)
-        status, _, _ = self._http_request(api, 'POST', data)
+        status, _, _ = BucketRestApi.load_sample_bucket(self, [sample_name])
         return status
 
     # figure out the proxy port
     def create_bucket(self, bucket_params=dict()):
-        api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets')
         init_params = {
             Bucket.name: bucket_params.get(Bucket.name),
             Bucket.ramQuotaMB: bucket_params.get(Bucket.ramQuotaMB),
@@ -372,11 +359,9 @@ class BucketHelper(RestConnection):
         if num_vbs:
             init_params[Bucket.numVBuckets] = num_vbs
 
-        server_info = dict({"ip": self.ip, "port": self.port,
-                            "username": self.username,
-                            "password": self.password})
-        rest = RC(server_info)
-        if rest.is_enterprise_edition():
+        is_enterprise = global_vars.cluster_util.is_enterprise_edition(
+            cluster=None, server=self.server)
+        if is_enterprise:
             init_params[Bucket.replicaIndex] = bucket_params.get(Bucket.replicaIndex)
             init_params[Bucket.compressionMode] = bucket_params.get(Bucket.compressionMode)
             init_params[Bucket.maxTTL] = bucket_params.get(Bucket.maxTTL)
@@ -428,23 +413,22 @@ class BucketHelper(RestConnection):
         if bucket_rank is not None:
             init_params[Bucket.rank] = bucket_rank
 
-        params = urllib.urlencode(init_params)
         self.log.info("Creating '%s' bucket %s"
                       % (init_params['bucketType'], init_params['name']))
-        self.log.debug("{0} with param: {1}".format(api, params))
         create_start_time = time.time()
 
         maxwait = 60
         for numsleep in range(maxwait):
-            status, content, header = self._http_request(api, 'POST', params)
+            status, response = BucketRestApi.create_bucket(self, init_params)
             if status:
                 create_time = time.time() - create_start_time
                 self.log.debug("{0:.02f} seconds to create bucket {1}"
                                .format(round(create_time, 2),
                                        bucket_params.get('name')))
                 break
-            elif (int(header['status']) == 503 and
-                    '{"_":"Bucket with given name still exists"}' in content):
+            elif (int(response.status_code) == 503
+                  and ('{"_":"Bucket with given name still exists"}'
+                       in response.text)):
                 sleep(1, "Bucket still exists, will retry..")
             else:
                 return False
@@ -452,7 +436,6 @@ class BucketHelper(RestConnection):
             self.log.warning("Failed creating the bucket after {0} secs"
                              .format(maxwait))
             return False
-
         return True
 
     def set_magma_quota_percentage(self, bucket="default", storageQuotaPercentage=10):
