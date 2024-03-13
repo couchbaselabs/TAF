@@ -112,6 +112,17 @@ class APIBase(CouchbaseBaseTest):
                       "expire".format(retry_after))
         time.sleep(retry_after)
 
+    @staticmethod
+    def get_utc_date(days_before=0):
+        import datetime
+        now = datetime.datetime.utcnow()
+
+        if days_before:
+            days_delta = datetime.timedelta(days_before)
+            now = now - days_delta
+
+        return now.strftime('%Y-%m-%dT%H:%M:%S') + ".000Z"
+
     def create_api_keys_for_all_combinations_of_roles(
             self, project_ids, project_roles=[], organization_roles=[]):
         if not project_roles:
@@ -277,7 +288,6 @@ class APIBase(CouchbaseBaseTest):
                     "start": datetime.now(),
                     "end": None,
                     "total_api_calls_made_to_hit_rate_limit": 0,
-                    "total_calls": 0,
                     "2xx_status_code": {},
                     "4xx_errors": {},
                     "5xx_errors": {}
@@ -289,12 +299,7 @@ class APIBase(CouchbaseBaseTest):
                 if not results[api_role["id"]]["rate_limit_hit"]:
                     results[api_role["id"]][
                         "total_api_calls_made_to_hit_rate_limit"] += 1
-                results[api_role["id"]]["total_calls"] += 1
-                # if (results[api_role["id"]]["total_calls"] ==
-                #         num_of_calls_per_api):
                 results[api_role["id"]]["end"] = datetime.now()
-                # self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                # break
                 if str(resp.status_code).startswith("2"):
                     if str(resp.status_code) in results[
                             api_role["id"]]["2xx_status_code"]:
@@ -304,8 +309,6 @@ class APIBase(CouchbaseBaseTest):
                         results[api_role["id"]]["2xx_status_code"][
                             str(resp.status_code)] = 1
                 elif str(resp.status_code).startswith("4"):
-                    if resp.status_code == 429:
-                        continue
                     if str(resp.status_code) in results[
                             api_role["id"]]["4xx_errors"]:
                         results[api_role["id"]]["4xx_errors"][
