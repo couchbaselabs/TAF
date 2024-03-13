@@ -160,7 +160,8 @@ class Kafka_Link(Link):
 class Dataset(object):
 
     def __init__(self, name, dataverse_name="Dafault", database_name="Default",
-                 bucket=None, scope=None, collection=None, storage_format="row"):
+                 bucket=None, scope=None, collection=None,
+                 num_of_items=0, storage_format="row"):
         """
         :param name <str> name of the dataset
         :param dataverse_name <str> dataverse where the dataset is present.
@@ -169,8 +170,6 @@ class Dataset(object):
         If only bucket name is specified, then default scope is selected.
         :param collection <str> KV collection on which dataset is based.
         If only bucket name is specified, then default collection in default scope is selected.
-        :param enabled_from_KV <bool> specify whether the dataset was
-        created by enabling analytics from KV.
         :param num_of_items <int> expected number of items in dataset.
         :param storage_format <str> storage format for the dataset.
         """
@@ -195,6 +194,7 @@ class Dataset(object):
                     self.get_fully_qualified_kv_entity_name(cardinality=1))
             else:
                 self.full_kv_entity_name = None
+        self.num_of_items = num_of_items
         self.storage_format = storage_format
 
     def __str__(self):
@@ -212,7 +212,8 @@ class Dataset(object):
                                           self.kv_collection.name)
 
     def reset_full_name(self):
-        self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
+        self.full_name = CBASHelper.format_name(
+            self.database_name, self.dataverse_name, self.name)
 
 
 class CBAS_Collection(object):
@@ -224,7 +225,8 @@ class Remote_Dataset(Dataset):
 
     def __init__(self, name, link_name, dataverse_name="Dafault",
                  database_name="Default", bucket=None, scope=None,
-                 collection=None, storage_format="row", capella=False):
+                 collection=None, num_of_items=0, storage_format="row",
+                 capella_as_source=False):
         """
         :param name <str> name of the dataset
         :param link_name <str> name of the remote link to which dataset is
@@ -238,12 +240,14 @@ class Remote_Dataset(Dataset):
         default scope is selected.
         :param num_of_items <int> expected number of items in dataset.
         :param storage_format <str> storage format for the dataset.
+        :param capella_as_source <bool> True if source for remote dataset is
+        capella cluster else False if source is on-prem cluster
         """
         super(Remote_Dataset, self).__init__(
             name, dataverse_name, database_name, bucket, scope,
-            collection, False, storage_format)
+            collection, num_of_items, storage_format)
 
-        self.capella_cluster = capella
+        self.capella_as_source = capella_as_source
         self.link_name = CBASHelper.format_name(link_name)
 
 
@@ -280,7 +284,8 @@ class Standalone_Dataset(Dataset):
         :param dataverse_name <str> dataverse where the dataset is present.
         :param data_source <str> Source from where data will be ingested
         into dataset. Accepted Values - mongo, dynamo, cassandra, s3, gcp,
-        azure, shadow_dataset
+        azure, shadow_dataset, crud(if standalone collection is used only for
+        insert, upsert and delete)
         :param link_name <str> Fully qualified name of the kafka link.
         :param external_collection <str> Fully qualified name of the
         collection on external databases like mongo, dynamo, cassandra etc
