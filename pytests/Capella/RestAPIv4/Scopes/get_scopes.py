@@ -32,28 +32,14 @@ class GetScope(GetBucket):
 
         # Delete scope
         self.log.info("Deleting scope: {}".format(self.scope_name))
-        if self.capellaAPI.cluster_ops_apis.delete_scope(
+        if self.flush_scopes(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.scope_name).status_code != 200:
-            self.log.error("Error while deleting Scope.")
+                self.bucket_id, [self.scope_name]):
+            self.log.error("Error while flushing Scopes.")
         else:
-            self.log.info("Scope deletion successful.")
+            self.log.info("Scope flushing successful.")
 
         super(GetScope, self).tearDown()
-
-    def validate_scope_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if key == "name" and actual_res[key] != self.scope_name:
-                continue
-            if isinstance(expected_res[key], dict):
-                self.validate_scope_api_response(
-                    expected_res[key], actual_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
 
     def test_api_path(self):
         testcases = [
@@ -179,18 +165,12 @@ class GetScope(GetBucket):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.fetch_scope_info(
                     org, proj, clus, buck, scope)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_scope_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.scope_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes"
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.scope_name)
 
         if failures:
             for fail in failures:
@@ -246,14 +226,9 @@ class GetScope(GetBucket):
                 result = self.capellaAPI.cluster_ops_apis.fetch_scope_info(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_id, self.scope_name, header)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_scope_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.scope_name)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -395,14 +370,9 @@ class GetScope(GetBucket):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase["bucketID"],
                     testcase["scopeName"], **kwarg)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_scope_api_response(
-                        self.expected_result, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_result, self.scope_name)
 
         if failures:
             for fail in failures:
@@ -415,85 +385,10 @@ class GetScope(GetBucket):
         api_func_list = [[self.capellaAPI.cluster_ops_apis.fetch_scope_info,
                           (self.organisation_id, self.project_id,
                            self.cluster_id, self.bucket_id, self.scope_name)]]
-
-        for i in range(self.input.param("num_api_keys", 1)):
-            resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id,
-                self.generate_random_string(prefix=self.prefix),
-                ["organizationOwner"], self.generate_random_string(50))
-            if resp.status_code == 429:
-                self.handle_rate_limit(int(resp.headers["Retry-After"]))
-                resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    self.organisation_id,
-                    self.generate_random_string(prefix=self.prefix),
-                    ["organizationOwner"], self.generate_random_string(50))
-            if resp.status_code == 201:
-                self.api_keys["organizationOwner_{}".format(i)] = resp.json()
-            else:
-                self.fail("Error while creating API key for "
-                          "organizationOwner_{}".format(i))
-
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail("Rate limit was hit after {0} API calls. This is"
-                              " definitely an issue.".format(results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
-        for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
-
-            if len(results[result]["4xx_errors"]) > 0 or len(
-                    results[result]["5xx_errors"]) > 0:
-                self.fail("Some API calls failed")
+        self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[self.capellaAPI.cluster_ops_apis.fetch_scope_info,
                           (self.organisation_id, self.project_id,
                            self.cluster_id, self.bucket_id, self.scope_name)]]
-
-        org_roles = self.input.param("org_roles", "organizationOwner")
-        proj_roles = self.input.param("proj_roles", "projectDataReader")
-        org_roles = org_roles.split(":")
-        proj_roles = proj_roles.split(":")
-
-        api_key_dict = self.create_api_keys_for_all_combinations_of_roles(
-            [self.project_id], proj_roles, org_roles)
-        for i, api_key in enumerate(api_key_dict):
-            if api_key in self.api_keys:
-                self.api_keys["{}_{}".format(api_key_dict[api_key], i)] = \
-                    api_key_dict[api_key]
-            else:
-                self.api_keys[api_key] = api_key_dict[api_key]
-
-        if self.input.param("rate_limit", False):
-            results = self.make_parallel_api_calls(
-                310, api_func_list, self.api_keys)
-            for result in results:
-                if ((not results[result]["rate_limit_hit"])
-                        or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
-                    self.fail("Rate limit was hit after {0} API calls. This is"
-                              " definitely an issue.".format(results[result][
-                                "total_api_calls_made_to_hit_rate_limit"]))
-
-        results = self.make_parallel_api_calls(
-            99, api_func_list, self.api_keys)
-        for result in results:
-            # Removing failure for tests which are intentionally ran for
-            # unauthorized roles, ie, which give a 403 response.
-            if "403" in results[result]["4xx_errors"]:
-                del results[result]["4xx_errors"]["403"]
-
-            if len(results[result]["4xx_errors"]) > 0 or len(
-                    results[result]["5xx_errors"]) > 0:
-                self.fail("Some API calls failed")
+        self.throttle_test(api_func_list, True, self.project_id)
