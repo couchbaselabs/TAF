@@ -5,28 +5,29 @@ Created on Mar 14, 2019
 
 """
 
-import json as pyJson
 import subprocess
 import os
 import time
 
 from threading import Lock
 
+from couchbase.diagnostics import ServiceType
+from couchbase.exceptions import UnAmbiguousTimeoutException, \
+    DocumentExistsException, DurabilityImpossibleException, \
+    RequestCanceledException, TimeoutException, \
+    DurabilitySyncWriteAmbiguousException, CouchbaseException, \
+    CasMismatchException, DocumentNotFoundException
 
 from cb_constants import ClusterRun, CbServer, DocLoading
 from constants.sdk_constants.java_client import SDKConstants
 from global_vars import logger
-from sdk_utils.java_sdk import SDKOptions
+from sdk_utils.sdk_options import SDKOptions
 from sdk_exceptions import SDKException
 
-from datetime import timedelta
-
-# needed for any cluster connection
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
-# needed for options -- cluster, timeout, SQL++ (N1QL) query, etc.
 from couchbase.options import (ClusterOptions, ClusterTimeoutOptions,
-                               QueryOptions)
+                               QueryOptions, WaitUntilReadyOptions)
 
 
 class SDKClientPool(object):
@@ -256,26 +257,22 @@ class SDKClient(object):
         # Having 'None' will enable us to test without sending any
         # compression settings and explicitly setting to 'False' as well
         build_env = False
-        t_cluster_env = cluster.sdk_env_built
+        auth = PasswordAuthenticator(self.username, self.password)
+        cluster_opts = {
+            "authenticator": auth,
+            "enable_tls": False
+        }
         if CbServer.use_https or self.transaction_conf or self.compression:
             t_cluster_env = cluster.sdk_cluster_env
             build_env = True
 
         if self.compression is not None:
-            is_compression = self.compression.get("enabled", False)
-            compression_config = CompressionConfig.enable(is_compression)
-            if "minSize" in self.compression:
-                compression_config = compression_config.minSize(
-                    self.compression["minSize"])
-            if "minRatio" in self.compression:
-                compression_config = compression_config.minRatio(
-                    self.compression["minRatio"])
-            t_cluster_env = t_cluster_env.compressionConfig(compression_config)
+            cluster_opts["enable_compression"] = self.compression.get("enabled", False)
+            cluster_opts["compression_min_size"] = self.compression["minSize"]
+            cluster_opts["compression_min_ratio"] = self.compression["minRatio"]
 
         if CbServer.use_https:
-            t_cluster_env = t_cluster_env.securityConfig(
-                SecurityConfig.enableTls(True)
-                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+            cluster_opts["enable_tls"] = True
 
         if self.transaction_conf:
             trans_conf = TransactionsConfig().cleanupConfig(
@@ -306,48 +303,40 @@ class SDKClient(object):
             t_cluster_env = t_cluster_env.transactionsConfig(trans_conf)
 
         if build_env:
-            t_cluster_env = t_cluster_env.build()
-
-        cluster_options = ClusterOptions \
-            .clusterOptions(self.username, self.password) \
-            .environment(t_cluster_env)
+            cluster_opts = ClusterOptions(**cluster_opts)
+        else:
+            cluster_opts = ClusterOptions(**cluster_opts)
         i = 1
         while i <= 5:
             try:
                 # Code for cluster_run
                 if ClusterRun.is_enabled:
-                    master_seed = HashSet(Collections.singletonList(
-                        SeedNode.create(
-                            servers[0][0],
-                            Optional.of(ClusterRun.memcached_port),
-                            Optional.of(int(servers[0][1])))))
-                    self.cluster = Cluster.connect(master_seed,
-                                                   cluster_options)
+                    self.cluster = Cluster.connect(f"{self.scheme, hosts[0]}",
+                                                   cluster_opts)
                 else:
                     connection_string = "{0}://{1}".format(self.scheme, ", ".
                                                            join(hosts).
                                                            replace(" ", ""))
-                    self.cluster = Cluster.connect(
-                        connection_string,
-                        cluster_options)
+                    self.cluster = Cluster.connect(connection_string,
+                                                   cluster_opts)
                 break
-            except ConfigException as e:
+            except Exception as e:
                 self.log.error("Exception during cluster connection: %s" % e)
                 i += 1
+
+        # Wait until cluster status ready
+        wait_until_ready_options = \
+            WaitUntilReadyOptions(service_types=[ServiceType.KeyValue])
+        try:
+            self.cluster.wait_until_ready(
+                SDKOptions.get_duration(30, SDKConstants.TimeUnit.SECONDS),
+                wait_until_ready_options)
+        except UnAmbiguousTimeoutException as e:
+            self.log.critical(e)
+
+        # Select bucket / collections if required
         if self.bucket is not None:
             self.bucketObj = self.cluster.bucket(self.bucket.name)
-            wait_until_ready_options = \
-                WaitUntilReadyOptions.waitUntilReadyOptions() \
-                .serviceTypes(ServiceType.KV)
-            try:
-                self.bucketObj.waitUntilReady(
-                    SDKOptions.get_duration(10, SDKConstants.TimeUnit.SECONDS),
-                    wait_until_ready_options)
-            except Java_base_exception as e:
-                # JCBC-1983: Suppress the exception just by logging it
-                # We might have got 10 seconds sleep for the connection to work
-                self.log.debug(e)
-
             self.select_collection(self.scope_name,
                                    self.collection_name)
 
@@ -401,39 +390,10 @@ class SDKClient(object):
     def close(self):
         self.log.debug("Closing SDK for bucket '%s'" % self.bucket)
         if self.cluster:
-            try:
-                self.cluster.disconnect()
-            except RuntimeException as e:
-                if "Did not observe any item" in str(e):
-                    pass
-                else:
-                    raise
-#             self.cluster.environment().shutdown()
-            self.log.debug("Cluster disconnected and env shutdown")
+            self.cluster.close()
             SDKClient.sdk_disconnections += 1
 
     # Translate APIs for document operations
-    @staticmethod
-    def translate_to_json_object(value, doc_type="json"):
-        if type(value) == JsonObject and doc_type == "json":
-            return value
-        json_obj = JsonObject.create()
-        try:
-            if doc_type.find("json") != -1:
-                if type(value) != dict:
-                    value = pyJson.loads(value)
-                for field, val in value.items():
-                    json_obj.put(field, val)
-                return json_obj
-            elif doc_type.find("binary") != -1:
-                value = String(value)
-                return value.getBytes(StandardCharsets.UTF_8)
-            else:
-                return value
-        except Exception:
-            pass
-        return json_obj
-
     @staticmethod
     def populate_crud_failure_reason(failed_key, error):
         try:
@@ -463,66 +423,41 @@ class SDKClient(object):
     def __translate_upsert_multi_results(data):
         success = dict()
         fail = dict()
-        if data is None:
-            return success, fail
-        for result in data:
-            key = result['id']
-            json_object = result["document"]
-            if result['status']:
-                success[key] = dict()
-                success[key]['value'] = json_object
-                success[key]['cas'] = result['cas']
-            else:
-                fail[key] = dict()
-                fail[key]['cas'] = result['cas']
-                fail[key]['value'] = json_object
-                fail[key]['error'] = str(result['error'].getClass().getName() +
-                                         " | " + result['error'].getMessage())
-                SDKClient.populate_crud_failure_reason(fail[key],
-                                                       result['error'])
+        for key, mutation_result in data.results.items():
+            success[key] = dict()
+            success[key]["cas"] = mutation_result.cas
+        for key, result_exception in data.exceptions.items():
+            fail[key] = dict()
+            fail[key]["cas"] = 0
+            fail[key]['error'] = result_exception
         return success, fail
 
     @staticmethod
     def __translate_delete_multi_results(data):
         success = dict()
         fail = dict()
-        if data is None:
-            return success, fail
-        for result in data:
-            key = result['id']
-            if result['status']:
-                success[key] = dict()
-                success[key]['cas'] = result['cas']
-            else:
-                fail[key] = dict()
-                fail[key]['cas'] = result['cas']
-                fail[key]['value'] = dict()
-                fail[key]['error'] = str(result['error'].getClass().getName() +
-                                         " | " + result['error'].getMessage())
-                SDKClient.populate_crud_failure_reason(fail[key],
-                                                       result['error'])
+        for key, mutation_result in data.results.items():
+            success[key] = dict()
+            success[key]["cas"] = mutation_result.cas
+        for key, result_exception in data.exceptions.items():
+            fail[key] = dict()
+            fail[key]["cas"] = 0
+            fail[key]['error'] = result_exception
         return success, fail
 
     @staticmethod
     def __translate_get_multi_results(data):
         success = dict()
         fail = dict()
-        if data is None:
-            return success, fail
-        for result in data:
-            key = result['id']
-            if result['status']:
-                success[key] = dict()
-                success[key]['value'] = result['content']
-                success[key]['cas'] = result['cas']
-            else:
-                fail[key] = dict()
-                fail[key]['cas'] = result['cas']
-                fail[key]['value'] = dict()
-                fail[key]['error'] = str(result['error'].getClass().getName() +
-                                         " | " + result['error'].getMessage())
-                SDKClient.populate_crud_failure_reason(fail[key],
-                                                       result['error'])
+        for key, result in data.results.items():
+            success[key] = dict()
+            success[key]["cas"] = result.cas
+            success[key]["value"] = result.content_as[dict]
+
+        for key, result in data.exceptions.items():
+            fail[key] = dict()
+            fail[key]["cas"] = 0
+            fail[key]["error"] = result
         return success, fail
 
     @staticmethod
@@ -604,12 +539,9 @@ class SDKClient(object):
         """
         self.scope_name = scope_name
         self.collection_name = collection_name
-        if collection_name != CbServer.default_collection:
-            self.collection = self.bucketObj \
-                .scope(scope_name) \
-                .collection(collection_name)
-        else:
-            self.collection = self.bucketObj.defaultCollection()
+        self.collection = self.bucketObj \
+            .scope(scope_name) \
+            .collection(collection_name)
 
     def create_scope(self, scope):
         """
@@ -658,47 +590,35 @@ class SDKClient(object):
     def delete(self, key, persist_to=0, replicate_to=0,
                timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                durability="", cas=0, sdk_retry_strategy=None):
-        result = dict()
-        result["cas"] = -1
+        result = {"key": key, "value": None, "cas": 0,
+                  "status": False, "error": None}
         try:
             options = SDKOptions.get_remove_options(
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
                 durability=durability,
-                cas=cas,
-                sdk_retry_strategy=sdk_retry_strategy)
+                cas=cas)
             delete_result = self.collection.remove(key, options)
-            result.update({"key": key, "value": None,
-                           "error": None, "status": True,
-                           "cas": delete_result.cas()})
+            result.update({"status": delete_result.success,
+                           "cas": delete_result.cas})
         except DocumentNotFoundException as e:
             self.log.debug("Exception: Document id {0} not found - {1}"
                            .format(key, e))
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
+            result.update({"value": None, "error": str(e)})
         except CasMismatchException as e:
             self.log.debug("Exception: Cas mismatch for doc {0} - {1}"
                            .format(key, e))
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
-        except TemporaryFailureException as e:
-            self.log.debug("Exception: Retry for doc {0} - {1}"
-                           .format(key, e))
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
+            result.update({"error": str(e)})
+        except (RequestCanceledException, TimeoutException) as e:
+            self.log.debug("Request cancelled/timed-out: " + str(e))
+            result.update({"error": str(e)})
         except CouchbaseException as e:
             self.log.debug("CB generic exception for doc {0} - {1}"
                            .format(key, e))
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
-        except (RequestCanceledException, TimeoutException) as ex:
-            self.log.debug("Request cancelled/timed-out: " + str(ex))
-            result.update({"key": key, "value": None,
-                           "error": str(ex), "status": False})
+            result.update({"error": str(e)})
         except Exception as e:
             self.log.error("Error during remove of {0} - {1}".format(key, e))
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
+            result.update({"error": str(e)})
         return result
 
     def insert(self, key, value,
@@ -707,63 +627,43 @@ class SDKClient(object):
                timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                doc_type="json",
                durability="", sdk_retry_strategy=None):
-
-        result = dict()
-        result["cas"] = 0
-        content = self.translate_to_json_object(value)
+        result = {"key": key, "value": None, "cas": 0,
+                  "status": False, "error": None}
         try:
             options = SDKOptions.get_insert_options(
                 exp=exp, exp_unit=exp_unit,
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
-                durability=durability,
-                sdk_retry_strategy=sdk_retry_strategy)
+                durability=durability)
             if doc_type == "binary":
-                options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+                raise NotImplementedError()
             elif doc_type == "string":
-                options = options.transcoder(RawStringTranscoder.INSTANCE)
+                raise NotImplementedError()
 
             # Returns com.couchbase.client.java.kv.MutationResult object
-            insert_result = self.collection.insert(key, content, options)
-            result.update({"key": key, "value": content,
-                           "error": None, "status": True,
-                           "cas": insert_result.cas()})
+            insert_result = self.collection.insert(key, value, options)
+            result.update({"value": value,
+                           "status": insert_result.success,
+                           "cas": insert_result.cas})
         except DocumentExistsException as ex:
             self.log.debug("The document already exists! => " + str(ex))
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
+            result.update({"value": value, "error": str(ex)})
         except DurabilityImpossibleException as ex:
             self.log.debug("Durability impossible for key: " + str(ex))
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
-        except ReplicaNotConfiguredException as ex:
-            self.log.debug("ReplicaNotConfigured for key: %s" % str(ex))
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
+            result.update({"value": value, "error": str(ex)})
         except (RequestCanceledException, TimeoutException) as ex:
             self.log.debug("Request cancelled/timed-out: " + str(ex))
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
-        except DurabilityAmbiguousException as e:
+            result.update({"value": value, "error": str(ex)})
+        except DurabilitySyncWriteAmbiguousException as e:
             self.log.debug("D_Ambiguous for key %s" % key)
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
-        except ServerOutOfMemoryException as ex:
-            self.log.debug("OOM exception: %s" % ex)
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
-        except FeatureNotAvailableException as ex:
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
+            result.update({"error": str(e)})
         except CouchbaseException as e:
             self.log.debug("CB generic exception for doc {0} - {1}"
                            .format(key, e))
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
+            result.update({"error": str(e)})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
+            result.update({"value": value, "error": str(ex)})
             if result["error"]:
                 result["error"] = str(ex.getClass().getName() +
                                       " | " + ex.getMessage())
@@ -776,123 +676,91 @@ class SDKClient(object):
                 timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                 durability="", cas=0, sdk_retry_strategy=None,
                 preserve_expiry=None):
-        result = dict()
-        result["cas"] = 0
-        content = self.translate_to_json_object(value)
+        result = {"key": key, "cas": 0,
+                  "error": None, "status": False}
         try:
             options = SDKOptions.get_replace_options(
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
                 durability=durability,
                 cas=cas,
-                preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy)
+                preserve_expiry=preserve_expiry)
             # Returns com.couchbase.client.java.kv.MutationResult object
-            replace_result = self.collection.replace(key, content, options)
-            result.update({"key": key, "value": content,
-                           "error": None, "status": True,
-                           "cas": replace_result.cas()})
-        except DocumentExistsException as ex:
-            self.log.debug("The document already exists! => " + str(ex))
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
+            replace_result = self.collection.replace(key, value, options)
+            result.update({"value": value,
+                           "status": replace_result.success,
+                           "cas": replace_result.cas})
+        except DocumentExistsException as e:
+            self.log.debug("The document already exists! => " + str(e))
+            result.update({"value": value, "error": str(ex)})
         except CasMismatchException as e:
             self.log.debug("CAS mismatch for key %s - %s" % (key, e))
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
+            result.update({"error": str(e)})
         except DocumentNotFoundException as e:
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
-        except DurabilityAmbiguousException as e:
+            result.update({"error": str(e)})
+        except DurabilitySyncWriteAmbiguousException as e:
             self.log.debug("D_Ambiguous for key %s" % key)
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
-        except (RequestCanceledException, TimeoutException) as ex:
-            self.log.debug("Request cancelled/timed-out: " + str(ex))
-            result.update({"key": key, "value": None,
-                           "error": str(ex), "status": False})
-        except FeatureNotAvailableException as ex:
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
+            result.update({"error": str(e)})
+        except (RequestCanceledException, TimeoutException) as e:
+            self.log.debug("Request cancelled/timed-out: " + str(e))
+            result.update({"error": str(e)})
         except Exception as ex:
-            self.log.error("Something else happened: " + str(ex))
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
+            self.log.error("Something else happened: " + str(e))
+            result.update({"value": value, "error": str(e)})
         return result
 
     def touch(self, key, exp=0, exp_unit=SDKConstants.TimeUnit.SECONDS,
-              persist_to=0, replicate_to=0,
-              durability="",
               timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
               sdk_retry_strategy=None):
-        result = {
-            "key": key,
-            "value": None,
-            "cas": 0,
-            "status": False,
-            "error": None
-        }
-        touch_options = SDKOptions.get_touch_options(
-            timeout, time_unit,
-            sdk_retry_strategy=sdk_retry_strategy)
+        result = {"key": key,
+                  "value": None,
+                  "cas": 0,
+                  "status": False,
+                  "error": None}
+        touch_options = SDKOptions.get_touch_options(timeout, time_unit)
         try:
             touch_result = self.collection.touch(
-                key,
-                SDKOptions.get_duration(exp, exp_unit),
-                touch_options)
-            result.update({"status": True, "cas": touch_result.cas()})
+                key, SDKOptions.get_duration(exp, exp_unit), touch_options)
+            result.update({"status": touch_result.success,
+                           "cas": touch_result.cas})
         except DocumentNotFoundException as e:
             self.log.debug("Document key '%s' not found!" % key)
             result["error"] = str(e)
         except (RequestCanceledException, TimeoutException) as ex:
             self.log.debug("Request cancelled/timed-out: " + str(ex))
-            result.update({"key": key, "value": None,
-                           "error": str(ex), "status": False})
-        except FeatureNotAvailableException as ex:
-            result.update({"key": key, "value": None,
-                           "error": str(ex), "status": False})
+            result.update({"error": str(ex)})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
-            result.update({"key": key, "value": None,
-                           "error": str(ex), "status": False})
+            result.update({"error": str(ex)})
         return result
 
     def read(self, key, timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
              sdk_retry_strategy=None, populate_value=True, with_expiry=None):
-        result = {
-            "key": key,
-            "value": None,
-            "cas": 0,
-            "status": False,
-            "error": None,
-            "ttl_present": None
-        }
-        read_options = SDKOptions.get_read_options(
-            timeout, time_unit,
-            sdk_retry_strategy=sdk_retry_strategy,
-            with_expiry=with_expiry)
+        result = {"key": key,
+                  "value": None,
+                  "cas": 0,
+                  "status": False,
+                  "error": None,
+                  "ttl_present": None}
+        read_options = SDKOptions.get_read_options(timeout, time_unit,
+                                                   with_expiry=with_expiry)
         try:
             get_result = self.collection.get(key, read_options)
-            result["status"] = True
+            result["status"] = get_result.success
             if populate_value:
-                result["value"] = str(get_result.contentAsObject())
-            result["cas"] = get_result.cas()
+                result["value"] = get_result.value
+            result["cas"] = get_result.cas
             if with_expiry:
-                result["ttl_present"] = get_result.expiryTime().isPresent()
-        except DocumentNotFoundException as e:
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
-        except (RequestCanceledException, TimeoutException) as ex:
-            self.log.debug("Request cancelled/timed-out: " + str(ex))
-            result.update({"key": key, "value": None,
-                           "error": str(ex), "status": False})
+                result["ttl_present"] = get_result.expiryTime
+        except (DocumentNotFoundException, RequestCanceledException,
+                TimeoutException) as e:
+            self.log.debug("Request cancelled/timed-out: " + str(e))
+            result.update({"error": str(e)})
         except CouchbaseException as e:
-            result.update({"key": key, "value": None,
-                           "error": str(e), "status": False})
+            result.update({"error": str(e)})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
-            result.update({"key": key, "value": None,
-                           "error": str(ex), "status": False})
+            result.update({"error": str(ex)})
         return result
 
     def get_from_all_replicas(self, key):
@@ -905,7 +773,7 @@ class SDKClient(object):
                 for item in get_result:
                     result.append({"key": key,
                                    "value": item.contentAsObject(),
-                                   "cas": item.cas(), "status": True})
+                                   "cas": item.cas, "status": get_result.success})
         except Exception:
             pass
         return result
@@ -915,7 +783,6 @@ class SDKClient(object):
                persist_to=0, replicate_to=0,
                timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                durability="", sdk_retry_strategy=None, preserve_expiry=None):
-        content = self.translate_to_json_object(value)
         result = dict()
         result["cas"] = 0
         try:
@@ -924,34 +791,25 @@ class SDKClient(object):
                 persist_to=persist_to, replicate_to=replicate_to,
                 timeout=timeout, time_unit=time_unit,
                 durability=durability,
-                preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy)
-            upsert_result = self.collection.upsert(key, content, options)
-            result.update({"key": key, "value": content,
+                preserve_expiry=preserve_expiry)
+            upsert_result = self.collection.upsert(key, value, options)
+            result.update({"key": key, "value": value,
                            "error": None, "status": True,
-                           "cas": upsert_result.cas()})
+                           "cas": upsert_result.cas})
         except DocumentExistsException as ex:
             self.log.debug("Upsert: Document already exists! => " + str(ex))
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
-        except ReplicaNotConfiguredException as ex:
-            self.log.debug("Upsert: ReplicaNotConfiguredException for %s: %s"
-                           % (key, str(ex)))
-            result.update({"key": key, "value": content,
+            result.update({"key": key, "value": value,
                            "error": str(ex), "status": False})
         except (RequestCanceledException, TimeoutException) as ex:
             self.log.debug("Request cancelled/timed-out: " + str(ex))
             result.update({"key": key, "value": None,
                            "error": str(ex), "status": False})
-        except DurabilityAmbiguousException as ex:
+        except DurabilitySyncWriteAmbiguousException as ex:
             self.log.debug("Durability Ambiguous for key: %s" % key)
-            result.update({"key": key, "value": content,
-                           "error": str(ex), "status": False})
-        except FeatureNotAvailableException as ex:
-            result.update({"key": key, "value": content,
+            result.update({"key": key, "value": value,
                            "error": str(ex), "status": False})
         except CouchbaseException as ex:
-            result.update({"key": key, "value": content,
+            result.update({"key": key, "value": value,
                            "error": str(ex), "status": False})
         except Exception as ex:
             self.log.error("Something else happened: " + str(ex))
@@ -998,16 +856,12 @@ class SDKClient(object):
                 sdk_retry_strategy=sdk_retry_strategy,
                 preserve_expiry=preserve_expiry)
         elif op_type == DocLoading.Bucket.DocOps.TOUCH:
-            result = self.touch(
-                key, exp=exp,
-                persist_to=persist_to, replicate_to=replicate_to,
-                durability=durability,
-                timeout=timeout, time_unit=time_unit,
-                sdk_retry_strategy=sdk_retry_strategy)
+            result = self.touch(key, exp=exp,
+                                timeout=timeout, time_unit=time_unit,
+                                sdk_retry_strategy=sdk_retry_strategy)
         elif op_type == DocLoading.Bucket.DocOps.READ:
-            result = self.read(
-                key, timeout=timeout, time_unit=time_unit,
-                sdk_retry_strategy=sdk_retry_strategy)
+            result = self.read(key, timeout=timeout, time_unit=time_unit,
+                               sdk_retry_strategy=sdk_retry_strategy)
         elif op_type in [DocLoading.Bucket.SubDocOps.INSERT, "subdoc_insert"]:
             sub_key, value = value[0], value[1]
             path_val = dict()
@@ -1144,43 +998,36 @@ class SDKClient(object):
     def delete_multi(self, keys, persist_to=0, replicate_to=0,
                      timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                      durability="", sdk_retry_strategy=None):
-        options = SDKOptions.get_remove_options(
+        options = SDKOptions.get_remove_multi_options(
             persist_to=persist_to, replicate_to=replicate_to,
             timeout=timeout, time_unit=time_unit,
-            durability=durability,
-            sdk_retry_strategy=sdk_retry_strategy)
-        result = SDKClient.doc_op.bulkDelete(
-            self.collection, keys, options)
+            durability=durability)
+        result = self.collection.remove_multi(keys, options)
         return self.__translate_delete_multi_results(result)
 
     def touch_multi(self, keys, exp=0,
                     timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                     sdk_retry_strategy=None):
-        touch_options = SDKOptions.get_touch_options(
-            timeout, time_unit, sdk_retry_strategy=sdk_retry_strategy)
-        exp_duration = \
-            SDKOptions.get_duration(exp, SDKConstants.TimeUnit.SECONDS)
-        result = SDKClient.doc_op.bulkTouch(
-            self.collection, keys, exp,
-            touch_options, exp_duration)
+        touch_options = SDKOptions.get_touch_multi_options(timeout, time_unit)
+        exp_duration = SDKOptions.get_duration(
+            exp, SDKConstants.TimeUnit.SECONDS)
+        result = self.collection.touch_multi(keys, exp_duration, touch_options)
         return self.__translate_delete_multi_results(result)
 
     def set_multi(self, items, exp=0, exp_unit=SDKConstants.TimeUnit.SECONDS,
                   persist_to=0, replicate_to=0,
                   timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                   doc_type="json", durability="", sdk_retry_strategy=None):
-        options = SDKOptions.get_insert_options(
+        options = SDKOptions.get_insert_multi_options(
             exp=exp, exp_unit=exp_unit,
             persist_to=persist_to, replicate_to=replicate_to,
             timeout=timeout, time_unit=time_unit,
-            durability=durability,
-            sdk_retry_strategy=sdk_retry_strategy)
+            durability=durability)
         if doc_type.lower() == "binary":
-            options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+            raise NotImplementedError()
         elif doc_type.lower() == "string":
-            options = options.transcoder(RawStringTranscoder.INSTANCE)
-        result = SDKClient.doc_op.bulkInsert(
-            self.collection, items, options)
+            raise NotImplementedError()
+        result = self.collection.insert_multi(items, options)
         return self.__translate_upsert_multi_results(result)
 
     def upsert_multi(self, docs,
@@ -1189,19 +1036,16 @@ class SDKClient(object):
                      timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                      doc_type="json", durability="",
                      preserve_expiry=None, sdk_retry_strategy=None):
-        options = SDKOptions.get_upsert_options(
+        options = SDKOptions.get_upsert_multi_options(
             exp=exp, exp_unit=exp_unit,
             persist_to=persist_to, replicate_to=replicate_to,
             timeout=timeout, time_unit=time_unit,
-            durability=durability,
-            preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy)
+            durability=durability)
         if doc_type.lower() == "binary":
-            options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+            raise NotImplementedError()
         elif doc_type.lower() == "string":
-            options = options.transcoder(RawStringTranscoder.INSTANCE)
-        result = SDKClient.doc_op.bulkUpsert(
-            self.collection, docs, options)
+            raise NotImplementedError()
+        result = self.collection.upsert_multi(docs, options)
         return self.__translate_upsert_multi_results(result)
 
     def replace_multi(self, docs,
@@ -1210,28 +1054,24 @@ class SDKClient(object):
                       timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                       doc_type="json", durability="",
                       preserve_expiry=None, sdk_retry_strategy=None):
-        options = SDKOptions.get_replace_options(
+        options = SDKOptions.get_replace_multi_options(
             exp=exp, exp_unit=exp_unit,
             persist_to=persist_to, replicate_to=replicate_to,
             timeout=timeout, time_unit=time_unit,
             durability=durability,
-            preserve_expiry=preserve_expiry,
-            sdk_retry_strategy=sdk_retry_strategy)
+            preserve_expiry=preserve_expiry)
         if doc_type.lower() == "binary":
-            options = options.transcoder(RawBinaryTranscoder.INSTANCE)
+            raise NotImplementedError()
         elif doc_type.lower() == "string":
-            options = options.transcoder(RawStringTranscoder.INSTANCE)
-        result = SDKClient.doc_op.bulkReplace(
-            self.collection, docs, options)
+            raise NotImplementedError()
+        result = self.collection.replace_multi(docs, options)
         return self.__translate_upsert_multi_results(result)
 
     def get_multi(self, keys,
                   timeout=5, time_unit=SDKConstants.TimeUnit.SECONDS,
                   sdk_retry_strategy=None):
-        read_options = SDKOptions.get_read_options(
-            timeout, time_unit,
-            sdk_retry_strategy=sdk_retry_strategy)
-        result = SDKClient.doc_op.bulkGet(self.collection, keys, read_options)
+        read_options = SDKOptions.get_read_multi_options(timeout, time_unit)
+        result = self.collection.get_multi(keys, read_options)
         return self.__translate_get_multi_results(result)
 
     # Bulk CRUDs for sub-doc APIs

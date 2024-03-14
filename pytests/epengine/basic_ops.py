@@ -25,7 +25,7 @@ from platform_constants.os_constants import Linux
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
-from sdk_utils.java_sdk import SDKOptions
+from sdk_utils.sdk_options import SDKOptions
 from table_view import TableView
 
 

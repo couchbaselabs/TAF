@@ -7,13 +7,11 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from constants.sdk_constants.java_client import SDKConstants
-from sdk_utils.java_sdk import SDKOptions
+from sdk_utils.sdk_options import SDKOptions
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
-
-from com.couchbase.client.core.error import CouchbaseException
 
 
 class BasicOps(CollectionBase):
