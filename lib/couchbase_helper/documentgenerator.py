@@ -9,13 +9,7 @@ import zlib
 from random import choice
 from string import ascii_uppercase, ascii_lowercase, digits
 
-from data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
-
-from com.couchbase.client.java.json import JsonObject
-from java.lang import String
-from java.nio.charset import StandardCharsets
-from reactor.util.function import Tuples
-
+from couchbase_helper.data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 letters = ascii_uppercase + ascii_lowercase + digits
 
@@ -30,32 +24,13 @@ def doc_generator(key, start, end,
                   deep_copy=False):
 
     # Defaults to JSON doc_type
-    template_obj = JsonObject.create()
-    template_obj.put("mutated", mutate)
-    _l = len('''{ "mutated": %s
-    }''' % mutate)
-    doc_size -= _l
-    _l = len('"age    ": 5,')
-    if doc_size > _l:
-        template_obj.put("age", 5)
-        doc_size -= _l
-    _l = len('"name    ": "james",')
-    if doc_size > _l:
-        template_obj.put("name", "james")
-        doc_size -= _l
-    _l = len('"mutation_type      ": {},'.format(mutation_type))
-    if doc_size > _l:
-        template_obj.put("mutation_type", mutation_type)
-        doc_size -= _l
-    _l = len('"body      ": ')
-    if doc_size > _l:
-        template_obj.put("body", "b")
-        doc_size -= _l
+    template_obj = {"mutated": mutate,
+                    "age": 5,
+                    "name": "james",
+                    "mutation_type": mutation_type,
+                    "body": ""}
+    doc_size -= len(str(template_obj))
 
-#     if doc_type in ["string", "binary"]:
-#         template_obj = 'age:{0}, first_name: "{1}", body: "{2}", ' \
-#                    'mutated:  %s, mutation_type: "%s"' \
-#                    % (mutate, mutation_type)
     if target_vbucket:
         return DocumentGeneratorForTargetVbucket(
             key, template_obj,
@@ -94,7 +69,7 @@ def sub_doc_generator(key, start, end, doc_size=256,
         last_name = [''.rjust(doc_size - 10, 'a')]
         city = ["Chicago", "Dallas", "Seattle", "Aurora", "Columbia"]
         state = ["AL", "CA", "IN", "NV", "NY"]
-        pin_code = [135, 246, 396, 837, 007]
+        pin_code = ["135", "246", "396", "837", "007"]
         template = '{{ "full_name.first": "{0}", "full_name.last": "{1}", \
                        "addr.city": "{2}", "addr.state": "{3}", \
                        "addr.pincode": {4} }}'
@@ -304,7 +279,7 @@ class DocumentGenerator(KVGenerator):
                     t_val = doc_key
                 else:
                     t_val = self.random.choice(self.kwargs[k])
-                template.put(k, t_val)
+                template[k] = t_val
 
         doc_size = self.doc_size
         if self.randomize_doc_size:
@@ -316,14 +291,8 @@ class DocumentGenerator(KVGenerator):
             self.body = (self.random_string *
                          (doc_size//self.len_random_string+2)
                          )[_slice:doc_size + _slice]
-        if template.containsKey("body"):
-            template.put("body", self.body)
-        if self.doc_type.lower().find("binary") != -1:
-            template = String(str(template)).getBytes(StandardCharsets.UTF_8)
-
-        if self.doc_type.lower().find("string") != -1:
-            template = String(str(template))
-
+        if "body" in template:
+            template["body"] = self.body
         doc_key = self.next_key()
         return doc_key, template
 
@@ -548,7 +517,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         if self.randomize:
             for k in template.getNames():
                 if k in self.kwargs:
-                    template.put(k, self.random.choice(self.kwargs[k]))
+                    template[k] = self.random.choice(self.kwargs[k])
 
         if self.randomize_doc_size:
             doc_size = self.random.randint(0, self.doc_size)
@@ -560,7 +529,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
                          (self.doc_size/self.len_random_string+2)
                          )[_slice:self.doc_size + _slice]
         if template.get("body"):
-            template.put("body", self.body)
+            template["body"] = self.body
         doc_key = self.next_key()
 
         return doc_key, template
@@ -616,7 +585,7 @@ class BatchedDocumentGenerator(object):
 
     def next_batch(self, skip_value=False):
         self.count = 0
-        key_val = []
+        key_val = dict()
         # Value is not required for
         # delete/touch ops, so below empty string
         # string is used
@@ -627,7 +596,7 @@ class BatchedDocumentGenerator(object):
                 skip_value = True
             else:
                 key = self._doc_gen.next_key()
-            key_val.append(Tuples.of(key, val))
+            key_val[key] = val
             self.count += 1
         return key_val
 

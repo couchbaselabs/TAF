@@ -9,19 +9,17 @@ import json
 import os
 import random
 import socket
-import threading
 import time
+import zlib
+
 from concurrent.futures import Future
 from copy import deepcopy
+from threading import Lock, Thread
+from collections import OrderedDict
 
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.index.index_api import IndexRestAPI
 from sdk_client3 import SDKClient
-import zlib
-
-from threading import Lock
-from collections import OrderedDict
-
 import common_lib
 import global_vars
 from BucketLib.BucketOperations import BucketHelper
@@ -746,7 +744,7 @@ class RebalanceTask(Task):
         username = self.cluster.master.rest_username
         password = self.cluster.master.rest_password
         node_index = 0
-        server_groups = self.server_groups_to_add.keys() \
+        server_groups = list(self.server_groups_to_add.keys()) \
             if self.server_groups_to_add else []
         server_group_index = 0
         services_for_node = [CbServer.Services.KV]
@@ -1069,9 +1067,7 @@ class GenericLoadingTask(Task):
                 doc_type=doc_type, durability=durability,
                 preserve_expiry=self.preserve_expiry,
                 sdk_retry_strategy=self.sdk_retry_strategy)
-
             if fail:
-                key_val = dict(key_val)
                 if not self.suppress_error_table:
                     failed_item_table = TableView(self.test_log.info)
                     failed_item_table.set_headers(["Update Key",
@@ -1079,10 +1075,10 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.log.debug(
                         "Sleep before reading the doc for verification")
-                    Thread.sleep(self.timeout)
+                    self.sleep(self.timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
-                    read_map, _ = self.batch_read(fail.keys())
+                    read_map, _ = self.batch_read(list(fail.keys()))
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0 \
                                 and value == read_map[key]["value"]:
@@ -1127,10 +1123,10 @@ class GenericLoadingTask(Task):
                 if not skip_read_on_error:
                     self.log.debug(
                         "Sleep before reading the doc for verification")
-                    Thread.sleep(self.timeout)
+                    self.sleep(self.timeout)
                     self.test_log.debug("Reading values {0} after failure"
                                         .format(fail.keys()))
-                    read_map, _ = self.batch_read(fail.keys())
+                    read_map, _ = self.batch_read(list(fail.keys()))
                     for key, value in fail.items():
                         if key in read_map and read_map[key]["cas"] != 0:
                             success[key] = value
@@ -1156,7 +1152,7 @@ class GenericLoadingTask(Task):
                      durability=""):
         client = client or self.client
         success, fail = client.delete_multi(
-            dict(key_val).keys(),
+            list(key_val.keys()),
             persist_to=persist_to,
             replicate_to=replicate_to,
             timeout=self.timeout,
@@ -1176,7 +1172,7 @@ class GenericLoadingTask(Task):
 
     def batch_touch(self, key_val, exp=0):
         success, fail = self.client.touch_multi(
-            dict(key_val).keys(),
+            list(key_val.keys()),
             exp=exp,
             timeout=self.timeout,
             time_unit=self.time_unit,
@@ -1198,8 +1194,6 @@ class GenericLoadingTask(Task):
             keys, timeout=self.timeout,
             time_unit=self.time_unit,
             sdk_retry_strategy=self.sdk_retry_strategy)
-        print(success)
-        print(fail)
         if fail and not self.suppress_error_table:
             failed_item_view = TableView(self.test_log.info)
             failed_item_view.set_headers(["Read Key", "Exception"])
@@ -1468,7 +1462,7 @@ class LoadDocumentsTask(GenericLoadingTask):
                 self.fail.update(fail)
 
         elif self.op_type == DocLoading.Bucket.DocOps.READ:
-            success, fail = self.batch_read(dict(key_value).keys())
+            success, fail = self.batch_read(list(key_value.keys()))
             if self.track_failures:
                 self.fail.update(fail)
             if not self.skip_read_success_results:
@@ -1789,9 +1783,9 @@ class Durability(Task):
         def call(self):
             self.start_task()
             if self.check_persistence:
-                persistence = threading.Thread(target=self.Persistence)
+                persistence = Thread(target=self.Persistence)
                 persistence.start()
-            reader = threading.Thread(target=self.Reader)
+            reader = Thread(target=self.Reader)
             reader.start()
 
             self.log.debug("Starting loader thread '%s'" % self.thread_name)
@@ -1908,7 +1902,7 @@ class Durability(Task):
                                         count += 1
                             except:
                                 pass
-                            if key not in self.create_failed.keys():
+                            if key not in list(self.create_failed.keys()):
                                 '''
                                 this condition make sure that document is
                                 persisted in alleast 1 node
@@ -1930,8 +1924,8 @@ class Durability(Task):
                                         key))
 
                         if self.op_type == 'update':
-                            if key not in self.update_failed[
-                                self.instance].keys():
+                            if key not in list(self.update_failed[
+                                    self.instance].keys()):
                                 try:
                                     for node in nodes:
                                         key_stat = shells[
@@ -1975,8 +1969,8 @@ class Durability(Task):
                                         count += 1
                                 except Exception as e:
                                     pass
-                            if key not in self.delete_failed[
-                                self.instance].keys():
+                            if key not in list(self.delete_failed[
+                                    self.instance].keys()):
                                 if count == (self.bucket.replicaNumber + 1):
                                     # if count > (self.bucket.replicaNumber+1 - self.majority_value):
                                     self.sdk_acked_pers_failed.update(
@@ -2020,7 +2014,7 @@ class Durability(Task):
                             self.test_log.debug(
                                 "Key = %s getFromAllReplica = %s" % (
                                     key, result))
-                            if key not in self.create_failed.keys():
+                            if key not in list(self.create_failed.keys()):
                                 if len(result) == 0:
                                     # if len(result) < self.majority_value:
                                     self.sdk_acked_curd_failed.update(
@@ -2045,7 +2039,7 @@ class Durability(Task):
                                     % (key, result))
                         if self.op_type == 'update':
                             result = self.client.get_from_all_replicas(key)
-                            if key not in self.update_failed.keys():
+                            if key not in list(self.update_failed.keys()):
                                 if len(result) == 0:
                                     # if len(result) < self.majority_value:
                                     self.sdk_acked_curd_failed.update(
@@ -2085,7 +2079,7 @@ class Durability(Task):
                                             % (key, result))
                         if self.op_type == 'delete':
                             result = self.client.get_from_all_replicas(key)
-                            if key not in self.delete_failed.keys():
+                            if key not in list(self.delete_failed.keys()):
                                 if len(result) > self.bucket.replicaNumber:
                                     self.sdk_acked_curd_failed.update(result[0])
                                     self.test_log.error(
@@ -3077,9 +3071,9 @@ class ValidateDocumentsTask(GenericLoadingTask):
         if self.cluster.sdk_client_pool is not None:
             self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
                 self.bucket, self.scope, self.collection)
-        key_value = dict(doc_gen.next_batch(self.skip_doc_gen_value))
+        key_value = doc_gen.next_batch(self.skip_doc_gen_value)
         self.test_log.info(key_value)
-        result_map, self.failed_reads = self.batch_read(key_value.keys())
+        result_map, self.failed_reads = self.batch_read(list(key_value.keys()))
         self.test_log.info(result_map)
         self.test_log.info(self.failed_reads)
 
@@ -3145,7 +3139,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
             # change to getFromReplica
             result_map = dict()
             self.failed_reads = dict()
-            for key in key_value.keys():
+            for key in list(key_value.keys()):
                 try:
                     result = self.client.get_from_all_replicas(key)
                     if all(_result for _result in result) \
@@ -3171,7 +3165,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
                     self.exception = error
                     return
         else:
-            result_map, self.failed_reads = self.batch_read(key_value.keys())
+            result_map, self.failed_reads = self.batch_read(list(key_value.keys()))
         if self.cluster.sdk_client_pool:
             self.cluster.sdk_client_pool.release_client(self.client)
             self.client = None
@@ -3186,7 +3180,7 @@ class ValidateDocumentsTask(GenericLoadingTask):
         if self.op_type == 'delete':
             not_missing = []
             if missing_keys.__len__() != key_value.keys().__len__():
-                for key in key_value.keys():
+                for key in list(key_value.keys()):
                     if key not in missing_keys:
                         not_missing.append(key)
                 if not_missing:
@@ -3601,7 +3595,7 @@ class ViewCreateTask(Task):
                     _, json_parsed, _ = self.rest._get_design_doc(
                         self.bucket, self.design_doc_name)
                     if self.view.is_spatial:
-                        if self.view.name not in json_parsed["spatial"].keys():
+                        if self.view.name not in list(json_parsed["spatial"].keys()):
                             self.set_exception(
                                 Exception(
                                     "design doc {0} doesn't contain spatial view {1}"
@@ -3609,7 +3603,7 @@ class ViewCreateTask(Task):
                                                 self.view.name)))
                             return 0
                     else:
-                        if self.view.name not in json_parsed["views"].keys():
+                        if self.view.name not in list(json_parsed["views"].keys()):
                             self.set_exception(Exception(
                                 "design doc {0} doesn't contain view {1}"
                                     .format(self.design_doc_name,
@@ -4885,9 +4879,9 @@ class BucketCreateFromSpecTask(Task):
         self.create_bucket()
         Bucket.set_defaults(self.bucket_obj)
         if CbServer.default_collection not in \
-                self.bucket_spec[
-                    "scopes"][CbServer.default_scope][
-                    "collections"].keys():
+                list(self.bucket_spec[
+                     "scopes"][CbServer.default_scope][
+                     "collections"].keys()):
             self.bucket_helper.delete_collection(self.bucket_spec["name"],
                                                  CbServer.default_scope,
                                                  CbServer.default_collection)
@@ -4909,7 +4903,7 @@ class BucketCreateFromSpecTask(Task):
         else:
             for scope_name, scope_spec in self.bucket_spec["scopes"].items():
                 scope_spec["name"] = scope_name
-                scope_create_thread = threading.Thread(
+                scope_create_thread = Thread(
                     target=self.create_scope_from_spec,
                     args=[scope_spec])
                 scope_create_thread.start()
@@ -4984,7 +4978,7 @@ class BucketCreateFromSpecTask(Task):
                 continue
 
             collection_spec["name"] = collection_name
-            collection_create_thread = threading.Thread(
+            collection_create_thread = Thread(
                 target=self.create_collection_from_spec,
                 args=[scope_spec["name"], collection_spec])
             collection_create_thread.start()
@@ -5062,7 +5056,7 @@ class MutateDocsFromSpecTask(Task):
 
     def __print_ops_task(self, op_type):
         if self.print_ops_rate:
-            for bucket in self.loader_spec.keys():
+            for bucket in list(self.loader_spec.keys()):
                 bucket.stats.manage_task(op_type, self.task_manager,
                                          cluster=self.cluster,
                                          bucket=bucket,
@@ -5129,7 +5123,7 @@ class MutateDocsFromSpecTask(Task):
     def create_tasks_for_bucket(self, bucket, scope_dict):
         load_gen_for_scopes_create_threads = list()
         for scope_name, collection_dict in scope_dict.items():
-            scope_thread = threading.Thread(
+            scope_thread = Thread(
                 target=self.create_tasks_for_scope,
                 args=[bucket, scope_name, collection_dict["collections"]])
             scope_thread.start()
@@ -5140,7 +5134,7 @@ class MutateDocsFromSpecTask(Task):
     def create_tasks_for_scope(self, bucket, scope_name, collection_dict):
         load_gen_for_collection_create_threads = list()
         for c_name, c_data in collection_dict.items():
-            collection_thread = threading.Thread(
+            collection_thread = Thread(
                 target=self.create_tasks_for_collections,
                 args=[bucket, scope_name, c_name, c_data])
             collection_thread.start()
@@ -5234,7 +5228,7 @@ class MutateDocsFromSpecTask(Task):
     def get_tasks(self):
         load_gen_for_bucket_create_threads = list()
         for bucket, scope_dict in self.loader_spec.items():
-            bucket_thread = threading.Thread(
+            bucket_thread = Thread(
                 target=self.create_tasks_for_bucket,
                 args=[bucket, scope_dict["scopes"]])
             bucket_thread.start()
@@ -5359,7 +5353,7 @@ class ValidateDocsFromSpecTask(Task):
     def create_tasks_for_bucket(self, bucket, scope_dict):
         load_gen_for_scopes_create_threads = list()
         for scope_name, collection_dict in scope_dict.items():
-            scope_thread = threading.Thread(
+            scope_thread = Thread(
                 target=self.create_tasks_for_scope,
                 args=[bucket, scope_name, collection_dict["collections"]])
             scope_thread.start()
@@ -5370,7 +5364,7 @@ class ValidateDocsFromSpecTask(Task):
     def create_tasks_for_scope(self, bucket, scope_name, collection_dict):
         load_gen_for_collection_create_threads = list()
         for c_name, c_data in collection_dict.items():
-            collection_thread = threading.Thread(
+            collection_thread = Thread(
                 target=self.create_tasks_for_collections,
                 args=[bucket, scope_name, c_name, c_data])
             collection_thread.start()
@@ -5424,7 +5418,7 @@ class ValidateDocsFromSpecTask(Task):
         bucket_validation_threads = list()
 
         for bucket, scope_dict in self.loader_spec.items():
-            bucket_thread = threading.Thread(
+            bucket_thread = Thread(
                 target=self.create_tasks_for_bucket,
                 args=[bucket, scope_dict["scopes"]])
             bucket_thread.start()
@@ -6720,7 +6714,7 @@ class Atomicity(Task):
                 docs.append(tuple)
             last_batch = dict(self.key_value_list[-10:])
 
-            self.all_keys = dict(self.key_value_list).keys()
+            self.all_keys = list(dict(self.key_value_list).keys())
             self.list_docs = list(self.__chunks(self.all_keys,
                                                 self.num_docs))
             self.docs = list(self.__chunks(self.key_value_list, self.num_docs))
@@ -6777,7 +6771,7 @@ class Atomicity(Task):
                             persist_to=self.persist_to,
                             replicate_to=self.replicate_to,
                             durability="")
-                    self.delete_keys = last_batch.keys()
+                    self.delete_keys = list(last_batch.keys())
                 elif op_type in ["rebalance_update", "create_update"]:
                     for i in range(len(self.docs)):
                         self.transaction_load(self.docs[i], self.commit,
@@ -7725,7 +7719,7 @@ class CreateDatasetsTask(Task):
             if creation_method == "enable_cbas_from_kv":
                 enabled_from_KV = True
                 if bucket.name + "." + scope.name in \
-                        self.cbas_util.dataverses.keys():
+                        list(self.cbas_util.dataverses.keys()):
                     dataverse = self.cbas_util.dataverses[
                         bucket.name + "." + scope.name]
                 else:
@@ -7735,7 +7729,7 @@ class CreateDatasetsTask(Task):
                 enabled_from_KV = False
                 dataverses = list(
                     filter(lambda dv: (self.ds_per_dv is None) or (len(
-                        dv.datasets.keys()) < self.ds_per_dv),
+                        list(dv.datasets.keys())) < self.ds_per_dv),
                            self.cbas_util.dataverses.values()))
                 if dataverses:
                     dataverse = random.choice(dataverses)
@@ -7770,7 +7764,7 @@ class CreateDatasetsTask(Task):
                     "Could not create dataset " + dataset_obj.name + " on " +
                     dataset_obj.dataverse_name)
             self.created_datasets.append(dataset_obj)
-            if dataverse.name not in self.cbas_util.dataverses.keys():
+            if dataverse.name not in list(self.cbas_util.dataverses.keys()):
                 self.cbas_util.dataverses[dataverse.name] = dataverse
             self.cbas_util.dataverses[dataverse.name].datasets[
                 self.created_datasets[-1].full_name] = self.created_datasets[-1]
@@ -7839,8 +7833,8 @@ class CreateSynonymsTask(Task):
                 name = self.cbas_util.generate_name(
                     name_cardinality=1, max_length=3, fixed_length=True)
                 while name in \
-                        self.cbas_util.dataverses[
-                            self.dataverse.name].synonyms.keys():
+                        list(self.cbas_util.dataverses[
+                                 self.dataverse.name].synonyms.keys()):
                     name = self.cbas_util.generate_name(
                         name_cardinality=1, max_length=3, fixed_length=True)
                 synonym = Synonym(
