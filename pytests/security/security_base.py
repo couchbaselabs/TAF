@@ -84,6 +84,7 @@ class SecurityBase(CouchbaseBaseTest):
         if self.cluster_id is None:
             self.create_cluster(self.prefix + "Cluster", self.server_version)
         if self.cluster_id is not None:
+            time.sleep(5)
             self.allow_ip(self.cluster_id, self.project_id)
 
         self.log.info("-------Setup finished for CouchbaseBaseTest-------")
@@ -483,12 +484,9 @@ class SecurityBase(CouchbaseBaseTest):
 
         num = 1
         for role in roles:
-            user_len = len(self.user)
-            gen_len = 64 - user_len
-            gen_len = min(gen_len, 9)
-            usrname = self.user.split('@')
-            username = usrname[0] + "+" + self.generate_random_string(gen_len, False) + "@" + \
-                       usrname[1]
+            _, domain = self.user.split('@')
+            username = "couchbase-security+"+ self.generate_random_string(9, False) \
+                                                                          + "@" + domain
             name = "Test_User_" + str(num)
             self.log.info("Creating user {} with role {}".format(username, role))
             create_user_resp = setup_capella_api.create_user(self.tenant_id,
@@ -537,7 +535,7 @@ class SecurityBase(CouchbaseBaseTest):
         self.log.info("Deleted all the Organization Roles successfully")
 
     @staticmethod
-    def generate_random_string(length=10, special_characters=True,
+    def generate_random_string(length=9, special_characters=True,
                                prefix=""):
         """
         Generates random name of specified length
