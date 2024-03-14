@@ -212,6 +212,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 cluster.sdk_client_pool = SDKClientPool()
 
         self.log_setup_status("OnPremBaseTest", "started")
+        self.nebula = self.input.param("nebula", False)
+        self.nebula_details = dict()
+        self.docker_containers = list()
+        self.docker = None
+        self.image_id = None
         try:
             # Construct dict of mem. quota percent / mb per service
             mem_quota_percent = dict()
@@ -266,11 +271,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                     self.case_number -= 1000
                 self.tearDownEverything(reset_cluster_env_vars=False)
 
-            self.nebula = self.input.param("nebula", False)
-            self.nebula_details = dict()
-            self.docker_containers = list()
-            self.docker = None
-            self.image_id = None
             for cluster_name, cluster in self.cb_clusters.items():
                 # Check if the master node is initialized. If not, force reset
                 # the cluster to avoid initial rebalance failure
