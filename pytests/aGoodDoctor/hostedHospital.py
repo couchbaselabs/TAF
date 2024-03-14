@@ -21,7 +21,7 @@ from hostedXDCR import DoctorXDCR
 from hostedBackupRestore import DoctorHostedBackupRestore
 from hostedOnOff import DoctorHostedOnOff
 from hostedEventing import DoctorEventing
-from constants.cloud_constants.capella_constants import AWS, GCP
+from constants.cloud_constants.capella_constants import AWS, GCP, AZURE
 from table_view import TableView
 import time
 from bucket_utils.bucket_ready_functions import CollectionUtils
@@ -149,9 +149,6 @@ class Murphy(BaseTestCase, hostedOPD):
     def rebalance_config(self, rebl_service_group=None, num=0):
         provider = self.input.param("provider", "aws").lower()
 
-        _type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
-        storage_type = self.input.param("type", _type).lower()
-
         specs = []
         for service_group in self.services:
             _services = sorted(service_group.split(":"))
@@ -165,7 +162,7 @@ class Murphy(BaseTestCase, hostedOPD):
                 },
                 "services": [{"type": self.services_map[_service.lower()]} for _service in _services],
                 "disk": {
-                    "type": storage_type,
+                    "type": self.storage_type,
                     "sizeInGb": self.disk[service]
                 },
                 "diskAutoScaling": {"enabled": self.diskAutoScaling}
@@ -839,6 +836,8 @@ class Murphy(BaseTestCase, hostedOPD):
         provider = self.input.param("provider", "aws").lower()
         if provider == "aws":
             computeList = AWS.compute
+        elif provider == "azure":
+            computeList = AZURE.compute
 
         self.services = self.input.param("services", "data").split("-")
         self.rebl_services = self.input.param("rebl_services",
@@ -898,6 +897,7 @@ class Murphy(BaseTestCase, hostedOPD):
             self.loop = 0
             disk_increment = self.input.param("increment", 10)
             compute_change = 1
+            disk_change = 1
             while self.loop < self.iterations:
                 self.PrintStep("Step 6.{}: Scale Disk with Loading of docs".
                                format(self.loop))
@@ -909,7 +909,13 @@ class Murphy(BaseTestCase, hostedOPD):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
-                            self.disk[service] = self.disk[service] + disk_increment
+                            if provider == "azure":
+                                index = AZURE.StorageType.order.index(self.storage_type)
+                                self.storage_type = AZURE.StorageType.order[index+disk_change]
+                                self.disk[service] = AZURE.StorageType.type[self.storage_type]["min"]
+                                self.iops[service] = AZURE.StorageType.type[self.storage_type]["iops"]["min"]
+                            else:
+                                self.disk[service] = self.disk[service] + disk_increment
                         config = self.rebalance_config(service)
                         rebalance_tasks = list()
                         for tenant in self.tenants:
@@ -926,6 +932,7 @@ class Murphy(BaseTestCase, hostedOPD):
                                 for bucket in cluster.buckets:
                                     self.drBackupRestore.backup_now(tenant, cluster, bucket, wait_for_backup=False)
                     disk_increment = disk_increment * -1
+                    disk_change = disk_change * -1
                     #turn cluster off and back on
                     self.test_cluster_on_off()
 
@@ -978,7 +985,13 @@ class Murphy(BaseTestCase, hostedOPD):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
-                            self.disk[service] = self.disk[service] + disk_increment
+                            if provider == "azure":
+                                index = AZURE.StorageType.order.index(self.storage_type)
+                                self.storage_type = AZURE.StorageType.order[index+disk_change]
+                                self.disk[service] = AZURE.StorageType.type[self.storage_type]["min"]
+                                self.iops[service] = AZURE.StorageType.type[self.storage_type]["iops"]["min"]
+                            else:
+                                self.disk[service] = self.disk[service] + disk_increment
                         comp = computeList.index(self.compute[service])
                         comp = comp + compute_change if len(computeList) > comp + compute_change else comp
                         self.compute[service] = computeList[comp]
@@ -1000,6 +1013,7 @@ class Murphy(BaseTestCase, hostedOPD):
                     self.sleep(60, "Sleep for 60s after rebalance")
                     disk_increment = disk_increment * -1
                     compute_change = compute_change * -1
+                    disk_change = disk_change * -1
                     self.cluster_util.print_cluster_stats(cluster)
                     #turn cluster off and back on
                     self.test_cluster_on_off()
