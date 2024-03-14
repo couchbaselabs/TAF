@@ -96,8 +96,9 @@ class basic_ops(ClusterSetup):
                 compression_settings=self.sdk_compression)
 
         # Set index storage to avoid failures during index creation
-        RestConnection(self.cluster.master).set_indexer_storage_mode(
-            storageMode="plasma")
+        rest = RestConnection(self.cluster.master)
+        rest.activate_service_api(CbServer.Services.INDEX)
+        rest.index.set_gsi_settings({"storageMode": "plasma"})
 
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("==========Finished Basic_ops base setup========")
