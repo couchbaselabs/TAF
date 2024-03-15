@@ -50,6 +50,8 @@ class S3LinksDatasets(ColumnarBaseTest):
 
     def test_create_query_drop_external_datasets(self):
         # Update columnar spec based on conf file params
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
+            "no_of_DBs", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -98,7 +100,7 @@ class S3LinksDatasets(ColumnarBaseTest):
 
         jobs = Queue()
         results = []
-        for dataset in self.cbas_util.list_all_dataset_objs("external"):
+        for dataset in self.cbas_util.get_all_dataset_objs("external"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
                 {"cluster": self.instance, "dataset_name": dataset.full_name,
@@ -106,14 +108,14 @@ class S3LinksDatasets(ColumnarBaseTest):
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         for result in results:
-            if result[0] != self.doc_count_per_format[file_format]:
+            if result != self.doc_count_per_format[file_format]:
                 self.fail("Doc count mismatch. Expected - {0}, Actual - {"
                           "1}".format(
-                    self.doc_count_per_format[file_format], result[0]))
+                    self.doc_count_per_format[file_format], result))
 
         results = []
         query = "select * from {} limit 1000"
-        for dataset in self.cbas_util.list_all_dataset_objs("external"):
+        for dataset in self.cbas_util.get_all_dataset_objs("external"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
                 {"cluster": self.instance,

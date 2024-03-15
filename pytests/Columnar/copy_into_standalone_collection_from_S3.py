@@ -37,8 +37,10 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             "csv": 7400000, "tsv": 7400000}
 
         self.files_to_use_in_include = {
-            "json": [["*/0.json", "*/10.json"], 1594120], "csv": [["*/1.csv", "*/11.csv"], 1594200],
-            "tsv": [["*/12.tsv", "*/17.tsv"], 1594141], "parquet": [["*/14.parquet", "*/17.parquet"], 798522]
+            "json": [["*/0.json", "*/10.json"], 1594120],
+            "csv": [["*/1.csv", "*/11.csv"], 1594200],
+            "tsv": [["*/12.tsv", "*/17.tsv"], 1594141],
+            "parquet": [["*/14.parquet", "*/17.parquet"], 798522]
         }
 
         self.log_setup_status(self.__class__.__name__, "Finished",
@@ -57,6 +59,8 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def test_create_copyinto_query_using_path_drop_standalone_collection(self):
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
+            "no_of_DBs", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -108,7 +112,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
 
         jobs = Queue()
         results = []
@@ -144,7 +148,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         jobs = Queue()
         results = []
 
-        for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
+        for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
                 {"cluster": self.instance, "dataset_name": dataset.full_name,
@@ -152,13 +156,13 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         for result in results:
-            if not (result[0] == doc_count[file_format]):
+            if not (result == doc_count[file_format]):
                 self.fail("Expected doc count between {0}. Actual doc "
-                          "count {1}".format(doc_count[file_format], result[0]))
+                          "count {1}".format(doc_count[file_format], result))
 
         results = []
         query = "select * from {} limit 1000"
-        for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
+        for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
                 {"cluster": self.instance,
@@ -174,6 +178,8 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
     def test_create_copyinto_query_drop_standalone_collection(self):
         # Update columnar spec based on conf file params
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
+            "no_of_DBs", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -225,7 +231,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
 
         for standalone_coll in datasets:
             if not (
@@ -251,7 +257,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         jobs = Queue()
         results = []
 
-        for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
+        for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
                 {"cluster": self.instance, "dataset_name": dataset.full_name,
@@ -260,17 +266,17 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             jobs, results, self.sdk_clients_per_user, async_run=False)
         for result in results:
             if use_include:
-                if not (0 < result[0] <= self.files_to_use_in_include[file_format][1]):
+                if not (0 < result <= self.files_to_use_in_include[file_format][1]):
                     self.fail("Expected doc count between 0-{0}. Actual doc "
-                              "count {1}".format(self.files_to_use_in_include[file_format][1], result[0]))
+                              "count {1}".format(self.files_to_use_in_include[file_format][1], result))
             else:
-                if not (0 < result[0] <= self.doc_count_per_format[file_format]):
+                if not (0 < result <= self.doc_count_per_format[file_format]):
                     self.fail("Expected doc count between 0-{0}. Actual doc "
-                              "count {1}".format(self.doc_count_per_format[file_format], result[0]))
+                              "count {1}".format(self.doc_count_per_format[file_format], result))
 
         results = []
         query = "select * from {} limit 1000"
-        for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
+        for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
                 {"cluster": self.instance,
@@ -286,6 +292,8 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
     def test_create_copyinto_query_missing_field_typedef_drop_standalone_collection(self):
         # Update columnar spec based on conf file params
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
+            "no_of_DBs", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -337,7 +345,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
 
         for standalone_coll in datasets:
             if not (
@@ -362,8 +370,8 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
         for standalone_coll in datasets:
             statement = "select * from {0} limit 1".format(standalone_coll.full_name)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.instance,
-                                                                                               statement)
+            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(
+                self.instance, statement)
             doc_retrived = dict((result[0])[CBASHelper.unformat_name(standalone_coll.name)])
             if 'freeparking' in doc_retrived:
                 self.fail("Field error for the docs parsed from S3")
@@ -371,7 +379,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         jobs = Queue()
         results = []
 
-        for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
+        for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
                 {"cluster": self.instance, "dataset_name": dataset.full_name,
@@ -380,17 +388,17 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             jobs, results, self.sdk_clients_per_user, async_run=False)
         for result in results:
             if use_include:
-                if not (0 < result[0] <= self.files_to_use_in_include[file_format][1]):
+                if not (0 < result <= self.files_to_use_in_include[file_format][1]):
                     self.fail("Expected doc count between 0-{0}. Actual doc "
-                              "count {1}".format(self.files_to_use_in_include[file_format][1], result[0]))
+                              "count {1}".format(self.files_to_use_in_include[file_format][1], result))
             else:
-                if not (0 < result[0] <= self.doc_count_per_format[file_format]):
+                if not (0 < result <= self.doc_count_per_format[file_format]):
                     self.fail("Expected doc count between 0-{0}. Actual doc "
-                              "count {1}".format(self.doc_count_per_format[file_format], result[0]))
+                              "count {1}".format(self.doc_count_per_format[file_format], result))
 
         results = []
         query = "select * from {} limit 1000"
-        for dataset in self.cbas_util.list_all_dataset_objs("standalone"):
+        for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
                 {"cluster": self.instance,
@@ -406,6 +414,8 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
     def test_create_copyinto_query_missing_typedef_drop_standalone_collection(self):
         # Update columnar spec based on conf file params
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
+            "no_of_DBs", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -453,7 +463,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
 
         for standalone_coll in datasets:
             if not (
@@ -480,6 +490,8 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
     def test_create_copyinto_query_missing_with_clause_drop_standalone_collection(self):
         # Update columnar spec based on conf file params
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
+            "no_of_DBs", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -508,7 +520,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
 
         for standalone_coll in datasets:
             if not (
@@ -535,6 +547,8 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
     def test_create_copyinto_query_incorrect_file_format_clause_drop_standalone_collection(self):
         # Update columnar spec based on conf file params
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
+            "no_of_DBs", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -564,7 +578,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
 
         for standalone_coll in datasets:
             if not (

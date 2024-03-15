@@ -60,7 +60,7 @@ spec = {
 
     "external_link": {
         # Accepted values are 0 or any positive int.
-        "no_of_external_links": 1,
+        "no_of_external_links": 0,
         # Accepted values are random or any string.
         "name_key": "random",
         # Accepted value is list of property dicts.
