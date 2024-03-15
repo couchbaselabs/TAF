@@ -46,18 +46,18 @@ class TaskManager(object):
             return
         future = self.futures[task.thread_name]
         i = 0
-        while not future.isDone() and i < 30:
+        while not future.done() and i < 30:
             sleep(1,
                   "Wait for %s to complete. Current status: %s"
-                  % (task.thread_name, future.isDone()),
+                  % (task.thread_name, future.done()),
                   log_type="infra")
             i += 1
         else:
             self.log.debug("Task %s in already finished. No need to stop task"
                            % task.thread_name)
-        if not future.isDone():
+        if not future.done():
             self.log.debug("Stopping task %s" % task.thread_name)
-            future.cancel(True)
+            future.cancel()
 
     def shutdown(self, timeout=5):
         self.log.info("Running TaskManager shutdown")
@@ -67,7 +67,7 @@ class TaskManager(object):
 
     def print_tasks_in_pool(self):
         for task_name, future in self.futures.items():
-            if not future.isDone():
+            if not future.done():
                 self.log.warning("Task '%s' not completed" % task_name)
 
     def abort_all_tasks(self):
