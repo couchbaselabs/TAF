@@ -786,6 +786,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 return False
 
         for idx, server in enumerate(servers):
+            self.log.info(f"{server.ip} - Parsing logs for error/critical "
+                          f"string patterns")
             shell = RemoteMachineShellConnection(server)
             shell.extract_remote_info()
             crash_dir = lib_cb + "crash/"
@@ -811,9 +813,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 print("#"*30)
                 result = get_full_thread_dump(shell)
                 print(result)
-#                 print("#"*30)
-#                 run_cbanalyze_core(shell, crash_dir + dmp_files[-1].strip(".dmp") + ".core")
-#                 print("#"*30)
                 if self.stop_server_on_crash:
                     shell.stop_couchbase()
                 result = True
@@ -861,8 +860,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         if 'exclude_patterns' in grep_pattern:
                             exclude_pattern = grep_pattern['exclude_patterns']
 
-                        cmd_to_run = "grep -r '%s' %s" \
-                                     % (grep_for_str, log_file)
+                        cmd_to_run = f'grep -r "{grep_for_str}" {log_file}'
                         if exclude_pattern is not None:
                             for pattern in exclude_pattern:
                                 cmd_to_run += " | grep -v '%s'" % pattern
@@ -873,7 +871,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
                             grep_str = "".join(grep_output)
                             kvstores = list(set(re.findall(regex, grep_str)))
                             self.data_sets[server] = kvstores
-                            grep_str = None
                         if err_pattern is not None:
                             for pattern in err_pattern:
                                 index = find_index_of(grep_output, pattern)
@@ -908,7 +905,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if result and force_collect and not self.stop_server_on_crash:
                 self.fetch_cb_collect_logs()
                 self.get_cbcollect_info = False
-            if (self.is_test_failed() or result):
+            if self.is_test_failed() or result:
                 if self.collect_data:
                     self.copy_data_on_slave()
                 if self.collect_pcaps:
