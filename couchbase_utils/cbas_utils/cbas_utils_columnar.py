@@ -917,8 +917,30 @@ class Dataverse_Util(Database_Util):
         self.log.info("Creating dataverses based on CBAS Spec")
 
         dataverse_spec = self.get_dataverse_spec(cbas_spec)
+
+        # Create a dataverse in non-default database, since a non-default
+        # database is created without a default dataverse. This logic is
+        # required because if we randomly pick a database in any of the
+        # create_from_spec methods and if the database does not have a
+        # dataverse then it will throw index out of range exception.
+        no_of_dataverses = dataverse_spec.get("no_of_dataverses", 1)
+        for db in self.databases.values():
+            if db.name != "Default":
+                name = self.generate_name(name_cardinality=1)
+                if self.create_dataverse(
+                        cluster=cluster, database_name=db.name,
+                        dataverse_name=self.format_name(name),
+                        if_not_exists=True, analytics_scope=False, scope=True,
+                        timeout=cbas_spec.get("api_timeout", 300),
+                        analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
+                    no_of_dataverses -= 1
+                else:
+                    self.log.debug("Failed to create dataverse {0} in "
+                                   "database {1}".format(name, db.name))
+                    return False
+
         results = list()
-        if dataverse_spec.get("no_of_dataverses", 1) > 1:
+        if no_of_dataverses > 1:
             for i in range(1, dataverse_spec.get("no_of_dataverses")):
                 while True:
                     database = random.choice(self.databases.values())
@@ -1101,17 +1123,20 @@ class Link_Util(Dataverse_Util):
                 username, password)
 
         if not exists:
+            link_prop = copy.deepcopy(link_properties)
+            if "database" in link_prop and link_prop["database"]:
+                link_prop["dataverse"] = "{0}.{1}".format(
+                    link_prop["database"], link_prop["dataverse"])
+                del link_prop["database"]
+
             if self.run_query_using_sdk:
-                status, content, errors = cbas_helper.create_link(link_properties)
+                link_prop["dataverse"] = self.metadata_format(
+                    link_prop["dataverse"])
+                status, content, errors = cbas_helper.create_link(link_prop)
             else:
-                link_prop = copy.deepcopy(link_properties)
                 params = dict()
                 uri = ""
-                if "database" in link_prop and link_prop["database"]:
-                    dataverse = "{0}.{1}".format(
-                        link_prop["database"], link_prop["dataverse"])
-                    del link_prop["database"]
-                elif "dataverse" in link_prop:
+                if "dataverse" in link_prop:
                     dataverse = link_prop["dataverse"]
                     del link_prop["dataverse"]
                 if dataverse:
@@ -3558,11 +3583,9 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         if type_parsing_info:
             cmd += "AS ({0}) ".format(type_parsing_info)
 
-        cmd += "FROM `{0}` AT {1} ".format(
-            aws_bucket_name, CBASHelper.format_name(external_link_name))
-
-        if path_on_aws_bucket:
-            cmd += "PATH \"{0}\" ".format(path_on_aws_bucket)
+        cmd += "FROM `{0}` AT {1} PATH \"{2}\" ".format(
+            aws_bucket_name, CBASHelper.format_name(external_link_name),
+            path_on_aws_bucket)
 
         with_parameters = dict()
         if file_format:
@@ -3595,7 +3618,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     with_parameters["decimal-to-double"] = False
         if bool(with_parameters):
             cmd += "WITH {0};".format(json.dumps(with_parameters))
-        self.log.info("Coping into {0} from {1}".format(
+        self.log.info("Copying into {0} from {1}".format(
             collection_name, external_link_name))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -3987,7 +4010,6 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                         else None
                     if link is None:
                         data_source = None
-                    break
 
             link_name = link.full_name if link else None
             dataset_obj = Standalone_Dataset(
@@ -4199,12 +4221,12 @@ class Synonym_Util(StandAlone_Collection_Util):
         :return boolean
         """
         self.log.debug("Validating Synonym entry in Metadata")
-        cmd = "select value sy from Metadata.`Synonym` as sy where " \ 
-              "sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\" and " \
-              "sy.DatabaseName = \"{2}\";".format(
+        cmd = ("select value sy from Metadata.`Synonym` as sy where "
+               "sy.SynonymName = \"{0}\" and sy.DataverseName = \"{1}\" and "
+               "sy.DatabaseName = \"{2}\";".format(
             self.unformat_name(synonym_name),
             self.metadata_format(synonym_dataverse_name),
-            self.metadata_format(synonym_database_name))
+            self.metadata_format(synonym_database_name)))
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
@@ -6097,8 +6119,8 @@ class CbasUtil(CBOUtil):
                     dataverse, self.drop_dataverse,
                     {"cluster": cluster, "dataverse_name": dataverse.name,
                      "if_exists": True,
+                     "database_name":dataverse.database_name,
                      "analytics_scope": random.choice([True, False]),
-                     "delete_dataverse_obj": delete_dataverse_object,
                      "timeout": cbas_spec.get("api_timeout", 300),
                      "analytics_timeout": cbas_spec.get("cbas_timeout",
                                                         300)})
@@ -6194,14 +6216,9 @@ class CbasUtil(CBOUtil):
             # Disconnect all remote links
             remote_links = self.get_all_links_from_metadata(cluster, "couchbase")
             for remote_link in remote_links:
-                link_name_parts = remote_link.split(".")
-                result = self.get_link_info(
-                    cluster, link_name_parts[1],link_name_parts[0],
-                    link_name_parts[2])
-                if result[0]["linkState"] == "CONNECTED":
-                    if not self.disconnect_link(cluster, remote_link):
-                        self.log.error(
-                            "Unable to disconnect Link {0}".format(remote_link))
+                if not self.disconnect_link(cluster, remote_link):
+                    self.log.error(
+                        "Unable to disconnect Link {0}".format(remote_link))
 
             # Disconnect all Kafka links
             kafka_links = self.get_all_links_from_metadata(cluster, "kafka")
@@ -6443,7 +6460,6 @@ class CbasUtil(CBOUtil):
     This method verifies whether all the datasets and views for travel-sample.inventory get's loaded
     automatically on analytics workbench.
     '''
-
     def verify_datasets_and_views_are_loaded_for_travel_sample(self, cluster):
         views_list = self.travel_sample_inventory_views.keys()
         dataset_list = self.travel_sample_inventory_collections.keys()

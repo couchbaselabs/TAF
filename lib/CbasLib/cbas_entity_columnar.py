@@ -265,7 +265,7 @@ class External_Dataset(Dataset):
         :param num_of_items <int> expected number of items in dataset.
         """
         super(External_Dataset, self).__init__(
-            name, dataverse_name, database_name, None, None, None, False,
+            name, dataverse_name, database_name, None, None, None,
             num_of_items, "")
         self.link_name = CBASHelper.format_name(link_name)
         self.dataset_properties = dataset_properties
@@ -295,7 +295,7 @@ class Standalone_Dataset(Dataset):
         :param storage_format <str> storage format for the dataset.
         """
         super(Standalone_Dataset, self).__init__(
-            name, dataverse_name, database_name, None, None, None, False,
+            name, dataverse_name, database_name, None, None, None,
             num_of_items, storage_format)
 
         self.primary_key = primary_key
