@@ -1088,7 +1088,8 @@ class Murphy(BaseTestCase, OPD):
                 '''
     
                 self.PrintStep("Step 6: Rebalance Out of {} node with Loading of docs".format(service))
-                rebalance_task = self.rebalance(nodes_in=0, nodes_out=self.rebl_nodes)
+                rebalance_task = self.rebalance(nodes_in=0, nodes_out=self.rebl_nodes,
+                                                services=[service]*self.rebl_nodes)
     
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 self.assertTrue(rebalance_task.result, "Rebalance Failed")
@@ -1160,6 +1161,7 @@ class Murphy(BaseTestCase, OPD):
                 '''
                 self.PrintStep("Step 11: Failover %s node and RebalanceOut that node \
                 with loading in parallel" % self.num_replicas)
+                graceful = False
                 failover_nodes = self.cluster.kv_nodes
                 if service == "fts":
                     failover_nodes = self.cluster.fts_nodes
@@ -1176,6 +1178,7 @@ class Murphy(BaseTestCase, OPD):
                 std = self.std_vbucket_dist or 1.0
     
                 if service == "kv":
+                    graceful = True
                     prev_failover_stats = self.bucket_util.get_failovers_logs(
                         nodes, self.cluster.buckets)
     
@@ -1193,7 +1196,7 @@ class Murphy(BaseTestCase, OPD):
                     failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
                     node.id = failover_node.id
                     success_failed_over = self.rest.fail_over(failover_node.id,
-                                                                   graceful=True)
+                                                                   graceful=graceful)
                     self.success_failed_over = self.success_failed_over and success_failed_over
                     self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                     self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
@@ -1310,7 +1313,7 @@ class Murphy(BaseTestCase, OPD):
                     failover_node = self.cluster_util.find_node_info(self.cluster.master, node)
                     node.id = failover_node.id
                     success_failed_over = self.rest.fail_over(failover_node.id,
-                                                                   graceful=True)
+                                                                   graceful=graceful)
                     self.success_failed_over = self.success_failed_over and success_failed_over
                     self.sleep(60, "Waiting for failover to finish and settle down cluster.")
                     self.assertTrue(self.rest.monitorRebalance(progress_count=50000), msg="Failover -> Rebalance failed")
