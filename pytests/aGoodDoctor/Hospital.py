@@ -290,6 +290,8 @@ class Murphy(BaseTestCase, OPD):
         self.rest = RestConnection(self.cluster.master)
         self.af_timeout = self.input.param("af_timeout", 600)
         self.af_enable = self.input.param("af_enable", False)
+        storageModeGSI = self.input.param("storageModeGSI", "plasma")
+        self.rest.set_indexer_storage_mode(storageModeGSI)
         self.assertTrue(
             self.rest.update_autofailover_settings(self.af_enable,
                                                    self.af_timeout),
