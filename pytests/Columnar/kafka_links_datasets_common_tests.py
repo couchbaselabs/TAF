@@ -1226,7 +1226,7 @@ class KafkaLinks(GoldFishBaseTest):
                 self.log.info(testcase["description"])
 
                 dataset_obj = self.cbas_util.create_standalone_dataset_obj(
-                    self.cluster, no_of_objs=1, dataset_cardinality=3,
+                    self.cluster, no_of_objs=1,
                     datasource="mongo", primary_key=pk, link=link,
                     external_collection_name=self.fully_qualified_mongo_collection_name[0][1])[0]
 

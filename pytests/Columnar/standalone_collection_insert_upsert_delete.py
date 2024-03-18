@@ -39,6 +39,8 @@ class StandaloneCollection(ColumnarBaseTest):
 
     def test_standalone_collection_lifecycle_with_insert_upsert_doc(self):
         # Update columnar spec based on conf file params
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
+            "no_of_DBs", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -51,7 +53,7 @@ class StandaloneCollection(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         for dataset in datasets:
             if not self.cbas_util.load_doc_to_standalone_collection(
                     self.instance, dataset.name, dataset.dataverse_name,
@@ -62,7 +64,7 @@ class StandaloneCollection(ColumnarBaseTest):
         jobs = Queue()
         results = []
         for dataset in datasets:
-            doc_count, _ = self.cbas_util.get_num_items_in_cbas_dataset(
+            doc_count= self.cbas_util.get_num_items_in_cbas_dataset(
                 self.instance, dataset.full_name)
             if doc_count != self.initial_doc_count:
                 self.fail("Number of docs inserted does not match the actual "

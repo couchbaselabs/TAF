@@ -153,8 +153,8 @@ class CopyToKv(ColumnarBaseTest):
 
     def test_create_copyToKv_from_standalone_collection(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        remote_link = self.cbas_util.list_all_link_objs("couchbase")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
         jobs = Queue()
         results = []
         for dataset in datasets:
@@ -184,7 +184,7 @@ class CopyToKv(ColumnarBaseTest):
         for i in range(len(datasets)):
             remote_dataset = self.cbas_util.create_remote_dataset_obj(self.provisioned_bucket_id, self.scope_name,
                                                                       provisioned_collections[i], remote_link,
-                                                                      capella=True)
+                                                                      capella_as_source=True)
             if not self.cbas_util.create_remote_dataset(self.cluster, remote_dataset.name, remote_dataset.full_kv_entity_name,
                                                         remote_dataset.link_name, dataverse_name=remote_dataset.dataverse_name,
                                                         database_name=remote_dataset.database_name):

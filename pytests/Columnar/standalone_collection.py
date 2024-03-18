@@ -330,7 +330,7 @@ class StandaloneCollection(ColumnarBaseTest):
         if validate_error:
             return
 
-        datasets = self.cbas_util.list_all_dataset_objs()
+        datasets = self.cbas_util.get_all_dataset_objs()
         for dataset in datasets:
             jobs.put((self.cbas_util.load_doc_to_standalone_collection,
                       {"cluster": self.cluster, "collection_name": dataset.name,
@@ -417,7 +417,7 @@ class StandaloneCollection(ColumnarBaseTest):
             self.fail(msg)
         jobs = Queue()
         results = []
-        synonyms = self.cbas_util.list_all_synonym_objs()
+        synonyms = self.cbas_util.get_all_synonym_objs()
 
         for synonym in synonyms:
             # load data to standalone collections
@@ -451,7 +451,7 @@ class StandaloneCollection(ColumnarBaseTest):
             self.fail(msg)
         jobs = Queue()
         results = []
-        datasets = self.cbas_util.list_all_dataset_objs()
+        datasets = self.cbas_util.get_all_dataset_objs()
         for dataset in datasets:
             jobs.put((self.cbas_util.load_doc_to_standalone_collection,
                       {"cluster": self.cluster, "collection_name": dataset.name,
@@ -487,7 +487,7 @@ class StandaloneCollection(ColumnarBaseTest):
             self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
-        remote_dataset = self.cbas_util.list_all_dataset_objs("remote")[0]
+        remote_dataset = self.cbas_util.get_all_dataset_objs("remote")[0]
         subquery = ["select name as name, email as email, reviews from {}",
                     "select name as name, email as email, reviews from {} where avg_rating > 0.4"]
         datasets = self.cbas_util.create_standalone_dataset_obj(self.cluster,
@@ -510,7 +510,7 @@ class StandaloneCollection(ColumnarBaseTest):
                 self.fail("Document count mismatch in {}".format(dataset.full_name))
 
         # verify the data after the link is disconnected
-        links = self.cbas_util.list_all_link_objs("couchbase")[0]
+        links = self.cbas_util.get_all_link_objs("couchbase")[0]
         self.cbas_util.disconnect_link(self.cluster, link_name=links.full_name)
         for dataset in datasets:
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)[0]
@@ -525,7 +525,7 @@ class StandaloneCollection(ColumnarBaseTest):
         docs_to_insert = []
         for i in range(self.initial_doc_count):
             docs_to_insert.append(self.cbas_util.generate_docs(self.doc_size))
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         jobs = Queue()
         results = []
         for dataset in datasets:
@@ -569,7 +569,7 @@ class StandaloneCollection(ColumnarBaseTest):
             doc = self.cbas_util.generate_docs(self.doc_size)
             del doc[self.input.param("remove_field", "email")]
             docs_to_insert.append(doc)
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         jobs = Queue()
         results = []
         for dataset in datasets:
@@ -596,7 +596,7 @@ class StandaloneCollection(ColumnarBaseTest):
             self.fail(msg)
         jobs = Queue()
         results = []
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         for dataset in datasets:
             jobs.put((self.cbas_util.crud_on_standalone_collection,
                       {"cluster": self.cluster, "collection_name": dataset.name,
@@ -639,7 +639,7 @@ class StandaloneCollection(ColumnarBaseTest):
         jobs = Queue()
         results = []
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         for dataset in datasets:
             jobs.put((self.cbas_util.insert_into_standalone_collection,
                       {"cluster": self.cluster, "collection_name": dataset.name,
@@ -670,7 +670,7 @@ class StandaloneCollection(ColumnarBaseTest):
         jobs = Queue()
         results = []
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         for dataset in datasets:
             jobs.put((self.cbas_util.load_doc_to_standalone_collection,
                       {"cluster": self.cluster, "collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
@@ -714,7 +714,7 @@ class StandaloneCollection(ColumnarBaseTest):
         jobs = Queue()
         results = []
 
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         for dataset in datasets:
             jobs.put((self.cbas_util.insert_into_standalone_collection,
                       {"cluster": self.cluster, "collection_name": dataset.name,

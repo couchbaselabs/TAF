@@ -569,7 +569,7 @@ class CopyToS3(ColumnarBaseTest):
         """
         Wait for the ingestion in all kind of dataset to be completed with external source
         """
-        datasets = self.cbas_util.list_all_dataset_objs()
+        datasets = self.cbas_util.get_all_dataset_objs()
         to_remove = []
         for collection in datasets:
             if isinstance(collection, Standalone_Dataset):
@@ -615,8 +615,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_standalone_dataset_query_drop_standalone_collection(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 1000)
         jobs = Queue()
         results = []
@@ -696,8 +696,8 @@ class CopyToS3(ColumnarBaseTest):
         self.start_source_ingestion(no_of_docs=no_of_docs, doc_size=1024)
         self.wait_for_source_ingestion(no_of_docs=no_of_docs)
         self.wait_for_destination_ingestion(no_of_docs)
-        datasets = self.cbas_util.list_all_dataset_objs("remote")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("remote")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         jobs = Queue()
         results = []
         for i in range(len(datasets)):
@@ -739,8 +739,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_external_collection_query_drop_standalone_collection(self):
         self.base_infra_setup()
-        external_datasets = self.cbas_util.list_all_dataset_objs("external")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        external_datasets = self.cbas_util.get_all_dataset_objs("external")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         jobs = Queue()
         results = []
         for i in range(len(external_datasets)):
@@ -786,13 +786,13 @@ class CopyToS3(ColumnarBaseTest):
     def test_create_copyToS3_from_multiple_collection_query_drop_standalone_collection(self):
         self.capella_provisioned_cluster_setup()
         self.base_infra_setup()
-        remote_dataset = self.cbas_util.list_all_dataset_objs("remote")
-        external_dataset = self.cbas_util.list_all_dataset_objs("external")
-        standalone_dataset = self.cbas_util.list_all_dataset_objs("standalone")
+        remote_dataset = self.cbas_util.get_all_dataset_objs("remote")
+        external_dataset = self.cbas_util.get_all_dataset_objs("external")
+        standalone_dataset = self.cbas_util.get_all_dataset_objs("standalone")
         unique_pairs = []
         for pair in self.pairs(remote_dataset, external_dataset, standalone_dataset):
             unique_pairs.append(pair)
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 100)
         self.start_source_ingestion(no_of_docs=no_of_docs, doc_size=1024)
         jobs = Queue()
@@ -856,8 +856,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_with_different_key_type_query_drop_standalone_collection(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 1000)
         jobs = Queue()
         results = []
@@ -941,8 +941,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_with_gzip_compression_drop_standalone_collection(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 1000)
         jobs = Queue()
         results = []
@@ -1010,8 +1010,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_with_max_object_compression_drop_standalone_collection(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         max_object_per_file = self.input.param("max_object_per_file", 100)
         no_of_docs = self.input.param("no_of_docs", 10000)
         jobs = Queue()
@@ -1079,8 +1079,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_to_non_empty_s3_bucket(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 10000)
         jobs = Queue()
         results = []
@@ -1171,8 +1171,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_to_non_existing_s3_bucket(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         jobs = Queue()
 
         results = []
@@ -1194,8 +1194,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_to_non_existing_directory_s3_bucket(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 100)
         jobs = Queue()
         results = []
@@ -1269,8 +1269,8 @@ class CopyToS3(ColumnarBaseTest):
             if not self.create_external_dataset(dataset_obj):
                 self.fail("Failed to create external dataset on destination S3 bucket")
 
-        datasets = self.cbas_util.list_all_dataset_objs("external")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("external")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         jobs = Queue()
         results = []
         for i in range(len(datasets)):
@@ -1319,8 +1319,8 @@ class CopyToS3(ColumnarBaseTest):
     def test_create_copyToS3_from_collection_order_by_query_drop_standalone_collection(self):
         # blocked by MB-60394
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 10000)
 
         jobs = Queue()
@@ -1416,8 +1416,8 @@ class CopyToS3(ColumnarBaseTest):
     def test_create_copyToS3_from_collection_multiple_order_by_query_drop_standalone_collection(self):
         # blocked by MB-60394
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 10000)
 
         jobs = Queue()
@@ -1514,8 +1514,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_invalid_link_drop_standalone_collection(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 100)
         jobs = Queue()
         results = []
@@ -1552,7 +1552,7 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_to_different_region_existing_s3_bucket(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         no_of_docs = self.input.param("no_of_docs", 100)
         jobs = Queue()
         results = []
@@ -1582,9 +1582,9 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_multi_partition_field_to_s3_bucket(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         no_of_docs = self.input.param("no_of_docs", 1000)
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         jobs = Queue()
         results = []
         for dataset in datasets:
@@ -1620,9 +1620,9 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_missing_partition_field_to_s3_bucket(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         no_of_docs = self.input.param("no_of_docs", 1000)
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         jobs = Queue()
         results = []
         for dataset in datasets:
@@ -1654,9 +1654,9 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_multiple_partition_field_to_s3_bucket(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
         no_of_docs = self.input.param("no_of_docs", 1000)
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         jobs = Queue()
         results = []
         for dataset in datasets:
@@ -1741,8 +1741,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_where_partition_already_exist_in_S3(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 1000)
         jobs = Queue()
         results = []
@@ -1799,8 +1799,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_empty_query_result_in_S3(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         jobs = Queue()
         results = []
 
@@ -1830,8 +1830,8 @@ class CopyToS3(ColumnarBaseTest):
 
     def test_create_copyToS3_from_collection_aggregate_group_by_result_in_S3(self):
         self.base_infra_setup()
-        datasets = self.cbas_util.list_all_dataset_objs("standalone")
-        s3_link = self.cbas_util.list_all_link_objs("s3")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        s3_link = self.cbas_util.get_all_link_objs("s3")[0]
         no_of_docs = self.input.param("no_of_docs", 1000)
         jobs = Queue()
         results = []

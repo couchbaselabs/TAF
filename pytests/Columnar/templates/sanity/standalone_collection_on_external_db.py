@@ -8,15 +8,20 @@ spec = {
     # Accepted values are > 0
     "max_thread_count": 25,
 
+    "database": {
+            # Accepted values are 0 or any positive int. 0 and 1 means no
+            # database will be created and Default database will be used.
+            "no_of_databases": 1,
+            # Accepted values are random or any string.
+            "name_key": "random",
+    },
+
     "dataverse": {
         # Accepted values are 0 or any positive int. 0 and 1 means no
         # dataverse will be created and Default dataverse will be used.
         "no_of_dataverses": 1,
         # Accepted values are random or any string.
         "name_key": "random",
-        # Accepted values are 0,1,2 . 0 means choose a cardinality
-        # randomly between 1 or 2
-        "cardinality": 0,
         # Accepted values are all or "dataverse" or "analytics_scope"
         "creation_method": "all",
     },

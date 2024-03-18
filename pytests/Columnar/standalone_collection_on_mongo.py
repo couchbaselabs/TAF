@@ -225,7 +225,7 @@ class StandaloneCollectionMongo(ColumnarBaseTest):
         if not self.wait_for_initial_data_load(self.initial_doc_count):
             self.fail("Initial doc loading into mongo failed.")
 
-        datasets = self.cbas_util.list_all_dataset_objs()
+        datasets = self.cbas_util.get_all_dataset_objs()
         # validate doc count on datasets
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(
@@ -251,7 +251,7 @@ class StandaloneCollectionMongo(ColumnarBaseTest):
 
         jobs = Queue()
         results = []
-        links = self.cbas_util.list_all_link_objs()
+        links = self.cbas_util.get_all_link_objs()
 
         for link in links:
             jobs.put((self.cbas_util.disconnect_link,
@@ -361,7 +361,7 @@ class StandaloneCollectionMongo(ColumnarBaseTest):
         if not self.cbas_util.wait_for_kafka_links(self.instance, "CONNECTED"):
             self.fail("Kafka link did not connect within timeout.")
 
-        datasets = self.cbas_util.list_all_dataset_objs()
+        datasets = self.cbas_util.get_all_dataset_objs()
         # validate doc count on datasets
         for dataset in datasets:
             if not self.cbas_util.wait_for_ingestion_complete(

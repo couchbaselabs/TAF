@@ -473,7 +473,7 @@ class GoldfishE2E(GoldFishBaseTest):
                       "SELECT AVG(r.rating.overall) AS average_overall_rating FROM {0} "
                       "AS b UNNEST b.reviews AS r WHERE ARRAY_COUNT(b.reviews) > 0;"]
 
-        datasets = cluster.cbas_util.list_all_dataset_objs()
+        datasets = cluster.cbas_util.get_all_dataset_objs()
         for i in range(no_of_parallel_query):
             collection = random.choice(datasets)
             cluster.jobs.put((
@@ -499,7 +499,7 @@ class GoldfishE2E(GoldFishBaseTest):
         Perform crud on standalone collection
         """
         standalone_loader = StandaloneCollectionLoader(cluster.cbas_util, self.use_sdk_for_cbas)
-        standalone_collections = cluster.cbas_util.list_all_dataset_objs(
+        standalone_collections = cluster.cbas_util.get_all_dataset_objs(
             "standalone")
         for standalone_collection in standalone_collections:
             if standalone_collection.data_source in ["s3", "azure", "gcp"]:
@@ -621,16 +621,16 @@ class GoldfishE2E(GoldFishBaseTest):
         Sources include s3, mongo, dynamo, rds, and remote links
         """
         try:
-            for dataset in cluster.cbas_util.list_all_dataset_objs("remote"):
+            for dataset in cluster.cbas_util.get_all_dataset_objs("remote"):
                 state, expected, actual = self.validate_data_in_remote_dataset(cluster, dataset)
                 self.return_doc_match_log_info(state, dataset.full_name, expected=expected, actual=actual)
 
-            for dataset in cluster.cbas_util.list_all_dataset_objs("external"):
+            for dataset in cluster.cbas_util.get_all_dataset_objs("external"):
                 state, expected, actual = self.validate_data_in_external_dataset(cluster, dataset)
                 self.return_doc_match_log_info(state, dataset.full_name, type="external", expected=expected,
                                                actual=actual)
 
-            for dataset in cluster.cbas_util.list_all_dataset_objs("standalone"):
+            for dataset in cluster.cbas_util.get_all_dataset_objs("standalone"):
                 if dataset.data_source is None:
                     state, expected, actual = self.validate_data_in_standalone_collection_with_source_none(cluster,
                                                                                                            dataset)
@@ -760,7 +760,7 @@ class GoldfishE2E(GoldFishBaseTest):
         Create and delete collections on clusters
         """
         start_time = time.time()
-        datasets = cluster.cbas_util.list_all_dataset_objs()
+        datasets = cluster.cbas_util.get_all_dataset_objs()
         while time.time() - start_time <= time_for_crud * 60:
             if datasets is None or len(datasets) == 0:
                 self.log.error("No datasets found to create crud collections from")
@@ -777,7 +777,7 @@ class GoldfishE2E(GoldFishBaseTest):
                 if isinstance(new_dataset, Standalone_Dataset):
                     self.create_crud_standalone_collection(cluster, new_dataset, timeout)
             if ops_type == "delete":
-                crud_datasets = cluster.cbas_util.list_all_crud_dataset_objs()
+                crud_datasets = cluster.cbas_util.get_all_dataset_objs()
                 if crud_datasets and len(crud_datasets) > 0:
                     dataset = random.choice(crud_datasets)
                     if not cluster.cbas_util.drop_dataset(
@@ -943,7 +943,7 @@ class GoldfishE2E(GoldFishBaseTest):
         Wait for the ingestion in all kind of dataset to be completed with external source
         """
         start_time = time.time()
-        datasets = cluster.cbas_util.list_all_dataset_objs()
+        datasets = cluster.cbas_util.get_all_dataset_objs()
         to_remove = []
         for collection in datasets:
             if isinstance(collection, Standalone_Dataset):
@@ -1131,7 +1131,7 @@ class GoldfishE2E(GoldFishBaseTest):
         # *********** Start Scenario:2 **********************
         # disconnect all kafka links
         for cluster in self.clusters:
-            kafka_links = cluster.cbas_util.list_all_link_objs("kafka")
+            kafka_links = cluster.cbas_util.get_all_link_objs("kafka")
             for link in kafka_links:
                 cluster.cbas_util.disconnect_link(cluster, link.full_name)
         for cluster in self.clusters:
@@ -1166,7 +1166,7 @@ class GoldfishE2E(GoldFishBaseTest):
 
         # increasing number of remote datasets from 2 to 6
         for cluster in self.clusters:
-            remote_datasets = cluster.cbas_util.list_all_dataset_objs("remote")
+            remote_datasets = cluster.cbas_util.get_all_dataset_objs("remote")
             for i in range(3):
                 for dataset in remote_datasets:
                     dataset.name = cluster.cbas_util.generate_name()
@@ -1215,7 +1215,7 @@ class GoldfishE2E(GoldFishBaseTest):
         for cluster in self.clusters:
             cluster.cbas_util.create_crud_dataverses(cluster, 1)
             standalone_loader = StandaloneCollectionLoader(cluster.cbas_util, self.use_sdk_for_cbas)
-            standalone_collection = random.choice([x for x in cluster.cbas_util.list_all_dataset_objs(
+            standalone_collection = random.choice([x for x in cluster.cbas_util.get_all_dataset_objs(
                 "standalone") if x.data_source is None])
             cluster.jobs.put((
                 standalone_loader.crud_on_standalone_collection,
@@ -1258,7 +1258,7 @@ class GoldfishE2E(GoldFishBaseTest):
 
         # create 1 more remote collection
         for cluster in self.clusters:
-            remote_datasets = random.choice(cluster.cbas_util.list_all_dataset_objs("remote"))
+            remote_datasets = random.choice(cluster.cbas_util.get_all_dataset_objs("remote"))
             remote_datasets.name = cluster.cbas_util.generate_name()
             remote_datasets.full_name = CBASHelper.format_name(remote_datasets.dataverse_name,
                                                                remote_datasets.name)
@@ -1278,7 +1278,7 @@ class GoldfishE2E(GoldFishBaseTest):
                 dataverse.remote_datasets[remote_datasets.name] = remote_datasets
 
             standalone_collection = random.choice(
-                [x for x in cluster.cbas_util.list_all_dataset_objs("standalone") if x.data_source
+                [x for x in cluster.cbas_util.get_all_dataset_objs("standalone") if x.data_source
                  in ["s3", "azure", "gcp"]])
             new_collection = []
             creation_method = "COLLECTION"
@@ -1315,8 +1315,8 @@ class GoldfishE2E(GoldFishBaseTest):
 
         # deleting all kafka datasets and kafka links and recreating all kafka links and datasets
         for cluster in self.clusters:
-            kafka_links = cluster.cbas_util.list_all_link_objs("kafka")
-            standalone_datasets = cluster.cbas_util.list_all_dataset_objs("standalone")
+            kafka_links = cluster.cbas_util.get_all_link_objs("kafka")
+            standalone_datasets = cluster.cbas_util.get_all_dataset_objs("standalone")
             kafka_datasets = [x for x in standalone_datasets if x.data_source in ["dynamo", "mongo", "rds"]]
 
             # deleting all kafka datasets
@@ -1362,7 +1362,7 @@ class GoldfishE2E(GoldFishBaseTest):
                               {"cluster": cluster, "state": "CONNECTED"}))
 
         for cluster in self.clusters:
-            remote_datasets = cluster.cbas_util.list_all_dataset_objs("remote")
+            remote_datasets = cluster.cbas_util.get_all_dataset_objs("remote")
             for i in range(4):
                 dataset = random.choice(remote_datasets)
                 dataset.name = cluster.cbas_util.generate_name()

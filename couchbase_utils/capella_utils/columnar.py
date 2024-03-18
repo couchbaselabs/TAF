@@ -250,9 +250,8 @@ class ColumnarUtils:
         if resp.status_code != 202:
             self.log.error("Unable to delete columnar instance {0}".format(
                 instance.name))
-            return None
-        resp = json.loads(resp.content)
-        return resp["id"]
+            return False
+        return True
 
     def scale_columnar_instance(self, instance, nodes, pod=None, user=None):
         if pod and user:
@@ -324,11 +323,19 @@ class ColumnarUtils:
             if state == "destroying":
                 self.log.info("instance is still deleting. Waiting for 10s.")
                 time.sleep(10)
+            elif state == "healthy":
+                self.log.info("instance is queued for deletion. Waiting for "
+                              "10s.")
+                time.sleep(10)
             else:
                 break
         if state == "destroying":
             self.log.error("instance {0} deletion failed even after {1} "
                            "seconds".format(instance.name, timeout))
+            return False
+        elif state == "healthy":
+            self.log.error("instance {0} still in deletion queue even after "
+                           "{1} seconds".format(instance.name, timeout))
             return False
         elif not state:
             return True

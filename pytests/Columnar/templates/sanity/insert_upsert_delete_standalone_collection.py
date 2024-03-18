@@ -7,6 +7,13 @@ Created on 25-Oct-2023
 spec = {
     # Accepted values are > 0
     "max_thread_count": 25,
+    "database": {
+        # Accepted values are 0 or any positive int. 0 and 1 means no
+        # database will be created and Default database will be used.
+        "no_of_databases": 1,
+        # Accepted values are random or any string.
+        "name_key": "random",
+    },
 
     "dataverse": {
         # Accepted values are 0 or any positive int. 0 and 1 means no
@@ -14,23 +21,38 @@ spec = {
         "no_of_dataverses": 1,
         # Accepted values are random or any string.
         "name_key": "random",
-        # Accepted values are 0,1,2 . 0 means choose a cardinality
-        # randomly between 1 or 2
-        "cardinality": 0,
         # Accepted values are all or "dataverse" or "analytics_scope"
         "creation_method": "all",
+        # Accepted values are list of database names. These are the
+        # databases where the dataverse will be created.
+        "include_databases": [],
+        # Accepted values are list of database names. These are the
+        # databases where the dataverse will not be created.
+        "exclude_databases": []
     },
 
     "standalone_dataset": {
         "num_of_standalone_coll": 1,
         # Accepted values are random or any string.
         "name_key": "random",
+        # Accepted values are list of database names. These are the
+        # databases where the dataverse will be created.
+        "include_databases": [],
+        # Accepted values are list of database names. These are the
+        # databases where the dataverse will not be created.
+        "exclude_databases": [],
         # Accepted values are list of dataverse names. These are the
         # dataverses where the dataset will be created.
         "include_dataverses": [],
         # Accepted values are list of dataverse names. These are the
         # dataverses where the dataset will not be created.
         "exclude_dataverses": [],
+        # Accepted values are list of link names. These are the link
+        # that will be used while creating a dataset.
+        "include_links": [],
+        # Accepted values are list of link names. These are the link
+        # that will not be used while creating a dataset.
+        "exclude_links": [],
         # Accepted values are list of creation methods
         # ["Dataset","Analytics collection","collection"]
         # [] means all methods will be considered while creating dataset.
@@ -54,35 +76,47 @@ spec = {
     },
 
     "synonym": {
-            # Accepted values are 0 or any positive int.
-            "no_of_synonyms": 1,
-            # Accepted values are random or any string.
-            "name_key": "random",
-            # Accepted values are list of dataverse names. These are the
-            # dataverses where the synonym will be created.
-            "include_dataverses": [],
-            # Accepted values are list of dataverse names. These are the
-            # dataverses where the synonym will not be created.
-            "exclude_dataverses": [],
-            # Accepted values are list of dataset names. These are the
-            # datsets on which the synonym will be created.
-            "include_datasets": [],
-            # Accepted values are list of dataset names. These are the
-            # datsets on which the synonym will not be created.
-            "exclude_datasets": [],
-            # Accepted values are list of synonym names. These are the
-            # synonyms on which the synonym will be created.
-            "include_synonyms": [],
-            # Accepted values are list of synonym names. These are the
-            # synonyms on which the synonym will be created.
-            "exclude_synonyms": [],
-        },
+        # Accepted values are 0 or any positive int.
+        "no_of_synonyms": 1,
+        # Accepted values are random or any string.
+        "name_key": "random",
+        # Accepted values are list of database names. These are the
+        # databases where the link will be created.
+        "include_databases": [],
+        # Accepted values are list of database names. These are the
+        # databases where the link will not be created.
+        "exclude_databases": [],
+        # Accepted values are list of dataverse names. These are the
+        # dataverses where the synonym will be created.
+        "include_dataverses": [],
+        # Accepted values are list of dataverse names. These are the
+        # dataverses where the synonym will not be created.
+        "exclude_dataverses": [],
+        # Accepted values are list of dataset names. These are the
+        # datsets on which the synonym will be created.
+        "include_datasets": [],
+        # Accepted values are list of dataset names. These are the
+        # datsets on which the synonym will not be created.
+        "exclude_datasets": [],
+        # Accepted values are list of synonym names. These are the
+        # synonyms on which the synonym will be created.
+        "include_synonyms": [],
+        # Accepted values are list of synonym names. These are the
+        # synonyms on which the synonym will be created.
+        "exclude_synonyms": [],
+    },
 
     "index": {
         # Accepted values are 0 or any positive int.
-        "no_of_indexes": 1,
+        "no_of_indexes": 3,
         # Accepted values are random or any string.
         "name_key": "random",
+        # Accepted values are list of database names. These are the
+        # databases where the link will be created.
+        "include_databases": [],
+        # Accepted values are list of database names. These are the
+        # databases where the link will not be created.
+        "exclude_databases": [],
         # Accepted values are list of dataverse names. The indexes
         # will only be created on datasets in these dataverses.
         "include_dataverses": [],

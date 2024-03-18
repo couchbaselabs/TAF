@@ -3231,8 +3231,10 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             return self.instance.generate_docs(self.document_size, self.country_type, self.include_country)
 
     def load_doc_to_standalone_collection(
-            self, cluster, collection_name, dataverse_name, database_name, no_of_docs,
-            document_size=1024, batch_size=500, max_concurrent_batches=10, country_type="string", include_country=True):
+            self, cluster, collection_name, dataverse_name, database_name,
+            no_of_docs, document_size=1024, batch_size=500,
+            max_concurrent_batches=10, country_type="string",
+            include_country=True):
         """
         Load documents to a standalone collection.
         """
@@ -4010,6 +4012,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                         else None
                     if link is None:
                         data_source = None
+            else:
+                data_source = None
 
             link_name = link.full_name if link else None
             dataset_obj = Standalone_Dataset(
