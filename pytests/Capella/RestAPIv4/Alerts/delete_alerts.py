@@ -112,9 +112,11 @@ class DeleteAlert(GetAlert):
                 "/v4/organizations/{}/projects/{}/alertIntegrations"
 
             if self.validate_testcase(result, [204], testcase, failures):
+                self.alerts.remove(self.alert_id)
                 self.alert_id = self.create_alert_to_be_tested(
                     self.project_id, self.expected_res["kind"],
                     self.expected_res["config"], self.expected_res["name"])
+                self.alerts.append(self.alert_id)
 
         if failures:
             for fail in failures:
@@ -170,9 +172,11 @@ class DeleteAlert(GetAlert):
                     header)
 
             if self.validate_testcase(result, [204], testcase, failures):
+                self.alerts.remove(self.alert_id)
                 self.alert_id = self.create_alert_to_be_tested(
                     self.project_id, self.expected_res["kind"],
                     self.expected_res["config"], self.expected_res["name"])
+                self.alerts.append(self.alert_id)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -272,7 +276,12 @@ class DeleteAlert(GetAlert):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["alertID"], **kwarg)
 
-            self.validate_testcase(result, [204], testcase, failures)
+            if self.validate_testcase(result, [204], testcase, failures):
+                self.alerts.remove(self.alert_id)
+                self.alert_id = self.create_alert_to_be_tested(
+                    self.project_id, self.expected_res["kind"],
+                    self.expected_res["config"], self.expected_res["name"])
+                self.alerts.append(self.alert_id)
 
         if failures:
             for fail in failures:

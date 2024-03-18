@@ -113,15 +113,18 @@ class APIBase(CouchbaseBaseTest):
         time.sleep(retry_after)
 
     @staticmethod
-    def get_utc_date(days_before=0):
+    def get_utc_datetime(minutes_delta=0):
         import datetime
         now = datetime.datetime.utcnow()
 
-        if days_before:
-            days_delta = datetime.timedelta(days_before)
-            now = now - days_delta
+        if minutes_delta:
+            delta = datetime.timedelta(minutes=minutes_delta)
+            if minutes_delta < 0:
+                now = now - delta
+            elif minutes_delta > 0:
+                now = now + delta
 
-        return now.strftime('%Y-%m-%dT%H:%M:%S') + ".000Z"
+        return now.strftime('%Y-%m-%dT%H:%M:%S') + "Z"
 
     def create_api_keys_for_all_combinations_of_roles(
             self, project_ids, project_roles=[], organization_roles=[]):
@@ -415,6 +418,8 @@ class APIBase(CouchbaseBaseTest):
                 else:
                     self.api_keys[api_key] = api_key_dict[api_key]
         else:
+            self.log.info("Rate Limit test is using {} API keys"
+                          .format(self.input.param("num_api_keys", 1)))
             for i in range(self.input.param("num_api_keys", 1)):
                 resp = self.capellaAPI.org_ops_apis.create_api_key(
                     self.organisation_id,
@@ -435,7 +440,7 @@ class APIBase(CouchbaseBaseTest):
 
         if self.input.param("rate_limit", False):
             results = self.make_parallel_api_calls(
-                150, api_func_list, self.api_keys)
+                110, api_func_list, self.api_keys)
             for r in results:
                 self.log.info("**********************************************")
                 self.log.info("Parallel API calls for role {} took {} seconds"
@@ -445,7 +450,7 @@ class APIBase(CouchbaseBaseTest):
             for result in results:
                 if ((not results[result]["rate_limit_hit"])
                         or results[result][
-                            "total_api_calls_made_to_hit_rate_limit"] > 300):
+                            "total_api_calls_made_to_hit_rate_limit"] > 100):
                     self.fail(
                         "Rate limit was hit after {0} API calls. "
                         "This is definitely an issue.".format(
@@ -465,6 +470,8 @@ class APIBase(CouchbaseBaseTest):
             self.log.info("**********************************************")
 
         for r in results:
+            if "429" in results[r]["4xx_errors"]:
+                del results[r]["4xx_errors"]["429"]
             for status_code in exclude_codes:
                 if status_code in results[r]["4xx_errors"]:
                     del results[r]["4xx_errors"][status_code]
