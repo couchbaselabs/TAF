@@ -16,6 +16,7 @@ import random
 from com.couchbase.test.sdk import Server
 from com.couchbase.test.sdk import SDKClient
 from _collections import defaultdict
+from goldfish.datasources import s3
 
 
 class Columnar(BaseTestCase, OPD):
@@ -96,9 +97,8 @@ class Columnar(BaseTestCase, OPD):
 
         mongo = MongoDB(mongo_hostname, mongo_username,
                         mongo_password, mongo_atlas)
-        mongo.name = "Mongo_" + ''.join([random.choice(string.ascii_letters + string.digits) for i in range(5)])
         mongo.loadDefn = self.default_workload
-        mongo.set_mongo_collections()
+        mongo.set_collections()
         mongo.key = "test_docs-"
         mongo.key_size = 18
         mongo.key_type = "Circular"
@@ -108,6 +108,10 @@ class Columnar(BaseTestCase, OPD):
                            create_end=mongo.loadDefn.get("num_items"),
                            bucket=mongo)
         self.data_sources["mongo"].append(mongo)
+
+        self.mongo_workload.perform_load(self.data_sources["mongo"], wait_for_load=True,
+                                         overRidePattern=[100, 0, 0, 0, 0],
+                                         tm=self.doc_loading_tm)
 
     def teardownMongo(self):
         for task in self.mongo_workload.tasks:
@@ -195,15 +199,20 @@ class Columnar(BaseTestCase, OPD):
         if self.input.param("onCloudMongo", False):
             self.setupMongo(atlas=True)
 
-        self.mongo_workload.perform_load(self.data_sources["mongo"], wait_for_load=True,
-                                         overRidePattern=[100, 0, 0, 0, 0],
-                                         tm=self.doc_loading_tm)
+        s3_obj = s3(self.input.datasources.get("s3_access"),
+                    self.input.datasources.get("s3_secret"))
+        s3_obj.loadDefn = self.default_workload
+        s3_obj.set_collections()
+        self.data_sources["s3"].append(s3_obj)
+
         self.drCBAS = DoctorCBAS()
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 self.setup_sdk_clients(cluster)
-                self.drCBAS.create_mongo_links(cluster, self.data_sources["mongo"])
-                self.sleep(60)
+                # self.drCBAS.create_links(cluster, [s3_obj])
+                for datasources in self.data_sources.values():
+                    self.drCBAS.create_links(cluster, datasources)
+                    self.sleep(60)
 
         for tenant in self.tenants:
             for cluster in tenant.clusters:

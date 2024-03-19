@@ -79,8 +79,10 @@ class OPD:
                  Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
                  Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
 
-            self.bucket_util.create_bucket(cluster, bucket)
             bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
+            if bucket.loadDefn.get("name"):
+                bucket.name = bucket.loadDefn.get("name")
+            self.bucket_util.create_bucket(cluster, bucket)
 
         # rebalance the new buckets across all nodes.
         self.log.info("Rebalance Starts")
@@ -607,7 +609,8 @@ class OPD:
         self.table.display("Docs statistics")
 
     def perform_load(self, wait_for_load=True,
-                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True):
+                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
+                     wait_for_stats=True):
         self.get_memory_footprint()
         buckets = buckets or cluster.buckets
         self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default)
@@ -641,7 +644,7 @@ class OPD:
                         i -= 1
 
         if wait_for_load:
-            self.wait_for_doc_load_completion(cluster, tasks)
+            self.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
             self.get_memory_footprint()
         else:
             return tasks

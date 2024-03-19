@@ -122,48 +122,27 @@ class DoctorCBAS():
         self.log = logger.get("test")
         self.stop_run = False
 
-    def create_mongo_links(self, cluster, data_sources):
-        client = cluster.SDKClients[0].cluster
+    def create_links(self, cluster, data_sources):
         for dataSource in data_sources:
-            dataSource.cbas_queries = list()
-            dataSource.cbas_collections = list()
-            dataSource.query_map = dict()
             query_count = 0
-            dataSource.link_name = dataSource.type + "_" + dataSource.name
-            statement = dataSource.create_link(dataSource.link_name)
-            self.log.info(statement)
-            try:
-                execute_statement_on_cbas(client, statement)
-            except LinkExistsException:
-                pass
-            i, d, q = 0, 0, 0
-            for collection in dataSource.collections:
-                if dataSource.loadDefn["valType"] == "Hotel":
-                    queryType = HotelQueries
-                if d < dataSource.loadDefn.get("cbas")[0]:
-                    # create collection
-                    coll_statement = "CREATE COLLECTION `{}` PRIMARY KEY (`_id`: string) ON {}.{} AT {};"
-                    coll_name = dataSource.link_name + "_volCollection_" + str(i)
-                    i += 1
-                    dataSource.cbas_collections.append(coll_name)
-                    statement = coll_statement.format(coll_name, dataSource.name, collection, dataSource.link_name)
-                    self.log.info(statement)
-                    try:
-                        execute_statement_on_cbas(client, statement)
-                    except DatasetExistsException:
-                        pass
-                    d += 1
-                if q < dataSource.loadDefn.get("cbas")[1]:
-                    if queryType[q % len(queryType)] in dataSource.query_map.keys():
-                        q += 1
-                        continue
-                    query = queryType[q % len(queryType)].format(coll_name)
-                    print query
-                    dataSource.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
-                    query_count += 1
-                    dataSource.cbas_queries.append((query, queryType[q % len(queryType)]))
+            dataSource.create_link(cluster)
+            if dataSource.loadDefn["valType"] == "Hotel":
+                queryType = HotelQueries
+            # create collection
+            dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0])
+            q = 0
+            while q < dataSource.loadDefn.get("cbas")[1]:
+                if queryType[q % len(queryType)] in dataSource.query_map.keys():
                     q += 1
-            self.connect_link(cluster, dataSource.link_name)
+                    continue
+                query = queryType[q % len(queryType)].format(dataSource.cbas_collections[q % len(dataSource.cbas_collections)])
+                print query
+                dataSource.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
+                query_count += 1
+                dataSource.cbas_queries.append((query, queryType[q % len(queryType)]))
+                q += 1
+            if dataSource.type != "s3":
+                self.connect_link(cluster, dataSource.link_name)
 
     def connect_link(self, cluster, link_name):
         client = cluster.SDKClients[0].cluster
@@ -225,7 +204,7 @@ class DoctorCBAS():
 
     def wait_for_ingestion(self, cluster, databases, timeout=86400):
         client = cluster.SDKClients[0].cluster
-        status = False
+        status = True
         for database in databases:
             for collection in database.cbas_collections:
                 status = False

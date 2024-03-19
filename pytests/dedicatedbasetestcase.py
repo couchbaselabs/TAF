@@ -190,8 +190,8 @@ class CapellaBaseTest(CouchbaseBaseTest):
                 th.append(invite_th)
             for invite_th in th:
                 invite_th.join()
-            for tenant in self.tenants:
-                tenant.project_id = tenant.projects[0]
+        for tenant in self.tenants:
+            tenant.project_id = tenant.projects[0]
 
 class ProvisionedBaseTestCase(CapellaBaseTest):
     def setUp(self):

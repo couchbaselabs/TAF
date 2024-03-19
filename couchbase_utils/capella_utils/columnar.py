@@ -188,7 +188,7 @@ class GoldfishUtils:
             tenant.id, tenant.project_id, cluster.id)
         if resp.status_code != 201:
             self.log.error(
-                "Unable to create API keys for goldfish cluster {0} with ID "
-                "{1}".format(cluster.name, cluster.id))
+                "Unable to create API keys for goldfish cluster {0}: "
+                "{1}".format(cluster.id, resp.content))
             return None
         return json.loads(resp.content)

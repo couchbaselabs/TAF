@@ -1,9 +1,7 @@
 from cb_constants import CbServer
 from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils
-from capella_utils.common_utils import Pod, Tenant
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster, GoldfishNebula
-from security_config import trust_all_certs
 
 import global_vars
 from capella_utils.columnar import GoldfishUtils
@@ -26,7 +24,7 @@ class ColumnarBaseTest(CapellaBaseTest):
                                     password=None,
                                     servers=[None])
                 cluster.id = cluster_id
-                self.tenants[0].cluster.append(cluster)
+                self.tenants[0].clusters.append(cluster)
         else:
             for tenant in self.tenants:
                 tenant.project_id = tenant.projects[0]
@@ -69,6 +67,7 @@ class ColumnarBaseTest(CapellaBaseTest):
                 cluster.nebula = GoldfishNebula(resp["config"]["endpoint"], server)
                 server = copy.deepcopy(server)
                 server.ip = resp["config"]["endpoint"].replace("r-stmgmpftyc", "r-rvfzrfywdw")
+                server.ip = resp["config"]["endpoint"].replace("r-hcrvvogzo3", "multinodeapi-0")
                 server.port = 8091
                 nodes = self.cluster_util.get_nodes(server)
                 cluster.refresh_object(nodes)

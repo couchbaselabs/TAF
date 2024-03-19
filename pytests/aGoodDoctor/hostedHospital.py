@@ -11,6 +11,7 @@ from BucketLib.bucket import Bucket
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from pytests.basetestcase import BaseTestCase
 from constants.cb_constants.CBServer import CbServer
+from workloads import default, nimbus, vector_load
 try:
     from fts import DoctorFTS, FTSQueryLoad
 except:
@@ -25,7 +26,7 @@ from constants.cloud_constants.capella_constants import AWS, GCP, AZURE
 from table_view import TableView
 import time
 from bucket_utils.bucket_ready_functions import CollectionUtils
-from com.couchbase.test.sdk import Server
+from com.couchbase.test.sdk import Server, SDKClientPool
 from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
@@ -393,110 +394,12 @@ class Murphy(BaseTestCase, hostedOPD):
                                                kwargs={"cluster": cluster})
                 cpu_monitor.start()
 
-        self.nimbus = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": 2,
-            "num_items": self.input.param("num_items", 1500000000),
-            "start": 0,
-            "end": self.input.param("num_items", 1500000000),
-            "ops": self.input.param("ops_rate", 100000),
-            "doc_size": 1024,
-            "pattern": [0, 50, 50, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2iQPS": 300,
-            "ftsQPS": 100,
-            "cbasQPS": 100,
-            "collections_defn": [
-                {
-                    "valType": "NimbusP",
-                    "2i": [2, 3],
-                    "FTS": [0, 0],
-                    "cbas": [0, 0, 0]
-                },
-                {
-                    "valType": "NimbusM",
-                    "2i": [1, 2],
-                    "FTS": [0, 0],
-                    "cbas": [0, 0, 0]
-                }
-                ]
-            }
-        self.default = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": self.input.param("collections", 2),
-            "num_items": self.input.param("num_items", 50000000),
-            "start": 0,
-            "end": self.input.param("num_items", 50000000),
-            "ops": self.input.param("ops_rate", 50000),
-            "doc_size": 1024,
-            "pattern": [0, 50, 50, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2iQPS": 10,
-            "ftsQPS": 10,
-            "cbasQPS": 10,
-            "collections_defn": [
-                {
-                    "valType": "Hotel",
-                    "2i": [self.input.param("gsi_indexes", 2),
-                           self.input.param("gsi_queries", 2)],
-                    "FTS": [self.input.param("fts_indexes", 2),
-                            self.input.param("fts_queries", 2)],
-                    "cbas": [self.input.param("cbas_indexes", 2),
-                             self.input.param("cbas_datasets", 2),
-                             self.input.param("cbas_queries", 2)]
-                    }
-                # {
-                #     "valType": "Hotel",
-                #     "2i": [self.input.param("gsi_indexes", 2),
-                #            self.input.param("gsi_queries", 2)],
-                #     "FTS": [0, 0],
-                #     "cbas": [self.input.param("cbas_datasets", 2),
-                #              self.input.param("cbas_indexes", 2),
-                #              self.input.param("cbas_queries", 2)]
-                #     }
-                ]
-            }
-        
-        self.vector_load = {
-            "valType": "Vector",
-            "scopes": 1,
-            "collections": self.input.param("collections", 2),
-            "num_items": self.input.param("num_items", 5000000),
-            "start": 0,
-            "end": self.input.param("num_items", 5000000),
-            "ops": self.input.param("ops_rate", 5000),
-            "doc_size": 1024,
-            "pattern": [0, 0, 100, 0, 0], # CRUDE
-            "load_type": ["update"],
-            "2iQPS": 10,
-            "ftsQPS": 10,
-            "cbasQPS": 0,
-            "collections_defn": [
-                {
-                    "valType": "Vector",
-                    "2i": [2, 2],
-                    "FTS": [2, 2],
-                    "cbas": [2, 2, 2]
-                    }
-                ]
-            }
-
-        # temp = [{
-        #     "valType": "Hotel",
-        #     "2i": [0, 0],
-        #     "FTS": [0, 0],
-        #     "cbas": [0, 0, 0]
-        #     }]*8
-        # self.default["collections_defn"].extend(temp)
-
         nimbus = self.input.param("nimbus", False)
         expiry = self.input.param("expiry", False)
-        self.load_defn.append(self.default)
+        self.load_defn.append(default)
         if nimbus:
             self.load_defn = list()
-            self.load_defn.append(self.nimbus)
+            self.load_defn.append(nimbus)
 
         if expiry:
             for load in self.load_defn:
@@ -505,7 +408,7 @@ class Murphy(BaseTestCase, hostedOPD):
 
         if self.vector:
             self.load_defn = list()
-            self.load_defn.append(self.vector_load)
+            self.load_defn.append(vector_load)
 
         #######################################################################
         for tenant in self.tenants:
@@ -515,6 +418,7 @@ class Murphy(BaseTestCase, hostedOPD):
                 else:
                     for i, bucket in enumerate(cluster.buckets):
                         bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
+                        cluster.sdk_client_pool = SDKClientPool()
                         num_clients = self.input.param("clients_per_db",
                                                        min(5, bucket.loadDefn.get("collections")))
                         self.create_sdk_client_pool(cluster, [bucket],

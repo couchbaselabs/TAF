@@ -15,6 +15,10 @@ from cbas import CBASQueryLoad
 from cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
 from elasticsearch import EsClient
+from bucket_utils.bucket_ready_functions import CollectionUtils
+from com.couchbase.test.sdk import SDKClientPool
+from workloads import default, nimbus, vector_load, quartz1, quartz2, quartz3,\
+    quartz5, quartz4, quartz6
 try:
     from fts import DoctorFTS, FTSQueryLoad
 except:
@@ -136,93 +140,18 @@ class Murphy(BaseTestCase, OPD):
                             self.esClient.deleteESIndex(collection.lower())
                             self.esClient.createESIndex(collection.lower(), None)
         
-        self.nimbus = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": 2,
-            "num_items": self.input.param("num_items", 1500000000),
-            "start": 0,
-            "end": self.input.param("num_items", 1500000000),
-            "ops": self.input.param("ops_rate", 100000),
-            "doc_size": 1024,
-            "pattern": [0, 50, 50, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2iQPS": 300,
-            "ftsQPS": 100,
-            "cbasQPS": 100,
-            "collections_defn": [
-                {
-                    "valType": "NimbusP",
-                    "2i": [2, 2],
-                    "FTS": [0, 0],
-                    "cbas": [0, 0, 0]
-                },
-                {
-                    "valType": "NimbusM",
-                    "2i": [1, 2],
-                    "FTS": [0, 0],
-                    "cbas": [0, 0, 0]
-                }
-                ]
-            }
-        self.default = {
-            "valType": self.val_type,
-            "scopes": 1,
-            "collections": self.input.param("collections", 2),
-            "num_items": self.input.param("num_items", 50000000),
-            "start": 0,
-            "end": self.input.param("num_items", 50000000),
-            "ops": self.input.param("ops_rate", 50000),
-            "doc_size": self.input.param("doc_size", 1024),
-            "pattern": [0, 50, 50, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2iQPS": 10,
-            "ftsQPS": 10,
-            "cbasQPS": 10,
-            "collections_defn": [
-                {
-                    "valType": self.val_type,
-                    "2i": [self.input.param("gsi_indexes", 2),
-                           self.input.param("gsi_queries", 2)],
-                    "FTS": [self.input.param("fts_indexes", 2),
-                            self.input.param("fts_queries", 2)],
-                    "cbas": [self.input.param("cbas_indexes", 2),
-                             self.input.param("cbas_datasets", 2),
-                             self.input.param("cbas_queries", 2)]
-                    }
-                ]
-            }
-        
-        self.vector_load = {
-            "valType": "Vector",
-            "scopes": 1,
-            "collections": self.input.param("collections", 2),
-            "num_items": self.input.param("num_items", 5000000),
-            "start": 0,
-            "end": self.input.param("num_items", 5000000),
-            "ops": self.input.param("ops_rate", 5000),
-            "doc_size": 1024,
-            "pattern": [0, 0, 100, 0, 0], # CRUDE
-            "load_type": ["update"],
-            "2iQPS": 10,
-            "ftsQPS": 10,
-            "cbasQPS": 0,
-            "collections_defn": [
-                {
-                    "valType": "Vector",
-                    "2i": [2, 2],
-                    "FTS": [2, 2],
-                    "cbas": [2, 2, 2]
-                    }
-                ]
-            }
         self.load_defn = list()
         nimbus = self.input.param("nimbus", False)
+        quartz = self.input.param("quartz", False)
         expiry = self.input.param("expiry", False)
-        self.load_defn.append(self.default)
+        self.load_defn.append(default)
         if nimbus:
             self.load_defn = list()
-            self.load_defn.append(self.nimbus)
+            self.load_defn.append(nimbus)
+
+        if quartz:
+            self.load_defn = list()
+            self.load_defn.extend([quartz1, quartz2, quartz3, quartz4, quartz5, quartz6])
 
         if expiry:
             for load in self.load_defn:
@@ -231,7 +160,7 @@ class Murphy(BaseTestCase, OPD):
 
         if self.vector:
             self.load_defn = list()
-            self.load_defn.append(self.vector_load)
+            self.load_defn.append(vector_load)
 
         #Vector Dataload Params
         self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
@@ -280,7 +209,27 @@ class Murphy(BaseTestCase, OPD):
         if self.num_buckets > 10:
             self.bucket_util.change_max_buckets(self.cluster.master,
                                                 self.num_buckets)
-        self.create_required_buckets(self.cluster)
+        if not self.skip_init:
+            self.create_required_buckets(self.cluster)
+        else:
+            for i, bucket in enumerate(self.cluster.buckets):
+                bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
+                self.cluster.sdk_client_pool = SDKClientPool()
+                num_clients = self.input.param("clients_per_db",
+                                               min(5, bucket.loadDefn.get("collections")))
+                self.create_sdk_client_pool(self.cluster, [bucket],
+                                            num_clients)
+                for scope in bucket.scopes.keys():
+                    if scope == CbServer.system_scope:
+                        continue
+                    if bucket.loadDefn.get("collections") > 0:
+                        self.collection_prefix = self.input.param("collection_prefix",
+                                                                  "VolumeCollection")
+        
+                        for i in range(bucket.loadDefn.get("collections")):
+                            collection_name = self.collection_prefix + str(i)
+                            collection_spec = {"name": collection_name}
+                            CollectionUtils.create_collection_object(bucket, scope, collection_spec)
         if self.xdcr_remote_nodes > 0:
             self.PrintStep("Step 2*: Create required buckets and collections on XDCR remote.")
             self.create_required_buckets(cluster=self.xdcr_remote_cluster)
@@ -307,7 +256,7 @@ class Murphy(BaseTestCase, OPD):
                     self.cluster, self.cluster.buckets)
 
         server = self.rest.get_nodes_self()
-        if self.cbas_nodes>0:
+        if self.cbas_nodes>0 and self.cbas_nodes > len(self.cluster.cbas_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.CBAS_MEM_QUOTA:
                                              int(server.mcdMemoryReserved - 100
                                                  )})
@@ -327,7 +276,7 @@ class Murphy(BaseTestCase, OPD):
                                 services=["backup"]*self.backup_nodes,
                                 validate_bucket_ranking=False)
 
-        if self.index_nodes>0:
+        if self.index_nodes>0 and self.index_nodes > len(self.cluster.index_nodes):
             self.indexer_mem_quota = self.input.param("indexer_mem_quota", None)
             self.enableShardAffinity = self.input.param("enableShardAffinity", True)
             if self.indexer_mem_quota:
@@ -346,10 +295,12 @@ class Murphy(BaseTestCase, OPD):
                                 validate_bucket_ranking=False)
             self.available_servers = [servs for servs in self.available_servers
                                       if servs not in self.cluster.index_nodes]
-            _ = self.rest.set_indexer_params(redistributeIndexes='true', enableShardAffinity='true') \
-            if self.enableShardAffinity else self.rest.set_indexer_params(redistributeIndexes='true')
+            _ = self.rest.set_indexer_params(redistributeIndexes='true', enableShardAffinity='true',
+                                             storageMode=storageModeGSI) \
+            if self.enableShardAffinity else self.rest.set_indexer_params(redistributeIndexes='true',
+                                                                          storageMode=storageModeGSI)
             self.sleep(10, "sleep  after setting indexer params")
-        if self.fts_nodes>0:
+        if self.fts_nodes>0 and self.fts_nodes > len(self.cluster.fts_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
                                              int(server.mcdMemoryReserved - 100
                                                  )})
@@ -491,7 +442,8 @@ class Murphy(BaseTestCase, OPD):
             self.perform_load(cluster=self.cluster,
                               buckets=self.cluster.buckets,
                               overRidePattern=[100,0,0,0,0],
-                              validate_data=False)
+                              validate_data=False,
+                              wait_for_stats=False)
 
         self.PrintStep("Step 3: Create %s items: %s" % (self.num_items, self.key_type))
         for bucket in self.cluster.buckets:
@@ -503,7 +455,8 @@ class Murphy(BaseTestCase, OPD):
             self.perform_load(cluster=self.cluster,
                               buckets=self.cluster.buckets,
                               overRidePattern=[100,0,0,0,0],
-                              validate_data=False)
+                              validate_data=False,
+                              wait_for_stats=False)
 
         for bucket in self.cluster.buckets:
             self.generate_docs(doc_ops=["update"],
@@ -514,7 +467,8 @@ class Murphy(BaseTestCase, OPD):
             self.perform_load(cluster=self.cluster,
                               buckets=self.cluster.buckets,
                               overRidePattern=[0,0,100,0,0],
-                              validate_data=False)
+                              validate_data=False,
+                              wait_for_stats=False)
 
         if self.cluster.cbas_nodes:
             self.drCBAS.create_datasets(self.cluster.buckets)

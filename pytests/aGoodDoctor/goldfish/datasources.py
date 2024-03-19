@@ -14,6 +14,11 @@ from com.couchbase.test.docgen import DRConstants
 from com.couchbase.test.docgen import WorkLoadSettings
 from java.util import HashMap
 from TestInput import TestInputSingleton
+from CbasLib.CBASOperations import CBASHelper
+from goldfish.CbasUtil import execute_statement_on_cbas
+from com.couchbase.client.core.error import LinkExistsException
+import random
+import string
 
 
 class MongoDB(object):
@@ -25,8 +30,16 @@ class MongoDB(object):
         self.port = 27017
         self.atlas = atlas
         self.connString = "mongodb"
+        self.source_name = "Mongo_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+        self.name = self.source_name
         self.type = "onPrem"
         self.collections = list()
+        self.primary_key = "_id"
+        self.link_name = self.type + "_" + self.source_name
+        
+        self.cbas_queries = list()
+        self.cbas_collections = list()
+        self.query_map = dict()
 
         if self.atlas:
             self.connString = self.connString + "+srv";
@@ -36,13 +49,70 @@ class MongoDB(object):
     def set_mongo_database(self, name):
         self.database = name
 
-    def set_mongo_collections(self):
+    def set_collections(self):
         for i in range(self.loadDefn.get("collections")):
             self.collections.append("volCollection" + str(i))
 
-    def create_link(self, link_name):
-        link_cmd = 'CREATE LINK Default.' + link_name + " TYPE KAFKA WITH { 'sourceDetails': {'source': 'MONGODB', 'connectionFields':{ 'connectionUri': '" + self.connString + '\' }}};'
-        return link_cmd
+    def create_link(self, cluster):
+        client = cluster.SDKClients[0].cluster
+        link_cmd = 'CREATE LINK Default.' + self.link_name + " TYPE KAFKA WITH { 'sourceDetails': {'source': 'MONGODB', 'connectionFields':{ 'connectionUri': '" + self.connString + '\' }}};'
+        execute_statement_on_cbas(client, link_cmd)
+        try:
+            execute_statement_on_cbas(client, link_cmd)
+        except LinkExistsException:
+            pass
+
+    def create_cbas_collections(self, cluster, num_collections=None):
+        client = cluster.SDKClients[0].cluster
+        num_collections = num_collections or len(self.collections)
+        i = 0
+        while i < num_collections:
+            mongo_collection = self.collections[i%len(self.collections)]
+            cbas_coll_name = self.link_name + "_volCollection_" + str(i)
+            self.cbas_collections.append(cbas_coll_name)
+            i += 1
+            self.coll_statement = "CREATE COLLECTION `{}` PRIMARY KEY (`_id`: string) ON {}.{} AT {};".format(
+                                    cbas_coll_name, self.source_name, mongo_collection, self.link_name)
+            execute_statement_on_cbas(client, self.coll_statement)
+
+
+class s3(object):
+
+    def __init__(self, username=None, password=None):
+        self.accessKeyId = username
+        self.secretAccessKey = password
+        self.type = "s3"
+        self.dataset = "external"
+        self.collections = list()
+        self.primary_key = None
+        self.region = "us-east-1"
+        self.link_name = "s3_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+        self.cbas_queries = list()
+        self.cbas_collections = list()
+        self.query_map = dict()
+
+    def set_collections(self):
+        for i in range(self.loadDefn.get("collections")):
+            self.collections.append("volCollection" + str(i))
+
+    def create_link(self, cluster):
+        rest = CBASHelper(cluster.nebula.endpoint)
+        params = {'dataverse': 'Default', "name": self.link_name, "type": "s3", 'accessKeyId': self.accessKeyId,
+                  'secretAccessKey': self.secretAccessKey,
+                  "region": self.region}
+        rest.analytics_link_operations(method="POST", params=params)
+        
+    def create_cbas_collections(self, cluster, num_collections=None):
+        client = cluster.SDKClients[0].cluster
+        num_collections = num_collections or len(self.collections)
+        i = 0
+        while i < num_collections:
+            cbas_coll_name = self.link_name + "_volCollection_" + str(i)
+            self.cbas_collections.append(cbas_coll_name)
+            i += 1
+            self.coll_statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
+                                    cbas_coll_name, "copyfroms3-2.5b", self.link_name, "")
+            execute_statement_on_cbas(client, self.coll_statement)
 
 
 class MongoWorkload():
