@@ -60,12 +60,12 @@ class CapellaBaseTest(CouchbaseBaseTest):
                              "eventing": "eventing"}
         provider = self.input.param("provider", AWS.__str__).lower()
         self.compute = {
-            "data": self.input.param("kv_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D2s_v5"),
-            "query": self.input.param("n1ql_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D2s_v5"),
-            "index": self.input.param("gsi_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D2s_v5"),
-            "search": self.input.param("fts_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D2s_v5"),
-            "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D2s_v5"),
-            "eventing": self.input.param("eventing_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D2s_v5"),
+            "data": self.input.param("kv_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "query": self.input.param("n1ql_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "index": self.input.param("gsi_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "search": self.input.param("fts_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "eventing": self.input.param("eventing_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
             }
         aws_storage_range = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
         aws_min_iops = [3000, 4370, 5740, 7110, 8480, 9850, 11220, 12590, 13960, 15330, 16000]
