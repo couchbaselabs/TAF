@@ -151,9 +151,8 @@ class ListAlert(GetAlert):
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"],
             }
-            if not any(element in [
-                "organizationOwner", "projectOwner",
-                "projectManager", "projectViewer", "projectDataReader"] for
+            if not any(element in ["organizationOwner", "projectOwner",
+                                   "projectManager", "projectViewer"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
