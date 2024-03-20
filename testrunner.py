@@ -14,11 +14,11 @@ from pprint import pprint
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "platform_utils/ssh_util",
             "connections", "constants"] + sys.path
-from framework_lib.framework import HelperLib
-
-from sdk_client3 import SDKClient
-from remote.remote_util import RemoteMachineShellConnection
 from TestInput import TestInputParser, TestInputSingleton
+from doc_loader.sirius import SiriusClient
+from framework_lib.framework import HelperLib
+from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 from xunit import XUnitTestResult
 
 
@@ -72,6 +72,11 @@ def main():
     # ensure command line params get higher priority
     runtime_test_params.update(TestInputSingleton.input.test_params)
     TestInputSingleton.input.test_params = runtime_test_params
+
+    HelperLib.register_signal_handlers()
+
+    if options.launch_sirius:
+        SiriusClient.start_sirius(port="4000")
 
     print("Global Test input params:")
     pprint(TestInputSingleton.input.test_params)
@@ -248,6 +253,8 @@ def main():
                 TestInputSingleton.input.param("stop-on-failure", False):
             print("Test fails, all of the following tests will be skipped!!!")
             break
+
+    HelperLib.cleanup()
 
     if "makefile" in TestInputSingleton.input.test_params:
         # Print fail for those tests which failed and do sys.exit() error code

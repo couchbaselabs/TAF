@@ -164,7 +164,10 @@ class ServerTasks(object):
                             track_failures=True,
                             preserve_expiry=None,
                             sdk_retry_strategy=None,
-                            iterations=1):
+                            iterations=1,
+                            ignore_exceptions=[],
+                            retry_exception=[],
+                            load_using="inbuilt_py_sdk"):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
@@ -184,25 +187,48 @@ class ServerTasks(object):
                                        scope=scope, collection=collection)
                 clients.append(client)
             if not ryow:
-                _task = jython_tasks.LoadDocumentsGeneratorsTask(
-                    cluster, self.jython_task_manager, bucket, clients,
-                    [generator], op_type,
-                    exp, random_exp=random_exp, exp_unit="seconds", flag=flag,
-                    persist_to=persist_to, replicate_to=replicate_to,
-                    batch_size=batch_size,
-                    timeout_secs=timeout_secs, time_unit=time_unit,
-                    compression=compression,
-                    process_concurrency=process_concurrency,
-                    print_ops_rate=print_ops_rate, retries=retries,
-                    durability=durability, task_identifier=task_identifier,
-                    skip_read_on_error=skip_read_on_error,
-                    suppress_error_table=suppress_error_table,
-                    scope=scope, collection=collection,
-                    monitor_stats=monitor_stats,
-                    track_failures=track_failures,
-                    preserve_expiry=preserve_expiry,
-                    sdk_retry_strategy=sdk_retry_strategy,
-                    iterations=iterations)
+                if load_using == "sirius_go_sdk":
+                    _task = jython_tasks.RestBasedDocLoaderAbstract(
+                        cluster, self.jython_task_manager, bucket, clients,
+                        [generator], op_type,
+                        exp, random_exp=random_exp, exp_unit="seconds", flag=flag,
+                        persist_to=persist_to, replicate_to=replicate_to,
+                        batch_size=batch_size,
+                        timeout_secs=timeout_secs, time_unit=time_unit,
+                        compression=compression,
+                        process_concurrency=process_concurrency,
+                        print_ops_rate=print_ops_rate, retries=retries,
+                        durability=durability, task_identifier=task_identifier,
+                        skip_read_on_error=skip_read_on_error,
+                        suppress_error_table=suppress_error_table,
+                        sdk_client_pool=cluster.sdk_client_pool,
+                        scope=scope, collection=collection,
+                        monitor_stats=monitor_stats,
+                        track_failures=track_failures,
+                        preserve_expiry=preserve_expiry,
+                        sdk_retry_strategy=sdk_retry_strategy,
+                        iterations=iterations, ignore_exceptions=ignore_exceptions,
+                        retry_exception=retry_exception, retry_attempts=0)
+                else:
+                    _task = jython_tasks.LoadDocumentsGeneratorsTask(
+                        cluster, self.jython_task_manager, bucket, clients,
+                        [generator], op_type, exp,
+                        random_exp=random_exp, exp_unit="seconds", flag=flag,
+                        persist_to=persist_to, replicate_to=replicate_to,
+                        batch_size=batch_size,
+                        timeout_secs=timeout_secs, time_unit=time_unit,
+                        compression=compression,
+                        process_concurrency=process_concurrency,
+                        print_ops_rate=print_ops_rate, retries=retries,
+                        durability=durability, task_identifier=task_identifier,
+                        skip_read_on_error=skip_read_on_error,
+                        suppress_error_table=suppress_error_table,
+                        scope=scope, collection=collection,
+                        monitor_stats=monitor_stats,
+                        track_failures=track_failures,
+                        preserve_expiry=preserve_expiry,
+                        sdk_retry_strategy=sdk_retry_strategy,
+                        iterations=iterations)
             else:
                 majority_value = (bucket.replicaNumber + 1) / 2 + 1
 

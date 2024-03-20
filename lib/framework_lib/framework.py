@@ -1,5 +1,7 @@
 import os
 import re
+from signal import signal, SIGINT, SIGTERM
+
 import requests
 import sys
 from argparse import ArgumentParser
@@ -8,6 +10,7 @@ from glob import glob
 from unittest import TestLoader
 from xml.dom.minidom import parse as xml_parse
 
+from doc_loader.sirius import SiriusClient
 from platform_constants import taf
 
 
@@ -20,6 +23,21 @@ class HelperLib(object):
         if msg is not None:
             print("Error: %s" % msg)
         sys.exit(exit_code)
+
+    @staticmethod
+    def handle_kill_signal(signum, frame):
+        print(f"Critical:: Abrupt termination due to signal {signum}")
+        HelperLib.cleanup()
+        sys.exit(signum)
+
+    @staticmethod
+    def register_signal_handlers():
+        signal(SIGINT, HelperLib.handle_kill_signal)
+        signal(SIGTERM, HelperLib.handle_kill_signal)
+
+    @staticmethod
+    def cleanup():
+        SiriusClient.terminate_sirius()
 
     @staticmethod
     def validate_python_version(current_version):
@@ -98,6 +116,9 @@ class HelperLib(object):
         parser.add_argument("-l", "--log-level",
                             dest="loglevel", default="INFO",
                             choices=["DEBUG", "INFO", "WARNING", "CRITICAL"])
+        parser.add_argument("--launch_sirius", action="store_true",
+                            dest="launch_sirius", default=False,
+                            help="If enabled, will start Sirius as subprocess")
         options = parser.parse_args()
 
         # Validate input options
@@ -417,3 +438,7 @@ class HelperLib(object):
             print("Warning: unknown filtertype given (only include/exclude "
                   "supported)!")
         return tests
+
+    @staticmethod
+    def launch_sirius_client(port=4000):
+        SiriusClient.start_sirius(port=port)
