@@ -4,6 +4,8 @@ from threading import Lock
 
 from global_vars import logger
 
+IDENTIFIER_TOKEN = "UNIQUE_" + str(int(time.time()))
+
 
 def sleep(seconds, message=None, log_type="test"):
     """
