@@ -68,7 +68,7 @@ def create_log_file(log_config_file_name, log_file_name):
 def main():
     names, runtime_test_params, arg_i, arg_p, options = parse_args()
     # get params from command line
-    TestInputSingleton.input = TestInputParser.get_test_input(sys.argv)
+    TestInputSingleton.input = TestInputParser.get_test_input(options)
     # ensure command line params get higher priority
     runtime_test_params.update(TestInputSingleton.input.test_params)
     TestInputSingleton.input.test_params = runtime_test_params

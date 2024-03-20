@@ -1,8 +1,8 @@
 import getopt
 import re
 import logging
-import configparser
 import os
+from configparser import ConfigParser
 
 from builds.build_query import BuildQuery
 from cb_constants import constants
@@ -125,49 +125,31 @@ class TestInputParser:
         pass
 
     @staticmethod
-    def get_test_input(argv):
-        # If file is given use parse_from_file
-        # If its from command line
-        (opts, args) = getopt.getopt(argv[1:],
-                                     'ht:c:v:s:i:p:l:m:d:e:r:g:', [])
-        # First let's loop over and find out if user has asked for help
-        # If it has i
+    def get_test_input(options):
         params = dict()
-        has_ini = False
-        ini_file = ''
-        for option, argument in opts:
-            if option == '-h':
-                print('usage')
-                return
-            if option == '-i':
-                has_ini = True
-                ini_file = argument
-            if option == '-p':
-                """
-                Takes in a string of the form "p1=v1,v2,p2=v3,p3=v4,v5,v6"
-                and converts to a dictionary of the form,
-                {"p1":"v1,v2", "p2":"v3", "p3":"v4,v5,v6"}
-                """
-                argument_split = [a.strip() for a in re.split("[,]?([^,=]+)=",
-                                                              argument)[1:]]
-                pairs = dict(zip(argument_split[::2], argument_split[1::2]))
-                for pair in pairs.items():
-                    argument_list = [a.strip() for a in pair[1].split(",")]
-                    if len(argument_list) > 1:
-                        # if the parameter had multiple entries separated
-                        # by comma then store as a list
-                        # ex. {'vbuckets':[1,2,3,4,100]}
-                        params[pair[0]] = argument_list
-                    else:
-                        # if parameter only had one entry then store
-                        # as a string. ex. {'product':'cb'}
-                        params[pair[0]] = argument_list[0]
+        if options.params:
+            """
+            Takes in a string of the form "p1=v1,v2,p2=v3,p3=v4,v5,v6"
+            and converts to a dictionary of the form,
+            {"p1":"v1,v2", "p2":"v3", "p3":"v4,v5,v6"}
+            """
+            argument_split = [a.strip() for a in re.split("[,]?([^,=]+)=",
+                                                          options.params)[1:]]
+            pairs = dict(zip(argument_split[::2], argument_split[1::2]))
+            for pair in pairs.items():
+                argument_list = [a.strip() for a in pair[1].split(",")]
+                if len(argument_list) > 1:
+                    # if the parameter had multiple entries separated
+                    # by comma then store as a list
+                    # ex. {'vbuckets':[1,2,3,4,100]}
+                    params[pair[0]] = argument_list
+                else:
+                    # if parameter only had one entry then store
+                    # as a string. ex. {'product':'cb'}
+                    params[pair[0]] = argument_list[0]
 
-        if has_ini:
-            t_input = TestInputParser.parse_from_file(ini_file)
-            # Now let's get the test specific parameters
-        else:
-            t_input = TestInputParser.parse_from_command_line(argv)
+        t_input = TestInputParser.parse_from_file(options.ini)
+        # Now let's get the test specific parameters
         t_input.test_params = params
 
         # Do not override the command line value
@@ -183,7 +165,7 @@ class TestInputParser:
         servers = []
         ips = []
         t_input = TestInput()
-        config = configparser.ConfigParser()
+        config = ConfigParser()
         config.read(input_file)
         sections = config.sections()
         global_properties = {}
@@ -423,79 +405,6 @@ class TestInputParser:
             if option == 'rest_password':
                 membase_settings.rest_password = config.get(section, option)
         return membase_settings
-
-    @staticmethod
-    def parse_from_command_line(argv):
-        t_input = TestInput()
-        try:
-            # -f : won't be parse here anynore
-            # -s will have comma separated list of servers
-            # -t : wont be parsed here anymore
-            # -v : version
-            # -u : url
-            # -b : will have the path to cli
-            # -k : key file
-            # -p : for smtp ( taken care of by jenkins)
-            # -o : taken care of by jenkins
-            servers = []
-            membase_setting = None
-            (opts, args) = getopt.getopt(argv[1:], 'h:t:c:i:p:', [])
-            # First let's loop over and find out if user has asked for help
-            need_help = False
-            for option, argument in opts:
-                if option == "-h":
-                    print('Usage...')
-                    need_help = True
-                    break
-            if need_help:
-                return
-            # First let's populate the server list and the version number
-            for option, argument in opts:
-                if option == "-s":
-                    # Handle server list
-                    servers = TestInputParser.handle_command_line_s(argument)
-                elif option == "-u" or option == "-v":
-                    _ = TestInputParser.handle_command_line_u_or_v(
-                        option, argument)
-
-            # Now we can override the username pass and cli_path info
-            for option, argument in opts:
-                if option == "-k":
-                    # Handle server list
-                    for server in servers:
-                        if server.ssh_key == '':
-                            server.ssh_key = argument
-                elif option == "--username":
-                    # Handle server list
-                    for server in servers:
-                        if server.ssh_username == '':
-                            server.ssh_username = argument
-                elif option == "--password":
-                    # Handle server list
-                    for server in servers:
-                        if server.ssh_password == '':
-                            server.ssh_password = argument
-                elif option == "-b":
-                    # Handle server list
-                    for server in servers:
-                        if server.cli_path == '':
-                            server.cli_path = argument
-            # loop over stuff once again and set the default
-            # value
-            for server in servers:
-                if server.ssh_username == '':
-                    server.ssh_username = 'root'
-                if server.ssh_password == '':
-                    server.ssh_password = 'northscale!23'
-                if not server.port:
-                    server.port = constants.port
-            t_input.servers = servers
-            t_input.membase_settings = membase_setting
-            return t_input
-        except Exception:
-            log = logging.getLogger()
-            log.error("Unable to parse input arguments")
-            raise
 
     @staticmethod
     def handle_command_line_u_or_v(option, argument):
