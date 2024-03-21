@@ -7,9 +7,8 @@ Created on Sep 25, 2017
 import json
 import urllib
 import requests
-import numbers
 
-from cb_constants import CbServer
+from Cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
 from membase.api import httplib2
 
@@ -17,11 +16,14 @@ from membase.api import httplib2
 class CBASHelper(RestConnection):
     def __init__(self, cbas_node):
         super(CBASHelper, self).__init__(cbas_node)
-        self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
-        if CbServer.use_https:
-            self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
         if cbas_node.type == "columnar":
-            self.cbas_base_url = "https://{0}:{1}".format(self.ip, cbas_node.cbas_port)
+            self.cbas_base_url = "https://{0}:{1}".format(
+                self.ip, cbas_node.nebula_rest_port)
+        else:
+            self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
+            if CbServer.use_https:
+                self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
+
 
     def createConn(self, bucket, username, password):
         pass
@@ -78,31 +80,6 @@ class CBASHelper(RestConnection):
                            .format(status, content))
             raise Exception("Analytics Service API failed")
 
-    def get_json(self, content="", json_data=None):
-        if not json_data:
-            json_data = json.loads(content)
-
-        def _convert_json(parsed_json):
-            new_json = None
-            if isinstance(parsed_json, list):
-                new_json = []
-                for item in parsed_json:
-                    new_json.append(_convert_json(item))
-            elif isinstance(parsed_json, dict):
-                new_json = {}
-                for key, value in parsed_json.items():
-                    key = str(key)
-                    new_json[key] = _convert_json(value)
-            elif isinstance(parsed_json, unicode):
-                new_json = str(parsed_json)
-            elif isinstance(parsed_json,
-                            (int, float, long, numbers.Real, numbers.Integral,
-                             str)):
-                new_json = parsed_json
-            return new_json
-
-        return _convert_json(json_data)
-
     def execute_parameter_statement_on_cbas(self, statement, mode, pretty=True,
                                             timeout=70, client_context_id=None,
                                             username=None, password=None,
@@ -156,8 +133,9 @@ class CBASHelper(RestConnection):
             password = self.password
 
         api = self.cbas_base_url + "/analytics/admin/active_requests"
+        headers = self._create_headers(username, password)
         status, content, response = self._http_request(
-            api, 'DELETE',params=payload, timeout=60)
+            api, 'DELETE', params=payload, headers=headers, timeout=600)
 
         if hasattr(response, "status"):
             status_code = response.status
@@ -589,7 +567,7 @@ class CBASHelper(RestConnection):
         if not password:
             password = rest_conn.password
 
-        api = rest_conn.baseUrl + "settings/analytics"
+        api = rest_conn.baseUrl + "/settings/analytics"
         headers = rest_conn._create_headers(username, password)
 
         try:

@@ -3,6 +3,8 @@ import subprocess
 import json
 import random
 import copy
+import re
+import string
 from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.documentgenerator import DocumentGenerator
 from threading import Thread
@@ -16,8 +18,8 @@ def perform_S3_operation(**kwargs):
     """
     aws_util_file_path = os.path.abspath(os.path.join(
         os.path.dirname(__file__), "S3.py"))
-    arguements = ["python", aws_util_file_path, kwargs.get("aws_access_key"),
-                  kwargs.get("aws_secret_key"), kwargs.get("aws_session_token")]
+    arguements = ["python3", aws_util_file_path, kwargs.get("aws_access_key"),
+                  kwargs.get("aws_secret_key"), kwargs.get("aws_session_token", "")]
 
     if kwargs.get("get_regions", False):
         arguements.append("--get_regions")
@@ -42,6 +44,9 @@ def perform_S3_operation(**kwargs):
         if kwargs.get("empty_bucket", False):
             arguements.append("--empty_bucket")
 
+        if kwargs.get("get_bucket_objects", False):
+            arguements.append("--get_objects_in_bucket")
+
         if kwargs.get("upload_file", False):
             arguements.append("--upload_file")
             arguements.append(kwargs.get("src_path", ""))
@@ -57,9 +62,11 @@ def perform_S3_operation(**kwargs):
         elif kwargs.get("delete_file", False):
             arguements.append("--delete_file")
             arguements.append(kwargs.get("file_path", ""))
+
     response = subprocess.Popen(arguements, stdin=subprocess.PIPE,
                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     output, error = response.communicate()
+
     if error and "import sitecustomize" not in str(error):
         raise Exception(str(error))
     else:
@@ -102,7 +109,8 @@ class S3DataHelper():
         self.n1ql_helper = n1ql_helper
 
     @staticmethod
-    def generate_folder(no_of_folder, max_depth, root_path=""):
+    def generate_folder(no_of_folder, max_depth, common_folder_pattern,
+                        folder_pattern, root_path=""):
         """
         Generates a list of folders.
         :param no_of_folder: no of folder paths to be generated.
@@ -113,16 +121,25 @@ class S3DataHelper():
         """
         folder_paths = [root_path]
 
-        if not no_of_folder or not max_depth:
-            return folder_paths
-        else:
+        if no_of_folder and common_folder_pattern:
+            for _ in range(no_of_folder):
+                path = ''
+                for directory in re.split('{|}', folder_pattern):
+                    if 'string' in directory:
+                        path +=  ''.join(random.choice(string.ascii_letters) for _ in range(10))
+                    elif 'int' in directory:
+                        path +=  ''.join(random.choice(string.digits) for _ in range(10))
+                    else:
+                        path += directory
+                folder_paths.append(path)
+        elif no_of_folder and max_depth:
             for i in xrange(0, no_of_folder):
                 depth = random.randint(1, max_depth)
                 path = copy.deepcopy(root_path)
                 for j in xrange(0, depth):
                     path += "folder{0}/".format(str(random.randint(0, no_of_folder)))
                 folder_paths.append(path)
-            return folder_paths
+        return folder_paths
 
     @staticmethod
     def generate_filenames(no_of_files, formats=["json", "csv", "tsv",
@@ -187,7 +204,7 @@ class S3DataHelper():
             no_of_folders, max_folder_depth, header, null_key, operation,
             bucket, no_of_docs, batch_size=10, exp=0, durability="",
             mutation_num=0, randomize_header=False, large_file=False,
-            missing_field=[False]):
+            missing_field=[False], common_folder_pattern=False, folder_pattern=None):
         """
         Uploads S3 files based on data in CB bucket.
         :param key: string, doc key
@@ -216,9 +233,11 @@ class S3DataHelper():
         self.filenames = sorted(S3DataHelper.generate_filenames(
             no_of_files, formats=file_formats))
         self.folders = S3DataHelper.generate_folder(no_of_folders,
-                                                    max_folder_depth)
+                                                    max_folder_depth,
+                                                    common_folder_pattern,
+                                                    folder_pattern)
 
-        self.n1ql_helper.create_primary_index()
+        self.n1ql_helper.create_primary_index(server=self.cluster.query_nodes[0])
 
         tasks = self.load_data_in_bucket(
             folders=self.folders, filenames=self.filenames,
@@ -287,7 +306,8 @@ class S3DataHelper():
         retry = 0
         while retry < 5:
             try:
-                n1ql_result = self.n1ql_helper.run_cbq_query(query)["results"]
+                n1ql_result = self.n1ql_helper.run_cbq_query(query,
+                    server=self.cluster.query_nodes[0])["results"]
                 break
             except Exception:
                 retry += 1
