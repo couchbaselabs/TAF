@@ -31,7 +31,7 @@ class ColumnarBaseTest(BaseTestCase):
         self.sdk_clients_per_user = self.input.param("sdk_clients_per_user", 1)
 
         if self.use_sdk_for_cbas:
-            for instance in self.project.instances:
+            for instance in self.tenant.columnar_instances:
                 self.init_sdk_pool_object(
                     instance, self.sdk_clients_per_user,
                     instance.api_access_key, instance.api_secret_key)
@@ -75,7 +75,7 @@ class ColumnarBaseTest(BaseTestCase):
 
     def tearDown(self):
         if self.perform_gf_instance_cleanup:
-            for instance in self.project.instances:
+            for instance in self.tenant.columnar_instances:
                 self.cbas_util.cleanup_cbas(instance)
 
         super(ColumnarBaseTest, self).tearDown()

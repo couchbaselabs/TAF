@@ -605,7 +605,7 @@ class StandaloneCollection(ColumnarBaseTest):
                        "doc_size": self.doc_size, "where_clause_for_delete_op": "alias.id in (SELECT VALUE "
                                                                                 "x.id FROM {0} as x limit {1})"}))
 
-        jobs.put((self.columnar_utils.scale_columnar_instance,
+        jobs.put((self.columnar_utils.scale_instance,
                   {"pod": self.pod, "user": self.user, "cluster": self.cluster,
                    "nodes": 2}))
 

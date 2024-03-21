@@ -8,7 +8,7 @@ import json
 import urllib
 import requests
 
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
 from membase.api import httplib2
 

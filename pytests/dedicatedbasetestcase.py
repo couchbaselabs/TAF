@@ -124,12 +124,14 @@ class CapellaBaseTest(CouchbaseBaseTest):
                             self.input.capella.get("secret_key"),
                             self.input.capella.get("access_key"))
             tenant.name = self.input.capella.get("capella_user").split("@")[0]
-            if not (self.input.capella.get("access_key") and\
-                self.input.capella.get("secret_key")):
+            if not (self.input.capella.get("access_key") and
+                    self.input.capella.get("secret_key")):
                 self.log.info("Creating API keys for tenant...")
-                resp = CapellaUtils.create_access_secret_key(self.pod, tenant, tenant.name)
+                resp = CapellaUtils.create_access_secret_key(
+                    self.pod, tenant, tenant.name)
                 tenant.api_secret_key = resp["secret"]
                 tenant.api_access_key = resp["access"]
+                tenant.api_key_id = resp["id"]
             self.tenants.append(tenant)
             if TestInputSingleton.input.capella.get("project", None):
                 tenant.projects.append(TestInputSingleton.input.capella.get("project"))

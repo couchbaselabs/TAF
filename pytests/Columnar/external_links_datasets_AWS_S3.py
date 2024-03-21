@@ -14,7 +14,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         super(S3LinksDatasets, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.instance = self.project.instances[0]
+        self.instance = self.tenant.columnar_instances[0]
 
         self.aws_access_key = self.input.param("aws_access_key")
         self.aws_secret_key = self.input.param("aws_secret_key")

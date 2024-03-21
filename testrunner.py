@@ -101,27 +101,16 @@ def main():
         print("Cases from GROUPs '%s' will be excluded"
               % runtime_test_params["EXCLUDE_GROUP"])
 
+    test_to_be_exec = []
     for name in names:
-        start_time = time.time()
-
-        # Reset SDK/Shell connection counters
-        RemoteMachineShellConnection.connections = 0
-        RemoteMachineShellConnection.disconnections = 0
-        SDKClient.sdk_connections = 0
-        SDKClient.sdk_disconnections = 0
-
         argument_split = [a.strip()
                           for a in re.split("[,]?([^,=]+)=", name)[1:]]
         params = dict(zip(argument_split[::2], argument_split[1::2]))
-
-        # Note that if ALL is specified at runtime then tests
-        # which have no groups are still run - just being explicit on this
-
         if "GROUP" in runtime_test_params \
                 and "ALL" not in runtime_test_params["GROUP"].split(";"):
             # Params is the .conf file parameters.
             if 'GROUP' not in params:
-                # this test is not in any groups so we do not run it
+                # this test is not in any groups, so we do not run it
                 print("Test '%s' skipped, group requested but test has no group"
                       % name)
                 continue
@@ -142,6 +131,24 @@ def main():
                         & set(params["GROUP"].split(";"))) > 0:
                 print("Test '%s' skipped, is in an excluded group" % name)
                 continue
+        test_to_be_exec.append(name)
+    TestInputSingleton.input.test_params["no_of_test_identified"] = len(test_to_be_exec)
+
+    for name in test_to_be_exec:
+        start_time = time.time()
+
+        # Reset SDK/Shell connection counters
+        RemoteMachineShellConnection.connections = 0
+        RemoteMachineShellConnection.disconnections = 0
+        SDKClient.sdk_connections = 0
+        SDKClient.sdk_disconnections = 0
+
+        argument_split = [a.strip()
+                          for a in re.split("[,]?([^,=]+)=", name)[1:]]
+        params = dict(zip(argument_split[::2], argument_split[1::2]))
+
+        # Note that if ALL is specified at runtime then tests
+        # which have no groups are still run - just being explicit on this
 
         # Create Log Directory
         logs_folder = os.path.join(root_log_dir, "test_%s" % case_number)
@@ -180,9 +187,9 @@ def main():
             result = unittest.TextTestRunner(verbosity=2).run(suite)
             if TestInputSingleton.input.param("rerun") \
                     and (result.failures or result.errors):
-                print("#"*60, "\n",
+                print("#" * 60, "\n",
                       "## \tTest Failed: Rerunning it one more time",
-                      "\n", "#"*60)
+                      "\n", "#" * 60)
                 print("####### Running test with trace logs enabled #######")
                 TestInputSingleton.input.test_params["log_level"] = "debug"
                 result = unittest.TextTestRunner(verbosity=2).run(suite)
