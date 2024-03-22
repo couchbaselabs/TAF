@@ -2171,6 +2171,66 @@ class basic_ops(ClusterSetup):
 
         self.assertFalse(self.crud_failure, "Crud failure observed")
 
+    def test_hash_table_during_compaction_expiry(self):
+        """
+        - Load TTL / non-TTL docs in parallel and wait for docs to persist
+        - Read the TTL docs to make sure they are marked as expired
+        - Do this in a loop for few times
+        - Trigger compaction and validate the temp_hash_items to zero
+        Ref: MB-61250
+        """
+        doc_gen = doc_generator(self.key, 0, self.num_items)
+        bucket = self.cluster.buckets[0]
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cb_stats = Cbstats(shell)
+
+        non_ttl_task = self.task.async_load_gen_docs(
+            self.cluster, bucket, doc_gen,
+            DocLoading.Bucket.DocOps.CREATE, batch_size=1000,
+            process_concurrency=2, print_ops_rate=False,
+            skip_read_on_error=True, suppress_error_table=True,
+            sdk_client_pool=self.sdk_client_pool, iterations=-1)
+
+        self.log.info("Loading ttl docs for 50 iterations")
+        for _ in range(50):
+            for i in range(5):
+                ttl_doc_gen = doc_generator("exp_docs_%s" % i, 0, 10000,
+                                            key_size=self.key_size,
+                                            doc_size=self.doc_size)
+                l_task = self.task.async_load_gen_docs(
+                    self.cluster, bucket, ttl_doc_gen,
+                    DocLoading.Bucket.DocOps.UPDATE, exp=10, batch_size=2000,
+                    process_concurrency=3, print_ops_rate=False,
+                    skip_read_on_error=True, suppress_error_table=True,
+                    sdk_client_pool=self.sdk_client_pool, iterations=3)
+                self.task_manager.get_task_result(l_task)
+
+        # Wait for load to complete
+        non_ttl_task.end_task()
+        self.task_manager.get_task_result(non_ttl_task)
+
+        # Wait for items to get persisted
+        self.bucket_util._wait_for_stats_all_buckets(
+            self.cluster, self.cluster.buckets)
+
+        self.log.info("Running manual compaction for the bucket")
+        self.bucket_util._run_compaction(self.cluster)
+
+        self.log.info("Validating stats after compaction")
+        all_stats = cb_stats.all_stats(bucket.name)
+        vb_stats = cb_stats.vbucket_details(bucket.name)
+        shell.disconnect()
+
+        self.assertTrue(int(all_stats["ep_bg_fetched_compaction"]) > 1000,
+                        "ep_bg_fetched_compaction %s < 1000"
+                        % all_stats["ep_bg_fetched_compaction"])
+        total_docs = 0
+        for vb_num, stats in vb_stats.items():
+            total_docs += int(stats["ht_num_items"])
+            self.assertEqual(int(stats["ht_num_temp_items"]), 0,
+                             "vb-%s :: ht_num_temp_items %s != 0"
+                             % (vb_num, stats["ht_num_temp_items"]))
+
     def test_oso_backfill_not_sending_duplicate_items(self):
         """
         1. Create few collections and load initial data
