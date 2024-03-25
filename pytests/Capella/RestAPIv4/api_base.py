@@ -119,10 +119,7 @@ class APIBase(CouchbaseBaseTest):
 
         if minutes_delta:
             delta = datetime.timedelta(minutes=minutes_delta)
-            if minutes_delta < 0:
-                now = now - delta
-            elif minutes_delta > 0:
-                now = now + delta
+            now = now + delta
 
         return now.strftime('%Y-%m-%dT%H:%M:%S') + "Z"
 
@@ -440,7 +437,7 @@ class APIBase(CouchbaseBaseTest):
 
         if self.input.param("rate_limit", False):
             results = self.make_parallel_api_calls(
-                110, api_func_list, self.api_keys)
+                150, api_func_list, self.api_keys)
             for r in results:
                 self.log.info("**********************************************")
                 self.log.info("Parallel API calls for role {} took {} seconds"
