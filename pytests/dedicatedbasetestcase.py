@@ -320,9 +320,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             for tenant in self.tenants:
                 for cluster in tenant.clusters:
                     self.log.info("Destroying cluster: {}".format(cluster.id))
-                    delete_th = threading.Thread(target=CapellaUtils.destroy_cluster,
-                                                 name=cluster.id,
-                                                 args=(self.pod, tenant, cluster))
+                    delete_th = threading.Thread(
+                        target=CapellaUtils.destroy_cluster, name=cluster.id,
+                        args=(self.pod, tenant, cluster))
                     delete_th.start()
                     th.append(delete_th)
             for delete_th in th:
@@ -331,9 +331,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         if not TestInputSingleton.input.capella.get("project", None):
             th = list()
             for tenant in self.tenants:
-                delete_th = threading.Thread(target=CapellaUtils.delete_project,
-                                                 name=tenant.id,
-                                                 args=(self.pod, tenant, tenant.projects))
+                delete_th = threading.Thread(
+                    target=CapellaUtils.delete_project, name=tenant.id,
+                    args=(self.pod, tenant, tenant.projects))
                 delete_th.start()
                 th.append(delete_th)
             for delete_th in th:

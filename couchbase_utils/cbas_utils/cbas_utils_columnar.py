@@ -3831,7 +3831,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             self, cluster, no_of_objs=1, datasource=None, primary_key={},
             link=None, same_db_same_dv_for_link_and_dataset=False,
             same_db_diff_dv_for_link_and_dataset=False,
-            external_collection_name=None, database_name="Default",
+            external_collection_name=None, database_name=None,
             dataverse_name=None, storage_format=None, name_length=30,
             fixed_length=False):
         """
@@ -3894,8 +3894,10 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 else:
                     dataverse_obj = link_dataverse_obj
             else:
-                database_name = self.generate_name()
-                dataverse_name = self.generate_name()
+                if not database_name:
+                    database_name = self.generate_name()
+                if not dataverse_name:
+                    dataverse_name = self.generate_name()
                 if not self.create_database(cluster, database_name):
                     self.log.error("Error while creating database {0}".format(
                         dataverse_name, database_name))

@@ -16,11 +16,12 @@ from sdk_client3 import SDKClient
 
 class ColumnarInstance:
 
-    def __init__(self, org_id, project_id, instance_name=None, instance_id=None,
+    def __init__(self, tenant_id, project_id, instance_name=None,
+                 instance_id=None,
                  instance_endpoint=None, nebula_sdk_port=16001,
                  nebula_rest_port=18001, api_access_key=None,
                  api_secret_key=None, db_users=list()):
-        self.org_id = org_id
+        self.tenant_id = tenant_id
         self.project_id = project_id
 
         if instance_name:
@@ -29,19 +30,17 @@ class ColumnarInstance:
             self.name = "Columnar_instance{0}".format(random.randint(1, 100000))
 
         self.instance_id = instance_id
-        self.endpoint = instance_endpoint
 
         self.master = TestInputServer()
-        self.master.ip = self.endpoint
+        self.master.ip = instance_endpoint
         self.master.port = nebula_rest_port
         self.master.nebula_sdk_port = nebula_sdk_port
         self.master.nebula_rest_port = nebula_rest_port
         self.master.type = "columnar"
+        self.master.rest_username = api_access_key
+        self.master.rest_password = api_secret_key
 
         self.cbas_cc_node = self.master
-
-        self.api_access_key = api_access_key
-        self.api_secret_key = api_secret_key
 
         self.db_users = db_users
         self.type = "columnar"

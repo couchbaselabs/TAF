@@ -5,20 +5,20 @@ Created on Oct 14, 2023
 """
 import time
 
-from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils
-from pytests.dedicatedbasetestcase import CapellaBaseTest
+from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
 
 import global_vars
 from capella_utils.columnar_final import DBUser, ColumnarInstance, ColumnarUtils
 from threading import Thread
 from sdk_client3 import SDKClientPool
+from TestInput import TestInputSingleton
 
 from capella_utils.dedicated import CapellaUtils
 
 
-class ColumnarBaseTest(CapellaBaseTest):
+class ColumnarBaseTest(ProvisionedBaseTestCase):
 
     def setUp(self):
         super(ColumnarBaseTest, self).setUp()
@@ -38,7 +38,7 @@ class ColumnarBaseTest(CapellaBaseTest):
 
         def create_columnar_instance(tenant, project_id, result):
             instance_obj = ColumnarInstance(
-                org_id=tenant.id, project_id=project_id,
+                tenant_id=tenant.id, project_id=project_id,
                 instance_name=None, instance_id=None, instance_endpoint=None,
                 nebula_sdk_port=self.nebula_sdk_proxy_port,
                 nebula_rest_port=self.nebula_rest_proxy_port, db_users=list())
@@ -77,8 +77,7 @@ class ColumnarBaseTest(CapellaBaseTest):
             if not response:
                 result.append("Fetching Instance details for {0} "
                               "failed".format(instance_obj.instance_id))
-            instance_obj.endpoint = str(response["config"]["endpoint"])
-            instance_obj.master.ip = instance_obj.endpoint
+            instance_obj.master.ip = str(response["config"]["endpoint"])
 
         # Columnar clusters can be reused within a test suite, only when they
         # are deployed on single tenant under single project.
@@ -95,6 +94,9 @@ class ColumnarBaseTest(CapellaBaseTest):
             if not self.capella.get("project", None):
                 self.capella["project"] = self.tenant.project_id
 
+            self.capella["clusters"] = ",".join([
+                cluster.id for cluster in self.tenant.clusters])
+
             if isinstance(self.capella.get("instance_id"), list):
                 instance_ids = self.capella.get("instance_id")
             else:
@@ -105,12 +107,13 @@ class ColumnarBaseTest(CapellaBaseTest):
             for i in range(0, self.input.param("num_columnar_instances", 1)):
                 if instance_ids and i < len(instance_ids):
                     instance = ColumnarInstance(
-                        org_id=self.tenant.id,
+                        tenant_id=self.tenant.id,
                         project_id=self.tenant.project_id,
                         instance_name=None, instance_id=instance_ids[i],
                         instance_endpoint=None,
                         nebula_sdk_port=self.nebula_sdk_proxy_port,
-                        nebula_rest_port=self.nebula_rest_proxy_port, db_users=list())
+                        nebula_rest_port=self.nebula_rest_proxy_port,
+                        db_users=list())
                     resp = self.columnar_utils.get_instance_info(
                         self.pod, self.tenant, self.tenant.project_id,
                         instance)
@@ -176,8 +179,8 @@ class ColumnarBaseTest(CapellaBaseTest):
                         instance)
                     count += 1
                     time.sleep(10)
-                instance.api_access_key = str(resp["apikeyId"])
-                instance.api_secret_key = str(resp["secret"])
+                instance.master.rest_username = str(resp["apikeyId"])
+                instance.master.rest_password = str(resp["secret"])
         else:
             # Multiple tenants, projects and instances
             instance_count = self.input.param("num_columnar_instances", 1)
@@ -241,8 +244,8 @@ class ColumnarBaseTest(CapellaBaseTest):
                             instance)
                         count += 1
                         time.sleep(10)
-                    instance.api_access_key = str(resp["apikeyId"])
-                    instance.api_secret_key = str(resp["secret"])
+                    instance.master.rest_username = str(resp["apikeyId"])
+                    instance.master.rest_password = str(resp["secret"])
 
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
@@ -253,8 +256,13 @@ class ColumnarBaseTest(CapellaBaseTest):
 
     def tearDown(self):
         self.shutdown_task_manager()
-        if self.sdk_client_pool:
-            self.sdk_client_pool.shutdown()
+        for tenant in self.tenants:
+            for instance in tenant.columnar_instances:
+                if instance.sdk_client_pool:
+                    instance.sdk_client_pool.shutdown()
+            for cluster in tenant.clusters:
+                if cluster.sdk_client_pool:
+                    cluster.sdk_client_pool.shutdown()
 
         if self.is_test_failed() and self.get_cbcollect_info:
             # Add code to get columnar logs.
@@ -310,22 +318,28 @@ class ColumnarBaseTest(CapellaBaseTest):
                                 "to be deleted - {0}".format(
                     wait_for_instance_delete_results))
 
-            if "cloud.couchbase.com" in self.pod.url_public:
-                return
+            # So that the capella cluster get's destroyed in
+            # ProvisionedBaseTestCase teardown
+            self.capella["clusters"] = None
+
+            # On Prod env don't delete project, as the project is used
+            # across pipeline.
+            if "cloud.couchbase.com" not in self.pod.url_public:
+                self.capella["project"] = None
+            super(ColumnarBaseTest, self).tearDown()
 
             for tenant in self.tenants:
-                for project_id in self.tenants.projects:
-                    result = CapellaUtils.delete_project(
-                        self.pod, tenant, project_id)
-                    if not result:
-                        raise Exception(
-                            "Project {0} failed to be deleted".format(
-                                project_id))
+                CapellaUtils.revoke_access_secret_key(
+                    self.pod, tenant, tenant.api_key_id)
 
         if self.input.param("skip_redeploy", False):
             if (TestInputSingleton.input.test_params["case_number"] ==
                     TestInputSingleton.input.test_params["no_of_test_identified"]):
                 delete_cloud_infra()
+            else:
+                for tenant in self.tenants:
+                    CapellaUtils.revoke_access_secret_key(
+                        self.pod, tenant, tenant.api_key_id)
         else:
             self.capella["project_id"] = self.capella["instance_id"] = ""
             delete_cloud_infra()

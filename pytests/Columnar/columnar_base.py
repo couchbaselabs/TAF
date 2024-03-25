@@ -34,7 +34,8 @@ class ColumnarBaseTest(BaseTestCase):
             for instance in self.tenant.columnar_instances:
                 self.init_sdk_pool_object(
                     instance, self.sdk_clients_per_user,
-                    instance.api_access_key, instance.api_secret_key)
+                    instance.master.rest_username,
+                    instance.master.rest_password)
 
         # This is to support static remote clusters. Multiple remote cluster
         # IPs can be passed in format ip1:ip2

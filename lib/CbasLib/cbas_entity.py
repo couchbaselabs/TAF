@@ -1,7 +1,7 @@
 from TestInput import TestInputSingleton
 
 runtype = TestInputSingleton.input.param("runtype", "default").lower()
-if runtype == "columnar":
+if runtype in ["columnar", "columnar1"]:
     from cbas_entity_columnar import (
         Database as database,
         Dataverse as dataverse,
