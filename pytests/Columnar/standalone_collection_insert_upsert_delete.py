@@ -14,7 +14,7 @@ class StandaloneCollection(ColumnarBaseTest):
         super(StandaloneCollection, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.instance = self.project.instances[0]
+        self.instance = self.tenant.columnar_instances[0]
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "sanity.insert_upsert_delete_standalone_collection"

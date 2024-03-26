@@ -332,7 +332,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 CapellaUtils.revoke_access_secret_key(
                     self.pod, tenant, tenant.api_key_id)
 
-        if self.input.param("skip_redeploy", False):
+        if self.input.param("skip_redeploy", True):
             if (TestInputSingleton.input.test_params["case_number"] ==
                     TestInputSingleton.input.test_params["no_of_test_identified"]):
                 delete_cloud_infra()
