@@ -16,7 +16,7 @@ from Columnar.columnar_base import ColumnarBaseTest
 class StandaloneCollection(ColumnarBaseTest):
     def setUp(self):
         super(StandaloneCollection, self).setUp()
-        self.cluster = self.project.instances[0]
+        self.cluster = self.tenant.columnar_instances[0]
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.doc_size = self.input.param("doc_size", 1024)
@@ -218,7 +218,7 @@ class StandaloneCollection(ColumnarBaseTest):
                 self.cluster):
             self.fail("Error while deleting cbas entities")
 
-        # super(StandaloneCollection, self).tearDown()
+        super(StandaloneCollection, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def start_source_ingestion(self, no_of_docs=1000000, doc_size=100000):
@@ -292,10 +292,13 @@ class StandaloneCollection(ColumnarBaseTest):
     def test_create_drop_standalone_collection_duplicate_key(self):
         no_of_collection = self.input.param("num_of_standalone_coll", 1)
         key = self.input.param("key", None)
+        expected_error=  self.input.param("error_message", None)
         for i in range(0, no_of_collection):
             dataset_name = self.cbas_util.generate_name()
             cmd = "Create Dataset {} Primary Key({})".format(dataset_name, key)
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, cmd)
+            if not self.cbas_util.validate_error_in_response(status, errors, expected_error):
+                self.fail("Verification pending because of issue")
             # verficiation pending due to opened issue
     def test_create_drop_standalone_collection(self):
         database_name = self.input.param("database", "Default")
@@ -422,9 +425,10 @@ class StandaloneCollection(ColumnarBaseTest):
         for synonym in synonyms:
             # load data to standalone collections
             jobs.put((self.cbas_util.crud_on_standalone_collection,
-                      {"cluster": self.cluster, "collection_name": synonyms.name,
+                      {"cluster": self.cluster, "collection_name": synonym.name,
                        "dataverse_name": synonym.dataverse_name, "database_name": synonym.database_name,
-                       "target_num_docs": self.initial_doc_count, "doc_size": self.doc_size}))
+                       "target_num_docs": self.initial_doc_count, "doc_size": self.doc_size,
+                       "where_clause_for_delete_op": "avg_rating > 0.2"}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False
@@ -602,26 +606,25 @@ class StandaloneCollection(ColumnarBaseTest):
                       {"cluster": self.cluster, "collection_name": dataset.name,
                        "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
                        "target_num_docs": self.initial_doc_count, "time_for_crud_in_mins": 5,
-                       "doc_size": self.doc_size, "where_clause_for_delete_op": "alias.id in (SELECT VALUE "
-                                                                                "x.id FROM {0} as x limit {1})"}))
+                       "doc_size": self.doc_size, "where_clause_for_delete_op": "avg_rating > 0.2"}))
 
         jobs.put((self.columnar_utils.scale_instance,
-                  {"pod": self.pod, "user": self.user, "cluster": self.cluster,
-                   "nodes": 2}))
+                  {"pod": self.pod, "tenant": self.tenant, "project_id": self.cluster.project_id, "instance": self.cluster,
+                   "nodes": 4}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False
         )
 
-        self.columnar_utils.wait_for_cluster_scaling_operation_to_complete(
-            self.pod, self.user, self.cluster)
+        self.columnar_utils.wait_for_instance_scaling_operation(
+            self.pod, self.tenant, self.cluster.project_id, self.cluster)
 
         if not all(results):
             self.fail("Failed to insert doc in standalone collection")
 
         # validate number of docs in standalone collection
         for dataset in datasets:
-            doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)[0]
+            doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)
             results.append(doc_count == self.initial_doc_count)
 
         if not all(results):
