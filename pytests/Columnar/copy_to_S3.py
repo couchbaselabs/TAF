@@ -13,7 +13,7 @@ from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
-from cbas_utils.cbas_utils import External_Dataset, Standalone_Dataset, Remote_Dataset
+from cbas_utils.cbas_utils_columnar import External_Dataset, Standalone_Dataset, Remote_Dataset
 from goldfishAPI.GoldfishAPIs.DocloadingAPIs.DocloadingAPIs import DocloadingAPIs
 from itertools import combinations, product
 import requests
@@ -25,7 +25,7 @@ from awsLib.s3_data_helper import perform_S3_operation
 class CopyToS3(ColumnarBaseTest):
     def setUp(self):
         super(CopyToS3, self).setUp()
-        self.cluster = self.project.instances[0]
+        self.cluster = self.tenant.columnar_instances[0]
         self.remote_cluster_id = None
         self.aws_access_key = self.input.param("aws_access_key")
         self.aws_secret_key = self.input.param("aws_secret_key")
@@ -116,8 +116,8 @@ class CopyToS3(ColumnarBaseTest):
     def capella_provisioned_cluster_setup(self):
 
         self.pod.url_public = (self.pod.url_public).replace("https://api", "https://cloudapi")
-        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.user.email, self.user.password, '')
-        resp = (self.capellaAPI.create_control_plane_api_key(self.user.org_id, 'init api keys')).json()
+        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
+        resp = (self.capellaAPI.create_control_plane_api_key(self.tenant.id, 'init api keys')).json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
         self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
         self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
@@ -128,7 +128,7 @@ class CopyToS3(ColumnarBaseTest):
         # create the first V4 API KEY WITH organizationOwner role, which will
         # be used to perform further operations on capella cluster
         resp = self.capellaAPI.org_ops_apis.create_api_key(
-            organizationId=self.user.org_id,
+            organizationId=self.tenant.id,
             name=self.cbas_util.generate_name(),
             organizationRoles=["organizationOwner"],
             description=self.cbas_util.generate_name())
@@ -189,7 +189,7 @@ class CopyToS3(ColumnarBaseTest):
         cluster_created = False
         while not cluster_created:
             resp = self.capellaAPI.cluster_ops_apis.create_cluster(
-                self.user.org_id, self.project.project_id, cluster_name,
+                self.tenant.id, self.tenant.project_id, cluster_name,
                 self.expected_result['cloudProvider'],
                 self.expected_result['couchbaseServer'],
                 self.expected_result['serviceGroups'],
@@ -206,8 +206,8 @@ class CopyToS3(ColumnarBaseTest):
         wait_start_time = time.time()
         health_status = "deploying"
         while time.time() < wait_start_time + 1500:
-            resp = (self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.user.org_id,
-                                                                        self.user.project.project_id,
+            resp = (self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.tenant.id,
+                                                                        self.tenant.project_id,
                                                                         self.remote_cluster_id)).json()
             health_status = resp[
                 "currentState"]
@@ -223,8 +223,8 @@ class CopyToS3(ColumnarBaseTest):
             self.fail("Unable to deploy a provisioned cluster for remote links")
 
         # allow 0.0.0.0/0 to allow access from anywhere
-        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.user.org_id,
-                                                                               self.user.project.project_id,
+        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.tenant.id,
+                                                                               self.tenant.project_id,
                                                                                self.remote_cluster_id, "0.0.0.0/0")
         if resp.status_code == 201:
             self.log.info("Added allowed IP 0.0.0.0/0")
@@ -240,8 +240,8 @@ class CopyToS3(ColumnarBaseTest):
 
         self.remote_cluster_username = "Administrator"
         self.remote_cluster_password = "Password#123"
-        resp = self.capellaAPI.cluster_ops_apis.create_database_user(self.user.org_id,
-                                                                     self.user.project.project_id,
+        resp = self.capellaAPI.cluster_ops_apis.create_database_user(self.tenant.id,
+                                                                     self.tenant.project_id,
                                                                      self.remote_cluster_id, "Administrator", access,
                                                                      "Password#123")
         if resp.status_code == 201:
@@ -254,8 +254,8 @@ class CopyToS3(ColumnarBaseTest):
         scope = None
         collection = None
 
-        resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.user.org_id,
-                                                              self.user.project.project_id,
+        resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.tenant.id,
+                                                              self.tenant.project_id,
                                                               self.remote_cluster_id,
                                                               bucket_name, "couchbase", "couchstore", 2000, "seqno",
                                                               "majorityAndPersistActive", 0, True, 1000000)
@@ -269,8 +269,8 @@ class CopyToS3(ColumnarBaseTest):
             self.remote_collection = "{}.{}.{}".format(bucket_name, scope, collection)
         else:
             self.remote_collection = "{}.{}.{}".format(bucket_name, "_default", "_default")
-        resp = self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.user.org_id,
-                                                                        self.user.project.project_id,
+        resp = self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.tenant.id,
+                                                                        self.tenant.project_id,
                                                                         self.remote_cluster_id)
         if resp.status_code == 200:
             self.remote_cluster_certificate = (resp.json())["certificate"]
