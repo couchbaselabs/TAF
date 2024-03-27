@@ -4,7 +4,7 @@ import time
 import requests
 
 from cb_constants import CbServer, DocLoading
-from common_lib import IDENTIFIER_TOKEN
+from pytests.sdk_workloads.go_workload import IDENTIFIER_TOKEN
 from doc_loader.sirius import SiriusClient
 from global_vars import logger
 from TestInput import TestInputSingleton

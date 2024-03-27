@@ -27,10 +27,10 @@ class SiriusClient(object):
 
     @staticmethod
     def start_sirius(port=4000):
-        print(f"Starting Sirius client on port '{port}'")
+        print("Starting Sirius client on port '{port}'".format(**{"port":port}))
         cmd = ["/bin/sh", "-c",
-               f"SIRIUS_PORT={port} ; export SIRIUS_PORT ; "
-               "cd sirius ; make build ; make clean ; "
+               "SIRIUS_PORT={port} ; export SIRIUS_PORT ; ".format(**{"port":port}),
+               "cd sirius ; make build ; make clean ; ",
                "make run"]
         fp = open("logs/sirius.log", "w")
 
@@ -40,7 +40,7 @@ class SiriusClient(object):
     def terminate_sirius():
         if SiriusClient.__running_process:
             pid = SiriusClient.__running_process.pid
-            print(f"Killing Sirius pid '{pid}'")
+            print("Killing Sirius pid '{pid}'".format(**{"pid":pid}))
             os.kill(pid, SIGTERM)
             SiriusClient.__running_process.communicate()
         SiriusClient.__running_process = None
