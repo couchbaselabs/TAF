@@ -189,7 +189,7 @@ class CBASExternalCollectionsDynamicPrefixes(CBASBaseTest):
             analytics_timeout=analytics_timeout)
         result.extend([status, cbas_result, errors])
 
-    def test_create_external_collection_with_dynamic_prefixes(self):
+    def test_create_query_external_collection_with_dynamic_prefixes(self):
         object_construction_def = "filename STRING, folder STRING, mutated INT, \
         null_key STRING, missing_field INT"
 
