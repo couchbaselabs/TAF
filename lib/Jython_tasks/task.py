@@ -8735,6 +8735,7 @@ class RestBasedSubDocLoaderAbstract(Task):
         return task
 
 
+
 class RestBasedSubDocLoader(Task):
     def __init__(self, cluster, bucket, generator,
                  op_type, exp, create_paths=False,

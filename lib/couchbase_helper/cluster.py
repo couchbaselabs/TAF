@@ -167,7 +167,7 @@ class ServerTasks(object):
                             iterations=1,
                             ignore_exceptions=[],
                             retry_exception=[],
-                            load_using="inbuilt_py_sdk"):
+                            load_using="default_loader"):
         clients = list()
         if active_resident_threshold == 100:
             if not task_identifier:
@@ -187,7 +187,7 @@ class ServerTasks(object):
                                        scope=scope, collection=collection)
                 clients.append(client)
             if not ryow:
-                if load_using == "sirius_go_sdk":
+                if load_using == "sirius_go_client":
                     _task = jython_tasks.RestBasedDocLoaderAbstract(
                         cluster, self.jython_task_manager, bucket, clients,
                         [generator], op_type,
@@ -207,7 +207,8 @@ class ServerTasks(object):
                         track_failures=track_failures,
                         preserve_expiry=preserve_expiry,
                         sdk_retry_strategy=sdk_retry_strategy,
-                        iterations=iterations, ignore_exceptions=ignore_exceptions,
+                        iterations=iterations,
+                        ignore_exceptions=ignore_exceptions,
                         retry_exception=retry_exception, retry_attempts=0)
                 else:
                     _task = jython_tasks.LoadDocumentsGeneratorsTask(

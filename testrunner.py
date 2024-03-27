@@ -15,7 +15,6 @@ sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "platform_utils/ssh_util",
             "connections", "constants"] + sys.path
 from TestInput import TestInputParser, TestInputSingleton
-from doc_loader.sirius import SiriusClient
 from framework_lib.framework import HelperLib
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
@@ -76,7 +75,7 @@ def main():
     HelperLib.register_signal_handlers()
 
     if options.launch_sirius:
-        SiriusClient.start_sirius(port="4000")
+        HelperLib.launch_sirius_client(options.sirius_url)
 
     print("Global Test input params:")
     pprint(TestInputSingleton.input.test_params)

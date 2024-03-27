@@ -119,6 +119,9 @@ class HelperLib(object):
         parser.add_argument("--launch_sirius", action="store_true",
                             dest="launch_sirius", default=False,
                             help="If enabled, will start Sirius as subprocess")
+        parse.add_argument("--sirius_url", dest="sirius_url",
+                           default="http://localhost:4000",
+                           help="Target")
         options = parser.parse_args()
 
         # Validate input options
@@ -440,5 +443,13 @@ class HelperLib(object):
         return tests
 
     @staticmethod
-    def launch_sirius_client(port=4000):
+    def launch_sirius_client(urls):
+        """
+        urls is expected to be in the format,
+            172.23.10.1:4000;172.23.10.2:4000;...
+        and we are interested in getting the intended port_number for this run.
+        So the trigger can call the script with format,
+            localhost:<port_num>
+        """
+        port = (urls.split(";")[0]).split(':')[-1]
         SiriusClient.start_sirius(port=port)

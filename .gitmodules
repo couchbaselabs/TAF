@@ -9,3 +9,7 @@
 	path = couchbase_utils/cb_server_rest_util
 	url = https://github.com/couchbaselabs/cb_server_rest_util
     branch = master
+[submodule "sirius"]
+	path = sirius
+	url = https://github.com/couchbaselabs/sirius.git
+	branch = master
