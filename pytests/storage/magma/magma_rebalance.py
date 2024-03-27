@@ -1,4 +1,6 @@
 from math import ceil
+import os
+import threading
 import time
 
 from BucketLib.BucketOperations import BucketHelper
@@ -9,6 +11,7 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
+from upgrade_lib.upgrade_helper import CbServerUpgrade
 
 
 class MagmaRebalance(MagmaBaseTest):
@@ -49,6 +52,7 @@ class MagmaRebalance(MagmaBaseTest):
         clients_per_bucket = int(ceil(max_clients / bucket_count))
         for bucket in self.cluster.buckets:
             self.cluster.sdk_client_pool.create_clients(
+                self.cluster,
                 bucket,
                 [self.cluster.master],
                 clients_per_bucket,
@@ -831,3 +835,113 @@ class MagmaRebalance(MagmaBaseTest):
 
     def test_data_load_collections_with_forced_hard_failover_rebalance_out(self):
         self.load_collections_with_rebalance(rebalance_operation="forced_hard_failover_rebalance_out")
+
+
+    def test_rebalance_large_batches(self):
+
+        # Number of docs of different sizes
+        num_2mb_docs = self.input.param("num_2mb_docs", 1000)
+        num_4mb_docs = self.input.param("num_4mb_docs", 1000)
+        num_8mb_docs = self.input.param("num_8mb_docs", 1000)
+        num_16mb_docs = self.input.param("num_16mb_docs", 500)
+        num_20mb_docs = self.input.param("num_20mb_docs", 500)
+        num_small_docs = self.input.param("num_small_docs", 5000000)
+        small_doc_size = self.input.param("small_doc_size", 2048)
+
+        multi_bucket_test = self.input.param("multi_bucket_test", False)
+        upsert_iterations = self.input.param("upsert_iterations", 0)
+        rebalance_data_load = self.input.param("rebalance_data_load", False)
+
+        spare_node1 = self.cluster.servers[1]
+        spare_node2 = self.cluster.servers[2]
+        bucket = self.cluster.buckets[0]
+
+        self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster,
+                                                               self.cluster.nodes_in_cluster)
+
+        # Loading docs of sizes 2MB - 20MB (large docs) using cbc-pillowfight
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_2mb_docs, 2548000, "2mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_4mb_docs, 4548000, "4mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_8mb_docs, 8548000, "8mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_16mb_docs, 16548000, "16mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_20mb_docs, 20548000, "20mbbig_docs")
+
+        self.sleep(20, "Wait for num_items to get reflected")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        total_upsert_iterations = upsert_iterations
+        while upsert_iterations > 0:
+            self.log.info("Upserting docs iteration: {}".format(total_upsert_iterations-upsert_iterations+1))
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_2mb_docs, 2548000, "2mbbig_docs")
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_4mb_docs, 4548000, "4mbbig_docs")
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_8mb_docs, 8548000, "8mbbig_docs")
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_16mb_docs, 16548000, "16mbbig_docs")
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_20mb_docs, 20548000, "20mbbig_docs")
+            upsert_iterations -= 1
+
+        if multi_bucket_test:
+            bucket2 = self.cluster.buckets[1]
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket2, num_small_docs, small_doc_size, threads=4)
+
+            self.sleep(20, "Wait for num_items to get reflected")
+            self.bucket_util.print_bucket_stats(self.cluster)
+
+        for bucket in self.cluster.buckets:
+            self.fetch_vbucket_size(bucket)
+
+        if rebalance_data_load:
+            self.log.info("Starting data load during rebalance..")
+            pillowfight_thread = threading.Thread(target=self.load_data_cbc_pillowfight,
+                                args=[self.cluster.master, bucket, 1000, 10548000, "10mbbig_docs1", 1, 10])
+            pillowfight_thread.start()
+
+        # Rebalancing-in a node
+        self.log.info("Rebalancing-in the node: {}".format(spare_node1.ip))
+        rebalance_in_res = self.task.rebalance(self.cluster,
+                                               to_add=[spare_node1],
+                                               to_remove=[],
+                                               retry_get_process_num=500)
+        if not rebalance_in_res:
+            self.log.info("Rebalance-in failed")
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        if rebalance_data_load:
+            pillowfight_thread.join()
+
+        if rebalance_data_load:
+            self.log.info("Starting data load during rebalance..")
+            pillowfight_thread = threading.Thread(target=self.load_data_cbc_pillowfight,
+                                args=[self.cluster.master, bucket, 1000, 10548000, "10mbbig_docs2", 1, 10])
+            pillowfight_thread.start()
+
+        # Swap rebalance of a spare node
+        self.log.info("Swap rebalance..")
+        rebalance_swap_res = self.task.rebalance(self.cluster,
+                                                to_add=[spare_node2],
+                                                to_remove=[spare_node1],
+                                                retry_get_process_num=500)
+        if not rebalance_swap_res:
+            self.log.info("Swap Rebalance failed")
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        if rebalance_data_load:
+            pillowfight_thread.join()
+
+        if rebalance_data_load:
+            self.log.info("Starting data load during rebalance..")
+            pillowfight_thread = threading.Thread(target=self.load_data_cbc_pillowfight,
+                                args=[self.cluster.master, bucket, 1000, 10548000, "10mbbig_docs3", 1, 10])
+            pillowfight_thread.start()
+
+        # Rebalance-out of a node
+        self.log.info("Rebalancing-out the node: {}".format(spare_node2.ip))
+        rebalance_out_res = self.task.rebalance(self.cluster,
+                                                to_add=[],
+                                                to_remove=[spare_node2],
+                                                retry_get_process_num=500)
+        if not rebalance_out_res:
+            self.log.info("Rebalance failed")
+        self.cluster_util.print_cluster_stats(self.cluster)
+
+        if rebalance_data_load:
+            pillowfight_thread.join()

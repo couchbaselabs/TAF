@@ -804,3 +804,49 @@ class MagmaCrashTests(MagmaBaseTest):
                                disable=False)
         self.validate_seq_itr()
         self.log.info("==test_crash_during_val_movement_across_trees ends==")
+
+
+    def test_crash_recovery_large_docs(self):
+
+        # Number of docs of different sizes
+        num_2mb_docs = self.input.param("num_2mb_docs", 1000)
+        num_4mb_docs = self.input.param("num_4mb_docs", 1000)
+        num_8mb_docs = self.input.param("num_8mb_docs", 1000)
+        num_16mb_docs = self.input.param("num_16mb_docs", 500)
+        num_20mb_docs = self.input.param("num_20mb_docs", 500)
+
+        self.log.info("====test_crash_recovery_large_docs starts====")
+
+        bucket = self.cluster.buckets[0]
+        self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster,
+                                                               self.cluster.nodes_in_cluster)
+
+        # Initial data load
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_2mb_docs, 2548000, "2mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_4mb_docs, 4548000, "4mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_8mb_docs, 8548000, "8mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_16mb_docs, 16548000, "16mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_20mb_docs, 20548000, "20mbbig_docs")
+
+        self.sleep(20, "Wait for num_items to get reflected")
+        self.bucket_util.print_bucket_stats(self.cluster)
+        self.fetch_vbucket_size(bucket)
+
+        pillowfight_thread = threading.Thread(target=self.load_data_cbc_pillowfight,
+                                args=[self.cluster.master, bucket, 20000, 1548000, "1mbbig_docs", 1, 10])
+        pillowfight_thread.start()
+        self.graceful = self.input.param("graceful", False)
+        wait_warmup = self.input.param("wait_warmup", True)
+        self.crash_th = threading.Thread(target=self.crash,
+                                         kwargs=dict(graceful=self.graceful,
+                                                     wait=wait_warmup))
+        self.crash_th.start()
+        self.stop_crash = True
+        self.crash_th.join()
+        pillowfight_thread.join()
+        self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
+        for node in self.cluster.nodes_in_cluster:
+            if "kv" in node.services:
+                self.assertTrue(self.bucket_util._wait_warmup_completed(
+                    self.cluster.buckets[0], servers=[node],
+                    wait_time=self.wait_timeout * 5))

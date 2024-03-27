@@ -11,6 +11,8 @@ import time
 from cb_constants.CBServer import CbServer
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
+from constants.cb_constants import DocLoading
+from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
@@ -2199,3 +2201,158 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             for shell in shell_conn:
                 shell.disconnect()
+
+
+    def test_magma_rollback_with_large_docs(self):
+
+        # Number of docs of different sizes
+        num_2mb_docs = self.input.param("num_2mb_docs", 1000)
+        num_4mb_docs = self.input.param("num_4mb_docs", 1000)
+        num_8mb_docs = self.input.param("num_8mb_docs", 1000)
+        num_16mb_docs = self.input.param("num_16mb_docs", 500)
+        num_20mb_docs = self.input.param("num_20mb_docs", 500)
+
+        upsert_iterations = self.input.param("upsert_iterations", 0)
+        bucket = self.cluster.buckets[0]
+        self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster,
+                                                               self.cluster.nodes_in_cluster)
+
+        # Initial data load
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_2mb_docs, 2548000, "2mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_4mb_docs, 4548000, "4mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_8mb_docs, 8548000, "8mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_16mb_docs, 16548000, "16mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_20mb_docs, 20548000, "20mbbig_docs")
+
+        self.sleep(20, "Wait for num_items to get reflected")
+        self.bucket_util.print_bucket_stats(self.cluster)
+        self.fetch_vbucket_size(bucket)
+
+        total_iter = upsert_iterations
+        while upsert_iterations > 0:
+            self.log.info("Upserting docs. Iteration: {}".format(total_iter - upsert_iterations + 1))
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_2mb_docs, 2548000, "2mbbig_docs")
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_4mb_docs, 4548000, "4mbbig_docs")
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_8mb_docs, 8548000, "8mbbig_docs")
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_16mb_docs, 16548000, "16mbbig_docs")
+            self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_20mb_docs, 20548000, "20mbbig_docs")
+            upsert_iterations -= 1
+
+        self.fetch_vbucket_size(bucket)
+
+        shell = RemoteMachineShellConnection(self.cluster.master)
+        cbstats = Cbstats(self.cluster.master)
+        self.target_vbucket = cbstats.vbucket_list(bucket.name)
+        self.log.info("Vbuckets on the master node = {}".format(self.target_vbucket))
+
+        # Ensure state files are created
+        self.log.info("State files after initial creates {}"
+                     .format(self.get_state_files(bucket)))
+
+        self.sleep(60+10, "Ensures creation of at least one snapshot")
+        self.log.info("State files after 60 second of sleep {}"
+                      .format(self.get_state_files(bucket)))
+
+        self.sleep(20, "Wait before fetching vbucket-details")
+        vb_dict = self.bucket_util.get_vb_details_for_bucket(bucket,
+                                        self.cluster.nodes_in_cluster)
+
+        # Stopping persistence on master node (node A)
+        Cbepctl(shell).persistence(bucket.name, "stop")
+        self.sleep(60+10, "Wait after stopping persistence on the master node")
+
+        self.log.info("State files before data load on the master node {}"
+                     .format(self.get_state_files(bucket)))
+
+        self.log.info("Data load on the vbuckets in the master node")
+        gen_create = doc_generator("large_docs", 0, 1000,
+                                   doc_size=1024000,
+                                   target_vbucket=self.target_vbucket,
+                                   randomize_value=True)
+        task = self.task.async_load_gen_docs(
+                        self.cluster, bucket,
+                        gen_create, DocLoading.Bucket.DocOps.CREATE,
+                        timeout_secs=self.sdk_timeout,
+                        process_concurrency=4,
+                        skip_read_on_error=True)
+        self.task_manager.get_task_result(task)
+
+        self.sleep(60+10, "Wait to ensure creation of state files")
+        self.log.info("State files after data load on the master node {}"
+                     .format(self.get_state_files(bucket)))
+
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        vb_dict1 = self.bucket_util.get_vb_details_for_bucket(bucket,
+                                        self.cluster.nodes_in_cluster)
+
+        self.log.info("High seqno of active vbuckets")
+        for vbucket in range(self.vbuckets):
+            vbucket_name = "vb_" + str(vbucket)
+            vb_active_seq_prev = vb_dict[vbucket]['active']['high_seqno']
+            vb_active_seq = vb_dict1[vbucket]['active']['high_seqno']
+            self.log.info("{0}: {1}".format(vbucket_name, vb_active_seq))
+            if vbucket in self.target_vbucket:
+                self.assertTrue(vb_active_seq > vb_active_seq_prev,
+                "High seqno of the active target vbucket {} has not been incremented"
+                .format(vbucket_name))
+
+        self.log.info("High seqno of replica vbuckets")
+        for vbucket in range(self.vbuckets):
+            vbucket_name = "vb_" + str(vbucket)
+            replica_list_prev = vb_dict[vbucket]['replica']
+            replica_list = vb_dict1[vbucket]['replica']
+            for j in range(len(replica_list)):
+                vb_replica_seq_prev = replica_list_prev[j]['high_seqno']
+                vb_replica_seq = replica_list[j]['high_seqno']
+                self.log.info("{0}: {1}".format(vbucket_name, vb_replica_seq))
+                if vbucket in self.target_vbucket:
+                    self.assertTrue(vb_replica_seq > vb_replica_seq_prev,
+                    "High seqno of the replica target vbucket {} has not been incremented"
+                    .format(vbucket_name))
+
+        self.log.info("Kill memcached on the master node")
+        shell.kill_memcached()
+
+        self.log.info("Wait until warmup is complete")
+        self.assertTrue(self.bucket_util._wait_warmup_completed(
+                        bucket,
+                        servers=[self.cluster.master],
+                        wait_time=self.wait_timeout * 10))
+
+        self.log.info("State files after killing memcached on master node== {}".
+                          format(self.get_state_files(bucket)))
+
+        # Restarting persistence on the master node
+        Cbepctl(shell).persistence(bucket.name, "start")
+
+        self.sleep(20, "Wait before fetching vbucket-details")
+        vb_dict2 = self.bucket_util.get_vb_details_for_bucket(bucket,
+                                        self.cluster.nodes_in_cluster)
+
+        self.log.info("High seqno of active vbuckets")
+        for vbucket in range(self.vbuckets):
+            vbucket_name = "vb_" + str(vbucket)
+            vb_active_seq_prev = vb_dict[vbucket]['active']['high_seqno']
+            vb_active_seq = vb_dict2[vbucket]['active']['high_seqno']
+            self.log.info("{0}: {1}".format(vbucket_name, vb_active_seq))
+            if vbucket in self.target_vbucket:
+                self.assertTrue(vb_active_seq == vb_active_seq_prev,
+                "High seqno of the active target vbucket {} does not match after rollback"
+                .format(vbucket_name))
+
+        self.log.info("High seqno of replica vbuckets")
+        for vbucket in range(self.vbuckets):
+            vbucket_name = "vb_" + str(vbucket)
+            replica_list_prev = vb_dict[vbucket]['replica']
+            replica_list = vb_dict2[vbucket]['replica']
+            for j in range(len(replica_list)):
+                vb_replica_seq_prev = replica_list_prev[j]['high_seqno']
+                vb_replica_seq = replica_list[j]['high_seqno']
+                self.log.info("{0}: {1}".format(vbucket_name, vb_replica_seq))
+                if vbucket in self.target_vbucket:
+                    self.assertTrue(vb_replica_seq == vb_replica_seq_prev,
+                    "High seqno of the replica target vbucket {} does not match after rollback"
+                    .format(vbucket_name))
+
+        shell.disconnect()
