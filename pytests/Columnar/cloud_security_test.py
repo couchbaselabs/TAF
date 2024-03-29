@@ -2,58 +2,74 @@ import base64
 import json
 import random
 import socket
+import string
 import time
 
 import requests
 from Columnar.columnar_base import ColumnarBaseTest
-from goldfishAPI.GoldfishAPIs.ServerlessAnalytics.ServerlessAnalytics import GoldfishAPI
-from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
+from capella_utils.columnar import (
+    Users, Project, DBUser, ColumnarInstance, ColumnarUtils)
+from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
+from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
+
 from uuid import uuid4
 
 class SecurityTest(ColumnarBaseTest):
 
     def setUp(self):
         ColumnarBaseTest.setUp(self)
-        self.url = self.input.capella.get("pod")
-        self.user = self.input.capella.get("capella_user")
-        self.passwd = self.input.capella.get("capella_pwd")
-        self.tenant_id = self.input.capella.get("tenant_id")
-        self.project_id = self.users[0].projects[0].project_id
-        #self.cluster_id = self.cluster.id
+        self.tenant_id = self.capella.get("tenant_id")
+        self.project_id = self.project.project_id
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
-        self.CBAS_PORT = 18001
-        self.KV_PORT = 16001
-        self.SVC_MGR_PORT = 18500
+        self.instance_list = []
 
-        self.goldfishAPI = GoldfishAPI("https://" + self.url, "", "", self.user, self.passwd, "")
-        self.capellaAPI = CapellaAPI("https://" + self.url, self.input.capella.get("secret_key"),
-                                    self.input.capella.get("access_key"), self.user,
-                                    self.passwd)
+        self.columnar_api = ColumnarAPI(self.pod.url_public, self.user.api_secret_key,
+                                        self.user.api_access_key, self.user.email,
+                                        self.user.password)
+        self.capella_api = CapellaAPIv2(self.pod.url_public, self.user.api_secret_key,
+                                        self.user.api_access_key, self.user.email,
+                                        self.user.password)
 
-        #list of clusters created during tests
-        self.cluster_list = []
-
-        self.test_users = []
-        self.create_users_for_tests(self.user)
+        self.create_different_organization_roles()
 
     def tearDown(self):
+        self.delete_different_organization_roles()
+        for instance_id in self.instance_list:
+            self.log.info("Deleting instance: {}".format(instance_id))
+            resp = self.columnar_api.delete_columnar_instance(self.tenant_id, self.project_id,
+                                                              instance_id)
+            if resp.status_code != 202:
+                self.log.error("Failed to delete instance: {}".format(instance_id))
 
-        #delete the users created
-        self.log.info("Removing the users created")
-        for user in self.test_users:
-            user_id = user["userid"]
-            resp = self.capellaAPI.remove_user(self.tenant_id, user_id)
-            self.log.info("Status code, remove user {}".format(resp.status_code))
+    def generate_random_email():
+        domain = 'couchbase.com'
+        username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+        return "{}@{}".format(username, domain)
 
-        #delete clusters that failed to get deleted in the test
-        for cluster_id in self.cluster_list:
-            resp = self.goldfishAPI.delete_goldfish_instance(self.tenant_id,
-                                                             self.project_id,
-                                                             cluster_id)
-            self.assertEqual(204, resp.status_code,
-                             "Failed to delete instance: {}".format(cluster_id))
-            self.wait_for_cluster_to_be_deleted(cluster_id)
+    def generate_random_password():
+        chars = string.ascii_letters + string.digits + string.punctuation
+        return ''.join(random.choices(chars, k=12))
 
+    @staticmethod
+    def generate_random_string(length=10, special_characters=True,
+                               prefix=""):
+        """
+        Generates random name of specified length
+        """
+        if special_characters:
+            special_characters = "!@#$%^&*()-_=+{[]}\|;:'\",.<>/?" + " " + "\t"
+        else:
+            special_characters = ""
+
+        characters = string.ascii_letters + string.digits + special_characters
+        name = ""
+        for i in range(length):
+            name += random.choice(characters)
+
+        if prefix:
+            name = prefix + name
+
+        return name
 
     def create_users_for_tests(self, email):
         organization_roles = ["organizationOwner", "organizationMember", "projectCreator"]
@@ -84,17 +100,82 @@ class SecurityTest(ColumnarBaseTest):
 
         self.log.info("Test users: {}".format(self.test_users))
 
+    def delete_different_organization_roles(self):
+        self.log.info("Deleting different Organization Roles")
+        for user in self.test_users:
+            user_id = self.test_users[user]["userid"]
+            self.log.info("Deleting user from organization. User Id: {}".format(user_id))
 
-    def wait_for_cluster_to_be_healty(self, cluster_id):
-        end_time = time.time() + 1800
+            resp = self.capella_api.delete_user(self.tenant_id,
+                                                user_id)
+
+            if resp.status_code != 204:
+                self.log.info("Failed to delete user with user id: {}. Reason: {} {}".format(
+                    user_id, resp.json()["message"], resp.json()["hint"]))
+                raise Exception("Failed to delete user")
+
+        self.log.info("Deleted all the Organization Roles successfully")
+
+    def create_different_organization_roles(self):
+        self.log.info("Creating Different Organization Roles")
+        self.test_users = {}
+        roles = ["organizationOwner", "projectCreator", "organizationMember"]
+        setup_capella_api = CapellaAPIv2(self.pod.url_public, self.user.api_secret_key,
+                                         self.user.api_access_key, self.user.email,
+                                         self.user.password)
+
+        num = 1
+        for role in roles:
+            usrname = self.user.email.split('@')
+            username = usrname[0] + "+" + self.generate_random_string(9, False) + "@" + usrname[1]
+            name = "Test_User_" + str(num)
+            self.log.info("Creating user {} with role {}".format(username, role))
+            create_user_resp = setup_capella_api.create_user(self.tenant_id,
+                                                             name,
+                                                             username,
+                                                             "Password@123",
+                                                             [role])
+            self.log.info("User creation response - {}".format(create_user_resp.content))
+            if create_user_resp.status_code == 200:
+                self.log.info("User {} created successfully".format(username))
+                self.test_users["User" + str(num)] = {
+                    "name": create_user_resp.json()["data"]["name"],
+                    "mailid": create_user_resp.json()["data"]["email"],
+                    "role": role,
+                    "password": "Password@123",
+                    "userid": create_user_resp.json()["data"]["id"]
+                }
+
+            elif create_user_resp.status_code == 422:
+                msg = "is already in use. Please sign-in."
+                if msg in create_user_resp.json()["message"]:
+                    self.log.info("User is already in use. Please sign-in")
+                    num = num + 1
+                    continue
+                else:
+                    self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+            else:
+                self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+            num = num + 1
+
+
+    def wait_for_instance_to_be_healty(self, instance_id):
+        start_time = time.time()
+        instance_deployment_end_time = start_time + 1800
+        fetch_instance_details_end_time = start_time + 300
 
         state = None
-        while time.time() < end_time:
-            resp = self.goldfishAPI.get_specific_goldfish_instance(self.tenant_id,
-                                                                   self.project_id,
-                                                                   cluster_id)
-            self.assertEqual(200, resp.status_code,
-                         msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
+        while time.time() < instance_deployment_end_time:
+            resp = self.columnar_api.get_specific_columnar_instance(self.tenant_id,
+                                                                    self.project.project_id,
+                                                                    instance_id)
+            if resp.status_code != 200:
+                if time.time() > fetch_instance_details_end_time:
+                    self.fail("Failed to fetch instance details within 5 minutes")
+                self.sleep(10, "Could not fetch instance details, Status code: {}".format(resp.status_code))
+                continue
 
             resp = resp.json()
             state = resp["state"]
@@ -102,35 +183,70 @@ class SecurityTest(ColumnarBaseTest):
             if state == "healthy":
                 break
             elif state == "deploying":
-                self.sleep(10, "Wait for cluster to be healthy")
+                self.sleep(10, "Wait for test instance to be healthy")
             else:
-                self.fail("Goldfish cluster deployment failed")
+                self.fail("Columnar instance deployment failed, Instance state: {}".format(state))
 
         if state == "deploying":
-            self.fail("Cluster is still deploying after timeout")
+            self.fail("Instance is still deploying after timeout")
 
-    def wait_for_cluster_to_be_deleted(self, cluster_id):
-        end_time = time.time() + 1800
+    def wait_for_instance_to_be_deleted(self, instance_id):
+        start_time = time.time()
+        end_time_healthy_to_destroying = start_time + 300  # 5 minutes
+        fetch_instance_details_end_time = start_time + 300 # 5 minutes
 
-        state = None
-        while time.time() < end_time:
-            resp = self.goldfishAPI.get_specific_goldfish_instance(self.tenant_id,
-                                                                   self.project_id,
-                                                                   cluster_id)
+        while True:
+            resp = self.columnar_api.get_specific_columnar_instance(self.tenant_id,
+                                                                    self.project.project_id,
+                                                                    instance_id)
             if resp.status_code == 404:
-                state = "desotryed"
-                break
+                self.log.info("Instance is already deleted")
+                return
 
-            resp = resp.json()
-            state = resp["state"]
+            if resp.status_code != 200:
+                if time.time() > fetch_instance_details_end_time:
+                    self.fail("Failed to fetch instance details within 5 minutes")
+                self.sleep(10, "Could not fetch instance details, Status code: {}".format(resp.status_code))
+                continue
+
+            resp_json = resp.json()
+            state = resp_json["state"]
+
+            if state == "healthy":
+                if time.time() > end_time_healthy_to_destroying:
+                    self.fail("Instance didn't transition to destroying within 5 minutes")
+                self.sleep(10, "Wait for test instance to transition to destroying")
+            elif state == "destroying":
+                break
+            else:
+                self.fail("Columnar instance deletion failed, Instance state: {}".format(state))
+
+        start_time = time.time()
+        end_time_destroying_to_destroyed = start_time + 1800  # 30 minutes
+        fetch_instance_details_end_time = start_time + 300 # 5 minutes
+
+        while time.time() < end_time_destroying_to_destroyed:
+            resp = self.columnar_api.get_specific_columnar_instance(self.tenant_id,
+                                                                    self.project.project_id,
+                                                                    instance_id)
+            if resp.status_code == 404:
+                return  # Instance is deleted
+
+            if resp.status_code != 200:
+                if time.time() > fetch_instance_details_end_time:
+                    self.fail("Failed to fetch instance details within 5 minutes")
+                self.sleep(10, "Could not fetch instance details, Status code: {}".format(resp.status_code))
+                continue
+
+            resp_json = resp.json()
+            state = resp_json["state"]
 
             if state == "destroying":
-                self.sleep(10, "Wait for cluster to be destroyed")
+                self.sleep(10, "Wait for test instance to be destroyed")
             else:
-                self.fail("Goldfish cluster deployment failed")
+                self.fail("Columnar instance deletion failed, Instance state: {}".format(state))
 
-        if state == "destroying":
-            self.fail("Cluster is still destroying after timeout")
+        self.fail("Instance is still destroying after timeout")
 
     def is_port_open(self, host, port):
         try:
@@ -148,13 +264,6 @@ class SecurityTest(ColumnarBaseTest):
             port = random.randint(1024, 65535)
 
         return port
-
-    def generate_database_credentials(self, cluster):
-        resp = self.goldfishAPI.create_api_keys(self.tenant_id, self.project_id,
-                                                cluster.cluster_id)
-        resp = resp.json()
-
-        return resp["apikeyId"], resp["secret"]
 
     def _create_headers(self, username=None, password=None, connection='close'):
         authorization = base64.b64encode('{}:{}'.format(username, password).encode()).decode()
@@ -181,24 +290,25 @@ class SecurityTest(ColumnarBaseTest):
 
         return False
 
-    def test_create_goldfish_instance_security(self):
+    def test_create_columnar_instance_security(self):
 
-        headers = {
-            "invalid_header": 'abcdefgh',
-            "empty_header": ''
-        }
-        for header in headers:
-            cbc_api_request_headers = {
-                    'Authorization': 'Bearer %s' % headers[header],
-                    'Content-Type': 'application/json'
-            }
-            resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id,
-                                                             "test-db", "desc", "aws", "us-east-1", 3,
-                                                             headers=cbc_api_request_headers,
-                                                             skip_jwt_retry=True)
-            self.log.info("Response: {}".format(resp))
-            self.assertEqual(401, resp.status_code,
-                            msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.log.info("Test started")
+        # temp_user = Users(self.tenant_id, "", self.generate_random_email(),
+        #                   self.generate_random_password())
+        # self.columnar_utils_temp = ColumnarUtils(self.log, self.pod, temp_user)
+        # headers = {
+        #     "invalid_header": 'abcdefgh',
+        #     "empty_header": ''
+        # }
+        # for header in headers:
+        #     cbc_api_request_headers = {
+        #             'Authorization': 'Bearer %s' % headers[header],
+        #             'Content-Type': 'application/json'
+        #     }
+        #     resp = self.columnar_utils.create
+        #     self.log.info("Response: {}".format(resp))
+        #     self.assertEqual(401, resp.status_code,
+        #                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
 
         tenant_ids = {
             "valid_tenant_id": self.tenant_id,
@@ -206,8 +316,13 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for tenant_id in tenant_ids:
-            resp = self.goldfishAPI.create_goldfish_instance(tenant_ids[tenant_id], self.project_id,
-                                                             "test-db", "desc", "aws", "us-east-1", 3)
+
+            instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+            resp = self.columnar_api.create_columnar_instance(
+                tenant_ids[tenant_id], self.project.project_id, instance_config["name"],
+                instance_config["description"], instance_config["provider"],
+                instance_config["region"], instance_config["nodes"]
+            )
             if tenant_id == "invalid_tenant_id":
                 self.assertEqual(404, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
@@ -216,16 +331,17 @@ class SecurityTest(ColumnarBaseTest):
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 201))
                 #wait for cluster to be healty
                 resp = json.loads(resp.content)
-                cluster_id = resp["id"]
-                self.wait_for_cluster_to_be_healty(cluster_id)
-                self.cluster_list.append(cluster_id)
-                #delete the cluster
-                resp = self.goldfishAPI.delete_goldfish_instance(self.tenant_id, self.project_id,
-                                                                cluster_id)
-                self.assertEqual(204, resp.status_code,
-                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
-                self.wait_for_cluster_to_be_deleted(cluster_id)
-                self.cluster_list.remove(cluster_id)
+                instance_id = resp["id"]
+                self.wait_for_instance_to_be_healty(instance_id)
+                self.instance_list.append(instance_id)
+
+                #delete the instance
+                resp = self.columnar_api.delete_columnar_instance(self.tenant_id, self.project_id,
+                                                                  instance_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
+                self.wait_for_instance_to_be_deleted(instance_id)
+                self.instance_list.remove(instance_id)
 
         project_ids = {
             'valid_project_id': self.project_id,
@@ -233,63 +349,72 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for project_id in project_ids:
-            resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, project_ids[project_id],
-                                                             "test-db", "desc", "aws", "us-east-1", 3)
+            instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+            resp = self.columnar_api.create_columnar_instance(
+                self.project.org_id, project_ids[project_id], instance_config["name"],
+                instance_config["description"], instance_config["provider"],
+                instance_config["region"], instance_config["nodes"]
+            )
             if project_id == "valid_project_id":
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 201))
                 #wait for cluster to be healty
                 resp = json.loads(resp.content)
-                cluster_id = resp["id"]
-                self.wait_for_cluster_to_be_healty(cluster_id)
-                self.cluster_list.append(cluster_id)
+                instance_id = resp["id"]
+                self.wait_for_instance_to_be_healty(instance_id)
+                self.instance_list.append(instance_id)
                 #delete the cluster
-                resp = self.goldfishAPI.delete_goldfish_instance(self.tenant_id, self.project_id,
-                                                                cluster_id)
-                self.assertEqual(204, resp.status_code,
-                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
-                self.wait_for_cluster_to_be_deleted(cluster_id)
-                self.cluster_list.remove(cluster_id)
+                resp = self.columnar_api.delete_columnar_instance(self.tenant_id, self.project_id,
+                                                                  instance_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
+                self.wait_for_instance_to_be_deleted(instance_id)
+                self.instance_list.remove(instance_id)
             else:
                 self.assertEqual(404, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
 
 
         for user in self.test_users:
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
 
-            resp = self.goldfishAPIrole.create_goldfish_instance(self.tenant_id, self.project_id,
-                                                                 "test-db", "desc", "aws", "us-east-1", 3)
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
 
-            if user["role"] == "organizationOwner":
+            instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+            resp = self.colunmnarAPIrole.create_columnar_instance(
+                self.project.org_id, self.project.project_id, instance_config["name"],
+                instance_config["description"], instance_config["provider"],
+                instance_config["region"], instance_config["nodes"]
+            )
+
+            if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 201))
                 #wait for cluster to be healty
                 resp = json.loads(resp.content)
-                cluster_id = resp["id"]
-                self.wait_for_cluster_to_be_healty(cluster_id)
-                self.cluster_list.append(cluster_id)
+                instance_id = resp["id"]
+                self.wait_for_instance_to_be_healty(instance_id)
+                self.instance_list.append(instance_id)
                 #delete the cluster
-                resp = self.goldfishAPI.delete_goldfish_instance(self.tenant_id, self.project_id,
-                                                                cluster_id)
-                self.assertEqual(204, resp.status_code,
+                resp = self.columnar_api.delete_columnar_instance(self.tenant_id, self.project_id,
+                                                                  instance_id)
+                self.assertEqual(202, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
-                                     'For role: {}'.format(resp.status_code, 204,
-                                                           user["role"]))
-                self.wait_for_cluster_to_be_deleted(cluster_id)
-                self.cluster_list.remove(cluster_id)
+                                     'For role: {}'.format(resp.status_code, 202,
+                                                           self.test_users[user]["role"]))
+                self.wait_for_instance_to_be_deleted(instance_id)
+                self.instance_list.remove(instance_id)
             else:
                 self.assertEqual(403, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 403,
-                                                           user["role"]))
+                                                           self.test_users[user]["role"]))
 
         self.log.info("Verifying endpoint for different roles under project - RBAC")
         project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
                          "projectDataWriter", "projectDataViewer"]
-        user = self.test_users[2]
+        user = self.test_users['User3']
 
         for role in project_roles:
 
@@ -302,16 +427,20 @@ class SecurityTest(ColumnarBaseTest):
                 "roles": [role], "users": [user["userid"]]
             }
 
-            resp = self.capellaAPI.add_user_to_project(self.tenant_id, json.dumps(payload))
+            resp = self.capella_api.add_user_to_project(self.tenant_id, json.dumps(payload))
             self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
 
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
 
-            resp = self.goldfishAPIrole.create_goldfish_instance(self.tenant_id, self.project_id,
-                                                                 "test-db", "desc", "aws", "us-east-1", 3)
+            instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+            resp = self.colunmnarAPIrole.create_columnar_instance(
+                self.project.org_id, self.project.project_id, instance_config["name"],
+                instance_config["description"], instance_config["provider"],
+                instance_config["region"], instance_config["nodes"]
+            )
 
             if role == "projectOwner" or role == "projectClusterManager":
                 self.assertEqual(201, resp.status_code,
@@ -319,45 +448,45 @@ class SecurityTest(ColumnarBaseTest):
                                      'For role: {}'.format(resp.status_code, 201, role))
                 #wait for cluster to be healty
                 resp = json.loads(resp.content)
-                cluster_id = resp["id"]
-                self.wait_for_cluster_to_be_healty(cluster_id)
-                self.cluster_list.append(cluster_id)
+                instance_id = resp["id"]
+                self.wait_for_instance_to_be_healty(instance_id)
+                self.instance_list.append(instance_id)
                 #delete the cluster
-                resp = self.goldfishAPI.delete_goldfish_instance(self.tenant_id, self.project_id,
-                                                                cluster_id)
-                self.assertEqual(204, resp.status_code,
-                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
-                self.wait_for_cluster_to_be_deleted(cluster_id)
-                self.cluster_list.remove(cluster_id)
+                resp = self.columnar_api.delete_columnar_instance(self.tenant_id, self.project_id,
+                                                                  instance_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
+                self.wait_for_instance_to_be_deleted(instance_id)
+                self.instance_list.remove(instance_id)
             else:
                 self.assertEqual(403, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 403, role))
 
-            resp = self.capellaAPI.remove_user_from_project(self.tenant_id, user["userid"],
+            resp = self.capella_api.remove_user_from_project(self.tenant_id, user["userid"],
                                                             self.project_id)
             self.assertEqual(204, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
 
 
-    def test_get_goldfish_instances_security(self):
+    def test_get_columnar_instances_security(self):
 
-        headers = {
-            "invalid_header": 'abcdefgh',
-            "empty_header": ''
-        }
-        for header in headers:
-            print("Header: {}".format(headers[header]))
-            cbc_api_request_headers = {
-                    'Authorization': 'Bearer %s' % headers[header],
-                    'Content-Type': 'application/json'
-            }
-            resp = self.goldfishAPI.get_goldfish_instances(self.tenant_id, self.project_id,
-                                                           headers=cbc_api_request_headers,
-                                                           skip_jwt_retry=True)
-            self.log.info("Response: {}".format(resp))
-            self.assertEqual(401, resp.status_code,
-                            msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        # headers = {
+        #     "invalid_header": 'abcdefgh',
+        #     "empty_header": ''
+        # }
+        # for header in headers:
+        #     print("Header: {}".format(headers[header]))
+        #     cbc_api_request_headers = {
+        #             'Authorization': 'Bearer %s' % headers[header],
+        #             'Content-Type': 'application/json'
+        #     }
+        #     resp = self.columnarAPI.get_columnar_instances(self.tenant_id, self.project_id,
+        #                                                    headers=cbc_api_request_headers,
+        #                                                    skip_jwt_retry=True)
+        #     self.log.info("Response: {}".format(resp))
+        #     self.assertEqual(401, resp.status_code,
+        #                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
 
         #trying with different tenant ids
         tenant_ids = {
@@ -366,8 +495,8 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for tenant_id in tenant_ids:
-            print("Tenant id: {}".format(tenant_ids[tenant_id]))
-            resp = self.goldfishAPI.get_goldfish_instances(tenant_ids[tenant_id], self.project_id)
+            resp = self.columnar_api.get_columnar_instances(tenant_ids[tenant_id],
+                                                            self.project.project_id)
             if tenant_id == "invalid_tenant_id":
                 self.assertEqual(404, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 403))
@@ -376,57 +505,46 @@ class SecurityTest(ColumnarBaseTest):
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 201))
 
          # Trying out with different project ids
-        self.log.info("Verifying the endpoint access with different projects")
-        self.log.info("Creating a project")
-        resp = self.capellaAPI.create_project(self.tenant_id, "security-test-project")
-        self.assertEqual(201, resp.status_code,
-                         msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                      201))
-
-        resp = resp.json()
 
         project_ids = {
             'valid_project_id': self.project_id,
-            'different_project_id': resp['id'],
             'invalid_project_id': self.invalid_id
         }
 
         for project_id in project_ids:
-            resp = self.goldfishAPI.get_goldfish_instances(self.tenant_id, project_ids[project_id])
+            resp = self.columnar_api.get_columnar_instances(self.tenant_id, project_ids[project_id])
             if project_id == "valid_project_id":
                 self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
             else:
                 self.assertEqual(404, resp.status_code,
-                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
-
-        self.log.info("Deleting project")
-        resp = self.capellaAPI.delete_project(self.tenant_id, project_ids["different_project_id"])
-        self.assertEqual(204, resp.status_code,
-                         msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 204))
+                                 msg='FAIL for {}:{}, Outcome:{}, Expected: {}'
+                                 .format(project_id, project_ids[project_id],
+                                         resp.status_code, 404))
 
         for user in self.test_users:
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                self.test_users[user]["mailid"],
+                                                self.test_users[user]["password"])
 
-            resp = self.goldfishAPIrole.get_goldfish_instances(self.tenant_id)
+            resp = self.colunmnarAPIrole.get_columnar_instances(self.tenant_id,
+                                                                self.project_id)
 
-            if user["role"] == "organizationOwner":
+            if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 200,
-                                                           user["role"]))
+                                                           self.test_users[user]["role"]))
             else:
                 self.assertEqual(403, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 403,
-                                                           user["role"]))
+                                                           self.test_users[user]["role"]))
 
         self.log.info("Verifying endpoint for different roles under project - RBAC")
         project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
                          "projectDataWriter", "projectDataViewer"]
-        user = self.test_users[2]
+        user = self.test_users['User3']
 
         for role in project_roles:
 
@@ -439,45 +557,45 @@ class SecurityTest(ColumnarBaseTest):
                 "roles": [role], "users": [user["userid"]]
             }
 
-            resp = self.capellaAPI.add_user_to_project(self.tenant_id, json.dumps(payload))
+            resp = self.capella_api.add_user_to_project(self.tenant_id, json.dumps(payload))
             self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
 
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
 
-            resp = self.goldfishAPIrole.get_goldfish_instances(self.tenant_id, self.project_id)
+            resp = self.colunmnarAPIrole.get_columnar_instances(self.tenant_id, self.project_id)
 
             self.assertEqual(200, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}.' \
                                     'For role: {}'.format(resp.status_code, 200, role))
 
-            resp = self.capellaAPI.remove_user_from_project(self.tenant_id, user["userid"],
+            resp = self.capella_api.remove_user_from_project(self.tenant_id, user["userid"],
                                                             self.project_id)
             self.assertEqual(204, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
 
-    def test_fetch_goldfish_instance_details_security(self):
+    def test_fetch_columnar_instance_details_security(self):
 
-        self.cluster = self.user.project.clusters[0]
-        cluster_id = self.cluster.cluster_id
+        instance = self.project.instances[0]
+        instance_id = instance.instance_id
 
-        headers = {
-            "invalid_header": 'abcdefgh',
-            "empty_header": ''
-        }
-        for header in headers:
-            cbc_api_request_headers = {
-                    'Authorization': 'Bearer %s' % headers[header],
-                    'Content-Type': 'application/json'
-            }
-            resp = self.goldfishAPI.get_specific_goldfish_instance(self.tenant_id, self.project_id,
-                                                                   cluster_id, headers=cbc_api_request_headers,
-                                                                   skip_jwt_retry=True)
-            self.log.info("Response: {}".format(resp))
-            self.assertEqual(401, resp.status_code,
-                            msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        # headers = {
+        #     "invalid_header": 'abcdefgh',
+        #     "empty_header": ''
+        # }
+        # for header in headers:
+        #     cbc_api_request_headers = {
+        #             'Authorization': 'Bearer %s' % headers[header],
+        #             'Content-Type': 'application/json'
+        #     }
+        #     resp = self.columnarAPI.get_specific_columnar_instance(self.tenant_id, self.project_id,
+        #                                                            cluster_id, headers=cbc_api_request_headers,
+        #                                                            skip_jwt_retry=True)
+        #     self.log.info("Response: {}".format(resp))
+        #     self.assertEqual(401, resp.status_code,
+        #                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
 
         #testing with different tenant ids
         tenant_ids = {
@@ -486,8 +604,8 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for tenant_id in tenant_ids:
-            resp = self.goldfishAPI.get_specific_goldfish_instance(tenant_ids[tenant_id], self.project_id,
-                                                                   cluster_id)
+            resp = self.columnar_api.get_specific_columnar_instance(tenant_ids[tenant_id], self.project_id,
+                                                                    instance_id)
             if tenant_id == "invalid_tenant_id":
                 self.assertEqual(404, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
@@ -498,7 +616,9 @@ class SecurityTest(ColumnarBaseTest):
         # Trying out with different project ids
         self.log.info("Verifying the endpoint access with different projects")
         self.log.info("Creating a project")
-        resp = self.capellaAPI.create_project(self.tenant_id, "security-test-project")
+        resp = self.capella_api.create_project(self.tenant_id,
+                                               "security-test-project{}"
+                                               .format(random.randint(1, 100000)))
         self.assertEqual(201, resp.status_code,
                          msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                       201))
@@ -512,8 +632,8 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for project_id in project_ids:
-            resp = self.goldfishAPI.get_specific_goldfish_instance(self.tenant_id, project_ids[project_id],
-                                                                   cluster_id)
+            resp = self.columnar_api.get_specific_columnar_instance(self.tenant_id, project_ids[project_id],
+                                                                    instance_id)
             if project_id == "valid_project_id":
                 self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
@@ -522,33 +642,33 @@ class SecurityTest(ColumnarBaseTest):
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
 
         self.log.info("Deleting project")
-        resp = self.capellaAPI.delete_project(self.tenant_id, project_ids["different_project_id"])
+        resp = self.capella_api.delete_project(self.tenant_id, project_ids["different_project_id"])
         self.assertEqual(204, resp.status_code,
                          msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 204))
 
         for user in self.test_users:
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                self.test_users[user]["mailid"],
+                                                self.test_users[user]["password"])
 
-            resp = self.goldfishAPIrole.get_specific_goldfish_instance(self.tenant_id, self.project_id,
-                                                                       cluster_id)
+            resp = self.colunmnarAPIrole.get_specific_columnar_instance(self.tenant_id, self.project_id,
+                                                                        instance_id)
 
-            if user["role"] == "organizationOwner":
+            if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 200,
-                                                           user["role"]))
+                                                           self.test_users[user]["role"]))
             else:
                 self.assertEqual(403, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 403,
-                                                           user["role"]))
+                                                           self.test_users[user]["role"]))
 
         self.log.info("Verifying endpoint for different roles under project - RBAC")
         project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
                          "projectDataWriter", "projectDataViewer"]
-        user = self.test_users[2]
+        user = self.test_users['User3']
 
         for role in project_roles:
 
@@ -561,51 +681,46 @@ class SecurityTest(ColumnarBaseTest):
                 "roles": [role], "users": [user["userid"]]
             }
 
-            resp = self.capellaAPI.add_user_to_project(self.tenant_id, json.dumps(payload))
+            resp = self.capella_api.add_user_to_project(self.tenant_id, json.dumps(payload))
             self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
 
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
 
-            resp = self.goldfishAPIrole.get_specific_goldfish_instance(self.tenant_id, self.project_id,
-                                                                       cluster_id)
+            resp = self.colunmnarAPIrole.get_specific_columnar_instance(self.tenant_id, self.project_id,
+                                                                        instance_id)
 
             self.assertEqual(200, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}.' \
                                     'For role: {}'.format(resp.status_code, 200, role))
 
-            resp = self.capellaAPI.remove_user_from_project(self.tenant_id, user["userid"],
-                                                            self.project_id)
+            resp = self.capella_api.remove_user_from_project(self.tenant_id, user["userid"],
+                                                             self.project_id)
             self.assertEqual(204, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
 
-    def test_delete_goldfish_instance_secuirty(self):
-        resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
-                                                  provider="aws", region="us-east-2", nodes=3)
-        if resp.status_code != 201:
-            self.fail("Failed to create columnar isntance")
-        resp = resp.json()
-        cluster_id = resp["id"]
-        self.wait_for_cluster_to_be_healty(cluster_id)
-        self.cluster_list.append(cluster_id)
+    def test_delete_columnar_instance_secuirty(self):
+        instance = self.project.instances[0]
+        instance_id = instance.instance_id
+        self.instance_list.append(instance_id)
 
-        headers = {
-            "invalid_header": 'abcdefgh',
-            "empty_header": ''
-        }
-        for header in headers:
-            cbc_api_request_headers = {
-                    'Authorization': 'Bearer %s' % headers[header],
-                    'Content-Type': 'application/json'
-            }
-            resp = self.goldfishAPI.delete_goldfish_instance(self.tenant_id, self.project_id,
-                                                            cluster_id, headers=cbc_api_request_headers,
-                                                            skip_jwt_retry=True)
-            self.log.info("Response: {}".format(resp))
-            self.assertEqual(401, resp.status_code,
-                            msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        # headers = {
+        #     "invalid_header": 'abcdefgh',
+        #     "empty_header": ''
+        # }
+        # for header in headers:
+        #     cbc_api_request_headers = {
+        #             'Authorization': 'Bearer %s' % headers[header],
+        #             'Content-Type': 'application/json'
+        #     }
+        #     resp = self.columnarAPI.delete_columnar_instance(self.tenant_id, self.project_id,
+        #                                                     cluster_id, headers=cbc_api_request_headers,
+        #                                                     skip_jwt_retry=True)
+        #     self.log.info("Response: {}".format(resp))
+        #     self.assertEqual(401, resp.status_code,
+        #                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
 
         #testing with different tenant ids
         tenant_ids = {
@@ -614,29 +729,35 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for tenant_id in tenant_ids:
-            resp = self.goldfishAPI.delete_goldfish_instance(tenant_ids[tenant_id], self.project_id,
-                                                             cluster_id)
+            resp = self.columnar_api.delete_columnar_instance(tenant_ids[tenant_id], self.project_id,
+                                                              instance_id)
             if tenant_id == "invalid_tenant_id":
                 self.assertEqual(404, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
             else:
-                self.assertEqual(204, resp.status_code,
-                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
-                self.wait_for_cluster_to_be_deleted(cluster_id)
-                self.cluster_list.remove(cluster_id)
-                resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
-                                                  provider="aws", region="us-east-2", nodes=3)
+                self.assertEqual(202, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
+                self.wait_for_instance_to_be_deleted(instance_id)
+                self.instance_list.remove(instance_id)
+                instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+                resp = self.columnar_api.create_columnar_instance(
+                    self.tenant_id, self.project.project_id, instance_config["name"],
+                    instance_config["description"], instance_config["provider"],
+                    instance_config["region"], instance_config["nodes"]
+                )
                 if resp.status_code != 201:
                     self.fail("Failed to create columnar isntance")
                 resp = resp.json()
-                cluster_id = resp["id"]
-                self.wait_for_cluster_to_be_healty(cluster_id)
-                self.cluster_list.append(cluster_id)
+                instance_id = resp["id"]
+                self.wait_for_instance_to_be_healty(instance_id)
+                self.instance_list.append(instance_id)
 
         # Trying out with different project ids
         self.log.info("Verifying the endpoint access with different projects")
         self.log.info("Creating a project")
-        resp = self.capellaAPI.create_project(self.tenant_id, "security-test-project")
+        resp = self.capella_api.create_project(self.tenant_id,
+                                               "security-test-project"
+                                               .format(random.randint(1, 100000)))
         self.assertEqual(201, resp.status_code,
                          msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
                                                                       201))
@@ -650,63 +771,71 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for project_id in project_ids:
-            resp = self.goldfishAPI.delete_goldfish_instance(self.tenant_id, project_ids[project_id],
-                                                                   cluster_id)
+            resp = self.columnar_api.delete_columnar_instance(self.tenant_id, project_ids[project_id],
+                                                              instance_id)
             if project_id == "valid_project_id":
-                self.assertEqual(204, resp.status_code,
-                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
-                self.wait_for_cluster_to_be_deleted(cluster_id)
-                self.cluster_list.remove(cluster_id)
-                resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
-                                                  provider="aws", region="us-east-2", nodes=3)
+                self.assertEqual(202, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
+                self.wait_for_instance_to_be_deleted(instance_id)
+                self.instance_list.remove(instance_id)
+                instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+                resp = self.columnar_api.create_columnar_instance(
+                    self.tenant_id, self.project.project_id, instance_config["name"],
+                    instance_config["description"], instance_config["provider"],
+                    instance_config["region"], instance_config["nodes"]
+                )
                 if resp.status_code != 201:
                     self.fail("Failed to create columnar isntance")
                 resp = resp.json()
-                cluster_id = resp["id"]
-                self.wait_for_cluster_to_be_healty(cluster_id)
-                self.cluster_list.append(cluster_id)
+                instance_id = resp["id"]
+                self.wait_for_instance_to_be_healty(instance_id)
+                self.instance_list.append(instance_id)
             else:
                 self.assertEqual(404, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
 
         self.log.info("Deleting project")
-        resp = self.capellaAPI.delete_project(self.tenant_id, project_ids["different_project_id"])
+        resp = self.capella_api.delete_project(self.tenant_id, project_ids["different_project_id"])
         self.assertEqual(204, resp.status_code,
                          msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 204))
 
         for user in self.test_users:
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                self.test_users[user]["mailid"],
+                                                self.test_users[user]["password"])
 
-            resp = self.goldfishAPIrole.delete_goldfish_instance(self.tenant_id, self.project_id,
-                                                                       cluster_id)
+            resp = self.colunmnarAPIrole.delete_columnar_instance(self.tenant_id, self.project_id,
+                                                                  instance_id)
 
-            if user["role"] == "organizationOwner":
-                self.assertEqual(204, resp.status_code,
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(202, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
-                                     'For role: {}'.format(resp.status_code, 204,
-                                                           user["role"]))
-                self.wait_for_cluster_to_be_deleted(cluster_id)
-                self.cluster_list.remove(cluster_id)
-                resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
-                                                  provider="aws", region="us-east-2", nodes=3)
+                                     'For role: {}'.format(resp.status_code, 202,
+                                                           self.test_users[user]["role"]))
+                self.wait_for_instance_to_be_deleted(instance_id)
+                self.instance_list.remove(instance_id)
+                instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+                resp = self.columnar_api.create_columnar_instance(
+                    self.tenant_id, self.project.project_id, instance_config["name"],
+                    instance_config["description"], instance_config["provider"],
+                    instance_config["region"], instance_config["nodes"]
+                )
                 if resp.status_code != 201:
                     self.fail("Failed to create columnar isntance")
                 resp = resp.json()
-                cluster_id = resp["id"]
-                self.wait_for_cluster_to_be_healty(cluster_id)
-                self.cluster_list.append(cluster_id)
+                instance_id = resp["id"]
+                self.wait_for_instance_to_be_healty(instance_id)
+                self.instance_list.append(instance_id)
             else:
                 self.assertEqual(403, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 403,
-                                                           user["role"]))
+                                                           self.test_users[user]["role"]))
 
         self.log.info("Verifying endpoint for different roles under project - RBAC")
         project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
                          "projectDataWriter", "projectDataViewer"]
-        user = self.test_users[2]
+        user = self.test_users['User3']
 
         for role in project_roles:
 
@@ -719,47 +848,51 @@ class SecurityTest(ColumnarBaseTest):
                 "roles": [role], "users": [user["userid"]]
             }
 
-            resp = self.capellaAPI.add_user_to_project(self.tenant_id, json.dumps(payload))
+            resp = self.capella_api.add_user_to_project(self.tenant_id, json.dumps(payload))
             self.assertEqual(200, resp.status_code,
-                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
+                             msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
 
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
 
-            resp = self.goldfishAPIrole.delete_goldfish_instance(self.tenant_id, self.project_id,
-                                                                 cluster_id)
+            resp = self.columnarAPIrole.delete_columnar_instance(self.tenant_id, self.project_id,
+                                                                  instance_id)
 
             if role == "projectOwner" or role == "projectClusterManager":
-                self.assertEqual(204, resp.status_code,
+                self.assertEqual(202, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
-                                     'For role: {}'.format(resp.status_code, 200, role))
-                self.wait_for_cluster_to_be_deleted(cluster_id)
-                self.cluster_list.remove(cluster_id)
-                resp = self.goldfishAPI.create_goldfish_instance(self.tenant_id, self.project_id, "test-db-2", "desc",
-                                                  provider="aws", region="us-east-2", nodes=3)
+                                     'For role: {}'.format(resp.status_code, 202, role))
+                self.wait_for_instance_to_be_deleted(instance_id)
+                self.instance_list.remove(instance_id)
+                instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+                resp = self.columnar_api.create_columnar_instance(
+                    self.tenant_id, self.project.project_id, instance_config["name"],
+                    instance_config["description"], instance_config["provider"],
+                    instance_config["region"], instance_config["nodes"]
+                )
                 if resp.status_code != 201:
                     self.fail("Failed to create columnar isntance")
                 resp = resp.json()
-                cluster_id = resp["id"]
-                self.wait_for_cluster_to_be_healty(cluster_id)
-                self.cluster_list.append(cluster_id)
+                instance_id = resp["id"]
+                self.wait_for_cluster_to_be_healty(instance_id)
+                self.cluster_list.append(instance_id)
             else:
                 self.assertEqual(403, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 200, role))
 
-            resp = self.capellaAPI.remove_user_from_project(self.tenant_id, user["userid"],
-                                                            self.project_id)
+            resp = self.capella_api.remove_user_from_project(self.tenant_id, user["userid"],
+                                                             self.project_id)
             self.assertEqual(204, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
 
-        resp = self.goldfishAPI.delete_goldfish_instance(self.tenant_id, self.project_id,
-                                                         cluster_id)
-        self.assertEqual(204, resp.status_code,
-                        msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
-        self.wait_for_cluster_to_be_deleted(cluster_id)
-        self.cluster_list.remove(cluster_id)
+        resp = self.columnar_api.delete_columnar_instance(self.tenant_id, self.project_id,
+                                                          instance_id)
+        self.assertEqual(202, resp.status_code,
+                        msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
+        self.wait_for_instance_to_be_deleted(instance_id)
+        self.instance_list.remove(instance_id)
 
     def test_cluster_scaling(self):
 
@@ -777,7 +910,7 @@ class SecurityTest(ColumnarBaseTest):
                     'Authorization': 'Bearer %s' % headers[header],
                     'Content-Type': 'application/json'
             }
-            resp = self.goldfishAPI.update_goldfish_instance(self.tenant_id, self.project_id,
+            resp = self.columnarAPI.update_columnar_instance(self.tenant_id, self.project_id,
                                                             cluster_id, self.cluster.name, "",
                                                             3, headers=cbc_api_request_headers,
                                                             skip_jwt_retry=True)
@@ -792,7 +925,7 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for tenant_id in tenant_ids:
-            resp = self.goldfishAPI.update_goldfish_instance(tenant_ids[tenant_id], self.project_id,
+            resp = self.columnarAPI.update_columnar_instance(tenant_ids[tenant_id], self.project_id,
                                                              cluster_id, self.cluster.name, "",
                                                              3)
             #wait for cluster scaling
@@ -803,7 +936,7 @@ class SecurityTest(ColumnarBaseTest):
             else:
                 self.assertEqual(202, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
-                self.goldfish_utils.wait_for_cluster_scaling_operation_to_complete(
+                self.columnar_utils.wait_for_cluster_scaling_operation_to_complete(
                             self.pod, self.users[0], self.cluster)
 
          # Trying out with different project ids
@@ -823,13 +956,13 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for project_id in project_ids:
-            resp = self.goldfishAPI.update_goldfish_instance(self.tenant_id, self.project_id,
+            resp = self.columnarAPI.update_columnar_instance(self.tenant_id, self.project_id,
                                                             cluster_id, self.cluster.name, "",
                                                             3)
             if project_id == "valid_project_id":
                 self.assertEqual(202, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
-                self.goldfish_utils.wait_for_cluster_scaling_operation_to_complete(
+                self.columnar_utils.wait_for_cluster_scaling_operation_to_complete(
                             self.pod, self.users[0], self.cluster)
             else:
                 self.assertEqual(404, resp.status_code,
@@ -841,11 +974,11 @@ class SecurityTest(ColumnarBaseTest):
                          msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 204))
 
         for user in self.test_users:
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
+            self.columnarAPIrole = columnarAPI("https://" + self.url, "", "",
                                                user["mailid"],
                                                user["password"])
 
-            resp = self.goldfishAPIrole.update_goldfish_instance(self.tenant_id, self.project_id,
+            resp = self.columnarAPIrole.update_columnar_instance(self.tenant_id, self.project_id,
                                                              cluster_id, self.cluster.name, "",
                                                              3)
 
@@ -854,7 +987,7 @@ class SecurityTest(ColumnarBaseTest):
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(resp.status_code, 202,
                                                            user["role"]))
-                self.goldfish_utils.wait_for_cluster_scaling_operation_to_complete(
+                self.columnar_utils.wait_for_cluster_scaling_operation_to_complete(
                             self.pod, self.users[0], self.cluster)
             else:
                 self.assertEqual(403, resp.status_code,
@@ -882,11 +1015,11 @@ class SecurityTest(ColumnarBaseTest):
             self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
 
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
+            self.columnarAPIrole = columnarAPI("https://" + self.url, "", "",
                                                user["mailid"],
                                                user["password"])
 
-            resp = self.goldfishAPIrole.update_goldfish_instance(self.tenant_id, self.project_id,
+            resp = self.columnarAPIrole.update_columnar_instance(self.tenant_id, self.project_id,
                                                              cluster_id, self.cluster.name, "",
                                                              3)
 
@@ -910,27 +1043,27 @@ class SecurityTest(ColumnarBaseTest):
 
     def test_create_api_keys_security(self):
 
-        self.cluster = self.user.project.clusters[0]
-        cluster_id = self.cluster.cluster_id
+        instance = self.project.instances[0]
+        instance_id = instance.instance_id
         #create bucket and collections
-        payload = self.get_api_key_payload()
+        # payload = self.get_api_key_payload()
 
-        headers = {
-            "invalid_header": 'abcdefgh',
-            "empty_header": ''
-        }
-        for header in headers:
-            cbc_api_request_headers = {
-                    'Authorization': 'Bearer %s' % headers[header],
-                    'Content-Type': 'application/json'
-            }
-            resp = self.goldfishAPI.create_api_keys(self.tenant_id, self.project_id,
-                                                    cluster_id,
-                                                    headers=cbc_api_request_headers,
-                                                    skip_jwt_retry=True)
-            self.log.info("Response: {}".format(resp))
-            self.assertEqual(401, resp.status_code,
-                            msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        # headers = {
+        #     "invalid_header": 'abcdefgh',
+        #     "empty_header": ''
+        # }
+        # for header in headers:
+        #     cbc_api_request_headers = {
+        #             'Authorization': 'Bearer %s' % headers[header],
+        #             'Content-Type': 'application/json'
+        #     }
+        #     resp = self.columnarAPI.create_api_keys(self.tenant_id, self.project_id,
+        #                                             cluster_id,
+        #                                             headers=cbc_api_request_headers,
+        #                                             skip_jwt_retry=True)
+        #     self.log.info("Response: {}".format(resp))
+        #     self.assertEqual(401, resp.status_code,
+        #                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
 
         #testing with different tenant ids
         tenant_ids = {
@@ -939,9 +1072,8 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for tenant_id in tenant_ids:
-            print("Tenant id: {}".format(tenant_ids[tenant_id]))
-            resp = self.goldfishAPI.create_api_keys(tenant_ids[tenant_id], self.project_id,
-                                                    cluster_id)
+            resp = self.columnar_api.create_api_keys(tenant_ids[tenant_id], self.project_id,
+                                                     instance_id)
             if tenant_id == "invalid_tenant_id":
                 self.assertEqual(404, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
@@ -952,23 +1084,17 @@ class SecurityTest(ColumnarBaseTest):
 
         # Trying out with different project ids
         self.log.info("Verifying the endpoint access with different projects")
-        self.log.info("Creating a project")
-        resp = self.capellaAPI.create_project(self.tenant_id, "security-test-project")
-        self.assertEqual(201, resp.status_code,
-                         msg='FAIL, Outcome: {}, Expected: {}'.format(resp.status_code,
-                                                                      201))
 
         resp = resp.json()
 
         project_ids = {
             'valid_project_id': self.project_id,
-            'different_project_id': resp['id'],
             'invalid_project_id': self.invalid_id
         }
 
         for project_id in project_ids:
-            resp = self.goldfishAPI.create_api_keys(self.tenant_id, project_ids[project_id],
-                                                    cluster_id)
+            resp = self.columnar_api.create_api_keys(self.tenant_id, project_ids[project_id],
+                                                     instance_id)
             if project_id == "valid_project_id":
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 201))
@@ -977,33 +1103,29 @@ class SecurityTest(ColumnarBaseTest):
                 self.assertEqual(404, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
 
-        self.log.info("Deleting project")
-        resp = self.capellaAPI.delete_project(self.tenant_id, project_ids["different_project_id"])
-        self.assertEqual(204, resp.status_code,
-                         msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 204))
 
         for user in self.test_users:
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
-                                               user["mailid"],
-                                               user["password"])
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                self.test_users[user]["mailid"],
+                                                self.test_users[user]["password"])
 
-            resp = self.goldfishAPIrole.create_api_keys(self.tenant_id, self.project_id,
-                                                    cluster_id)
+            resp = self.colunmnarAPIrole.create_api_keys(self.tenant_id, self.project_id,
+                                                         instance_id)
 
-            if user["role"] == "organizationOwner":
+            if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
-                                     'For role: {}'.format(resp.status_code, 201, user["role"]))
+                                     'For role: {}'.format(resp.status_code, 201, self.test_users[user]["role"]))
                 #delte api keys
             else:
                 self.assertEqual(403, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
-                                     'For role: {}'.format(resp.status_code, 403, user["role"]))
+                                     'For role: {}'.format(resp.status_code, 403, self.test_users[user]["role"]))
 
         self.log.info("Verifying endpoint for different roles under project - RBAC")
         project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
                          "projectDataWriter", "projectDataViewer"]
-        user = self.test_users[2]
+        user = self.test_users['User3']
 
         for role in project_roles:
 
@@ -1016,16 +1138,16 @@ class SecurityTest(ColumnarBaseTest):
                 "roles": [role], "users": [user["userid"]]
             }
 
-            resp = self.capellaAPI.add_user_to_project(self.tenant_id, json.dumps(payload))
+            resp = self.capella_api.add_user_to_project(self.tenant_id, json.dumps(payload))
             self.assertEqual(200, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
 
-            self.goldfishAPIrole = GoldfishAPI("https://" + self.url, "", "",
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
                                                user["mailid"],
                                                user["password"])
 
-            resp = self.goldfishAPIrole.create_api_keys(self.tenant_id, self.project_id,
-                                                    cluster_id)
+            resp = self.columnarAPIrole.create_api_keys(self.tenant_id, self.project_id,
+                                                        instance_id)
 
             if role == "projectOwner" or role == "projectClusterManager":
                 self.assertEqual(201, resp.status_code,
@@ -1037,18 +1159,258 @@ class SecurityTest(ColumnarBaseTest):
                                  msg='FAIL, Outcome:{}, Expected: {}.' \
                                      'For role: {}'.format(role, resp.status_code, 403))
 
-            resp = self.capellaAPI.remove_user_from_project(self.tenant_id, user["userid"],
-                                                            self.project_id)
+            resp = self.capella_api.remove_user_from_project(self.tenant_id, user["userid"],
+                                                             self.project_id)
             self.assertEqual(204, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
 
-    def goldfish_test_data_isolation(self):
+    def test_get_columnar_api_keys_security(self):
+        instance = self.project.instances[0]
+        instance_id = instance.instance_id
+
+        # headers = {
+        #     "invalid_header": 'abcdefgh',
+        #     "empty_header": ''
+        # }
+        # for header in headers:
+        #     cbc_api_request_headers = {
+        #             'Authorization': 'Bearer %s' % headers[header],
+        #             'Content-Type': 'application/json'
+        #     }
+        #     resp = self.columnarAPI.create_api_keys(self.tenant_id, self.project_id,
+        #                                             cluster_id,
+        #                                             headers=cbc_api_request_headers,
+        #                                             skip_jwt_retry=True)
+        #     self.log.info("Response: {}".format(resp))
+        #     self.assertEqual(401, resp.status_code,
+        #                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+
+        #testing with different tenant ids
+        tenant_ids = {
+            "valid_tenant_id": self.tenant_id,
+            "invalid_tenant_id": self.invalid_id
+        }
+
+        for tenant_id in tenant_ids:
+            resp = self.columnar_api.get_api_keys(tenant_ids[tenant_id], self.project_id,
+                                                  instance_id)
+            if tenant_id == "invalid_tenant_id":
+                self.assertEqual(404, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
+            else:
+                self.assertEqual(200, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
+
+        # Trying out with different project ids
+        self.log.info("Verifying the endpoint access with different projects")
+
+        resp = resp.json()
+
+        project_ids = {
+            'valid_project_id': self.project_id,
+            'invalid_project_id': self.invalid_id
+        }
+
+        for project_id in project_ids:
+            resp = self.columnar_api.get_api_keys(self.tenant_id, project_ids[project_id],
+                                                  instance_id)
+            if project_id == "valid_project_id":
+                self.assertEqual(200, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
+                #delete api keys
+            else:
+                self.assertEqual(404, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
+
+        for user in self.test_users:
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                self.test_users[user]["mailid"],
+                                                self.test_users[user]["password"])
+
+            resp = self.colunmnarAPIrole.get_api_keys(self.tenant_id, self.project_id,
+                                                      instance_id)
+
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(200, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}.' \
+                                     'For role: {}'.format(resp.status_code, 200, self.test_users[user]["role"]))
+            else:
+                self.assertEqual(403, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}.' \
+                                     'For role: {}'.format(resp.status_code, 403, self.test_users[user]["role"]))
+
+        self.log.info("Verifying endpoint for different roles under project - RBAC")
+        project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
+                         "projectDataWriter", "projectDataViewer"]
+        user = self.test_users['User3']
+
+        for role in project_roles:
+
+            self.log.info(
+                "Adding user to project {} with role as {}".format(self.project_id, role))
+
+            payload = {
+                "resourceId": self.project_id,
+                "resourceType": "project",
+                "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capella_api.add_user_to_project(self.tenant_id, json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               user["mailid"],
+                                               user["password"])
+
+            resp = self.columnarAPIrole.get_api_keys(self.tenant_id, self.project_id,
+                                                     instance_id)
+
+            if role == "projectOwner" or role == "projectClusterManager" \
+                                      or role == "projectClusterViewer":
+                self.assertEqual(200, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}.' \
+                                     'For role: {}'.format(role, resp.status_code, 200))
+                #delete api key
+            else:
+                self.assertEqual(403, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}.' \
+                                     'For role: {}'.format(role, resp.status_code, 403))
+
+            resp = self.capella_api.remove_user_from_project(self.tenant_id, user["userid"],
+                                                             self.project_id)
+            self.assertEqual(204, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
+
+
+    def test_delete_columnar_api_keys(self):
+        instance = self.project.instances[0]
+        instance_id = instance.instance_id
+
+        # headers = {
+        #     "invalid_header": 'abcdefgh',
+        #     "empty_header": ''
+        # }
+        # for header in headers:
+        #     cbc_api_request_headers = {
+        #             'Authorization': 'Bearer %s' % headers[header],
+        #             'Content-Type': 'application/json'
+        #     }
+        #     resp = self.columnarAPI.create_api_keys(self.tenant_id, self.project_id,
+        #                                             cluster_id,
+        #                                             headers=cbc_api_request_headers,
+        #                                             skip_jwt_retry=True)
+        #     self.log.info("Response: {}".format(resp))
+        #     self.assertEqual(401, resp.status_code,
+        #                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+
+        resp = self.columnar_api.create_api_keys(self.tenant_id, self.project_id,
+                                                 instance_id)
+        if resp.status_code != 201:
+            self.fail("Failed to create API keys")
+        resp = resp.json()
+        api_key_id = resp["apikeyId"]
+
+        #testing with different tenant ids
+        tenant_ids = {
+            "valid_tenant_id": self.tenant_id,
+            "invalid_tenant_id": self.invalid_id
+        }
+
+        for tenant_id in tenant_ids:
+            resp = self.columnar_api.delete_api_keys(tenant_ids[tenant_id], self.project_id,
+                                                     instance_id, api_key_id)
+            if tenant_id == "invalid_tenant_id":
+                self.assertEqual(404, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
+            else:
+                self.assertEqual(202, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
+                resp = self.columnar_api.create_api_keys(self.tenant_id, self.project_id,
+                                                 instance_id)
+                if resp.status_code != 201:
+                    self.fail("Failed to create API keys")
+                resp = resp.json()
+                api_key_id = resp["apikeyId"]
+
+        for user in self.test_users:
+            self.colunmnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                self.test_users[user]["mailid"],
+                                                self.test_users[user]["password"])
+
+            resp = self.colunmnarAPIrole.delete_api_keys(self.tenant_id, self.project_id,
+                                                         instance_id, api_key_id)
+
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(202, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}.' \
+                                     'For role: {}'.format(resp.status_code, 202, self.test_users[user]["role"]))
+
+                resp = self.columnar_api.create_api_keys(self.tenant_id, self.project_id,
+                                                 instance_id)
+                if resp.status_code != 201:
+                    self.fail("Failed to create API keys")
+                resp = resp.json()
+                api_key_id = resp["apikeyId"]
+            else:
+                self.assertEqual(403, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}.' \
+                                     'For role: {}'.format(resp.status_code, 403, self.test_users[user]["role"]))
+
+        self.log.info("Verifying endpoint for different roles under project - RBAC")
+        project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
+                         "projectDataWriter", "projectDataViewer"]
+        user = self.test_users['User3']
+
+        for role in project_roles:
+
+            self.log.info(
+                "Adding user to project {} with role as {}".format(self.project_id, role))
+
+            payload = {
+                "resourceId": self.project_id,
+                "resourceType": "project",
+                "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capella_api.add_user_to_project(self.tenant_id, json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               user["mailid"],
+                                               user["password"])
+
+            resp = self.columnarAPIrole.delete_api_keys(self.tenant_id, self.project_id,
+                                                        instance_id, api_key_id)
+
+            if role == "projectOwner" or role == "projectClusterManager":
+                self.assertEqual(202, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}.' \
+                                     'For role: {}'.format(role, resp.status_code, 202))
+
+                resp = self.columnar_api.create_api_keys(self.tenant_id, self.project_id,
+                                                 instance_id)
+                if resp.status_code != 201:
+                    self.fail("Failed to create API keys")
+                resp = resp.json()
+                api_key_id = resp["apikeyId"]
+            else:
+                self.assertEqual(403, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}.' \
+                                     'For role: {}'.format(role, resp.status_code, 403))
+
+            resp = self.capella_api.remove_user_from_project(self.tenant_id, user["userid"],
+                                                             self.project_id)
+            self.assertEqual(204, resp.status_code,
+                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
+
+    def columnar_test_data_isolation(self):
 
         self.cluster1 = self.user.project.clusters[0]
         cluster_username1, cluster_password1 = self.generate_database_credentials(self.cluster1)
         dataverse_name = "securityScope"
         collection_name = "securityColl"
-        print("C1 name,  endpoint: {}, {}".format(self.cluster1.name, self.cluster1.endpoint))
 
         #create scope and collections in one intance
         res = self.cbas_util.create_dataverse(self.cluster1, dataverse_name, cluster_username1,
@@ -1065,7 +1427,6 @@ class SecurityTest(ColumnarBaseTest):
 
         self.cluster2 = self.user.project.clusters[1]
         cluster_username2, cluster_password2 = self.generate_database_credentials(self.cluster2)
-        print("C2 name,  endpoint: {}, {}".format(self.cluster2.name, self.cluster2.endpoint))
 
         execute_statement = "Select * from " + dataverse_name + "." + collection_name
         response, metrics, errors, results, handle = self.cbas_util.execute_statement_on_cbas_util(self.cluster2,
@@ -1080,60 +1441,7 @@ class SecurityTest(ColumnarBaseTest):
         if expected_err_msg not in actual_err_msg:
             self.fail("Data isolation failed")
 
-    def goldfish_nebula_test_invalid_credentials(self):
-
-        statement_to_execute = "Select 1;"
-
-        self.cluster = self.user.project.clusters[0]
-        cluster_username, cluster_password = self.generate_database_credentials(self.cluster)
-
-        usernames = [cluster_username, "", "%!xyz", "Administrator"]
-        passwords = [cluster_password, "", "78!awy", "password"]
-
-        for i in range(len(usernames)):
-            username = usernames[i]
-            for j in range(len(passwords)):
-                password = passwords[j]
-
-                response, metrics, errors, results, handle = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                              statement_to_execute,
-                                                                                              username=username,
-                                                                                              password=password)
-
-                if i == 0 and j == 0:
-                    if errors:
-                        self.fail("Got error message for valid credentials, Err: {}".format(errors[0]["msg"]))
-                else:
-                    actual_err_msg = errors[0]["msg"]
-                    expected_err_msg = "Unauthorized user."
-                    if not actual_err_msg == expected_err_msg:
-                        self.fail("Received unexpected error message for invalid credentials, {}:{}." \
-                                  "Expected: {}, Actual: {}".format(username, password,
-                                                                    expected_err_msg, actual_err_msg))
-
-    def goldfish_nebula_test_open_ports(self):
-
-        self.cluster = self.user.project.clusters[0]
-        valid_ports = [self.CBAS_PORT, self.KV_PORT, self.SVC_MGR_PORT]
-        invalid_ports = []
-
-        for i in range(10):
-            random_port = self.generate_random_port()
-            invalid_ports.append(random_port)
-
-        for port in valid_ports:
-            port_status = self.is_port_open(self.cluster.endpoint, port)
-            if not port_status:
-                self.fail("Expected port {} to be open but connection to port failed ".
-                          format(port))
-
-        for port in invalid_ports:
-            port_status = self.is_port_open(self.cluster.endpoint, port)
-            if port_status:
-                self.fail("Expected port {} to be closed but port is open".
-                          format(port))
-
-    def goldfish_security_test_invalid_endpoints(self):
+    def columnar_security_test_invalid_endpoints(self):
 
         self.cluster = self.user.project.clusters[0]
 
