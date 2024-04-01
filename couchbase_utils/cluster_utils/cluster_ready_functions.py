@@ -1618,7 +1618,7 @@ class ClusterUtils:
         for server in servers:
             shell = RemoteMachineShellConnection(server)
             # service should listen on non-ssl port only on localhost/no-address
-            for port in port_map.keys():
+            for port in list(port_map.keys()):
                 addresses = shell.get_port_recvq(port)
                 for address in addresses:
                     expected_address = "127.0.0.1:" + port + '\n'
@@ -1628,7 +1628,7 @@ class ClusterUtils:
                         shell.disconnect()
                         return False
             # service should listen on tls_port(if there is one) for all outside addresses
-            for port in port_map.keys():
+            for port in list(port_map.keys()):
                 ssl_port = CbServer.ssl_port_map.get(port)
                 if ssl_port is None:
                     continue

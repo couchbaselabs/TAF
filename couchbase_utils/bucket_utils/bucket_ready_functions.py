@@ -516,7 +516,7 @@ class DocLoaderUtils(object):
         spec_percent_data["lookup"] = input_spec["subdoc_crud"].get(
             MetaCrudParams.SubDocCrud.LOOKUP_PER_COLLECTION, 0)
 
-        for op_type in spec_percent_data.keys():
+        for op_type in list(spec_percent_data.keys()):
             if isinstance(spec_percent_data[op_type], int):
                 spec_percent_data[op_type] = (spec_percent_data[op_type], 1)
         exclude_dict = dict()
@@ -585,7 +585,7 @@ class DocLoaderUtils(object):
                 subdoc_data[op_type] = op_data
         for data in [doc_data, subdoc_data]:
             for op_type, op_data in data.items():
-                failed_keys = op_data["fail"].keys()
+                failed_keys = list(op_data["fail"].keys())
 
                 # New dicts to filter failures based on retry strategy
                 op_data["unwanted"] = dict()
@@ -1798,10 +1798,10 @@ class BucketUtils(ScopeUtils):
         exclude_scopes = list()
 
         for b_name, scope_dict in exclude_from.items():
-            for scope_name in scope_dict["scopes"].keys():
+            for scope_name in list(scope_dict["scopes"].keys()):
                 exclude_scopes.append("%s:%s" % (b_name, scope_name))
 
-        for bucket_name in selected_buckets.keys():
+        for bucket_name in list(selected_buckets.keys()):
             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
             known_buckets[bucket_name] = bucket
             active_scopes = BucketUtils.get_active_scopes(bucket,
@@ -1868,14 +1868,14 @@ class BucketUtils(ScopeUtils):
             if "scopes" in scope_dict:
                 for scope_name, collection_dict in scope_dict["scopes"].items():
                     if "collections" in collection_dict:
-                        for c_name in collection_dict["collections"].keys():
+                        for c_name in list(collection_dict["collections"].keys()):
                             exclude_collections.append("%s:%s:%s"
                                                        % (b_name, scope_name,
                                                            c_name))
 
         for bucket_name, scope_dict in selected_buckets.items():
             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
-            for scope_name in scope_dict["scopes"].keys():
+            for scope_name in list(scope_dict["scopes"].keys()):
                 active_collections = BucketUtils.get_active_collections(
                     bucket, scope_name, only_names=True)
                 if consider_only_dropped:
@@ -2925,7 +2925,7 @@ class BucketUtils(ScopeUtils):
                 self.log.error("At least need {0}MB memoryQuota".format(256*bucket_count))
                 success = False
         if success:
-            for key in storage.keys():
+            for key in list(storage.keys()):
                 if ram_quota is not None:
                     bucket_ram = ram_quota
                 else:
@@ -3121,7 +3121,7 @@ class BucketUtils(ScopeUtils):
         min_count = list()
         zones = rest.get_zone_names()
         for zone in zones:
-            nodes = rest.get_nodes_in_zone(zone).keys()
+            nodes = list(rest.get_nodes_in_zone(zone).keys())
             if nodes:
                 min_count.append(len(nodes))
         # [2,2,1] supports replica 3
@@ -3497,11 +3497,12 @@ class BucketUtils(ScopeUtils):
         for task, task_info in tasks_info.items():
             task.result = True
             op_type = task_info["op_type"]
-            ignored_keys = task_info["ignored"].keys()
-            retried_success_keys = task_info["retried"]["success"].keys()
-            retried_failed_keys = task_info["retried"]["fail"].keys()
-            unwanted_success_keys = task_info["unwanted"]["success"].keys()
-            unwanted_failed_keys = task_info["unwanted"]["fail"].keys()
+            ignored_keys = list(task_info["ignored"].keys())
+            retried_success_keys = list(task_info["retried"]["success"].keys())
+            retried_failed_keys = list(task_info["retried"]["fail"].keys())
+            unwanted_success_keys = \
+                list(task_info["unwanted"]["success"].keys())
+            unwanted_failed_keys = list(task_info["unwanted"]["fail"].keys())
 
             # Success cases
             if len(ignored_keys) > 0:
@@ -3840,7 +3841,7 @@ class BucketUtils(ScopeUtils):
             monitor_stats=monitor_stats,
             track_failures=track_failures)
 
-        for task in tasks_info.keys():
+        for task in list(tasks_info.keys()):
             self.task_manager.get_task_result(task)
 
         # Wait for all doc_loading tasks to complete and populate failures
@@ -3988,7 +3989,7 @@ class BucketUtils(ScopeUtils):
         servers = self.cluster_util.get_kv_nodes(cluster)
         dcp_stat_map = self.data_collector.collect_compare_dcp_stats(
             cluster.buckets, servers, filter_list=filter_list)
-        for bucket in dcp_stat_map.keys():
+        for bucket in list(dcp_stat_map.keys()):
             if dcp_stat_map[bucket]:
                 self.log.critical("Bucket {0} has unacked bytes != 0: {1}"
                                   .format(bucket, dcp_stat_map[bucket]))
@@ -4101,12 +4102,12 @@ class BucketUtils(ScopeUtils):
         """
         bucketMap = dict()
         logic = True
-        for bucket in map1.keys():
+        for bucket in list(map1.keys()):
             map = dict()
             nodeMap = dict()
             output = ""
-            for node in map1[bucket].keys():
-                for vbucket in map1[bucket][node].keys():
+            for node in list(map1[bucket].keys()):
+                for vbucket in list(map1[bucket][node].keys()):
                     uuid = map1[bucket][node][vbucket]['uuid']
                     abs_high_seqno = map1[bucket][node][vbucket]['abs_high_seqno']
                     purge_seqno = map1[bucket][node][vbucket]['purge_seqno']
@@ -4149,8 +4150,8 @@ class BucketUtils(ScopeUtils):
         """
         isTrue = True
         output = ""
-        for bucket in vbucketseq.keys():
-            for vbucket in vbucketseq[bucket].keys():
+        for bucket in list(vbucketseq.keys()):
+            for vbucket in list(vbucketseq[bucket].keys()):
                 seq = vbucketseq[bucket][vbucket]['abs_high_seqno']
                 uuid = vbucketseq[bucket][vbucket]['uuid']
                 fseq = failoverlog[bucket][vbucket]['seq']
@@ -4171,13 +4172,13 @@ class BucketUtils(ScopeUtils):
     @staticmethod
     def print_results_per_node(node_map):
         """ Method to print map results - Used only for debugging purpose """
-        for bucket in node_map.keys():
+        for bucket in list(node_map.keys()):
             print("----- Bucket {0} -----".format(bucket))
-            for node in node_map[bucket].keys():
+            for node in list(node_map[bucket].keys()):
                 print("-------------Node {0}------------".format(node))
-                for vbucket in node_map[bucket][node].keys():
+                for vbucket in list(node_map[bucket][node].keys()):
                     print("   for vbucket {0}".format(vbucket))
-                    for key in node_map[bucket][node][vbucket].keys():
+                    for key in list(node_map[bucket][node][vbucket].keys()):
                         print("            :: for key {0} = {1}"
                               .format(key,
                                       node_map[bucket][node][vbucket][key]))
@@ -4193,7 +4194,7 @@ class BucketUtils(ScopeUtils):
         servers = self.cluster_util.get_kv_nodes(cluster, servers)
         active, replica = self.get_vb_distribution_active_replica(
             cluster, servers=servers, buckets=buckets)
-        for bucket in active.keys():
+        for bucket in list(active.keys()):
             self.log.debug("Begin Verification for Bucket {0}".format(bucket))
             active_result = active[bucket]
             replica_result = replica[bucket]
@@ -4357,12 +4358,12 @@ class BucketUtils(ScopeUtils):
         """
         bucketMap = dict()
         logic = True
-        for bucket in map1.keys():
+        for bucket in list(map1.keys()):
             map = dict()
             tempMap = dict()
             output = ""
-            for node in map1[bucket].keys():
-                for vbucket in map1[bucket][node].keys():
+            for node in list(map1[bucket].keys()):
+                for vbucket in list(map1[bucket][node].keys()):
                     id = map1[bucket][node][vbucket]['id']
                     seq = map1[bucket][node][vbucket]['seq']
                     num_entries = map1[bucket][node][vbucket]['num_entries']
@@ -4436,7 +4437,7 @@ class BucketUtils(ScopeUtils):
 
     def sync_ops_all_buckets(self, cluster, docs_gen_map, batch_size=10,
                              verify_data=True, exp=0, num_items=0):
-        for key in docs_gen_map.keys():
+        for key in list(docs_gen_map.keys()):
             if key != "remaining":
                 op_type = key
                 if key == "expiry":
@@ -4454,7 +4455,7 @@ class BucketUtils(ScopeUtils):
         tasks = []
         if "expiry" in docs_gen_map.keys():
             self._expiry_pager(cluster)
-        for key in docs_gen_map.keys():
+        for key in list(docs_gen_map.keys()):
             if key != "remaining":
                 op_type = key
                 if key == "expiry":
@@ -5911,7 +5912,7 @@ class BucketUtils(ScopeUtils):
                         scope_data["collections"] = \
                             bucket.scopes[scope_name].collections
 
-                    for collection_name in scope_data["collections"].keys():
+                    for collection_name in list(scope_data["collections"].keys()):
                         collection_dict[collection_name] = dict()
 
         def perform_scope_operation(operation_type, ops_spec):
@@ -5980,7 +5981,7 @@ class BucketUtils(ScopeUtils):
                         for bucket_name, b_data in buckets_spec.items():
                             bucket = BucketUtils.get_bucket_obj(buckets,
                                                                 bucket_name)
-                            for scope_name in b_data["scopes"].keys():
+                            for scope_name in list(b_data["scopes"].keys()):
                                 futures.append(executor.submit(ScopeUtils.drop_scope, cluster.master,
                                                                bucket, scope_name, session=session))
                     for future in concurrent.futures.as_completed(futures):
@@ -5994,7 +5995,7 @@ class BucketUtils(ScopeUtils):
                 for bucket_name, b_data in buckets_spec.items():
                     bucket = BucketUtils.get_bucket_obj(buckets,
                                                         bucket_name)
-                    for scope_name in b_data["scopes"].keys():
+                    for scope_name in list(b_data["scopes"].keys()):
                         scope_obj = bucket.scopes[scope_name]
                         BucketUtils.create_scope(cluster.master,
                                                  bucket,
@@ -6015,7 +6016,7 @@ class BucketUtils(ScopeUtils):
 
         def perform_collection_operation(operation_type, ops_spec):
             if operation_type == "create":
-                bucket_names = ops_spec.keys()
+                bucket_names = list(ops_spec.keys())
                 bucket_names.remove("req_collections")
                 net_dict = dict()  # {"buckets"{bucket_name:{"scopes":{scope_name:{"collections":{collections_name:{}}}}}}}
                 net_dict["buckets"] = dict()
@@ -6026,8 +6027,9 @@ class BucketUtils(ScopeUtils):
                             bucket_name = sample(bucket_names, 1)[0]
                             bucket = BucketUtils.get_bucket_obj(buckets,
                                                                 bucket_name)
-                            scope = sample(ops_spec[bucket_name]["scopes"].keys(),
-                                           1)[0]
+                            scope = sample(
+                                list(ops_spec[bucket_name]["scopes"].keys()),
+                                1)[0]
                             collection_name = BucketUtils.get_random_name(
                                 prefix="collection",
                                 counter_obj=Bucket.collection_counter)
@@ -6060,7 +6062,7 @@ class BucketUtils(ScopeUtils):
                             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
                             for scope_name, scope_data in b_data["scopes"].items():
                                 for collection_name in \
-                                        scope_data["collections"].keys():
+                                        list(scope_data["collections"].keys()):
                                     if operation_type == "flush":
                                         CollectionUtils.flush_collection(
                                             cluster.master, bucket,
@@ -6081,7 +6083,7 @@ class BucketUtils(ScopeUtils):
                         for bucket_name, b_data in ops_spec.items():
                             bucket = BucketUtils.get_bucket_obj(buckets, bucket_name)
                             for scope_name, scope_data in b_data["scopes"].items():
-                                for col_name in scope_data["collections"].keys():
+                                for col_name in list(scope_data["collections"].keys()):
                                     collection = bucket.scopes[scope_name] \
                                         .collections[col_name]
                                     c_dict = collection.get_dict_object()

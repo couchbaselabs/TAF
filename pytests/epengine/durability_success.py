@@ -101,14 +101,16 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update,
             DocLoading.Bucket.DocOps.UPDATE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Wait for document_loader tasks to complete
         for task in tasks:
@@ -124,14 +126,16 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_delete,
             DocLoading.Bucket.DocOps.DELETE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Wait for document_loader tasks to complete
         for task in tasks[2:]:
@@ -176,7 +180,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 op_type = DocLoading.Bucket.DocOps.DELETE
 
             op_failed = self.durability_helper.retry_with_no_error(
-                client, task.fail, op_type)
+                client, task.fail, op_type, load_using=self.load_docs_using)
             if op_failed:
                 self.log_failure(
                     "CRUD '{0}' failed on retry with no error condition"

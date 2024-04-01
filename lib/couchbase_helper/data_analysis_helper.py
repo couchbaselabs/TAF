@@ -38,7 +38,7 @@ class DataAnalysisResultAnalyzer:
         output = ""
         summary = ""
         logic = True
-        for bucket in result.keys():
+        for bucket in list(result.keys()):
             summary += "\n +++++++++++++++++++++++++++++++++++++++++++++++++++"
             output += "\n +++++++++++++++++++++++++++++++++++++++++++++++++++"
             output += "\n Analyzing for Bucket {0}".format(bucket)
@@ -78,12 +78,12 @@ class DataAnalysisResultAnalyzer:
         output = ""
         summary = ""
         logic = True
-        for bucket in result.keys():
+        for bucket in list(result.keys()):
             output += "\n +++++++++++++++++++++++++++++++++++++++++++++++++++"
             summary += "\n +++++++++++++++++++++++++++++++++++++++++++++++++++"
             output += "\n Analyzing for Bucket {0}".format(bucket)
             summary += "\n Analyzing for Bucket {0}".format(bucket)
-            for node in result[bucket].keys():
+            for node in list(result[bucket].keys()):
                 output += "\n ++++++++++++++++++++++++++++++++++++++++++++++++"
                 output += "\n Analyzing for Bucket {0}, node {1}" \
                           .format(bucket, node)
@@ -133,7 +133,7 @@ class DataAnalysisResultAnalyzer:
             output += failureoutputformat.format(actual, lresult)
 
         if result is not None and type == UPDATED_ITEMS:
-            for key in result.keys():
+            for key in list(result.keys()):
                 output += "\n {0} : {1} ".format(key, result[key])
         else:
             for values in result:
@@ -155,7 +155,7 @@ class DataAnalyzer(object):
                                                     min per vbucket, mean, std
         """
         Result = {}
-        for bucket in sourceMap.keys():
+        for bucket in list(sourceMap.keys()):
             info = sourceMap[bucket]
             Result[bucket] = self.find_data_distribution(info)
         return Result
@@ -187,7 +187,7 @@ class DataAnalyzer(object):
                  This output is for bucket -> vbucket level
         """
         Result = {}
-        for bucket in sourceMap.keys():
+        for bucket in list(sourceMap.keys()):
             info1 = sourceMap[bucket]
             info2 = targetMap[bucket]
             Result[bucket] = self.compare_data_maps(info1, info2, headerInfo,
@@ -224,10 +224,10 @@ class DataAnalyzer(object):
                  This output is for bucket -> node -> vbucket level
         """
         Result = {}
-        for bucket in sourceMap.keys():
+        for bucket in list(sourceMap.keys()):
             Result[bucket] = {}
-        for bucket in sourceMap.keys():
-            for node in sourceMap[bucket].keys():
+        for bucket in list(sourceMap.keys()):
+            for node in list(sourceMap[bucket].keys()):
                 info1 = sourceMap[bucket][node]
                 info2 = targetMap[bucket][node]
                 Result[bucket][node] = self.compare_data_maps(
@@ -264,7 +264,7 @@ class DataAnalyzer(object):
                  This output is for bucket -> vbucket level
         """
         Result = {}
-        for bucket in bucketmap1.keys():
+        for bucket in list(bucketmap1.keys()):
             info1 = bucketmap1[bucket]
             info2 = bucketmap2[bucket]
             Result[bucket] = self.compare_maps(info1, info2, mainKey,
@@ -302,12 +302,12 @@ class DataAnalyzer(object):
                   This output is for bucket -> node -> vbucket level
         """
         Result = {}
-        for bucket in bucketmap1.keys():
+        for bucket in list(bucketmap1.keys()):
             map1 = bucketmap1[bucket]
             map2 = bucketmap2[bucket]
             NodeResult = {}
             if map1 is not None:
-                for node in map1.keys():
+                for node in list(map1.keys()):
                     info1 = map1[node]
                     info2 = map2[node]
                     NodeResult[node] = self.compare_maps(info1, info2, mainKey,
@@ -325,7 +325,7 @@ class DataAnalyzer(object):
             data2 = info2[key]
             reason = {}
             if len(data1.keys()) == len(data2.keys()):
-                for vkey in data1.keys():
+                for vkey in list(data1.keys()):
                     if comparisonMap is not None and vkey in comparisonMap.keys():
                         self.compare_values(data1[vkey], data2[vkey], vkey,
                                             reason, comparisonMap[vkey])
@@ -348,7 +348,7 @@ class DataAnalyzer(object):
     def find_data_distribution(self, info):
         """ Method to extract data distribution from map info """
         distribution_map = {}
-        for key in info.keys():
+        for key in list(info.keys()):
             data = info[key].split(",")
             vbucket = data[len(data) - 1]
             if vbucket in distribution_map.keys():
@@ -356,7 +356,7 @@ class DataAnalyzer(object):
             else:
                 distribution_map[vbucket] = 1
         array = []
-        for key in distribution_map.keys():
+        for key in list(distribution_map.keys()):
             array.append(distribution_map[key])
         max_val = max(array)
         min_val = min(array)
@@ -376,14 +376,14 @@ class DataAnalyzer(object):
     def compare_analyze_active_replica_vb_nums(self, active_map, replica_map):
         active_maps = {}
         replica_maps = {}
-        for bucket in active_map.keys():
+        for bucket in list(active_map.keys()):
             active_maps[bucket] = self.analyze_vb_nums(active_map[bucket])
             replica_maps[bucket] = self.analyze_vb_nums(replica_map[bucket])
         return active_maps, replica_maps
 
     def analyze_vb_nums(self, map):
         array = []
-        for machine in map.keys():
+        for machine in list(map.keys()):
             array.append(map[machine])
         total = sum(array)
         max_val = max(array)
@@ -526,7 +526,7 @@ class DataCollector(object):
                     buckets, data_path=data_path, userId=userId,
                     password=password, getReplica=getReplica, mode=mode)
                 remote_client.disconnect()
-            for bucket in bucketMap.keys():
+            for bucket in list(bucketMap.keys()):
                 newMap = self.translateDataFromCSVToMap(0, bucketMap[bucket])
                 if perNode:
                     completeMap[bucket][server.ip] = newMap
@@ -579,14 +579,14 @@ class DataCollector(object):
                     # self.createMapVbucket(vbucket, map_data)
                 if collect_vbucket_seqno:
                     result = cbstat.vbucket_seqno(bucket.name)
-                    for key in result.keys():
+                    for key in list(result.keys()):
                         result['vb_' + key] = result.pop(key)
                     map_data.update(result)
                     # vbucket_seqno = client.stats('vbucket-seqno')
                     # self.createMapVbucket(vbucket_seqno, map_data)
                 if collect_vbucket_details:
                     result = cbstat.vbucket_details(bucket.name)
-                    for key in result.keys():
+                    for key in list(result.keys()):
                         result['vb_' + key] = result.pop(key)
                     map_data.update(result)
                     # vbucket_details = client.stats('vbucket-details')
@@ -736,7 +736,7 @@ class DataCollector(object):
                 # stats = client.stats('dcp')
                 cbstat = Cbstats(server)
                 stats = cbstat.dcp_stats(bucket.name)
-                for key in stats.keys():
+                for key in list(stats.keys()):
                     do_filter = False
                     if stat_name in key:
                         for filter_key in filter_list:
@@ -774,7 +774,7 @@ class DataCollector(object):
             dataMap = {}
             for server in servers:
                 stats = MemcachedClientHelper.direct_client(server, bucket).stats('dcp')
-                for key in stats.keys():
+                for key in list(stats.keys()):
                     for stat_name in stat_names:
                         if stat_name in key and extra_key_condition in key:
                             value = int(stats[key])
@@ -790,7 +790,7 @@ class DataCollector(object):
         """
         Helper method for vbucket information data collection
         """
-        for o in details.keys():
+        for o in list(details.keys()):
             tokens = o.split(":")
             if len(tokens) == 2:
                 vb = tokens[0]

@@ -251,28 +251,12 @@ class basic_ops(ClusterSetup):
             ryow=self.ryow,
             check_persistence=self.check_persistence,
             scope=self.scope_name,
-            collection=self.collection_name)
+            collection=self.collection_name,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
 
         if self.ryow:
             check_durability_failures()
-
-        # Retry doc_exception code
-        self.log.info("Validating failed doc's (if any) exceptions")
-        doc_op_info_dict = dict()
-        doc_op_info_dict[task] = self.bucket_util.get_doc_op_info_dict(
-            def_bucket, DocLoading.Bucket.DocOps.CREATE,
-            exp=0, replicate_to=self.replicate_to,
-            persist_to=self.persist_to, durability=self.durability_level,
-            timeout=self.sdk_timeout, time_unit="seconds",
-            ignore_exceptions=ignore_exceptions,
-            retry_exceptions=retry_exceptions)
-        self.bucket_util.verify_doc_op_task_exceptions(
-            doc_op_info_dict, self.cluster)
-
-        if len(doc_op_info_dict[task]["unwanted"]["fail"].keys()) != 0:
-            self.fail("Failures in retry doc CRUDs: {0}"
-                      .format(doc_op_info_dict[task]["unwanted"]["fail"]))
 
         self.log.info("Wait for ep_all_items_remaining to become '0'")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -330,7 +314,8 @@ class basic_ops(ClusterSetup):
                 check_persistence=self.check_persistence,
                 scope=self.scope_name,
                 collection=self.collection_name,
-                iterations=doc_ops_loop)
+                iterations=doc_ops_loop,
+                load_using=self.load_docs_using)
             if doc_ops_loop == -1:
                 self.sleep(60, "Wait before killing the cont. update load")
                 task.end_task()
@@ -350,7 +335,8 @@ class basic_ops(ClusterSetup):
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
                     scope=self.scope_name,
-                    collection=self.collection_name)
+                    collection=self.collection_name,
+                    validate_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
         elif doc_op == DocLoading.Bucket.DocOps.DELETE:
@@ -366,7 +352,8 @@ class basic_ops(ClusterSetup):
                 timeout_secs=self.sdk_timeout,
                 ryow=self.ryow, check_persistence=self.check_persistence,
                 scope=self.scope_name,
-                collection=self.collection_name)
+                collection=self.collection_name,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
             if self.collection_name is None:
                 target_scope = CbServer.default_scope
@@ -392,7 +379,8 @@ class basic_ops(ClusterSetup):
                 self.cluster, def_bucket, doc_update,
                 DocLoading.Bucket.DocOps.DELETE, 0,
                 batch_size=self.batch_size,
-                process_concurrency=self.process_concurrency)
+                process_concurrency=self.process_concurrency,
+                validate_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
         elif doc_op is not None:
@@ -429,7 +417,8 @@ class basic_ops(ClusterSetup):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
         # check if all the documents(250) are loaded with default timeout
@@ -451,7 +440,8 @@ class basic_ops(ClusterSetup):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
             if self.doc_size > 20:
                 if len(task.fail.keys()) == 0:
@@ -481,7 +471,8 @@ class basic_ops(ClusterSetup):
                     persist_to=self.persist_to,
                     durability=self.durability_level,
                     compression=self.sdk_compression,
-                    timeout_secs=self.sdk_timeout)
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using)
                 self.task.jython_task_manager.get_task_result(task)
                 if len(task.fail.keys()) != 1:
                     self.log_failure("Large docs inserted for keys: %s"
@@ -770,7 +761,7 @@ class basic_ops(ClusterSetup):
                 mc_stat[t_node] = McStat(shell_conn)
 
             while not stop_thread:
-                for t_node in mc_stat.keys():
+                for t_node in list(mc_stat.keys()):
                     try:
                         mc_stat[t_node].reset(bucket_name)
                     except Exception as mcstat_err:
@@ -784,7 +775,7 @@ class basic_ops(ClusterSetup):
                 cb_stat[t_node] = Cbstats(t_node)
 
             while not stop_thread:
-                for t_node in cb_stat.keys():
+                for t_node in list(cb_stat.keys()):
                     try:
                         cb_stat[t_node].get_timings(bucket_name)
                     except Exception as cbstat_err:
@@ -823,7 +814,7 @@ class basic_ops(ClusterSetup):
         while total_gets < max_gets:
             total_gets = 0
             try:
-                for node in cb_stat_obj.keys():
+                for node in list(cb_stat_obj.keys()):
                     vb_details = cb_stat_obj[node].vbucket_details(bucket.name)
                     for _, vb_stats in vb_details.items():
                         total_gets += long(vb_stats["ops_get"])
@@ -1227,7 +1218,7 @@ class basic_ops(ClusterSetup):
                 self.log.info("ep_num_pager_runs started running")
 
         # Closing all shell connections
-        for node in nodes_data.keys():
+        for node in list(nodes_data.keys()):
             nodes_data[node]["shell"].disconnect()
 
         self.validate_test_failure()
@@ -1737,7 +1728,7 @@ class basic_ops(ClusterSetup):
         doc_keys = dict([(vb_num, list())
                         for vb_num in range(0, self.cluster.vbuckets)])
         index = -1
-        req_key_for_vb = doc_keys.keys()
+        req_key_for_vb = list(doc_keys.keys())
         d_level = SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE
 
         param = "warmup_backfill_scan_chunk_duration"
@@ -1759,7 +1750,7 @@ class basic_ops(ClusterSetup):
 
         # Load doc with async writes
         self.log.info("Loading documents to each vbucket")
-        for vb_num in doc_keys.keys():
+        for vb_num in list(doc_keys.keys()):
             # Async write
             key = doc_keys[vb_num][0]
             result = client.crud(DocLoading.Bucket.DocOps.CREATE, key, doc_val)

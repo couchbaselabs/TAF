@@ -129,7 +129,8 @@ class DurabilityHelper:
                                .format(failed_doc["error"], key))
         return validation_passed
 
-    def retry_with_no_error(self, client, doc_list, op_type, timeout=5):
+    def retry_with_no_error(self, client, doc_list, op_type, timeout=5,
+                            load_using="default_loader"):
         """
         Retry all failed docs in singular CRUD manner and
         expects no errors from all operations.
@@ -143,21 +144,24 @@ class DurabilityHelper:
         :return op_failed: Success status of all CRUDs (bool)
         """
         op_failed = False
-        for key, doc_info in doc_list.items():
-            # If doc expiry is not set, use exp=0
-            if "exp" not in doc_info:
-                doc_info["exp"] = 0
+        if load_using == "sirius_go_sdk":
+            pass
+        else:
+            for key, doc_info in doc_list.items():
+                # If doc expiry is not set, use exp=0
+                if "exp" not in doc_info:
+                    doc_info["exp"] = 0
 
-            result = client.crud(
-                op_type, key, value=doc_info["value"], exp=doc_info["exp"],
-                replicate_to=self.replicate_to, persist_to=self.persist_to,
-                durability=self.durability, timeout=timeout)
-            if result["status"] is False:
-                op_failed = True
-                self.log.error("Exception: '{0}' for '{1}' during '{2}' "
-                               "with durability={3}, timeout={4}"
-                               .format(result["error"], key, op_type,
-                                       self.durability, timeout))
+                result = client.crud(
+                    op_type, key, value=doc_info["value"], exp=doc_info["exp"],
+                    replicate_to=self.replicate_to, persist_to=self.persist_to,
+                    durability=self.durability, timeout=timeout)
+                if result["status"] is False:
+                    op_failed = True
+                    self.log.error("Exception: '{0}' for '{1}' during '{2}' "
+                                   "with durability={3}, timeout={4}"
+                                   .format(result["error"], key, op_type,
+                                           self.durability, timeout))
         return op_failed
 
     def retry_for_ambiguous_exception(self, sdk_client, op_type, doc_key,
@@ -243,11 +247,11 @@ class DurabilityHelper:
 
         for vb_num in range(0, vbuckets):
             vb_num = str(vb_num)
-            for op_type in ops_val.keys():
+            for op_type in list(ops_val.keys()):
                 ops_val[op_type] += int(vb_details_stats[vb_num][op_type])
 
         # Verification block
-        for op_type in ops_val.keys():
+        for op_type in list(ops_val.keys()):
             self.log.debug("%s for %s: %s" % (op_type, bucket.name,
                                               ops_val[op_type]))
 
