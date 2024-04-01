@@ -1,12 +1,11 @@
 import os
 import re
-from signal import signal, SIGINT, SIGTERM
-
 import requests
 import sys
 from argparse import ArgumentParser
-from os.path import basename, exists, isdir, sep, splitext
 from glob import glob
+from os.path import basename, exists, isdir, sep, splitext
+from signal import signal, SIGINT, SIGTERM
 from unittest import TestLoader
 from xml.dom.minidom import parse as xml_parse
 
@@ -38,6 +37,7 @@ class HelperLib(object):
     @staticmethod
     def cleanup():
         SiriusClient.terminate_sirius()
+        SiriusClient.stop_sirius_docker()
 
     @staticmethod
     def validate_python_version(current_version):
@@ -446,7 +446,7 @@ class HelperLib(object):
         return tests
 
     @staticmethod
-    def launch_sirius_client(taf_path, urls):
+    def launch_sirius_client(taf_path, urls, process_type="docker_process"):
         """
         urls is expected to be in the format,
             172.23.10.1:4000;172.23.10.2:4000;...
@@ -455,4 +455,9 @@ class HelperLib(object):
             localhost:<port_num>
         """
         port = (urls.split(";")[0]).split(':')[-1]
-        SiriusClient.start_sirius(taf_path, port=port)
+        if process_type == "standalone_process":
+            SiriusClient.start_sirius(taf_path, port=port)
+        elif process_type == "docker_process":
+            SiriusClient.start_sirius_docker(port=port)
+        else:
+            raise Exception(f"Invalid Sirius process {process_type}")

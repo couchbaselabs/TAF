@@ -1,7 +1,12 @@
+import errno
 import os
+import pathlib
+
 import requests
 from signal import SIGTERM
 from subprocess import Popen
+
+import yaml
 
 from common_lib import sleep
 
@@ -77,3 +82,35 @@ class SiriusClient(object):
                     print(str(e))
                     exception = e
             raise exception
+
+    @staticmethod
+    def start_sirius_docker(port=4000):
+        docker_file_path = os.path.join(os.getcwd(), "sirius",
+                                        "docker-compose.yaml")
+        if os.path.exists(docker_file_path):
+            with open(docker_file_path) as stream:
+                try:
+                    docker_file_data = yaml.safe_load(stream=stream)
+                except Exception:
+                    raise Exception
+
+            docker_file_data["services"]["sirius"]["ports"] = [f"{port}:4000"]
+            print(docker_file_data)
+            with open(docker_file_path, 'a') as outfile:
+                yaml.safe_dump(docker_file_data, outfile,
+                               default_flow_style=False)
+
+            fp = open("logs/sirius.log", "w")
+            cmd = ["/bin/sh", "-c", "cd sirius ; make clean_deploy"]
+            process = Popen(cmd, stdout=fp, stderr=fp)
+            process.communicate()
+        else:
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
+                                    docker_file_path)
+
+    @classmethod
+    def stop_sirius_docker(cls):
+        fp = open("logs/sirius.log", "a")
+        cmd = ["/bin/sh", "-c", "cd sirius ; make down"]
+        process = Popen(cmd, stdout=fp, stderr=fp)
+        process.communicate()
