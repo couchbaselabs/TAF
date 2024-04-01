@@ -187,7 +187,7 @@ class ServerTasks(object):
                                        scope=scope, collection=collection)
                 clients.append(client)
             if not ryow:
-                if load_using == "sirius_go_client":
+                if load_using == "sirius_go_sdk":
                     _task = jython_tasks.RestBasedDocLoaderAbstract(
                         cluster, self.jython_task_manager, bucket, clients,
                         [generator], op_type,
