@@ -162,7 +162,8 @@ class GoDocLoader(unittest.TestCase):
         self.rest_password = self.input.capella.get("cluster_password", "password")
         self.body = self.create_body()
         self.convert_bucket_list()
-        self.sirius_url = self.input.capella.get("sirius_url", "http://0.0.0.0:4000")
+        self.sirius_url = self.input.capella.get("sirius_url",
+                                                 "http://localhost:4000")
 
     def tearDown(self):
         pass

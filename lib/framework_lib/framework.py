@@ -116,12 +116,15 @@ class HelperLib(object):
         parser.add_argument("-l", "--log-level",
                             dest="loglevel", default="INFO",
                             choices=["DEBUG", "INFO", "WARNING", "CRITICAL"])
-        parser.add_argument("--launch_sirius", action="store_true",
-                            dest="launch_sirius", default=False,
+        parser.add_argument("--launch_sirius_process", action="store_true",
+                            dest="launch_sirius_process", default=False,
                             help="If enabled, will start Sirius as subprocess")
-        parse.add_argument("--sirius_url", dest="sirius_url",
-                           default="http://localhost:4000",
-                           help="Target")
+        parser.add_argument("--launch_sirius_docker", action="store_true",
+                            dest="launch_sirius_docker", default=False,
+                            help="If enabled, will start Sirius as subprocess")
+        parser.add_argument("--sirius_url", dest="sirius_url",
+                            default="http://localhost:4000",
+                            help="Target")
         options = parser.parse_args()
 
         # Validate input options
@@ -443,7 +446,7 @@ class HelperLib(object):
         return tests
 
     @staticmethod
-    def launch_sirius_client(urls):
+    def launch_sirius_client(taf_path, urls):
         """
         urls is expected to be in the format,
             172.23.10.1:4000;172.23.10.2:4000;...
@@ -452,4 +455,4 @@ class HelperLib(object):
             localhost:<port_num>
         """
         port = (urls.split(";")[0]).split(':')[-1]
-        SiriusClient.start_sirius(port=port)
+        SiriusClient.start_sirius(taf_path, port=port)

@@ -74,9 +74,6 @@ def main():
 
     HelperLib.register_signal_handlers()
 
-    if options.launch_sirius:
-        HelperLib.launch_sirius_client(options.sirius_url)
-
     print("Global Test input params:")
     pprint(TestInputSingleton.input.test_params)
     import mode
@@ -88,13 +85,16 @@ def main():
         mode.rest = True
     xunit = XUnitTestResult()
     # Create root logs directory
-    abs_path = os.path.dirname(os.path.abspath(sys.argv[0]))
+    taf_path = os.path.dirname(os.path.abspath(sys.argv[0]))
     # Create testrunner logs subdirectory
     str_time = time.strftime("%y-%b-%d_%H-%M-%S", time.localtime())
-    root_log_dir = os.path.join(abs_path,
+    root_log_dir = os.path.join(taf_path,
                                 "logs%stestrunner-%s" % (os.sep, str_time))
     if not os.path.exists(root_log_dir):
         os.makedirs(root_log_dir)
+
+    if options.launch_sirius:
+        HelperLib.launch_sirius_client(taf_path, options.sirius_url)
 
     results = []
     case_number = 1

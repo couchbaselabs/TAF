@@ -26,14 +26,20 @@ class SiriusClient(object):
         return False
 
     @staticmethod
-    def start_sirius(port=4000):
-        print(f"Starting Sirius client on port '{port}'")
-        cmd = ["/bin/sh", "-c",
-               f"SIRIUS_PORT={port} ; export SIRIUS_PORT ; "
-               "cd sirius ; make build ; make clean ; "
-               "make run"]
-        fp = open("logs/sirius.log", "w")
+    def start_sirius(taf_path, port=4000):
+        fp = open("logs/sirius.log", "a")
 
+        print("Building sirius")
+        cmd = ["/bin/sh", "-c",
+               f"cd {taf_path}/sirius ; make clean ; make build"]
+
+        process = Popen(cmd, stdout=fp, stderr=fp)
+        process.communicate()
+        fp.close()
+
+        print(f"Starting Sirius client on port '{port}'")
+        fp = open("logs/sirius.log", "a")
+        cmd = [f"{taf_path}/sirius/sirius", "-port", port]
         SiriusClient.__running_process = Popen(cmd, stdout=fp, stderr=fp)
 
     @staticmethod

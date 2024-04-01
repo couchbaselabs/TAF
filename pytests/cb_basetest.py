@@ -165,6 +165,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.ryow = self.input.param("ryow", False)
         self.check_persistence = self.input.param("check_persistence", False)
         self.ops_rate = self.input.param("ops_rate", 10000)
+        self.sirius_url = self.input.param("sirius_url", None)
         self.load_docs_using = self.input.param("load_docs_using",
                                                 "default_loader")
         # End of client specific parameters
