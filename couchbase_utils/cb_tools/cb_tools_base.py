@@ -1,7 +1,8 @@
-from TestInput import TestInputSingleton
-from cb_server_rest_util.constants.cluster_run import ClusterRun
-from platform_constants.os_constants import Linux, Mac, Windows
 import os
+
+from TestInput import TestInputSingleton
+from cb_constants.ClusterRun import ClusterRun
+from platform_constants.os_constants import Linux, Mac, Windows
 
 
 class CbCmdBase:

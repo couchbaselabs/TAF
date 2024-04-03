@@ -19,7 +19,7 @@ from couchbase.exceptions import UnAmbiguousTimeoutException, \
     CasMismatchException, DocumentNotFoundException
 
 from cb_constants import CbServer, DocLoading
-from cb_server_rest_util.constants.cluster_run import ClusterRun
+from cb_constants.ClusterRun import ClusterRun
 from constants.sdk_constants.java_client import SDKConstants
 from global_vars import logger
 from sdk_utils.sdk_options import SDKOptions

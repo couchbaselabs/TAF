@@ -18,7 +18,7 @@ from threading import Lock, Thread
 from collections import OrderedDict
 
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
-from cb_server_rest_util.constants.cluster_run import ClusterRun
+from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.index.index_api import IndexRestAPI
 from doc_loader.sirius_client import RESTClient
 from sdk_client3 import SDKClient

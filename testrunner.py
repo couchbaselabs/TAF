@@ -13,7 +13,7 @@ from pprint import pprint
 
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "platform_utils/ssh_util",
-            "connections", "constants"] + sys.path
+            "connections", "constants", "py_constants"] + sys.path
 from TestInput import TestInputParser, TestInputSingleton
 from framework_lib.framework import HelperLib
 from remote.remote_util import RemoteMachineShellConnection

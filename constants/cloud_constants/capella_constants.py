@@ -85,4 +85,4 @@ class GCP(object):
                ]
 
     class StorageType(object):
-            PD_SSD = "PD-SSD"
+       PD_SSD = "PD-SSD"

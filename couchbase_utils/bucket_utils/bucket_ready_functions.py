@@ -42,8 +42,8 @@ from SecurityLib.rbac import RbacUtil
 from TestInput import TestInputSingleton, TestInputServer
 from BucketLib.bucket import Bucket, Collection, Scope, Serverless
 from capella_utils.dedicated import CapellaUtils as DedicatedCapellaUtils
+from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
-from cb_server_rest_util.constants.cluster_run import ClusterRun
 from cb_server_rest_util.security.security_api import SecurityRestAPI
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
