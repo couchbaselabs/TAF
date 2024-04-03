@@ -11,7 +11,6 @@ import numbers
 
 from cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
-from membase.api import httplib2
 
 
 class CBASHelper(RestConnection):

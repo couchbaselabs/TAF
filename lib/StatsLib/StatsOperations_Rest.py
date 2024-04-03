@@ -10,7 +10,6 @@ from platform_constants.os_constants import Windows
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from global_vars import logger
 from pytests.scalable_stats import constants
-from membase.api import httplib2
 
 
 class StatsHelper(RestConnection):
