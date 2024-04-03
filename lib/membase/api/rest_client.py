@@ -3,7 +3,6 @@ import base64
 import json
 import urllib
 
-import httplib2
 import socket
 import time
 import uuid
@@ -36,11 +35,7 @@ from custom_exceptions.exception import \
     XDCRException
 
 import requests
-
-try:
-    requests.packages.urllib3.disable_warnings()
-except:
-    pass
+requests.packages.urllib3.disable_warnings()
 import urllib3
 
 urllib3.disable_warnings()
