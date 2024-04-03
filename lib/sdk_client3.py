@@ -264,7 +264,7 @@ class SDKClient(object):
             "enable_tls": False
         }
         if CbServer.use_https or self.transaction_conf or self.compression:
-            t_cluster_env = cluster.sdk_cluster_env
+            # t_cluster_env = cluster.sdk_cluster_options
             build_env = True
 
         if self.compression is not None:

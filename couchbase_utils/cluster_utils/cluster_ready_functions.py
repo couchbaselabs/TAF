@@ -18,13 +18,15 @@ from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
 from TestInput import TestInputSingleton, TestInputServer
 from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from cb_tools.cb_collectinfo import CbCollectInfo
 from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI
 from couchbase_helper.class_definitions import CouchbaseCluster, OtpNode, Node, \
     NodeDiskStorage, NodeDataStorage
 from couchbase_utils.cb_tools.cb_cli import CbCli
-from custom_exceptions.exception import ServerUnavailableException
+from custom_exceptions.exception import ServerUnavailableException, \
+    RebalanceFailedException
 from global_vars import logger
 import global_vars
 from membase.api.rest_client import RestConnection
@@ -913,7 +915,8 @@ class ClusterUtils:
             remote_client.disconnect()
 
     @staticmethod
-    def get_nodes(server, inactive_added=False, inactive_failed=False):
+    def get_nodes(server, active=True, inactive_added=False,
+                  inactive_failed=False):
         cluster_rest = ClusterRestAPI(server)
         count = 0
         while count < 7:
@@ -926,7 +929,9 @@ class ClusterUtils:
             raise Exception("could not get node info after 30 seconds")
 
         nodes = list()
-        nodes_to_consider = ["active"]
+        nodes_to_consider = list()
+        if active:
+            nodes_to_consider.append("active")
         # Useful when we want to do cbcollect on failed over/recovered node
         if inactive_added:
             nodes_to_consider.append("inactiveAdded")
@@ -2123,3 +2128,131 @@ class ClusterUtils:
             key = "{0}:{1}".format(node.ip, node.port)
             n_map[key] = node.services
         return n_map
+
+    @staticmethod
+    def get_cluster_tasks(server, task_type=None, task_sub_type=None):
+        cluster_tasks = list()
+        rest = ClusterRestAPI(server)
+        status, content = rest.cluster_tasks()
+        if not status:
+            return cluster_tasks
+
+        if task_type is not None:
+            for t_content in content:
+                if t_content["type"] == task_type:
+                    if task_sub_type is None or "subtype" not in t_content:
+                        return t_content
+                    elif t_content["subtype"] == task_sub_type:
+                        return t_content
+        return content
+
+    @staticmethod
+    def get_zones(server):
+        zone_names = dict()
+        server_group = ServerGroupsAPI(server)
+        status, zone_info = server_group.get_server_groups_info()
+        if status and zone_info and len(zone_info["groups"]) >= 1:
+            for i in range(0, len(zone_info["groups"])):
+                zone_names[zone_info["groups"][i]["name"]] = zone_info["groups"][i]["uri"][28:]
+        return zone_names
+
+    def print_UI_logs(self, rest, last_n=10, contains_text=None):
+        _, logs = rest.ui_logs()
+        logs = logs['list']
+        logs.reverse()
+        result = list()
+        for i in range(min(last_n, len(logs))):
+            result.append(logs[i])
+            if contains_text is not None and contains_text in logs[i]["text"]:
+                break
+
+        self.test_log.info("Latest logs from UI")
+        for ui_log in result:
+            self.test_log.error(ui_log)
+
+    def get_rebalance_status_and_progress(self, cluster, task_status_id=None):
+        """
+        Returns a 2-tuple capturing the rebalance status and progress, as follows:
+            ('running', progress) - if rebalance is running
+            ('none', 100)         - if rebalance is not running (i.e. assumed done)
+            (None, -100)          - if there's an error getting the rebalance progress
+                                    from the server or ServerUnavailable
+            (None, -1)            - if the server responds but there's no information on
+                                    what the status of rebalance is
+
+        The progress is computed as a average of the progress of each node
+        rounded to 2 decimal places.
+
+        Throws RebalanceFailedException if rebalance progress returns an error message
+        """
+        def get_reb_task():
+            status, cluster_tasks = cluster_rest.cluster_tasks()
+            # Find the right dict containing the rebalance task
+            for i in range(0, len(cluster_tasks)):
+                cluster_task = cluster_tasks[i]
+                if "type" in cluster_task:
+                    if cluster_task["type"] == "rebalance":
+                        return status, cluster_task
+            return None, None
+
+        avg_percentage = -1
+        rebalance_status = None
+        cluster_rest = ClusterRestAPI(cluster.master)
+        try:
+            status, json_parsed = get_reb_task()
+        except ServerUnavailableException as e:
+            return None, -100
+
+        if status:
+            if "status" in json_parsed:
+                rebalance_status = json_parsed["status"]
+                if rebalance_status == "notRunning":
+                    rebalance_status = "none"  # rebalance finished/notRunning scenario
+                if "errorMessage" in json_parsed:
+                    msg = '{0} - rebalance failed'.format(json_parsed)
+                    self.test_log.error(msg)
+                    self.print_UI_logs(cluster_rest)
+                    raise RebalanceFailedException(msg)
+                elif rebalance_status == "running":
+                    if task_status_id is not None \
+                            and "statusId" in json_parsed \
+                            and json_parsed["statusId"] != task_status_id:
+                        # Case where current rebalance is done
+                        # and new rebalance / failover task is running in cluster
+                        rebalance_status = "none"
+                        avg_percentage = 100
+                        self.test_log.warning(
+                            "Previous rebalance with status id '%s' changed to '%s'"
+                            % (task_status_id, json_parsed["statusId"]))
+                    else:
+                        avg_percentage = round(json_parsed["progress"], 2)
+                        self.test_log.debug("Rebalance percentage: {0:.02f} %"
+                                            .format(avg_percentage))
+                else:
+                    # Sleep before printing rebalance failure log
+                    sleep(5, log_type="infra")
+                    _, json_parsed = get_reb_task()
+                    if "errorMessage" in json_parsed:
+                        msg = '{0} - rebalance failed'.format(json_parsed)
+                        self.print_UI_logs(cluster_rest)
+                        raise RebalanceFailedException(msg)
+                    avg_percentage = 100
+        else:
+            avg_percentage = -100
+        return rebalance_status, avg_percentage
+
+    def is_cluster_mixed(self, cluster):
+        rest = ClusterRestAPI(cluster.master)
+        status, content = rest.cluster_details()
+        if content == 'unknown pool' or status is False:
+            return False
+        try:
+            versions = list(set([node["version"][:1] for node in http_res["nodes"]]))
+        except Exception:
+            self.log.error(f'Error while processing cluster info {content}')
+            # not really clear what to return but False see to be a good start until we figure what is happening
+            return False
+
+        if '1' in versions and '2' in versions:
+            return True
+        return False

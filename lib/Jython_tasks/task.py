@@ -20,6 +20,7 @@ from collections import OrderedDict
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.index.index_api import IndexRestAPI
+from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from doc_loader.sirius_client import RESTClient
 from sdk_client3 import SDKClient
 import common_lib
@@ -470,7 +471,7 @@ class RebalanceTask(Task):
             self.server_groups_to_add = add_nodes_server_groups
 
         try:
-            self.rest = RestConnection(self.cluster.master)
+            self.rest = ClusterRestAPI(self.cluster.master)
         except ServerUnavailableException as e:
             self.test_log.error(e)
             raise e
@@ -482,10 +483,12 @@ class RebalanceTask(Task):
             nodes_to_remove.append("%s:%s" % (node.ip, node.port))
             node_ips_to_remove.append(node.ip)
 
+        self.cluster_util = global_vars.cluster_util
         # Get current 'active' nodes in the cluster
         # and update the nodes_in_cluster accordingly
-        for r_node in self.rest.get_nodes(inactive_added=True,
-                                          inactive_failed=True):
+        for r_node in self.cluster_util.get_nodes(self.cluster.master,
+                                                  inactive_added=True,
+                                                  inactive_failed=True):
             for server in self.cluster.servers:
                 if r_node.ip == server.ip and int(r_node.port) == \
                         int(server.port):
@@ -519,7 +522,8 @@ class RebalanceTask(Task):
                     join(defrag_options["defragmentZones"])
             self.defrag_options["knownNodesIP"] = defrag_options["knownNodes"]
 
-        cluster_stats = self.rest.get_cluster_stats()
+        cluster_stats = self.cluster_util.get_cluster_stats(
+            self.cluster.master)
         self.table = TableView(self.test_log.info)
         self.table.set_headers(["Nodes", "Zone", "Services", "Version / Config",
                                 "CPU", "Status", "Membership / Recovery"])
@@ -590,8 +594,9 @@ class RebalanceTask(Task):
 
         # Fetch last rebalance task to track starting of current rebalance
         self.prev_rebalance_status_id = None
-        server_task = self.rest.ns_server_tasks(
-            task_type="rebalance", task_sub_type="rebalance")
+        server_task = self.cluster_util.get_cluster_tasks(
+            self.cluster.master, task_type="rebalance",
+            task_sub_type="rebalance")
         if server_task and "statusId" in server_task:
             self.prev_rebalance_status_id = server_task["statusId"]
         self.log.debug("Last known rebalance status_id: %s"
@@ -628,22 +633,20 @@ class RebalanceTask(Task):
         try:
             if len(self.to_add) and len(self.to_add) == len(self.to_remove) \
                     and self.cluster.nodes_in_cluster:
-                node_version_check = self.rest.check_node_versions()
                 non_swap_servers = set(self.cluster.nodes_in_cluster) - set(
                     self.to_remove) - set(self.to_add)
                 if self.check_vbucket_shuffling:
-                    self.old_vbuckets = BucketHelper(
-                        self.cluster.master) \
+                    self.old_vbuckets = BucketHelper(self.cluster.master) \
                         ._get_vbuckets(non_swap_servers, None)
                 if self.old_vbuckets and self.check_vbucket_shuffling:
                     self.monitor_vbuckets_shuffling = True
-                if self.monitor_vbuckets_shuffling \
-                        and node_version_check and self.services:
+                if self.monitor_vbuckets_shuffling and self.services:
                     for service_group in self.services:
                         if "kv" not in service_group:
                             self.monitor_vbuckets_shuffling = False
-                if self.monitor_vbuckets_shuffling and node_version_check:
-                    services_map = self.rest.get_nodes_services()
+                if self.monitor_vbuckets_shuffling:
+                    services_map = self.cluster_util.get_nodes_services(
+                        self.cluster.master)
                     for remove_node in self.to_remove:
                         key = "{0}:{1}".format(remove_node.ip,
                                                remove_node.port)
@@ -656,8 +659,8 @@ class RebalanceTask(Task):
             self.state = "add_nodes"
             self.add_nodes()
             # Validate the current orchestrator is selected as expected
-            result = global_vars.cluster_util.\
-                validate_orchestrator_selection(self.cluster)
+            result = self.cluster_util.validate_orchestrator_selection(
+                self.cluster)
             if result is False:
                 return self.result
             self.state = "triggering"
@@ -670,8 +673,8 @@ class RebalanceTask(Task):
             self.table.display("Rebalance Overview")
 
             nodes_to_avoid = self.to_remove + []
-            fo_node_ips = [node.ip for node in self.rest.get_nodes(
-                active=False, inactive_failed=True)]
+            fo_node_ips = [node.ip for node in self.cluster_util.get_nodes(
+                self.cluster.master, active=False, inactive_failed=True)]
             for server in self.cluster.servers:
                 if server.ip in fo_node_ips:
                     nodes_to_avoid.append(server)
@@ -687,13 +690,14 @@ class RebalanceTask(Task):
                 self.cluster.master = retained_nodes[0]
                 self.log.critical("Picked new temp-master: {}"
                                   .format(self.cluster.master))
-                self.rest = RestConnection(self.cluster.master)
+                self.rest = ClusterRestAPI(self.cluster.master)
 
             check_timeout = int(time.time()) + 10
             rebalance_started = False
             # Wait till current rebalance statusId updates in cluster's task
             while not rebalance_started and int(time.time()) < check_timeout:
-                server_task = self.rest.ns_server_tasks(
+                server_task = self.cluster_util.get_cluster_tasks(
+                    self.cluster.master,
                     task_type="rebalance", task_sub_type="rebalance")
                 if server_task and server_task["statusId"] \
                         != self.prev_rebalance_status_id:
@@ -715,18 +719,16 @@ class RebalanceTask(Task):
                 global_vars.bucket_util.get_updated_bucket_server_list(
                     self.cluster, bucket)
 
-        self.complete_task()
-
         # Validate the current orchestrator is selected as expected
-        result = global_vars.cluster_util.\
-            validate_orchestrator_selection(self.cluster, self.to_remove)
+        result = self.cluster_util.validate_orchestrator_selection(
+            self.cluster, self.to_remove)
         if result:
             self.result = True
 
         if self.validate_bucket_ranking:
             # Validate if the vbucket movement is as per bucket ranking
-            ranking_validation_res = global_vars.cluster_util.\
-                    validate_bucket_ranking(self.cluster)
+            ranking_validation_res = self.cluster_util.validate_bucket_ranking(
+                self.cluster)
             if not ranking_validation_res:
                 self.log.error("The vbucket movement was not according to bucket ranking")
                 self.result = False
@@ -740,6 +742,7 @@ class RebalanceTask(Task):
         print_nodes("Eventing......", self.cluster.eventing_nodes)
         print_nodes("Backup........", self.cluster.backup_nodes)
         print_nodes("Serviceless...", self.cluster.serviceless_nodes)
+        self.complete_task()
         return self.result
 
     def add_nodes(self):
@@ -766,16 +769,30 @@ class RebalanceTask(Task):
             self.table.add_row([node.ip, str(zone_name),
                                 ",".join(services_for_node), "", "",
                                 "<--- IN ---", ""])
+            
+            hostname = node.ip
+            add_node = self.rest.join_node_to_cluster
+            
             if self.use_hostnames:
-                self.rest.add_node(username, password,
-                                   node.hostname, node.port,
-                                   zone_name=zone_name,
-                                   services=services_for_node)
+                hostname = node.hostname
+
+            if zone_name:
+                zones = self.cluster_util.get_zones(self.cluster.master)
+                uuid = zones[zone_name] if zone_name in zones else None
+                server_group = ServerGroupsAPI(self.cluster.master)
+                status, content = server_group.add_node(
+                    hostname, node.port, uuid,
+                    username, password, services_for_node)
             else:
-                self.rest.add_node(username, password,
-                                   node.ip, node.port,
-                                   zone_name=zone_name,
-                                   services=services_for_node)
+                status, content = self.rest.add_node(
+                    f"{hostname}:{node.port}", username, password,
+                    services_for_node)
+
+            if status is False:
+                self.set_result(False)
+                self.log.critical(f"Add Node failed: {content}")
+                return False
+
             for services in services_for_node:
                 for service in services.split(","):
                     if service == CbServer.Services.KV:
@@ -803,7 +820,7 @@ class RebalanceTask(Task):
             self.cluster.nodes_in_cluster.append(node)
 
     def start_rebalance(self):
-        nodes = self.rest.node_statuses()
+        nodes = self.cluster_util.get_otp_nodes(self.cluster.master)
         if self.defrag_options:
             self.defrag_options["knownNodes"] = []
             for node in nodes:
@@ -833,9 +850,10 @@ class RebalanceTask(Task):
                         self.test_log.debug(remove_node_msg.format(node.ip,
                                                                    node.port))
 
-        rebalance_result, content = self.rest.rebalance(otpNodes=[node.id for node in nodes],
-                                                        ejectedNodes=ejected_nodes,
-                                                        defrag_options=self.defrag_options)
+        rebalance_result, content = self.rest.rebalance(
+            known_nodes=[node.id for node in nodes],
+            eject_nodes=ejected_nodes,
+            defrag_options=self.defrag_options)
         self.rebalance_api_response = content
         if not rebalance_result:
             self.state = "trigger_failed"
@@ -862,8 +880,10 @@ class RebalanceTask(Task):
                                          new_vbuckets[srv][vb_type])
                                 self.test_log.error(msg)
                                 raise Exception(msg)
-                (status, progress) = self.rest._rebalance_status_and_progress(
-                    self.prev_rebalance_status_id)
+                (status, progress) = \
+                    self.cluster_util.get_rebalance_status_and_progress(
+                        self.cluster,
+                        self.prev_rebalance_status_id)
                 self.test_log.info("Rebalance - status: %s, progress: %s",
                                    status,
                                    progress)
@@ -882,7 +902,7 @@ class RebalanceTask(Task):
             except Exception as e:
                 self.result = False
                 raise e
-            if self.rest.is_cluster_mixed():
+            if self.cluster_util.is_cluster_mixed(self.cluster):
                 """ for mix cluster, rebalance takes longer """
                 self.test_log.debug("Rebalance in mix cluster")
                 self.retry_get_process_num *= 2
@@ -898,7 +918,7 @@ class RebalanceTask(Task):
                     exception_msg = "Seems like rebalance hangs. Please check logs!"
                     if self.validate_bucket_ranking:
                         # Validate if the vbucket movement is as per bucket ranking
-                        ranking_validation_res = global_vars.cluster_util.\
+                        ranking_validation_res = self.cluster_util.\
                             validate_bucket_ranking(self.cluster)
                         if not ranking_validation_res:
                             self.log.error("The vbucket movement was not according to bucket ranking")
@@ -911,15 +931,16 @@ class RebalanceTask(Task):
                 success_cleaned = []
                 for removed in self.to_remove:
                     try:
-                        rest = RestConnection(removed)
+                        rest = ClusterRestAPI(removed)
                     except ServerUnavailableException as e:
                         self.test_log.error(e)
                         continue
                     start = time.time()
                     while time.time() - start < 30:
                         try:
-                            if 'pools' in rest.get_pools_info() and \
-                                    (len(rest.get_pools_info()["pools"]) == 0):
+                            _, pools_info = rest.cluster_info()
+                            if 'pools' in pools_info and \
+                                    (len(pools_info["pools"]) == 0):
                                 success_cleaned.append(removed)
                                 break
                         except (ServerUnavailableException, IncompleteRead) as e:
