@@ -224,15 +224,23 @@ class ClusterUtils:
         :param server: Any node running CB server
         :return: True if the cluster is enterprise edition
         """
-        server = server or cluster.master
-        rest = ClusterRestAPI(server)
-        status, result = rest.cluster_details()
-        if not status:
-            raise Exception("Unable to read /pools API")
-        for node in result["nodes"]:
-            if node["version"].split("-")[-1] != "enterprise":
-                return False
-        return True
+        rest = ClusterRestAPI(server or cluster.master)
+        if server:
+            # If any particular node is given, we can just look for /pools
+            status, result = rest.cluster_info()
+            if not status:
+                raise Exception("Unable to read /pools API")
+            return result["isEnterprise"]
+        else:
+            # If Cluster, we check all nodes' status from /pools/default
+            status, result = rest.cluster_details()
+            if not status:
+                raise Exception("Unable to read /pools/default API")
+
+            for node in result["nodes"]:
+                if node["version"].split("-")[-1] != "enterprise":
+                    return False
+            return True
 
     def get_server_profile_type(self, servers):
         """
