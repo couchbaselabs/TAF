@@ -18,6 +18,7 @@ from threading import Lock, Thread
 from collections import OrderedDict
 
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.constants.cluster_run import ClusterRun
 from cb_server_rest_util.index.index_api import IndexRestAPI
 from doc_loader.sirius_client import RESTClient
 from sdk_client3 import SDKClient
@@ -26,7 +27,7 @@ import global_vars
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket, Serverless
-from cb_constants import constants, CbServer, DocLoading, ClusterRun
+from cb_constants import constants, CbServer, DocLoading
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
     CBAS_Index, CBAS_UDF

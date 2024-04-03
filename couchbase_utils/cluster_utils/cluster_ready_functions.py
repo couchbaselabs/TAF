@@ -13,10 +13,11 @@ from copy import deepcopy
 from datetime import datetime,timedelta
 from threading import Lock
 
-from cb_constants import constants, CbServer, ClusterRun
+from cb_constants import constants, CbServer
 from Jython_tasks.task import MonitorActiveTask, FunctionCallTask
 from TestInput import TestInputSingleton, TestInputServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.constants.cluster_run import ClusterRun
 from cb_tools.cb_collectinfo import CbCollectInfo
 from common_lib import sleep, humanbytes
 from couchbase_cli import CouchbaseCLI

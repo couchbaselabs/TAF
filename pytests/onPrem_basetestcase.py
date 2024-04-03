@@ -9,13 +9,14 @@ from imp import reload
 
 import global_vars
 from BucketLib.bucket import Bucket
-from cb_constants import ClusterRun, CbServer
+from cb_constants import CbServer
 import cb_constants
 from SystemEventLogLib.Events import Event
 from SystemEventLogLib.data_service_events import DataServiceEvents
 from TestInput import TestInputSingleton
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.constants.cluster_run import ClusterRun
 from cb_server_rest_util.security.security_api import SecurityRestAPI
 from constants.platform_constants import os_constants
 from cb_basetest import CouchbaseBaseTest
