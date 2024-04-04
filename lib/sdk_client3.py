@@ -350,11 +350,7 @@ class SDKClient(object):
             else:
                 self.scheme = "couchbase"
             if not ClusterRun.is_enabled:
-                if server.type == "columnar":
-                    hosts.append(server.ip + ":" + str(
-                        server.nebula_sdk_port))
-                else:
-                    hosts.append(server.ip)
+                hosts.append(server.ip)
 
         start_time = time.time()
         self.__create_conn(framework_cb_cluster_obj, servers, hosts)

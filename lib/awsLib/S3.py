@@ -1,3 +1,5 @@
+import time
+
 import boto3
 from botocore.exceptions import ClientError
 from boto3.s3.transfer import TransferConfig
@@ -171,10 +173,28 @@ class S3():
             for item in response:
                 if item["ResponseMetadata"]["HTTPStatusCode"] != 200:
                     status = status and False
-            return status
+            is_bucket_empty = self.wait_until_bucket_empty(bucket_name)
+            return is_bucket_empty
         except Exception as e:
             self.logger.error(e)
             return False
+
+    def wait_until_bucket_empty(self, bucket_name, timeout=300):
+        try:
+            while timeout > 0:
+                # Create a bucket resource object
+                bucket_resource = self.s3_resource.Bucket(bucket_name)
+                is_empty = [] == [i for i in bucket_resource.objects.limit(1).all()]
+                if is_empty:
+                    return True
+                else:
+                    timeout -= 5
+                    time.sleep(5)
+            return False
+        except Exception as e:
+            self.logger.error(e)
+            return False
+
 
     def list_existing_buckets(self):
         """
