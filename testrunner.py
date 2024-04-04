@@ -121,7 +121,7 @@ def main():
         argument_split = [a.strip()
                           for a in re.split("[,]?([^,=]+)=", name)[1:]]
         params = dict(zip(argument_split[::2], argument_split[1::2]))
-
+        params["sirius_url"] = options.sirius_url
         # Note that if ALL is specified at runtime then tests
         # which have no groups are still run - just being explicit on this
 

@@ -1,6 +1,5 @@
 import errno
 import os
-import pathlib
 
 import requests
 from signal import SIGTERM
@@ -95,7 +94,6 @@ class SiriusClient(object):
                     raise Exception
 
             docker_file_data["services"]["sirius"]["ports"] = [f"{port}:4000"]
-            print(docker_file_data)
             with open(docker_file_path, 'a') as outfile:
                 yaml.safe_dump(docker_file_data, outfile,
                                default_flow_style=False)

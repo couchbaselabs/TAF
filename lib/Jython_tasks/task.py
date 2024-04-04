@@ -21,6 +21,7 @@ from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.index.index_api import IndexRestAPI
 from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
+from doc_loader.sirius import SiriusClient
 from doc_loader.sirius_client import RESTClient
 from sdk_client3 import SDKClient
 import common_lib
@@ -39,7 +40,7 @@ from collections_helper.collections_spec_constants import MetaConstants
 from common_lib import sleep, IDENTIFIER_TOKEN
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
-    SubdocDocumentGenerator
+    SubdocDocumentGenerator, DocumentGenerator
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 from custom_exceptions.exception import \
@@ -54,7 +55,7 @@ from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
-from TestInput import TestInputServer
+from TestInput import TestInputServer, TestInputSingleton
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
     CapellaUtils
@@ -2288,7 +2289,7 @@ class ContinuousRangeScan(Task):
 
 class RangeScanOnCollection(Task):
     def __init__(self, clients, scan_terms_map, timeout=60,
-                 expect_exceptions=[],sampling_scan_param=0):
+                 expect_exceptions=[], sampling_scan_param=0):
         super(RangeScanOnCollection, self).__init__("RangeScanOnCollection")
         self.clients = clients
         self.task_ended = False
@@ -7652,7 +7653,7 @@ class BucketFlushTask(Task):
                 else:
                     self.test_log.error(
                         "Unable to reach bucket {0} on server {1} after flush"
-                            .format(self.bucket, self.server))
+                        .format(self.bucket, self.server))
                     self.set_result(False)
             else:
                 self.set_result(False)
@@ -8075,7 +8076,7 @@ class DropDatasetsTask(Task):
                     if dataset.enabled_from_KV:
                         if self.kv_name_cardinality > 1:
                             if not self.cbas_util.disable_analytics_from_KV(
-                                self.cluster, dataset.full_kv_entity_name):
+                                    self.cluster, dataset.full_kv_entity_name):
                                 raise Exception(
                                     "Unable to disable analytics on " + \
                                     dataset.full_kv_entity_name)
@@ -8151,9 +8152,9 @@ class ExecuteQueryTask(Task):
                                                                      connection=connection,
                                                                      isIndexerQuery=self.isIndexerQuery)
                 self.log.debug("Status of the query {}".format(status))
-                #self.log.debug("Content of the query is {}".format(content))
+                # self.log.debug("Content of the query is {}".format(content))
                 self.set_result(status)
-                self.log.debug("check isIndexQuery status"+str(self.isIndexerQuery))
+                self.log.debug("check isIndexQuery status" + str(self.isIndexerQuery))
                 json_parsed = json.loads(content)
                 if json_parsed["status"] == 'errors':
                     self.log.debug("parsed error body {}".format(json_parsed))
@@ -8179,7 +8180,7 @@ class ExecuteQueryTask(Task):
 
 
 class RestBasedDocLoader(Task):
-    def __init__(self, cluster, task_manager, bucket, generator,
+    def __init__(self, cluster, task_manager, bucket, generator: DocumentGenerator,
                  op_type, exp, exp_unit="seconds", random_exp=False, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  timeout_secs=5, compression=None, retries=5, durability="None",
@@ -8190,13 +8191,13 @@ class RestBasedDocLoader(Task):
                  track_failures=True,
                  preserve_expiry=None,
                  sdk_retry_strategy=None,
-                 iterations=1, doc_type="json", key_prefix="", key_suffix="",
+                 iterations=1,
                  readYourOwnWrite=False, fieldsToChange=[], template="Person",
                  sirius_base_url="http://0.0.0.0:4000", scheme="http",
                  retry=1000, retry_interval=0.2, delete_record=False,
                  ignore_exceptions=[], retry_exception=[],
                  retry_attempts=0):
-        self.thread_name = "RestLoader_%s_%s_%s".format(bucket, scope, collection)
+        self.thread_name = "Sirius_Doc_Loader_%s_%s_%s".format(bucket, scope, collection)
         super(RestBasedDocLoader, self).__init__(self.thread_name)
         self.cluster = cluster
         self.exp = exp
@@ -8234,14 +8235,14 @@ class RestBasedDocLoader(Task):
         self.scheme = scheme
         self.username = self.cluster.username
         self.password = self.cluster.password
-        self.start = self.generator.start
-        self.end = self.generator.end
+        self.start = int(self.generator.start)
+        self.end = int(self.generator.end)
         self.count = self.end - self.start
         self.doc_size = self.generator.doc_size
         self.key_size = self.generator.key_size
-        self.doc_type = doc_type
-        self.key_prefix = key_prefix
-        self.key_suffix = key_suffix
+        self.doc_type = self.generator.doc_type
+        self.key_prefix = self.generator.name
+        self.key_suffix = ""
         self.expiry = self.exp
         self.readYourOwnWrite = readYourOwnWrite
         self.fieldsToChange = fieldsToChange
@@ -8261,26 +8262,28 @@ class RestBasedDocLoader(Task):
         self.result = False
 
     def call(self):
+        self.start_task()
         try:
-            self.start_task()
-            rest_client_object = RESTClient(servers=[self.cluster.master], bucket=self.bucket, scope=self.scope,
-                                            collection=self.collection, username=self.username, password=self.password,
-                                            compression_settings=self.compression, sirius_base_url
-                                            =self.sirius_base_url)
+            sirius_client = RESTClient(
+                servers=[self.cluster.master], bucket=self.bucket,
+                scope=self.scope, collection=self.collection,
+                username=self.username, password=self.password,
+                compression_settings=self.compression,
+                sirius_base_url=self.sirius_base_url)
 
-            insert_options = rest_client_object.create_payload_insert_options(
+            insert_options = sirius_client.create_payload_insert_options(
                 self.exp, persist_to=self.persist_to,
                 replicate_to=self.replicate_to, durability=self.durability,
                 timeout=self.timeout_secs)
 
-            remove_options = rest_client_object.create_payload_remove_options(persist_to=self.persist_to,
-                                                                              replicate_to=self.replicate_to,
-                                                                              durability=self.durability,
-                                                                              timeout=self.timeout_secs)
+            remove_options = sirius_client.create_payload_remove_options(
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
+                durability=self.durability, timeout=self.timeout_secs)
 
-            touch_options = rest_client_object.create_payload_touch_options(timeout=self.timeout_secs)
+            touch_options = sirius_client.create_payload_touch_options(
+                timeout=self.timeout_secs)
 
-            operation_config = rest_client_object.create_payload_operation_config(
+            operation_config = sirius_client.create_payload_operation_config(
                 count=self.count,
                 doc_size=self.doc_size,
                 doc_type=self.doc_type,
@@ -8294,32 +8297,31 @@ class RestBasedDocLoader(Task):
                 retry_exception=self.retry_exceptions,
                 retry_attempts=self.retry_attempts)
 
-            self.fail, self.success_count, self.fail_count, self.resultSeed = rest_client_object.do_bulk_operation(
-                op_type=self.op_type,
-                identifier_token=self.identifier_token,
-                insert_options=insert_options,
-                remove_options=remove_options,
-                touch_options=touch_options,
-                operation_config=operation_config,
-                expiry=self.exp,
-                retry=self.retry,
-                retry_interval=self.retry_interval,
-                delete_record=self.delete_record)
+            self.fail, self.success_count, self.fail_count, self.resultSeed = \
+                sirius_client.do_bulk_operation(
+                    op_type=self.op_type,
+                    identifier_token=self.identifier_token,
+                    insert_options=insert_options,
+                    remove_options=remove_options,
+                    touch_options=touch_options,
+                    operation_config=operation_config,
+                    expiry=self.exp,
+                    retry=self.retry,
+                    retry_interval=self.retry_interval,
+                    delete_record=self.delete_record)
 
             if self.op_type == "validate":
                 if len(self.fail) > 0:
-                    for key, failed_doc in self.fail:
+                    for key, failed_doc in list(self.fail.items()):
                         print(key, failed_doc)
 
                     self.set_result(True)
                     self.complete_task()
                     raise Exception("Validation Failed")
-
             self.set_result(True)
-            self.complete_task()
         except Exception as e:
             self.log.critical(e)
-        self.set_result(True)
+            self.set_result(False)
         self.complete_task()
         return True
 
@@ -8328,26 +8330,23 @@ class RestBasedDocLoader(Task):
 
 
 class RestBasedDocLoaderAbstract(Task):
-    def __init__(self, cluster, task_manager, bucket, clients, generator,
+    def __init__(self, cluster, task_manager, bucket,
+                 generator: list[DocumentGenerator],
                  op_type, exp, exp_unit="seconds", random_exp=False, flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
                  batch_size=1,
                  timeout_secs=5, compression=None, process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="None",
                  task_identifier="", skip_read_on_error=False,
-                 suppress_error_table=False,
-                 sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  monitor_stats=["doc_ops"],
                  track_failures=True,
                  preserve_expiry=None,
                  sdk_retry_strategy=None,
-                 iterations=1, doc_type="json", key_prefix="", key_suffix="",
-                 readYourOwnWrite=False, fieldsToChange=[],
+                 iterations=1, readYourOwnWrite=False, fieldsToChange=[],
                  template="Person", sirius_base_url="http://0.0.0.0:4000", retry=1000, retry_interval=0.2,
                  delete_record=False, ignore_exceptions=[], retry_exception=[], retry_attempts=0):
-
         self.thread_name = "Sirius_Based_Load_task_Abstract_%s_%s_%s".format(bucket, scope, collection)
         super(RestBasedDocLoaderAbstract, self).__init__(self.thread_name)
         self.op_type = None
@@ -8363,8 +8362,6 @@ class RestBasedDocLoaderAbstract(Task):
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
-        self.clients = clients
-        self.sdk_client_pool = sdk_client_pool
         self.task_manager = task_manager
         self.batch_size = batch_size
         self.generators = generator
@@ -8376,7 +8373,6 @@ class RestBasedDocLoaderAbstract(Task):
         self.durability = durability
         self.task_identifier = task_identifier
         self.skip_read_on_error = skip_read_on_error
-        self.suppress_error_table = suppress_error_table
         self.monitor_stats = monitor_stats
         self.scope = scope
         self.collection = collection
@@ -8398,10 +8394,6 @@ class RestBasedDocLoaderAbstract(Task):
         self.success = dict()
         self.print_ops_rate_tasks = list()
         self.__tasks = list()
-
-        self.doc_type = doc_type
-        self.key_prefix = key_prefix
-        self.key_suffix = key_suffix
         self.expiry = exp
         self.readYourOwnWrite = readYourOwnWrite
         self.fieldsToChange = fieldsToChange
@@ -8454,14 +8446,11 @@ class RestBasedDocLoaderAbstract(Task):
                         durability=self.durability,
                         task_identifier=self.thread_name,
                         skip_read_on_error=self.skip_read_on_error,
-                        suppress_error_table=self.suppress_error_table,
                         scope=self.scope, collection=self.collection,
                         track_failures=self.track_failures,
                         preserve_expiry=self.preserve_expiry,
                         sdk_retry_strategy=self.sdk_retry_strategy,
-                        iterations=1, doc_type=self.doc_type,
-                        key_prefix=self.key_prefix,
-                        key_suffix=self.key_prefix,
+                        iterations=1,
                         readYourOwnWrite=self.readYourOwnWrite,
                         fieldsToChange=self.fieldsToChange,
                         template=self.template,
@@ -8516,10 +8505,6 @@ class RestBasedDocLoaderAbstract(Task):
                     self.task_manager.stop_task(task)
                     self.log.debug("Task '{0}' complete. Loaded {1} items"
                                    .format(task.thread_name, task.get_total_doc_ops))
-                if self.sdk_client_pool is None:
-                    for client in self.clients:
-                        client.close()
-
         except Exception as e:
             self.test_log.error(e)
             self.set_exception(e)
@@ -8560,25 +8545,26 @@ class RestBasedDocLoaderCleaner(Task):
 
     def call(self):
         self.start_task()
+        sirius_client = SiriusClient()
         try:
             for bucket in self.buckets:
                 if bucket is None:
                     bucket = Bucket()
 
-                clear_test_information(base_urls=self.sirius_base_url, identifier_token=self.identifier_token,
-                                       username=self.username, password=self.password, bucket=bucket.name,
-                                       scope=self.scope, collection=self.collection)
+                sirius_client.clear_test_information(
+                    base_urls=self.sirius_base_url,
+                    identifier_token=self.identifier_token)
                 self.set_result(True)
                 self.complete_task()
         except Exception as e:
-            print(str(e))
-            self.set_result(True)
+            self.log.critical(str(e))
+            self.set_result(False)
             self.complete_task()
 
 
 class RestBasedSubDocLoaderAbstract(Task):
-    def __init__(self, cluster, task_manager, bucket, clients,
-                 generators,
+    def __init__(self, cluster, task_manager, bucket,
+                 generators: list[SubdocDocumentGenerator],
                  op_type, exp, create_paths=False,
                  xattr=False, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
@@ -8587,14 +8573,12 @@ class RestBasedSubDocLoaderAbstract(Task):
                  process_concurrency=8,
                  print_ops_rate=True, retries=5, durability="",
                  task_identifier="",
-                 sdk_client_pool=None,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
                  preserve_expiry=None, sdk_retry_strategy=None,
                  store_semantics=None,
                  access_deleted=False,
                  create_as_deleted=False,
-                 doc_type="json", key_prefix="", key_suffix="",
                  template="Person", sirius_base_url="http://0.0.0.0:4000",
                  retry=1000, retry_interval=0.2, delete_record=False,
                  ignore_exceptions=[], retry_exception=[], retry_attempts=0):
@@ -8613,7 +8597,6 @@ class RestBasedSubDocLoaderAbstract(Task):
         self.timeout_secs = timeout_secs
         self.compression = compression
         self.process_concurrency = process_concurrency
-        self.clients = clients
         self.task_manager = task_manager
         self.batch_size = batch_size
         self.generators = generators
@@ -8623,7 +8606,6 @@ class RestBasedSubDocLoaderAbstract(Task):
         self.print_ops_rate = print_ops_rate
         self.retries = retries
         self.durability = durability
-        self.sdk_client_pool = sdk_client_pool
         self.scope = scope
         self.collection = collection
         self.preserve_expiry = preserve_expiry
@@ -8643,9 +8625,6 @@ class RestBasedSubDocLoaderAbstract(Task):
         self.num_loaded = 0
         self.fail = dict()
         self.success = dict()
-        self.doc_type = doc_type
-        self.key_prefix = key_prefix
-        self.key_suffix = key_suffix
         self.expiry = exp
         self.template = template
         self.sirius_base_url = sirius_base_url
@@ -8723,9 +8702,6 @@ class RestBasedSubDocLoaderAbstract(Task):
             self.log.debug("=======================================")
             for task in tasks:
                 self.task_manager.stop_task(task)
-            if self.sdk_client_pool is None:
-                for client in self.clients:
-                    client.close()
         self.complete_task()
         return self.fail
 
@@ -8748,18 +8724,15 @@ class RestBasedSubDocLoaderAbstract(Task):
             preserve_expiry=self.preserve_expiry,
             store_semantics=self.store_semantics,
             access_deleted=self.access_deleted,
-            create_as_deleted=self.create_as_deleted,
-            doc_type=self.doc_type, key_prefix=self.key_prefix,
-            key_suffix=self.key_suffix, template=self.template,
+            create_as_deleted=self.create_as_deleted, template=self.template,
             sirius_base_url=self.sirius_base_url, retry=self.retry, retry_interval=self.retry_interval,
             delete_record=self.delete_record, ignore_exceptions=self.ignore_exceptions,
             retry_exception=self.ignore_exceptions, retry_attempts=self.retry_attempts)
         return task
 
 
-
 class RestBasedSubDocLoader(Task):
-    def __init__(self, cluster, bucket, generator,
+    def __init__(self, cluster, bucket, generator: SubdocDocumentGenerator,
                  op_type, exp, create_paths=False,
                  xattr=False, exp_unit="seconds", flag=0,
                  persist_to=0, replicate_to=0, time_unit="seconds",
@@ -8775,7 +8748,7 @@ class RestBasedSubDocLoader(Task):
                  template="Person", sirius_base_url="http://0.0.0.0:4000",
                  retry=1000, retry_interval=0.2, delete_record=False,
                  ignore_exceptions=[], retry_exception=[], retry_attempts=0):
-        self.thread_name = "Rest_Subdoc_Load_Task%s_%s_%s"\
+        self.thread_name = "Sirius_Subdoc_Load_Task%s_%s_%s"\
             .format(bucket, scope, collection)
         super(RestBasedSubDocLoader, self).__init__(self.thread_name)
 
@@ -8812,9 +8785,11 @@ class RestBasedSubDocLoader(Task):
         self.count = self.end - self.start
         self.scope = scope
         self.collection = collection
-        self.doc_type = doc_type
-        self.key_prefix = key_prefix
-        self.key_suffix = key_suffix
+        self.doc_type = self.generator.doc_type
+        self.key_prefix = self.generator.name
+        self.key_suffix = ""
+        self.doc_size = self.generator.doc_size
+        self.key_size = self.generator.key_size
         self.expiry = exp
         self.template = template
         self.sirius_base_url = sirius_base_url
@@ -8831,42 +8806,54 @@ class RestBasedSubDocLoader(Task):
     def call(self):
         try:
             self.start_task()
-            rest_client_object = RESTClient(
+
+            sirius_client = RESTClient(
                 servers=[self.cluster.master], bucket=self.bucket, scope=self.scope,
                 collection=self.collection, username=self.username, password=self.password,
                 compression_settings=self.compression, sirius_base_url
                 =self.sirius_base_url)
-            sub_doc_operation_config = rest_client_object.build_sub_doc_operation_config(
-                self.start, self.end,
+
+            operation_config = sirius_client.create_payload_operation_config(
+                count=self.count,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                key_size=self.key_size,
+                key_prefix=self.key_prefix,
+                key_suffix=self.key_suffix,
+                read_your_own_write=None,
+                start=self.start, end=self.end,
+                fields_to_change=None,
                 ignore_exceptions=self.ignore_exceptions,
                 retry_exception=self.retry_exceptions,
                 retry_attempts=self.retry_attempts)
-            insert_spec_options = rest_client_object.build_insert_spec_options(create_path=self.create_path,
-                                                                               is_xattr=self.xattr)
 
-            replace_spec_options = rest_client_object.build_replace_spec_options(is_xattr=self.xattr)
-            remove_spec_options = rest_client_object.build_remove_spec_options(is_xattr=self.xattr)
-            get_spec_options = rest_client_object.build_get_spec_options(is_xattr=self.xattr)
-            lookup_in_options = rest_client_object.build_lookup_in_options(timeout=self.timeout_secs)
-            mutate_in_options = rest_client_object.build_mutate_in_options(expiry=self.expiry,
-                                                                           persist_to=self.persist_to,
-                                                                           replicate_to=self.replicate_to,
-                                                                           durability=self.durability,
-                                                                           store_semantic=self.store_semantics,
-                                                                           timeout=self.timeout_secs,
-                                                                           preserve_expiry=self.preserve_expiry)
+            insert_spec_options = sirius_client.build_insert_spec_options(create_path=self.create_path,
+                                                                          is_xattr=self.xattr)
 
-            self.fail, self.success_count, self.fail_count, self.resultSeed = rest_client_object.do_bulk_sub_doc_operation(
-                op_type=self.op_type, identifier_token=self.identifier_token,
-                insert_spec_options=insert_spec_options,
-                remove_spec_options=remove_spec_options,
-                replace_spec_options=replace_spec_options,
-                get_spec_options=get_spec_options,
-                lookup_in_options=lookup_in_options,
-                mutate_in_options=mutate_in_options,
-                sub_doc_operation_config=sub_doc_operation_config,
-                retry=self.retry, retry_interval=self.retry_interval,
-                delete_record=self.delete_record)
+            replace_spec_options = sirius_client.build_replace_spec_options(is_xattr=self.xattr)
+            remove_spec_options = sirius_client.build_remove_spec_options(is_xattr=self.xattr)
+            get_spec_options = sirius_client.build_get_spec_options(is_xattr=self.xattr)
+            lookup_in_options = sirius_client.build_lookup_in_options(timeout=self.timeout_secs)
+            mutate_in_options = sirius_client.build_mutate_in_options(expiry=self.expiry,
+                                                                      persist_to=self.persist_to,
+                                                                      replicate_to=self.replicate_to,
+                                                                      durability=self.durability,
+                                                                      store_semantic=self.store_semantics,
+                                                                      timeout=self.timeout_secs,
+                                                                      preserve_expiry=self.preserve_expiry)
+
+            self.fail, self.success_count, self.fail_count, self.resultSeed = \
+                sirius_client.do_bulk_sub_doc_operation(
+                    op_type=self.op_type, identifier_token=self.identifier_token,
+                    insert_spec_options=insert_spec_options,
+                    remove_spec_options=remove_spec_options,
+                    replace_spec_options=replace_spec_options,
+                    get_spec_options=get_spec_options,
+                    lookup_in_options=lookup_in_options,
+                    mutate_in_options=mutate_in_options,
+                    sub_doc_operation_config=operation_config,
+                    retry=self.retry, retry_interval=self.retry_interval,
+                    delete_record=self.delete_record)
 
             self.set_result(True)
             self.complete_task()

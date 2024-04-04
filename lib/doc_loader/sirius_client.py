@@ -535,7 +535,7 @@ class RESTClient(object):
             if expiry is not None:
                 payload.update({"expiry": expiry})
 
-        elif self.op_type == DocLoading.Bucket.DocOps.VALIDATE:
+        elif self.op_type == "validate":
             path = "/validate"
 
         else:
@@ -1409,3 +1409,11 @@ class RESTClient(object):
     #     for index, data in enumerate(documents):
     #         self.collection.insert(key_prefix + str(index),
     #                                JsonObject.fromJson(data))
+
+    def warmup_bucket(self, identifier_token=IDENTIFIER_TOKEN):
+        payload = {"identifierToken": identifier_token,
+                   "bucket": self.bucket.name}
+        payload.update(self.cluster_config)
+        path = "/warmup-bucket"
+        method = "POST"
+        _ = self.send_request(path=path, method=method, payload=payload)
