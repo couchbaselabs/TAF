@@ -86,7 +86,7 @@ fi
 
 # Perform Installation of builds on target servers
 cd platform_utils/ssh_util
-python -m install_util.install -i $WORKSPACE/testexec.$$.ini -v 7.6.2-3524 --skip_local_download
+python -m install_util.install -i $WORKSPACE/testexec.$$.ini -v ${version_number} --skip_local_download
 status=$?
 cd ../..
 
