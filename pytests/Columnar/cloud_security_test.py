@@ -7,8 +7,6 @@ import time
 
 import requests
 from Columnar.columnar_base import ColumnarBaseTest
-from capella_utils.columnar import (
-    Users, Project, DBUser, ColumnarInstance, ColumnarUtils)
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 
@@ -19,16 +17,16 @@ class SecurityTest(ColumnarBaseTest):
     def setUp(self):
         ColumnarBaseTest.setUp(self)
         self.tenant_id = self.capella.get("tenant_id")
-        self.project_id = self.project.project_id
+        self.project_id = self.tenant.project_id
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         self.instance_list = []
 
-        self.columnar_api = ColumnarAPI(self.pod.url_public, self.user.api_secret_key,
-                                        self.user.api_access_key, self.user.email,
-                                        self.user.password)
-        self.capella_api = CapellaAPIv2(self.pod.url_public, self.user.api_secret_key,
-                                        self.user.api_access_key, self.user.email,
-                                        self.user.password)
+        self.columnar_api = ColumnarAPI(self.pod.url_public, self.tenant.api_secret_key,
+                                        self.tenant.api_access_key, self.tenant.user,
+                                        self.tenant.pwd)
+        self.capella_api = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key,
+                                        self.tenant.api_access_key, self.tenant.user,
+                                        self.tenant.pwd)
 
         self.create_different_organization_roles()
 
@@ -120,13 +118,13 @@ class SecurityTest(ColumnarBaseTest):
         self.log.info("Creating Different Organization Roles")
         self.test_users = {}
         roles = ["organizationOwner", "projectCreator", "organizationMember"]
-        setup_capella_api = CapellaAPIv2(self.pod.url_public, self.user.api_secret_key,
-                                         self.user.api_access_key, self.user.email,
-                                         self.user.password)
+        setup_capella_api = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key,
+                                         self.tenant.api_access_key, self.tenant.user,
+                                         self.tenant.pwd)
 
         num = 1
         for role in roles:
-            usrname = self.user.email.split('@')
+            usrname = self.tenant.user.split('@')
             username = usrname[0] + "+" + self.generate_random_string(9, False) + "@" + usrname[1]
             name = "Test_User_" + str(num)
             self.log.info("Creating user {} with role {}".format(username, role))
@@ -169,7 +167,7 @@ class SecurityTest(ColumnarBaseTest):
         state = None
         while time.time() < instance_deployment_end_time:
             resp = self.columnar_api.get_specific_columnar_instance(self.tenant_id,
-                                                                    self.project.project_id,
+                                                                    self.project_id,
                                                                     instance_id)
             if resp.status_code != 200:
                 if time.time() > fetch_instance_details_end_time:
@@ -178,6 +176,7 @@ class SecurityTest(ColumnarBaseTest):
                 continue
 
             resp = resp.json()
+            resp = resp["data"]
             state = resp["state"]
 
             if state == "healthy":
@@ -197,7 +196,7 @@ class SecurityTest(ColumnarBaseTest):
 
         while True:
             resp = self.columnar_api.get_specific_columnar_instance(self.tenant_id,
-                                                                    self.project.project_id,
+                                                                    self.project_id,
                                                                     instance_id)
             if resp.status_code == 404:
                 self.log.info("Instance is already deleted")
@@ -227,7 +226,7 @@ class SecurityTest(ColumnarBaseTest):
 
         while time.time() < end_time_destroying_to_destroyed:
             resp = self.columnar_api.get_specific_columnar_instance(self.tenant_id,
-                                                                    self.project.project_id,
+                                                                    self.project_id,
                                                                     instance_id)
             if resp.status_code == 404:
                 return  # Instance is deleted
@@ -317,9 +316,9 @@ class SecurityTest(ColumnarBaseTest):
 
         for tenant_id in tenant_ids:
 
-            instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+            instance_config = self.columnar_utils.generate_instance_configuration()
             resp = self.columnar_api.create_columnar_instance(
-                tenant_ids[tenant_id], self.project.project_id, instance_config["name"],
+                tenant_ids[tenant_id], self.project_id, instance_config["name"],
                 instance_config["description"], instance_config["provider"],
                 instance_config["region"], instance_config["nodes"]
             )
@@ -349,9 +348,9 @@ class SecurityTest(ColumnarBaseTest):
         }
 
         for project_id in project_ids:
-            instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+            instance_config = self.columnar_utils.generate_instance_configuration()
             resp = self.columnar_api.create_columnar_instance(
-                self.project.org_id, project_ids[project_id], instance_config["name"],
+                self.tenant_id, project_ids[project_id], instance_config["name"],
                 instance_config["description"], instance_config["provider"],
                 instance_config["region"], instance_config["nodes"]
             )
@@ -381,9 +380,9 @@ class SecurityTest(ColumnarBaseTest):
                                                self.test_users[user]["mailid"],
                                                self.test_users[user]["password"])
 
-            instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+            instance_config = self.columnar_utils.generate_instance_configuration()
             resp = self.colunmnarAPIrole.create_columnar_instance(
-                self.project.org_id, self.project.project_id, instance_config["name"],
+                self.tenant_id, self.project_id, instance_config["name"],
                 instance_config["description"], instance_config["provider"],
                 instance_config["region"], instance_config["nodes"]
             )
@@ -435,9 +434,9 @@ class SecurityTest(ColumnarBaseTest):
                                                 user["mailid"],
                                                 user["password"])
 
-            instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+            instance_config = self.columnar_utils.generate_instance_configuration()
             resp = self.colunmnarAPIrole.create_columnar_instance(
-                self.project.org_id, self.project.project_id, instance_config["name"],
+                self.tenant_id, self.project_id, instance_config["name"],
                 instance_config["description"], instance_config["provider"],
                 instance_config["region"], instance_config["nodes"]
             )
@@ -496,7 +495,7 @@ class SecurityTest(ColumnarBaseTest):
 
         for tenant_id in tenant_ids:
             resp = self.columnar_api.get_columnar_instances(tenant_ids[tenant_id],
-                                                            self.project.project_id)
+                                                            self.project_id)
             if tenant_id == "invalid_tenant_id":
                 self.assertEqual(404, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 403))
@@ -578,7 +577,7 @@ class SecurityTest(ColumnarBaseTest):
 
     def test_fetch_columnar_instance_details_security(self):
 
-        instance = self.project.instances[0]
+        instance = self.tenant.columnar_instances[0]
         instance_id = instance.instance_id
 
         # headers = {
@@ -702,7 +701,7 @@ class SecurityTest(ColumnarBaseTest):
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
 
     def test_delete_columnar_instance_secuirty(self):
-        instance = self.project.instances[0]
+        instance = self.tenant.columnar_instances[0]
         instance_id = instance.instance_id
         self.instance_list.append(instance_id)
 
@@ -739,9 +738,9 @@ class SecurityTest(ColumnarBaseTest):
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
                 self.wait_for_instance_to_be_deleted(instance_id)
                 self.instance_list.remove(instance_id)
-                instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+                instance_config = self.columnar_utils.generate_instance_configuration()
                 resp = self.columnar_api.create_columnar_instance(
-                    self.tenant_id, self.project.project_id, instance_config["name"],
+                    self.tenant_id, self.project_id, instance_config["name"],
                     instance_config["description"], instance_config["provider"],
                     instance_config["region"], instance_config["nodes"]
                 )
@@ -778,9 +777,9 @@ class SecurityTest(ColumnarBaseTest):
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 202))
                 self.wait_for_instance_to_be_deleted(instance_id)
                 self.instance_list.remove(instance_id)
-                instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+                instance_config = self.columnar_utils.generate_instance_configuration()
                 resp = self.columnar_api.create_columnar_instance(
-                    self.tenant_id, self.project.project_id, instance_config["name"],
+                    self.tenant_id, self.project_id, instance_config["name"],
                     instance_config["description"], instance_config["provider"],
                     instance_config["region"], instance_config["nodes"]
                 )
@@ -814,9 +813,9 @@ class SecurityTest(ColumnarBaseTest):
                                                            self.test_users[user]["role"]))
                 self.wait_for_instance_to_be_deleted(instance_id)
                 self.instance_list.remove(instance_id)
-                instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+                instance_config = self.columnar_utils.generate_instance_configuration()
                 resp = self.columnar_api.create_columnar_instance(
-                    self.tenant_id, self.project.project_id, instance_config["name"],
+                    self.tenant_id, self.project_id, instance_config["name"],
                     instance_config["description"], instance_config["provider"],
                     instance_config["region"], instance_config["nodes"]
                 )
@@ -865,9 +864,9 @@ class SecurityTest(ColumnarBaseTest):
                                      'For role: {}'.format(resp.status_code, 202, role))
                 self.wait_for_instance_to_be_deleted(instance_id)
                 self.instance_list.remove(instance_id)
-                instance_config = self.columnar_utils.generate_cloumnar_instance_configuration()
+                instance_config = self.columnar_utils.generate_instance_configuration()
                 resp = self.columnar_api.create_columnar_instance(
-                    self.tenant_id, self.project.project_id, instance_config["name"],
+                    self.tenant_id, self.project_id, instance_config["name"],
                     instance_config["description"], instance_config["provider"],
                     instance_config["region"], instance_config["nodes"]
                 )
@@ -1043,7 +1042,7 @@ class SecurityTest(ColumnarBaseTest):
 
     def test_create_api_keys_security(self):
 
-        instance = self.project.instances[0]
+        instance = self.tenant.columnar_instances[0]
         instance_id = instance.instance_id
         #create bucket and collections
         # payload = self.get_api_key_payload()
@@ -1165,7 +1164,7 @@ class SecurityTest(ColumnarBaseTest):
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 204))
 
     def test_get_columnar_api_keys_security(self):
-        instance = self.project.instances[0]
+        instance = self.tenant.columnar_instances[0]
         instance_id = instance.instance_id
 
         # headers = {
@@ -1284,7 +1283,7 @@ class SecurityTest(ColumnarBaseTest):
 
 
     def test_delete_columnar_api_keys(self):
-        instance = self.project.instances[0]
+        instance = self.tenant.columnar_instances[0]
         instance_id = instance.instance_id
 
         # headers = {
