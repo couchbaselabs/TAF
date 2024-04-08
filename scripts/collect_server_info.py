@@ -8,11 +8,10 @@ from datetime import datetime
 import subprocess
 import platform
 
-sys.path = [".", "platform_utils"] + sys.path
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 import TestInput
 from platform_constants.os_constants import Windows
-from remote.remote_util import RemoteMachineShellConnection
 
 
 def usage(error=None):
@@ -183,6 +182,48 @@ def main():
             print("Log file name is \n %s" % file_name)
         else:
             print("Failed to collect log")
+
+
+class MemInfoRunner(object):
+    def __init__(self, server, local=False):
+        self.server = server
+        self.local = local
+        self.succ = {}
+        self.fail = []
+
+    def _run(self, server):
+        mem = None
+        try:
+            if not self.local:
+                remote_client = RemoteMachineShellConnection(server)
+                print("Collecting memory info from %s\n" % server.ip)
+                remote_cmd = \
+                    "sh -c 'if [[ \"$OSTYPE\" == \"darwin\"* ]]; " \
+                    "then sysctl hw.memsize|grep -Eo [0-9]; " \
+                    "else grep MemTotal /proc/meminfo|grep -Eo [0-9]; fi'"
+                output, error = remote_client.execute_command(remote_cmd)
+                print("\n".join(error))
+                remote_client.disconnect()
+                mem = int("".join(output))
+        except Exception as e:
+            self.fail.append((server.ip, e))
+        else:
+            if mem:
+                self.succ[server.ip] = mem
+            else:
+                self.fail.append((server.ip, Exception("mem parse failed")))
+
+    def run(self):
+        if isinstance(self.server, list):
+            meminfo_threads = []
+            for server in self.server:
+                meminfo_thread = Thread(target=self._run, args=(server,))
+                meminfo_thread.start()
+                meminfo_threads.append(meminfo_thread)
+            for meminfo_thread in meminfo_threads:
+                meminfo_thread.join()
+        else:
+            self._run(self.server)
 
 
 if __name__ == "__main__":
