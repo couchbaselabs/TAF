@@ -109,7 +109,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         for result in results:
-            if result[0] != self.doc_count_per_format[file_format]:
+            if result != self.doc_count_per_format[file_format]:
                 self.fail("Doc count mismatch. Expected - {0}, Actual - {"
                           "1}".format(
                     self.doc_count_per_format[file_format], result))
