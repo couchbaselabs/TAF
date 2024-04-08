@@ -1,36 +1,99 @@
-import json
-from optparse import OptionParser
 import configparser
+import json
+import sys
+from optparse import OptionParser
 
-
-# takes an ini template as input, standard out is populated with the server pool
+sys.path = ['.', 'constants', 'lib', 'platform_utils/ssh_util',
+            'py_constants'] + sys.path
+from TestInput import TestInputServer
+from collect_server_info import MemInfoRunner
+# takes an ini template as input, stdout is populated with the server pool
 # need a descriptor as a parameter
-
 # need a timeout param
+
 
 def main():
     print('in main')
     usage = '%prog -i inifile -o outputfile -s servers'
     parser = OptionParser(usage)
     parser.add_option('-s', '--servers', dest='servers', default=None)
-    parser.add_option('-d', '--addPoolServerId', dest='addPoolServerId', default=None)
-    parser.add_option('-a', '--addPoolServers', dest='addPoolServers', default=None)
+    parser.add_option('-x', '--internal_servers', dest='internal_servers',
+                      default=None)
+    parser.add_option('-d', '--addPoolServerId', dest='addPoolServerId',
+                      default=None)
+    parser.add_option('-a', '--addPoolServers', dest='addPoolServers',
+                      default=None)
     parser.add_option('-i', '--inifile', dest='inifile')
     parser.add_option('-o', '--outputFile', dest='outputFile')
     parser.add_option('-p', '--os', dest='os')
     parser.add_option('-k', '--keyValue', dest='keyValue')
     parser.add_option('-r', '--replaceValue', dest='replaceValue')
+    parser.add_option('-m', '--skip_mem_info', dest='skip_mem_info',
+                      action='store_true', default=False)
     options, args = parser.parse_args()
 
     print('the ini file is', options.inifile)
-
     servers = []
-    if options.servers and len(servers) > 0:
+    DEFAULT_LINUX_USER = 'root'
+    DEFAULT_LINUX_PWD = 'couchbase'
+    DEFAULT_WIN_USER = 'Administrator'
+    DEFAULT_WIN_PWD = 'Membase123'
+
+    print('the given server info is', options.servers)
+
+    if options.servers and len(options.servers) > 0 and options.servers != "None":
         if not options.servers.startswith('['):
             options.servers='['+options.servers+']'
+        if options.internal_servers and not options.internal_servers.startswith('['):
+            options.internal_servers='['+options.internal_servers+']'
         servers = json.loads(options.servers)
+        internal_servers = json.loads(options.internal_servers) if options.internal_servers else None
+        internal_servers_map = {}
+        # Sort servers by total memory
+        test_servers = []
+        for i, server_ip in enumerate(servers):
+            server = TestInputServer()
+            server.ip = server_ip
+            if internal_servers:
+                server.internal_ip = internal_servers[i]
+                internal_servers_map[server.ip] = server.internal_ip
+            server.os = options.os
+            if 'windows' in options.os:
+                server.ssh_username = DEFAULT_WIN_USER
+                server.ssh_password = DEFAULT_WIN_PWD
+            else:
+                if options.inifile:
+                    with open(options.inifile, 'rt') as tempfile:
+                        for line in tempfile:
+                            if line.startswith('username:'):
+                                server.ssh_username = line.split(':')[1].strip()
+                            elif line.startswith('password:'):
+                                server.ssh_password = line.split(':')[1].strip()
+                            if server.ssh_username and server.ssh_password:
+                                break
+                if not server.ssh_username:
+                    server.ssh_username = DEFAULT_LINUX_USER
+                if not server.ssh_password:
+                    server.ssh_password = DEFAULT_LINUX_PWD
+            test_servers.append(server)
 
-    print('the server info is', options.servers)
+        if not options.skip_mem_info:
+            runner = MemInfoRunner(test_servers)
+            runner.run()
+            orig_servers = servers
+            servers = []
+            if len(runner.succ) > 0:
+                sorted_by_mem = sorted(runner.succ.items(), key=lambda item: int(item[1]))
+                print('the servers memory info is', sorted_by_mem)
+                for (k,v) in sorted_by_mem:
+                    servers.append(k)
+            for (server, e) in runner.fail:
+                print("CAN'T GET MEMORY FROM {0}: {1}".format(server, e))
+                servers.append(server)
+            for nomemserver in orig_servers:
+                if nomemserver not in servers:
+                    print("CAN'T GET MEMORY FROM {0}: unknown error".format(server))
+                    servers.append(nomemserver)
 
     addPoolServers = []
 
@@ -54,23 +117,41 @@ def main():
     data = f.readlines()
 
     for i in range( len(data) ):
-          if 'dynamic' in data[i] and servers:
-             data[i] = data[i].replace('dynamic', servers[0])
-             servers.pop(0)
-          elif addPoolServers and options.addPoolServerId in data[i]:
-             data[i] = data[i].replace(options.addPoolServerId, addPoolServers[0])
-             addPoolServers.pop(0)
+        if 'dynamic' in data[i] and servers:
+            ip = servers[0]
+            data[i] = data[i].replace('dynamic', ip)
+            servers.pop(0)
+            if internal_servers_map:
+                data[i] += f"internal_ip:{internal_servers_map[ip]}\n"
+        elif addPoolServers:
+            if options.addPoolServerId == "localstack" and "endpoint:" in data[i]:
+                endpoint = data[i].split(":", 1)[1]
+                data[i] = data[i].replace(endpoint, "http://" + addPoolServers[0] + ":4572\n")
+                addPoolServers.pop(0)
+            elif options.addPoolServerId in data[i]:
+                data[i] = data[i].replace(options.addPoolServerId, addPoolServers[0])
+                addPoolServers.pop(0)
 
-          if options.os == 'windows':
-              if 'root' in data[i]:
-                  data[i] = data[i].replace('root', 'Administrator')
-              if 'password:couchbase' in data[i]:
-                  data[i] = data[i].replace('couchbase', 'Membase123')
+        if 'windows' in options.os:
+            if 'username:root' in data[i]:
+                data[i] = data[i].replace('root', DEFAULT_WIN_USER)
+            if 'password:couchbase' in data[i]:
+                data[i] = data[i].replace('couchbase', DEFAULT_WIN_PWD)
 
-          if options.replaceValue:
-              for oldnew in options.replaceValue.split(','):
-                  old, new = oldnew.split("=")
-                  if old in data[i]:
+        if 'es_ssh_username:root' in data[i]:
+            data[i] = data[i].replace('es_ssh_username:root', 'username:'+DEFAULT_LINUX_USER)
+        if 'es_ssh_password:couchbase' in data[i]:
+            data[i] = data[i].replace('es_ssh_password:couchbase', 'password:'+DEFAULT_LINUX_PWD)
+
+        if 'es_ssh_username:Administrator' in data[i]:
+            data[i] = data[i].replace('es_ssh_username:Administrator', 'username:'+DEFAULT_LINUX_USER)
+        if 'es_ssh_password:Membase123' in data[i]:
+            data[i] = data[i].replace('es_ssh_password:Membase123', 'password:'+DEFAULT_LINUX_PWD)
+
+        if options.replaceValue:
+            for oldnew in options.replaceValue.split(','):
+                old, new = oldnew.split("=")
+                if old in data[i]:
                     data[i] = data[i].replace(old, new)
 
 
