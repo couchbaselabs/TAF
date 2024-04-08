@@ -173,7 +173,7 @@ class ColumnarUtils:
             if not resp:
                 state = None
                 continue
-            state = resp["state"]
+            state = resp["data"]["state"]
             if state == "deploying":
                 self.log.info("Instance is still deploying. Waiting for 10s.")
                 time.sleep(10)

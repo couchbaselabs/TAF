@@ -77,7 +77,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             if not response:
                 result.append("Fetching Instance details for {0} "
                               "failed".format(instance_obj.instance_id))
-            instance_obj.master.ip = str(response["config"]["endpoint"])
+            instance_obj.master.ip = str(response["data"]["config"]["endpoint"])
 
         # Columnar clusters can be reused within a test suite, only when they
         # are deployed on single tenant under single project.
@@ -122,7 +122,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                             "Fetching instance details for {0} failed".format(
                                 instance.instance_id))
                     else:
-                        instance.name = str(resp["name"])
+                        instance.name = str(resp["data"]["name"])
                         self.tenant.columnar_instances.append(instance)
                 else:
                     threads.append(Thread(
