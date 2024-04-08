@@ -6,7 +6,6 @@ Created on 17-Oct-2023
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils import CbasUtil
-from goldfishAPI.GoldfishAPIs.DocloadingAPIs.DocloadingAPIs import DocloadingAPIs
 
 
 class ColumnarBaseTest(BaseTestCase):
@@ -64,9 +63,7 @@ class ColumnarBaseTest(BaseTestCase):
             "doc_loading_server_ip", None)
         self.doc_loading_server_port = self.input.param(
             "doc_loading_server_port", None)
-        self.doc_loading_APIs = DocloadingAPIs(
-            self.doc_loading_server_ip, self.doc_loading_server_port) if (
-            self.doc_loading_server_ip) else None
+        self.doc_loading_APIs = None
 
         self.perform_gf_instance_cleanup = self.input.param(
             "perform_gf_instance_cleanup", True)

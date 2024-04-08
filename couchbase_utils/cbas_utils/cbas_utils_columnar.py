@@ -28,7 +28,7 @@ from common_lib import sleep
 from Queue import Queue
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
-from Cb_constants import CbServer
+from cb_constants import CbServer
 from java.lang import System
 from java.util.concurrent import Executors, Callable, TimeUnit, CompletableFuture
 
@@ -2764,18 +2764,15 @@ class Remote_Dataset_Util(Dataset_Util):
                     "_default").num_items
 
             if dataset_spec["storage_format"] == "mixed":
-                storage_format = random.choice(
-                    ["row", "column"])
+                storage_format = random.choice(["row", "column"])
             else:
-                storage_format = dataset_spec[
-                    "storage_format"]
+                storage_format = dataset_spec["storage_format"]
 
             dataset_obj = Remote_Dataset(
                 name=name, link_name=link.full_name,
                 dataverse_name=dataverse.name,
                 database_name=dataverse.database_name, bucket=bucket,
-                scope=scope, collection=collection,
-                num_of_items=num_of_items,
+                scope=scope, collection=collection, num_of_items=num_of_items,
                 storage_format=storage_format
             )
 
