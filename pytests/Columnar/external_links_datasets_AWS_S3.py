@@ -101,7 +101,7 @@ class S3LinksDatasets(ColumnarBaseTest):
 
         jobs = Queue()
         results = []
-        for dataset in self.cbas_util.list_all_dataset_objs("external"):
+        for dataset in self.cbas_util.get_all_dataset_objs("external"):
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
                 {"cluster": self.instance, "dataset_name": dataset.full_name,
@@ -116,7 +116,7 @@ class S3LinksDatasets(ColumnarBaseTest):
 
         results = []
         query = "select * from {} limit 1000"
-        for dataset in self.cbas_util.list_all_dataset_objs("external"):
+        for dataset in self.cbas_util.get_all_dataset_objs("external"):
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
                 {"cluster": self.instance,
