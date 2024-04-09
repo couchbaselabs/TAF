@@ -65,6 +65,7 @@ from constants.cloud_constants.capella_constants import AWS
 
 from java.util.concurrent.atomic import AtomicInteger
 from org.xbill.DNS import Lookup, Type
+from capella_utils.columnar import GoldfishUtils
 
 
 class Task(Callable):
@@ -211,6 +212,119 @@ class TimerTask(Task):
         self.complete_task()
         return result
 
+
+class DeployColumnarInstance(Task):
+    def __init__(self, pod, tenant, name, config, timeout=1800):
+        Task.__init__(self, "DeployingColumnarInstance-{}".format(name))
+        self.name = name
+        self.config = config
+        self.pod = pod
+        self.tenant = tenant
+        self.timeout = timeout
+
+    def call(self):
+        try:
+            instance_id, cluster_id, srv, servers = \
+                GoldfishUtils.create_cluster(self.pod, self.tenant,
+                                             self.config)
+            self.instance_id = instance_id
+            self.cluster_id = cluster_id
+            self.servers = servers
+            self.srv = srv
+            self.result = True
+        except Exception as e:
+            self.log.error(e)
+            self.result = False
+        return self.result
+
+
+class ScaleColumnarInstance(Task):
+    def __init__(self, pod, tenant, cluster, nodes, timeout=1200, poll_interval=60):
+        Task.__init__(self, "Scaling_task_{}".format(str(time.time())))
+        self.pod = pod
+        self.tenant = tenant
+        self.cluster = cluster
+        self.timeout = timeout
+        self.servers = None
+        self.poll_interval = poll_interval
+        self.state = "healthy"
+        GoldfishUtils.scale_cluster(self.pod, self.tenant, self.cluster, nodes)
+        count = 1200
+        while self.state == "healthy" and count > 0:
+            resp = DedicatedUtils.get_cluster_info_internal(self.pod, self.tenant, self.cluster.cluster_id)
+            self.state = resp["meta"]["status"]["state"]
+            self.sleep(5, "Wait until CP trigger the scaling job and change status")
+            self.log.info("Current: {}, Expected: {}".format(self.state, "scaling"))
+            count -= 1
+
+    def call(self):
+        capella_api = decicatedCapellaAPI(self.pod.url_public,
+                                          self.tenant.api_secret_key,
+                                          self.tenant.api_access_key,
+                                          self.tenant.user,
+                                          self.tenant.pwd)
+        end = time.time() + self.timeout
+        while end > time.time():
+            try:
+                content = DedicatedUtils.jobs(capella_api,
+                                              self.pod,
+                                              self.tenant,
+                                              self.cluster.cluster_id)
+                resp = DedicatedUtils.get_cluster_info_internal(self.pod, self.tenant, self.cluster.cluster_id)
+                self.state = resp["meta"]["status"]["state"]
+                if self.state in ["deployment_failed",
+                                  "deploymentFailed",
+                                  "redeploymentFailed",
+                                  "rebalance_failed",
+                                  "rebalanceFailed",
+                                  "scaleFailed"]:
+                    raise Exception("{} for cluster {}".format(
+                        self.state, self.cluster.id))
+                if content.get("data") or self.state != "healthy":
+                    for data in content.get("data"):
+                        data = data.get("data")
+                        if data.get("clusterId") == self.cluster.cluster_id:
+                            step, progress = data.get("currentStep"), \
+                                             data.get("completionPercentage")
+                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", self.state, step, progress))
+                    time.sleep(self.poll_interval)
+                else:
+                    self.log.info("Scaling the cluster completed. State == {}".
+                                  format(self.state))
+                    self.sleep(120)
+                    self.result = True
+                    break
+            except Exception as e:
+                self.log.critical(e)
+                self.result = False
+                return self.result
+        count = 5
+        while count > 0:
+            self.servers = DedicatedUtils.get_nodes(
+                self.pod, self.tenant, self.cluster.cluster_id)
+            count -= 1
+            if self.servers:
+                break
+        nodes = list()
+        for server in self.servers:
+            temp_server = TestInputServer()
+            temp_server.ip = server.get("hostname")
+            temp_server.hostname = server.get("hostname")
+            temp_server.services = server.get("services")
+            temp_server.port = "18091"
+            temp_server.rest_username = self.cluster.username
+            temp_server.rest_password = self.cluster.password
+            temp_server.hosted_on_cloud = True
+            temp_server.memcached_port = "11207"
+            temp_server.type = "columnar"
+            temp_server.cbas_port = 18095
+            nodes.append(temp_server)
+
+        if self.servers:
+            self.cluster.refresh_object(nodes)
+        else:
+            raise Exception("RebalanceTask: Capella API to fetch nodes failed!!")
+        return self.result
 
 class DeployDataplane(Task):
     def __init__(self, cluster, config, timeout=900):

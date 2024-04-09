@@ -27,11 +27,9 @@ from table_view import TableView
 import time
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from com.couchbase.test.sdk import Server, SDKClientPool
-from TestInput import TestInputServer
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
 from custom_exceptions.exception import ServerUnavailableException
-from exceptions import IndexError
 from elasticsearch import EsClient
 import string
 from hostedOPD import hostedOPD
@@ -354,38 +352,6 @@ class Murphy(BaseTestCase, hostedOPD):
         query_monitor = threading.Thread(target=check_query_stats)
         query_monitor.start()
 
-    def refresh_cluster(self, tenant, cluster):
-        while True:
-            if cluster.nodes_in_cluster:
-                self.log.info("Cluster Nodes: {}".format(cluster.nodes_in_cluster))
-                try:
-                    cluster.refresh_object(self.cluster_util.get_nodes(
-                        random.choice(cluster.nodes_in_cluster)))
-                    break
-                except ServerUnavailableException:
-                    pass
-                except IndexError:
-                    pass
-            else:
-                self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
-                self.sleep(30)
-                self.servers = DedicatedUtils.get_nodes(
-                    self.pod, tenant, cluster.id)
-                nodes = list()
-                for server in self.servers:
-                    temp_server = TestInputServer()
-                    temp_server.ip = server.get("hostname")
-                    temp_server.hostname = server.get("hostname")
-                    temp_server.services = server.get("services")
-                    temp_server.port = "18091"
-                    temp_server.rest_username = cluster.username
-                    temp_server.rest_password = cluster.password
-                    temp_server.hosted_on_cloud = True
-                    temp_server.memcached_port = "11207"
-                    temp_server.type = "dedicated"
-                    nodes.append(temp_server)
-                cluster.refresh_object(nodes)
-
     def initial_setup(self):
         self.monitor_query_status()
         for tenant in self.tenants:
@@ -394,10 +360,10 @@ class Murphy(BaseTestCase, hostedOPD):
                                                kwargs={"cluster": cluster})
                 cpu_monitor.start()
 
-        nimbus = self.input.param("nimbus", False)
+        _nimbus = self.input.param("nimbus", False)
         expiry = self.input.param("expiry", False)
         self.load_defn.append(default)
-        if nimbus:
+        if _nimbus:
             self.load_defn = list()
             self.load_defn.append(nimbus)
 

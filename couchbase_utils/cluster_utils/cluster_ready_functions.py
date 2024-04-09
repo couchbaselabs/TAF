@@ -27,15 +27,6 @@ from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
 from sdk_client3 import SDKClient
 from table_view import TableView
 from copy import deepcopy
-# import srvlookup
-
-
-class GoldfishNebula:
-    def __init__(self, srv, server):
-        self.servers = dict()
-        self.endpoint = server
-        self.endpoint.type = "columnar"
-        self.endpoint.srv = srv
 
 
 class Nebula:

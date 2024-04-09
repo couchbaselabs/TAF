@@ -8,21 +8,18 @@ import json
 import urllib
 import requests
 
-from cb_constants import CbServer
 from connections.Rest_Connection import RestConnection
 from membase.api import httplib2
+from constants.cb_constants.CBServer import CbServer
 
 
 class CBASHelper(RestConnection):
     def __init__(self, cbas_node):
         super(CBASHelper, self).__init__(cbas_node)
-        if cbas_node.type == "columnar":
-            self.cbas_base_url = "https://{0}:{1}".format(
-                self.ip, cbas_node.nebula_rest_port)
-        else:
-            self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
-            if CbServer.use_https:
-                self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
+
+        self.cbas_base_url = "http://{0}:{1}".format(self.ip, CbServer.cbas_port)
+        if CbServer.use_https or cbas_node.type == "columnar":
+            self.cbas_base_url = "https://{0}:{1}".format(self.ip, CbServer.ssl_cbas_port)
 
 
     def createConn(self, bucket, username, password):

@@ -445,6 +445,24 @@ class CapellaUtils(object):
         return json.loads(resp.content)
 
     @staticmethod
+    def get_cluster_info_internal(pod, tenant, cluster_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.get_cluster_info_internal(cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("LOG A BUG: Fetch Cluster API returns :\
+            {}".format(resp.status_code))
+            print(resp.content)
+            time.sleep(5)
+            return CapellaUtils.get_cluster_info_internal(cluster_id)
+        return json.loads(resp.content)
+
+
+    @staticmethod
     def get_cluster_state(pod, tenant, cluster_id):
         content = CapellaUtils.get_cluster_info(pod, tenant, cluster_id)
         return content.get("status")

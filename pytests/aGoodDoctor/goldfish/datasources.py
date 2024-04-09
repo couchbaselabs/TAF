@@ -13,9 +13,8 @@ from com.couchbase.test.docgen import DocRange
 from com.couchbase.test.docgen import DRConstants
 from com.couchbase.test.docgen import WorkLoadSettings
 from java.util import HashMap
-from TestInput import TestInputSingleton
 from CbasLib.CBASOperations import CBASHelper
-from goldfish.CbasUtil import execute_statement_on_cbas
+from CbasUtil import execute_statement_on_cbas
 from com.couchbase.client.core.error import LinkExistsException
 import random
 import string
@@ -75,13 +74,38 @@ class MongoDB(object):
                                     cbas_coll_name, self.source_name, mongo_collection, self.link_name)
             execute_statement_on_cbas(client, self.coll_statement)
 
+    @staticmethod
+    def perform_load(databases, wait_for_load=True, overRidePattern=None, tm=None, workers=10):
+        loader_map = Loader._loader_dict(databases, overRidePattern)
+        self.tasks = list()
+        i = workers
+        while i > 0:
+            for database in databases:
+                master = Server(database.hostname, database.port,
+                                database.username, database.password,
+                                "")
+                for collection in database.collections:
+                    client = MongoSDKClient(master, database.name, collection, database.atlas)
+                    client.connectCluster()
+                    time.sleep(1)
+                    taskName = "Loader_%s_%s_%s" % (database.name, collection, time.time())
+                    task = WorkLoadGenerate(taskName, loader_map[database.name+collection], client)
+                    self.tasks.append(task)
+                    tm.submit(task)
+                    i -= 1
+
+        if wait_for_load:
+            tm.getAllTaskResult()
+        else:
+            return self.tasks
+
 
 class s3(object):
 
     def __init__(self, username=None, password=None):
         self.accessKeyId = username
         self.secretAccessKey = password
-        self.type = "s3"
+        self.name = self.type = "s3"
         self.dataset = "external"
         self.collections = list()
         self.primary_key = None
@@ -96,33 +120,50 @@ class s3(object):
             self.collections.append("volCollection" + str(i))
 
     def create_link(self, cluster):
-        rest = CBASHelper(cluster.nebula.endpoint)
+        rest = CBASHelper(cluster.master)
         params = {'dataverse': 'Default', "name": self.link_name, "type": "s3", 'accessKeyId': self.accessKeyId,
                   'secretAccessKey': self.secretAccessKey,
                   "region": self.region}
         rest.analytics_link_operations(method="POST", params=params)
         
-    def create_cbas_collections(self, cluster, num_collections=None):
+    def create_cbas_collections(self, cluster, external_collections=None):
         client = cluster.SDKClients[0].cluster
-        num_collections = num_collections or len(self.collections)
+        num_collections = external_collections or len(self.collections)
         i = 0
         while i < num_collections:
-            cbas_coll_name = self.link_name + "_volCollection_" + str(i)
+            cbas_coll_name = self.link_name + "_external_volCollection_" + str(i)
             self.cbas_collections.append(cbas_coll_name)
             i += 1
             self.coll_statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
-                                    cbas_coll_name, "copyfroms3-2.5b", self.link_name, "")
+                                    cbas_coll_name, "columnartest", self.link_name, "hotel")
             execute_statement_on_cbas(client, self.coll_statement)
+    
+    def copy_from_s3_into_standalone(self, cluster, standalone_collections=None):
+        client = cluster.SDKClients[0].cluster
+        num_collections = standalone_collections or len(self.collections)
+        i = 0
+        while i < num_collections:
+            cbas_coll_name = self.link_name + "_standalone_volCollection_" + str(i)
+            self.cbas_collections.append(cbas_coll_name)
+            i += 1
+            self.coll_statement = 'CREATE STANDANOLE COLLECTION `%s`  PRIMARY KEY (%s:%s)' % (
+                                    cbas_coll_name, "columnartest", self.link_name, "hotel")
+            execute_statement_on_cbas(client, self.coll_statement)
+            
+            statement = 'COPY into %s FROM %s AT %s PATH "%s" WITH { "format": "json"};'.format(
+                cbas_coll_name, "columnartest", self.link_name, "hotel")
+            execute_statement_on_cbas(client, statement)
 
 
-class MongoWorkload():
+class Loader():
 
-    def _loader_dict(self, databases, overRidePattern=None, workers=10, cmd={}):
-        self.workers = workers
-        self.loader_map = dict()
-        self.default_pattern = [100, 0, 0, 0, 0]
+    @staticmethod
+    def _loader_dict(databases, overRidePattern=None, workers=10, cmd={}):
+        workers = workers
+        loader_map = dict()
+        default_pattern = [100, 0, 0, 0, 0]
         for database in databases:
-            pattern = overRidePattern or database.loadDefn.get("pattern", self.default_pattern)
+            pattern = overRidePattern or database.loadDefn.get("pattern", default_pattern)
             for i, collection in enumerate(database.collections):
                 workloads = database.loadDefn.get("collections_defn", [database.loadDefn])
                 valType = workloads[i % len(workloads)]["valType"]
@@ -158,33 +199,5 @@ class MongoWorkload():
                 dr = DocRange(hm)
                 ws.dr = dr
                 dg = DocumentGenerator(ws, database.key_type, valType)
-                self.loader_map.update({database.name+collection: dg})
-
-    def perform_load(self, databases=None, wait_for_load=True, overRidePattern=None, tm=None):
-        self.doc_loading_tm = tm
-        self._loader_dict(databases, overRidePattern)
-        self.tasks = list()
-        i = self.workers
-        while i > 0:
-            for database in databases:
-                master = Server(database.hostname, database.port,
-                                database.username, database.password,
-                                "")
-                for collection in database.collections:
-                    client = MongoSDKClient(master, database.name, collection, database.atlas)
-                    client.connectCluster()
-                    time.sleep(1)
-                    taskName = "Loader_%s_%s_%s" % (database.name, collection, time.time())
-                    task = WorkLoadGenerate(taskName, self.loader_map[database.name+collection], client)
-                    self.tasks.append(task)
-                    self.doc_loading_tm.submit(task)
-                    i -= 1
-
-        if wait_for_load:
-            self.wait_for_doc_load_completion()
-        else:
-            return self.tasks
-
-    def wait_for_doc_load_completion(self):
-        self.doc_loading_tm.getAllTaskResult()
-
+                loader_map.update({database.name+collection: dg})
+        return loader_map
