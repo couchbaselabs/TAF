@@ -54,6 +54,28 @@ class SecurityTest(SecurityBase):
 
         return cluster_ids
 
+    def wait_until_cluster_turned_on_off(self, cluster_id, expected_cluster_status, failed_status):
+        status = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.tenant_id,
+                                                                     self.project_id,
+                                                                     cluster_id)
+        status = status.json()["currentState"]
+        end_time = time.time() + 1800
+        while status != expected_cluster_status and time.time() < end_time:
+            self.sleep(15, "Waiting for cluster to be in {} state. Current status - {}"
+                       .format(expected_cluster_status, status))
+            cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                                                                                self.tenant_id,
+                                                                                self.project_id,
+                                                                                cluster_id)
+            cluster_ready_resp = cluster_ready_resp.json()
+            status = cluster_ready_resp["currentState"]
+
+            if status == failed_status:
+                self.fail("Cluster turn on/off failed with status {}. Reason: {}".format(
+                                                failed_status, cluster_ready_resp.content))
+
+        return status
+
     def test_create_cluster(self):
         self.log.info("Verify creating clusters for v4 APIs")
 
@@ -1293,6 +1315,518 @@ class SecurityTest(SecurityBase):
                 self.assertEqual(403, role_response.status_code,
                                  msg="FAIL: Outcome:{}, Expected: {}".format(
                                      role_response.status_code,403))
+
+            self.log.info("Removing user from project {} with role as {}".format(self.project_id,
+                                                                                 role))
+            update_info = [{
+                "op": "remove",
+                "path": "/resources/{}".format(self.project_id)
+            }]
+            remove_proj_resp = self.capellaAPI.org_ops_apis.update_user(self.tenant_id,
+                                                                        user['userid'],
+                                                                        update_info)
+            self.assertEqual(200, remove_proj_resp.status_code,
+                             msg="FAIL: Outcome:{}, Expected: {}".format(
+                                 remove_proj_resp.status_code, 200))
+
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
+            self.assertEqual(204, resp.status_code,
+                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
+
+    def test_turn_on_cluster(self):
+        self.log.info("Verify turn on cluster v4 api")
+
+        self.log.info("First Turning off the cluster")
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                   self.project_id,
+                                                                   self.cluster_id)
+        self.assertEqual(202, resp.status_code,
+                         msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 202))
+        self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff", "turningOffFailed")
+        self.log.info("Cluster Turned Off Successfully")
+
+        self.log.info("Verifying the endpoint authentication with different test cases")
+        self.log.info("     1. Empty AccessKey")
+        self.capellaAPI.cluster_ops_apis.ACCESS = ""
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.cluster_id,
+                                                                  False)
+        self.assertEqual(401, resp.status_code,
+                         msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.reset_api_keys()
+
+        self.log.info("     2. Empty SecretKey")
+        self.capellaAPI.cluster_ops_apis.SECRET = ""
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.cluster_id,
+                                                                  False)
+        self.assertEqual(401, resp.status_code,
+                         msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.reset_api_keys()
+
+        self.log.info("     3. Invalid AccessKey")
+        self.capellaAPI.cluster_ops_apis.ACCESS = self.invalid_id
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.cluster_id,
+                                                                  False)
+        self.assertEqual(401, resp.status_code,
+                         msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.reset_api_keys()
+
+        self.log.info("     4. Invalid SecretKey")
+        self.capellaAPI.cluster_ops_apis.SECRET = self.invalid_id
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(self.tenant_id,
+                                                                  self.project_id,
+                                                                  self.cluster_id,
+                                                                  False)
+        self.assertEqual(401, resp.status_code,
+                         msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.reset_api_keys()
+
+        # Verify endpoint for different organizations id
+        self.log.info("Verify the turn on cluster v4 api for different organization ids")
+        tenant_ids = {
+            'valid_tenant_id': self.tenant_id,
+            'invalid_tenant_id': self.invalid_id
+        }
+        for tenant_id in tenant_ids:
+            resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(tenant_ids[tenant_id],
+                                                                      self.project_id,
+                                                                      self.cluster_id,
+                                                                      False)
+            if tenant_id == 'valid_tenant_id':
+                self.assertEqual(resp.status_code, 202,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "healthy", "turningOnFailed")
+                resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(tenant_ids[tenant_id],
+                                                                           self.project_id,
+                                                                           self.cluster_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff",
+                                                      "turningOffFailed")
+                self.log.info("Cluster Turned Off Successfully")
+
+
+            else:
+                # For now the response is 403. Later change it to 404.
+                self.assertEqual(resp.status_code, 403,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              403))
+
+        # Verify the endpoint with different projects
+        self.log.info("Verifying the endpoint access with different projects")
+        self.log.info("Creating a project")
+
+        resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id,
+                                                           "Turn_On_Cluster_Security")
+
+        self.assertEqual(201, resp.status_code,
+                         msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+
+        resp = resp.json()
+        project_ids = {
+            'valid_project_id': self.project_id,
+            'different_project_id': resp['id'],
+            'invalid_project_id': self.invalid_id
+        }
+
+        for project_id in project_ids:
+            resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(self.tenant_id,
+                                                                      project_ids[project_id],
+                                                                      self.cluster_id,
+                                                                      False)
+
+            if project_id == 'valid_project_id':
+                self.assertEqual(resp.status_code, 202,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "healthy", "turningOnFailed")
+                resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                           project_ids[project_id],
+                                                                           self.cluster_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff",
+                                                      "turningOffFailed")
+                self.log.info("Cluster Turned Off Successfully")
+
+            else:
+                self.assertEqual(resp.status_code, 422,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              422))
+        self.log.info("Deleting project")
+        resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
+                                                           project_ids["different_project_id"])
+
+        self.assertEqual(204, resp.status_code,
+                         msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 204))
+
+        # Testing for organization RBAC roles
+        self.log.info("Verifying endpoint for different roles under organization - RBAC")
+        for user in self.test_users:
+            self.log.info("Checking with role - {}".format(self.test_users[user]["role"]))
+
+            self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
+                user]["mailid"], self.test_users[user]["password"], self.test_users[user]['token'])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.switch_cluster_on(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        False)
+
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(role_response.status_code, 202,
+                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
+                                     role_response.status_code, 202))
+
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "healthy", "turningOnFailed")
+                resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                           self.project_id,
+                                                                           self.cluster_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff",
+                                                      "turningOffFailed")
+                self.log.info("Cluster Turned Off Successfully")
+
+            else:
+                self.assertEqual(role_response.status_code, 403,
+                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
+                                     role_response.status_code, 403))
+
+        # Testing for Project Level RBAC roles
+        self.log.info("Verifying endpoint for different roles under project - RBAC")
+        project_roles = ["projectOwner", "projectViewer", "projectManager",
+                         "projectDataReaderWriter", "projectDataReader"]
+        user = self.test_users["User3"]
+
+        for role in project_roles:
+            resources = [
+                {
+                    "id": self.project_id,
+                    "roles": [role]
+                }
+            ]
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.tenant_id,
+                'API Key for role {}'.format(user["role"]),
+                organizationRoles=["organizationMember"],
+                expiry=1,
+                resources=resources)
+            resp = resp.json()
+            api_key_id = resp['id']
+            user['token'] = resp['token']
+
+            self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
+            dic = {"update_info": [{
+                "op": "add",
+                "path": "/resources/{}".format(self.project_id),
+                "value": {
+                    "id": self.project_id,
+                    "type": "project",
+                    "roles": [role]
+                }
+            }]
+            }
+            self.capellaAPI.org_ops_apis.update_user(self.tenant_id,
+                                                     user['userid'],
+                                                     dic["update_info"])
+
+            self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
+                                             user["password"], user['token'])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.switch_cluster_on(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        False)
+
+            if role == "projectOwner":
+                self.assertEqual(202, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 202))
+
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "healthy", "turningOnFailed")
+                resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                           self.project_id,
+                                                                           self.cluster_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff",
+                                                      "turningOffFailed")
+                self.log.info("Cluster Turned Off Successfully")
+
+            else:
+                self.assertEqual(403, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 403))
+
+            self.log.info("Removing user from project {} with role as {}".format(self.project_id,
+                                                                                 role))
+            update_info = [{
+                "op": "remove",
+                "path": "/resources/{}".format(self.project_id)
+            }]
+            remove_proj_resp = self.capellaAPI.org_ops_apis.update_user(self.tenant_id,
+                                                                        user['userid'],
+                                                                        update_info)
+            self.assertEqual(200, remove_proj_resp.status_code,
+                             msg="FAIL: Outcome:{}, Expected: {}".format(
+                                 remove_proj_resp.status_code, 200))
+
+            resp = self.capellaAPI.org_ops_apis.delete_api_key(self.tenant_id, api_key_id)
+            self.assertEqual(204, resp.status_code,
+                             msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 204))
+
+    def test_turn_off_cluster(self):
+        self.log.info("Verify turn off cluster v4 api")
+
+        self.log.info("Verifying the endpoint authentication with different test cases")
+        self.log.info("     1. Empty AccessKey")
+        self.capellaAPI.cluster_ops_apis.ACCESS = ""
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                   self.project_id,
+                                                                   self.cluster_id,
+                                                                   False)
+        self.assertEqual(401, resp.status_code,
+                         msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.reset_api_keys()
+
+        self.log.info("     2. Empty SecretKey")
+        self.capellaAPI.cluster_ops_apis.SECRET = ""
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                   self.project_id,
+                                                                   self.cluster_id,
+                                                                   False)
+        self.assertEqual(401, resp.status_code,
+                         msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.reset_api_keys()
+
+        self.log.info("     3. Invalid AccessKey")
+        self.capellaAPI.cluster_ops_apis.ACCESS = self.invalid_id
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                   self.project_id,
+                                                                   self.cluster_id,
+                                                                   False)
+        self.assertEqual(401, resp.status_code,
+                         msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.reset_api_keys()
+
+        self.log.info("     4. Invalid SecretKey")
+        self.capellaAPI.cluster_ops_apis.SECRET = self.invalid_id
+        self.capellaAPI.cluster_ops_apis.bearer_token = ""
+        resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                   self.project_id,
+                                                                   self.cluster_id,
+                                                                   False)
+        self.assertEqual(401, resp.status_code,
+                         msg='FAIL: Outcome:{}, Expected: {}'.format(resp.status_code, 401))
+        self.reset_api_keys()
+
+        # Verify endpoint for different organizations id
+        self.log.info("Verify the turn on cluster v4 api for different organization ids")
+        tenant_ids = {
+            'valid_tenant_id': self.tenant_id,
+            'invalid_tenant_id': self.invalid_id
+        }
+        for tenant_id in tenant_ids:
+            resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(tenant_ids[tenant_id],
+                                                                       self.project_id,
+                                                                       self.cluster_id,
+                                                                       False)
+            if tenant_id == 'valid_tenant_id':
+                self.assertEqual(resp.status_code, 202,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff",
+                                                      "turningOffFailed")
+                resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(tenant_ids[tenant_id],
+                                                                          self.project_id,
+                                                                          self.cluster_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "healthy",
+                                                      "turningOnFailed")
+                self.log.info("Cluster Turned On Successfully")
+
+
+            else:
+                # For now the response is 403. Later change it to 404.
+                self.assertEqual(resp.status_code, 403,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              403))
+
+        # Verify the endpoint with different projects
+        self.log.info("Verifying the endpoint access with different projects")
+        self.log.info("Creating a project")
+
+        resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id,
+                                                           "Turn_Off_Cluster_Security")
+
+        self.assertEqual(201, resp.status_code,
+                         msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code, 201))
+
+        resp = resp.json()
+        project_ids = {
+            'valid_project_id': self.project_id,
+            'different_project_id': resp['id'],
+            'invalid_project_id': self.invalid_id
+        }
+
+        for project_id in project_ids:
+            resp = self.capellaAPI.cluster_ops_apis.switch_cluster_off(self.tenant_id,
+                                                                       project_ids[project_id],
+                                                                       self.cluster_id,
+                                                                       False)
+
+            if project_id == 'valid_project_id':
+                self.assertEqual(resp.status_code, 202,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff",
+                                                      "turningOffFailed")
+                resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(self.tenant_id,
+                                                                           project_ids[project_id],
+                                                                           self.cluster_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "healthy", "turningOnFailed")
+                self.log.info("Cluster Turned On Successfully")
+
+            else:
+                self.assertEqual(resp.status_code, 422,
+                                 msg='FAIL: Outcome: {}, Expected: {}'.format(resp.status_code,
+                                                                              422))
+        self.log.info("Deleting project")
+        resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
+                                                           project_ids["different_project_id"])
+
+        self.assertEqual(204, resp.status_code,
+                         msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code, 204))
+
+        # Testing for organization RBAC roles
+        self.log.info("Verifying endpoint for different roles under organization - RBAC")
+        for user in self.test_users:
+            self.log.info("Checking with role - {}".format(self.test_users[user]["role"]))
+
+            self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', self.test_users[
+                user]["mailid"], self.test_users[user]["password"], self.test_users[user]['token'])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.switch_cluster_off(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        False)
+
+            if self.test_users[user]["role"] == "organizationOwner":
+                self.assertEqual(role_response.status_code, 202,
+                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
+                                     role_response.status_code, 202))
+
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff",
+                                                      "turningOffFailed")
+                resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(self.tenant_id,
+                                                                           self.project_id,
+                                                                           self.cluster_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "healthy",
+                                                      "turningOnFailed")
+                self.log.info("Cluster Turned Off Successfully")
+
+            else:
+                self.assertEqual(role_response.status_code, 403,
+                                 msg='FAIL: Outcome:{}, Expected:{}'.format(
+                                     role_response.status_code, 403))
+
+        # Testing for Project Level RBAC roles
+        self.log.info("Verifying endpoint for different roles under project - RBAC")
+        project_roles = ["projectOwner", "projectViewer", "projectManager",
+                         "projectDataReaderWriter", "projectDataReader"]
+        user = self.test_users["User3"]
+
+        for role in project_roles:
+            resources = [
+                {
+                    "id": self.project_id,
+                    "roles": [role]
+                }
+            ]
+            resp = self.capellaAPI.org_ops_apis.create_api_key(
+                self.tenant_id,
+                'API Key for role {}'.format(user["role"]),
+                organizationRoles=["organizationMember"],
+                expiry=1,
+                resources=resources)
+            resp = resp.json()
+            api_key_id = resp['id']
+            user['token'] = resp['token']
+
+            self.log.info("Adding user to project {} with role as {}".format(self.project_id, role))
+            dic = {"update_info": [{
+                "op": "add",
+                "path": "/resources/{}".format(self.project_id),
+                "value": {
+                    "id": self.project_id,
+                    "type": "project",
+                    "roles": [role]
+                }
+            }]
+            }
+            self.capellaAPI.org_ops_apis.update_user(self.tenant_id,
+                                                     user['userid'],
+                                                     dic["update_info"])
+
+            self.capellaAPIRole = CapellaAPI("https://" + self.url, '', '', user["mailid"],
+                                             user["password"], user['token'])
+
+            role_response = self.capellaAPIRole.cluster_ops_apis.switch_cluster_off(
+                                                                        self.tenant_id,
+                                                                        self.project_id,
+                                                                        self.cluster_id,
+                                                                        False)
+
+            if role == "projectOwner":
+                self.assertEqual(202, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 202))
+
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "turnedOff",
+                                                      "turningOffFailed")
+                resp = self.capellaAPI.cluster_ops_apis.switch_cluster_on(self.tenant_id,
+                                                                           self.project_id,
+                                                                           self.cluster_id)
+                self.assertEqual(202, resp.status_code,
+                                 msg="FAIL: Outcome: {}, Expected: {}".format(resp.status_code,
+                                                                              202))
+                self.wait_until_cluster_turned_on_off(self.cluster_id, "healthy",
+                                                      "turningOnFailed")
+                self.log.info("Cluster Turned On Successfully")
+
+            else:
+                self.assertEqual(403, role_response.status_code,
+                                 msg="FAIL: Outcome:{}, Expected: {}".format(
+                                     role_response.status_code, 403))
 
             self.log.info("Removing user from project {} with role as {}".format(self.project_id,
                                                                                  role))
