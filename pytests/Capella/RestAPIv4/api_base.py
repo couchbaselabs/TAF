@@ -659,6 +659,11 @@ class APIBase(CouchbaseBaseTest):
     def validate_testcase(self, result, success_codes, testcase, failures,
                           validate_response=False, expected_res=None,
                           resource_id=None):
+
+        # Condition is for Sample Buckets delete testcases.
+        if "code" in result.content and result.json()["code"] == 6008:
+            return True
+
         if result.status_code in success_codes:
             if ("expected_error" in testcase and
                     testcase["expected_status_code"] != 404):

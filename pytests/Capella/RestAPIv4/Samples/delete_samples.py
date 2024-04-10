@@ -47,44 +47,20 @@ class DeleteSample(GetCluster):
                 "description": "Create sample but with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Create sample but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Create sample but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived"
-                               " to be a client error."
-                }
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }
         ]
         failures = list()
@@ -110,10 +86,9 @@ class DeleteSample(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     org, proj, clus, self.dummy_sample_id)
-            if "code" in result.content and result.json()["code"] == 6008:
+
+            if self.validate_testcase(result, [6008], testcase, failures):
                 self.log.debug("Dummy error validation passed.")
-            else:
-                self.validate_testcase(result, 6008, testcase, failures)
 
         if failures:
             for fail in failures:
@@ -170,10 +145,9 @@ class DeleteSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.dummy_sample_id, header)
-            if "code" in result.content and result.json()["code"] == 6008:
+
+            if self.validate_testcase(result, [6008], testcase, failures):
                 self.log.debug("Dummy error validation passed.")
-            else:
-                self.validate_testcase(result, 6008, testcase, failures)
 
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
@@ -272,10 +246,9 @@ class DeleteSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], self.dummy_sample_id, kwarg)
-            if "code" in result.content and result.json()["code"] == 6008:
+
+            if self.validate_testcase(result, [6008], testcase, failures):
                 self.log.debug("Dummy error validation passed.")
-            else:
-                self.validate_testcase(result, 6008, testcase, failures)
 
         if failures:
             for fail in failures:

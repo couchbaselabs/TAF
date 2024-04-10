@@ -25,7 +25,7 @@ class ListSample(GetCluster):
                     "replicas": 1,
                     "flush": False,
                     "timeToLiveInSeconds": 0,
-                    "evictionPolicy": "valueOnly",
+                    "evictionPolicy": "fullEviction",
                     "stats": {
                         "itemCount": None,
                         "opsPerSecond": None,
@@ -59,26 +59,6 @@ class ListSample(GetCluster):
             self.log.info("Successfully deleted bucket.")
 
         super(ListSample, self).tearDown()
-
-    def validate_bucket_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(expected_res[key], dict):
-                self.validate_bucket_api_response(
-                    expected_res[key], actual_res[key])
-            elif isinstance(expected_res[key], list):
-                for i in range(len(expected_res[key])):
-                    if (actual_res[key] == "data" and
-                            actual_res[key][i]["bucketId"] !=
-                            self.sample_bucket_id):
-                        continue
-                    self.validate_bucket_api_response(
-                        expected_res[key][i], actual_res[key][i])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
 
     def test_api_path(self):
         testcases = [
@@ -118,8 +98,9 @@ class ListSample(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -132,8 +113,9 @@ class ListSample(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -146,8 +128,9 @@ class ListSample(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -178,15 +161,9 @@ class ListSample(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
                     org, proj, clus)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_bucket_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_res, self.sample_bucket_id)
 
             self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/sampleBuckets"
@@ -246,14 +223,9 @@ class ListSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
                     self.organisation_id, self.project_id,
                     self.cluster_id, header)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_bucket_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_res, self.sample_bucket_id)
 
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
@@ -351,14 +323,9 @@ class ListSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.list_sample_buckets(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], **kwarg)
-            if result.status_code == 200 and "expected_error" not in testcase:
-                if not self.validate_bucket_api_response(
-                        self.expected_res, result.json()):
-                    self.log.error("Status == 200, Key validation Failure : {}"
-                                   .format(testcase["description"]))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 200, testcase, failures)
+
+            self.validate_testcase(result, [200], testcase, failures, True,
+                                   self.expected_res, self.sample_bucket_id)
 
         if failures:
             for fail in failures:
