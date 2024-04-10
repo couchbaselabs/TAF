@@ -11,23 +11,23 @@ from doc_loader.sirius import SiriusClient
 from pytests.sdk_workloads.go_workload import IDENTIFIER_TOKEN
 
 path_map_loading = {
-    DocLoading.DocOpCodes.DocOps.CREATE: ["/create", "single"],
-    DocLoading.DocOpCodes.DocOps.BULKCREATE: ["/bulk-create", "bulk"],
-    DocLoading.DocOpCodes.DocOps.UPDATE: ["/upsert", "single"],
-    DocLoading.DocOpCodes.DocOps.BULKUPDATE: ["/bulk-upsert", "bulk"],
-    DocLoading.DocOpCodes.DocOps.READ: ["/read", "single"],
-    DocLoading.DocOpCodes.DocOps.BULKREAD: ["/bulk-read", "bulk"],
-    DocLoading.DocOpCodes.SubDocOps.INSERT: ["/sub-doc-insert", "single"],
-    DocLoading.DocOpCodes.SubDocOps.UPSERT: ["/sub-doc-upsert", "single"],
-    DocLoading.DocOpCodes.SubDocOps.LOOKUP: ["/sub-doc-read", "single"],
-    DocLoading.DocOpCodes.SubDocOps.REMOVE: ["/sub-doc-delete", "single"],
-    DocLoading.DocOpCodes.DocOps.DELETE: ["/delete", "single"],
-    DocLoading.DocOpCodes.DocOps.BULKDELETE: ["/bulk-delete", "bulk"],
-    DocLoading.DocOpCodes.DocOps.TOUCH: ["/touch", "single"],
-    DocLoading.DocOpCodes.DocOps.BULKTOUCH: ["/bulk-touch", "bulk"],
-    DocLoading.DocOpCodes.DocOps.VALIDATECOLUMNAR: ["/validate-columnar", "single"],
-    DocLoading.DocOpCodes.DocOps.RETRY: ["/retry-exceptions", "bulk"],
-    DocLoading.DocOpCodes.DocOps.VALIDATE: ["/validate", "single"],
+    DocLoading.DocOpCodes.DocOps.CREATE: "/create",
+    DocLoading.DocOpCodes.DocOps.BULKCREATE: "/bulk-create",
+    DocLoading.DocOpCodes.DocOps.UPDATE: "/upsert",
+    DocLoading.DocOpCodes.DocOps.BULKUPDATE: "/bulk-upsert",
+    DocLoading.DocOpCodes.DocOps.READ: "/read",
+    DocLoading.DocOpCodes.DocOps.BULKREAD: "/bulk-read",
+    DocLoading.DocOpCodes.SubDocOps.INSERT: "single",
+    DocLoading.DocOpCodes.SubDocOps.UPSERT: "/sub-doc-upsert",
+    DocLoading.DocOpCodes.SubDocOps.LOOKUP: "/sub-doc-read",
+    DocLoading.DocOpCodes.SubDocOps.REMOVE: "/sub-doc-delete",
+    DocLoading.DocOpCodes.DocOps.DELETE: "/delete",
+    DocLoading.DocOpCodes.DocOps.BULKDELETE: "/bulk-delete",
+    DocLoading.DocOpCodes.DocOps.TOUCH: "/touch",
+    DocLoading.DocOpCodes.DocOps.BULKTOUCH: "/bulk-touch",
+    DocLoading.DocOpCodes.DocOps.VALIDATECOLUMNAR: "/validate-columnar",
+    DocLoading.DocOpCodes.DocOps.RETRY: "/retry-exceptions",
+    DocLoading.DocOpCodes.DocOps.VALIDATE: "/validate",
 }
 
 path_map_mgmt = {
@@ -89,7 +89,7 @@ class RESTClient(object):
         if exception is not None:
             raise exception
 
-    def get_result_using_seed(self, response, load_type):
+    def get_result_using_seed(self, response):
 
         fail = {}
 
@@ -143,27 +143,21 @@ class RESTClient(object):
             ):
                 print(result_using_seed["data"]["otherErrors"])
 
-            if load_type == "bulk":
-                for error_name, failed_documents in result_using_seed["data"][
-                    "bulkErrors"
-                ].items():
-                    for doc_failed in failed_documents:
-                        key = doc_failed["key"]
-                        fail[key] = dict()
-                        fail[key]["error"] = doc_failed["errorString"]
-                        fail[key]["value"] = {}
-                        fail[key]["status"] = False
-                        fail[key]["offset"] = doc_failed["Offset"]
+            for error_name, failed_documents in result_using_seed["data"][
+                "bulkErrors"
+            ].items():
+                for doc_failed in failed_documents:
+                    key = doc_failed["key"]
+                    fail[key] = dict()
+                    fail[key]["error"] = error_name
+                    fail[key]["value"] = {}
+                    fail[key]["status"] = False
+                    fail[key]["offset"] = doc_failed["Offset"]
 
-                return fail, \
-                    result_using_seed["data"]["success"], \
-                    result_using_seed["data"]["failure"], \
-                    result_from_request["data"]["seed"],
-            else:
-                return result_using_seed["data"]["singleResult"], \
-                    result_using_seed["data"]["success"], \
-                    result_using_seed["data"]["failure"], \
-                    result_from_request["data"]["seed"],
+            return fail, \
+                result_using_seed["data"]["success"], \
+                result_using_seed["data"]["failure"], \
+                result_from_request["data"]["seed"],
 
         else:
             print(result_using_seed["message"])
@@ -187,7 +181,7 @@ class RESTClient(object):
         self.retry_interval = retry_interval
         self.delete_record = delete_record
         self.op_type = op_type
-        endpoint = path_map_loading[op_type][0]
+        endpoint = path_map_loading[op_type]
         payload = {
             "identifierToken": identifier_token,
             "dbType": db_type,
@@ -200,9 +194,7 @@ class RESTClient(object):
         if extra is not None:
             payload["extra"] = extra
         response = self.send_request(path=endpoint, payload=payload)
-        return self.get_result_using_seed(
-            response=response, load_type=path_map_loading[op_type][1]
-        )
+        return self.get_result_using_seed(response=response)
 
     def do_db_mgmt(
         self,
@@ -262,7 +254,7 @@ class RESTClient(object):
         if extra is not None:
             payload["extra"] = extra
         response = self.send_request(path=endpoint, payload=payload)
-        return self.get_result_using_seed(response=response, load_type="bulk")
+        return self.get_result_using_seed(response=response)
 
     def build_rest_payload_extra(
         self,
@@ -308,6 +300,8 @@ class RESTClient(object):
         maxOpenConnections=None,
         maxIdleTime=None,
         maxLifeTime=None,
+        hostedOnPrem=None,
+        dbOnLocal = None
     ):
         payload = {}
         for param_name, param_value in locals().items():
