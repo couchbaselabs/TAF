@@ -350,7 +350,10 @@ class SDKClient(object):
             else:
                 self.scheme = "couchbase"
             if not ClusterRun.is_enabled:
-                hosts.append(server.ip)
+                if server.type == "columnar":
+                    hosts.append(framework_cb_cluster_obj.srv)
+                else:
+                    hosts.append(server.ip)
 
         start_time = time.time()
         self.__create_conn(framework_cb_cluster_obj, servers, hosts)
