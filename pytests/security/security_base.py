@@ -84,7 +84,7 @@ class SecurityBase(CouchbaseBaseTest):
         if self.cluster_id is None:
             self.create_cluster(self.prefix + "Cluster", self.server_version)
         if self.cluster_id is not None:
-            time.sleep(5)
+            self.sleep(10, "Waiting for cluster to be responsive")
             self.allow_ip(self.cluster_id, self.project_id)
 
         self.log.info("-------Setup finished for CouchbaseBaseTest-------")
@@ -435,7 +435,7 @@ class SecurityBase(CouchbaseBaseTest):
     def create_api_keys_for_different_roles(self):
         self.api_keys = []
         for user in self.test_users:
-            if self.test_users[user]["role"] == "cloudManager":
+            if self.test_users[user]["role"] != "cloudManager":
                 resp = self.capellaAPI.org_ops_apis.create_api_key(
                                             self.tenant_id,
                                             self.test_users[user]["role"],
@@ -478,7 +478,7 @@ class SecurityBase(CouchbaseBaseTest):
     def create_different_organization_roles(self):
         self.log.info("Creating Different Organization Roles")
         self.test_users = {}
-        roles = ["organizationOwner", "projectCreator", "organizationMember"]
+        roles = ["organizationOwner", "projectCreator", "organizationMember", "cloudManager"]
         setup_capella_api = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
                                        self.user, self.passwd)
 

@@ -11,6 +11,7 @@ from BucketLib.bucket import Bucket
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from pytests.basetestcase import BaseTestCase
 from constants.cb_constants.CBServer import CbServer
+from workloads import default, nimbus, vector_load
 try:
     from fts import DoctorFTS, FTSQueryLoad
 except:
@@ -21,16 +22,14 @@ from hostedXDCR import DoctorXDCR
 from hostedBackupRestore import DoctorHostedBackupRestore
 from hostedOnOff import DoctorHostedOnOff
 from hostedEventing import DoctorEventing
-from constants.cloud_constants.capella_constants import AWS, GCP
+from constants.cloud_constants.capella_constants import AWS, GCP, AZURE
 from table_view import TableView
 import time
 from bucket_utils.bucket_ready_functions import CollectionUtils
-from com.couchbase.test.sdk import Server
-from TestInput import TestInputServer
+from com.couchbase.test.sdk import Server, SDKClientPool
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
 from custom_exceptions.exception import ServerUnavailableException
-from exceptions import IndexError
 from elasticsearch import EsClient
 import string
 from hostedOPD import hostedOPD
@@ -149,9 +148,6 @@ class Murphy(BaseTestCase, hostedOPD):
     def rebalance_config(self, rebl_service_group=None, num=0):
         provider = self.input.param("provider", "aws").lower()
 
-        _type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
-        storage_type = self.input.param("type", _type).lower()
-
         specs = []
         for service_group in self.services:
             _services = sorted(service_group.split(":"))
@@ -165,7 +161,7 @@ class Murphy(BaseTestCase, hostedOPD):
                 },
                 "services": [{"type": self.services_map[_service.lower()]} for _service in _services],
                 "disk": {
-                    "type": storage_type,
+                    "type": self.storage_type,
                     "sizeInGb": self.disk[service]
                 },
                 "diskAutoScaling": {"enabled": self.diskAutoScaling}
@@ -356,150 +352,20 @@ class Murphy(BaseTestCase, hostedOPD):
         query_monitor = threading.Thread(target=check_query_stats)
         query_monitor.start()
 
-    def refresh_cluster(self, tenant, cluster):
-        while True:
-            if cluster.nodes_in_cluster:
-                self.log.info("Cluster Nodes: {}".format(cluster.nodes_in_cluster))
-                try:
-                    cluster.refresh_object(self.cluster_util.get_nodes(
-                        random.choice(cluster.nodes_in_cluster)))
-                    break
-                except ServerUnavailableException:
-                    pass
-                except IndexError:
-                    pass
-            else:
-                self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
-                self.sleep(30)
-                self.servers = DedicatedUtils.get_nodes(
-                    self.pod, tenant, cluster.id)
-                nodes = list()
-                for server in self.servers:
-                    temp_server = TestInputServer()
-                    temp_server.ip = server.get("hostname")
-                    temp_server.hostname = server.get("hostname")
-                    temp_server.services = server.get("services")
-                    temp_server.port = "18091"
-                    temp_server.rest_username = cluster.username
-                    temp_server.rest_password = cluster.password
-                    temp_server.hosted_on_cloud = True
-                    temp_server.memcached_port = "11207"
-                    temp_server.type = "dedicated"
-                    nodes.append(temp_server)
-                cluster.refresh_object(nodes)
-
     def initial_setup(self):
         self.monitor_query_status()
         for tenant in self.tenants:
-            for cluster in tenant.clusters:  
+            for cluster in tenant.clusters:
                 cpu_monitor = threading.Thread(target=self.print_cluster_cpu_ram,
                                                kwargs={"cluster": cluster})
                 cpu_monitor.start()
 
-        self.nimbus = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": 2,
-            "num_items": self.input.param("num_items", 1500000000),
-            "start": 0,
-            "end": self.input.param("num_items", 1500000000),
-            "ops": self.input.param("ops_rate", 100000),
-            "doc_size": 1024,
-            "pattern": [0, 50, 50, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2iQPS": 300,
-            "ftsQPS": 100,
-            "cbasQPS": 100,
-            "collections_defn": [
-                {
-                    "valType": "NimbusP",
-                    "2i": [2, 3],
-                    "FTS": [0, 0],
-                    "cbas": [0, 0, 0]
-                },
-                {
-                    "valType": "NimbusM",
-                    "2i": [1, 2],
-                    "FTS": [0, 0],
-                    "cbas": [0, 0, 0]
-                }
-                ]
-            }
-        self.default = {
-            "valType": "Hotel",
-            "scopes": 1,
-            "collections": self.input.param("collections", 2),
-            "num_items": self.input.param("num_items", 50000000),
-            "start": 0,
-            "end": self.input.param("num_items", 50000000),
-            "ops": self.input.param("ops_rate", 50000),
-            "doc_size": 1024,
-            "pattern": [0, 50, 50, 0, 0], # CRUDE
-            "load_type": ["read", "update"],
-            "2iQPS": 10,
-            "ftsQPS": 10,
-            "cbasQPS": 10,
-            "collections_defn": [
-                {
-                    "valType": "Hotel",
-                    "2i": [self.input.param("gsi_indexes", 2),
-                           self.input.param("gsi_queries", 2)],
-                    "FTS": [self.input.param("fts_indexes", 2),
-                            self.input.param("fts_queries", 2)],
-                    "cbas": [self.input.param("cbas_indexes", 2),
-                             self.input.param("cbas_datasets", 2),
-                             self.input.param("cbas_queries", 2)]
-                    }
-                # {
-                #     "valType": "Hotel",
-                #     "2i": [self.input.param("gsi_indexes", 2),
-                #            self.input.param("gsi_queries", 2)],
-                #     "FTS": [0, 0],
-                #     "cbas": [self.input.param("cbas_datasets", 2),
-                #              self.input.param("cbas_indexes", 2),
-                #              self.input.param("cbas_queries", 2)]
-                #     }
-                ]
-            }
-        
-        self.vector_load = {
-            "valType": "Vector",
-            "scopes": 1,
-            "collections": self.input.param("collections", 2),
-            "num_items": self.input.param("num_items", 5000000),
-            "start": 0,
-            "end": self.input.param("num_items", 5000000),
-            "ops": self.input.param("ops_rate", 5000),
-            "doc_size": 1024,
-            "pattern": [0, 0, 100, 0, 0], # CRUDE
-            "load_type": ["update"],
-            "2iQPS": 10,
-            "ftsQPS": 10,
-            "cbasQPS": 0,
-            "collections_defn": [
-                {
-                    "valType": "Vector",
-                    "2i": [2, 2],
-                    "FTS": [2, 2],
-                    "cbas": [2, 2, 2]
-                    }
-                ]
-            }
-
-        # temp = [{
-        #     "valType": "Hotel",
-        #     "2i": [0, 0],
-        #     "FTS": [0, 0],
-        #     "cbas": [0, 0, 0]
-        #     }]*8
-        # self.default["collections_defn"].extend(temp)
-
-        nimbus = self.input.param("nimbus", False)
+        _nimbus = self.input.param("nimbus", False)
         expiry = self.input.param("expiry", False)
-        self.load_defn.append(self.default)
-        if nimbus:
+        self.load_defn.append(default)
+        if _nimbus:
             self.load_defn = list()
-            self.load_defn.append(self.nimbus)
+            self.load_defn.append(nimbus)
 
         if expiry:
             for load in self.load_defn:
@@ -508,7 +374,7 @@ class Murphy(BaseTestCase, hostedOPD):
 
         if self.vector:
             self.load_defn = list()
-            self.load_defn.append(self.vector_load)
+            self.load_defn.append(vector_load)
 
         #######################################################################
         for tenant in self.tenants:
@@ -518,6 +384,7 @@ class Murphy(BaseTestCase, hostedOPD):
                 else:
                     for i, bucket in enumerate(cluster.buckets):
                         bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
+                        cluster.sdk_client_pool = SDKClientPool()
                         num_clients = self.input.param("clients_per_db",
                                                        min(5, bucket.loadDefn.get("collections")))
                         self.create_sdk_client_pool(cluster, [bucket],
@@ -839,6 +706,8 @@ class Murphy(BaseTestCase, hostedOPD):
         provider = self.input.param("provider", "aws").lower()
         if provider == "aws":
             computeList = AWS.compute
+        elif provider == "azure":
+            computeList = AZURE.compute
 
         self.services = self.input.param("services", "data").split("-")
         self.rebl_services = self.input.param("rebl_services",
@@ -898,6 +767,7 @@ class Murphy(BaseTestCase, hostedOPD):
             self.loop = 0
             disk_increment = self.input.param("increment", 10)
             compute_change = 1
+            disk_change = 1
             while self.loop < self.iterations:
                 self.PrintStep("Step 6.{}: Scale Disk with Loading of docs".
                                format(self.loop))
@@ -909,7 +779,13 @@ class Murphy(BaseTestCase, hostedOPD):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
-                            self.disk[service] = self.disk[service] + disk_increment
+                            if provider == "azure":
+                                index = AZURE.StorageType.order.index(self.storage_type)
+                                self.storage_type = AZURE.StorageType.order[index+disk_change]
+                                self.disk[service] = AZURE.StorageType.type[self.storage_type]["min"]
+                                self.iops[service] = AZURE.StorageType.type[self.storage_type]["iops"]["min"]
+                            else:
+                                self.disk[service] = self.disk[service] + disk_increment
                         config = self.rebalance_config(service)
                         rebalance_tasks = list()
                         for tenant in self.tenants:
@@ -926,6 +802,7 @@ class Murphy(BaseTestCase, hostedOPD):
                                 for bucket in cluster.buckets:
                                     self.drBackupRestore.backup_now(tenant, cluster, bucket, wait_for_backup=False)
                     disk_increment = disk_increment * -1
+                    disk_change = disk_change * -1
                     #turn cluster off and back on
                     self.test_cluster_on_off()
 
@@ -978,7 +855,13 @@ class Murphy(BaseTestCase, hostedOPD):
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
                         if not(len(service_group) == 1 and service in ["query"]):
-                            self.disk[service] = self.disk[service] + disk_increment
+                            if provider == "azure":
+                                index = AZURE.StorageType.order.index(self.storage_type)
+                                self.storage_type = AZURE.StorageType.order[index+disk_change]
+                                self.disk[service] = AZURE.StorageType.type[self.storage_type]["min"]
+                                self.iops[service] = AZURE.StorageType.type[self.storage_type]["iops"]["min"]
+                            else:
+                                self.disk[service] = self.disk[service] + disk_increment
                         comp = computeList.index(self.compute[service])
                         comp = comp + compute_change if len(computeList) > comp + compute_change else comp
                         self.compute[service] = computeList[comp]
@@ -1000,6 +883,7 @@ class Murphy(BaseTestCase, hostedOPD):
                     self.sleep(60, "Sleep for 60s after rebalance")
                     disk_increment = disk_increment * -1
                     compute_change = compute_change * -1
+                    disk_change = disk_change * -1
                     self.cluster_util.print_cluster_stats(cluster)
                     #turn cluster off and back on
                     self.test_cluster_on_off()

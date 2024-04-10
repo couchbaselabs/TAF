@@ -40,6 +40,65 @@ class SDKClientPool(object):
         self.log = logger.get("infra")
         self.clients = dict()
 
+    def create_cluster_clients(
+            self, cluster, servers, req_clients=1, username="Administrator",
+            password="password", compression_settings=None):
+        """
+        Create set of clients for the specified cluster.
+        All created clients will be saved under the respective cluster key.
+        :param cluster: cluster object for which the clients will be created
+        :param servers: List of servers for SDK to establish initial
+                        connections with
+        :param req_clients: Required number of clients to be created for the
+                            given bucket and client settings
+        :param username: User name using which to establish the connection
+        :param password: Password for username authentication
+        :param compression_settings: Same as expected by SDKClient class
+        :return:
+        """
+        if cluster.name not in self.clients:
+            self.clients[cluster.name] = dict()
+            self.clients[cluster.name]["lock"] = Lock()
+            self.clients[cluster.name]["idle_clients"] = list()
+            self.clients[cluster.name]["busy_clients"] = list()
+
+        for _ in range(req_clients):
+            self.clients[cluster.name]["idle_clients"].append(SDKClient(
+                cluster, None, servers,
+                username=username, password=password,
+                compression_settings=compression_settings))
+
+    def get_cluster_client(self, cluster):
+        """
+        Method to get a cluster client which can be used for SDK operations
+        further by a callee.
+        :param cluster: Cluster object for which the client has to selected
+        :return client: Instance of SDKClient object
+        """
+        client = None
+        if not self.clients:
+            return client
+        while client is None:
+            self.clients[cluster.name]["lock"].acquire()
+            client = self.clients[cluster.name]["idle_clients"].pop()
+            self.clients[cluster.name]["busy_clients"].append(client)
+            self.clients[cluster.name]["lock"].release()
+        return client
+
+    def release_cluster_client(self, cluster, client):
+        """
+        Release the acquired SDKClient object back into the pool
+        :param cluster: Cluster object for which the client has to released.
+        :param client: Instance of SDKClient object
+        :return None:
+        """
+        if cluster.name not in self.clients:
+            return
+        self.clients[cluster.name]["lock"].acquire()
+        self.clients[cluster.name]["busy_clients"].remove(client)
+        self.clients[cluster.name]["idle_clients"].append(client)
+        self.clients[cluster.name]["lock"].release()
+
     def shutdown(self):
         """
         Shutdown all active clients managed by this ClientPool Object

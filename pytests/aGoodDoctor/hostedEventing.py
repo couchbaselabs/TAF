@@ -18,7 +18,7 @@ class DoctorEventing():
         for file in os.listdir(eventing_functions_dir):
             fh = open(os.path.join(eventing_functions_dir, file), "r")
             body = fh.read()
-            body = body.replace("default0", cluster.buckets[0])
+            body = body.replace("default0", cluster.buckets[0].name)
             fh.close()
             self.log.debug("Creating Eventing function - {}".format(json.loads(body)["appname"]))
             eventing_helper.import_function(body)

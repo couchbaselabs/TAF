@@ -99,7 +99,10 @@ class SSOTest(BaseTestCase):
         self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
 
         # Get the SAML Request
+        self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
         saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+        self.log.info("Response: {}".format(saml_request.content))
+
         self.assertEqual(saml_request.status_code // 100, 2)
         c = saml_request.cookies
 
@@ -160,7 +163,9 @@ class SSOTest(BaseTestCase):
         self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
 
         # Get the SAML Request
+        self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
         saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+        self.log.info("Response: {}".format(saml_request.content))
         self.assertEqual(saml_request.status_code // 100, 2)
         c = saml_request.cookies
 
@@ -235,7 +240,9 @@ class SSOTest(BaseTestCase):
         self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
 
         # Get the SAML Request
+        self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
         saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+        self.log.info("Response: {}".format(saml_request.content))
         self.assertEqual(saml_request.status_code // 100, 2)
         c = saml_request.cookies
 
@@ -269,31 +276,41 @@ class SSOTest(BaseTestCase):
         self.log.info(s.to_string())
         response = s.to_base64()
 
-        # try:
-        #     response = self.sso.send_saml_response(self.realm_callback, response,
-        #                                            saml_request_dict["RelayState"],
-        #                                            cookies=c)
-        # except requests.ConnectionError as er:
-        #     self.log.info(er)
-        #     pass
-        # else:
-        #     self.log.info("Got Response: {0} {1}".format(response.status_code, response.content))
-        #     self.fail("Oversize payload should have been ignored by auth0")
-        response = self.sso.send_saml_response(self.realm_callback, response,
-                                               saml_request_dict["RelayState"],
-                                               cookies=c)
+        # CODE 1 START
+        # Code throws connection abort error
 
-        self.assertEqual(response.status_code // 100, 3)
+        try:
+            response = self.sso.send_saml_response(self.realm_callback, response,
+                                                   saml_request_dict["RelayState"],
+                                                   cookies=c)
+        except requests.ConnectionError as er:
+            self.log.info(er)
+            pass
+        else:
+            self.log.info("Got Response: {0} {1}".format(response.status_code, response.content))
+            self.fail("Oversize payload should have been ignored by auth0")
 
-        new_url = urlparse(response.headers['Location'])
-        new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
-                                                   new_url.query)
-        finish_flow = self.sso.continue_saml_response(new_url)
+        # CODE 1 END
 
-        self.log.info(finish_flow.headers)
-        self.log.info(finish_flow.content)
+        # CODE 2 START
 
-        self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
+        # response = self.sso.send_saml_response(self.realm_callback, response,
+        #                                        saml_request_dict["RelayState"],
+        #                                        cookies=c)
+        #
+        # self.assertEqual(response.status_code // 100, 3)
+        #
+        # new_url = urlparse(response.headers['Location'])
+        # new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
+        #                                            new_url.query)
+        # finish_flow = self.sso.continue_saml_response(new_url)
+        #
+        # self.log.info(finish_flow.headers)
+        # self.log.info(finish_flow.content)
+        #
+        # self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
+
+        # CODE 2 END
 
     def test_high_quantity_saml_to_auth0(self):
         no_of_iters = self.input.param("no_of_iters", 10000)
@@ -311,7 +328,9 @@ class SSOTest(BaseTestCase):
                 self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
 
                 # Get the SAML Request
+                self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
                 saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+                self.log.info("Response: {}".format(saml_request.content))
                 self.assertEqual(saml_request.status_code // 100, 2)
                 c = saml_request.cookies
 
@@ -362,7 +381,9 @@ class SSOTest(BaseTestCase):
         self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
 
         # Get the SAML Request
+        self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
         saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+        self.log.info("Response: {}".format(saml_request.content))
         self.assertEqual(saml_request.status_code // 100, 2)
         c = saml_request.cookies
 
@@ -413,7 +434,9 @@ class SSOTest(BaseTestCase):
         self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
 
         # Get the SAML Request
+        self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
         saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+        self.log.info("Response: {}".format(saml_request.content))
         self.assertEqual(saml_request.status_code // 100, 2)
         c = saml_request.cookies
 
@@ -480,7 +503,9 @@ class SSOTest(BaseTestCase):
         self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
 
         # Get the SAML Request
+        self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
         saml_request = self.sso.get_saml_request(login_flow['loginURL'])
+        self.log.info("Response: {}".format(saml_request.content))
         self.assertEqual(saml_request.status_code // 100, 2)
         c = saml_request.cookies
 

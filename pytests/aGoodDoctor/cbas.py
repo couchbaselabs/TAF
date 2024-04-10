@@ -184,7 +184,7 @@ class DoctorCBAS():
                     pass
 
     def wait_for_ingestion(self, buckets, timeout=86400):
-        status = False
+        status = True
         for bucket in buckets:
             for dataset in bucket.datasets.keys():
                 status = False

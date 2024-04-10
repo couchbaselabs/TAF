@@ -130,6 +130,18 @@ class CapellaUtils(object):
         return json.loads(resp.content)
 
     @staticmethod
+    def revoke_access_secret_key(pod, tenant, key_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.revoke_access_secret_key(tenant.id, key_id)
+        if resp.status_code != 204:
+            raise Exception(
+                "Revoking Tenant Access/Secret Failed: %s" % resp.content)
+
+    @staticmethod
     def create_cluster(pod, tenant, cluster_details, timeout=1800):
         end_time = time.time() + timeout
         subnet = CapellaUtils.get_next_cidr() + "/20"
@@ -431,6 +443,24 @@ class CapellaUtils(object):
             time.sleep(5)
             return CapellaUtils.get_cluster_info(pod, tenant, cluster_id)
         return json.loads(resp.content)
+
+    @staticmethod
+    def get_cluster_info_internal(pod, tenant, cluster_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd,
+                                 pod.TOKEN)
+        resp = capella_api.get_cluster_info_internal(cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("LOG A BUG: Fetch Cluster API returns :\
+            {}".format(resp.status_code))
+            print(resp.content)
+            time.sleep(5)
+            return CapellaUtils.get_cluster_info_internal(cluster_id)
+        return json.loads(resp.content)
+
 
     @staticmethod
     def get_cluster_state(pod, tenant, cluster_id):

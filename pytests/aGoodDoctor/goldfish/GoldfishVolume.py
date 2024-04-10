@@ -10,12 +10,13 @@ from CbasUtil import DoctorCBAS, CBASQueryLoad
 from aGoodDoctor.hostedOPD import OPD
 from basetestcase import BaseTestCase
 from table_view import TableView
-from datasources import MongoDB, MongoWorkload
-import string
-import random
+from datasources import MongoDB
 from com.couchbase.test.sdk import Server
 from com.couchbase.test.sdk import SDKClient
 from _collections import defaultdict
+from datasources import s3
+from capella_utils.dedicated import CapellaUtils
+from Jython_tasks.task import ScaleColumnarInstance
 
 
 class Columnar(BaseTestCase, OPD):
@@ -96,49 +97,49 @@ class Columnar(BaseTestCase, OPD):
 
         mongo = MongoDB(mongo_hostname, mongo_username,
                         mongo_password, mongo_atlas)
-        mongo.name = "Mongo_" + ''.join([random.choice(string.ascii_letters + string.digits) for i in range(5)])
         mongo.loadDefn = self.default_workload
-        mongo.set_mongo_collections()
+        mongo.set_collections()
         mongo.key = "test_docs-"
         mongo.key_size = 18
         mongo.key_type = "Circular"
-        self.mongo_workload = MongoWorkload()
         self.generate_docs(doc_ops=["create"],
                            create_start=0,
                            create_end=mongo.loadDefn.get("num_items"),
                            bucket=mongo)
         self.data_sources["mongo"].append(mongo)
 
+        mongo.perform_load(self.data_sources["mongo"], wait_for_load=True,
+                           overRidePattern=[100, 0, 0, 0, 0],
+                           tm=self.doc_loading_tm)
+
     def teardownMongo(self):
-        for task in self.mongo_workload.tasks:
-            task.sdk.dropDatabase()
-            break
-        for task in self.mongo_workload.tasks:
-            task.sdk.disconnectCluster()
+        for database in self.data_sources["mongo"]:
+            for task in database.tasks:
+                task.sdk.dropDatabase()
+                task.sdk.disconnectCluster()
+                return
 
     def setup_sdk_clients(self, cluster):
         cluster.SDKClients = list()
-        nebula_endpoint = cluster.nebula.endpoint
-        master = Server(nebula_endpoint.ip, nebula_endpoint.port,
-                        nebula_endpoint.rest_username, nebula_endpoint.rest_password,
-                        str(nebula_endpoint.memcached_port))
-        master.ip = "couchbases://" + master.ip + ":16001"
+        master = Server(cluster.srv, cluster.master.port,
+                        cluster.master.rest_username, cluster.master.rest_password,
+                        str(cluster.master.memcached_port))
         client = SDKClient(master, "None")
         client.connectCluster()
         cluster.SDKClients.append(client)
 
     def tearDown(self):
         for tenant in self.tenants:
-            for cluster in tenant.clusters:
+            for cluster in tenant.columnar_instances:
                 for data_source in self.data_sources["mongo"]:
                     self.drCBAS.disconnect_link(cluster, data_source.link_name)
         for tenant in self.tenants:
-            for cluster in tenant.clusters:
+            for cluster in tenant.columnar_instances:
                 for data_source in self.data_sources["mongo"]:
                     self.drCBAS.wait_for_link_disconnect(cluster, data_source.link_name, 3600)
 
         for tenant in self.tenants:
-            for cluster in tenant.clusters:
+            for cluster in tenant.columnar_instances:
                 self.drCBAS.drop_collections(cluster, self.data_sources["mongo"])
                 self.drCBAS.drop_links(cluster, self.data_sources["mongo"])
 
@@ -195,30 +196,36 @@ class Columnar(BaseTestCase, OPD):
         if self.input.param("onCloudMongo", False):
             self.setupMongo(atlas=True)
 
-        self.mongo_workload.perform_load(self.data_sources["mongo"], wait_for_load=True,
-                                         overRidePattern=[100, 0, 0, 0, 0],
-                                         tm=self.doc_loading_tm)
+        s3_obj = s3(self.input.datasources.get("s3_access"),
+                    self.input.datasources.get("s3_secret"))
+        s3_obj.loadDefn = self.default_workload
+        s3_obj.set_collections()
+        self.data_sources["s3"].append(s3_obj)
+
         self.drCBAS = DoctorCBAS()
         for tenant in self.tenants:
-            for cluster in tenant.clusters:
+            for cluster in tenant.columnar_instances:
                 self.setup_sdk_clients(cluster)
-                self.drCBAS.create_mongo_links(cluster, self.data_sources["mongo"])
-                self.sleep(60)
+                for datasources in self.data_sources.values():
+                    self.drCBAS.create_links(cluster, datasources)
+                    # self.sleep(60)
 
         for tenant in self.tenants:
-            for cluster in tenant.clusters:
+            for cluster in tenant.columnar_instances:
                 for data_source in self.data_sources["mongo"]:
                     self.drCBAS.wait_for_link_connect(cluster, data_source.link_name, 3600)
 
         for tenant in self.tenants:
-            for cluster in tenant.clusters:
+            for cluster in tenant.columnar_instances:
                 for key in self.data_sources.keys():
+                    if key == "s3":
+                        continue
                     result = self.drCBAS.wait_for_ingestion(
                         cluster, self.data_sources[key], self.index_timeout)
                     self.assertTrue(result, "CBAS ingestion couldn't complete in time: %s" % self.index_timeout)
 
         for tenant in self.tenants:
-            for cluster in tenant.clusters:
+            for cluster in tenant.columnar_instances:
                 for data_sources in self.data_sources.values():
                     for data_source in data_sources:
                         if data_source.loadDefn.get("cbasQPS", 0) > 0:
@@ -228,36 +235,56 @@ class Columnar(BaseTestCase, OPD):
 
     def test_rebalance(self):
         self.initial_setup()
-        self.sleep(30)
+        self.sleep(300)
         self.mutate = 0
-        for datasources in self.data_sources.values():
-            for datasource in datasources:
-                self.generate_docs(bucket=datasource)
-
-        self.mongo_workload.perform_load(self.data_sources["mongo"],
-                                         wait_for_load=False,
-                                         tm=self.doc_loading_tm)
-        self.iterations = self.input.param("iterations", 1) + 2
-        for i in range(2, self.iterations):
-            self.PrintStep("Scaling operation: %s" % str(i-1))
+        self.workload_tasks = list()
+        for key in self.data_sources.keys():
+            if key == "s3":
+                continue
+            for dataSource in self.data_sources[key]:
+                self.generate_docs(bucket=dataSource)
+                self.workload_tasks.append(dataSource.perform_load(
+                    [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
+        self.iterations = self.input.param("iterations", 1)
+        for i in range(0, self.iterations):
+            self.PrintStep("Scaling OUT operation: %s" % str(i+1))
+            tasks = list()
             for tenant in self.tenants:
-                for cluster in tenant.clusters:
-                    self.goldfish_utils.scale_cluster(self.pod, tenant, cluster, i)
+                for cluster in tenant.columnar_instances:
+                    servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
+                    tbl = TableView(self.log.info)
+                    tbl.set_headers(["Hostname", "Services"])
+                    for server in servers:
+                        tbl.add_row([server.get("hostname"), server.get("services")])
+                    tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.id, cluster.cluster_id))
+                    _task = ScaleColumnarInstance(self.pod, tenant, cluster, (i+1)*2, timeout=self.wait_timeout)
+                    self.task_manager.add_new_task(_task)
+                    tasks.append(_task)
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+                self.assertTrue(task.result, "Cluster deployment failed!")
+            self.sleep(60)
+        for i in range(self.iterations-1, -1):
+            self.PrintStep("Scaling IN operation: %s" % str(i))
+            tasks = list()
             for tenant in self.tenants:
-                for cluster in tenant.clusters:
-                    self.goldfish_utils.wait_for_cluster_scaling(self.pod, tenant, cluster)
-            self.sleep(600)
-        for i in range(self.iterations-1, 1):
-            self.PrintStep("Scaling operation: %s" % str(i-1))
-            for tenant in self.tenants:
-                for cluster in tenant.clusters:
-                    self.goldfish_utils.scale_cluster(self.pod, tenant, cluster, i)
-            for tenant in self.tenants:
-                for cluster in tenant.clusters:
-                    self.goldfish_utils.wait_for_cluster_scaling(self.pod, tenant, cluster)
+                for cluster in tenant.columnar_instances:
+                    servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
+                    tbl = TableView(self.log.info)
+                    tbl.set_headers(["Hostname", "Services"])
+                    for server in servers:
+                        tbl.add_row([server.get("hostname"), server.get("services")])
+                    tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.id, cluster.cluster_id))
+                    count = i*2 if i > 0 else 1
+                    _task = ScaleColumnarInstance(self.pod, tenant, cluster, count, timeout=self.wait_timeout)
+                    self.task_manager.add_new_task(_task)
+                    tasks.append(_task)
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+                self.assertTrue(task.result, "Cluster deployment failed!")
             self.sleep(600)
         for tenant in self.tenants:
-            for cluster in tenant.clusters:
+            for cluster in tenant.columnar_instances:
                 for ql in self.cbasQL:
                     ql.stop_query_load()
 

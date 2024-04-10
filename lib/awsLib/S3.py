@@ -1,17 +1,20 @@
+import time
+
 import boto3
 from botocore.exceptions import ClientError
 from boto3.s3.transfer import TransferConfig
 import argparse
 import json
 
+
 class S3():
 
-    def __init__(self, access_key, secret_key, session_token=None):
+    def __init__(self, access_key, secret_key, session_token=None, region=None):
         import logging
         logging.basicConfig()
         self.logger = logging.getLogger("AWS_Util")
         self.create_session(access_key, secret_key, session_token)
-        self.s3_client = self.create_service_client(service_name="s3")
+        self.s3_client = self.create_service_client(service_name="s3", region=region)
         self.s3_resource = self.create_service_resource(resource_name="s3")
 
     def create_session(self, access_key, secret_key, session_token=None):
@@ -26,8 +29,8 @@ class S3():
         try:
             if session_token:
                 self.aws_session = boto3.Session(aws_access_key_id=access_key,
-                                             aws_secret_access_key=secret_key,
-                                             aws_session_token=session_token)
+                                                 aws_secret_access_key=secret_key,
+                                                 aws_session_token=session_token)
             else:
                 self.aws_session = boto3.Session(aws_access_key_id=access_key,
                                                  aws_secret_access_key=secret_key)
@@ -60,7 +63,7 @@ class S3():
 
     def get_region_list(self):
         # Retrieves all regions/endpoints
-        ec2 = self.create_service_client(service_name="ec2",region="us-west-1")
+        ec2 = self.create_service_client(service_name="ec2", region="us-west-1")
         response = ec2.describe_regions()
         if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
             return [region['RegionName'] for region in response["Regions"]]
@@ -170,10 +173,28 @@ class S3():
             for item in response:
                 if item["ResponseMetadata"]["HTTPStatusCode"] != 200:
                     status = status and False
-            return status
+            is_bucket_empty = self.wait_until_bucket_empty(bucket_name)
+            return is_bucket_empty
         except Exception as e:
             self.logger.error(e)
             return False
+
+    def wait_until_bucket_empty(self, bucket_name, timeout=300):
+        try:
+            while timeout > 0:
+                # Create a bucket resource object
+                bucket_resource = self.s3_resource.Bucket(bucket_name)
+                is_empty = [] == [i for i in bucket_resource.objects.limit(1).all()]
+                if is_empty:
+                    return True
+                else:
+                    timeout -= 5
+                    time.sleep(5)
+            return False
+        except Exception as e:
+            self.logger.error(e)
+            return False
+
 
     def list_existing_buckets(self):
         """
@@ -295,6 +316,15 @@ class S3():
             self.logger.error(e)
             return False
 
+    def get_object_in_a_bucket(self, bucket_name):
+        response = self.s3_client.list_objects_v2(Bucket=bucket_name)
+        objects = list()
+        if 'Contents' in response:
+            for obj in response['Contents']:
+                objects.append(obj['Key'])
+        return objects
+
+
 def main():
     parser = argparse.ArgumentParser()
 
@@ -315,6 +345,7 @@ def main():
     parser.add_argument("--download_file", nargs=2, help="specify path on aws and dest file path")
     parser.add_argument("--delete_file", help="specify path on aws and dest file path")
     parser.add_argument("--empty_bucket", help="to be used with --existing_bucket flag", action="store_true")
+    parser.add_argument("--get_objects_in_bucket", help="fetches all objects in a bucket", action="store_true")
 
     args = parser.parse_args()
 
@@ -327,6 +358,9 @@ def main():
         result = {"result": s3_obj.create_bucket(args.new_bucket, args.region)}
         print(json.dumps(result))
     elif args.existing_bucket:
+        if args.get_objects_in_bucket:
+            result = {"result": s3_obj.get_object_in_a_bucket(args.existing_bucket)}
+            print(json.dumps(result))
         if args.upload_file:
             result = {"result": s3_obj.upload_file(args.existing_bucket, args.upload_file[0], args.upload_file[1])}
             print(json.dumps(result))

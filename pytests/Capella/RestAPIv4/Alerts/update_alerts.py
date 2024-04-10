@@ -103,12 +103,12 @@ class UpdateAlert(GetAlert):
 
             result = self.capellaAPI.cluster_ops_apis.update_alert(
                 org, proj, alert, self.expected_res["kind"],
-                self.expected_res["config"], self.expected_res["name"])
+                self.expected_res["config"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_alert(
                     org, proj, alert, self.expected_res["kind"],
-                    self.expected_res["config"], self.expected_res["name"])
+                    self.expected_res["config"])
 
             self.capellaAPI.cluster_ops_apis.alerts_endpoint = \
                 "/v4/organizations/{}/projects/{}/alertIntegrations"
@@ -162,14 +162,13 @@ class UpdateAlert(GetAlert):
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.update_alert(
                 self.organisation_id, self.project_id, self.alert_id,
-                self.expected_res["kind"], self.expected_res["config"],
-                self.expected_res["name"], header)
+                self.expected_res["kind"], self.expected_res["config"], header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_alert(
                     self.organisation_id, self.project_id, self.alert_id,
                     self.expected_res["kind"], self.expected_res["config"],
-                    self.expected_res["name"], header)
+                    header)
 
             self.validate_testcase(result, [204], testcase, failures)
 
@@ -265,15 +264,13 @@ class UpdateAlert(GetAlert):
             result = self.capellaAPI.cluster_ops_apis.update_alert(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["alertID"], self.expected_res["kind"],
-                self.expected_res["config"], self.expected_res["name"],
-                **kwarg)
+                self.expected_res["config"], **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_alert(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["alertID"], self.expected_res["kind"],
-                    self.expected_res["config"], self.expected_res["name"],
-                    **kwarg)
+                    self.expected_res["config"], **kwarg)
 
             self.validate_testcase(result, [204], testcase, failures)
 
@@ -288,8 +285,7 @@ class UpdateAlert(GetAlert):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.update_alert,
             (self.organisation_id, self.project_id, self.alert_id,
-             self.expected_res["kind"], self.expected_res["name"],
-             self.expected_res["config"])
+             self.expected_res["kind"], self.expected_res["config"])
         ]]
         self.throttle_test(api_func_list)
 
@@ -297,7 +293,6 @@ class UpdateAlert(GetAlert):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.update_alert,
             (self.organisation_id, self.project_id, self.alert_id,
-             self.expected_res["kind"], self.expected_res["name"],
-             self.expected_res["config"])
+             self.expected_res["kind"], self.expected_res["config"])
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

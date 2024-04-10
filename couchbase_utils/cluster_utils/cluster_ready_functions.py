@@ -39,14 +39,6 @@ from testconstants import IS_CONTAINER
 from xdcr_utils.xdcr_util import XDCRUtils
 
 
-class GoldfishNebula:
-    def __init__(self, srv, server):
-        self.servers = dict()
-        self.endpoint = server
-        self.endpoint.type = "columnar"
-        self.endpoint.srv = srv
-
-
 class Nebula:
     def __init__(self, srv, server):
         self.servers = dict()

@@ -53,11 +53,11 @@ class BackupRestoreTest(CBASBaseTest):
                          original_bucket, original_scope, original_collection,
                          remap_bucket, remap_scope, remap_collection,
                          level="cluster"):
-        dv_after_restore = self.cbas_util.get_dataverses(self.cluster, retries=1)
+        dv_after_restore = self.cbas_util.get_dataverses(self.cluster)
         ds_after_restore = self.cbas_util.get_datasets(
             self.cluster, retries=1, fields=self.ds_fields)
-        syn_after_restore = self.cbas_util.get_synonyms(self.cluster, retries=1)
-        idx_after_restore = self.cbas_util.get_indexes(self.cluster, retries=1)
+        syn_after_restore = self.cbas_util.get_synonyms(self.cluster)
+        idx_after_restore = self.cbas_util.get_indexes(self.cluster)
         if include:
             if not isinstance(include, list):
                 include = urllib.quote(include).split(",")
@@ -234,10 +234,10 @@ class BackupRestoreTest(CBASBaseTest):
         status, restore, response = self.backup_util.rest_restore_cbas(
             self.cluster, level="cluster", backup=backup)
         self.assertTrue(status)
-        syn_after_restore = self.cbas_util.get_synonyms(self.cluster, retries=1)
-        dv_after_restore = self.cbas_util.get_dataverses(self.cluster, retries=1)
-        ds_after_restore = self.cbas_util.get_datasets(self.cluster, retries=1)
-        idx_after_restore = self.cbas_util.get_indexes(self.cluster, retries=1)
+        syn_after_restore = self.cbas_util.get_synonyms(self.cluster)
+        dv_after_restore = self.cbas_util.get_dataverses(self.cluster)
+        ds_after_restore = self.cbas_util.get_datasets(self.cluster)
+        idx_after_restore = self.cbas_util.get_indexes(self.cluster)
         self.assertEquals(len(syn_before_backup), len(syn_after_restore))
         self.assertEquals(len(dv_before_backup), len(dv_after_restore))
         if self.drop_datasets:

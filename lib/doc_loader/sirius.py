@@ -1,11 +1,9 @@
 import errno
 import os
-
 import requests
+import yaml
 from signal import SIGTERM
 from subprocess import Popen
-
-import yaml
 
 from common_lib import sleep
 

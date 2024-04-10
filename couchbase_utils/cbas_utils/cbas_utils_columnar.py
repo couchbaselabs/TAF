@@ -20,17 +20,15 @@ from Columnar.templates.crudTemplate.docgen_template import Hotel
 from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity import (
-    Database, Dataverse, Remote_Link, External_Link, Kafka_Link, Dataset,
+    Database, Dataverse, Remote_Link, External_Link, Kafka_Link,
     Remote_Dataset, External_Dataset, Standalone_Dataset, Synonym,
     CBAS_Index)
 from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
 from common_lib import sleep
-from Queue import Queue
+from queue import Queue
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
-from Cb_constants import CbServer
-from java.lang import System
-from java.util.concurrent import Executors, Callable, TimeUnit, CompletableFuture
+from cb_constants import CbServer
 
 
 class BaseUtil(object):
@@ -2764,20 +2762,16 @@ class Remote_Dataset_Util(Dataset_Util):
                     "_default").num_items
 
             if dataset_spec["storage_format"] == "mixed":
-                storage_format = random.choice(
-                    ["row", "column"])
+                storage_format = random.choice(["row", "column"])
             else:
-                storage_format = dataset_spec[
-                    "storage_format"]
+                storage_format = dataset_spec["storage_format"]
 
             dataset_obj = Remote_Dataset(
                 name=name, link_name=link.full_name,
                 dataverse_name=dataverse.name,
                 database_name=dataverse.database_name, bucket=bucket,
-                scope=scope, collection=collection,
-                num_of_items=num_of_items,
-                storage_format=storage_format
-            )
+                scope=scope, collection=collection, num_of_items=num_of_items,
+                storage_format=storage_format)
 
             dataverse_name = dataset_obj.dataverse_name
             if dataverse_name == "Default":
@@ -3231,8 +3225,10 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             return self.instance.generate_docs(self.document_size, self.country_type, self.include_country)
 
     def load_doc_to_standalone_collection(
-            self, cluster, collection_name, dataverse_name, database_name, no_of_docs,
-            document_size=1024, batch_size=500, max_concurrent_batches=10, country_type="string", include_country=True):
+            self, cluster, collection_name, dataverse_name, database_name,
+            no_of_docs, document_size=1024, batch_size=500,
+            max_concurrent_batches=10, country_type="string",
+            include_country=True):
         """
         Load documents to a standalone collection.
         """
@@ -3829,7 +3825,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             self, cluster, no_of_objs=1, datasource=None, primary_key={},
             link=None, same_db_same_dv_for_link_and_dataset=False,
             same_db_diff_dv_for_link_and_dataset=False,
-            external_collection_name=None, database_name="Default",
+            external_collection_name=None, database_name=None,
             dataverse_name=None, storage_format=None, name_length=30,
             fixed_length=False):
         """
@@ -3892,8 +3888,10 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 else:
                     dataverse_obj = link_dataverse_obj
             else:
-                database_name = self.generate_name()
-                dataverse_name = self.generate_name()
+                if not database_name:
+                    database_name = self.generate_name()
+                if not dataverse_name:
+                    dataverse_name = self.generate_name()
                 if not self.create_database(cluster, database_name):
                     self.log.error("Error while creating database {0}".format(
                         dataverse_name, database_name))
@@ -4010,6 +4008,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                         else None
                     if link is None:
                         data_source = None
+            else:
+                data_source = None
 
             link_name = link.full_name if link else None
             dataset_obj = Standalone_Dataset(

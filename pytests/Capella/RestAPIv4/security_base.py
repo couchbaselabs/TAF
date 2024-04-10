@@ -477,8 +477,9 @@ class SecurityBase(CouchbaseBaseTest):
 
         num = 1
         for role in roles:
-            usrname = self.user.split('@')
-            username = usrname[0] + "+" + self.generate_random_string(9, False) + "@" + usrname[1]
+            _, domain = self.user.split('@')
+            username = "couchbase-security+" + self.generate_random_string(9, False) \
+                       + "@" + domain
             name = "Test_User_" + str(num)
             self.log.info("Creating user {} with role {}".format(username, role))
             create_user_resp = setup_capella_api.create_user(self.tenant_id,

@@ -99,8 +99,11 @@ class Tenant:
         self.pwd = pwd
         self.api_secret_key = secret
         self.api_access_key = access
+        # This will be used to destroy the key in teardown.
+        self.api_key_id = None
         self.projects = []
         self.clusters = list()
+        self.columnar_instances = list()
         self.xdcr_clusters = list()
         self.users = [User(self.user, self.pwd)]
 

@@ -11,7 +11,6 @@ from TestInput import TestInputSingleton
 
 
 class RESTClient(object):
-
     def __init__(self, servers, bucket,
                  scope=CbServer.default_scope,
                  collection=CbServer.default_collection,
@@ -437,7 +436,8 @@ class RESTClient(object):
         fail = {}
 
         if response.status_code != 200:
-            print("unable to start operation (Bad/Malformed) :" + self.op_type + " " + str(response.status_code))
+            print(f"unable to start operation (Bad/Malformed): "
+                  f"{self.op_type} {response.status_code}")
             print(json.loads(response.content))
             raise Exception("Bad HTTP status at doc loading")
 

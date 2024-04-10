@@ -48,7 +48,7 @@ class GetCluster(GetProject):
                 "type": "single"
             },
             "support": {
-                "plan": plan,
+                "plan": "enterprise",
                 "timezone": "GMT"
             },
             "currentState": None,

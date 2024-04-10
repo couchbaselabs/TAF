@@ -10,6 +10,9 @@ elif runtype == "serverless":
 elif runtype == "columnar":
     from columnarbasetestcase import ColumnarBaseTest as CbBaseTest
     from columnarbasetestcase import ClusterSetup as CbClusterSetup
+elif runtype == "columnar1":
+    from columnarbasetest import ColumnarBaseTest as CbBaseTest
+    from columnarbasetest import ClusterSetup as CbClusterSetup
 else:
     from onPrem_basetestcase import OnPremBaseTest as CbBaseTest
     from onPrem_basetestcase import ClusterSetup as CbClusterSetup

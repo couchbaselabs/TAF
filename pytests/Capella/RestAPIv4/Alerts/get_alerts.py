@@ -12,6 +12,11 @@ class GetAlert(GetProject):
         GetProject.setUp(self, nomenclature)
 
         # Create a webhook.
+        ###############################################################
+        #   PLEASE NOTE THAT THE PAYLOAD FOR ALERT INTEGRATION CREATION
+        #   IS SUBJECT TO CHANGE BASED ON THE EXPIRY OF THE SERVICE NOW
+        #   URL and/or AUTH
+        ###############################################################
         self.expected_res = {
             "enabled": False,
             "status": "healthy",
@@ -24,12 +29,22 @@ class GetAlert(GetProject):
             },
             "config": {
                 "webhook": {
-                    "token": "",
+                    "basicAuth": {
+                        "user": "capella-webhook-uitest-user",
+                        "password": "G:lM-5istvJ.h<3Y9HFl=EMdi}m*^07igec[W$hAPkB4}+G6Ko}rX<H10>Fg8=8"
+                    },
                     "method": "POST",
-                    "url": "https://dev116354.service-now.com/api/1259084/"
-                           "testwebhook/new"
+                    "url": "https://dev199760.service-now.com/api/1325623/capella_webhook_ui_test"
                 }
             },
+            # "config": {
+            #     "webhook": {
+            #         "token": "",
+            #         "method": "POST",
+            #         "url": "https://dev116354.service-now.com/api/1259084/"
+            #                "testwebhook/new"
+            #     }
+            # },
             "kind": "webhook",
             "name": self.prefix + nomenclature,
             "projectId": self.project_id,
@@ -189,9 +204,8 @@ class GetAlert(GetProject):
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"],
             }
-            if not any(element in [
-                "organizationOwner", "projectOwner",
-                "projectManager", "projectViewer", "projectDataReader"] for
+            if not any(element in ["organizationOwner", "projectOwner",
+                                   "projectManager", "projectViewer"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,

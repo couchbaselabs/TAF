@@ -14,7 +14,8 @@ from capella_utils.dedicated import CapellaUtils
 from capella_utils.common_utils import Pod, Tenant
 from cb_basetest import CouchbaseBaseTest
 from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster
-from constants.cloud_constants.capella_constants import AWS, Cluster
+from constants.cloud_constants.capella_constants import AWS, Cluster, AZURE
+from security_config import trust_all_certs
 from Jython_tasks.task import DeployCloud
 import uuid
 from table_view import TableView
@@ -37,7 +38,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
 
         self.pod_table = TableView(self.log.info)
         self.pod_table.set_headers(["Tenant", "Creds", "Cluster"])
-        
+
         self.wait_timeout = self.input.param("wait_timeout", 120)
         self.use_https = self.input.param("use_https", True)
         self.enforce_tls = self.input.param("enforce_tls", True)
@@ -59,12 +60,12 @@ class CapellaBaseTest(CouchbaseBaseTest):
                              "eventing": "eventing"}
         provider = self.input.param("provider", AWS.__str__).lower()
         self.compute = {
-            "data": self.input.param("kv_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
-            "query": self.input.param("n1ql_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
-            "index": self.input.param("gsi_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
-            "search": self.input.param("fts_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
-            "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4"),
-            "eventing": self.input.param("eventing_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4")
+            "data": self.input.param("kv_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "query": self.input.param("n1ql_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "index": self.input.param("gsi_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "search": self.input.param("fts_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "analytics": self.input.param("cbas_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
+            "eventing": self.input.param("eventing_compute", AWS.ComputeNode.VCPU4_RAM16 if provider == "aws" else "n2-standard-4" if provider == "gcp" else "Standard_D4s_v5"),
             }
         aws_storage_range = [100, 200, 300, 400, 500, 600, 700, 800, 900, 1000]
         aws_min_iops = [3000, 4370, 5740, 7110, 8480, 9850, 11220, 12590, 13960, 15330, 16000]
@@ -84,10 +85,19 @@ class CapellaBaseTest(CouchbaseBaseTest):
             "analytics": self.input.param("cbas_disk", 200),
             "eventing": self.input.param("eventing_disk", 200)
             }
-        for i, storage in enumerate(aws_storage_range):
+        storage_type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd" if provider == "gcp" else "P6"
+        self.storage_type = self.input.param("type", storage_type).lower()
+        if provider == "aws":
+            for i, storage in enumerate(aws_storage_range):
+                for service in ["data", "query", "index", "search", "analytics", "eventing"]:
+                    if self.disk[service] >= storage:
+                        self.iops[service] = max(aws_min_iops[i+1], self.iops[service])
+        elif provider == "azure":
+            self.storage_type = self.storage_type.upper()
             for service in ["data", "query", "index", "search", "analytics", "eventing"]:
-                if self.disk[service] >= storage:
-                    self.iops[service] = max(aws_min_iops[i+1], self.iops[service])
+                self.disk[service] = AZURE.StorageType.type[self.storage_type]["min"]
+                self.iops[service] = AZURE.StorageType.type[self.storage_type]["iops"]["min"]
+
         self.num_nodes = {
             "data": self.input.param("kv_nodes", 3),
             "query": self.input.param("n1ql_nodes", 2),
@@ -113,12 +123,14 @@ class CapellaBaseTest(CouchbaseBaseTest):
                             self.input.capella.get("secret_key"),
                             self.input.capella.get("access_key"))
             tenant.name = self.input.capella.get("capella_user").split("@")[0]
-            if not (self.input.capella.get("access_key") and\
-                self.input.capella.get("secret_key")):
+            if not (self.input.capella.get("access_key") and
+                    self.input.capella.get("secret_key")):
                 self.log.info("Creating API keys for tenant...")
-                resp = CapellaUtils.create_access_secret_key(self.pod, tenant, tenant.name)
+                resp = CapellaUtils.create_access_secret_key(
+                    self.pod, tenant, tenant.name)
                 tenant.api_secret_key = resp["secret"]
                 tenant.api_access_key = resp["access"]
+                tenant.api_key_id = resp["id"]
             self.tenants.append(tenant)
             if TestInputSingleton.input.capella.get("project", None):
                 tenant.projects.append(TestInputSingleton.input.capella.get("project"))
@@ -177,8 +189,8 @@ class CapellaBaseTest(CouchbaseBaseTest):
                 th.append(invite_th)
             for invite_th in th:
                 invite_th.join()
-            for tenant in self.tenants:
-                tenant.project_id = tenant.projects[0]
+        for tenant in self.tenants:
+            tenant.project_id = tenant.projects[0]
 
 class ProvisionedBaseTestCase(CapellaBaseTest):
     def setUp(self):
@@ -307,9 +319,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             for tenant in self.tenants:
                 for cluster in tenant.clusters:
                     self.log.info("Destroying cluster: {}".format(cluster.id))
-                    delete_th = threading.Thread(target=CapellaUtils.destroy_cluster,
-                                                 name=cluster.id,
-                                                 args=(self.pod, tenant, cluster))
+                    delete_th = threading.Thread(
+                        target=CapellaUtils.destroy_cluster, name=cluster.id,
+                        args=(self.pod, tenant, cluster))
                     delete_th.start()
                     th.append(delete_th)
             for delete_th in th:
@@ -318,9 +330,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         if not TestInputSingleton.input.capella.get("project", None):
             th = list()
             for tenant in self.tenants:
-                delete_th = threading.Thread(target=CapellaUtils.delete_project,
-                                                 name=tenant.id,
-                                                 args=(self.pod, tenant, tenant.projects))
+                delete_th = threading.Thread(
+                    target=CapellaUtils.delete_project, name=tenant.id,
+                    args=(self.pod, tenant, tenant.projects))
                 delete_th.start()
                 th.append(delete_th)
             for delete_th in th:
@@ -416,6 +428,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         elif provider == "gcp":
             self.provider = "hostedGCP"
             self.package = "Enterprise"
+        elif provider == "azure":
+            self.provider = "hostedAzure"
+            self.package = "Enterprise"
         self.capella_cluster_config = CapellaUtils.get_cluster_config(
             description="Amazing Cloud",
             single_az=False,
@@ -438,7 +453,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 services=[self.services_map[_service.lower()] for _service in service_group],
                 count=count,
                 compute=self.compute[service],
-                storage_type=self.input.param("type", AWS.StorageType.GP3).lower(),
+                storage_type=self.storage_type,
                 storage_size_gb=self.disk[service],
                 storage_iops=self.iops[service],
                 diskAutoScaling=self.diskAutoScaling)
@@ -449,9 +464,6 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
 
     def create_specs(self):
         provider = self.input.param("provider", "aws").lower()
-
-        _type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd"
-        storage_type = self.input.param("type", _type).lower()
 
         specs = []
         services = self.input.param("services", "data")
@@ -465,12 +477,12 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 },
                 "services": [{"type": self.services_map[_service.lower()]} for _service in services],
                 "disk": {
-                    "type": storage_type,
+                    "type": self.storage_type,
                     "sizeInGb": self.disk[service]
                 },
                 "diskAutoScaling": {"enabled": self.diskAutoScaling}
             }
-            if provider == "aws":
+            if provider in ["aws", "azure"]:
                 spec["disk"]["iops"] = self.iops[service]
             specs.append(spec)
         return specs
@@ -485,6 +497,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             package = "developerPro"
         elif provider == "gcp":
             provider = "hostedGCP"
+            package = "enterprise"
+        elif provider == "azure":
+            provider = "hostedAzure"
             package = "enterprise"
         else:
             raise Exception("Provider has to be one of aws or gcp")

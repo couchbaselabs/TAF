@@ -17,6 +17,7 @@ from copy import deepcopy
 from threading import Lock, Thread
 from collections import OrderedDict
 
+from capella_utils.columnar import GoldfishUtils
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.index.index_api import IndexRestAPI
@@ -31,8 +32,8 @@ from BucketLib.MemcachedOperations import MemcachedHelper
 from BucketLib.bucket import Bucket, Serverless
 from cb_constants import constants, CbServer, DocLoading
 from CbasLib.CBASOperations import CBASHelper
-from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
-    CBAS_Index, CBAS_UDF
+from CbasLib.cbas_entity import Dataverse, Dataset, Synonym, \
+    CBAS_Index, CBAS_UDF, Remote_Dataset
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
@@ -206,6 +207,119 @@ class TimerTask(Task):
         self.complete_task()
         return result
 
+
+class DeployColumnarInstance(Task):
+    def __init__(self, pod, tenant, name, config, timeout=1800):
+        Task.__init__(self, "DeployingColumnarInstance-{}".format(name))
+        self.name = name
+        self.config = config
+        self.pod = pod
+        self.tenant = tenant
+        self.timeout = timeout
+
+    def call(self):
+        try:
+            instance_id, cluster_id, srv, servers = \
+                GoldfishUtils.create_cluster(self.pod, self.tenant,
+                                             self.config)
+            self.instance_id = instance_id
+            self.cluster_id = cluster_id
+            self.servers = servers
+            self.srv = srv
+            self.result = True
+        except Exception as e:
+            self.log.error(e)
+            self.result = False
+        return self.result
+
+
+class ScaleColumnarInstance(Task):
+    def __init__(self, pod, tenant, cluster, nodes, timeout=1200, poll_interval=60):
+        Task.__init__(self, "Scaling_task_{}".format(str(time.time())))
+        self.pod = pod
+        self.tenant = tenant
+        self.cluster = cluster
+        self.timeout = timeout
+        self.servers = None
+        self.poll_interval = poll_interval
+        self.state = "healthy"
+        GoldfishUtils.scale_cluster(self.pod, self.tenant, self.cluster, nodes)
+        count = 1200
+        while self.state == "healthy" and count > 0:
+            resp = DedicatedUtils.get_cluster_info_internal(self.pod, self.tenant, self.cluster.cluster_id)
+            self.state = resp["meta"]["status"]["state"]
+            self.sleep(5, "Wait until CP trigger the scaling job and change status")
+            self.log.info("Current: {}, Expected: {}".format(self.state, "scaling"))
+            count -= 1
+
+    def call(self):
+        capella_api = decicatedCapellaAPI(self.pod.url_public,
+                                          self.tenant.api_secret_key,
+                                          self.tenant.api_access_key,
+                                          self.tenant.user,
+                                          self.tenant.pwd)
+        end = time.time() + self.timeout
+        while end > time.time():
+            try:
+                content = DedicatedUtils.jobs(capella_api,
+                                              self.pod,
+                                              self.tenant,
+                                              self.cluster.cluster_id)
+                resp = DedicatedUtils.get_cluster_info_internal(self.pod, self.tenant, self.cluster.cluster_id)
+                self.state = resp["meta"]["status"]["state"]
+                if self.state in ["deployment_failed",
+                                  "deploymentFailed",
+                                  "redeploymentFailed",
+                                  "rebalance_failed",
+                                  "rebalanceFailed",
+                                  "scaleFailed"]:
+                    raise Exception("{} for cluster {}".format(
+                        self.state, self.cluster.id))
+                if content.get("data") or self.state != "healthy":
+                    for data in content.get("data"):
+                        data = data.get("data")
+                        if data.get("clusterId") == self.cluster.cluster_id:
+                            step, progress = data.get("currentStep"), \
+                                             data.get("completionPercentage")
+                            self.log.info("{}: Status=={}, State=={}, Progress=={}%".format("Scaling", self.state, step, progress))
+                    time.sleep(self.poll_interval)
+                else:
+                    self.log.info("Scaling the cluster completed. State == {}".
+                                  format(self.state))
+                    self.sleep(120)
+                    self.result = True
+                    break
+            except Exception as e:
+                self.log.critical(e)
+                self.result = False
+                return self.result
+        count = 5
+        while count > 0:
+            self.servers = DedicatedUtils.get_nodes(
+                self.pod, self.tenant, self.cluster.cluster_id)
+            count -= 1
+            if self.servers:
+                break
+        nodes = list()
+        for server in self.servers:
+            temp_server = TestInputServer()
+            temp_server.ip = server.get("hostname")
+            temp_server.hostname = server.get("hostname")
+            temp_server.services = server.get("services")
+            temp_server.port = "18091"
+            temp_server.rest_username = self.cluster.username
+            temp_server.rest_password = self.cluster.password
+            temp_server.hosted_on_cloud = True
+            temp_server.memcached_port = "11207"
+            temp_server.type = "columnar"
+            temp_server.cbas_port = 18095
+            nodes.append(temp_server)
+
+        if self.servers:
+            self.cluster.refresh_object(nodes)
+        else:
+            raise Exception("RebalanceTask: Capella API to fetch nodes failed!!")
+        return self.result
 
 class DeployDataplane(Task):
     def __init__(self, cluster, config, timeout=900):
@@ -4023,7 +4137,7 @@ class RunQueriesTask(Task):
 
     def __init__(self, cluster, queries, task_manager, helper, query_type,
                  run_infinitely=False, parallelism=1, is_prepared=True,
-                 record_results=True):
+                 record_results=True, regenerate_queries=False):
         super(RunQueriesTask, self).__init__("RunQueriesTask_started_%s"
                                              % (time.time()))
         self.cluster = cluster
@@ -4041,6 +4155,7 @@ class RunQueriesTask(Task):
         self.is_prepared = is_prepared
         self.debug_msg = self.query_type + "-DEBUG-"
         self.record_results = record_results
+        self.regenerate_queries = regenerate_queries
 
     def call(self):
         start = 0
@@ -4081,6 +4196,8 @@ class RunQueriesTask(Task):
                         end = self.parallelism
                     else:
                         break
+                if self.regenerate_queries:
+                    self.prepare_cbas_queries()
         except Exception as e:
             self.test_log.error(e)
             self.set_exception(e)
@@ -4088,7 +4205,7 @@ class RunQueriesTask(Task):
         self.complete_task()
 
     def prepare_cbas_queries(self):
-        datasets = self.cbas_util.get_datasets(self.cluster, retries=20)
+        datasets = self.cbas_util.get_datasets(self.cluster)
         if not datasets:
             self.set_exception(Exception("Datasets not available"))
         prepared_queries = []
@@ -7702,6 +7819,8 @@ class CreateDatasetsTask(Task):
             for bucket in self.cluster.buckets:
                 if self.kv_name_cardinality > 1:
                     for scope in self.bucket_util.get_active_scopes(bucket):
+                        if scope.name == "_system":
+                            continue
                         for collection in \
                                 self.bucket_util.get_active_collections(
                                     bucket, scope.name):
@@ -7769,23 +7888,22 @@ class CreateDatasetsTask(Task):
                     name_cardinality=1, max_length=3, fixed_length=True)
             num_of_items = collection.num_items
 
-            if creation_method == "cbas_collection":
-                dataset_obj = CBAS_Collection(
+            if link_name:
+                dataset_obj = Remote_Dataset(
                     name=name, dataverse_name=dataverse.name,
-                    link_name=link_name,
-                    dataset_source="internal", dataset_properties={},
-                    bucket=bucket, scope=scope, collection=collection,
-                    enabled_from_KV=enabled_from_KV, num_of_items=num_of_items)
+                    link_name=link_name, bucket=bucket, scope=scope, collection=collection,
+                    num_of_items=num_of_items
+                )
             else:
                 dataset_obj = Dataset(
                     name=name, dataverse_name=dataverse.name,
-                    dataset_source="internal", dataset_properties={},
                     bucket=bucket, scope=scope, collection=collection,
                     enabled_from_KV=enabled_from_KV, num_of_items=num_of_items,
-                    link_name=link_name)
-            if not self.create_dataset(dataset_obj):
+                    )
+            analytics_collection = True if creation_method == "cbas_collection" else False
+            if not self.create_dataset(dataset_obj, analytics_collection=analytics_collection):
                 raise N1QLQueryException(
-                    "Could not create dataset " + dataset_obj.name + " on " +
+                "Could not create dataset " + dataset_obj.name + " on " +
                     dataset_obj.dataverse_name)
             self.created_datasets.append(dataset_obj)
             if dataverse.name not in list(self.cbas_util.dataverses.keys()):
@@ -7793,7 +7911,7 @@ class CreateDatasetsTask(Task):
             self.cbas_util.dataverses[dataverse.name].datasets[
                 self.created_datasets[-1].full_name] = self.created_datasets[-1]
 
-    def create_dataset(self, dataset):
+    def create_dataset(self, dataset, analytics_collection=False):
         dataverse_name = str(dataset.dataverse_name)
         if dataverse_name == "Default":
             dataverse_name = None
@@ -7807,10 +7925,7 @@ class CreateDatasetsTask(Task):
                     self.cluster, dataset.get_fully_qualified_kv_entity_name(1),
                     False, False, None, None, None, 120, 120)
         else:
-            if isinstance(dataset, CBAS_Collection):
-                analytics_collection = True
-            elif isinstance(dataset, Dataset):
-                analytics_collection = False
+            dataset.link_name = dataset.link_name if hasattr(dataset, "link_name") else None
             if self.kv_name_cardinality > 1 and self.cbas_name_cardinality > 1:
                 return self.cbas_util.create_dataset(
                     self.cluster, dataset.name, dataset.full_kv_entity_name,
@@ -8312,7 +8427,7 @@ class RestBasedDocLoader(Task):
 
             if self.op_type == "validate":
                 if len(self.fail) > 0:
-                    for key, failed_doc in list(self.fail.items()):
+                    for key, failed_doc in self.fail:
                         print(key, failed_doc)
 
                     self.set_result(True)

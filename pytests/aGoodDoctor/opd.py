@@ -25,10 +25,13 @@ from com.couchbase.test.docgen import DRConstants
 from com.couchbase.client.core.error import DocumentExistsException,\
     TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
-from custom_exceptions.exception import RebalanceFailedException
+from custom_exceptions.exception import RebalanceFailedException,\
+    ServerUnavailableException
 from constants.cb_constants.CBServer import CbServer
 from threading import Thread
 import threading
+from capella_utils.dedicated import CapellaUtils as DedicatedUtils
+from TestInput import TestInputServer
 
 
 class OPD:
@@ -79,8 +82,10 @@ class OPD:
                  Bucket.historyRetentionBytes: self.bucket_history_retention_bytes,
                  Bucket.historyRetentionSeconds: self.bucket_history_retention_seconds})
 
-            self.bucket_util.create_bucket(cluster, bucket)
             bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
+            if bucket.loadDefn.get("name"):
+                bucket.name = bucket.loadDefn.get("name")
+            self.bucket_util.create_bucket(cluster, bucket)
 
         # rebalance the new buckets across all nodes.
         self.log.info("Rebalance Starts")
@@ -281,7 +286,7 @@ class OPD:
                 self.available_servers = [servs for servs in self.available_servers
                                           if servs not in servers]
         if "index" in services:
-            services=["index,n1ql"]
+            services=["index,n1ql"] * len(services)
 
         print "Servers coming in : %s with services: %s" % ([server.ip for server in self.servs_in], services)
         print "Servers going out : %s" % ([server.ip for server in self.servs_out])
@@ -607,7 +612,8 @@ class OPD:
         self.table.display("Docs statistics")
 
     def perform_load(self, wait_for_load=True,
-                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True):
+                     validate_data=True, cluster=None, buckets=None, overRidePattern=None, skip_default=True,
+                     wait_for_stats=True):
         self.get_memory_footprint()
         buckets = buckets or cluster.buckets
         self._loader_dict(cluster, buckets, overRidePattern, skip_default=skip_default)
@@ -641,7 +647,7 @@ class OPD:
                         i -= 1
 
         if wait_for_load:
-            self.wait_for_doc_load_completion(cluster, tasks)
+            self.wait_for_doc_load_completion(cluster, tasks, wait_for_stats)
             self.get_memory_footprint()
         else:
             return tasks
@@ -1058,3 +1064,37 @@ class OPD:
 
         query_monitor = threading.Thread(target=check_query_stats)
         query_monitor.start()
+
+    def refresh_cluster(self, tenant, cluster, type="dedicated"):
+        while True:
+            if cluster.nodes_in_cluster:
+                self.log.info("Cluster Nodes: {}".format(cluster.nodes_in_cluster))
+                try:
+                    cluster.refresh_object(self.cluster_util.get_nodes(
+                        random.choice(cluster.nodes_in_cluster)))
+                    break
+                except ServerUnavailableException:
+                    pass
+                except IndexError:
+                    pass
+            else:
+                self.log.critical("Cluster object: Nodes in cluster are reset by rebalance task.")
+                self.sleep(30)
+                self.servers = DedicatedUtils.get_nodes(
+                    self.pod, tenant, cluster.id)
+                nodes = list()
+                for server in self.servers:
+                    temp_server = TestInputServer()
+                    temp_server.ip = server.get("hostname")
+                    temp_server.hostname = server.get("hostname")
+                    temp_server.services = server.get("services")
+                    temp_server.port = "18091"
+                    temp_server.rest_username = cluster.username
+                    temp_server.rest_password = cluster.password
+                    temp_server.hosted_on_cloud = True
+                    temp_server.memcached_port = "11207"
+                    temp_server.type = type
+                    if type == "columnar":
+                        temp_server.cbas_port = 18095
+                    nodes.append(temp_server)
+                cluster.refresh_object(nodes)
