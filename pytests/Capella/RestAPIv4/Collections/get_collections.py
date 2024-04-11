@@ -42,18 +42,6 @@ class GetCollection(GetScope):
 
         super(GetCollection, self).tearDown()
 
-    def validate_collection_api_response(self, expected_res, actual_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(expected_res[key], dict):
-                self.validate_collection_api_response(
-                    expected_res[key], actual_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
-
     def test_api_path(self):
         testcases = [
             {
@@ -87,8 +75,9 @@ class GetCollection(GetScope):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -101,8 +90,9 @@ class GetCollection(GetScope):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -115,8 +105,9 @@ class GetCollection(GetScope):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -198,7 +189,7 @@ class GetCollection(GetScope):
 
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
-                "/{}/collections/"
+                "/{}/collections"
 
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.collection_name)

@@ -661,7 +661,8 @@ class APIBase(CouchbaseBaseTest):
                           resource_id=None):
 
         # Condition is for Sample Buckets delete testcases.
-        if "code" in result.content and result.json()["code"] == 6008:
+        if ("code" in result.content and result.json()["code"] == 6008 and
+                success_codes == 6008):
             return True
 
         if result.status_code in success_codes:
@@ -1025,16 +1026,16 @@ class APIBase(CouchbaseBaseTest):
     def create_scope_to_be_tested(self, org_id, proj_id, clus_id, buck_id):
         self.update_auth_with_api_token(self.org_owner_key["token"])
 
-        new_scope_name = self.generate_random_string(5, False, self.prefix)
+        name = self.prefix + "Scope_Delete"
         res = self.capellaAPI.cluster_ops_apis.create_scope(
-            org_id, proj_id, clus_id, buck_id, new_scope_name)
+            org_id, proj_id, clus_id, buck_id, name)
         if res.status_code == 429:
             self.handle_rate_limit(int(res.headers["Retry-After"]))
             res = self.capellaAPI.cluster_ops_apis.create_scope(
-                org_id, proj_id, clus_id, buck_id, new_scope_name)
+                org_id, proj_id, clus_id, buck_id, name)
         if res.status_code == 201:
-            self.log.debug("New scope Name: {}".format(new_scope_name))
-            return new_scope_name
+            self.log.debug("New scope Name: {}".format(name))
+            return name
         self.log.error(res.content)
         self.fail("!!!...Scope creation unsuccessful...!!!")
 
@@ -1042,16 +1043,16 @@ class APIBase(CouchbaseBaseTest):
                                        buck_id, scope_name):
         self.update_auth_with_api_token(self.org_owner_key["token"])
 
-        new_coll_name = self.generate_random_string(5, False, self.prefix)
+        name = self.prefix + "Collections_Delete"
         res = self.capellaAPI.cluster_ops_apis.create_collection(
-            org_id, proj_id, clus_id, buck_id, scope_name, new_coll_name)
+            org_id, proj_id, clus_id, buck_id, scope_name, name)
         if res.status_code == 429:
             self.handle_rate_limit(int(res.headers["Retry-After"]))
             res = self.capellaAPI.cluster_ops_apis.create_collection(
-                org_id, proj_id, clus_id, buck_id, scope_name, new_coll_name)
+                org_id, proj_id, clus_id, buck_id, scope_name, name)
         if res.status_code == 201:
-            self.log.debug("New collection Name: {}".format(new_coll_name))
-            return new_coll_name
+            self.log.debug("New collection Name: {}".format(name))
+            return name
         self.log.error(res.content)
         self.fail("!!!...Collection creation unsuccessful...!!!")
 
@@ -1086,7 +1087,7 @@ class APIBase(CouchbaseBaseTest):
                 self.handle_rate_limit(int(res.headers["Retry-After"]))
                 res = self.capellaAPI.cluster_ops_apis.delete_scope(
                     org_id, proj_id, clus_id, buck_id, scope)
-            if res.status_code != 200:
+            if res.status_code != 204:
                 self.log.warning("Error while deleting scope {}".format(scope))
                 self.log.error("Response: {}".format(res.content))
                 scopes_deletion_failed = True
@@ -1107,7 +1108,7 @@ class APIBase(CouchbaseBaseTest):
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.capellaAPI.cluster_ops_apis.delete_collection(
                     org_id, proj_id, clus_id, buck_id, scope, collection)
-            if res.status_code != 200:
+            if res.status_code != 204:
                 self.log.warning("Error while deleting collection {}"
                                  .format(collection))
                 self.log.error("Response: {}".format(res.content))

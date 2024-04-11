@@ -57,20 +57,47 @@ class CreateCollection(GetScope):
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived"
+                               " to be a client error."
+                }
             }, {
                 "description": "Create collection but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived"
+                               " to be a client error."
+                }
             }, {
                 "description": "Create collection but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived"
+                               " to be a client error."
+                }
             }, {
                 "description": "Create collection but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
@@ -82,7 +109,14 @@ class CreateCollection(GetScope):
                 "invalid_scopeName": self.replace_last_character(
                     self.scope_name),
                 "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_error": {
+                    "code": 11002,
+                    "hint": "The requested scope details could not be "
+                            "found or fetched. Please ensure that the "
+                            "correct scope name is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Scope Not Found"
+                }
             }
         ]
         failures = list()
@@ -119,7 +153,7 @@ class CreateCollection(GetScope):
 
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
-                "/{}/collections/"
+                "/{}/collections"
 
             if self.validate_testcase(result, [201], testcase, failures):
                 self.collections.append(collection_name)
