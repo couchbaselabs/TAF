@@ -358,7 +358,7 @@ class CopyToKv(ColumnarBaseTest):
             if not all(results):
                 self.fail("Mismatch found in Copy To KV")
 
-    def negative_cases_invalid_name(self):
+    def test_negative_cases_invalid_name(self):
         self.base_infra_setup()
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
         remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
@@ -398,7 +398,7 @@ class CopyToKv(ColumnarBaseTest):
         if not all(results):
             self.fail("Negative test for invalid names failed")
 
-    def drop_link_during_copy_to_kv(self):
+    def test_drop_link_during_copy_to_kv(self):
         self.base_infra_setup()
         remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
         datasets = self.cbas_util.get_all_dataset_objs("external")
@@ -413,10 +413,18 @@ class CopyToKv(ColumnarBaseTest):
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
+            expected_error = self.input.param("expected_error")
+            if remote_link.database_name == "Default":
+                expected_error = expected_error.format(remote_link.dataverse_name + '.' + remote_link.name)
+            else:
+                expected_error = expected_error.format(remote_link.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                       "link_name": remote_link.full_name}))
+                       "link_name": remote_link.full_name,
+                       "validate_error_msg": self.input.param("validate_error", False),
+                       "expected_error": expected_error,
+                       "expected_error_code": self.input.param("expected_error_code")}))
 
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         time.sleep(4)
@@ -434,9 +442,10 @@ class CopyToKv(ColumnarBaseTest):
                 new_remote_link = i
                 break
         for i in range(len(datasets)):
-            remote_dataset = self.cbas_util.create_remote_dataset_obj(self.provisioned_bucket_id, self.scope_name,
-                                                                      provisioned_collections[i], new_remote_link,
-                                                                      capella_as_source=True)
+            remote_dataset = self.cbas_util.create_remote_dataset_obj(self.cluster, self.provisioned_bucket_name,
+                                                                      self.provisioned_scope_name,
+                                                                      provisioned_collections[i], remote_link,
+                                                                      capella_as_source=True)[0]
             if not self.cbas_util.create_remote_dataset(self.cluster, remote_dataset.name,
                                                         remote_dataset.full_kv_entity_name,
                                                         remote_dataset.link_name,

@@ -126,8 +126,9 @@ class SDKClientPool(object):
             return client
         while client is None:
             self.clients[cluster.name]["lock"].acquire()
-            client = self.clients[cluster.name]["idle_clients"].pop()
-            self.clients[cluster.name]["busy_clients"].append(client)
+            if len(self.clients[cluster.name]["idle_clients"]) > 0:
+                client = self.clients[cluster.name]["idle_clients"].pop()
+                self.clients[cluster.name]["busy_clients"].append(client)
             self.clients[cluster.name]["lock"].release()
         return client
 
