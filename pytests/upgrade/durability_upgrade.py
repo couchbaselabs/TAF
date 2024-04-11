@@ -1,4 +1,5 @@
 import random
+import threading
 import time
 from random import choice
 from threading import Thread
@@ -699,6 +700,60 @@ class UpgradeTests(UpgradeBase):
         self.upgrade_version = self.upgrade_chain[0]
         self.PrintStep("Starting rebalance/failover tasks post downgrade")
         self.tasks_post_upgrade()
+
+    def test_upgrade_with_large_docs(self):
+
+        # Number of docs of different sizes
+        num_2mb_docs = self.input.param("num_2mb_docs", 1000)
+        num_4mb_docs = self.input.param("num_4mb_docs", 1000)
+        num_8mb_docs = self.input.param("num_8mb_docs", 1000)
+        num_16mb_docs = self.input.param("num_16mb_docs", 500)
+        num_20mb_docs = self.input.param("num_20mb_docs", 500)
+        upgrade_data_load = self.input.param("upgrade_data_load", False)
+
+        bucket = self.cluster.buckets[0]
+
+        # Initial data load
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_2mb_docs, 2548000, "2mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_4mb_docs, 4548000, "4mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_8mb_docs, 8548000, "8mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_16mb_docs, 16548000, "16mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, num_20mb_docs, 20548000, "20mbbig_docs")
+
+        self.sleep(20, "Wait for num_items to get reflected")
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        self.upgrade_version = self.upgrade_chain[-1]
+        self.PrintStep("Starting the upgrade of nodes to {0}".format(self.upgrade_version))
+
+        node_to_upgrade = self.fetch_node_to_upgrade()
+        itr = 0
+
+        while node_to_upgrade is not None:
+            self.log.info("Selected node for upgrade: {}".format(node_to_upgrade.ip))
+
+            if upgrade_data_load:
+                self.log.info("Starting data load during rebalance")
+                pillowfight_thread = threading.Thread(target=self.load_data_cbc_pillowfight,
+                            args=[self.cluster.master, bucket, 5000, 1548000, "1mbbig_docs", 1, 10])
+                pillowfight_thread.start()
+
+            if self.upgrade_type in ["failover_delta_recovery",
+                                     "failover_full_recovery"]:
+                self.upgrade_function[self.upgrade_type](node_to_upgrade)
+            else:
+                self.upgrade_function[self.upgrade_type](node_to_upgrade,
+                                                        self.upgrade_version)
+            if upgrade_data_load:
+                pillowfight_thread.join()
+
+            itr += 1
+            self.PrintStep("Upgrade of node {0} done".format(itr))
+            self.cluster_util.print_cluster_stats(self.cluster)
+            node_to_upgrade = self.fetch_node_to_upgrade()
+
+        self.PrintStep("Upgrade of the whole cluster complete")
+
 
     def test_bucket_durability_upgrade(self):
         self.key = self.input.param("key", "test_collections")

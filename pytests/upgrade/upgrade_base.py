@@ -96,6 +96,11 @@ class UpgradeBase(BaseTestCase):
         self.index_quota_mem = self.input.param("index_quota_mem", 512)
         self.kv_quota_mem = self.input.param("kv_quota_mem", 6000)
 
+        # Input params for large doc upgrade tests
+        self.large_doc_upgrade = self.input.param("large_doc_upgrade", False)
+        self.bucket_replicas = self.input.param("bucket_replicas", 0)
+        self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
+
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
         community_upgrade = self.input.param("community_upgrade", False)
@@ -235,7 +240,10 @@ class UpgradeBase(BaseTestCase):
             self.log.info("Rebalance retry settings = {}".format(res))
 
         # Creating buckets from spec file
-        CollectionBase.deploy_buckets_from_spec_file(self)
+        if not self.large_doc_upgrade:
+            CollectionBase.deploy_buckets_from_spec_file(self)
+        else:
+            self.create_bucket_for_large_doc_upgrades()
 
         self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
@@ -1064,6 +1072,47 @@ class UpgradeBase(BaseTestCase):
         self.log.info("Number of failed queries = {}".format(total_queries - success_query_count))
         self.log.info("Failed queries = {}".format(failed_queries))
 
+    def create_bucket_for_large_doc_upgrades(self):
+
+        rest = RestConnection(self.cluster.master)
+        pools_info = rest.get_pools_default()
+        kv_quota = pools_info["memoryQuota"]
+        bucket_spec = self.bucket_util.get_bucket_template_from_package(self.spec_name)
+        bucket_spec[MetaConstants.USE_SIMPLE_NAMES] = True
+        bucket_spec[Bucket.replicaNumber] = self.bucket_replicas
+        if self.bucket_ram_quota is None:
+            bucket_spec[Bucket.ramQuotaMB] = kv_quota - 2000
+        else:
+            bucket_spec[Bucket.ramQuotaMB] = self.bucket_ram_quota
+
+        CollectionBase.over_ride_bucket_template_params(self, self.bucket_storage,
+                                                        bucket_spec)
+        self.bucket_util.create_buckets_using_json_data(self.cluster, bucket_spec)
+
+        if float(self.upgrade_chain[0][:3]) < 7.6:
+            for bucket in self.cluster.buckets:
+                for coll in bucket.scopes[CbServer.system_scope].collections:
+                    bucket.scopes[CbServer.system_scope].collections.pop(coll)
+                bucket.scopes.pop(CbServer.system_scope)
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+    def load_data_cbc_pillowfight(self, server, bucket, items, doc_size, key_prefix="test_docs", threads=1, ops_rate=None):
+        shell = RemoteMachineShellConnection(server)
+
+        self.log.info("Loading {0} items of doc size: {1} into the bucket with cbc-pillowfight".format(items, doc_size))
+        pillowfight_base_cmd = "/opt/couchbase/bin/cbc-pillowfight -U {0}/{1} -u Administrator -P password -I {2}" \
+                                " -t {3} -m {4} -M {4} --populate-only --random-body --key-prefix={5} -Dtimeout=10"
+
+        cmd = pillowfight_base_cmd.format(server.ip, bucket.name, items, threads, doc_size, key_prefix)
+
+        if ops_rate is not None:
+            cmd += " --rate-limit {}".format(ops_rate)
+
+        self.log.info("Executing pillowfight command = {}".format(cmd))
+        o, e = shell.execute_command(cmd)
+        self.sleep(30, "Wait after executing pillowfight command")
+        shell.disconnect()
 
     def PrintStep(self, msg=None):
         print "\n"
