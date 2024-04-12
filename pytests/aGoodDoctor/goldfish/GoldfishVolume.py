@@ -264,7 +264,7 @@ class Columnar(BaseTestCase, OPD):
                 self.task_manager.get_task_result(task)
                 self.assertTrue(task.result, "Cluster deployment failed!")
             self.sleep(60)
-        for i in range(self.iterations-1, -1):
+        for i in range(self.iterations-1, -1, -1):
             self.PrintStep("Scaling IN operation: %s" % str(i))
             tasks = list()
             for tenant in self.tenants:
