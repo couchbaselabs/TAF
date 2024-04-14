@@ -68,7 +68,6 @@ class GetCluster(GetProject):
             self.organisation_id, self.project_id,
             self.expected_result["name"],
             self.expected_result['cloudProvider'],
-            self.expected_result['couchbaseServer'],
             self.expected_result['serviceGroups'],
             self.expected_result['availability'],
             self.expected_result['support'])
@@ -98,7 +97,7 @@ class GetCluster(GetProject):
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
-        if not self.verify_project_empty(self.project_id):
+        if not self.wait_for_deletion(self.project_id, self.cluster_id):
             self.fail("Cluster could not be destroyed")
         self.log.info("Cluster destroyed successfully.")
 
