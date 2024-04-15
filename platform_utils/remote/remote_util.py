@@ -3426,7 +3426,7 @@ class RemoteMachineShellConnection(KeepRefs):
                                 ' ').rstrip('\\n').rstrip(' ')
                             is_version_id = True
                         elif line.startswith('PRETTY_NAME'):
-                            os_pretty_name = line.split('=')[1].replace('"', '')
+                            os_pretty_name = line.split('=')[1].strip("\n").replace('"', '')
                             is_pretty_name = True
                         line = file.readline()
 
