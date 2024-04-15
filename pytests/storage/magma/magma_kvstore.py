@@ -1,4 +1,6 @@
+import os
 import threading
+import time
 
 from cb_constants.CBServer import CbServer
 from magma_base import MagmaBaseTest
@@ -384,3 +386,106 @@ class KVStoreTests(MagmaBaseTest):
             for task in task_info:
                 self.task_manager.get_task_result(task)
             count += 1
+
+    def test_cbstats_slow_getStats_ops(self):
+
+        def run_cbstats_loop(server, cmd, iter):
+            cbstats_shell = RemoteMachineShellConnection(server)
+            self.PrintStep("Running cbstats all command in a loop")
+            for i in range(iter):
+                self.log.info("Executing cbstats command iteration: {}".format(i+1))
+                cbstats_shell.execute_command(cmd)
+                time.sleep(1)
+            cbstats_shell.disconnect()
+
+        bucket = self.cluster.buckets[0]
+        self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster,
+                                                               self.cluster.nodes_in_cluster)
+        cbstats_iter = self.input.param("cbstats_iter", 300)
+        data_load_items = self.input.param("data_load_items", 15000000)
+        max_getStats_time = self.input.param("max_getStats_time", 10000) # unit in microSeconds
+
+        self.create_start = 0
+        self.create_end = data_load_items
+        self.PrintStep("Inserting {} items in each collection".format(self.create_end))
+        self.new_loader()
+
+        # Running cbstats commands in parallel during data load
+        cbstats_cmd = "/opt/couchbase/bin/cbstats {0}:11210 -u Administrator -p password -b {1} all" \
+                        .format(self.cluster.master.ip, bucket.name)
+        run_cbstats_loop(self.cluster.master, cbstats_cmd, cbstats_iter)
+
+        self.doc_loading_tm.getAllTaskResult()
+        self.printOps.end_task()
+
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+        max_getStats_times = self.parse_logs_stat_histogram(self.cluster.master, "getStatsTime")
+        for time_taken in max_getStats_times:
+            err_msg = "Slow getStats operations with duration {} microseconds".format(time_taken)
+            self.assertTrue(time_taken < max_getStats_time, err_msg)
+        self.log.info("No slow getStats operations were found")
+
+
+    def parse_logs_stat_histogram(self, server, stat_name):
+
+        logs_path = "/cb_logs"
+        file_name = "stats.log"
+
+        self.PrintStep("Parsing stat '{0}' histogram in {1}".format(stat_name, file_name))
+
+        shell = RemoteMachineShellConnection(server)
+
+        # Install unzip on node
+        shell.execute_command("apt-get install unzip")
+
+        # Create a directory to store cbcollect_info logs
+        shell.execute_command("mkdir {}".format(logs_path))
+
+        # Trigger cbcollect
+        self.log.info("Collecting cbcollect_info logs")
+        shell.execute_command("/opt/couchbase/bin/cbcollect_info {}/logs1.zip".format(logs_path))
+        shell.execute_command("unzip {0}/logs1.zip -d {1}".format(logs_path, logs_path))
+
+        # Identify the unzipped cbcollect_info folder
+        o, e = shell.execute_command("ls {}".format(logs_path))
+        for path in o:
+            if "zip" not in path:
+                cb_logs_folder = path[:-1].strip()
+
+        complete_path = os.path.join(logs_path, cb_logs_folder, file_name)
+
+        # Grep for lines containing the stat keyword
+        grep_cmd = "grep -n -i '{0}' {1}".format(stat_name, complete_path)
+        grep_output, e = shell.execute_command(grep_cmd)
+
+        # Store file data in a variable to parse it
+        lines, err = shell.execute_command("cat {}".format(complete_path))
+
+        # Extract line numbers from grep output
+        line_nums = []
+        for line in grep_output:
+            line_nums.append(int(line.split(":")[0].strip()))
+
+        # Iterate from the start to the end of the histogram to find max range
+        max_get_time_range = []
+        for num in line_nums:
+            c = num
+            while 1:
+                st = lines[c].split(':')[0].strip()
+                if st == "Avg":
+                    max_get_time_range.append(lines[c-1])
+                    break
+                c += 1
+
+        max_get_times = []
+        for time_range in max_get_time_range:
+            range_time = time_range.split(":")[0].strip()
+            max_get_times.append(int(range_time.split("-")[1].strip()[:-2]))
+
+        self.log.info("Max getStats time duration in microSeconds = {}".format(max_get_times))
+
+        # Delete logs directory
+        shell.execute_command("rm -rf {}".format(logs_path+"/"))
+
+        return max_get_times
