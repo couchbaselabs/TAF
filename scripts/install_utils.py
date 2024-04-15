@@ -92,6 +92,12 @@ class NodeHelper:
         if self.info.deliverable_type == "dmg":
             major_version = os.split('.')
             os = major_version[0] + '.' + major_version[1]
+        if self.info.distribution_type == "Amazon Linux 2":
+            os = "amzn2"
+        if self.info.distribution_type == "Amazon Linux 2023":
+            os = "al2023"
+        if self.info.distribution_type == "CBL-Mariner/Linux":
+            os = "mariner2"
         return os
 
     def uninstall_cb(self):
@@ -102,6 +108,8 @@ class NodeHelper:
             need_nonroot_relogin = True
         if self.actions_dict[self.info.deliverable_type]["uninstall"]:
             cmd = self.actions_dict[self.info.deliverable_type]["uninstall"]
+            if "mariner" in self.get_os():
+                cmd = self.actions_dict[self.info.deliverable_type]["mariner_uninstall"]
             if "msi" in cmd:
                 '''WINDOWS UNINSTALL'''
                 self.shell.terminate_processes(self.info, [s for s in testconstants.WIN_PROCESSES_KILLED])
@@ -170,6 +178,11 @@ class NodeHelper:
         if self.actions_dict[self.info.deliverable_type]["install"]:
             if "suse" in self.get_os():
                 cmd = self.actions_dict[self.info.deliverable_type]["suse_install"]
+            elif "mariner" in self.get_os():
+                cmd = self.actions_dict[self.info.deliverable_type]["mariner_install"]
+                cmd_d = self.actions_dict[self.info.deliverable_type][
+                    "mariner_install"]
+                cmd_debug = None
             else:
                 cmd = self.actions_dict[self.info.deliverable_type]["install"]
                 cmd_d = self.actions_dict[self.info.deliverable_type]["install"]

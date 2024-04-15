@@ -31,11 +31,12 @@ SUSE = ["suse12", "suse15"]
 UBUNTU = ["ubuntu16.04", "ubuntu18.04", "ubuntu20.04","ubuntu22.04"]
 ALMA = ["alma9"]
 ROCKY = ['rocky9']
-LINUX_DISTROS = AMAZON + CENTOS + DEBIAN + OEL + RHEL + SUSE + UBUNTU + ALMA + ROCKY
+MARINER = ["mariner2"]
+LINUX_DISTROS = AMAZON + CENTOS + DEBIAN + OEL + RHEL + SUSE + UBUNTU + ALMA + ROCKY + MARINER
 MACOS_VERSIONS = ["10.13", "10.14", "10.15", "11.1", "11.2", "11.3", "12.3", "macos"]
 WINDOWS_SERVER = ["2016", "2019", "2022", "windows"]
 SUPPORTED_OS = LINUX_DISTROS + MACOS_VERSIONS + WINDOWS_SERVER
-X86 = CENTOS + SUSE + RHEL + OEL + AMAZON + ALMA + ROCKY
+X86 = CENTOS + SUSE + RHEL + OEL + AMAZON + ALMA + ROCKY + MARINER
 LINUX_AMD64 = DEBIAN + UBUNTU
 AMD64 = DEBIAN + UBUNTU + WINDOWS_SERVER
 DEBUG_INFO_SUPPORTED = CENTOS + SUSE + RHEL + OEL + AMAZON + DEBIAN + UBUNTU + ALMA + ROCKY
@@ -154,6 +155,8 @@ CMDS = {
             "echo never > /sys/kernel/mm/transparent_hugepage/enabled; " +
             "echo never > /sys/kernel/mm/transparent_hugepage/defrag; ",
         "suse_install": "rpm -i buildpath",
+        "mariner_install" : "tdnf -y install buildpath > /dev/null && echo 1 || echo 0",
+        "mariner_uninstall" : "tdnf -y remove couchbase-server.x86_64 > /dev/null; rm -rf /opt/couchbase",
         "post_install": "systemctl -q is-active couchbase-server && echo 1 || echo 0",
         "post_install_retry": "systemctl daemon-reexec; systemctl restart couchbase-server",
         "init": None,
