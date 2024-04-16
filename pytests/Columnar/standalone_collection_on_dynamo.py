@@ -7,7 +7,7 @@ import random
 from Queue import Queue
 import time
 
-from CbasLib.cbas_entity import ExternalDB
+from CbasLib.cbas_entity_columnar import ExternalDB
 from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from awsLib.s3_data_helper import perform_S3_operation

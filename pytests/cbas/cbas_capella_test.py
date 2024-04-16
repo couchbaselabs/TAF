@@ -12,7 +12,7 @@ import time
 
 from BucketLib.BucketOperations import BucketHelper
 from CbasLib.CBASOperations import CBASHelper
-from CbasLib.cbas_entity import Dataverse, Synonym, CBAS_Index
+from CbasLib.cbas_entity_on_prem import Dataverse, Synonym, CBAS_Index
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cbas.cbas_base import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams

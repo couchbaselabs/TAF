@@ -34,11 +34,11 @@ from cbas.cbas_base import CBASBaseTest
 from security_utils.security_utils import SecurityUtils
 from rbac_utils.Rbac_ready_functions import RbacUtils
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
-from CbasLib.cbas_entity import ExternalDB
+from CbasLib.cbas_entity_columnar import ExternalDB
 import random, json, copy
 from BucketLib.BucketOperations import BucketHelper
 from cbas_utils.cbas_utils import CBASRebalanceUtil
-from CbasLib.cbas_entity import (
+from CbasLib.cbas_entity_columnar import (
     Remote_Dataset, External_Dataset, Standalone_Dataset)
 from Jython_tasks.task import RunQueriesTask
 

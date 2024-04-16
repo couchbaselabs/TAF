@@ -19,7 +19,7 @@ import requests
 from Columnar.templates.crudTemplate.docgen_template import Hotel
 from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
-from CbasLib.cbas_entity import (
+from CbasLib.cbas_entity_columnar import (
     Database, Dataverse, Remote_Link, External_Link, Kafka_Link, Dataset,
     Remote_Dataset, External_Dataset, Standalone_Dataset, Synonym,
     CBAS_Index)

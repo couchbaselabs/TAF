@@ -43,7 +43,7 @@ from Queue import Queue
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from CbasLib.CBASOperations import CBASHelper
-from CbasLib.cbas_entity import ExternalDB
+from CbasLib.cbas_entity_columnar import ExternalDB
 from Goldfish.columnar_base import GoldFishBaseTest
 from cbas_utils.cbas_utils import StandaloneCollectionLoader
 from cbas_utils.cbas_utils import CbasUtil, External_Dataset, Standalone_Dataset, Remote_Dataset
