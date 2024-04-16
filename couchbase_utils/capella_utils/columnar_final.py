@@ -17,10 +17,8 @@ from sdk_client3 import SDKClient
 class ColumnarInstance:
 
     def __init__(self, tenant_id, project_id, instance_name=None,
-                 instance_id=None,
-                 instance_endpoint=None, nebula_sdk_port=16001,
-                 nebula_rest_port=18001, api_access_key=None,
-                 api_secret_key=None, db_users=list()):
+                 instance_id=None, cluster_id=None, instance_endpoint=None,
+                 db_users=list()):
         self.tenant_id = tenant_id
         self.project_id = project_id
 
@@ -30,16 +28,11 @@ class ColumnarInstance:
             self.name = "Columnar_instance{0}".format(random.randint(1, 100000))
 
         self.instance_id = instance_id
+        self.cluster_id = cluster_id
+        self.srv = instance_endpoint
 
-        self.master = TestInputServer()
-        self.master.ip = instance_endpoint
-        self.master.port = nebula_rest_port
-        self.master.nebula_sdk_port = nebula_sdk_port
-        self.master.nebula_rest_port = nebula_rest_port
-        self.master.type = "columnar"
-        self.master.rest_username = api_access_key
-        self.master.rest_password = api_secret_key
-
+        self.servers = list()
+        self.master = None
         self.cbas_cc_node = self.master
 
         self.db_users = db_users
@@ -54,11 +47,18 @@ class ColumnarInstance:
 
 class DBUser:
 
-    def __init__(self, username="Administrator", password="password"):
+    def __init__(self, userId="", username="Administrator",
+                 password="password"):
         self.username = username
         self.password = password
-        self.permission = list()
+        self.roles = list()
+        self.privileges = list()
+        self.id = userId
 
+class ColumnarRole:
+    def __init__(self, roleId=""):
+        self.id = roleId
+        self.privileges = list()
 
 class ColumnarUtils:
 

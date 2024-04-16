@@ -80,8 +80,9 @@ class SDKClientPool(object):
             return client
         while client is None:
             self.clients[cluster.name]["lock"].acquire()
-            client = self.clients[cluster.name]["idle_clients"].pop()
-            self.clients[cluster.name]["busy_clients"].append(client)
+            if len(self.clients[cluster.name]["idle_clients"]) > 0:
+                client = self.clients[cluster.name]["idle_clients"].pop()
+                self.clients[cluster.name]["busy_clients"].append(client)
             self.clients[cluster.name]["lock"].release()
         return client
 
@@ -302,7 +303,10 @@ class SDKClient(object):
             else:
                 self.scheme = "couchbase"
             if not ClusterRun.is_enabled:
-                hosts.append(server.ip)
+                if server.type == "columnar":
+                    hosts.append(framework_cb_cluster_obj.srv)
+                else:
+                    hosts.append(server.ip)
 
         start_time = time.time()
         self.__create_conn(framework_cb_cluster_obj, servers, hosts)

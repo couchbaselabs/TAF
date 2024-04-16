@@ -63,8 +63,9 @@ class CreateScope(GetScope):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -77,8 +78,9 @@ class CreateScope(GetScope):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -91,8 +93,9 @@ class CreateScope(GetScope):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"

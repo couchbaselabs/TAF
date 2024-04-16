@@ -19,7 +19,7 @@ class DeleteCollection(GetCollection):
     def test_api_path(self):
         testcases = [
             {
-                "description": "Fetch info for a valid collection"
+                "description": "Delete a valid collection"
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/buckets/"
@@ -42,62 +42,65 @@ class DeleteCollection(GetCollection):
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
-                "description": "Fetch collection but with non-hex "
+                "description": "Delete collection but with non-hex "
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
                                " to be a client error."
                 }
             }, {
-                "description": "Fetch collection but with non-hex projectID",
+                "description": "Delete collection but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
                                " to be a client error."
                 }
             }, {
-                "description": "Fetch collection but with non-hex clusterID",
+                "description": "Delete collection but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
                                " to be a client error."
                 }
             }, {
-                "description": "Fetch collection but with invalid bucketID",
+                "description": "Delete collection but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "BucketID is invalid."
+                    "code": 6008,
+                    "hint": "The requested bucket does not exist. Please "
+                            "ensure that the correct bucket ID is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Unable to find the specified bucket."
                 }
             }, {
-                "description": "Fetch collection but with invalid scopeName",
+                "description": "Delete collection but with invalid scopeName",
                 "invalid_scopeName": self.replace_last_character(
                     self.scope_name),
                 "expected_status_code": 404,
@@ -110,7 +113,7 @@ class DeleteCollection(GetCollection):
                     "message": "Scope Not Found"
                 }
             }, {
-                "description": "Fetch collection but with invalid "
+                "description": "Delete collection but with invalid "
                                "collectionName",
                 "invalid_collectionName": self.replace_last_character(
                     self.collection_name),
@@ -160,7 +163,7 @@ class DeleteCollection(GetCollection):
 
             self.capellaAPI.cluster_ops_apis.collection_endpoint = "/v4/" \
                 "organizations/{}/projects/{}/clusters/{}/buckets/{}/scopes" \
-                "/{}/collections/"
+                "/{}/collections"
 
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")

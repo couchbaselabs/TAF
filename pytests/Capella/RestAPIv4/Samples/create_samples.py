@@ -53,8 +53,9 @@ class CreateSample(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -67,8 +68,9 @@ class CreateSample(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -81,8 +83,9 @@ class CreateSample(GetCluster):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -113,18 +116,17 @@ class CreateSample(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                     org, proj, clus, self.expected_res["name"])
-            if result.status_code == 201 and "expected_error" not in testcase:
+
+            self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
+                "organizations/{}/projects/{}/clusters/{}/sampleBuckets"
+
+            if self.validate_testcase(result, [201], testcase, failures):
                 self.log.info("Wait for data load in sample bucket to complete")
                 time.sleep(10)
                 sample_id = result.json()
                 self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     sample_id)
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
-
-            self.capellaAPI.cluster_ops_apis.sample_bucket_endpoint = "/v4/" \
-                "organizations/{}/projects/{}/clusters/{}/sampleBuckets"
 
         if failures:
             for fail in failures:
@@ -181,15 +183,14 @@ class CreateSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res["name"], header)
-            if result.status_code == 201 and "expected_error" not in testcase:
+
+            if self.validate_testcase(result, [201], testcase, failures):
                 self.log.info("Wait for data load in sample bucket to complete")
                 time.sleep(10)
                 sample_id = result.json()
                 self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     sample_id)
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
 
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
@@ -290,15 +291,14 @@ class CreateSample(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], self.expected_res["name"], kwarg)
-            if result.status_code == 201 and "expected_error" not in testcase:
+
+            if self.validate_testcase(result, [201], testcase, failures):
                 self.log.info("Wait for data load in sample bucket to complete")
                 time.sleep(10)
                 sample_id = result.json()
                 self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
                     sample_id)
-            else:
-                self.validate_testcase(result, 201, testcase, failures)
 
         if failures:
             for fail in failures:

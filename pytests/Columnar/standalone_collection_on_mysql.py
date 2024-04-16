@@ -7,7 +7,7 @@ Created on 25-OCTOBER-2023
 from Queue import Queue
 import time
 
-from CbasLib.cbas_entity import ExternalDB
+from CbasLib.cbas_entity_columnar import ExternalDB
 from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
 

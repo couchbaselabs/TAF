@@ -13,7 +13,7 @@ import global_vars
 from capella_utils.columnar_final import DBUser, ColumnarInstance, ColumnarUtils
 from threading import Thread
 from sdk_client3 import SDKClientPool
-from TestInput import TestInputSingleton
+from TestInput import TestInputSingleton, TestInputServer
 
 from capella_utils.dedicated import CapellaUtils
 
@@ -25,12 +25,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         self.log_setup_status(self.__class__.__name__, "started")
 
-        # Nebula ports
-        self.nebula_sdk_proxy_port = self.capella.get(
-            "nebula_sdk_proxy_port", 16001)
-        self.nebula_rest_proxy_port = self.capella.get(
-            "nebula_rest_proxy_port", 18001)
-
         self.num_nodes_in_columnar_instance = self.input.param(
             "num_nodes_in_columnar_instance", 0)
 
@@ -40,8 +34,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             instance_obj = ColumnarInstance(
                 tenant_id=tenant.id, project_id=project_id,
                 instance_name=None, instance_id=None, instance_endpoint=None,
-                nebula_sdk_port=self.nebula_sdk_proxy_port,
-                nebula_rest_port=self.nebula_rest_proxy_port, db_users=list())
+                db_users=list())
             instance_config = (
                 self.columnar_utils.generate_instance_configuration(
                     instance_obj.name,
@@ -69,7 +62,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 result.append("Columnar Instance {0} failed to deploy".format(
                     instance_obj.instance_id))
 
-        def get_instance_endpoint(
+        def populate_columnar_instance_obj(
                 tenant, project_id, instance_obj, result):
             response = self.columnar_utils.get_instance_info(
                 self.pod, tenant, project_id, instance_obj
@@ -77,7 +70,23 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             if not response:
                 result.append("Fetching Instance details for {0} "
                               "failed".format(instance_obj.instance_id))
-            instance_obj.master.ip = str(response["data"]["config"]["endpoint"])
+            instance_obj.srv = str(response["data"]["config"]["endpoint"])
+
+            instance_obj.cluster_id = response["data"]["config"]["clusterId"]
+
+            servers = CapellaUtils.get_nodes(self.pod, tenant,
+                                             instance_obj.cluster_id)
+            for server in servers:
+                temp_server = TestInputServer()
+                temp_server.ip = server.get("hostname")
+                temp_server.hostname = server.get("hostname")
+                temp_server.services = server.get("services")
+                temp_server.port = "18091"
+                temp_server.type = "columnar"
+                temp_server.memcached_port = "11207"
+                instance_obj.servers.append(temp_server)
+            instance_obj.master = instance_obj.servers[0]
+            instance_obj.cbas_cc_node = instance_obj.servers[0]
 
         # Columnar clusters can be reused within a test suite, only when they
         # are deployed on single tenant under single project.
@@ -110,10 +119,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                         tenant_id=self.tenant.id,
                         project_id=self.tenant.project_id,
                         instance_name=None, instance_id=instance_ids[i],
-                        instance_endpoint=None,
-                        nebula_sdk_port=self.nebula_sdk_proxy_port,
-                        nebula_rest_port=self.nebula_rest_proxy_port,
-                        db_users=list())
+                        instance_endpoint=None, db_users=list())
                     resp = self.columnar_utils.get_instance_info(
                         self.pod, self.tenant, self.tenant.project_id,
                         instance)
@@ -144,30 +150,30 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
             purge_lists(threads, thread_results)
 
-            fetch_instance_conn_str_threads = list()
-            fetch_instance_conn_str_thread_results = list()
+            populate_instance_obj_threads = list()
+            populate_instance_obj_thread_results = list()
             for instance in self.tenant.columnar_instances:
                 threads.append(Thread(
                     target=wait_for_instance_deployment,
                     name="waiter_thread",
                     args=(self.tenant, self.tenant.project_id, instance,
                           thread_results,)))
-                fetch_instance_conn_str_threads.append(Thread(
-                    target=get_instance_endpoint,
+                populate_instance_obj_threads.append(Thread(
+                    target=populate_columnar_instance_obj,
                     name="set_instance_ip_thread",
                     args=(self.tenant, self.tenant.project_id, instance,
-                          fetch_instance_conn_str_thread_results,)))
+                          populate_instance_obj_thread_results,)))
             self.start_threads(threads)
             if thread_results:
                 raise Exception("Failed while waiting for following instance "
                                 "to be deployed - {0}".format(thread_results))
             purge_lists(threads, thread_results)
 
-            self.start_threads(fetch_instance_conn_str_threads)
-            if fetch_instance_conn_str_thread_results:
+            self.start_threads(populate_instance_obj_threads)
+            if populate_instance_obj_thread_results:
                 raise Exception("Failed fetching connection string for "
                                 "following instances- {0}".format(
-                    fetch_instance_conn_str_thread_results))
+                    populate_instance_obj_thread_results))
 
             # Adding db user to each instance.
             for instance in self.tenant.columnar_instances:
@@ -179,8 +185,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                         instance)
                     count += 1
                     time.sleep(10)
-                instance.master.rest_username = str(resp["apikeyId"])
-                instance.master.rest_password = str(resp["secret"])
+                for server in instance.servers:
+                    server.rest_username = str(resp["apikeyId"])
+                    server.rest_password = str(resp["secret"])
         else:
             # Multiple tenants, projects and instances
             instance_count = self.input.param("num_columnar_instances", 1)
@@ -207,8 +214,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
             purge_lists(threads, thread_results)
 
-            fetch_instance_conn_str_threads = list()
-            fetch_instance_conn_str_thread_results = list()
+            populate_instance_obj_threads = list()
+            populate_instance_obj_thread_results = list()
             for tenant in self.tenants:
                 for instance in tenant.columnar_instances:
                     threads.append(Thread(
@@ -216,22 +223,22 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                         name="waiter_thread",
                         args=(tenant, instance.project_id, instance,
                               thread_results,)))
-                    fetch_instance_conn_str_threads.append(Thread(
-                        target=get_instance_endpoint,
+                    populate_instance_obj_threads.append(Thread(
+                        target=populate_columnar_instance_obj,
                         name="set_instance_ip_thread",
                         args=(tenant, instance.project_id, instance,
-                              fetch_instance_conn_str_thread_results,)))
+                              populate_instance_obj_thread_results,)))
             self.start_threads(threads)
             if thread_results:
                 raise Exception("Failed while waiting for following instance "
                                 "to be deployed - {0}".format(thread_results))
             purge_lists(threads, thread_results)
 
-            self.start_threads(fetch_instance_conn_str_threads)
-            if fetch_instance_conn_str_thread_results:
+            self.start_threads(populate_instance_obj_threads)
+            if populate_instance_obj_thread_results:
                 raise Exception("Failed fetching connection string for "
                                 "following instances- {0}".format(
-                    fetch_instance_conn_str_thread_results))
+                    populate_instance_obj_thread_results))
 
             # Adding db user to each instance.
             for tenant in self.tenants:
@@ -244,8 +251,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                             instance)
                         count += 1
                         time.sleep(10)
-                    instance.master.rest_username = str(resp["apikeyId"])
-                    instance.master.rest_password = str(resp["secret"])
+                    for server in instance.servers:
+                        server.rest_username = str(resp["apikeyId"])
+                        server.rest_password = str(resp["secret"])
 
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)

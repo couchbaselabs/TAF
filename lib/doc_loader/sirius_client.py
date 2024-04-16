@@ -432,7 +432,6 @@ class RESTClient(object):
         return payload
 
     def get_result_using_seed(self, response, load_type="bulk"):
-
         fail = {}
 
         if response.status_code != 200:
@@ -550,7 +549,6 @@ class RESTClient(object):
                                   replace_spec_options=None, get_spec_options=None, lookup_in_options=None,
                                   mutate_in_options=None, sub_doc_operation_config=None, retry=10, retry_interval=1,
                                   delete_record=False):
-
         self.retry = retry
         self.retry_interval = retry_interval
         self.delete_record = delete_record

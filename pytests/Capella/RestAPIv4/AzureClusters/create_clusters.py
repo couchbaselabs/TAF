@@ -21,7 +21,7 @@ class AzureAutoExpansion(GetProject):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": str(self.input.param("server_version", 7.2))
+                "version": str(self.input.param("server_version", 7.6))
             },
             "serviceGroups": [
                 {
@@ -51,11 +51,12 @@ class AzureAutoExpansion(GetProject):
         }
 
     def tearDown(self):
-        if not self.verify_project_empty(self.project_id):
+        if not self.wait_for_deletion(self.project_id, self.cluster_id):
             self.fail("Cluster could not be destroyed")
         super(AzureAutoExpansion, self).tearDown()
 
     def validate_auto_expansion(self, cluster_id):
+        self.cluster_id = cluster_id
         self.update_auth_with_api_token(self.org_owner_key["token"])
         res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
             self.organisation_id, self.project_id, cluster_id)
@@ -114,8 +115,9 @@ class AzureAutoExpansion(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -129,8 +131,9 @@ class AzureAutoExpansion(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -154,20 +157,17 @@ class AzureAutoExpansion(GetProject):
 
             result = self.select_CIDR(org, proj, self.expected_result["name"],
                                       self.expected_result['cloudProvider'],
-                                      self.expected_result['couchbaseServer'],
                                       self.expected_result['serviceGroups'],
                                       self.expected_result['availability'],
                                       self.expected_result['support'])
-            if result.status_code == 202 and "expected_error" not in testcase:
-                if not self.validate_auto_expansion(result.json()["id"]):
-                    self.log.warning("Result : {}".format(result.json()))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 202, testcase, failures)
-
             self.iteration += 1
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
+
+            if self.validate_testcase(result, [202], testcase, failures):
+                if not self.validate_auto_expansion(result.json()["id"]):
+                    self.log.warning("Result : {}".format(result.json()))
+                    failures.append(testcase["description"])
 
         if failures:
             for fail in failures:
@@ -214,21 +214,19 @@ class AzureAutoExpansion(GetProject):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
+
             result = self.select_CIDR(self.organisation_id, self.project_id,
                                       self.expected_result["name"],
                                       self.expected_result['cloudProvider'],
-                                      self.expected_result['couchbaseServer'],
                                       self.expected_result['serviceGroups'],
                                       self.expected_result['availability'],
                                       self.expected_result['support'], header)
-            if result.status_code == 202 and "expected_error" not in testcase:
+            self.iteration += 1
+
+            if self.validate_testcase(result, [202], testcase, failures):
                 if not self.validate_auto_expansion(result.json()["id"]):
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 202, testcase, failures)
-
-            self.iteration += 1
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -313,14 +311,12 @@ class AzureAutoExpansion(GetProject):
                                       self.expected_result['serviceGroups'],
                                       self.expected_result['availability'],
                                       self.expected_result['support'], **kwarg)
-            if result.status_code == 202 and "expected_error" not in testcase:
+            self.iteration += 1
+
+            if self.validate_testcase(result, [202], testcase, failures):
                 if not self.validate_auto_expansion(result.json()["id"]):
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 202, testcase, failures)
-
-            self.iteration += 1
 
         if failures:
             for fail in failures:

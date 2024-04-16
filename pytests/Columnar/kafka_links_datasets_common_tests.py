@@ -5,7 +5,7 @@ Created on 1-February-2024
 '''
 import random
 
-from CbasLib.cbas_entity import ExternalDB
+from CbasLib.cbas_entity_columnar import ExternalDB
 from Goldfish.columnar_base import GoldFishBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from threading import Thread

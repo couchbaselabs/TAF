@@ -24,7 +24,7 @@ import requests
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
 from CbasLib.CBASOperations import CBASHelper
-from CbasLib.cbas_entity import Dataverse, CBAS_Scope, Link, Dataset, \
+from CbasLib.cbas_entity_on_prem import Dataverse, CBAS_Scope, Link, Dataset, \
     CBAS_Collection, Synonym, CBAS_Index
 from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
 from common_lib import sleep

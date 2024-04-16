@@ -38,7 +38,7 @@ class ToggleAzureAutoExpansion(GetProject):
                 "cidr": CapellaUtils.get_next_cidr() + "/20"
             },
             "couchbaseServer": {
-                "version": str(self.input.param("server_version", 7.2))
+                "version": str(self.input.param("server_version", 7.6))
             },
             "serviceGroups": [
                 {
@@ -69,7 +69,6 @@ class ToggleAzureAutoExpansion(GetProject):
         result = self.select_CIDR(self.organisation_id, self.project_id,
                                   self.expected_result["name"],
                                   self.expected_result['cloudProvider'],
-                                  self.expected_result['couchbaseServer'],
                                   self.expected_result['serviceGroups'],
                                   self.expected_result['availability'],
                                   self.expected_result['support'])
@@ -85,11 +84,12 @@ class ToggleAzureAutoExpansion(GetProject):
     def tearDown(self):
         self.capellaAPI.cluster_ops_apis.delete_cluster(
             self.organisation_id, self.project_id, self.cluster_id)
-        if not self.verify_project_empty(self.project_id):
+        if not self.wait_for_deletion(self.project_id, self.cluster_id):
             self.fail("Cluster could not be destroyed")
         super(ToggleAzureAutoExpansion, self).tearDown()
 
     def validate_auto_expansion(self, cluster_id):
+        self.cluster_id = cluster_id
         self.update_auth_with_api_token(self.org_owner_key["token"])
         autoExpansion = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
             self.organisation_id, self.project_id, cluster_id
@@ -147,8 +147,9 @@ class ToggleAzureAutoExpansion(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -162,8 +163,9 @@ class ToggleAzureAutoExpansion(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -177,8 +179,9 @@ class ToggleAzureAutoExpansion(GetProject):
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
-                    "hint": "Check if all the required params are present "
-                            "in the request body.",
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
                     "httpStatusCode": 400,
                     "message": "The server cannot or will not process the "
                                "request due to something that is perceived"
@@ -213,15 +216,14 @@ class ToggleAzureAutoExpansion(GetProject):
                     org, proj, clus, self.expected_result["name"], "",
                     self.expected_result['support'],
                     self.update_service_group, False)
-            if result.status_code == 204 and "expected_error" not in testcase:
-                if not self.validate_auto_expansion(self.cluster_id):
-                    self.log.warning("Result : {}".format(result.content))
-                    failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
 
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
+
+            if self.validate_testcase(result, [204], testcase, failures):
+                if not self.validate_auto_expansion(self.cluster_id):
+                    self.log.warning("Result : {}".format(result.content))
+                    failures.append(testcase["description"])
 
         if failures:
             for fail in failures:
@@ -280,12 +282,11 @@ class ToggleAzureAutoExpansion(GetProject):
                     self.expected_result["name"], "",
                     self.expected_result['support'],
                     self.update_service_group, False, header)
-            if result.status_code == 204 and "expected_error" not in testcase:
+
+            if self.validate_testcase(result, [204], testcase, failures):
                 if not self.validate_auto_expansion(self.cluster_id):
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -390,12 +391,11 @@ class ToggleAzureAutoExpansion(GetProject):
                     testcase["clusterID"], self.expected_result["name"], "",
                     self.expected_result['support'], self.update_service_group,
                     False, **kwarg)
-            if result.status_code == 204 and "expected_error" not in testcase:
+
+            if self.validate_testcase(result, [204], testcase, failures):
                 if not self.validate_auto_expansion(self.cluster_id):
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 204, testcase, failures)
 
         if failures:
             for fail in failures:
