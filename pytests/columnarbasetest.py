@@ -88,6 +88,14 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             instance_obj.master = instance_obj.servers[0]
             instance_obj.cbas_cc_node = instance_obj.servers[0]
 
+        def allow_access_from_everywhere_on_instance(
+                tenant, project_id, instance_obj, result):
+            response = self.columnar_utils.allow_ip_on_instance(
+                self.pod, tenant, project_id, instance_obj)
+            if not response:
+                result.append("Setting Allow IP as 0.0.0.0/0  for instance {0}"
+                              "failed".format(instance_obj.instance_id))
+
         # Columnar clusters can be reused within a test suite, only when they
         # are deployed on single tenant under single project.
         # Set skip_redeploy to True if you want to reuse the columnar instance.
@@ -152,6 +160,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
             populate_instance_obj_threads = list()
             populate_instance_obj_thread_results = list()
+            allow_access_from_everywhere_threads = list()
+            allow_access_from_everywhere_thread_results = list()
             for instance in self.tenant.columnar_instances:
                 threads.append(Thread(
                     target=wait_for_instance_deployment,
@@ -163,6 +173,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                     name="set_instance_ip_thread",
                     args=(self.tenant, self.tenant.project_id, instance,
                           populate_instance_obj_thread_results,)))
+                allow_access_from_everywhere_threads.append(Thread(
+                    target=allow_access_from_everywhere_on_instance,
+                    name="allow_ip_thread",
+                    args=(self.tenant, self.tenant.project_id, instance,
+                          allow_access_from_everywhere_thread_results,)
+                ))
             self.start_threads(threads)
             if thread_results:
                 raise Exception("Failed while waiting for following instance "
@@ -174,6 +190,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 raise Exception("Failed fetching connection string for "
                                 "following instances- {0}".format(
                     populate_instance_obj_thread_results))
+
+            self.start_threads(allow_access_from_everywhere_threads)
+            if allow_access_from_everywhere_thread_results:
+                raise Exception("Failed setting allow access from everywhere "
+                                "on instances- {0}".format(
+                    allow_access_from_everywhere_thread_results))
 
             # Adding db user to each instance.
             for instance in self.tenant.columnar_instances:
@@ -216,6 +238,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
             populate_instance_obj_threads = list()
             populate_instance_obj_thread_results = list()
+            allow_access_from_everywhere_threads = list()
+            allow_access_from_everywhere_thread_results = list()
             for tenant in self.tenants:
                 for instance in tenant.columnar_instances:
                     threads.append(Thread(
@@ -228,6 +252,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                         name="set_instance_ip_thread",
                         args=(tenant, instance.project_id, instance,
                               populate_instance_obj_thread_results,)))
+                    allow_access_from_everywhere_threads.append(Thread(
+                        target=allow_access_from_everywhere_on_instance,
+                        name="allow_ip_thread",
+                        args=(self.tenant, self.tenant.project_id, instance,
+                              allow_access_from_everywhere_thread_results,)
+                    ))
             self.start_threads(threads)
             if thread_results:
                 raise Exception("Failed while waiting for following instance "
@@ -239,6 +269,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 raise Exception("Failed fetching connection string for "
                                 "following instances- {0}".format(
                     populate_instance_obj_thread_results))
+
+            self.start_threads(allow_access_from_everywhere_threads)
+            if allow_access_from_everywhere_thread_results:
+                raise Exception("Failed setting allow access from everywhere "
+                                "on instances- {0}".format(
+                    allow_access_from_everywhere_thread_results))
 
             # Adding db user to each instance.
             for tenant in self.tenants:
