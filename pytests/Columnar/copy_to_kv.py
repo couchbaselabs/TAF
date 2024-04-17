@@ -8,6 +8,7 @@ import time
 from Queue import Queue
 from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
+from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 
 
 class CopyToKv(ColumnarBaseTest):
@@ -48,7 +49,7 @@ class CopyToKv(ColumnarBaseTest):
 
         if hasattr(self, 'provisioned_bucket_id'):
             self.delete_capella_bucket(self.provisioned_bucket_id)
-        # super(ColumnarBaseTest, self).tearDown()
+        super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def base_infra_setup(self):
@@ -463,6 +464,43 @@ class CopyToKv(ColumnarBaseTest):
                 results.append(columnar_count != kv_count)
             if not all(results):
                 self.fail("Mismatch found in Copy To KV")
+
+    def test_remove_user_access_while_copy_to_kv(self):
+        capella_api_v2 = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key, self.tenant.api_access_key,
+                                      self.tenant.user, self.tenant.pwd)
+        self.remote_cluster = self.cb_clusters['C1']
+        new_db_user_id = capella_api_v2.create_db_user(self.tenant.id, self.tenant.project_id, self.remote_cluster.id,
+                                                       "CopyToKV", "Couchbase@123").json()['id']
+        self.remote_cluster.username = "CopyToKV"
+        self.base_infra_setup()
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        dataset = self.cbas_util.get_all_dataset_objs("external")[0]
+        link_properties = remote_link.properties
+        link_properties['username'] = "CopyToKV"
+        link_properties['password'] = "Couchbase@123"
+        self.cbas_util.alter_link_properties(self.cluster, link_properties)
+        jobs = Queue()
+        results = []
+        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
+        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
+        collection_name = self.create_capella_collection(self.provisioned_bucket_id,
+                                                             self.provisioned_scope_name)
+        collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
+                                           collection_name)
+
+        jobs.put((self.cbas_util.copy_to_kv,
+                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
+                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
+                       "link_name": remote_link.full_name,
+                       "validate_error_msg": self.input.param("validate_error", False),
+                       "expected_error": self.input.param("expected_error", ""),
+                       "expected_error_code": self.input.param("expected_error_code", "")}))
+
+        self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
+        time.sleep(10)
+        capella_api_v2.delete_db_user(self.tenant.id, self.tenant.project_id, self.remote_cluster.id, new_db_user_id)
+        jobs.join()
+
 
     def test_copy_to_kv_while_scaling(self):
         self.base_infra_setup()
