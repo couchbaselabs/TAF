@@ -169,7 +169,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                                        vbuckets=num_vb)
 
         # Fetch the profile_type from the master node
-        # Value will be default / serverless
+        # Value will be default / serverless / columnar
         CbServer.cluster_profile = \
             self.cluster_util.get_server_profile_type(self.servers)
 
@@ -246,6 +246,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.security_util.set_internal_creds_rotation_interval(self.cluster, self.int_pwd_rotn)
 
             if self.skip_setup_cleanup:
+                for server in self.servers:
+                    self.set_ports_for_server(server, "ssl")
                 # Update current server/service map and buckets for the cluster
                 for _, cluster in self.cb_clusters.items():
                     self.cluster_util.update_cluster_nodes_service_list(
@@ -412,13 +414,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.log.info("Initializing cluster : {0}".format(cluster_name))
         # This check is to set up compute storage separation for
         # analytics in serverless mode
+        self.aws_access_key = self.input.param("aws_access_key", None)
+        self.aws_secret_key = self.input.param("aws_secret_key", None)
+        self.aws_bucket_region = self.input.param("aws_bucket_region", None)
+        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_bucket_created = False
         if (self.analytics_compute_storage_separation and
                 CbServer.cluster_profile == "columnar"):
-            self.aws_access_key = self.input.param("aws_access_key", None)
-            self.aws_secret_key = self.input.param("aws_secret_key", None)
-            self.aws_bucket_region = self.input.param("aws_bucket_region",
-                                                      None)
-            self.aws_session_token = self.input.param("aws_session_token", "")
             for i in range(5):
                 try:
                     self.aws_bucket_name = "columnar-build-sanity-" + str(int(
@@ -437,6 +439,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         "Failed.".format(
                             self.aws_bucket_name, self.aws_bucket_region))
                     self.log.error(str(e))
+            if not self.aws_bucket_created:
+                self.fail("Unable to create S3 bucket.")
             self.log.info("Adding aws bucket credentials to analytics")
             rest = RestConnection(self.cluster.master)
             status = rest.configure_compute_storage_separation_for_analytics(
