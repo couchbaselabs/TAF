@@ -10,7 +10,6 @@ import random
 import string
 import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
-from TestInput import TestInputServer
 from sdk_client3 import SDKClient
 
 
@@ -111,6 +110,8 @@ class ColumnarUtils:
         if resp.status_code != 201:
             self.log.error("Unable to create columnar instance {0} in project "
                            "{1}".format(instance_config["name"], project_id))
+            if resp.content:
+                self.log.error("Error - {}".format(resp.content))
             return None
         resp = json.loads(resp.content)
         return resp["id"]

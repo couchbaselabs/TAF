@@ -776,11 +776,12 @@ class RebalanceTask(Task):
                                         "swap rebalance")
             self.state = "add_nodes"
             self.add_nodes()
-            # Validate the current orchestrator is selected as expected
-            result = global_vars.cluster_util.\
-                validate_orchestrator_selection(self.cluster)
-            if result is False:
-                return self.result
+            if CbServer.cluster_profile != "columnar":
+                # Validate the current orchestrator is selected as expected
+                result = global_vars.cluster_util.\
+                    validate_orchestrator_selection(self.cluster)
+                if result is False:
+                    return self.result
             self.state = "triggering"
             self.start_rebalance()
             if self.state == "trigger_failed":
@@ -838,11 +839,12 @@ class RebalanceTask(Task):
 
         self.complete_task()
 
-        # Validate the current orchestrator is selected as expected
-        result = global_vars.cluster_util.\
-            validate_orchestrator_selection(self.cluster, self.to_remove)
-        if result:
-            self.result = True
+        if CbServer.cluster_profile != "columnar":
+            # Validate the current orchestrator is selected as expected
+            result = global_vars.cluster_util.\
+                validate_orchestrator_selection(self.cluster, self.to_remove)
+            if result:
+                self.result = True
 
         if self.validate_bucket_ranking:
             # Validate if the vbucket movement is as per bucket ranking

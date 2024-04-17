@@ -413,7 +413,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
         # This check is to set up compute storage separation for
         # analytics in serverless mode
         if (self.analytics_compute_storage_separation and
-                CbServer.cluster_profile == "serverless"):
+                CbServer.cluster_profile == "columnar"):
             self.aws_access_key = self.input.param("aws_access_key", None)
             self.aws_secret_key = self.input.param("aws_secret_key", None)
             self.aws_bucket_region = self.input.param("aws_bucket_region",
@@ -421,8 +421,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.aws_session_token = self.input.param("aws_session_token", "")
             for i in range(5):
                 try:
-                    self.aws_bucket_name = "columnar-build-sanity-" + str(
-                        time.time())
+                    self.aws_bucket_name = "columnar-build-sanity-" + str(int(
+                        time.time()))
                     self.log.info("Creating S3 bucket")
                     self.aws_bucket_created = perform_S3_operation(
                         aws_access_key=self.aws_access_key,
@@ -595,6 +595,25 @@ class OnPremBaseTest(CouchbaseBaseTest):
             if cluster.sdk_client_pool:
                 cluster.sdk_client_pool.shutdown()
 
+        # delete aws bucket that was created for compute storage separation
+        if (self.analytics_compute_storage_separation and
+                CbServer.cluster_profile == "columnar"
+                and self.aws_bucket_created):
+            for cluster_name, cluster in self.cb_clusters.items():
+                self.log.info("Resetting cluster nodes")
+                self.node_utils.reset_cluster_nodes(self.cluster_util,
+                                                    cluster)
+            self.log.info("Deleting AWS S3 bucket - {}".format(
+                self.aws_bucket_name))
+            if not perform_S3_operation(
+                    aws_access_key=self.aws_access_key,
+                    aws_secret_key=self.aws_secret_key,
+                    aws_session_token=self.aws_session_token,
+                    delete_bucket=True,
+                    bucket_name=self.aws_bucket_name,
+                    region=self.aws_bucket_region):
+                self.log.error("AWS bucket failed to delete")
+
         result = self.check_coredump_exist(self.servers, force_collect=True)
         if self.skip_teardown_cleanup:
             self.log.debug("Skipping tearDownEverything")
@@ -615,23 +634,6 @@ class OnPremBaseTest(CouchbaseBaseTest):
         elif sys_event_validation_failure:
             self.log.critical("System event log validation failed: %s"
                               % sys_event_validation_failure)
-
-        # delete aws bucket that was created for compute storage separation
-        if (self.analytics_compute_storage_separation and
-                CbServer.cluster_profile == "serverless"
-                and self.aws_bucket_created):
-            for cluster_name, cluster in self.cb_clusters.items():
-                self.log.info("Resetting cluster nodes")
-                self.node_utils.reset_cluster_nodes(self.cluster_util, cluster)
-            self.log.info("Deleting AWS S3 bucket - {}".format(
-                self.aws_bucket_name))
-            if not perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    delete_bucket=True, bucket_name=self.aws_bucket_name,
-                    region=self.aws_bucket_region):
-                self.log.error("AWS bucket failed to delete")
 
         self.shutdown_task_manager()
 

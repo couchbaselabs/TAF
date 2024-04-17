@@ -2349,8 +2349,9 @@ class Dataset_Util(KafkaLink_Util):
             else:
                 sleep(2)
 
-        self.log.error("Dataset: {0} kv-items: {1} ds-items: {2}".format(
-            dataset_name, num_items, actual_doc_count))
+        self.log.error(
+            "Dataset: {0} Expected Doc Count: {1} Actual Doc Count: "
+            "{2}".format(dataset_name, num_items, actual_doc_count))
 
         return False
 
@@ -4039,7 +4040,6 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
     Note - Number of external collection should be same as number of 
     standalone collections to be created. 
     """
-
     def create_standalone_dataset_for_external_db_from_spec(
             self, cluster, cbas_spec):
         self.log.info("Creating Standalone Datasets for external database "

@@ -107,8 +107,23 @@ class CBASBaseTest(BaseTestCase):
         Since BaseTestCase will initialize at least one cluster, we need to
         initialize only total clusters required - 1.
         """
+        """
+        In case of On-Prem columnar tests, make sure to specify analytics 
+        cluster services first in conf file followed by services for remote 
+        cluster i.e. services_init=kv:cbas-cbas(analytics cluster)|
+        kv:n1ql:index-kv:n1ql:index(remote cluster), this is required so 
+        that we don't set compute storage separation for remote cluster. 
+        """
         cluster_name_format = "C%s"
         for i in range(1, self.num_of_clusters):
+            # Construct dict of mem. quota percent / mb per service
+            mem_quota_percent = dict()
+            reset_analytics_compute_storage_separation = False
+            if self.analytics_compute_storage_separation:
+                self.analytics_compute_storage_separation = False
+                # Construct dict of mem. quota percent per service
+                mem_quota_percent[CbServer.Services.KV] = 90
+                reset_analytics_compute_storage_separation = True
             start = end
             end += self.nodes_init[i]
             cluster_name = cluster_name_format % str(i+1)
@@ -118,9 +133,13 @@ class CBASBaseTest(BaseTestCase):
             self.cb_clusters[cluster_name] = cluster
             cluster.kv_nodes.append(cluster.master)
 
-            self.initialize_cluster(cluster_name, cluster,
-                                    services=self.services_init[i][0])
+            self.initialize_cluster(
+                cluster_name, cluster, services=self.services_init[i][0],
+                services_mem_quota_percent=mem_quota_percent
+            )
             cluster.master.services = self.services_init[i][0].replace(":", ",")
+            if reset_analytics_compute_storage_separation:
+                self.analytics_compute_storage_separation = True
 
             if "cbas" in cluster.master.services:
                 cluster.cbas_nodes.append(cluster.master)
