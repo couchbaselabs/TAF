@@ -33,9 +33,6 @@ py_executable=python3
 # True since the version_num is > "6.5"
 rerun_job=true
 
-echo "Set ALLOW_HTP to False so test could run."
-sed -i 's/ALLOW_HTP.*/ALLOW_HTP = False/' lib/testconstants.py
-
 set +e
 echo newState=available>propfile
 newState=available
@@ -214,18 +211,8 @@ sdk_client_params="-P transaction_version=$transaction_version -P client_version
 if [ $status -eq 0 ]; then
   desc2=`echo $descriptor | awk '{split($0,r,"-");print r[1],r[2]}'`
 
-  if [ $majorRelease = "3" ]; then
-     echo have a 3.x release
-     git checkout 0b2bb7a53e350f90737112457877ef2c05ca482a
-  elif [[ "$testrunner_tag" != "master" ]]; then
-     git checkout $testrunner_tag
-  fi
-  echo "Need to set ALLOW_HTP back to True to do git pull branch"
-  sed -i 's/ALLOW_HTP.*/ALLOW_HTP = True/' lib/testconstants.py
   git checkout ${branch}
   git pull origin ${branch}
-  echo "Set ALLOW_HTP to False so test could run."
-  sed -i 's/ALLOW_HTP.*/ALLOW_HTP = False/' lib/testconstants.py
 
   ###### To fix auto merge failures. Please revert this if this does not work.
   git fetch
