@@ -680,6 +680,8 @@ class APIBase(CouchbaseBaseTest):
                                            testcase["description"]))
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
+                else:
+                    return True
             else:
                 return True
         elif result.status_code >= 500:
@@ -776,33 +778,32 @@ class APIBase(CouchbaseBaseTest):
                         if service not in actual_res[key]:
                             return False
                     continue
-                for i in range(len(expected_res[key])):
-                    if (actual_res[key] is "data" and
-                            actual_res[key][i]["id"] != id):
+                for i in range(len(actual_res[key])):
+                    if key == "data" and actual_res[key][i]["id"] != id:
                         continue
                     if not self.validate_api_response(
-                            expected_res[key][i], actual_res[key][i], id):
+                            expected_res[key][0], actual_res[key][i], id):
                         return False
             elif expected_res[key] != actual_res[key]:
                 return False
         return True
 
-    def select_CIDR(self, org, proj, name, cloudProvider, serviceGroup,
+    def select_CIDR(self, org, proj, name, cloudProvider, serviceGroups,
                     availability, support, header=None, **kwargs):
         self.log.info("Selecting CIDR for cluster deployment.")
 
         start_time = time.time()
         while time.time() - start_time < 1800:
             result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                org, proj, name, cloudProvider, serviceGroup=serviceGroup,
-                availability=availability, support=support, header=header,
+                org, proj, name, cloudProvider, serviceGroups=serviceGroups,
+                availability=availability, support=support, headers=header,
                 **kwargs)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                    org, proj, name, cloudProvider, serviceGroup=serviceGroup,
-                    availability=availability, support=support, header=header,
-                    **kwargs)
+                    org, proj, name, cloudProvider,
+                    serviceGroups=serviceGroups, availability=availability,
+                    support=support, headers=header, **kwargs)
             if result.status_code != 422:
                 return result
             elif "Please ensure you are passing a unique CIDR block" in \
