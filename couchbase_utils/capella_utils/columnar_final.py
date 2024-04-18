@@ -10,7 +10,6 @@ import random
 import string
 import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
-from TestInput import TestInputServer
 from sdk_client3 import SDKClient
 
 
@@ -111,6 +110,8 @@ class ColumnarUtils:
         if resp.status_code != 201:
             self.log.error("Unable to create columnar instance {0} in project "
                            "{1}".format(instance_config["name"], project_id))
+            if resp.content:
+                self.log.error("Error - {}".format(resp.content))
             return None
         resp = json.loads(resp.content)
         return resp["id"]
@@ -265,9 +266,29 @@ class ColumnarUtils:
             tenant.id, project_id, instance.instance_id, api_key)
         if resp.status_code != 201:
             self.log.error(
-                "Unable to dekete API keys for Columnar instance {0} with ID "
+                "Unable to delete API keys for Columnar instance {0} with ID "
                 "{1}".format(instance.name, instance.instance_id))
             if resp.text:
                 self.log.error("Following error recieved {}".format(resp.text))
             return None
         return json.loads(resp.content)
+
+    def allow_ip_on_instance(self, pod, tenant, project_id, instance,
+                             ip="0.0.0.0/0", description=""):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.allow_ip(
+            tenant.id, project_id, instance.instance_id, ip, description)
+        if resp.status_code != 201:
+            if (resp.status_code == 422 and resp.json()["errorType"] ==
+                    "ErrAllowListsCreateDuplicateCIDR"):
+                return True
+            else:
+                self.log.error(
+                    "Unable to add IP {0} to Columnar instance {1} with ID "
+                    "{2}".format(ip, instance.name, instance.instance_id))
+                if resp.text:
+                    self.log.error("Following error recieved {}".format(resp.text))
+                return False
+        return True

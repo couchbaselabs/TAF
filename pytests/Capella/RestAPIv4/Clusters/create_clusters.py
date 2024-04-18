@@ -144,13 +144,11 @@ class CreateCluster(GetProject):
             elif "invalid_projectID" in testcase:
                 proj = testcase["invalid_projectID"]
 
-            result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                org, proj, self.expected_result["name"],
-                self.expected_result['cloudProvider'],
-                self.expected_result['couchbaseServer'],
-                self.expected_result['serviceGroups'],
-                self.expected_result['availability'],
-                self.expected_result['support'])
+            result = self.select_CIDR(org, proj, self.expected_result["name"],
+                                      self.expected_result['cloudProvider'],
+                                      self.expected_result['serviceGroups'],
+                                      self.expected_result['availability'],
+                                      self.expected_result['support'])
 
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
@@ -220,24 +218,14 @@ class CreateCluster(GetProject):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.create_cluster(
+
+            result = self.select_CIDR(
                 self.organisation_id, self.project_id,
                 self.expected_result["name"],
                 self.expected_result['cloudProvider'],
-                self.expected_result['couchbaseServer'],
                 self.expected_result['serviceGroups'],
                 self.expected_result['availability'],
                 self.expected_result['support'], headers=header)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                    self.organisation_id, self.project_id,
-                    self.expected_result["name"],
-                    self.expected_result['cloudProvider'],
-                    self.expected_result['couchbaseServer'],
-                    self.expected_result['serviceGroups'],
-                    self.expected_result['availability'],
-                    self.expected_result['support'], headers=header)
 
             self.validate_testcase(result, [422], testcase, failures)
 
@@ -326,24 +314,13 @@ class CreateCluster(GetProject):
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.cluster_ops_apis.create_cluster(
+            result = self.select_CIDR(
                 testcase["organizationID"], testcase["projectID"],
                 self.expected_result["name"],
                 self.expected_result['cloudProvider'],
-                self.expected_result['couchbaseServer'],
                 self.expected_result['serviceGroups'],
                 self.expected_result['availability'],
                 self.expected_result['support'], **kwarg)
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                    testcase["organizationID"], testcase["projectID"],
-                    self.expected_result["name"],
-                    self.expected_result['cloudProvider'],
-                    self.expected_result['couchbaseServer'],
-                    self.expected_result['serviceGroups'],
-                    self.expected_result['availability'],
-                    self.expected_result['support'], **kwarg)
 
             self.validate_testcase(result, [422], testcase, failures)
 
@@ -359,7 +336,6 @@ class CreateCluster(GetProject):
                           (self.organisation_id, self.project_id,
                            self.expected_result["name"],
                            self.expected_result['cloudProvider'],
-                           self.expected_result['couchbaseServer'],
                            self.expected_result['serviceGroups'],
                            self.expected_result['availability'],
                            self.expected_result['support'])]]
@@ -370,7 +346,6 @@ class CreateCluster(GetProject):
                           (self.organisation_id, self.project_id,
                            self.expected_result["name"],
                            self.expected_result['cloudProvider'],
-                           self.expected_result['couchbaseServer'],
                            self.expected_result['serviceGroups'],
                            self.expected_result['availability'],
                            self.expected_result['support'])]]

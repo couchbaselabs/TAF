@@ -4,8 +4,6 @@ Created on August 02, 2023
 @author: Vipul Bhardwaj
 """
 
-import time
-import base64
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
@@ -43,7 +41,7 @@ class ListCluster(GetProject):
                         "cidr": CapellaUtils.get_next_cidr() + "/20"
                     },
                     "couchbaseServer": {
-                        "version": str(self.input.param("server_version", 7.2))
+                        "version": str(self.input.param("server_version", 7.6))
                     },
                     "serviceGroups": [
                         {
@@ -90,7 +88,6 @@ class ListCluster(GetProject):
         result = self.select_CIDR(
             self.organisation_id, self.project_id, self.cluster_name,
             self.expected_result["data"][0]['cloudProvider'],
-            self.expected_result["data"][0]['couchbaseServer'],
             self.expected_result["data"][0]['serviceGroups'],
             self.expected_result["data"][0]['availability'],
             self.expected_result["data"][0]['support'])
@@ -119,7 +116,7 @@ class ListCluster(GetProject):
 
         # Wait for the cluster to be destroyed.
         self.log.info("Waiting for cluster to be destroyed.")
-        if not self.verify_project_empty(self.project_id):
+        if not self.wait_for_deletion(self.project_id, self.cluster_id):
             self.fail("Cluster could not be destroyed")
         self.log.info("Cluster destroyed successfully.")
 
@@ -157,7 +154,7 @@ class ListCluster(GetProject):
                                "be a client error."
                 }
             }, {
-                "description": "Fetch cluster but with non-hex organizationID",
+                "description": "List clusters with non-hex organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
                 "expected_status_code": 400,
@@ -172,7 +169,7 @@ class ListCluster(GetProject):
                                "be a client error."
                 }
             }, {
-                "description": "Fetch cluster but with non-hex projectID",
+                "description": "List clusters with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
                 "expected_status_code": 400,

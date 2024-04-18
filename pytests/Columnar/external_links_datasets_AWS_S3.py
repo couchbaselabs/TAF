@@ -3,6 +3,7 @@ Created on 25-OCTOBER-2023
 
 @author: umang.agrawal
 """
+import random
 
 from Columnar.columnar_base import ColumnarBaseTest
 from Queue import Queue
@@ -23,7 +24,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         # For sanity tests we are hard coding the bucket from which the data
         # will be read. This will ensure stable and consistent test runs.
         self.aws_region = "us-west-1"
-        self.aws_bucket_name = "columnar-sanity-test-data"
+        self.aws_bucket_name = "columnar-functional-sanity-test-data"
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "sanity.S3_external_datasets"
@@ -32,8 +33,12 @@ class S3LinksDatasets(ColumnarBaseTest):
             self.columnar_spec_name)
 
         self.doc_count_per_format = {
-            "json": 7400000, "parquet": 7300000,
-            "csv": 7400000, "tsv": 7400000}
+            "json": 7800000, "parquet": 7800000,
+            "csv": 7800000, "tsv": 7800000, "avro": 7800000}
+
+        self.doc_count_level_1_folder_1 = {
+            "json": 1560000, "parquet": 1560000,
+            "csv": 1560000, "tsv": 1560000, "avro": 0}
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -76,15 +81,19 @@ class S3LinksDatasets(ColumnarBaseTest):
         dataset_properties["include"] = "*.{0}".format(file_format)
         dataset_properties["region"] = self.aws_region
         dataset_properties["path_on_external_container"] = (
-            self.input.param("path_on_external_container", 
-                             "Depth_{depth-no:int}_Folder_{folder-no:int}"))
+            self.input.param("path_on_external_container",
+                             "level_{level_no:int}_folder_{folder_no:int}"))
 
         if file_format in ["csv", "tsv"]:
             dataset_properties["object_construction_def"] = (
-                "address string,avgrating double,city string,country string,"
-                "email string,freebreakfast boolean,freeparking boolean,"
-                "name string,phone string,price double,publiclikes string,"
-                "reviews string,`type` string,url string,extra string")
+                "id int,product_name string,product_link string,"
+                "product_features string,product_specs string,"
+                "product_image_links string,product_reviews string,"
+                "product_category string, price double,avg_rating double,"
+                "num_sold int,upload_date string,weight double,quantity int,"
+                "seller_name string,seller_location string,"
+                "seller_verified boolean,template_name string,mutated int,"
+                "padding string")
             dataset_properties["header"] = True
             dataset_properties["redact_warning"] = False
             dataset_properties["null_string"] = None
@@ -100,8 +109,10 @@ class S3LinksDatasets(ColumnarBaseTest):
             self.fail(msg)
 
         jobs = Queue()
+        datasets = self.cbas_util.get_all_dataset_objs("external")
         results = []
-        for dataset in self.cbas_util.get_all_dataset_objs("external"):
+        # Read all the docs in the aws s3 bucket
+        for dataset in datasets:
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
                 {"cluster": self.instance, "dataset_name": dataset.full_name,
@@ -114,9 +125,10 @@ class S3LinksDatasets(ColumnarBaseTest):
                           "1}".format(
                     self.doc_count_per_format[file_format], result))
 
+        # Read docs from a particular folder
         results = []
-        query = "select * from {} limit 1000"
-        for dataset in self.cbas_util.get_all_dataset_objs("external"):
+        query = "select count(*) from {} where level_no=1 and folder_no=1"
+        for dataset in datasets:
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
                 {"cluster": self.instance,
@@ -127,6 +139,21 @@ class S3LinksDatasets(ColumnarBaseTest):
             if result[0] != "success":
                 self.fail("Query execution failed with error - {}".format(
                     result[2]))
-            elif len(result[3]) != 1000:
-                self.fail("Doc count mismatch. Expected - 1000, Actual - {"
-                          "0}".format(len(result[3])))
+            elif result[3][0]["$1"] != self.doc_count_level_1_folder_1[file_format]:
+                self.fail(
+                    "Doc count mismatch. Expected - {0}, Actual - {1}".format(
+                        self.doc_count_level_1_folder_1[file_format],
+                        len(result[3])))
+
+        # Verify docs read from a particular folder are embedded with
+        # computated fields used in dynamic prefix.
+        dataset = random.choice(datasets)
+        query = ("select * from {} where level_no=1 and folder_no=1 limit "
+                 "1").format(dataset.full_name)
+        status, metrics, errors, results, _ = \
+            self.cbas_util.execute_statement_on_cbas_util(
+                self.instance, query, timeout=300, analytics_timeout=300)
+        if not ("level_no" in results[0][dataset.name] and
+                "folder_no" in results[0][dataset.name]):
+            self.fail("Dynamic prefix computated fields are not present in "
+                      "the document")

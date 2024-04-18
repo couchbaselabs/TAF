@@ -680,6 +680,8 @@ class APIBase(CouchbaseBaseTest):
                                            testcase["description"]))
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
+                else:
+                    return True
             else:
                 return True
         elif result.status_code >= 500:
@@ -762,48 +764,51 @@ class APIBase(CouchbaseBaseTest):
 
     def validate_api_response(self, expected_res, actual_res, id):
         for key in actual_res:
+            if key == "version" or not expected_res[key]:
+                continue
             if key not in expected_res:
                 return False
             if isinstance(expected_res[key], dict):
-                self.validate_api_response(
-                    expected_res[key], actual_res[key], id)
+                if not self.validate_api_response(
+                        expected_res[key], actual_res[key], id):
+                    return False
             elif isinstance(expected_res[key], list):
                 if key == "services":
                     for service in expected_res[key]:
                         if service not in actual_res[key]:
                             return False
                     continue
-                for i in range(len(expected_res[key])):
-                    if (actual_res[key] is "data" and
-                            actual_res[key][i]["id"] != id):
+                for i in range(len(actual_res[key])):
+                    if key == "data" and actual_res[key][i]["id"] != id:
                         continue
-                    self.validate_api_response(
-                        expected_res[key][i], actual_res[key][i], id)
-            elif expected_res[key]:
-                if expected_res[key] == "version":
-                    if expected_res[key] not in actual_res[key]:
+                    if not self.validate_api_response(
+                            expected_res[key][0], actual_res[key][i], id):
                         return False
-                elif expected_res[key] != actual_res[key]:
-                    return False
+            elif expected_res[key] != actual_res[key]:
+                return False
         return True
 
-    def select_CIDR(self, org, proj, name, cp, cs, sg, av, sp,
-                    header=None, **kwargs):
+    def select_CIDR(self, org, proj, name, cloudProvider, serviceGroups,
+                    availability, support, header=None, **kwargs):
         self.log.info("Selecting CIDR for cluster deployment.")
 
         start_time = time.time()
         while time.time() - start_time < 1800:
             result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                org, proj, name, cp, cs, sg, av, sp, header, **kwargs)
+                org, proj, name, cloudProvider, serviceGroups=serviceGroups,
+                availability=availability, support=support, headers=header,
+                **kwargs)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                    org, proj, name, cp, cs, sg, av, sp, header, **kwargs)
+                    org, proj, name, cloudProvider,
+                    serviceGroups=serviceGroups, availability=availability,
+                    support=support, headers=header, **kwargs)
             if result.status_code != 422:
                 return result
             elif "Please ensure you are passing a unique CIDR block" in \
                     result.json()["message"]:
-                cp["cidr"] = CapellaUtils.get_next_cidr() + "/20"
+                cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
             if time.time() - start_time >= 1800:
                 self.log.error("Couldn't find CIDR within half an hour.")
 
@@ -822,53 +827,64 @@ class APIBase(CouchbaseBaseTest):
                                "\nResult: {}".format(state.content))
                 return False
 
-            state = state.json()["currentState"]
-            self.log.info("Current state: {}".format(state))
+            self.log.info("Current state: {}"
+                          .format(state.json()["currentState"]))
 
-            if state == "deploymentFailed":
+            if state.json()["currentState"] == "deploymentFailed":
                 self.log.error("!!!Deployment Failed!!!")
+                self.log.error(state.content)
                 return False
-            elif state != "healthy":
+            elif state.json()["currentState"] != "healthy":
                 self.log.info("...Waiting further...")
             else:
                 return True
         self.log.error("Cluster/App didn't deploy within half an hour.")
         return False
 
-    def verify_app_services_empty(self, proj_id):
+    def wait_for_deletion(self, proj_id, clus_id, app_svc_id=None):
         start_time = time.time()
         while start_time + 1800 > time.time():
             time.sleep(15)
 
-            res = self.capellaAPI.cluster_ops_apis.list_appservices(
-                self.organisation_id, projectId=proj_id)
-            if res.status_code != 200:
-                self.log.error("Error while retrieving App Services: {}"
-                               .format(res.content))
-                return False
-            if len(res.json()["data"]) != 0:
+            if app_svc_id:
+                res = self.capellaAPI.cluster_ops_apis.get_appservice(
+                    self.organisation_id, proj_id, clus_id, app_svc_id)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers["Retry-After"]))
+                    res = self.capellaAPI.cluster_ops_apis.get_appservice(
+                        self.organisation_id, proj_id, clus_id, app_svc_id)
+            else:
+                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, proj_id, clus_id)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers["Retry-After"]))
+                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                        self.organisation_id, proj_id, clus_id)
+
+            if res.status_code == 404:
+                try:
+                    res = res.json()
+                    if "code" in res:
+                        if app_svc_id and res["code"] == 404:
+                            return True
+                        elif not app_svc_id and res["code"] == 4025:
+                            return True
+                        else:
+                            self.log.error("Error while retrieving resource "
+                                           "information: {}"
+                                           .format(res.content))
+                            return False
+                except (Exception, ):
+                    self.log.error("Error while retrieving resource "
+                                   "information: {}".format(res.content))
+                    return False
+            elif res.status_code == 200:
                 self.log.info("...Waiting further...")
             else:
-                return True
-        self.log.error("App Service didn't delete within half an hour.")
-        return False
-
-    def verify_project_empty(self, proj_id):
-        start_time = time.time()
-        while start_time + 1800 > time.time():
-            time.sleep(15)
-
-            res = self.capellaAPI.cluster_ops_apis.list_clusters(
-                self.organisation_id, proj_id)
-            if res.status_code != 200:
-                self.log.error("Error while retrieving clusters: {}"
-                               .format(res.content))
+                self.log.error("Error while retrieving resource "
+                               "information: {}".format(res.content))
                 return False
-            if len(res.json()["data"]) != 0:
-                self.log.info("...Waiting further...")
-            else:
-                return True
-        self.log.error("Cluster didn't delete within half an hour")
+        self.log.error("Resource didn't delete within half an hour.")
         return False
 
     def create_path_combinations(self, *args):

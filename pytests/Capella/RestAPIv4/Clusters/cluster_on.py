@@ -81,7 +81,11 @@ class ClusterOn(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     org, proj, clus, False)
-            if result.status_code in [409, 202]:
+
+            self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
+                "/v4/organizations/{}/projects/{}/clusters/{}/on"
+
+            if self.validate_testcase(result, [409, 202], testcase, failures):
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):
@@ -90,11 +94,6 @@ class ClusterOn(GetCluster):
                                            testcase["description"]))
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 409, testcase, failures)
-
-            self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
-                "/v4/organizations/{}/projects/{}/clusters/{}/on"
 
         if failures:
             for fail in failures:
@@ -149,7 +148,8 @@ class ClusterOn(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id,
                     False, headers=header)
-            if result.status_code in [409, 202]:
+
+            if self.validate_testcase(result, [409, 202], testcase, failures):
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):
@@ -158,8 +158,6 @@ class ClusterOn(GetCluster):
                                            testcase["description"]))
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 409, testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -260,7 +258,8 @@ class ClusterOn(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], False, **kwarg)
-            if result.status_code in [409, 202]:
+
+            if self.validate_testcase(result, [409, 202], testcase, failures):
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):
@@ -269,8 +268,6 @@ class ClusterOn(GetCluster):
                                            testcase["description"]))
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 409, testcase, failures)
 
         if failures:
             for fail in failures:
@@ -304,7 +301,8 @@ class ClusterOn(GetCluster):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id, val)
-            if result.status_code in [409, 202]:
+
+            if self.validate_testcase(result, [409, 202], testcase, failures):
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):
@@ -313,8 +311,6 @@ class ClusterOn(GetCluster):
                                            testcase["description"]))
                     self.log.warning("Result : {}".format(result.json()))
                     failures.append(testcase["description"])
-            else:
-                self.validate_testcase(result, 409, testcase, failures)
 
         if failures:
             for fail in failures:
