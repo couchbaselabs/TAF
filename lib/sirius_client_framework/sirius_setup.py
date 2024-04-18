@@ -1,17 +1,22 @@
 import os
+import time
+
 import requests
 from signal import SIGTERM
 from subprocess import Popen
 
 from common_lib import sleep
+from sirius_constants import DB_MGMT_PATH, SiriusCodes
+
+IDENTIFIER_TOKEN = 'unique_' + str(int(time.time()))
 
 
-class SiriusClient(object):
+class SiriusSetup(object):
     __running_process = None
 
     @staticmethod
     def get_running_pid():
-        return SiriusClient.__running_process
+        return SiriusSetup.__running_process
 
     @staticmethod
     def is_sirius_online(url):
@@ -27,23 +32,23 @@ class SiriusClient(object):
 
     @staticmethod
     def start_sirius(port=4000):
-        print("Starting Sirius client on port '{port}'".format(**{"port":port}))
+        print("Starting Sirius client on port '{port}'".format(**{"port": port}))
         cmd = ["/bin/sh", "-c",
-               "SIRIUS_PORT={port} ; export SIRIUS_PORT ; ".format(**{"port":port}),
+               "SIRIUS_PORT={port} ; export SIRIUS_PORT ; ".format(**{"port": port}),
                "cd sirius ; make build ; make clean ; ",
                "make run"]
         fp = open("logs/sirius.log", "w")
 
-        SiriusClient.__running_process = Popen(cmd, stdout=fp, stderr=fp)
+        SiriusSetup.__running_process = Popen(cmd, stdout=fp, stderr=fp)
 
     @staticmethod
     def terminate_sirius():
-        if SiriusClient.__running_process:
-            pid = SiriusClient.__running_process.pid
-            print("Killing Sirius pid '{pid}'".format(**{"pid":pid}))
+        if SiriusSetup.__running_process:
+            pid = SiriusSetup.__running_process.pid
+            print("Killing Sirius pid '{pid}'".format(**{"pid": pid}))
             os.kill(pid, SIGTERM)
-            SiriusClient.__running_process.communicate()
-        SiriusClient.__running_process = None
+            SiriusSetup.__running_process.communicate()
+        SiriusSetup.__running_process = None
 
     def __init__(self):
         pass
@@ -58,7 +63,7 @@ class SiriusClient(object):
             exception = None
             for i in range(5):
                 try:
-                    path = "/clear_data"
+                    path = DB_MGMT_PATH[SiriusCodes.DBMgmtOps.CLEAR]
                     response = requests.post(url=base_url + path,
                                              headers=headers,
                                              json=json_data_request)

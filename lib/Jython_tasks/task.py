@@ -41,7 +41,8 @@ from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     SubdocDocumentGenerator
-from doc_loader.sirius_client import RESTClient
+from sirius_client_framework.sirius_old import SiriusClient as RESTClient
+from sirius_client_framework.sirius_setup import IDENTIFIER_TOKEN
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 from custom_exceptions.exception import \
