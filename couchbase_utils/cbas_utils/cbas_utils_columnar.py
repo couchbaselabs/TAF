@@ -344,9 +344,8 @@ class BaseUtil(object):
             jobs.join()
 
     @staticmethod
-    def get_kv_entity(cluster, bucket_util, bucket_cardinality=1,
-                      include_buckets=[], exclude_buckets=[],
-                      include_scopes=[], exclude_scopes=[],
+    def get_kv_entity(cluster, bucket_util, include_buckets=[],
+                      exclude_buckets=[], include_scopes=[], exclude_scopes=[],
                       include_collections=[], exclude_collections=[]):
         bucket = None
         while not bucket:
@@ -355,28 +354,24 @@ class BaseUtil(object):
                 bucket = None
             if exclude_buckets and bucket.name in exclude_buckets:
                 bucket = None
-        if bucket_cardinality > 1:
-            scope = None
-            while not scope:
-                scope = random.choice(bucket_util.get_active_scopes(bucket))
-                if include_scopes and scope.name not in include_scopes:
-                    scope = None
-                if exclude_scopes and scope.name in exclude_scopes:
-                    scope = None
-            if bucket_cardinality > 2:
+
+        scope = None
+        while not scope:
+            scope = random.choice(bucket_util.get_active_scopes(bucket))
+            if include_scopes and scope.name not in include_scopes:
+                scope = None
+            if exclude_scopes and scope.name in exclude_scopes:
+                scope = None
+
+        collection = None
+        while not collection:
+            collection = random.choice(
+                bucket_util.get_active_collections(bucket, scope.name))
+            if include_collections and collection.name not in include_collections:
                 collection = None
-                while not collection:
-                    collection = random.choice(
-                        bucket_util.get_active_collections(bucket, scope.name))
-                    if include_collections and collection.name not in include_collections:
-                        collection = None
-                    if exclude_collections and collection.name in exclude_collections:
-                        collection = None
-                return bucket, scope, collection
-            else:
-                return bucket, scope, None
-        else:
-            return bucket, None, None
+            if exclude_collections and collection.name in exclude_collections:
+                collection = None
+        return bucket, scope, collection
 
     @staticmethod
     def format_name(*args):
@@ -1960,6 +1955,11 @@ class KafkaLink_Util(ExternalLink_Util):
         results = list()
         num_of_external_links = link_spec.get("no_of_kafka_links", 0)
 
+        # This is to store index value of the last chosen external db
+        # connection specs of a particular type of db. This will ensure all
+        # the specs for a particular db is used for creating kafka links in
+        # case where we are creating multiple links.
+        chosen_db_spec_index = {}
         for i in range(0, num_of_external_links):
             if link_spec.get("name_key", "random").lower() == "random":
                 name = self.generate_name(name_cardinality=1)
@@ -2001,8 +2001,28 @@ class KafkaLink_Util(ExternalLink_Util):
             else:
                 db_type = random.choice(["mongo", "dynamo", "rds"])
 
-            external_db_details = random.choice(
-                link_spec["external_database_details"][db_type])
+            # This logic will ensure all the external_database_details for a
+            # particular database_type are picked up in round-robin fashion.
+            index = i % len(link_spec["external_database_details"][db_type])
+
+            if db_type not in chosen_db_spec_index:
+                # if db_type is not present in chosen_db_spec_index add it with
+                # current index value.
+                chosen_db_spec_index[db_type] = index
+            elif chosen_db_spec_index[db_type] == index:
+                # if db_type is present and equal to the last index then
+                # increase index by 1, now if index > the length of list of
+                # external db details then reassign index to 0
+                index += 1
+                if index > len(link_spec["external_database_details"][
+                                   db_type]):
+                    index = 0
+                chosen_db_spec_index[db_type] = index
+            else:
+                chosen_db_spec_index[db_type] = index
+
+            external_db_details = link_spec["external_database_details"][
+                db_type][chosen_db_spec_index[db_type]]
 
             link = Kafka_Link(
                 name=name, dataverse_name=dataverse.name,
@@ -2691,6 +2711,31 @@ class Remote_Dataset_Util(Dataset_Util):
 
         num_of_remote_datasets = dataset_spec.get("num_of_remote_datasets", 0)
 
+        kv_collection_used = {}
+        # create a map of cluster and all their KV collections
+        all_kv_collection_remote_cluster_map = {}
+        for remote_cluster in remote_clusters:
+            kv_collection_used[remote_cluster.name] = []
+            all_kv_collection_remote_cluster_map[remote_cluster.name] = []
+            for bucket in remote_cluster.buckets:
+                if bucket in dataset_spec.get("exclude_buckets", []):
+                    continue
+                else:
+                    for scope in bucket_util.get_active_scopes(bucket):
+                        if scope.name in dataset_spec.get(
+                                "exclude_scopes", []):
+                            continue
+                        else:
+                            for collection in bucket_util.get_active_collections(
+                                    bucket, scope.name):
+                                if collection.name in dataset_spec.get(
+                                        "exclude_collections", []):
+                                    continue
+                                else:
+                                    all_kv_collection_remote_cluster_map[
+                                        remote_cluster.name].append(
+                                        (bucket, scope, collection))
+
         for i in range(0, num_of_remote_datasets):
 
             database = None
@@ -2734,35 +2779,31 @@ class Remote_Dataset_Util(Dataset_Util):
             creation_method = random.choice(
                 dataset_spec["creation_methods"])
 
-            if dataset_spec.get("bucket_cardinality", 0) == 0:
-                bucket_cardinality = random.choice([1, 3])
-            else:
-                bucket_cardinality = dataset_spec["bucket_cardinality"]
-
             link = remote_link_objs[i % len(remote_link_objs)]
             remote_cluster = None
             for tmp_cluster in remote_clusters:
                 if tmp_cluster.master.ip == link.properties["hostname"]:
                     remote_cluster = tmp_cluster
+                    break
 
-                bucket, scope, collection = self.get_kv_entity(
-                    remote_cluster, bucket_util, bucket_cardinality,
-                    dataset_spec.get("include_buckets", []),
-                    dataset_spec.get("exclude_buckets", []),
-                    dataset_spec.get("include_scopes", []),
-                    dataset_spec.get("exclude_scopes", []),
-                    dataset_spec.get("include_collections", []),
-                    dataset_spec.get("exclude_collections", []))
-
-            if collection:
-                if isinstance(collection, dict):
-                    num_of_items = collection.num_items
+            # Logic to ensure remote dataset is made on all collections of a
+            # bucket.
+            while True:
+                kv_entity = random.choice(all_kv_collection_remote_cluster_map[
+                                      remote_cluster.name])
+                if kv_entity not in kv_collection_used[remote_cluster.name]:
+                    kv_collection_used[remote_cluster.name].append(kv_entity)
+                    break
                 else:
-                    num_of_items = 0
-            else:
-                num_of_items = bucket_util.get_collection_obj(
-                    bucket_util.get_scope_obj(bucket, "_default"),
-                    "_default").num_items
+                    if len(kv_collection_used[remote_cluster.name]) == len(
+                            all_kv_collection_remote_cluster_map[
+                                remote_cluster.name]):
+                        kv_collection_used[remote_cluster.name] = [kv_entity]
+                        break
+
+            bucket, scope, collection = kv_entity
+            num_of_items = collection.num_items
+
 
             if dataset_spec["storage_format"] == "mixed":
                 storage_format = random.choice(["row", "column"])
@@ -3126,12 +3167,13 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 return False
             link = external_link_objs[i % len(external_link_objs)]
             while True:
-                dataset_properties = random.choice(
-                    dataset_spec.get(
-                        "external_dataset_properties", [{}]))
+                dataset_properties = dataset_spec[
+                    "external_dataset_properties"][i % len(dataset_spec[
+                    "external_dataset_properties"])]
                 if link.properties["region"] == dataset_properties.get(
                         "region", None):
                     break
+
             dataset_obj = External_Dataset(
                 name=name, dataverse_name=dataverse.name,
                 database_name=dataverse.database_name,
@@ -3939,6 +3981,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         results = list()
 
         num_of_standalone_coll = dataset_spec.get("num_of_standalone_coll", 0)
+
         for i in range(0, num_of_standalone_coll):
             database = None
             while not database:
@@ -3994,10 +4037,9 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             link = None
             if len(data_sources) > 0:
                 data_source = data_sources[i % len(data_sources)]
-                if data_source is None:
-                    link = None
-                else:
-                    links = set(self.get_all_link_objs(link_type=data_source))
+                if data_source is not None:
+                    links = set(
+                        self.get_all_link_objs(link_type=data_source).sort())
                     if dataset_spec.get("include_links", []):
                         for link_name in dataset_spec.get("include_links"):
                             link_obj = self.get_link_obj(cluster, link_name)
@@ -4008,19 +4050,15 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                             link_obj = self.get_link_obj(cluster, link_name)
                             if link_obj in links:
                                 links.remove(link_obj)
-                    link = random.choice(list(links)) if len(links) > 0 \
-                        else None
-                    if link is None:
-                        data_source = None
+                    link = random.choice(links)
             else:
                 data_source = None
 
             link_name = link.full_name if link else None
             dataset_obj = Standalone_Dataset(
-                name, data_source, random.choice(dataset_spec["primary_key"]),
+                name, data_source, dataset_spec["primary_key"][i % len(dataset_spec["primary_key"])],
                 dataverse.name, database.name, link_name, None,
-                random.choice(
-                    dataset_spec.get("standalone_collection_properties", [{}])),
+                dataset_spec["standalone_collection_properties"][i % len(dataset_spec["standalone_collection_properties"])],
                 0, storage_format)
 
             results.append(
@@ -4045,7 +4083,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         self.log.info("Creating Standalone Datasets for external database "
                       "based on CBAS Spec")
 
-        dataset_spec = self.get_standalone_dataset_spec(cbas_spec, spec_name="kafka_dataset")
+        dataset_spec = self.get_standalone_dataset_spec(
+            cbas_spec, spec_name="kafka_dataset")
         results = list()
 
         kafka_link_objs = set(self.get_all_link_objs("kafka"))
@@ -4114,23 +4153,21 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             else:
                 datasource = dataset_spec["data_source"][i % len(dataset_spec["data_source"])]
 
-            if (dataset_spec["include_external_collections"].get(
+            if (dataset_spec["include_kafka_topics"].get(
                     datasource, {}) and dataset_spec[
-                "exclude_external_collections"].get(datasource, {})
-                    and (set(dataset_spec["include_external_collections"][
+                "exclude_kafka_topics"].get(datasource, {})
+                    and (set(dataset_spec["include_kafka_topics"][
                                  datasource]) == set(
-                        dataset_spec["exclude_external_collections"][
+                        dataset_spec["exclude_kafka_topics"][
                             datasource]))):
                 self.log.error("Both include and exclude "
-                               "external collections cannot be "
-                               "same")
+                               "kafka topics cannot be same")
                 return False
-            elif dataset_spec["exclude_external_collections"].get(datasource,
-                                                                  {}):
-                dataset_spec["include_external_collections"][datasource] = (
-                        set(dataset_spec["include_external_collections"][
+            elif dataset_spec["exclude_kafka_topics"].get(datasource, {}):
+                dataset_spec["include_kafka_topics"][datasource] = (
+                        set(dataset_spec["include_kafka_topics"][
                                 datasource]) - set(
-                    dataset_spec["exclude_external_collections"][datasource]))
+                    dataset_spec["exclude_kafka_topics"][datasource]))
 
             eligible_links = [link for link in kafka_link_objs if
                               link.db_type == datasource]
@@ -4138,7 +4175,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             """
             This is to make sure that we don't create 2 collection with same 
             source collection and link
-            include_external_collections should be of format -
+            include_kafka_topics should be of format -
             { "datasource" : [("region","collection_name")]}
             for mongo and MySQL, region should be empty string
             This is to support Dynamo tables multiple regions.
@@ -4147,9 +4184,9 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             while retry < 100:
                 link = random.choice(eligible_links)
 
-                if dataset_spec["include_external_collections"][datasource]:
+                if dataset_spec["include_kafka_topics"][datasource]:
                     external_collection_name = random.choice(
-                        dataset_spec["include_external_collections"][
+                        dataset_spec["include_kafka_topics"][
                             datasource])
 
                     # this will be True for Dynamo only
@@ -4158,7 +4195,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                                link.external_database_details[
                                    "connectionFields"]["region"]):
                             external_collection_name = random.choice(
-                                dataset_spec["include_external_collections"][
+                                dataset_spec["include_kafka_topics"][
                                     datasource])
                     external_collection_name = external_collection_name[1]
                 else:

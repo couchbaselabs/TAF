@@ -298,7 +298,11 @@ class ClusterUtils:
             else:
                 break
         for node in pools_default_res["nodes"]:
-            version, build, type = node["version"].split("-")
+            if CbServer.cluster_profile != "columnar":
+                version, build, type = node["version"].split("-")
+            else:
+                version, type = node["version"].split("-")
+                build = ""
             node_ipaddr = node["hostname"].split(":")[0]
             if version > highest_version or \
                 (version == highest_version and build > highest_build):
