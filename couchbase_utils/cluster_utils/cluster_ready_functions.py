@@ -162,6 +162,13 @@ class ClusterUtils:
         while retry_index < max_retry:
             status, content = rest.get_terse_cluster_info()
             json_content = json.loads(content)
+            # MB-60705 - On adding the node, pools/default is returning unknown for a while
+            # TODO - Remove the retry mechanism once MB-60705 gets resolved
+            if json_content == "unknown pool" or status == 404:
+                sleep(5, message="pools/default/terseClusterInfo returned \
+                      status {} content {}".format(status, json_content))
+                retry_index += 1
+                continue
             orchestrator_node = json_content["orchestrator"]
             if orchestrator_node == "undefined":
                 sleep(2, message="orchestrator='undefined'", log_type="test")
@@ -260,7 +267,19 @@ class ClusterUtils:
         highest_version_nodes = list()
         highest_version = ""
         highest_build = ""
-        pools_default_res = RestConnection(cluster.master).get_pools_default()
+
+        # MB-60705 - On adding the node, pools/default is returning unknown for a while
+        # Adding a retry mechanism in case pools/default returns unknown
+        # TODO - Remove the retry mechanism once MB-60705 gets resolved
+        retry = 0
+        max_retry = 5
+        while retry <  max_retry:
+            pools_default_res = RestConnection(cluster.master).get_pools_default()
+            if pools_default_res == "unknown pool":
+                retry += 1
+                continue
+            else:
+                break
         for node in pools_default_res["nodes"]:
             version, build, type = node["version"].split("-")
             node_ipaddr = node["hostname"].split(":")[0]
