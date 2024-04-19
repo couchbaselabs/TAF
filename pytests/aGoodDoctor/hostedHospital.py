@@ -26,7 +26,6 @@ from constants.cloud_constants.capella_constants import AWS, GCP, AZURE
 from table_view import TableView
 import time
 from bucket_utils.bucket_ready_functions import CollectionUtils
-from com.couchbase.test.sdk import Server, SDKClientPool
 from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
 from custom_exceptions.exception import ServerUnavailableException

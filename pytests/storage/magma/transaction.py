@@ -8,15 +8,6 @@ from Jython_tasks.task import TimerTask
 from java.util import HashMap
 from reactor.util.function import Tuples
 
-from com.couchbase.test.docgen import WorkLoadSettings, \
-    DocumentGenerator, \
-    DocRange
-from com.couchbase.test.loadgen import TransactionWorkLoadGenerate, WorkLoadGenerate
-from com.couchbase.test.sdk import Server
-from com.couchbase.test.sdk import SDKClient as NewSDKClient
-from com.couchbase.test.taskmanager import TaskManager
-from com.couchbase.test.transactions import Transaction
-
 from couchbase.test.docgen import DRConstants
 
 

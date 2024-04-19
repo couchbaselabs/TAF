@@ -9,10 +9,6 @@ from sdk_client3 import SDKClient
 from constants.sdk_constants.java_client import SDKConstants
 from remote.remote_util import RemoteMachineShellConnection
 
-from java.util import Collections
-from java.lang import String
-from com.couchbase.client.java.kv import LookupInMacro, LookupInSpec
-
 
 class DurabilitySuccessTests(DurabilityTestsBase):
     def setUp(self):

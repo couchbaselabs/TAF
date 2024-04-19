@@ -12,8 +12,6 @@ from platform_constants.os_constants import Windows
 from remote.remote_util import RemoteMachineShellConnection
 from table_view import TableView
 
-from java.lang import Exception as Java_base_exception
-
 
 class ConfigPurging(CollectionBase):
     def setUp(self):
@@ -169,8 +167,6 @@ class ConfigPurging(CollectionBase):
         try:
             self.n1ql_helper.run_cbq_query(query)
         except Exception as e:
-            self.log.critical(e)
-        except Java_base_exception as e:
             self.log.critical(e)
 
     def __get_purged_tombstone_from_last_run(self, nodes=None):

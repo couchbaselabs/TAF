@@ -10,13 +10,6 @@ from threading import Thread
 import threading
 import time
 
-from com.couchbase.client.java.query import QueryOptions,\
-    QueryScanConsistency, QueryStatus
-from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutException
-from com.couchbase.client.core.error import RequestCanceledException,\
-    CouchbaseException, InternalServerFailureException,\
-    AmbiguousTimeoutException, PlanningFailureException,\
-    UnambiguousTimeoutException, IndexNotFoundException, IndexExistsException
 from string import ascii_uppercase, ascii_lowercase
 from encodings.punycode import digits
 from gsiLib.gsiHelper import GsiHelper
@@ -24,8 +17,6 @@ from global_vars import logger
 from _collections import defaultdict
 from table_view import TableView
 import itertools
-from com.couchbase.client.java.json import JsonObject
-from com.github.javafaker import Faker
 from constants.cb_constants.CBServer import CbServer
 from connections.Rest_Connection import RestConnection
 

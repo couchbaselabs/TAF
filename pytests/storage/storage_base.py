@@ -15,18 +15,8 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from sdk_constants.java_client import SDKConstants
-from com.couchbase.test.taskmanager import TaskManager
-from com.couchbase.test.sdk import SDKClient as NewSDKClient
-from com.couchbase.test.docgen import WorkLoadSettings,\
-    DocumentGenerator
-from com.couchbase.test.sdk import Server
-from com.couchbase.test.loadgen import WorkLoadGenerate
 from Jython_tasks.task import PrintBucketStats
 from java.util import HashMap
-from com.couchbase.test.docgen import DocRange
-from com.couchbase.test.docgen import DRConstants
-from com.couchbase.client.core.error import ServerOutOfMemoryException,\
-    DocumentExistsException, DocumentNotFoundException, TimeoutException
 
 
 class StorageBase(BaseTestCase):

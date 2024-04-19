@@ -18,7 +18,6 @@ from couchbase_helper.documentgenerator import \
     DocumentGenerator
 from error_simulation.cb_error import CouchbaseError
 from custom_exceptions.exception import DesignDocCreationException
-from com.couchbase.client.java.kv import StoreSemantics
 from couchbase_helper.document import View
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper

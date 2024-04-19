@@ -17,12 +17,6 @@ from serverlessbasetestcase import OnCloudBaseTest
 from cb_constants import CbServer
 from capellaAPI.capella.serverless.CapellaAPI import CapellaAPI
 
-from com.couchbase.test.docgen import DocumentGenerator
-from com.couchbase.test.sdk import Server
-from com.couchbase.test.taskmanager import TaskManager
-
-from java.util.concurrent import ExecutionException
-
 
 class TenantMgmtOnCloud(OnCloudBaseTest):
     def setUp(self):

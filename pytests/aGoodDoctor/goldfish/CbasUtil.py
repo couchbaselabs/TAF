@@ -11,12 +11,6 @@ import threading
 import time
 
 from CbasLib.CBASOperations import CBASHelper
-from com.couchbase.client.core.error import RequestCanceledException, \
-    CouchbaseException, AmbiguousTimeoutException, PlanningFailureException, \
-    UnambiguousTimeoutException, TimeoutException, DatasetExistsException, \
-    LinkExistsException
-from com.couchbase.client.java.analytics import AnalyticsOptions, \
-    AnalyticsScanConsistency, AnalyticsStatus
 from global_vars import logger
 
 

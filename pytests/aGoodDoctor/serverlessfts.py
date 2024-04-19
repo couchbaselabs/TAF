@@ -14,10 +14,6 @@ import time
 from constants.cb_constants.CBServer import CbServer
 from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
-from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutException
-from com.couchbase.client.core.error import AmbiguousTimeoutException, \
- RequestCanceledException, CouchbaseException, UnambiguousTimeoutException
-from com.couchbase.client.java.search import SearchQuery
 from global_vars import logger
 from table_view import TableView
 from membase.api.rest_client import RestConnection

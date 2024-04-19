@@ -18,8 +18,6 @@ import json
 import threading
 from table_view import TableView
 from BucketLib.BucketOperations import BucketHelper
-from com.couchbase.test.sdk import Server
-from com.couchbase.client.core.error import TimeoutException
 from threading import Lock
 from _collections import defaultdict
 import subprocess

@@ -15,8 +15,6 @@ from n1ql_exceptions import N1qlException
 from platform_constants.os_constants import Linux
 from sdk_exceptions import SDKException
 
-from com.couchbase.client.java.json import JsonObject
-
 
 class N1qlBase(CollectionBase):
     def setUp(self):

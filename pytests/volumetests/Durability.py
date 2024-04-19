@@ -1,7 +1,3 @@
-from com.couchbase.client.java import *
-from com.couchbase.client.java.json import *
-from com.couchbase.client.java.query import *
-
 from membase.api.rest_client import RestConnection
 from cb_constants import constants, CbServer, DocLoading
 from TestInput import TestInputSingleton

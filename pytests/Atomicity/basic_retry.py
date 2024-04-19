@@ -8,10 +8,6 @@ from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import DocumentGenerator
 from sdk_client3 import SDKClient, TransactionConfig
 
-from com.couchbase.client.java.json import JsonObject
-from com.couchbase.test.transactions import SimpleTransaction as Transaction
-from reactor.util.function import Tuples
-
 
 class basic_ops(ClusterSetup):
     def setUp(self):

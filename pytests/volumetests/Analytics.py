@@ -36,7 +36,6 @@ from sdk_exceptions import SDKException
 from basetestcase import BaseTestCase
 from cbas_utils.cbas_utils_v2 import CbasUtil, CBASRebalanceUtil
 import traceback
-from java.lang import Exception as Java_base_exception
 
 
 class volume(BaseTestCase):
@@ -184,8 +183,6 @@ class volume(BaseTestCase):
                 if self.initial_data_load:
                     self.data_load_spec = self.input.param(
                         "data_load_spec", "volume_test_load_for_volume_test")
-            except Java_base_exception as exception:
-                    self.handle_collection_setup_exception(exception)
             except Exception as exception:
                 self.handle_collection_setup_exception(exception)
 

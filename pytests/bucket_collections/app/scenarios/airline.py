@@ -6,8 +6,6 @@ from bucket_collections.app.lib.common_util import get_all_scenarios, \
     get_random_scenario
 from global_vars import logger
 
-from java.lang import Exception as Java_base_exception
-
 
 class Airline(Thread):
     scenarios = dict()
@@ -58,10 +56,6 @@ class Airline(Thread):
                     self.result = Airline.scenarios[self.op_type](self)
                 Airline.log.debug("%s %s" % (self.tenant_scope, self.result))
             except Exception as e:
-                self.exception = e
-                traceback.print_exc()
-                break
-            except Java_base_exception as e:
                 self.exception = e
                 traceback.print_exc()
                 break

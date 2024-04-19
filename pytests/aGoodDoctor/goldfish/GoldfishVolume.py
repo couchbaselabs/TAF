@@ -11,8 +11,6 @@ from aGoodDoctor.hostedOPD import OPD
 from basetestcase import BaseTestCase
 from table_view import TableView
 from datasources import MongoDB
-from com.couchbase.test.sdk import Server
-from com.couchbase.test.sdk import SDKClient
 from _collections import defaultdict
 from datasources import s3
 from capella_utils.dedicated import CapellaUtils

@@ -5,13 +5,6 @@ import threading
 import time
 
 from sdk_client3 import SDKClient
-from com.couchbase.client.java.query import QueryOptions,\
-    QueryScanConsistency, QueryStatus
-from com.couchbase.client.core.deps.io.netty.handler.timeout import TimeoutException
-from com.couchbase.client.core.error import RequestCanceledException,\
-    CouchbaseException, InternalServerFailureException,\
-    AmbiguousTimeoutException, UnambiguousTimeoutException,\
-    PlanningFailureException, IndexNotFoundException
 from string import ascii_uppercase, ascii_lowercase
 from encodings.punycode import digits
 from gsiLib.gsiHelper import GsiHelper

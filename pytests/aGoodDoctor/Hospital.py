@@ -16,7 +16,6 @@ from cbas import DoctorCBAS
 from cluster_utils.cluster_ready_functions import CBCluster
 from elasticsearch import EsClient
 from bucket_utils.bucket_ready_functions import CollectionUtils
-from com.couchbase.test.sdk import SDKClientPool
 from workloads import default, nimbus, vector_load, quartz1, quartz2, quartz3,\
     quartz5, quartz4, quartz6
 try:

@@ -5,8 +5,6 @@ from cb_constants import CbServer
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from serverless.tenant_mgmt_on_cloud import TenantMgmtOnCloud
 
-from com.couchbase.test.docgen import DocumentGenerator
-
 from table_view import TableView
 
 

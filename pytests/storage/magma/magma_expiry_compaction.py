@@ -31,8 +31,6 @@ import time
 
 from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
-from com.couchbase.client.core.error import DocumentUnretrievableException
-from com.couchbase.client.java.kv import GetAnyReplicaOptions
 from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from remote.remote_util import RemoteMachineShellConnection

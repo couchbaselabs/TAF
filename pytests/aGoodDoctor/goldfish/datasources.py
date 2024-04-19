@@ -6,16 +6,8 @@ Created on Nov 3, 2023
 # from mongo.loader import MongoSDKClient
 import time
 
-from com.couchbase.test.sdk import Server
-from com.couchbase.test.taskmanager import TaskManager
-from com.mongo.loader import MongoSDKClient, WorkLoadGenerate, DocumentGenerator
-from com.couchbase.test.docgen import DocRange
-from com.couchbase.test.docgen import DRConstants
-from com.couchbase.test.docgen import WorkLoadSettings
-from java.util import HashMap
 from CbasLib.CBASOperations import CBASHelper
 from CbasUtil import execute_statement_on_cbas
-from com.couchbase.client.core.error import LinkExistsException
 import random
 import string
 

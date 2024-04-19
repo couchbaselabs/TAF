@@ -7,7 +7,6 @@ from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from cbas.cbas_base import CBASBaseTest
 from collections_helper.collections_spec_constants import MetaCrudParams
-from com.couchbase.client.java.json import JsonObject
 from couchbase_helper.documentgenerator import DocumentGenerator
 from CbasLib.CBASOperations import CBASHelper
 

@@ -5,7 +5,6 @@ Created on 30-Aug-2021
 '''
 import time
 
-from com.couchbase.test.taskmanager import TaskManager
 from opd import OPD
 
 

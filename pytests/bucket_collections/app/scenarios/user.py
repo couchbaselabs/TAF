@@ -16,9 +16,6 @@ from cb_constants import DocLoading
 from global_vars import logger
 from constants.sdk_constants.java_client import SDKConstants
 
-from com.couchbase.client.java.json import JsonObject
-from java.lang import Exception as Java_base_exception
-
 from sdk_exceptions import SDKException
 
 
@@ -306,10 +303,6 @@ class User(Thread):
                     self.result = User.scenarios[self.op_type](self)
                 User.log.info("%s %s" % (self.scope, self.result))
             except Exception as e:
-                self.exception = e
-                traceback.print_exc()
-                break
-            except Java_base_exception as e:
                 self.exception = e
                 traceback.print_exc()
                 break

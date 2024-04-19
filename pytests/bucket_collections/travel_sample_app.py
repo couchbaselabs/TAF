@@ -11,8 +11,6 @@ from bucket_collections.app.scenarios.hotel import Hotel
 from bucket_collections.app.scenarios.user import User
 from cb_constants import DocLoading
 
-from com.couchbase.client.java.json import JsonObject
-
 
 class TravelSampleApp(AppBase):
     def setUp(self):

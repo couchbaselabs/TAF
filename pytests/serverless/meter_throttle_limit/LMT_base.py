@@ -11,21 +11,11 @@ from membase.api.rest_client import RestConnection
 from StatsLib.StatsOperations import StatsHelper
 from sdk_exceptions import SDKException
 from cb_constants.CBServer import CbServer
-from com.couchbase.test.taskmanager import TaskManager
-from com.couchbase.test.sdk import Server, SDKClient
-from com.couchbase.test.sdk import SDKClient as NewSDKClient
-from com.couchbase.test.docgen import WorkLoadSettings,\
-    DocumentGenerator
-from com.couchbase.test.loadgen import WorkLoadGenerate
-from com.couchbase.test.docgen import DocRange
 from java.util import HashMap
 from couchbase.test.docgen import DRConstants
 from serverless.serverless_onprem_basetest import ServerlessOnPremBaseTest
 from constants.sdk_constants.java_client import SDKConstants
-from com.couchbase.client.core.error import ServerOutOfMemoryException,\
-    DocumentExistsException, DocumentNotFoundException, TimeoutException
 from cb_tools.cbstats import Cbstats
-from com.couchbase.test.transactions import SimpleTransaction as Transaction
 
 
 # LMT == LIMITING METERING THROTTLING

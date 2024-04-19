@@ -3,9 +3,6 @@ from membase.api.rest_client import RestConnection
 from sdk_client3 import SDKClient
 from constants.sdk_constants.java_client import SDKConstants
 
-from reactor.util.function import Tuples
-import com.couchbase.test.transactions.SimpleTransaction as Transaction
-
 """
 Basic test cases with commit,rollback scenarios
 """

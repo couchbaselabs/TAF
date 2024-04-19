@@ -6,8 +6,6 @@ from serverless.tenant_mgmt_on_cloud import TenantMgmtOnCloud
 import time
 import random
 
-from com.couchbase.test.docgen import DocumentGenerator
-
 
 class HibernationOnCloud(TenantMgmtOnCloud):
     def setUp(self):

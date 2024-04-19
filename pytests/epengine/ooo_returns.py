@@ -10,9 +10,6 @@ from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 
-from com.couchbase.test.transactions import SimpleTransaction as Transaction
-from reactor.util.function import Tuples
-
 from sdk_client3 import TransactionConfig, SDKClient
 
 

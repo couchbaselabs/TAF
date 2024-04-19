@@ -11,11 +11,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
-
-from java.lang import Exception as Java_base_exception
 
 retry_exceptions = list([SDKException.AmbiguousTimeoutException,
                          SDKException.DurabilityImpossibleException,
@@ -89,8 +86,6 @@ class RebalanceBaseTest(BaseTestCase):
         if self.spec_name is not None:
             try:
                 self.collection_setup()
-            except Java_base_exception as exception:
-                self.handle_setup_exception(exception)
             except Exception as exception:
                 self.handle_setup_exception(exception)
         else:

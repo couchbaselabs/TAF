@@ -16,14 +16,9 @@ from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
 from serverlessfts import ftsQueries, ftsIndex, HotelQueries, \
     HotelIndex, template
-from com.couchbase.client.core.error import TimeoutException, \
-    AmbiguousTimeoutException, UnambiguousTimeoutException, \
-    RequestCanceledException, CouchbaseException
-from com.couchbase.client.java.search import SearchQuery
 from global_vars import logger
 from java.net import SocketTimeoutException
 from elasticsearch import EsClient
-from com.couchbase.test.val import Vector
 from constants.cb_constants.CBServer import CbServer
 
 

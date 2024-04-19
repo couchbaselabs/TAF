@@ -2,10 +2,6 @@ import random
 import re
 import time
 
-from com.couchbase.client.java import *
-from com.couchbase.client.java.json import *
-from com.couchbase.client.java.query import *
-
 from cb_constants import CbServer
 from FtsLib.FtsOperations import FtsHelper
 from membase.api.rest_client import RestConnection

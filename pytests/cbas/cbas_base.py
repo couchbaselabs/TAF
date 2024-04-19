@@ -400,8 +400,6 @@ class CBASBaseTest(BaseTestCase):
                 if self.bucket_spec is not None:
                     try:
                         self.collectionSetUp(cluster)
-                    except Java_base_exception as exception:
-                        self.handle_setup_exception(exception)
                     except Exception as exception:
                         self.handle_setup_exception(exception)
                 else:

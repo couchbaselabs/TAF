@@ -5,9 +5,6 @@ from basetestcase import ClusterSetup
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_client3 import SDKClient, TransactionConfig
 
-import com.couchbase.test.transactions.SimpleTransaction as Transaction
-from reactor.util.function import Tuples
-
 from sdk_exceptions import SDKException
 
 

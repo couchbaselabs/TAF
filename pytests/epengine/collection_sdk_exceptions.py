@@ -18,12 +18,6 @@ from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
 from table_view import TableView
 
-from com.couchbase.client.core.error import \
-    CollectionExistsException, \
-    CollectionNotFoundException, \
-    CouchbaseException, \
-    ScopeNotFoundException
-
 
 class SDKExceptionTests(CollectionBase):
     def setUp(self):

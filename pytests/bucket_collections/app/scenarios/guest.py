@@ -9,8 +9,6 @@ from bucket_collections.app.lib.common_util import \
     get_random_scenario
 from global_vars import logger
 
-from java.lang import Exception as Java_base_exception
-
 
 class Guest(Thread):
     scenarios = dict()
@@ -116,10 +114,6 @@ class Guest(Thread):
                     self.result = Guest.scenarios[self.op_type]()
                 Guest.log.info("%s %s" % (self.tenant_scope, self.result))
             except Exception as e:
-                self.exception = e
-                traceback.print_exc()
-                break
-            except Java_base_exception as e:
                 self.exception = e
                 traceback.print_exc()
                 break

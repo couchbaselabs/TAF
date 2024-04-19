@@ -8,7 +8,6 @@ from couchbase_utils.cb_tools.cbimport import CbImport
 from remote.remote_util import RemoteMachineShellConnection
 from global_vars import logger
 from bucket_collections.collections_base import CollectionBase
-from java.lang import Exception as Java_base_exception
 from awsLib.s3_data_helper import perform_S3_operation
 from sdk_client3 import SDKClientPool
 
@@ -50,8 +49,6 @@ class TPCHUtil(object):
                 self.basetest_obj.sdk_compression)
 
             self.basetest_obj.cluster_util.print_cluster_stats(cluster)
-        except Java_base_exception as exception:
-            self.basetest_obj.handle_setup_exception(exception)
         except Exception as exception:
             self.basetest_obj.handle_setup_exception(exception)
 

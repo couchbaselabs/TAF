@@ -8,8 +8,6 @@ from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
-from com.couchbase.client.core.error import InternalServerFailureException
-
 
 class KvOsoBackfillTests(CollectionBase):
     def setUp(self):

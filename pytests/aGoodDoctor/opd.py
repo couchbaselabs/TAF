@@ -13,17 +13,6 @@ from BucketLib.BucketOperations import BucketHelper
 from table_view import TableView
 from membase.api.rest_client import RestConnection
 from cb_tools.cbstats import Cbstats
-from com.couchbase.test.taskmanager import TaskManager
-from com.couchbase.test.sdk import Server, SDKClientPool
-# from com.couchbase.test.sdk import SDKClient as NewSDKClient
-from com.couchbase.test.docgen import WorkLoadSettings
-from com.couchbase.test.docgen import DocumentGenerator
-from com.couchbase.test.loadgen import WorkLoadGenerate
-from com.couchbase.test.docgen import DocRange
-from java.util import HashMap
-from com.couchbase.test.docgen import DRConstants
-from com.couchbase.client.core.error import DocumentExistsException,\
-    TimeoutException, DocumentNotFoundException, ServerOutOfMemoryException
 import time
 from custom_exceptions.exception import RebalanceFailedException,\
     ServerUnavailableException

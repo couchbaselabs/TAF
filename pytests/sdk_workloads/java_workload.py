@@ -13,7 +13,6 @@ from table_view import TableView
 import time
 from cb_constants.CBServer import CbServer
 from bucket_utils.bucket_ready_functions import CollectionUtils
-from com.couchbase.test.sdk import Server
 
 
 class JavaSDKWorkload(BaseTestCase, OPD):

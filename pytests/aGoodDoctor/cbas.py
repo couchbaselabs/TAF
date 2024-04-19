@@ -10,12 +10,6 @@ import threading
 import time
 
 from sdk_client3 import SDKClient
-from com.couchbase.client.java.analytics import AnalyticsOptions,\
-    AnalyticsScanConsistency, AnalyticsStatus
-from com.couchbase.client.core.error import RequestCanceledException,\
-    CouchbaseException, AmbiguousTimeoutException, PlanningFailureException,\
-    UnambiguousTimeoutException, TimeoutException, DatasetExistsException,\
-    IndexExistsException
 from global_vars import logger
 from constants.cb_constants.CBServer import CbServer
 import itertools

@@ -16,13 +16,6 @@ from cb_tools.cbstats import Cbstats
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
 
-from com.couchbase.client.core.error import \
-    IndexFailureException,\
-    IndexNotFoundException, \
-    InternalServerFailureException
-
-from java.lang import Exception as Java_base_exception
-
 
 class CollectionBase(ClusterSetup):
     def setUp(self):
@@ -88,8 +81,6 @@ class CollectionBase(ClusterSetup):
             self.collection_setup()
             CollectionBase.setup_collection_history_settings(self)
             CollectionBase.setup_indexing_for_dcp_oso_backfill(self)
-        except Java_base_exception as exception:
-            self.handle_setup_exception(exception)
         except Exception as exception:
             self.handle_setup_exception(exception)
         self.supported_d_levels = \
@@ -276,7 +267,7 @@ class CollectionBase(ClusterSetup):
                         .format(bucket.name, scope.name, col.name)
                     try:
                         sdk_client.cluster.query(query)
-                    except InternalServerFailureException as e:
+                    except Exception as e:
                         if "Build Already In Progress" in str(e):
                             pass
                     index_names.append(i_name)
