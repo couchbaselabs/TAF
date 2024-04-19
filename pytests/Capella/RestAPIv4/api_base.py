@@ -789,21 +789,20 @@ class APIBase(CouchbaseBaseTest):
         return True
 
     def select_CIDR(self, org, proj, name, cloudProvider, serviceGroups,
-                    availability, support, header=None, **kwargs):
+                    availability, support, couchbaseServer=None, header=None,
+                    **kwargs):
         self.log.info("Selecting CIDR for cluster deployment.")
 
         start_time = time.time()
         while time.time() - start_time < 1800:
             result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                org, proj, name, cloudProvider, serviceGroups=serviceGroups,
-                availability=availability, support=support, headers=header,
-                **kwargs)
+                org, proj, name, cloudProvider, couchbaseServer,
+                serviceGroups, availability, support, header, **kwargs)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                    org, proj, name, cloudProvider,
-                    serviceGroups=serviceGroups, availability=availability,
-                    support=support, headers=header, **kwargs)
+                    org, proj, name, cloudProvider, couchbaseServer,
+                    serviceGroups, availability, support, header, **kwargs)
             if result.status_code != 422:
                 return result
             elif "Please ensure you are passing a unique CIDR block" in \
