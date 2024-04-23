@@ -6,9 +6,12 @@ Created on 4-March-2024
 import random
 import time
 from Queue import Queue
+
+from CbasLib.CBASOperations import CBASHelper
 from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
+from itertools import combinations, product
 
 
 class CopyToKv(ColumnarBaseTest):
@@ -51,6 +54,11 @@ class CopyToKv(ColumnarBaseTest):
             self.delete_capella_bucket(self.provisioned_bucket_id)
         super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
+
+    def pairs(self, *lists):
+        for t in combinations(lists, 2):
+            for pair in product(*t):
+                yield pair
 
     def base_infra_setup(self):
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
@@ -170,6 +178,7 @@ class CopyToKv(ColumnarBaseTest):
         if resp.status_code == 201:
             self.log.info("Create collection {} in scope {}".format(collection_name, scope_id))
             return collection_name
+        return False
 
     def delete_capella_bucket(self, bucket_id):
         resp = self.capellaAPI.cluster_ops_apis.delete_bucket(self.tenant.id, self.tenant.project_id,
@@ -501,6 +510,215 @@ class CopyToKv(ColumnarBaseTest):
         capella_api_v2.delete_db_user(self.tenant.id, self.tenant.project_id, self.remote_cluster.id, new_db_user_id)
         jobs.join()
 
+    def test_copy_to_kv_drop_remote_dataset(self):
+        self.base_infra_setup()
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("external")
+        jobs = Queue()
+        results = []
+        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
+        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
+        provisioned_collections = []
+        for dataset in datasets:
+            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
+                                                             self.provisioned_scope_name)
+            provisioned_collections.append(collection_name)
+            collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
+                                           collection_name)
+            expected_error = self.input.param("expected_error")
+            if remote_link.database_name == "Default":
+                expected_error = expected_error.format(remote_link.dataverse_name + '.' + remote_link.name)
+            else:
+                expected_error = expected_error.format(remote_link.full_name)
+            jobs.put((self.cbas_util.copy_to_kv,
+                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
+                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
+                       "link_name": remote_link.full_name,
+                       "validate_error_msg": self.input.param("validate_error", False),
+                       "expected_error": expected_error,
+                       "expected_error_code": self.input.param("expected_error_code")}))
+
+        self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
+        time.sleep(4)
+        if not self.delete_capella_bucket(bucket_id=self.provisioned_bucket_id):
+            self.fail("Failed to drop remote bucket while copying to KV")
+        jobs.join()
+
+    def test_copy_to_kv_drop_columnar_dataset(self):
+        self.base_infra_setup()
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("external")
+        jobs = Queue()
+        results = []
+        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
+        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
+        provisioned_collections = []
+        for dataset in datasets:
+            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
+                                                             self.provisioned_scope_name)
+            provisioned_collections.append(collection_name)
+            collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
+                                           collection_name)
+            expected_error = self.input.param("expected_error")
+            if remote_link.database_name == "Default":
+                expected_error = expected_error.format(remote_link.dataverse_name + '.' + remote_link.name)
+            else:
+                expected_error = expected_error.format(remote_link.full_name)
+            jobs.put((self.cbas_util.copy_to_kv,
+                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
+                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
+                       "link_name": remote_link.full_name,
+                       "validate_error_msg": self.input.param("validate_error", False),
+                       "expected_error": expected_error,
+                       "expected_error_code": self.input.param("expected_error_code")}))
+
+        self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
+        time.sleep(10)
+        for dataset in datasets:
+            if not self.cbas_util.drop_dataset(self.cluster, dataset.full_name):
+                self.fail("Failed to drop columnar dataset while copying to KV")
+        jobs.join()
+
+    def test_create_copyToKV_from_collection_aggregate_group_by(self):
+        self.base_infra_setup()
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        no_of_docs = self.input.param("no_of_docs", 1000)
+        jobs = Queue()
+        results = []
+        for i in range(len(datasets)):
+            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": datasets[i].name,
+                       "dataverse_name": datasets[i].dataverse_name, "database_name": datasets[i].database_name,
+                       "no_of_docs": no_of_docs}))
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+        if not all(results):
+            self.log.error("Not all docs were inserted")
+        results = []
+        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
+        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
+        provisioned_collections = []
+        query = "SELECT country, ARRAY_AGG(city) AS city FROM {0} GROUP BY country"
+        for dataset in datasets:
+            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
+                                                             self.provisioned_scope_name)
+            provisioned_collections.append(collection_name)
+            collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
+                                           collection_name)
+            source_definition = query.format(dataset.full_name)
+            jobs.put((self.cbas_util.copy_to_kv,
+                      {"cluster": self.cluster, "source_definition":source_definition, "dest_bucket": collection,
+                       "link_name": remote_link.full_name}))
+        self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        for i in range(len(datasets)):
+            remote_dataset = self.cbas_util.create_remote_dataset_obj(self.cluster, self.provisioned_bucket_name,
+                                                                      self.provisioned_scope_name,
+                                                                      provisioned_collections[i], remote_link,
+                                                                      capella_as_source=True)[0]
+            if not self.cbas_util.create_remote_dataset(self.cluster, remote_dataset.name,
+                                                        remote_dataset.full_kv_entity_name,
+                                                        remote_dataset.link_name,
+                                                        dataverse_name=remote_dataset.dataverse_name,
+                                                        database_name=remote_dataset.database_name):
+                self.log.error("Failed to create remote dataset on KV")
+                results.append(False)
+                continue
+            for j in range(5):
+                statement = "select * from {0} limit 1".format(datasets[i].full_name)
+                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                                                                                                   statement)
+                country_name = ((result[0])[CBASHelper.unformat_name(datasets[i].name)]["country"]).replace("&amp;",
+                                                                                                            "")
+                query_statement = "SELECT ARRAY_LENGTH(ARRAY_AGG(city)) as city FROM {0} where country = \"{1}\"".format(
+                        datasets[i].full_name, str(country_name))
+                remote_statement = "select * from {0} where country = \"{1}\"".format(
+                    remote_dataset.full_name, str(country_name))
+
+                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                                                                                                       remote_statement)
+                length_of_city_array_from_remote = len((result[0][remote_dataset.name])['city'])
+
+                status, metrics, errors, result2, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                                                                                                        query_statement)
+                length_of_city_array_from_dataset = result2[0]["city"]
+                if length_of_city_array_from_dataset != length_of_city_array_from_remote:
+                        self.log.error("Length of city aggregate failed")
+                results.append(length_of_city_array_from_remote == length_of_city_array_from_dataset)
+
+        if not all(results):
+            self.fail("Copy to statement copied the wrong results")
+
+    def test_create_copyToKV_from_multiple_collection_query_drop_standalone_collection(self):
+        self.base_infra_setup()
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        jobs = Queue()
+        results = []
+        self.provisioned_bucket_id = self.create_capella_bucket()
+        self.provisioned_scope = self.create_capella_scope(self.provisioned_bucket_id)
+        provisioned_collections = []
+        unique_pairs = []
+        for pair in self.pairs(datasets):
+            unique_pairs.append(pair)
+        for dataset in datasets:
+            if dataset.data_source is None:
+                jobs.put((self.cbas_util.load_doc_to_standalone_collection,
+                          {"cluster": self.cluster, "collection_name": dataset.name,
+                           "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
+                           "no_of_docs": self.no_of_docs}))
+
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+        results = []
+        for i in range(len(unique_pairs)):
+            statement = "select * from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4".format(
+                (unique_pairs[i][0]).full_name, (unique_pairs[i][1]).full_name
+            )
+            collection = "{}.{}.{}".format(self.provisioned_bucket_id, self.provisioned_scope,
+                                           self.create_capella_collection(self.provisioned_bucket_id,
+                                                                          self.provisioned_scope))
+            provisioned_collections.append(collection)
+            jobs.put((self.cbas_util.copy_to_kv,
+                      {"cluster": self.cluster, "source_definition": statement, "dest_bucket": collection,
+                       "link_name": remote_link.full_name}))
+
+        self.cbas_util.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+        if not all(results):
+            self.log.error("Copy to KV statement failure")
+
+        for i in range(len(unique_pairs)):
+            remote_dataset = self.cbas_util.create_remote_dataset_obj(self.cluster, self.provisioned_bucket_name,
+                                                                      self.provisioned_scope_name,
+                                                                      provisioned_collections[i], remote_link,
+                                                                      capella_as_source=True)[0]
+            if not self.cbas_util.create_remote_dataset(self.cluster, remote_dataset.name,
+                                                        remote_dataset.full_kv_entity_name,
+                                                        remote_dataset.link_name,
+                                                        dataverse_name=remote_dataset.dataverse_name,
+                                                        database_name=remote_dataset.database_name):
+                self.log.fail("Failed to create remote dataset on KV")
+
+            dataset_statement = "select count(*) from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4".format(
+                (unique_pairs[i][0]).full_name, (unique_pairs[i][1]).full_name
+            )
+            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                                                                                               dataset_statement)
+
+            remote_statement = "select count(*) from {}".format(remote_dataset.full_name)
+            status, metrics, errors, result1, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                                                                                                remote_statement)
+
+            if result[0]['$1'] != result1[0]['$1']:
+                self.log.error("Document count mismatch in remote dataset {0}".format(
+                    remote_dataset.full_name
+                ))
+            results.append(result[0]['$1'] == result1[0]['$1'])
+
+            if not all(results):
+                self.fail("The document count does not match in remote source and KV")
 
     def test_copy_to_kv_while_scaling(self):
         self.base_infra_setup()

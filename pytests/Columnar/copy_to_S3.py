@@ -1884,15 +1884,15 @@ class CopyToS3(ColumnarBaseTest):
 
                 status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                    dynamic_statement)
-                lenght_of_city_array_from_s3 = len((result[0][dataset_obj_string.name])['city'])
+                length_of_city_array_from_s3 = len((result[0][dataset_obj_string.name])['city'])
 
                 status, metrics, errors, result2, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                     query_statement)
 
-                lenght_of_city_array_from_dataset = result2[0]["city"]
-                if lenght_of_city_array_from_s3 != lenght_of_city_array_from_dataset:
+                length_of_city_array_from_dataset = result2[0]["city"]
+                if length_of_city_array_from_s3 != length_of_city_array_from_dataset:
                     self.log.error("Length of city aggregate failed")
-                results.append(lenght_of_city_array_from_s3 == lenght_of_city_array_from_dataset)
+                results.append(length_of_city_array_from_s3 == length_of_city_array_from_dataset)
 
         if not all(results):
             self.fail("Copy to statement copied the wrong results")

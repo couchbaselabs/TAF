@@ -2710,6 +2710,8 @@ class Remote_Dataset_Util(Dataset_Util):
         remote_link_objs = list(remote_link_objs)
 
         num_of_remote_datasets = dataset_spec.get("num_of_remote_datasets", 0)
+        if num_of_remote_datasets == 0:
+            return True
 
         kv_collection_used = {}
         # create a map of cluster and all their KV collections
