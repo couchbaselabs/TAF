@@ -527,7 +527,7 @@ class BasicUpsertTests(BasicCrudTests):
                 for task in tasks_info:
                     self.task_manager.get_task_result(task)
                 self.bucket_util.verify_doc_op_task_exceptions(
-                    tasks_info, self.cluster)
+                    tasks_info, self.cluster, load_using=self.load_docs_using)
                 self.bucket_util.log_doc_ops_task_failures(tasks_info)
                 mutated += 1
 

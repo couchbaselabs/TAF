@@ -82,11 +82,10 @@ class MagmaRecovery(BaseTestCase):
         for bucket in self.first_cluster.buckets:
             self.log.info("Loading data into bucket: {}".format(bucket.name))
             doc_gen = doc_generator(key="temp_docs", start=0, end=self.item_count, doc_size=1024)
-            doc_loading_task = self.task.async_load_gen_docs(self.first_cluster,
-                                                            bucket,
-                                                            doc_gen, "create",
-                                                            scope=self.scope_to_load,
-                                                            collection=self.collection_to_load)
+            doc_loading_task = self.task.async_load_gen_docs(
+                self.first_cluster, bucket, doc_gen, "create",
+                scope=self.scope_to_load, collection=self.collection_to_load,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(doc_loading_task)
 
         self.sleep(30, "Wait for bucket item count to get reflected")

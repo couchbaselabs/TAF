@@ -87,8 +87,8 @@ class PlasmaBaseTest(StorageBase):
                     durability=self.durability_level,
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
-                    scope=scope_name,
-                    collection=collection))
+                    scope=scope_name, collection=collection,
+                    load_using=self.load_docs_using))
         return tasks
 
     def compare_RR_for_nodes(self, final_stat_map_list, initial_stat_map_list, field='resident_ratio', comparisonType='percent', ops='greater', threshold=10):

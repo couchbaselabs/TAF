@@ -123,9 +123,9 @@ class StorageMigration(BaseTestCase):
         self.log.info("Starting a data load on the source bucket")
         doc_gen = doc_generator(key="temp_docs", start=0,
                                 end=self.item_count, doc_size=1024)
-        load_task = self.task.async_load_gen_docs(self.source_cluster,
-                                                self.source_cluster.buckets[0],
-                                                doc_gen, "create")
+        load_task = self.task.async_load_gen_docs(
+            self.source_cluster, self.source_cluster.buckets[0], doc_gen,
+            "create", load_using=self.load_docs_using)
 
         self.log.info("Starting migration of storageBackend for bucket: {}".format(
                             self.source_bucket_name))

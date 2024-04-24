@@ -629,7 +629,8 @@ class StorageBase(BaseTestCase):
                     scope=scope,
                     collection=collection,
                     monitor_stats=self.monitor_stats,
-                    track_failures=track_failures)
+                    track_failures=track_failures,
+                    load_using=self.load_docs_using)
                 tasks_info.update(task_info.items())
                 task_per_collection[collection] = list(task_info.keys())[0]
             if scope == CbServer.default_scope:
@@ -857,7 +858,8 @@ class StorageBase(BaseTestCase):
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
                 sdk_retry_strategy=sdk_retry_strategy,
-                iterations=iterations)
+                iterations=iterations,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
         if "create" in doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -876,7 +878,8 @@ class StorageBase(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "expiry" in doc_ops and self.gen_expiry is not None and self.maxttl:
@@ -897,22 +900,23 @@ class StorageBase(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
         if "read" in doc_ops and self.gen_read is not None:
             read_tasks_info = self.bucket_util._async_validate_docs(
-               self.cluster, self.gen_read, "read", 0,
-               batch_size=self.batch_size,
-               process_concurrency=self.process_concurrency,
-               timeout_secs=self.sdk_timeout,
-               time_unit=self.time_unit,
-               retry_exceptions=retry_exceptions,
-               ignore_exceptions=ignore_exceptions,
-               scope=scope,
-               collection=collection,
-               suppress_error_table=suppress_error_table,
-               sdk_retry_strategy=sdk_retry_strategy)
+                self.cluster, self.gen_read, "read", 0,
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                timeout_secs=self.sdk_timeout,
+                time_unit=self.time_unit,
+                retry_exceptions=retry_exceptions,
+                ignore_exceptions=ignore_exceptions,
+                scope=scope,
+                collection=collection,
+                suppress_error_table=suppress_error_table,
+                sdk_retry_strategy=sdk_retry_strategy)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -931,7 +935,8 @@ class StorageBase(BaseTestCase):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
@@ -939,8 +944,8 @@ class StorageBase(BaseTestCase):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
 
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster, load_using=self.load_docs_using)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         if read_task:

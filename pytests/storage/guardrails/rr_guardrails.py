@@ -566,8 +566,8 @@ class RRGuardrails(GuardrailsBase):
             DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
 
         current_rr = self.check_resident_ratio(self.cluster)
         end_time = time.time() + self.timeout
@@ -771,8 +771,8 @@ class RRGuardrails(GuardrailsBase):
             DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=self.batch_size,
             process_concurrency=self.process_concurrency,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
 
         current_rr = self.check_resident_ratio(self.cluster)
         end_time = time.time() + self.timeout

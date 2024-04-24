@@ -168,7 +168,8 @@ class PlasmaStatsTest(PlasmaBaseTest):
             DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=100, process_concurrency=8,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
 
         # Add 2 more index nodes to the cluster
         self.nodes_in = self.input.param("nodes_in", 2)
@@ -313,7 +314,8 @@ class PlasmaStatsTest(PlasmaBaseTest):
             DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=100, process_concurrency=8,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
 
         for indexName in indexDict.items():
             drop_query = "Drop INDEX `%s`.`%s` Using GSI" % (self.buckets[0].name, indexName[0])
