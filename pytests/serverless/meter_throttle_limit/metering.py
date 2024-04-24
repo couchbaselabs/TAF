@@ -139,7 +139,7 @@ class ServerlessMetering(LMT):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            print_ops_rate=False)
+            print_ops_rate=False, load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -155,9 +155,8 @@ class ServerlessMetering(LMT):
             DocLoading.Bucket.DocOps.UPDATE, exp=1,
             batch_size=2000, process_concurrency=5,
             durability=self.durability_level,
-            timeout_secs=30,
-            skip_read_on_error=True,
-            print_ops_rate=False)
+            timeout_secs=30, skip_read_on_error=True, print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         _, self.ru, self.wu = self.get_stat(self.bucket)
         expected_wu += self.bucket_util.calculate_units(20, self.doc_size, 0,
@@ -169,11 +168,9 @@ class ServerlessMetering(LMT):
         load_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, doc_gen,
             DocLoading.Bucket.DocOps.READ,
-            batch_size=500, process_concurrency=8,
-            timeout_secs=30,
-            suppress_error_table=True,
-            start_task=False,
-            print_ops_rate=False)
+            batch_size=500, process_concurrency=8, timeout_secs=30,
+            suppress_error_table=True, start_task=False, print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.add_new_task(load_task)
         self.task_manager.get_task_result(load_task)
         _, self.ru, self.wu = self.get_stat(self.bucket)
@@ -572,8 +569,8 @@ class ServerlessMetering(LMT):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            scope=scope_name,
-            collection=collection_name)
+            scope=scope_name, collection=collection_name,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(task)
         # check metering
         storage, num_throttled, ru, wu = self.get_stat_from_prometheus(self.bucket)
@@ -590,7 +587,8 @@ class ServerlessMetering(LMT):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(task)
         storage, num_throttled, ru, wu = self.get_stat_from_prometheus(self.bucket)
         self.log.info("add validation check")
@@ -665,7 +663,8 @@ class ServerlessMetering(LMT):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 compression=self.sdk_compression,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             thread.join()
             self.task_manager.get_task_result(task)
             num_throttled, ru, wu = self.bucket_util.get_stat_from_metrics(bucket)

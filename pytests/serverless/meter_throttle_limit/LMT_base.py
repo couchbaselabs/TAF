@@ -334,7 +334,8 @@ class LMT(ServerlessOnPremBaseTest):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
         if "create" in doc_ops and self.gen_create is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -353,7 +354,8 @@ class LMT(ServerlessOnPremBaseTest):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "expiry" in doc_ops and self.gen_expiry is not None and self.maxttl:
@@ -374,7 +376,8 @@ class LMT(ServerlessOnPremBaseTest):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_expiry.end - self.gen_expiry.start)
         if "read" in doc_ops and self.gen_read is not None:
@@ -408,7 +411,8 @@ class LMT(ServerlessOnPremBaseTest):
                 collection=collection,
                 monitor_stats=self.monitor_stats,
                 track_failures=track_failures,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 

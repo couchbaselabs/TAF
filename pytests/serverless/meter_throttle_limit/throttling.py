@@ -28,7 +28,8 @@ class ServerlessThrottling(LMT):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=10, process_concurrency=1))
+                batch_size=10, process_concurrency=1,
+                load_using=self.load_docs_using))
         return task_info
 
     def get_size_of_doc(self, gen_doc):
@@ -151,7 +152,8 @@ class ServerlessThrottling(LMT):
                     durability=self.durability_level,
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
-                    print_ops_rate=False)
+                    print_ops_rate=False,
+                    load_using=self.load_docs_using)
                 self.task_manager.get_task_result(load_task)
 
                 self.sleep(30)
@@ -258,7 +260,8 @@ class ServerlessThrottling(LMT):
                     durability=self.durability_level,
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
-                    print_ops_rate=False)
+                    print_ops_rate=False,
+                    load_using=self.load_docs_using)
                 tasks.append(load_task)
 
             for load_task in tasks:
@@ -335,7 +338,8 @@ class ServerlessThrottling(LMT):
                     durability=self.durability_level,
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
-                    print_ops_rate=False)
+                    print_ops_rate=False,
+                    load_using=self.load_docs_using)
                 self.task_manager.get_task_result(load_task)
             for task in task_info:
                 self.task_manager.get_task_result(task)
