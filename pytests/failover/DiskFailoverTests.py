@@ -96,8 +96,9 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
     def test_disk_failure_for_reads(self):
         self.enable_disk_autofailover_and_validate()
         tasks = []
-        tasks.extend(self.async_load_all_buckets(self.initial_load_gen,
-                                                 "read", 0))
+        tasks.extend(self.async_load_all_buckets(
+            self.initial_load_gen, "read", 0,
+            load_using=self.load_docs_using))
         self.loadgen_tasks = tasks
         self.failover_expected = (not self.failover_action == "disk_full")
         self.failover_actions[self.failover_action]()
@@ -148,7 +149,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
-                self.cluster.master, self.initial_load_gen, "read", 0))
+                self.cluster.master, self.initial_load_gen, "read", 0,
+                load_using=self.load_docs_using))
         else:
             task = self.data_load_from_spec(async_load=True)
         rebalance_task = self.cluster.async_rebalance(self.cluster,
@@ -193,7 +195,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
-                self.cluster.master, self.initial_load_gen, "read", 0))
+                self.cluster.master, self.initial_load_gen, "read", 0,
+                load_using=self.load_docs_using))
         else:
             task = self.data_load_from_spec(async_load=True)
         rebalance_success = self.task.rebalance(self.cluster,
@@ -232,7 +235,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
-                self.cluster.master, self.initial_load_gen, "read", 0))
+                self.cluster.master, self.initial_load_gen, "read", 0,
+                load_using=self.load_docs_using))
         else:
             task = self.data_load_from_spec(async_load=True)
         count = 0
@@ -287,7 +291,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket._async_load_all_buckets(
-                self.cluster.master, self.initial_load_gen, "read", 0))
+                self.cluster.master, self.initial_load_gen, "read", 0,
+                load_using=self.load_docs_using))
         else:
             task = self.data_load_from_spec(async_load=True)
         count = 0
@@ -340,7 +345,8 @@ class DiskAutofailoverTests(DiskAutoFailoverBasetest):
         if self.spec_name is None:
             self.loadgen_tasks = self._loadgen()
             self.loadgen_tasks.extend(self.bucket_util._async_load_all_buckets(
-                self.cluster.master, self.initial_load_gen, "read", 0))
+                self.cluster.master, self.initial_load_gen, "read", 0,
+                load_using=self.load_docs_using))
         else:
             task = self.data_load_from_spec(async_load=True)
         count = 0

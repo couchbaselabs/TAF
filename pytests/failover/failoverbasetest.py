@@ -153,7 +153,8 @@ class FailoverBaseTest(BaseTestCase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
             retry_exceptions=retry_exceptions,
-            ignore_exceptions=ignore_exceptions)
+            ignore_exceptions=ignore_exceptions,
+            load_using=self.load_docs_using)
 
     def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
         tasks = []
@@ -163,7 +164,8 @@ class FailoverBaseTest(BaseTestCase):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 batch_size=batch_size, timeout_secs=self.sdk_timeout,
                 process_concurrency=8, retries=self.sdk_retries,
-                durability=self.durability_level)
+                durability=self.durability_level,
+                load_using=self.load_docs_using)
             tasks.append(task)
         return tasks
 
@@ -177,7 +179,8 @@ class FailoverBaseTest(BaseTestCase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -186,7 +189,8 @@ class FailoverBaseTest(BaseTestCase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
         if "delete" in self.doc_ops:
@@ -196,13 +200,14 @@ class FailoverBaseTest(BaseTestCase):
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
-                ignore_exceptions=ignore_exceptions)
+                ignore_exceptions=ignore_exceptions,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items -= (self.gen_delete.end - self.gen_delete.start)
 
         if task_verification:
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster, load_using=self.load_docs_using)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         return tasks_info

@@ -202,8 +202,9 @@ class AutoFailoverBaseTest(ClusterSetup):
                                                 key_size=self.key_size,
                                                 doc_size=self.doc_size,
                                                 doc_type=self.doc_type)
-            tasks = self.async_load_all_buckets(subsequent_load_gen,
-                                                "create", 0)
+            tasks = self.async_load_all_buckets(
+                subsequent_load_gen, "create", 0,
+                load_using=self.load_docs_using)
         return tasks
 
     def get_vbucket_info_from_failover_nodes(self):
@@ -241,7 +242,8 @@ class AutoFailoverBaseTest(ClusterSetup):
         task = self.async_load_all_buckets(kv_gen, op_type, exp, batch_size)
         self.task_manager.get_task_result(task)
 
-    def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
+    def async_load_all_buckets(self, kv_gen, op_type, exp, batch_size=20,
+                               load_using="default_loader"):
         tasks = []
         for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
@@ -249,12 +251,14 @@ class AutoFailoverBaseTest(ClusterSetup):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 batch_size=batch_size, timeout_secs=self.sdk_timeout,
                 process_concurrency=8, retries=self.sdk_retries,
-                durability=self.durability_level)
+                durability=self.durability_level, load_using=load_using)
             tasks.append(task)
         return tasks
 
-    def load_all_buckets(self, kv_gen, op_type, exp, batch_size=20):
-        tasks = self.async_load_all_buckets(kv_gen, op_type, exp, batch_size)
+    def load_all_buckets(self, kv_gen, op_type, exp, batch_size=20,
+                         load_using="default_loader"):
+        tasks = self.async_load_all_buckets(kv_gen, op_type, exp, batch_size,
+                                            load_using=load_using)
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
@@ -843,7 +847,8 @@ class AutoFailoverBaseTest(ClusterSetup):
                 batch_size=10, replicate_to=self.replicate_to,
                 persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
             # Verify there is not failed docs in the task
             if len(task.fail.keys()) != 0:

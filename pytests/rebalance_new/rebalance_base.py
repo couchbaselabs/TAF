@@ -6,6 +6,7 @@ from cb_constants import CbServer
 from basetestcase import BaseTestCase
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
@@ -25,7 +26,7 @@ retry_exceptions = list([SDKException.AmbiguousTimeoutException,
 class RebalanceBaseTest(BaseTestCase):
     def setUp(self):
         super(RebalanceBaseTest, self).setUp()
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
         self.doc_ops = self.input.param("doc_ops", "create")
         self.bucket_size = self.input.param("bucket_size", 256)
         self.key_size = self.input.param("key_size", 0)
@@ -51,11 +52,12 @@ class RebalanceBaseTest(BaseTestCase):
         if self.cluster.type == "default":
             node_ram_ratio = self.bucket_util.base_bucket_ratio(
                 self.cluster.servers)
-            info = self.rest.get_nodes_self()
-            self.rest.init_cluster(username=self.cluster.master.rest_username,
-                                   password=self.cluster.master.rest_password)
-            kv_mem_quota = int(info.mcdMemoryReserved*node_ram_ratio)
-            self.rest.set_service_mem_quota(
+            _, info = self.rest.node_details()
+            self.rest.initialize_node(
+                username=self.cluster.master.rest_username,
+                password=self.cluster.master.rest_password)
+            kv_mem_quota = int(info["mcdMemoryReserved"]*node_ram_ratio)
+            self.rest.configure_memory(
                 {CbServer.Settings.KV_MEM_QUOTA: kv_mem_quota})
             self.bucket_util.add_rbac_user(self.cluster.master)
 
@@ -134,7 +136,8 @@ class RebalanceBaseTest(BaseTestCase):
                         .num_items = 0
 
             # Create clients in SDK client pool
-            if self.cluster.sdk_client_pool:
+            if self.load_docs_using == "default_loader" \
+                    and self.cluster.sdk_client_pool:
                 self.log.info("Creating SDK clients for client_pool")
                 for bucket in self.cluster.buckets:
                     self.cluster.sdk_client_pool.create_clients(
@@ -347,7 +350,8 @@ class RebalanceBaseTest(BaseTestCase):
             retry_exceptions=retry_exceptions_local,
             active_resident_threshold=self.active_resident_threshold,
             scope=self.scope_name,
-            collection=self.collection_name)
+            collection=self.collection_name,
+            load_using=self.load_docs_using)
         if self.active_resident_threshold < 100:
             for task, _ in tasks_info.items():
                 self.num_items = task.doc_index
@@ -429,7 +433,8 @@ class RebalanceBaseTest(BaseTestCase):
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
-                scope=self.scope_name, collection=self.collection_name)
+                scope=self.scope_name, collection=self.collection_name,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
         if "create" in self.doc_ops:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -441,7 +446,8 @@ class RebalanceBaseTest(BaseTestCase):
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
-                scope=self.scope_name, collection=self.collection_name)
+                scope=self.scope_name, collection=self.collection_name,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             self.num_items += (self.gen_create.end - self.gen_create.start)
             for bucket in self.cluster.buckets:
@@ -459,7 +465,8 @@ class RebalanceBaseTest(BaseTestCase):
                 timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
                 retry_exceptions=retry_exceptions,
                 ignore_exceptions=ignore_exceptions,
-                scope=self.scope_name, collection=self.collection_name)
+                scope=self.scope_name, collection=self.collection_name,
+                load_using=self.load_docs_using)
             tasks_info.update(tem_tasks_info.items())
             for bucket in self.cluster.buckets:
                 bucket \
@@ -474,7 +481,7 @@ class RebalanceBaseTest(BaseTestCase):
                 self.task_manager.get_task_result(task)
 
             self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster)
+                tasks_info, self.cluster, load_using=self.load_docs_using)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         return tasks_info

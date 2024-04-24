@@ -1,12 +1,12 @@
 import time
 from random import shuffle
 
-from BucketLib.bucket import Bucket
 from cb_constants import constants
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from common_lib import sleep
 from global_vars import logger
 import global_vars
-from custom_exceptions.exception import StatsUnavailableException, \
+from custom_exceptions.exception import \
     ServerAlreadyJoinedException, RebalanceFailedException, \
     InvalidArgumentException, ServerSelfJoinException, \
     AddNodeException
@@ -90,7 +90,7 @@ class RebalanceHelper(object):
         curr_stat_value = -1
         verified = False
         while not verified:
-            rest = RestConnection(master)
+            rest = BucketRestApi(master)
             try:
                 stats = rest.get_bucket_stats(bucket)
                 if stats and stat_key in stats and stats[stat_key] == stat_value:
@@ -134,7 +134,7 @@ class RebalanceHelper(object):
         log = logger.get("infra")
         log.info("Waiting for bucket {0} stat: {1} to match {2} on {3}"
                  .format(bucket, stat_key, stat_value, master.ip))
-        rest = RestConnection(master)
+        rest = BucketRestApi(master)
         stats = rest.get_bucket_stats(bucket)
 
         while stats.get(stat_key, -1) != stat_value:
@@ -213,7 +213,7 @@ class RebalanceHelper(object):
         start = time.time()
         verified = False
         while (time.time() - start) <= timeout_in_seconds:
-            rest = RestConnection(master)
+            rest = BucketRestApi(master)
             stats = rest.get_bucket_stats(bucket)
             # some stats are in memcached
             if stats and stat_key in stats:

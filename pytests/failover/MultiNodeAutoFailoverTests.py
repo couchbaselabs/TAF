@@ -299,7 +299,8 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
                                                 doc_size=self.doc_size,
                                                 doc_type=self.doc_type)
             tasks = self.async_load_all_buckets(
-                subsequent_load_gen, "create", 0)
+                subsequent_load_gen, "create", 0,
+                load_using=self.load_docs_using)
         else:
             doc_loading_spec = self.bucket_util.get_crud_template_from_package(
                 self.data_load_spec)
