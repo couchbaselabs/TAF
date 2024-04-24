@@ -100,7 +100,8 @@ class CrashTest(ClusterSetup):
                         persist_to=self.persist_to,
                         replicate_to=self.replicate_to,
                         durability=self.durability_level,
-                        batch_size=10, process_concurrency=8)
+                        batch_size=10, process_concurrency=8,
+                        load_using=self.load_docs_using)
                     self.task.jython_task_manager.get_task_result(task)
 
                     self.bucket_util._wait_for_stats_all_buckets(
@@ -185,7 +186,8 @@ class CrashTest(ClusterSetup):
                 persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                skip_read_on_error=True)
+                skip_read_on_error=True,
+                load_using=self.load_docs_using)
 
         # Induce the error condition
         error_sim.create(error_to_simulate)
@@ -296,7 +298,8 @@ class CrashTest(ClusterSetup):
                 persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                skip_read_on_error=True)
+                skip_read_on_error=True,
+                load_using=self.load_docs_using)
 
         task_info = dict()
         task_info[task] = self.bucket_util.get_doc_op_info_dict(
@@ -317,8 +320,8 @@ class CrashTest(ClusterSetup):
         if self.atomicity:
             self.task.jython_task_manager.get_task_result(task)
         if not self.atomicity:
-            self.bucket_util.verify_doc_op_task_exceptions(task_info,
-                                                           self.cluster)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                task_info, self.cluster, load_using=self.load_docs_using)
             self.bucket_util.log_doc_ops_task_failures(task_info)
 
         # Update self.num_items
@@ -415,7 +418,8 @@ class CrashTest(ClusterSetup):
                 process_concurrency=1,
                 skip_read_on_error=True,
                 print_ops_rate=False,
-                task_identifier="%s_%s" % (doc_op, index))
+                task_identifier="%s_%s" % (doc_op, index),
+                load_using=self.load_docs_using)
             tasks.append(task)
 
         self.log.info("Starting error_simulation on %s" % nodes_to_affect)

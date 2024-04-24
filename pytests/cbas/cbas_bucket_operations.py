@@ -409,7 +409,8 @@ class CBASBucketOperations(CBASBaseTest):
                     self.cluster, doc_gen, "create", 0,
                     batch_size=1000,
                     durability=self.durability_level,
-                    suppress_error_table=True)
+                    suppress_error_table=True,
+                    load_using=self.load_docs_using)
             except Exception as e:
                 self.fail("Following error occurred while loading bucket - {"
                           "0}".format(str(e)))
@@ -585,7 +586,8 @@ class CBASEphemeralBucketOperations(CBASBucketOperations):
             try:
                 self.bucket_util.sync_load_all_buckets(
                     self.cluster, doc_gen, "create", 0, batch_size=doc_batch_size,
-                    durability=self.durability_level, suppress_error_table=True)
+                    durability=self.durability_level, suppress_error_table=True,
+                    load_using=self.load_docs_using)
             except Exception as e:
                 self.fail("Following error occurred while loading bucket - {"
                           "0}".format(str(e)))

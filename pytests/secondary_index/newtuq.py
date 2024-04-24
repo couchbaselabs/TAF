@@ -318,20 +318,19 @@ class QueryTests(BaseTestCase):
             if type(gens_load[bucket.name]) is list:
                 for gen in gens_load[bucket.name]:
                     tasks.append(self.task.async_load_gen_docs(
-                        self.cluster, bucket, gen, op_type, exp,
-                        flag, self.persist_to, self.replicate_to,
-                        self.batch_size,
-                        self.sdk_timeout, self.sdk_compression,
-                        print_ops_rate=False,
-                        retries=self.sdk_retries))
+                        self.cluster, bucket, gen, op_type, exp, flag,
+                        self.persist_to, self.replicate_to,
+                        self.batch_size, self.sdk_timeout,
+                        self.sdk_compression, print_ops_rate=False,
+                        retries=self.sdk_retries,
+                        load_using=self.load_docs_using))
             else:
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, bucket, gens_load[bucket.name], op_type, exp,
                     flag, self.persist_to, self.replicate_to,
-                    self.batch_size,
-                    self.sdk_timeout, self.sdk_compression,
-                    print_ops_rate=False,
-                    retries=self.sdk_retries))
+                    self.batch_size, self.sdk_timeout, self.sdk_compression,
+                    print_ops_rate=False, retries=self.sdk_retries,
+                    load_using=self.load_docs_using))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         self.num_items = items + start_items
