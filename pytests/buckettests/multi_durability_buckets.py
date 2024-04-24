@@ -114,7 +114,7 @@ class MultiDurabilityTests(BaseTestCase):
                     durability=bucket_info[index]["durability"],
                     timeout_secs=bucket_info[index]["sdk_timeout"],
                     task_identifier=bucket_info[index]["object"].name,
-                    print_ops_rate=False))
+                    print_ops_rate=False, load_using=self.load_docs_using))
 
             # Wait for all tasks to complete
             for task in tasks:
@@ -161,7 +161,7 @@ class MultiDurabilityTests(BaseTestCase):
                 batch_size=10, process_concurrency=1,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                task_identifier=bucket.name))
+                task_identifier=bucket.name, load_using=self.load_docs_using))
         for task in doc_loading_tasks:
             self.task.jython_task_manager.get_task_result(task)
 

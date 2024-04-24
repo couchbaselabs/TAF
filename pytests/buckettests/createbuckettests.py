@@ -72,7 +72,8 @@ class CreateBucketTests(ClusterSetup):
         for bucket in self.cluster.buckets:
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, load_gen,
-                DocLoading.Bucket.DocOps.CREATE)
+                DocLoading.Bucket.DocOps.CREATE,
+                load_using=self.load_docs_using)
             tasks.append(task)
 
         for task in tasks:
@@ -100,8 +101,8 @@ class CreateBucketTests(ClusterSetup):
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_create, "create", 0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
-                timeout_secs=self.sdk_timeout,
-                batch_size=10, process_concurrency=8)
+                timeout_secs=self.sdk_timeout, batch_size=10,
+                process_concurrency=8, load_using=self.load_docs_using)
             loading_tasks.append(task)
         for task in loading_tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -166,7 +167,8 @@ class CreateBucketTests(ClusterSetup):
                 self.cluster, bucket, doc_create, "create", 0,
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 timeout_secs=self.sdk_timeout,
-                batch_size=10, process_concurrency=8)
+                batch_size=10, process_concurrency=8,
+                load_using=self.load_docs_using)
             loading_tasks.append(task)
         for task in loading_tasks:
             self.task.jython_task_manager.get_task_result(task)

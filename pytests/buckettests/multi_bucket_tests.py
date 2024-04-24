@@ -33,13 +33,12 @@ class MultiBucketTests(ClusterSetup):
         for index, bucket in enumerate(self.cluster.buckets):
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, self.load_gen, "create", 0,
-                batch_size=10,
-                process_concurrency=2,
-                replicate_to=self.replicate_to,
-                persist_to=self.persist_to,
+                batch_size=10, process_concurrency=2,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                task_identifier="bucket%d" % int(index+1)))
+                task_identifier="bucket%d" % int(index+1),
+                load_using=self.load_docs_using))
 
         for task in tasks:
             self.task_manager.get_task_result(task)
@@ -90,7 +89,8 @@ class MultiBucketTests(ClusterSetup):
                 persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                task_identifier=bucket_obj.name))
+                task_identifier=bucket_obj.name,
+                load_using=self.load_docs_using))
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
@@ -177,7 +177,8 @@ class MultiBucketTests(ClusterSetup):
                 replicate_to=self.replicate_to,
                 persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout))
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using))
 
         # Wait for tasks to complete
         for task in tasks:

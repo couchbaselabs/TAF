@@ -63,7 +63,8 @@ class BucketParamTest(ClusterSetup):
                         replicate_to=self.replicate_to,
                         durability=self.durability_level,
                         timeout_secs=self.sdk_timeout,
-                        batch_size=10, process_concurrency=8)
+                        batch_size=10, process_concurrency=8,
+                        load_using=self.load_docs_using)
                     self.task.jython_task_manager.get_task_result(task)
 
             if not self.atomicity:
@@ -148,7 +149,8 @@ class BucketParamTest(ClusterSetup):
 
     def load_docs(self, doc_ops, start_doc_for_insert, doc_count, doc_update,
                   doc_create, doc_delete, suppress_error_table=False,
-                  ignore_exceptions=[], retry_exceptions=[]):
+                  ignore_exceptions=[], retry_exceptions=[],
+                  load_using="default_loader"):
         tasks_info = dict()
         if "create" in doc_ops:
             # Start doc create task in parallel with replica_update
@@ -160,7 +162,8 @@ class BucketParamTest(ClusterSetup):
                 batch_size=10, process_concurrency=8,
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions,
-                suppress_error_table=suppress_error_table))
+                suppress_error_table=suppress_error_table,
+                load_using=load_using))
             doc_count += (doc_create.end - doc_create.start)
             start_doc_for_insert += self.num_items
         if "update" in doc_ops:
@@ -173,7 +176,8 @@ class BucketParamTest(ClusterSetup):
                 batch_size=10, process_concurrency=8,
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions,
-                suppress_error_table=suppress_error_table))
+                suppress_error_table=suppress_error_table,
+                load_using=load_using))
         if "delete" in doc_ops:
             # Start doc update task in parallel with replica_update
             tasks_info.update(self.bucket_util._async_load_all_buckets(
@@ -184,7 +188,8 @@ class BucketParamTest(ClusterSetup):
                 batch_size=10, process_concurrency=8,
                 ignore_exceptions=ignore_exceptions,
                 retry_exceptions=retry_exceptions,
-                suppress_error_table=suppress_error_table))
+                suppress_error_table=suppress_error_table,
+                load_using=load_using))
             doc_count -= (doc_delete.end - doc_delete.start)
 
         return tasks_info, doc_count, start_doc_for_insert
@@ -297,8 +302,8 @@ class BucketParamTest(ClusterSetup):
                 self.task.jython_task_manager.get_task_result(task)
             if not self.atomicity:
                 # Wait for doc_ops to complete and retry & validate failures
-                self.bucket_util.verify_doc_op_task_exceptions(tasks,
-                                                               self.cluster)
+                self.bucket_util.verify_doc_op_task_exceptions(
+                    tasks, self.cluster, load_using=self.load_docs_using)
                 self.bucket_util.log_doc_ops_task_failures(tasks)
 
                 for _, task_info in tasks.items():
@@ -334,8 +339,8 @@ class BucketParamTest(ClusterSetup):
                 self.task.jython_task_manager.get_task_result(task)
             if not self.atomicity:
                 # Wait for doc_ops to complete and retry & validate failures
-                self.bucket_util.verify_doc_op_task_exceptions(tasks,
-                                                               self.cluster)
+                self.bucket_util.verify_doc_op_task_exceptions(
+                    tasks, self.cluster, load_using=self.load_docs_using)
                 self.bucket_util.log_doc_ops_task_failures(tasks)
 
                 for task, task_info in tasks.items():
@@ -485,7 +490,8 @@ class BucketParamTest(ClusterSetup):
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,
-                    batch_size=10, process_concurrency=8)
+                    batch_size=10, process_concurrency=8,
+                    load_using=self.load_docs_using)
             data_load_task.append(task)
 
         if self.minimum_bucket_replica is not None:
@@ -543,7 +549,8 @@ class BucketParamTest(ClusterSetup):
                     persist_to=self.persist_to, replicate_to=self.replicate_to,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,
-                    batch_size=10, process_concurrency=8)
+                    batch_size=10, process_concurrency=8,
+                    load_using=self.load_docs_using)
             data_load_task.append(task)
         for task in data_load_task:
             self.task.jython_task_manager.get_task_result(task)
@@ -686,7 +693,8 @@ class BucketParamTest(ClusterSetup):
             self.cluster, self.def_bucket, load_gen, "update", 0,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
             timeout_secs=self.sdk_timeout,
-            batch_size=10, process_concurrency=8)
+            batch_size=10, process_concurrency=8,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
 
         # Update bucket replica to new value

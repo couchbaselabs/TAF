@@ -75,8 +75,8 @@ class AutoCompactionTests(CollectionBase):
                                 timeout_secs=self.sdk_timeout,
                                 batch_size=10,
                                 process_concurrency=8,
-                                scope=scope.name,
-                                collection=collection.name)
+                                scope=scope.name, collection=collection.name,
+                                load_using=self.load_docs_using)
                             self.task.jython_task_manager.get_task_result(task)
                             if end_time < time.time() or self.stop_loading_thread:
                                 break
@@ -105,8 +105,8 @@ class AutoCompactionTests(CollectionBase):
                         timeout_secs=self.sdk_timeout,
                         batch_size=batch_size,
                         process_concurrency=process_concurrency,
-                        scope=scope.name,
-                        collection=collection.name)
+                        scope=scope.name, collection=collection.name,
+                        load_using=self.load_docs_using)
                     self.task.jython_task_manager.get_task_result(task)
                     bucket.scopes[scope.name] \
                         .collections[collection.name] \

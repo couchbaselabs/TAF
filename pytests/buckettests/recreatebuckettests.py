@@ -23,10 +23,12 @@ class RecreateBucketTests(ClusterSetup):
                                        key_size=self.key_size,
                                        doc_size=self.doc_size,
                                        doc_type=self.doc_type)
-        task = self.task.async_load_gen_docs(self.cluster, bucket, gen_create, "create", 0,
-                                             batch_size=20, persist_to=self.persist_to,
-                                             replicate_to=self.replicate_to,
-                                             timeout_secs=self.sdk_timeout, retries=self.sdk_retries)
+        task = self.task.async_load_gen_docs(
+            self.cluster, bucket, gen_create, "create", 0,
+            batch_size=20, persist_to=self.persist_to,
+            replicate_to=self.replicate_to,
+            timeout_secs=self.sdk_timeout, retries=self.sdk_retries,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
 
     def _validate_load(self, bucket):
