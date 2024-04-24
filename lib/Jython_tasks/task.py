@@ -7420,6 +7420,7 @@ class CompactBucketTask(Task):
                                 "%s retries" % self.retries)
 
         self.complete_task()
+        return self.result
 
 
 class MonitorBucketCompaction(Task):

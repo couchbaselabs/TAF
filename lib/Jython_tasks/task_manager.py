@@ -73,7 +73,7 @@ class TaskManager(object):
     def abort_all_tasks(self):
         for task_name, future in self.futures.items():
             self.log.info("Stopping task {0}".format(task_name))
-            result = future.cancel(True)
+            result = future.cancel()
             if result:
                 self.log.debug("Stopped task {0}".format(task_name))
             else:
