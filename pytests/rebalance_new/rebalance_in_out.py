@@ -167,7 +167,7 @@ class RebalanceInOutTests(RebalanceBaseTest):
         try:
             self.shuffle_nodes_between_zones_and_rebalance(servs_out)
             self.cluster_util.print_cluster_stats(self.cluster)
-        except Exception, e:
+        except Exception as e:
             if "deltaRecoveryNotPossible" not in e.__str__():
                 self.fail("Rebalance did not fail. Rebalance has to fail since no delta recovery should be possible"
                           " while adding nodes too")

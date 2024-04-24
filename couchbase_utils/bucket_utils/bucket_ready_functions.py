@@ -3103,7 +3103,7 @@ class BucketUtils(ScopeUtils):
                              check_bucket_stats=True,
                              check_ep_items_remaining=False,
                              verify_total_items=True, num_zone=1):
-        master = cluster.master
+
         self._wait_for_stats_all_buckets(
             cluster, cluster.buckets,
             timeout=(timeout or 120),
@@ -5098,7 +5098,7 @@ class BucketUtils(ScopeUtils):
         for server in nodes:
             # get the stats
             server_stats = bucket_helper.get_bucket_stats_for_node(
-                bucket, server)
+                bucket.name, server)
             if not server_stats:
                 self.log.debug("Unable to get stats from {0}: {1}"
                                .format(server.ip, server.port))
@@ -5108,7 +5108,7 @@ class BucketUtils(ScopeUtils):
             raise StatsUnavailableException()
         curr_items = 0
         max_vbuckets = int(cbstat.all_stats(bucket.name)["ep_max_vbuckets"])
-        master_stats = bucket_helper.get_bucket_stats(bucket)
+        master_stats = bucket_helper.get_bucket_stats(bucket.name)
         if "vb_active_num" in master_stats:
             self.log.debug('vb_active_num from master: {0}'
                            .format(master_stats["vb_active_num"]))
