@@ -215,7 +215,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             shell.disconnect()
 
             # SDKClientPool object for creating generic clients across tasks
-            if self.sdk_client_pool is True:
+            if self.load_docs_using == "default_loader" \
+                    and self.sdk_client_pool is True:
                 cluster.sdk_client_pool = SDKClientPool()
 
         self.log_setup_status("OnPremBaseTest", "started")
@@ -315,18 +316,18 @@ class OnPremBaseTest(CouchbaseBaseTest):
                             self.docker.buildImage(nebula_path,
                                                    "directnebula-%s" % _rand)
                         self.log.info("Construct docker port mapping")
-                        portMap = dict()
+                        port_map = dict()
                         for i in range(9000, 9011):
                             i = str(i)
-                            portMap.update({i: i})
+                            port_map.update({i: i})
                         for i in range(11000, 11011):
                             i = str(i)
-                            portMap.update({i: i})
-                        host_config = self.docker.portMapping(portMap)
+                            port_map.update({i: i})
+                        host_config = self.docker.portMapping(port_map)
                         self.log.info("Start Docker Container")
                         dn_container_id = self.docker.startDockerContainer(
                             host_config, self.image_id,
-                            exposedPorts=portMap.keys(),
+                            exposedPorts=port_map.keys(),
                             tag="DirectNebula-{}".format(_rand))
                         self.docker_containers.append(dn_container_id)
                         self.use_https = False
@@ -336,7 +337,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                         nebula.endpoint.srv = nebula_ip
                         self.log.info("Populate Nebula object done!!")
                         self.nebula_details[cluster] = nebula
-                    except:
+                    except Exception:
                         traceback.print_exc()
                         self.nebula = False
 
@@ -373,8 +374,9 @@ class OnPremBaseTest(CouchbaseBaseTest):
             # Enforce IPv4 or IPv6 or both
             if self.ipv4_only or self.ipv6_only:
                 for _, cluster in self.cb_clusters.items():
-                    status, msg = self.cluster_util.enable_disable_ip_address_family_type(
-                        cluster, True, self.ipv4_only, self.ipv6_only)
+                    status, msg = self.cluster_util.\
+                        enable_disable_ip_address_family_type(
+                            cluster, True, self.ipv4_only, self.ipv6_only)
                     if not status:
                         self.fail(msg)
 
@@ -527,8 +529,8 @@ class OnPremBaseTest(CouchbaseBaseTest):
             while retry < retry_count:
                 for _, cluster in self.cb_clusters.items():
                     status = True
-                    task = self.node_utils.async_enable_tls(cluster.master,
-                                                            self.encryption_level)
+                    task = self.node_utils.async_enable_tls(
+                        cluster.master, self.encryption_level)
                     self.task_manager.get_task_result(task)
                     self.log.info("Validating if services obey tls only "
                                   "on servers {0}".format(cluster.servers))
