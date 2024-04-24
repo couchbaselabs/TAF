@@ -66,7 +66,8 @@ class LuksUpgrade(UpgradeBase):
                     timeout_secs=self.sdk_timeout,
                     process_concurrency=4,
                     skip_read_on_error=True,
-                    suppress_error_table=True)
+                    suppress_error_table=True,
+                    load_using=self.load_docs_using)
             self.task_manager.get_task_result(sync_write_task)
 
             if self.atomicity:

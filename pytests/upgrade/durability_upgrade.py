@@ -762,7 +762,8 @@ class UpgradeTests(UpgradeBase):
                     timeout_secs=self.sdk_timeout,
                     process_concurrency=4,
                     skip_read_on_error=True,
-                    suppress_error_table=True)
+                    suppress_error_table=True,
+                    load_using=self.load_docs_using)
             self.task_manager.get_task_result(sync_write_task)
             self.num_items += create_batch_size
 
@@ -1131,7 +1132,8 @@ class UpgradeTests(UpgradeBase):
             timeout_secs=self.sdk_timeout,
             process_concurrency=4,
             skip_read_on_error=True,
-            suppress_error_table=True)
+            suppress_error_table=True,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(task)
 
     def update_item_count_after_loading_large_docs(self):

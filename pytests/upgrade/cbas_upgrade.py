@@ -288,7 +288,8 @@ class UpgradeTests(UpgradeBase):
                 active_resident_threshold=self.active_resident_threshold,
                 timeout_secs=self.sdk_timeout,
                 process_concurrency=8,
-                batch_size=500)
+                batch_size=500,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(async_load_task)
 
             # Update num_items in case of DGM run
@@ -330,7 +331,8 @@ class UpgradeTests(UpgradeBase):
                 active_resident_threshold=self.active_resident_threshold,
                 timeout_secs=self.sdk_timeout,
                 process_concurrency=8,
-                batch_size=500)
+                batch_size=500,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(async_load_task)
 
             # Verify doc load count
@@ -400,7 +402,8 @@ class UpgradeTests(UpgradeBase):
                     active_resident_threshold=self.active_resident_threshold,
                     timeout_secs=self.sdk_timeout,
                     process_concurrency=8,
-                    batch_size=500)
+                    batch_size=500,
+                    load_using=self.load_docs_using)
                 self.task_manager.get_task_result(async_load_task)
 
                 # Update num_items in case of DGM run

@@ -97,7 +97,8 @@ class MemCompressionUpgradeTests(UpgradeBase):
                     active_resident_threshold=self.active_resident_threshold,
                     timeout_secs=self.sdk_timeout,
                     process_concurrency=8,
-                    batch_size=500)
+                    batch_size=500,
+                    load_using=self.load_docs_using)
                 self.task_manager.get_task_result(async_load_task)
                 # Update num_items in case of DGM run
                 if self.active_resident_threshold != 100:
@@ -202,16 +203,17 @@ class MemCompressionUpgradeTests(UpgradeBase):
 
         for bucket in self.cluster.buckets[1:]:
             gen_load = doc_generator(
-                    self.key, 0, self.num_items,
-                    randomize_doc_size=True, randomize_value=True,
-                    randomize=True)
+                self.key, 0, self.num_items,
+                randomize_doc_size=True, randomize_value=True,
+                randomize=True)
             async_load_task = self.task.async_load_gen_docs(
-                    self.cluster, bucket, gen_load,
-                    DocLoading.Bucket.DocOps.CREATE,
-                    active_resident_threshold=self.active_resident_threshold,
-                    timeout_secs=self.sdk_timeout,
-                    process_concurrency=8,
-                    batch_size=500)
+                self.cluster, bucket, gen_load,
+                DocLoading.Bucket.DocOps.CREATE,
+                active_resident_threshold=self.active_resident_threshold,
+                timeout_secs=self.sdk_timeout,
+                process_concurrency=8,
+                batch_size=500,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(async_load_task)
             # Update num_items in case of DGM run
             if self.active_resident_threshold != 100:
