@@ -40,17 +40,14 @@ class BucketHelper(BucketRestApi):
             return False
 
     def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
-        api = '%s%s%s?basic_stats=true' \
-               % (self.baseUrl, 'pools/default/buckets/',
-                  urllib.quote_plus(bucket.name))
-        status, content, _ = self._http_request(api)
+        status, parsed = self.get_bucket_info(bucket, basic_stats=True)
         num = 1
         while not status and num_attempt > num:
-            sleep(timeout, "Will retry to get %s" % api, log_type="infra")
-            status, content, _ = self._http_request(api)
+            sleep(timeout, f"{bucket.name} - Retrying get_basic_stats...",
+                  log_type="infra")
+            status, parsed = self.get_bucket_info(bucket, basic_stats=True)
             num += 1
         if status:
-            parsed = json.loads(content)
             if 'vBucketServerMap' in parsed:
                 vBucketServerMap = parsed['vBucketServerMap']
                 serverList = vBucketServerMap['serverList']
@@ -123,7 +120,7 @@ class BucketHelper(BucketRestApi):
         target_servers = [server.ip for server in servers]
         if bucket_name is None:
             bucket_name = self.get_buckets_json()[0]["name"]
-        bucket_to_check = self.get_bucket_json(bucket_name)
+        bucket_to_check = self.get_buckets_json(bucket_name)
         bucket_servers = bucket_to_check["vBucketServerMap"]["serverList"]
         bucket_servers = [ip.split(":")[0] for ip in bucket_servers]
 
@@ -149,24 +146,17 @@ class BucketHelper(BucketRestApi):
         Keyword argument:
         bucket -- bucket name
         """
-        api = self.baseUrl + 'pools/default/buckets/' \
-              + urllib.quote_plus("%s" % bucket)
-        _, content, _ = self._http_request(api)
-        _stats = json.loads(content)
-        return _stats['vBucketServerMap']['vBucketMap']
+        _, json_parsed = self.get_bucket_info(bucket_name=bucket)
+        return json_parsed['vBucketServerMap']['vBucketMap']
 
     def get_vbucket_map_and_server_list(self, bucket="default"):
         """ Return server list, replica and vbuckets map
         that matches to server list """
-        # vbucket_map = self.fetch_vbucket_map(bucket)
-        api = self.baseUrl + 'pools/default/buckets/' \
-              + urllib.quote_plus("%s" % bucket)
-        _, content, _ = self._http_request(api)
-        _stats = json.loads(content)
-        num_replica = _stats['vBucketServerMap']['numReplicas']
-        vbucket_map = _stats['vBucketServerMap']['vBucketMap']
-        servers = _stats['vBucketServerMap']['serverList']
-        server_list = []
+        _, json_parsed = self.get_bucket_info(bucket_name=bucket)
+        num_replica = json_parsed['vBucketServerMap']['numReplicas']
+        vbucket_map = json_parsed['vBucketServerMap']['vBucketMap']
+        servers = json_parsed['vBucketServerMap']['serverList']
+        server_list = list()
         for node in servers:
             node = node.split(":")
             server_list.append(node[0])
@@ -176,14 +166,9 @@ class BucketHelper(BucketRestApi):
         if not node:
             self.log.critical('node_ip not specified')
             return None
-        stats = {}
-        api = "{0}{1}{2}{3}{4}:{5}{6}" \
-              .format(self.baseUrl, 'pools/default/buckets/',
-                      urllib.quote_plus("%s" % bucket), "/nodes/",
-                      node.ip, node.port, "/stats")
-        status, content, _ = self._http_request(api)
+        stats = dict()
+        status, json_parsed = super().get_bucket_stats_from_node(bucket, node)
         if status:
-            json_parsed = json.loads(content)
             op = json_parsed["op"]
             samples = op["samples"]
             for stat_name in samples:
@@ -201,10 +186,8 @@ class BucketHelper(BucketRestApi):
         if not bucket:
             self.log.critical("Bucket Name not Specified")
             return None
-        api = self.baseUrl + 'pools/default/buckets'
-        status, content, _ = self._http_request(api)
+        status, json_parsed = self.get_bucket_info()
         if status:
-            json_parsed = json.loads(content)
             for item in json_parsed:
                 if item["name"] == bucket:
                     return item["nodes"][0]["status"]
@@ -217,8 +200,7 @@ class BucketHelper(BucketRestApi):
         bucket -- bucket name
         zoom -- stats zoom level (minute | hour | day | week | month | year)
         """
-        status, content = BucketRestApi.get_bucket_stats(self, bucket,
-                                                         zoom=zoom)
+        status, content = super().get_bucket_stats(bucket, zoom=zoom)
         if not status:
             raise Exception(content)
         return content
@@ -229,15 +211,15 @@ class BucketHelper(BucketRestApi):
         bucket -- bucket name
         zoom -- stats zoom level (minute | hour | day | week | month | year)
         """
-        api = self.baseUrl \
+        api = self.base_url \
               + 'pools/default/buckets/@xdcr-{0}/stats?zoom={1}' \
                 .format(urllib.quote_plus("%s" % bucket), zoom)
         _, content, _ = self._http_request(api)
         return json.loads(content)
 
-    def get_bucket_stats(self, bucket='default'):
+    def get_bucket_stats(self, bucket='default', zoom=None):
         stats = {}
-        status, json_parsed = self.get_bucket_stats_json(bucket)
+        status, json_parsed = super().get_bucket_stats(bucket, zoom=zoom)
         if status:
             op = json_parsed["op"]
             samples = op["samples"]
@@ -248,16 +230,8 @@ class BucketHelper(BucketRestApi):
                         stats[stat_name] = samples[stat_name][last_sample]
         return stats
 
-    def get_bucket_stats_json(self, bucket_name='default'):
-        api = "{0}{1}{2}{3}".format(self.baseUrl, 'pools/default/buckets/',
-                                    urllib.quote_plus("%s" % bucket_name),
-                                    "/stats")
-        status, content, _ = self._http_request(api)
-        json_parsed = json.loads(content)
-        return status, json_parsed
-
     def pause_bucket(self, bucket, s3_path=None, blob_storage_region=None, rate_limit=1024):
-        api = '{0}{1}'.format(self.baseUrl, 'controller/pause')
+        api = '{0}{1}'.format(self.base_url, 'controller/pause')
         param_dict = {}
         param_dict["bucket"] = bucket
         param_dict["remote_path"] = s3_path
@@ -273,7 +247,7 @@ class BucketHelper(BucketRestApi):
         return status, json_parsed
 
     def stop_pause(self, bucket):
-        api = '{0}{1}'.format(self.baseUrl, 'controller/stopPause')
+        api = '{0}{1}'.format(self.base_url, 'controller/stopPause')
         param_dict = {}
         param_dict["bucket"] = bucket
         params = json.dumps(param_dict)
@@ -286,7 +260,7 @@ class BucketHelper(BucketRestApi):
         return status, json_parsed
 
     def resume_bucket(self, bucket, s3_path=None, blob_storage_region=None, rate_limit=1024):
-        api = '{0}{1}'.format(self.baseUrl, 'controller/resume')
+        api = '{0}{1}'.format(self.base_url, 'controller/resume')
         param_dict = {}
         param_dict["bucket"] = bucket
         param_dict["remote_path"] = s3_path
@@ -302,7 +276,7 @@ class BucketHelper(BucketRestApi):
         return status, json_parsed
 
     def stop_resume(self, bucket):
-        api = '{0}{1}'.format(self.baseUrl, 'controller/stopResume')
+        api = '{0}{1}'.format(self.base_url, 'controller/stopResume')
         param_dict = {}
         param_dict["bucket"] = bucket
         params = json.dumps(param_dict)
@@ -439,7 +413,7 @@ class BucketHelper(BucketRestApi):
         return True
 
     def set_magma_quota_percentage(self, bucket="default", storageQuotaPercentage=10):
-        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
+        api = '{0}{1}{2}'.format(self.base_url, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
         params_dict = {}
         params_dict["storageQuotaPercentage"] = storageQuotaPercentage
@@ -455,7 +429,7 @@ class BucketHelper(BucketRestApi):
     def set_throttle_n_storage_limit(self, bucket_name, throttle_limit=5000, storage_limit=500, service="data"):
         key_throttle_limit = service + "ThrottleLimit"
         key_storage_limit = service + "StorageLimit"
-        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
+        api = '{0}{1}{2}'.format(self.base_url, 'pools/default/buckets/',
                               urllib.quote_plus("%s" % bucket_name))
         params = urllib.urlencode({key_throttle_limit: throttle_limit, key_storage_limit: storage_limit})
         self.log.debug("%s with param: %s" % (api, params))
@@ -466,7 +440,7 @@ class BucketHelper(BucketRestApi):
         return status, content
 
     def update_memcached_settings(self, **params):
-        api = self.baseUrl + "pools/default/settings/memcached/global"
+        api = self.base_url + "pools/default/settings/memcached/global"
         params = urllib.urlencode(params)
         self.log.info("Updating memcached properties")
         self.log.debug("%s with param: %s" % (api, params))
@@ -491,7 +465,7 @@ class BucketHelper(BucketRestApi):
                             magma_key_tree_data_block_size=None,
                             magma_seq_tree_data_block_size=None):
 
-        api = '{0}{1}{2}'.format(self.baseUrl, 'pools/default/buckets/',
+        api = '{0}{1}{2}'.format(self.base_url, 'pools/default/buckets/',
                                  urllib.quote_plus("%s" % bucket))
         params_dict = {}
         if ramQuotaMB:
@@ -553,27 +527,11 @@ class BucketHelper(BucketRestApi):
 
     def set_collection_history(self, bucket_name, scope, collection,
                                history="false"):
-        api = self.baseUrl \
-            + "pools/default/buckets/%s/scopes/%s/collections/%s" \
-            % (bucket_name, scope, collection)
-        params = {"history": history}
-        params = urllib.urlencode(params)
-        status, content, _ = self._http_request(api, "PATCH", params)
-        return status, content
-
-    def set_collection_maxttl(self, bucket_name, scope, collection,
-                               maxTTL):
-        api = self.baseUrl \
-            + "pools/default/buckets/%s/scopes/%s/collections/%s" \
-            % (bucket_name, scope, collection)
-        params = {"maxTTL": maxTTL}
-        params = urllib.urlencode(params)
-        status, content, _ = self._http_request(api, "PATCH", params)
-        return status, content
+        return self.edit_collection(bucket_name, scope, collection,
+                                    collection_spec={"history": history})
 
     def set_bucket_rr_guardrails(self, couch_min_rr=None, magma_min_rr=None):
-
-        api = self.baseUrl + "settings/resourceManagement/bucket/residentRatio"
+        api = self.base_url + "settings/resourceManagement/bucket/residentRatio"
         params = {}
         if couch_min_rr is not None:
             params['couchstoreMinimum'] = couch_min_rr
@@ -584,8 +542,7 @@ class BucketHelper(BucketRestApi):
         return status, content
 
     def set_max_data_per_bucket_guardrails(self, couch_max_data=None, magma_max_data=None):
-
-        api = self.baseUrl + "settings/resourceManagement/bucket/dataSizePerNode"
+        api = self.base_url + "settings/resourceManagement/bucket/dataSizePerNode"
         params = {}
         if couch_max_data is not None:
             params['couchstoreMaximum'] = couch_max_data
@@ -596,8 +553,7 @@ class BucketHelper(BucketRestApi):
         return status, content
 
     def set_max_disk_usage_guardrails(self, max_disk_usage):
-
-        api = self.baseUrl + "settings/resourceManagement/diskUsage"
+        api = self.base_url + "settings/resourceManagement/diskUsage"
         params = {}
         params['maximum'] = max_disk_usage
         params = urllib.urlencode(params)
@@ -605,7 +561,7 @@ class BucketHelper(BucketRestApi):
         return status, content
 
     def get_auto_compaction_settings(self):
-        api = self.baseUrl + "settings/autoCompaction"
+        api = self.base_url + "settings/autoCompaction"
         _, content, _ = self._http_request(api)
         return json.loads(content)
 
@@ -623,7 +579,7 @@ class BucketHelper(BucketRestApi):
         """Reset compaction values to default, try with old fields (dp4 build)
         and then try with newer fields"""
         params = {}
-        api = self.baseUrl
+        api = self.base_url
 
         if bucket is None:
             # setting is cluster wide
@@ -632,11 +588,6 @@ class BucketHelper(BucketRestApi):
             # overriding per/bucket compaction setting
             api = api + "pools/default/buckets/" + bucket
             params["autoCompactionDefined"] = "true"
-            # reuse current ram quota in mb per node
-#             num_nodes = len(self.node_statuses())
-            bucket_info = self.get_bucket_json(bucket)
-#             quota = self.get_bucket_json(bucket)["quota"]["ram"] / (1048576 * num_nodes)
-#             params["ramQuotaMB"] = quota
 
         params["parallelDBAndViewCompaction"] = parallelDBAndVC
         # Need to verify None because the value could be = 0
@@ -672,24 +623,20 @@ class BucketHelper(BucketRestApi):
            Cluster-wide Setting
               Disable autocompaction on doc and view
         """
-        api = self.baseUrl + "controller/setAutoCompaction"
+        api = self.base_url + "controller/setAutoCompaction"
         self.log.info("Disable autocompaction in cluster-wide setting")
         status, _, _ = self._http_request(api, "POST",
                                           "parallelDBAndViewCompaction=false")
         return status
 
     def flush_bucket(self, bucket="default"):
-        bucket_name = bucket
-        self.log.info("Triggering bucket flush for '%s'" % bucket_name)
-        api = self.baseUrl + "pools/default/buckets/{0}/controller/doFlush" \
-            .format(urllib.quote_plus("%s" % bucket_name))
-        status, _, _ = self._http_request(api, 'POST')
-        self.log.debug("Bucket flush '%s' triggered" % bucket_name)
+        status, _ = super().flush_bucket(bucket)
+        self.log.debug("Bucket flush '%s' triggered" % bucket)
         return status
 
     def get_bucket_CCCP(self, bucket):
         self.log.debug("Getting CCCP config")
-        api = '%spools/default/b/%s' % (self.baseUrl,
+        api = '%spools/default/b/%s' % (self.base_url,
                                         urllib.quote_plus("%s" % bucket))
         status, content, _ = self._http_request(api)
         if status:
@@ -698,27 +645,18 @@ class BucketHelper(BucketRestApi):
 
     def compact_bucket(self, bucket="default"):
         self.log.debug("Triggering bucket compaction for '%s'" % bucket)
-        api = self.baseUrl \
-              + 'pools/default/buckets/{0}/controller/compactBucket' \
-                .format(urllib.quote_plus("%s" % bucket))
-        status, _, _ = self._http_request(api, 'POST')
-        if status:
-            self.log.debug('Bucket compaction successful')
-        else:
+        status, _ = super().compact_bucket(bucket)
+        if not status:
             raise BucketCompactionException(bucket)
-
+        self.log.debug('Bucket compaction successful')
         return True
 
     def cancel_bucket_compaction(self, bucket="default"):
-        self.log.debug("Stopping bucket compaction for '%s'" % bucket)
-        api = self.baseUrl \
-              + 'pools/default/buckets/{0}/controller/cancelBucketCompaction' \
-                .format(urllib.quote_plus("%s" % bucket))
-        status, _, _ = self._http_request(api, 'POST')
-        if status:
-            self.log.debug('Cancel bucket compaction successful')
-        else:
+        self.log.debug("Triggering bucket compaction for '%s'" % bucket)
+        status, _ = super().cancel_compaction(bucket)
+        if not status:
             raise BucketCompactionException(bucket)
+        self.log.debug('Bucket compaction successful')
         return True
 
     def get_xdc_queue_size(self, bucket):
@@ -745,7 +683,7 @@ class BucketHelper(BucketRestApi):
 
     # the same as Preview a Random Document on UI
     def get_random_key(self, bucket):
-        api = self.baseUrl + 'pools/default/buckets/{0}/localRandomKey' \
+        api = self.base_url + 'pools/default/buckets/{0}/localRandomKey' \
                              .format(urllib.quote_plus("%s" % bucket))
         status, content, _ = self._http_request(
             api, headers=self._create_capi_headers())
@@ -763,7 +701,7 @@ class BucketHelper(BucketRestApi):
 
     def add_set_builtin_user(self, user_id, payload):
         url = "settings/rbac/users/local/" + user_id
-        api = self.baseUrl + url
+        api = self.base_url + url
         status, content, _ = self._http_request(api, 'PUT', payload)
         if not status:
             raise Exception(content)
@@ -775,7 +713,7 @@ class BucketHelper(BucketRestApi):
 
     def delete_builtin_user(self, user_id):
         url = "settings/rbac/users/local/" + user_id
-        api = self.baseUrl + url
+        api = self.base_url + url
         status, content, _ = self._http_request(api, 'DELETE')
         if not status:
             raise Exception(content)
@@ -788,7 +726,7 @@ class BucketHelper(BucketRestApi):
 
     def change_password_builtin_user(self, user_id, password):
         url = "controller/changePassword/" + user_id
-        api = self.baseUrl + url
+        api = self.base_url + url
         status, content, _ = self._http_request(api,
                                                 'POST',
                                                 password)
@@ -798,82 +736,23 @@ class BucketHelper(BucketRestApi):
 
     # Collection/Scope specific APIs
     def create_collection(self, bucket, scope, collection_spec, session=None):
-        api = self.baseUrl \
-              + 'pools/default/buckets/%s/scopes/%s/collections' \
-              % (urllib.quote_plus("%s" % bucket), urllib.quote_plus(scope))
         params = dict()
         for key, value in collection_spec.items():
             if key in ['name', 'maxTTL', 'history']:
                 params[key] = value
-        params = urllib.urlencode(params)
-        headers = self._create_headers()
-        if session is None:
-            status, content, _ = self._http_request(api,
-                                                    'POST',
-                                                    params=params,
-                                                    headers=headers)
-        else:
-            status, content, _ = self._urllib_request(api,
-                                                      'POST',
-                                                      params=params,
-                                                      headers=headers,
-                                                      session=session)
-        return status, content
+        return super().create_collection(bucket, scope, params)
 
     def create_scope(self, bucket, scope, session=None):
-        api = self.baseUrl + 'pools/default/buckets/%s/scopes' \
-                             % urllib.quote_plus("%s" % bucket)
-        params = urllib.urlencode({'name': scope})
-        headers = self._create_headers()
-        if session is None:
-            status, content, _ = self._http_request(api,
-                                                    'POST',
-                                                    params=params,
-                                                    headers=headers)
-        else:
-            status, content, _ = self._urllib_request(api,
-                                                      'POST',
-                                                      params=params,
-                                                      headers=headers,
-                                                      session=session)
-        return status, content
+        return super().create_scope(bucket, scope)
 
     def delete_scope(self, bucket, scope, session=None):
-        api = self.baseUrl + 'pools/default/buckets/%s/scopes/%s' \
-                             % (urllib.quote_plus("%s" % bucket),
-                                urllib.quote_plus(scope))
-        headers = self._create_headers()
-        if session is None:
-            status, content, _ = self._http_request(api,
-                                                    'DELETE',
-                                                    headers=headers)
-        else:
-            status, content, _ = self._urllib_request(api,
-                                                      'DELETE',
-                                                      headers=headers,
-                                                      session=session)
-        return status, content
+        return self.drop_scope(bucket, scope)
 
     def delete_collection(self, bucket, scope, collection, session=None):
-        api = self.baseUrl \
-              + 'pools/default/buckets/%s/scopes/%s/collections/%s' \
-              % (urllib.quote_plus("%s" % bucket),
-                 urllib.quote_plus(scope),
-                 urllib.quote_plus(collection))
-        headers = self._create_headers()
-        if session is None:
-            status, content, _ = self._http_request(api,
-                                                    'DELETE',
-                                                    headers=headers)
-        else:
-            status, content, _ = self._urllib_request(api,
-                                                      'DELETE',
-                                                      headers=headers,
-                                                      session=session)
-        return status, content
+        return self.drop_collection(bucket, scope, collection)
 
     def wait_for_collections_warmup(self, bucket, uid, session=None):
-        api = self.baseUrl \
+        api = self.base_url \
               + "pools/default/buckets/%s/scopes/@ensureManifest/%s" \
               % (bucket.name, uid)
         headers = self._create_headers()
@@ -889,44 +768,29 @@ class BucketHelper(BucketRestApi):
         return status, content
 
     def list_collections(self, bucket):
-        api = self.baseUrl + 'pools/default/buckets/%s/scopes' \
-                             % (urllib.quote_plus("%s" % bucket))
-        headers = self._create_headers()
-        status, content, _ = self._http_request(api,
-                                                'GET',
-                                                headers=headers)
-        return status, content
+        return self.list_scope_collections(bucket.name)
 
     def get_total_collections_in_bucket(self, bucket):
-        status, content = self.list_collections(bucket)
-        json_parsed = json.loads(content)
-        scopes = json_parsed["scopes"]
+        _, json_parsed = self.list_scope_collections(bucket.name)
         collection_count = 0
-        for scope in scopes:
-            collections = len(scope["collections"])
-            collection_count += collections
+        for scope in json_parsed["scopes"]:
+            collection_count += len(scope["collections"])
         return collection_count
 
     def get_bucket_manifest_uid(self, bucket):
-        status, content = self.list_collections(bucket)
-        json_parsed = json.loads(content)
-        manifest_uid = json_parsed["uid"]
-        return manifest_uid
+        _, json_parsed = self.list_scope_collections(bucket.name)
+        return json_parsed["uid"]
 
     def get_scope_id(self, bucket, scope_name):
-        status, content = self.list_collections(bucket)
-        json_parsed = json.loads(content)
-        scopes_data = json_parsed["scopes"]
-        for scope_data in scopes_data:
+        _, json_parsed = self.list_scope_collections(bucket.name)
+        for scope_data in json_parsed["scopes"]:
             if scope_data["name"] == scope_name:
                 sid = scope_data["uid"]
                 return sid
 
     def get_collection_id(self, bucket, scope_name, collection_name):
-        status, content = self.list_collections(bucket)
-        json_parsed = json.loads(content)
-        scopes_data = json_parsed["scopes"]
-        for scope_data in scopes_data:
+        _, json_parsed = self.list_scope_collections(bucket.name)
+        for scope_data in json_parsed["scopes"]:
             if scope_data["name"] == scope_name:
                 collections_data = scope_data["collections"]
                 for collection_data in collections_data:
@@ -938,7 +802,7 @@ class BucketHelper(BucketRestApi):
         url = "pools/default/buckets/%s/scopes" \
               % urllib.quote_plus(bucket_name)
         json_header = self.get_headers_for_content_type_json()
-        api = self.baseUrl + url
+        api = self.base_url + url
         status, content, _ = self._http_request(api, 'PUT', manifest_data,
                                                 headers=json_header)
         if not status:
@@ -946,11 +810,8 @@ class BucketHelper(BucketRestApi):
         return json.loads(content)
 
     def get_buckets_itemCount(self):
-        # get all the buckets
-        bucket_map = {}
-        api = '{0}{1}'.format(self.baseUrl, 'pools/default/buckets?basic_stats=true')
-        status, content, _ = self._http_request(api)
-        json_parsed = json.loads(content)
+        bucket_map = dict()
+        status, json_parsed = self.get_bucket_info(basic_stats=True)
         if status:
             for item in json_parsed:
                 bucket_name = item['name']
