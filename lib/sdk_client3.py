@@ -381,6 +381,9 @@ class SDKClient(object):
                     connection_string = "{0}://{1}".format(self.scheme, ", ".
                                                            join(hosts).
                                                            replace(" ", ""))
+                    if self.scheme == "couchbases":
+                        connection_string += "?ssl=no_verify"
+
                     self.cluster = Cluster.connect(connection_string,
                                                    cluster_opts)
                 break
