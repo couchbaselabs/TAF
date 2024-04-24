@@ -94,10 +94,10 @@ class CrashTest(CollectionBase):
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_create,
                 DocLoading.Bucket.DocOps.CREATE, self.maxttl,
-                persist_to=self.persist_to,
-                replicate_to=self.replicate_to,
+                persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
-                batch_size=10, process_concurrency=8)
+                batch_size=10, process_concurrency=8,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
@@ -199,14 +199,11 @@ class CrashTest(CollectionBase):
             self.cluster, self.bucket, gen_load,
             DocLoading.Bucket.DocOps.CREATE,
             exp=0,
-            batch_size=10,
-            process_concurrency=8,
-            replicate_to=self.replicate_to,
-            persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
+            batch_size=10, process_concurrency=8,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
             scope=scope_name, collection=collection_obj.name,
-            skip_read_on_error=True)
+            skip_read_on_error=True, load_using=self.load_docs_using)
         collection_obj.num_items += self.new_docs_to_add
 
     def test_create_remove_scope_with_node_crash(self):
@@ -288,7 +285,8 @@ class CrashTest(CollectionBase):
                 batch_size=200, process_concurrency=4,
                 compression=self.sdk_compression,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
 
         if action == "create":
             create_scope(self.client_type, self.bucket, self.scope_name)
@@ -402,7 +400,8 @@ class CrashTest(CollectionBase):
                 batch_size=200, process_concurrency=8,
                 compression=self.sdk_compression,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
 
         if action == "create":
             create_collection(self.client_type, self.bucket,
@@ -594,8 +593,8 @@ class CrashTest(CollectionBase):
             self.task.jython_task_manager.get_task_result(
                 self.N1ql_load_task)
         self.task_manager.get_task_result(self.doc_loading_task)
-        self.bucket_util.verify_doc_op_task_exceptions(task_info,
-                                                       self.cluster)
+        self.bucket_util.verify_doc_op_task_exceptions(
+            task_info, self.cluster, load_using=self.load_docs_using)
         self.bucket_util.log_doc_ops_task_failures(task_info)
 
         # Verification stats

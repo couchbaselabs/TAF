@@ -119,7 +119,8 @@ class DocHistoryRetention(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             print_ops_rate=False, batch_size=500, process_concurrency=2,
-            iterations=iterations, scope=scope, collection=collection)
+            iterations=iterations, scope=scope, collection=collection,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
 
@@ -205,7 +206,7 @@ class DocHistoryRetention(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, self.cluster.buckets[0], doc_gen,
             DocLoading.Bucket.DocOps.CREATE, track_failures=False,
-            exp=self.maxttl)
+            exp=self.maxttl, load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets)
@@ -216,7 +217,7 @@ class DocHistoryRetention(ClusterSetup):
             load_task = self.task.async_load_gen_docs(
                 self.cluster, self.cluster.buckets[0], doc_gen,
                 DocLoading.Bucket.DocOps.UPDATE, track_failures=False,
-                exp=self.maxttl)
+                exp=self.maxttl, load_using=self.load_docs_using)
             self.task_manager.get_task_result(load_task)
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
@@ -788,7 +789,8 @@ class DocHistoryRetention(ClusterSetup):
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 durability=self.durability_level, batch_size=500,
                 process_concurrency=1, iterations=20,
-                scope=s_name, collection=c_name)
+                scope=s_name, collection=c_name,
+                load_using=self.load_docs_using)
             load_tasks.append(load_task)
         self.validate_retention_settings_on_all_nodes()
 
@@ -936,7 +938,8 @@ class DocHistoryRetention(ClusterSetup):
                     self.cluster, bucket, doc_gen,
                     DocLoading.Bucket.DocOps.CREATE,
                     scope=CbServer.default_scope, collection="c1", exp=ttl,
-                    durability=self.durability_level)
+                    durability=self.durability_level,
+                    load_using=self.load_docs_using)
                 self.task_manager.get_task_result(load_task)
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets)
@@ -965,7 +968,8 @@ class DocHistoryRetention(ClusterSetup):
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 scope=CbServer.default_scope, collection="c1", exp=self.maxttl,
                 durability=self.durability_level, iterations=420,
-                skip_read_on_error=True, print_ops_rate=False)
+                skip_read_on_error=True, print_ops_rate=False,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(load_task)
             cb_err.create(CouchbaseError.KILL_MEMCACHED)
             self.sleep(10, "Wait before next operation")
@@ -1012,7 +1016,8 @@ class DocHistoryRetention(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE,
             scope=CbServer.default_scope, collection="c1",
-            durability=self.durability_level, iterations=2)
+            durability=self.durability_level, iterations=2,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets)
@@ -1043,7 +1048,8 @@ class DocHistoryRetention(ClusterSetup):
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             scope=CbServer.default_scope, collection="c1",
             durability=self.durability_level, print_ops_rate=False,
-            iterations=420, skip_read_on_error=True)
+            iterations=420, skip_read_on_error=True,
+            load_using=self.load_docs_using)
         if target_scenario != CouchbaseError.STOP_MEMCACHED:
             while not load_task.completed:
                 self.log.info("Killing memcached")
@@ -1166,7 +1172,8 @@ class DocHistoryRetention(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             durability=self.durability_level, iterations=-1,
-            batch_size=100, process_concurrency=6)
+            batch_size=100, process_concurrency=6,
+            load_using=self.load_docs_using)
         for index in range(1, iterations+1):
             self.log.info("Iteration :: %s" % iterations)
             cb_err.create(CouchbaseError.STOP_SERVER)
@@ -1568,12 +1575,14 @@ class DocHistoryRetention(ClusterSetup):
             load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
                 exp=1, durability=self.durability_level,
-                collection=col, print_ops_rate=False)
+                collection=col, print_ops_rate=False,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(load_task)
             self.sleep(5, "Wait before reading the keys back")
             load_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.READ,
-                collection=col, track_failures=False, print_ops_rate=False)
+                collection=col, track_failures=False, print_ops_rate=False,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(load_task)
             if index != (loop-1):
                 self.sleep(5, "Wait before loading exp docs again")

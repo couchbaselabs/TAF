@@ -49,8 +49,8 @@ class BasicOps(CollectionBase):
                         durability=self.durability_level,
                         timeout_secs=self.sdk_timeout,
                         retries=self.sdk_retries,
-                        scope=scope.name,
-                        collection=collection.name)
+                        scope=scope.name, collection=collection.name,
+                        load_using=self.load_docs_using)
                     self.task.jython_task_manager.get_task_result(task)
                     if op_type == "create":
                         bucket.scopes[scope.name] \
@@ -111,7 +111,8 @@ class BasicOps(CollectionBase):
                 timeout_secs=self.sdk_timeout,
                 scope=CbServer.default_scope,
                 collection=CbServer.default_collection,
-                suppress_error_table=True)
+                suppress_error_table=True,
+                load_using=self.load_docs_using)
             self.bucket.scopes[CbServer.default_scope] \
                 .collections[CbServer.default_collection] \
                 .num_items += self.num_items
@@ -274,7 +275,8 @@ class BasicOps(CollectionBase):
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             scope=CbServer.default_scope,
-            collection=CbServer.default_collection)
+            collection=CbServer.default_collection,
+            load_using=self.load_docs_using)
 
         # Create scope(s) while CRUDs are running in background
         if self.action_phase == "during_default_load":
@@ -342,7 +344,8 @@ class BasicOps(CollectionBase):
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             scope=CbServer.default_scope,
-            collection=CbServer.default_collection)
+            collection=CbServer.default_collection,
+            load_using=self.load_docs_using)
 
         self.bucket.scopes[CbServer.default_scope] \
             .collections[CbServer.default_collection] \
@@ -450,8 +453,8 @@ class BasicOps(CollectionBase):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            scope=scope_name,
-            collection=collection_name)
+            scope=scope_name, collection=collection_name,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(task)
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -670,7 +673,8 @@ class BasicOps(CollectionBase):
                         timeout_secs=self.sdk_timeout,
                         scope=scope.name,
                         collection=collection.name,
-                        suppress_error_table=True))
+                        suppress_error_table=True,
+                        load_using=self.load_docs_using))
 
                 for task in tasks:
                     self.task_manager.get_task_result(task)
@@ -842,7 +846,8 @@ class BasicOps(CollectionBase):
             timeout_secs=self.sdk_timeout,
             scope=CbServer.default_scope,
             collection=CbServer.default_collection,
-            suppress_error_table=True)
+            suppress_error_table=True,
+            load_using=self.load_docs_using)
 
         # perform some collection operation
         if self.perform_ops:
@@ -969,11 +974,9 @@ class BasicOps(CollectionBase):
             self.cluster, self.bucket, load_gen, "create",
             exp=self.maxttl,
             batch_size=200, process_concurrency=1,
-            scope=scope_name,
-            collection=collection_name,
-            suppress_error_table=True,
-            compression=self.sdk_compression,
-            print_ops_rate=True, retries=0)
+            scope=scope_name, collection=collection_name,
+            suppress_error_table=True, compression=self.sdk_compression,
+            print_ops_rate=True, retries=0, load_using=self.load_docs_using)
 
         self.sleep(5)
         self.bucket_util.print_bucket_stats(self.cluster)

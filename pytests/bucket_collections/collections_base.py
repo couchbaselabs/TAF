@@ -596,6 +596,12 @@ class CollectionBase(ClusterSetup):
 
     @staticmethod
     def create_clients_for_sdk_pool(test_obj, cluster=None):
+        if test_obj.load_docs_using != "default_loader":
+            test_obj.log.warning(
+                "Skipping SDKClientPool creation since "
+                f"load_docs_using='{test_obj.load_docs_using}'")
+            return
+
         if not cluster:
             cluster = test_obj.cluster
 

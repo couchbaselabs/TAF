@@ -195,7 +195,8 @@ class SDKCompression(CollectionBase):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            scope=scope, collection=collection))
+            scope=scope, collection=collection,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, create_gen_2, "create", self.maxttl,
             batch_size=self.batch_size, process_concurrency=3,
@@ -203,7 +204,8 @@ class SDKCompression(CollectionBase):
             durability=self.durability_level,
             compression=None,
             timeout_secs=self.sdk_timeout,
-            scope=scope, collection=collection))
+            scope=scope, collection=collection,
+            load_using=self.load_docs_using))
 
         for task in tasks:
             self.task_manager.get_task_result(task)
@@ -226,7 +228,8 @@ class SDKCompression(CollectionBase):
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             task_identifier="update_1",
-            scope=scope, collection=collection))
+            scope=scope, collection=collection,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, update_gen_2, "update", self.maxttl,
             batch_size=self.batch_size, process_concurrency=3,
@@ -235,7 +238,8 @@ class SDKCompression(CollectionBase):
             compression=None,
             timeout_secs=self.sdk_timeout,
             task_identifier="update_2",
-            scope=scope, collection=collection))
+            scope=scope, collection=collection,
+            load_using=self.load_docs_using))
         for task in tasks:
             self.task_manager.get_task_result(task)
             if task.fail.keys():
@@ -265,7 +269,8 @@ class SDKCompression(CollectionBase):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            scope=scope, collection=collection))
+            scope=scope, collection=collection,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, create_gen_2, "delete", self.maxttl,
             batch_size=self.batch_size, process_concurrency=3,
@@ -273,7 +278,8 @@ class SDKCompression(CollectionBase):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            scope=scope, collection=collection))
+            scope=scope, collection=collection,
+            load_using=self.load_docs_using))
 
         for task in tasks:
             self.task_manager.get_task_result(task)

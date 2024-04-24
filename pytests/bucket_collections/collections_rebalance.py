@@ -328,7 +328,8 @@ class CollectionsRebalance(CollectionBase):
             active_resident_threshold=self.dgm,
             compression=self.sdk_compression,
             scope=CbServer.default_scope,
-            collection=CbServer.default_collection))
+            collection=CbServer.default_collection,
+            load_using=self.load_docs_using))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
             if task.fail:

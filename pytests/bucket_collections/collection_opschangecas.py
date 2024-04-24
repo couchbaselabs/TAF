@@ -266,13 +266,11 @@ class OpsChangeCasTests(CollectionBase):
         dgm_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, dgm_gen,
             DocLoading.Bucket.DocOps.CREATE, 0,
-            persist_to=self.persist_to,
-            replicate_to=self.replicate_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            batch_size=10,
-            process_concurrency=4,
-            active_resident_threshold=self.active_resident_threshold)
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            batch_size=10, process_concurrency=4,
+            active_resident_threshold=self.active_resident_threshold,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(dgm_task)
 
         self.log.info("Touch initial self.num_items docs which are "

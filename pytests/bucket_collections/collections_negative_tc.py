@@ -183,7 +183,8 @@ class CollectionsNegativeTc(CollectionBase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             retries=self.sdk_retries,
-            collection=self.collection_name)
+            collection=self.collection_name,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
         if task.fail:
             self.log.info("Inserting doc key > max size failed as expected")
