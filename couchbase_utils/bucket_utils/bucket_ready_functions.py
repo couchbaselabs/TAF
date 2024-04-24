@@ -49,13 +49,14 @@ from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaConstants, \
     MetaCrudParams
-from common_lib import sleep, humanbytes
+from common_lib import sleep, humanbytes, IDENTIFIER_TOKEN
 from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
     DataAnalysisResultAnalyzer
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator, sub_doc_generator_for_edit
+from doc_loader.sirius_client import RESTClient
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 
@@ -97,6 +98,15 @@ Parameters:
 
 class DocLoaderUtils(object):
     log = logger.get("test")
+
+    @staticmethod
+    def check_if_exception_exists(target_exception, *Exceptions):
+        # type: (str, list) -> bool
+        for exceptions in Exceptions:
+            for e in exceptions:
+                if e in str(target_exception) or str(target_exception) in e:
+                    return True
+        return False
 
     @staticmethod
     def __get_required_num_from_percentage(collection_obj, target_percent, op_type):
@@ -1273,8 +1283,8 @@ class CollectionUtils(DocLoaderUtils):
     @staticmethod
     def set_maxTTL_for_collection(cluster_node, bucket, scope,
                                   collection, maxttl):
-        status, content = BucketHelper(cluster_node).set_collection_maxttl(
-            bucket.name, scope, collection, maxTTL=maxttl)
+        status, _ = BucketHelper(cluster_node).edit_collection(
+            bucket.name, scope, collection, collection_spec={"maxTTL": maxttl})
         if status:
             bucket.scopes[scope].collections[collection].maxTTL = maxttl
         return status
@@ -3547,14 +3557,66 @@ class BucketUtils(ScopeUtils):
                                .format(task_info["unwanted"]["fail"]))
 
     @staticmethod
-    def verify_doc_op_task_exceptions(tasks_info, cluster):
+    def verify_doc_op_task_exceptions_with_sirius(tasks_info, cluster):
+        for task, task_info in list(tasks_info.items()):
+            bucket = task_info["bucket"]
+            scope = task_info["scope"]
+            collection = task_info["collection"]
+            client = RESTClient([cluster.master],
+                                bucket,
+                                scope=scope,
+                                collection=collection)
+
+            exception_payload = client.create_payload_exception_handling(
+                resultSeed=task.resultSeed,
+                identifierToken=IDENTIFIER_TOKEN,
+                ignoreExceptions=[], retryExceptions=[],
+                retryAttempts=1)
+            failed_docs, _, _, _ = client.retry_exceptions(
+                exception_payload=exception_payload, delete_record=False)
+            for key, failed_doc in list(failed_docs.items()):
+                found = False
+                exception = failed_doc["error"]
+                key_value = {key: failed_doc}
+                for ex in task_info["ignore_exceptions"]:
+                    if DocLoaderUtils.check_if_exception_exists(exception, ex):
+                        bucket.scopes[scope].collections[
+                            collection].num_items -= 1
+                        tasks_info[task]["ignored"].update(key_value)
+                        found = True
+                        break
+                if found:
+                    continue
+                ambiguous_state = False
+                dict_key = "unwanted"
+                for ex in task_info["retry_exceptions"]:
+                    if DocLoaderUtils.check_if_exception_exists(str(exception), ex):
+                        dict_key = "retried"
+                        break
+                if failed_doc["status"]:
+                    tasks_info[task][dict_key]["success"].update(key_value)
+                else:
+                    tasks_info[task][dict_key]["fail"].update(key_value)
+        return tasks_info
+
+    @staticmethod
+    def verify_doc_op_task_exceptions(tasks_info, cluster,
+                                      load_using="default_loader"):
         """
         :param tasks_info:  dict() of dict() of form,
                             tasks_info[task_obj] = get_doc_op_info_dict()
         :param cluster:     Cluster object
+        :param load_using: Param to tell to use inbuilt / sirius SDK
         :return: tasks_info dictionary updated with retried/unwanted docs
         """
-        for task, task_info in tasks_info.items():
+
+        if load_using != "default_loader":
+            # Sirius case
+            return BucketUtils.verify_doc_op_task_exceptions_with_sirius(
+                tasks_info, cluster)
+
+        # Default SDK case
+        for task, task_info in list(tasks_info.items()):
             client = None
             bucket = task_info["bucket"]
             scope = task_info["scope"]
@@ -3643,7 +3705,7 @@ class BucketUtils(ScopeUtils):
                           monitor_stats=["doc_ops"],
                           track_failures=True,
                           sdk_retry_strategy=None,
-                          iterations=1):
+                          iterations=1, load_using="default_loader"):
         return self.task.async_load_gen_docs(
             cluster, bucket, generator, op_type,
             exp=exp, random_exp=random_exp,
@@ -3661,7 +3723,7 @@ class BucketUtils(ScopeUtils):
             monitor_stats=monitor_stats,
             track_failures=track_failures,
             sdk_retry_strategy=sdk_retry_strategy,
-            iterations=iterations)
+            iterations=iterations, load_using=load_using)
 
     def load_docs_to_all_collections(self, start, end, cluster,
                                      key="test_docs",
@@ -3669,7 +3731,8 @@ class BucketUtils(ScopeUtils):
                                      mutate=0, process_concurrency=8,
                                      persist_to=0, replicate_to=0,
                                      batch_size=10,
-                                     timeout_secs=10):
+                                     timeout_secs=10,
+                                     load_using="default_loader"):
         """
         Loads documents to all the collections available in bucket_util sequentially
         :param start int, starting of document serial
@@ -3693,7 +3756,8 @@ class BucketUtils(ScopeUtils):
                         collection=collection.name,
                         process_concurrency=process_concurrency,
                         persist_to=persist_to, replicate_to=replicate_to,
-                        timeout_secs=timeout_secs)
+                        timeout_secs=timeout_secs,
+                        load_using=load_using)
                     self.task_manager.get_task_result(task)
                     bucket.scopes[scope.name].collections[collection.name].num_items += (end - start)
         # Doc count validation
@@ -3717,7 +3781,7 @@ class BucketUtils(ScopeUtils):
                                 monitor_stats=["doc_ops"],
                                 track_failures=True,
                                 sdk_retry_strategy=None,
-                                iterations=1):
+                                iterations=1, load_using="default_loader"):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -3748,7 +3812,7 @@ class BucketUtils(ScopeUtils):
                 monitor_stats=monitor_stats,
                 track_failures=track_failures,
                 sdk_retry_strategy=sdk_retry_strategy,
-                iterations=iterations)
+                iterations=iterations, load_using=load_using)
             tasks_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,
@@ -3806,7 +3870,8 @@ class BucketUtils(ScopeUtils):
                               scope=CbServer.default_scope,
                               collection=CbServer.default_collection,
                               monitor_stats=["doc_ops"],
-                              track_failures=True):
+                              track_failures=True,
+                              load_using="default_loader"):
 
         """
         Asynchronously apply load generation to all buckets in the
@@ -3839,19 +3904,21 @@ class BucketUtils(ScopeUtils):
             dgm_batch=dgm_batch,
             scope=scope, collection=collection,
             monitor_stats=monitor_stats,
-            track_failures=track_failures)
+            track_failures=track_failures, load_using=load_using)
 
         for task in list(tasks_info.keys()):
             self.task_manager.get_task_result(task)
 
         # Wait for all doc_loading tasks to complete and populate failures
-        self.verify_doc_op_task_exceptions(tasks_info, cluster)
+        self.verify_doc_op_task_exceptions(tasks_info, cluster,
+                                           load_using=load_using)
         self.log_doc_ops_task_failures(tasks_info)
         return tasks_info
 
     def load_durable_aborts(self, ssh_shell, server, load_gens, cluster, bucket,
                             durability_level, doc_op="create",
-                            load_type="all_aborts"):
+                            load_type="all_aborts",
+                            load_using="default_loader"):
         """
         :param ssh_shell: ssh connection for simulating memcached_stop
         :param load_gens: doc_load generators used for running doc_ops
@@ -3879,12 +3946,13 @@ class BucketUtils(ScopeUtils):
                     batch_size=10, process_concurrency=8,
                     durability=durability_level,
                     timeout_secs=2, start_task=False,
-                    skip_read_on_error=True, suppress_error_table=True)
+                    skip_read_on_error=True, suppress_error_table=True,
+                    load_using=load_using)
             return self.task.async_load_gen_docs(
                 cluster, bucket, doc_gen, doc_op, 0,
                 batch_size=10, process_concurrency=8,
                 durability=durability_level,
-                timeout_secs=60)
+                timeout_secs=60, load_using=load_using)
 
         result = True
         tasks = list()
@@ -4436,7 +4504,8 @@ class BucketUtils(ScopeUtils):
         return new_failovers_stats
 
     def sync_ops_all_buckets(self, cluster, docs_gen_map, batch_size=10,
-                             verify_data=True, exp=0, num_items=0):
+                             verify_data=True, exp=0, num_items=0,
+                             load_using="default_loader"):
         for key in list(docs_gen_map.keys()):
             if key != "remaining":
                 op_type = key
@@ -4445,7 +4514,7 @@ class BucketUtils(ScopeUtils):
                     verify_data = False
                     self.expiry = 3
                 self.sync_load_all_buckets(cluster, docs_gen_map[key][0],
-                                           op_type, exp)
+                                           op_type, exp, load_using=load_using)
                 if verify_data:
                     self.verify_cluster_stats(cluster, num_items)
         if "expiry" in docs_gen_map.keys():

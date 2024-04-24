@@ -464,7 +464,8 @@ class ServerTasks(object):
                              batch_size=10, process_concurrency=4,
                              persist_to=None, replicate_to=None,
                              durability="", sdk_timeout=5,
-                             doc_type="json", sdk_retry_strategy=None):
+                             doc_type="json", sdk_retry_strategy=None,
+                             load_using="default_loader"):
         rest = BucketHelper(cluster.master)
         bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                      cluster.master)
@@ -486,7 +487,8 @@ class ServerTasks(object):
                 timeout_secs=sdk_timeout,
                 task_identifier=bucket.name,
                 print_ops_rate=False,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=load_using)
             self.jython_task_manager.get_task_result(task)
             bucket_stat = rest.get_bucket_stats_for_node(bucket.name,
                                                          cluster.master)
@@ -837,7 +839,8 @@ class ServerTasks(object):
                       dgm_batch=5000,
                       scope=CbServer.default_scope,
                       collection=CbServer.default_collection,
-                      sdk_retry_strategy=None):
+                      sdk_retry_strategy=None,
+                      load_using="default_loader"):
         _task = self.async_load_gen_docs(
             cluster, bucket, generator, op_type, exp=exp,
             flag=flag, persist_to=persist_to, replicate_to=replicate_to,
@@ -854,7 +857,8 @@ class ServerTasks(object):
             dgm_batch=dgm_batch,
             scope=scope,
             collection=collection,
-            sdk_retry_strategy=sdk_retry_strategy)
+            sdk_retry_strategy=sdk_retry_strategy,
+            load_using=load_using)
         self.jython_task_manager.get_task_result(_task)
         return _task
 
