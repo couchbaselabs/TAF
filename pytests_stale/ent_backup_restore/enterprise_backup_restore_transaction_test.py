@@ -50,7 +50,7 @@ class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
             for bucket in buckets:
                 tasks.append(self.task.async_load_gen_docs(
                     cluster, bucketa, self.kv_gen, ops_type, 0, batch_size=20,
-                    process_concurrency=1))
+                    process_concurrency=1, load_using=self.load_docs_using))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
@@ -63,9 +63,9 @@ class EnterpriseBackupRestoreTransactionTest(EnterpriseBKRSNewBaseTest):
                                                                  process_concurrency=8))
         else:
             for bucket in buckets:
-                tasks.append(self.task.async_load_gen_docs(cluster, bucket, self.kv_gen,
-                                                           "verify", 0, batch_size=20,
-                                                           process_concurrency=1))
+                tasks.append(self.task.async_load_gen_docs(
+                    cluster, bucket, self.kv_gen, "verify", 0, batch_size=20,
+                    process_concurrency=1, load_using=self.load_docs_using))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 

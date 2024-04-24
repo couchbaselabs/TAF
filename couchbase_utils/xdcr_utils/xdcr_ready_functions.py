@@ -537,7 +537,8 @@ class XDCRUtils:
             else:
                 if i >= len(self.__cb_clusters) - 1:
                     break
-            cluster.bucket_util.sync_load_all_buckets(cluster, self.gen_create, "create", 0)
+            cluster.bucket_util.sync_load_all_buckets(
+                cluster, self.gen_create, "create", 0, load_using=self.load_docs_using)
 
     def setup_all_replications(self):
         """Setup replication between buckets on remote clusters

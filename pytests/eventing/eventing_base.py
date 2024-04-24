@@ -450,11 +450,11 @@ class EventingBaseTest(BaseTestCase):
                          eventing_node.ip, core_dump_count))
             shell.disconnect()
 
-    def print_execution_and_failure_stats(self,name):
+    def print_execution_and_failure_stats(self, name):
         out_event_execution = self.eventing_helper.get_event_execution_stats(name)
-        self.log.debug("Event execution stats : {0}".format(out_event_execution))
+        self.log.debug("Event execution stats: {0}".format(out_event_execution))
         out_event_failure = self.eventing_helper.get_event_failure_stats(name)
-        self.log.debug("Event failure stats : {0}".format(out_event_failure))
+        self.log.debug("Event failure stats: {0}".format(out_event_failure))
 
     # """
     #     Push the bucket into DGM and return the number of items it took to push the bucket to DGM
@@ -487,8 +487,8 @@ class EventingBaseTest(BaseTestCase):
     #     return val
 
     def bucket_compaction(self):
-        for bucket in self.buckets:
-            log.info("Compacting bucket : {0}".format(bucket.name))
+        for bucket in self.cluster.buckets:
+            self.log.info("Compacting bucket : {0}".format(bucket.name))
             self.bucket_helper.compact_bucket(bucket=bucket.name)
 
     def kill_consumer(self, server):
@@ -672,17 +672,16 @@ class EventingBaseTest(BaseTestCase):
     def insall_dependencies(self):
         try:
             import docker
-        except ImportError, e:
+        except ImportError as e:
             o = os.system("python scripts/install_docker.py docker")
             self.log.info("docker installation done: {}".format(o))
             self.sleep(30)
             try:
                 import docker
-            except ImportError, e:
+            except ImportError as e:
                 raise Exception("docker installation fails with {}".format(o))
 
     def load_sample_buckets(self, server, bucketName):
-        from lib.remote.remote_util import RemoteMachineShellConnection
         shell = RemoteMachineShellConnection(server)
         shell.execute_command("""curl -v -u Administrator:password \
                              -X POST http://{0}:8091/sampleBuckets/install \
@@ -733,12 +732,10 @@ class EventingBaseTest(BaseTestCase):
     def load(self, load_gen, bucket, operation="create"):
         self.log.info("doc_generator created")
         task = self.task.async_load_gen_docs(
-                self.cluster, bucket, load_gen, operation, 0,
-                batch_size=10,
-                process_concurrency=2,
-                replicate_to=self.replicate_to,
-                persist_to=self.persist_to,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                task_identifier="bucket{0}".format(bucket.name))
+            self.cluster, bucket, load_gen, operation, 0,
+            batch_size=10, process_concurrency=2,
+            replicate_to=self.replicate_to, persist_to=self.persist_to,
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            task_identifier="bucket{0}".format(bucket.name),
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(task)

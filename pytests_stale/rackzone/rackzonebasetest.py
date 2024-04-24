@@ -43,7 +43,8 @@ class RackzoneBaseTest(ClusterSetup):
                     batch_size=20, persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
                     pause_secs=5, timeout_secs=self.sdk_timeout,
-                    retries=self.sdk_retries))
+                    retries=self.sdk_retries,
+                    load_using=self.load_docs_using))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
         else:
@@ -60,7 +61,8 @@ class RackzoneBaseTest(ClusterSetup):
                     batch_size=20, persist_to=self.persist_to,
                     replicate_to=self.replicate_to,
                     pause_secs=5, timeout_secs=self.sdk_timeout,
-                    retries=self.sdk_retries))
+                    retries=self.sdk_retries,
+                    load_using=self.load_docs_using))
             for task in tasks:
                 self.task.jython_task_manager.get_task_result(task)
         shell = RemoteMachineShellConnection(self.cluster.master)

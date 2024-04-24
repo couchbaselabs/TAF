@@ -393,7 +393,8 @@ class EventingSanity(EventingBaseTest):
                     batch_size=50, process_concurrency=8,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout)
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using)
                 self.task.jython_task_manager.get_task_result(task)
                 verification_dict["ops_create"] += crud_batch_size
                 if len(task.fail.keys()) != 0:
@@ -408,7 +409,8 @@ class EventingSanity(EventingBaseTest):
                     batch_size=50, process_concurrency=8,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout)
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using)
                 self.task.jython_task_manager.get_task_result(task)
                 verification_dict["ops_update"] += crud_batch_size
                 if len(task.fail.keys()) != 0:
@@ -577,7 +579,8 @@ class EventingSanity(EventingBaseTest):
                     batch_size=50, process_concurrency=8,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout)
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using)
                 self.task.jython_task_manager.get_task_result(task)
                 if len(task.fail.keys()) != 0:
                     self.log_failure("Some failures seen during doc_ops")
@@ -590,7 +593,8 @@ class EventingSanity(EventingBaseTest):
                     batch_size=50, process_concurrency=8,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout)
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using)
                 self.task.jython_task_manager.get_task_result(task)
                 if len(task.fail.keys()) != 0:
                     self.log_failure("Some failures seen during doc_ops")

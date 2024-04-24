@@ -179,11 +179,13 @@ class CreateDeleteViewTests(ClusterSetup):
                                      doc_size=self.doc_size,
                                      doc_type=self.doc_type)
         for bucket in self.cluster.buckets:
-            tasks.append(self.task.async_load_gen_docs(self.cluster, bucket, gen_load, "create", 0,
-                                                       batch_size=20, persist_to=self.persist_to,
-                                                       replicate_to=self.replicate_to,
-                                                       pause_secs=5, timeout_secs=self.sdk_timeout,
-                                                       retries=self.sdk_retries))
+            tasks.append(self.task.async_load_gen_docs(
+                self.cluster, bucket, gen_load, "create", 0,
+                batch_size=20, persist_to=self.persist_to,
+                replicate_to=self.replicate_to,
+                pause_secs=5, timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries,
+                load_using=self.load_docs_using))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
         for bucket in self.buckets:

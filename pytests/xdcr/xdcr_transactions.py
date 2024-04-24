@@ -97,7 +97,7 @@ class XDCRTransactions(XDCRNewBaseTest):
             for bucket in self.src_cluster.bucket_util.buckets:
                 tasks.append(self.task.async_load_gen_docs(
                     self.src_cluster, bucket, gen, op, 0, batch_size=20,
-                    process_concurrency=1))
+                    process_concurrency=1, load_using=self.load_docs_using))
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)
 
