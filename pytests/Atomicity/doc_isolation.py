@@ -372,22 +372,18 @@ class IsolationDocTest(ClusterSetup):
         # Create docs which are going to be created by Tranx Task
         create_task = self.task.async_load_gen_docs(
             self.cluster, self.cluster.buckets[0], load_gen, "create",
-            exp=self.maxttl,
-            compression=self.sdk_compression,
-            timeout_secs=60,
-            process_concurrency=8,
-            batch_size=200)
+            exp=self.maxttl, compression=self.sdk_compression,
+            timeout_secs=60, process_concurrency=8, batch_size=200,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(create_task)
 
         # Perform delete of docs / wait for docs to expire
         if self.maxttl == 0:
             delete_task = self.task.async_load_gen_docs(
                 self.cluster, self.cluster.buckets[0], load_gen, "delete",
-                exp=self.maxttl,
-                compression=self.sdk_compression,
-                timeout_secs=60,
-                process_concurrency=8,
-                batch_size=200)
+                exp=self.maxttl, compression=self.sdk_compression,
+                timeout_secs=60, process_concurrency=8, batch_size=200,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(delete_task)
         else:
             self.sleep(self.maxttl+1, "Wait for created docs to expire")

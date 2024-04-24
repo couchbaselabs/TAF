@@ -100,8 +100,8 @@ class BasicOps(N1qlBase):
                     durability=self.durability_level,
                     compression=self.sdk_compression,
                     timeout_secs=self.sdk_timeout,
-                    scope=scope,
-                    collection=collection)
+                    scope=scope, collection=collection,
+                    load_using=self.load_docs_using)
                 self.task_manager.get_task_result(task)
         stmts = self.n1ql_helper.get_stmt(bucket_collections)
         self.execute_query_and_validate_results(stmts,
@@ -137,8 +137,8 @@ class BasicOps(N1qlBase):
                 durability=self.durability_level,
                 compression=self.sdk_compression,
                 timeout_secs=self.sdk_timeout,
-                scope=scope,
-                collection=collection)
+                scope=scope, collection=collection,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(task)
         stmts = self.n1ql_helper.get_stmt(bucket_collections)
         self.execute_query_and_validate_results(stmts,

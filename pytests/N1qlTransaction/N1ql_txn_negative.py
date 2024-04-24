@@ -83,7 +83,8 @@ class N1ql_txn_negative(N1qlBase):
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             scope=scope,
-            collection=collection)
+            collection=collection,
+            load_using=self.load_docs_using)
         keyspace = self.get_collection_name(bucket.name, scope, collection)
         self.n1ql_helper.create_index(keyspace)
         self.task_manager.get_task_result(task)

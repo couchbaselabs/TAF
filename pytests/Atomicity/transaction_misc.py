@@ -31,7 +31,8 @@ class basic_ops(ClusterSetup):
             task = self.task.async_load_gen_docs(
                 self.cluster, bucket, self.gen_create, "create", 0,
                 batch_size=20, persist_to=self.persist_to,
-                replicate_to=self.replicate_to)
+                replicate_to=self.replicate_to,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
         self.log.info("Loading of 1M documents complete")
         self.sleep(40, "Bringing the bucket state to stable")
