@@ -601,7 +601,8 @@ class CollectionDurabilityTests(CollectionBase):
                             durability=tem_durability, timeout_secs=3,
                             print_ops_rate=False,
                             skip_read_on_error=True,
-                            task_identifier="parallel_task2")
+                            task_identifier="parallel_task2",
+                            load_using=self.load_docs_using)
                         self.task.jython_task_manager.get_task_result(
                             doc_loader_task_2)
 
@@ -644,7 +645,8 @@ class CollectionDurabilityTests(CollectionBase):
                                 c_meta[op_type]["doc_gen"], "read",
                                 batch_size=self.crud_batch_size,
                                 process_concurrency=1,
-                                timeout_secs=self.sdk_timeout)
+                                timeout_secs=self.sdk_timeout,
+                                load_using=self.load_docs_using)
                             self.task_manager.get_task_result(read_task)
                             for key, doc_info in read_task.success.items():
                                 if doc_info["cas"] != 0 \
@@ -854,7 +856,8 @@ class CollectionDurabilityTests(CollectionBase):
                                 DocLoading.Bucket.DocOps.READ,
                                 batch_size=self.crud_batch_size,
                                 process_concurrency=1,
-                                timeout_secs=self.sdk_timeout)
+                                timeout_secs=self.sdk_timeout,
+                                load_using=self.load_docs_using)
                             self.task_manager.get_task_result(read_task)
                             for key, doc_info in read_task.success.items():
                                 if doc_info["cas"] != 0 and \

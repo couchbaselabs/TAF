@@ -937,7 +937,8 @@ class OpsChangeCasTests(CasBaseTest):
                 persist_to=self.persist_to, replicate_to=self.replicate_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                batch_size=self.num_items)
+                batch_size=self.num_items,
+                load_using=self.load_docs_using)
             for task, _ in tasks_info.items():
                 if task.fail:
                     self.log_failure("Failures observed during %s" % op_type)

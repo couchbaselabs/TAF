@@ -1647,7 +1647,8 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
                 timeout_secs=self.sdk_timeout,
                 print_ops_rate=False,
                 task_identifier="sw_docTask",
-                start_task=False)
+                start_task=False,
+                load_using=self.load_docs_using)
 
             doc_cas = self.client.crud(DocLoading.Bucket.DocOps.READ,
                                        doc_key)["cas"]
@@ -1860,7 +1861,8 @@ class XattrTests(SubdocBaseTest):
              'durability': self.durability_level,
              'process_concurrency': 8,
              'batch_size': 50,
-             'print_ops_rate': True}
+             'print_ops_rate': True,
+             'load_using': self.load_docs_using}
 
         # Some workloads can be ran cyclically
         self.cycles = self.input.param("cycles", 1)

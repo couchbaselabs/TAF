@@ -569,7 +569,7 @@ class SDKExceptionTests(CollectionBase):
             scope=self.scope_name,
             collection=self.collection_name,
             batch_size=200, process_concurrency=8,
-            timeout_secs=60)
+            timeout_secs=60, load_using=self.load_docs_using)
         self.task_manager.get_task_result(task)
         if self.subdoc_test:
             load_gen = sub_doc_generator(self.key, 0, self.num_items/2)
@@ -664,14 +664,12 @@ class SDKExceptionTests(CollectionBase):
             if op_type in Bucket_Op.DOC_OPS:
                 tasks[op_type] = self.task.async_load_gen_docs(
                     self.cluster, self.bucket, doc_gen[op_type], op_type, 0,
-                    scope=self.scope_name,
-                    collection=self.collection_name,
+                    scope=self.scope_name, collection=self.collection_name,
                     batch_size=1, process_concurrency=8,
                     durability=self.durability_level,
                     timeout_secs=self.sdk_timeout,
-                    suppress_error_table=True,
-                    print_ops_rate=False,
-                    skip_read_on_error=True)
+                    suppress_error_table=True, print_ops_rate=False,
+                    skip_read_on_error=True, load_using=self.load_docs_using)
             else:
                 tasks[op_type] = self.task.async_load_gen_sub_docs(
                     self.cluster, self.bucket, doc_gen[op_type], op_type, 0,

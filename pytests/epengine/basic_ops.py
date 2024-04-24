@@ -506,7 +506,8 @@ class basic_ops(ClusterSetup):
             DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=100, process_concurrency=8,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
 
         # Create required doc_gens and doc_op task object
@@ -553,7 +554,8 @@ class basic_ops(ClusterSetup):
                 durability=d_level, timeout_secs=self.sdk_timeout,
                 process_concurrency=1, batch_size=1,
                 print_ops_rate=False, start_task=False,
-                task_identifier="%s_%d" % (doc_op, op_index))
+                task_identifier="%s_%d" % (doc_op, op_index),
+                load_using=self.load_docs_using)
 
         # Start all tasks
         for op_index, doc_op in enumerate(self.doc_ops):
@@ -699,7 +701,7 @@ class basic_ops(ClusterSetup):
         create_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=100, process_concurrency=self.process_concurrency,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
         self.task_manager.get_task_result(create_task)
 
         cbstat = dict()
@@ -796,7 +798,7 @@ class basic_ops(ClusterSetup):
         create_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=500, process_concurrency=self.process_concurrency,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
         self.task_manager.get_task_result(create_task)
 
         mc_stat_reset_thread = Thread(target=reset_mcstat, args=[bucket.name])
@@ -1083,11 +1085,10 @@ class basic_ops(ClusterSetup):
             doc_op_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, op_type,
                 timeout_secs=self.sdk_timeout,
-                print_ops_rate=False,
-                skip_read_on_error=True,
+                print_ops_rate=False, skip_read_on_error=True,
                 suppress_error_table=True,
-                batch_size=1,
-                process_concurrency=1)
+                batch_size=1, process_concurrency=1,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(doc_op_task)
             self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                          self.cluster.buckets)
@@ -1343,7 +1344,8 @@ class basic_ops(ClusterSetup):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            print_ops_rate=False)
+            print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
 
         # Small bucket docs generation
@@ -1358,7 +1360,8 @@ class basic_ops(ClusterSetup):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            print_ops_rate=False)
+            print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task_2)
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -1419,7 +1422,8 @@ class basic_ops(ClusterSetup):
             durability=self.durability_level,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            print_ops_rate=False)
+            print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -1440,7 +1444,8 @@ class basic_ops(ClusterSetup):
             durability=self.durability_level,
             timeout_secs=30,
             skip_read_on_error=True,
-            print_ops_rate=False)
+            print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
 
         # Read task to trigger expiry_purger
@@ -1451,7 +1456,8 @@ class basic_ops(ClusterSetup):
             timeout_secs=30,
             suppress_error_table=True,
             start_task=False,
-            print_ops_rate=False)
+            print_ops_rate=False,
+            load_using=self.load_docs_using)
 
         retry = 0
         before_stats = None
@@ -1668,9 +1674,9 @@ class basic_ops(ClusterSetup):
             process_concurrency=10,
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
-            scope=self.scope_name,
-            collection=self.collection_name,
-            print_ops_rate=False)
+            scope=self.scope_name, collection=self.collection_name,
+            print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
         task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_create,
@@ -1679,9 +1685,9 @@ class basic_ops(ClusterSetup):
             process_concurrency=10,
             durability=SDKConstants.DurabilityLevel.MAJORITY,
             timeout_secs=self.sdk_timeout,
-            scope=self.scope_name,
-            collection=self.collection_name,
-            print_ops_rate=False)
+            scope=self.scope_name, collection=self.collection_name,
+            print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -1899,7 +1905,8 @@ class basic_ops(ClusterSetup):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -1928,7 +1935,8 @@ class basic_ops(ClusterSetup):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             compression=self.sdk_compression,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -2032,7 +2040,8 @@ class basic_ops(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             exp=self.maxttl, timeout_secs=60, durability=self.durability_level,
-            process_concurrency=8, batch_size=500, print_ops_rate=False)
+            process_concurrency=8, batch_size=500, print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -2058,7 +2067,8 @@ class basic_ops(ClusterSetup):
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             exp=self.maxttl, timeout_secs=60, durability=self.durability_level,
             iterations=iterations, process_concurrency=8,
-            batch_size=500, print_ops_rate=False)
+            batch_size=500, print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -2111,12 +2121,14 @@ class basic_ops(ClusterSetup):
         init_load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, init_gen, DocLoading.Bucket.DocOps.CREATE,
             timeout_secs=300, durability=self.durability_level,
-            process_concurrency=10, batch_size=2000, print_ops_rate=False)
+            process_concurrency=10, batch_size=2000, print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.log.info("Loading ttl documents")
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, exp_gen, DocLoading.Bucket.DocOps.CREATE,
             exp=exp, timeout_secs=300, durability=self.durability_level,
-            process_concurrency=10, batch_size=2000, print_ops_rate=False)
+            process_concurrency=10, batch_size=2000, print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.log.info("Waiting for doc_loading to complete")
         self.task_manager.get_task_result(init_load_task)
         self.task_manager.get_task_result(load_task)
@@ -2176,7 +2188,8 @@ class basic_ops(ClusterSetup):
             DocLoading.Bucket.DocOps.CREATE, batch_size=1000,
             process_concurrency=2, print_ops_rate=False,
             skip_read_on_error=True, suppress_error_table=True,
-            sdk_client_pool=self.sdk_client_pool, iterations=-1)
+            sdk_client_pool=self.sdk_client_pool, iterations=-1,
+            load_using=self.load_docs_using)
 
         self.log.info("Loading ttl docs for 50 iterations")
         for _ in range(50):
@@ -2189,7 +2202,8 @@ class basic_ops(ClusterSetup):
                     DocLoading.Bucket.DocOps.UPDATE, exp=10, batch_size=2000,
                     process_concurrency=3, print_ops_rate=False,
                     skip_read_on_error=True, suppress_error_table=True,
-                    sdk_client_pool=self.sdk_client_pool, iterations=3)
+                    sdk_client_pool=self.sdk_client_pool, iterations=3,
+                    load_using=self.load_docs_using)
                 self.task_manager.get_task_result(l_task)
 
         # Wait for load to complete
@@ -2273,7 +2287,7 @@ class basic_ops(ClusterSetup):
             tasks.append(self.task.async_load_gen_docs(
                 self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE,
                 collection=c_name, batch_size=1000, process_concurrency=1,
-                print_ops_rate=False))
+                print_ops_rate=False, load_using=self.load_docs_using))
         for task in tasks:
             self.task_manager.get_task_result(task)
 
@@ -2404,7 +2418,8 @@ class basic_ops(ClusterSetup):
         load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             durability=self.durability_level, timeout_secs=self.sdk_timeout,
-            batch_size=100, process_concurrency=4, print_ops_rate=False)
+            batch_size=100, process_concurrency=4, print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.log.info("Validating unlock outcome with eviction")
         validate_unlock_exception(key_1, doc_1_cas, not_locked_msgs)
@@ -2435,7 +2450,8 @@ class basic_ops(ClusterSetup):
             l_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen, DocLoading.Bucket.DocOps.UPDATE,
                 batch_size=20, process_concurrency=3, print_ops_rate=False,
-                skip_read_on_error=True, suppress_error_table=True)
+                skip_read_on_error=True, suppress_error_table=True,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(l_task)
 
         cbstat = cb_err = None
@@ -2473,7 +2489,7 @@ class basic_ops(ClusterSetup):
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
             batch_size=20, process_concurrency=3, print_ops_rate=False,
             skip_read_on_error=True, suppress_error_table=True,
-            start_task=False)
+            start_task=False, load_using=self.load_docs_using)
 
         prepare_mutation_thread = Thread(target=perform_sync_write,
                                          args=[client, key])
@@ -2525,7 +2541,8 @@ class basic_ops(ClusterSetup):
             self.cluster, bucket, load_gen, DocLoading.Bucket.DocOps.UPDATE,
             durability=self.durability_level, batch_size=200, iterations=5,
             process_concurrency=8, print_ops_rate=False,
-            skip_read_on_error=True, suppress_error_table=True)
+            skip_read_on_error=True, suppress_error_table=True,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster, [bucket])
 

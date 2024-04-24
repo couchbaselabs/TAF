@@ -256,8 +256,8 @@ class BasicOps(DurabilityTestsBase):
             self.cluster, def_bucket, doc_gen, "create", self.maxttl,
             batch_size=10, process_concurrency=8,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
 
         half_of_num_items = self.num_items
@@ -360,7 +360,7 @@ class BasicOps(DurabilityTestsBase):
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, def_bucket, read_gen, "read", 0,
             batch_size=10, process_concurrency=1,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using))
 
         verification_dict["ops_update"] += self.num_items
         if self.is_sync_write_enabled:
@@ -474,13 +474,13 @@ class BasicOps(DurabilityTestsBase):
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, def_bucket, doc_gen["create"], "create", 0,
             batch_size=10, process_concurrency=1,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, def_bucket, doc_gen["read"], "read", 0,
             batch_size=10, process_concurrency=1,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Start Sub_document mutations
         for index in range(0, 4):
@@ -962,7 +962,7 @@ class BasicOps(DurabilityTestsBase):
                                 target_vbucket=[vb_for_key])
         doc_load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.UPDATE,
-            durability=self.durability_level)
+            durability=self.durability_level, load_using=self.load_docs_using)
         self.task_manager.get_task_result(doc_load_task)
 
         rest = RestConnection(self.cluster.master)

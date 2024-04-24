@@ -28,7 +28,8 @@ class OpsChangeCasTests(CasBaseTest):
                 persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                compression=self.sdk_compression)
+                compression=self.sdk_compression,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
     def verify_cas(self, ops, generator):
@@ -253,7 +254,8 @@ class OpsChangeCasTests(CasBaseTest):
             timeout_secs=self.sdk_timeout,
             batch_size=10,
             process_concurrency=4,
-            active_resident_threshold=self.active_resident_threshold)
+            active_resident_threshold=self.active_resident_threshold,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(dgm_task)
 
         self.log.info("3. Touch intial self.num_items docs which are "

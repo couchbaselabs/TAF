@@ -12,6 +12,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
 
+
 class DurabilityTestsBase(ClusterSetup):
     def setUp(self):
         super(DurabilityTestsBase, self).setUp()
@@ -43,7 +44,8 @@ class DurabilityTestsBase(ClusterSetup):
         self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool
-        if self.cluster.sdk_client_pool:
+        if self.load_docs_using == "default_loader" \
+                and self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
                 self.bucket,
@@ -73,7 +75,8 @@ class DurabilityTestsBase(ClusterSetup):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
             # Verify initial doc load count
@@ -284,7 +287,8 @@ class BucketDurabilityBase(ClusterSetup):
                 batch_size=1,
                 skip_read_on_error=True,
                 suppress_error_table=True,
-                start_task=False)
+                start_task=False,
+                load_using=self.load_docs_using)
 
             self.sleep(5, "Wait for sdk_client to get warmed_up")
             # Simulate target error condition
@@ -318,10 +322,9 @@ class BucketDurabilityBase(ClusterSetup):
         # Retry the same CRUDs without any error simulation in place
         doc_load_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, op_type,
-            exp=self.maxttl,
-            durability=doc_durability,
-            timeout_secs=2,
-            batch_size=1)
+            exp=self.maxttl, durability=doc_durability,
+            timeout_secs=2, batch_size=1,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(doc_load_task)
         if doc_load_task.fail:
             self.log_failure("Failures seen during CRUD without "

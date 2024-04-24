@@ -121,25 +121,27 @@ class volume(BaseTestCase):
 
     def initial_data_load(self, initial_load):
         if self.atomicity:
-            task = self.task.async_load_gen_docs_atomicity(self.cluster, self.cluster.buckets,
-                                                            initial_load, "create" , exp=0,
-                                                            batch_size=10,
-                                                            process_concurrency=self.process_concurrency,
-                                                            replicate_to=self.replicate_to,
-                                                            persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
-                                                            retries=self.sdk_retries,update_count=self.mutate, transaction_timeout=self.transaction_timeout,
-                                                            commit=self.transaction_commit,durability=self.durability_level,sync=self.sync)
+            task = self.task.async_load_gen_docs_atomicity(
+                self.cluster, self.cluster.buckets, initial_load, "create",
+                exp=0, batch_size=10,
+                process_concurrency=self.process_concurrency,
+                replicate_to=self.replicate_to, persist_to=self.persist_to,
+                timeout_secs=self.sdk_timeout,
+                retries=self.sdk_retries, update_count=self.mutate,
+                transaction_timeout=self.transaction_timeout,
+                commit=self.transaction_commit,
+                durability=self.durability_level,
+                sync=self.sync)
             self.task.jython_task_manager.get_task_result(task)
         else:
-            tasks_info = self.bucket_util._async_load_all_buckets(self.cluster, initial_load,
-                                                            "create", exp=0,
-                                                            persist_to = self.persist_to,
-                                                            replicate_to=self.replicate_to,
-                                                            batch_size= 10,
-                                                            timeout_secs=30,
-                                                            durability=self.durability_level,
-                                                            process_concurrency = self.process_concurrency,
-                                                            retries=self.sdk_retries)
+            tasks_info = self.bucket_util._async_load_all_buckets(
+                self.cluster, initial_load, "create", exp=0,
+                persist_to = self.persist_to, replicate_to=self.replicate_to,
+                batch_size= 10, timeout_secs=30,
+                durability=self.durability_level,
+                process_concurrency = self.process_concurrency,
+                retries=self.sdk_retries,
+                load_using=self.load_docs_using)
 
             for task, task_info in tasks_info.items():
                 self.task_manager.get_task_result(task)
@@ -232,13 +234,14 @@ class volume(BaseTestCase):
             SDKException.DurabilityAmbiguousException,
             SDKException.DurabilityImpossibleException,
         ]
-        tasks_info = self.bucket_util._async_load_all_buckets(self.cluster, kv_gen,
-                                                              op_type, 0, batch_size=20,
-                                                              persist_to=self.persist_to, replicate_to=self.replicate_to,
-                                                              durability=self.durability_level,
-                                                              timeout_secs=30, process_concurrency=process_concurrency,
-                                                              retries=self.sdk_retries,
-                                                              retry_exceptions=retry_exceptions)
+        tasks_info = self.bucket_util._async_load_all_buckets(
+            self.cluster, kv_gen, op_type, 0, batch_size=20,
+            persist_to=self.persist_to, replicate_to=self.replicate_to,
+            durability=self.durability_level,
+            timeout_secs=30, process_concurrency=process_concurrency,
+            retries=self.sdk_retries,
+            retry_exceptions=retry_exceptions,
+            load_using=self.load_docs_using)
         return tasks_info
 
     # Stopping and restarting the memcached process
@@ -286,8 +289,8 @@ class volume(BaseTestCase):
         if not self.atomicity:
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
-            self.bucket_util.verify_doc_op_task_exceptions(tasks_info,
-                                                           self.cluster)
+            self.bucket_util.verify_doc_op_task_exceptions(
+                tasks_info, self.cluster, load_using=self.load_docs_using)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
             self.sleep(10)

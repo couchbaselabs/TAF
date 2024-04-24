@@ -62,7 +62,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 batch_size=10, process_concurrency=8,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout, skip_read_on_error=True,
-                suppress_error_table=True)
+                suppress_error_table=True, load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(d_create_task)
 
             # Fetch vbucket seq_no status from cbstats after CREATE task
@@ -92,7 +92,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         async_create_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_load, "create",
             batch_size=10, process_concurrency=8,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(async_create_task)
 
         # Verify doc load count
@@ -107,18 +107,20 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         # Start durable UPDATE operation
         tasks.append(self.task.async_load_gen_docs(
-                self.cluster, self.bucket, gen_load, "update",
-                batch_size=10, process_concurrency=4,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                skip_read_on_error=True))
+            self.cluster, self.bucket, gen_load, "update",
+            batch_size=10, process_concurrency=4,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            skip_read_on_error=True,
+            load_using=self.load_docs_using))
         # Start durable DELETE operation
         tasks.append(self.task.async_load_gen_docs(
-                self.cluster, self.bucket, gen_load, "delete",
-                batch_size=10, process_concurrency=4,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                skip_read_on_error=True))
+            self.cluster, self.bucket, gen_load, "delete",
+            batch_size=10, process_concurrency=4,
+            durability=self.durability_level,
+            timeout_secs=self.sdk_timeout,
+            skip_read_on_error=True,
+            load_using=self.load_docs_using))
 
         # Wait for all tasks to complete and validate the exception
         for task in tasks:
@@ -246,10 +248,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
         doc_loader_task_1 = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_loader_1, self.doc_ops[0], 0,
             batch_size=self.crud_batch_size, process_concurrency=8,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            print_ops_rate=False,
-            start_task=False)
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            print_ops_rate=False, start_task=False,
+            load_using=self.load_docs_using)
 
         # SDK client for performing individual ops
         client = SDKClient(self.cluster, self.bucket)
@@ -416,8 +417,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         doc_loader_task_1 = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_loader, self.doc_ops[0], 0,
             batch_size=10, process_concurrency=8,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
 
         self.sleep(20, message="Wait for task_1 ops to reach the server")
 
@@ -521,26 +522,26 @@ class DurabilityFailureTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update, "update", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_read, "read", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_delete, "delete", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Wait for all tasks to complete
         for task in tasks:
@@ -721,10 +722,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
         doc_loader_task_1 = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_loader[0], self.doc_ops[0], 0,
             batch_size=self.crud_batch_size, process_concurrency=8,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout,
-            print_ops_rate=False,
-            start_task=False)
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            print_ops_rate=False, start_task=False,
+            load_using=self.load_docs_using)
 
         # This will support both sync-write and non-sync-writes
         doc_loader_task_2 = self.task.async_load_gen_docs(
@@ -732,9 +732,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
             batch_size=self.crud_batch_size, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=tem_durability, timeout_secs=10,
-            print_ops_rate=False,
-            task_identifier="parallel_task2",
-            start_task=False)
+            print_ops_rate=False, task_identifier="parallel_task2",
+            start_task=False, load_using=self.load_docs_using)
 
         # Perform specified action
         for node in target_nodes:
@@ -775,7 +774,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
             read_task = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_loader[0], "read",
                 batch_size=self.crud_batch_size, process_concurrency=1,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
             self.task_manager.get_task_result(read_task)
             for key, doc_info in read_task.success.items():
                 if doc_info["cas"] != 0 \
@@ -852,8 +851,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         doc_loader_task_1 = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_loader, self.doc_ops[0], 0,
             batch_size=10, process_concurrency=8,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
 
         self.sleep(30, message="Wait for task_1 ops to reach the server")
 
@@ -861,8 +860,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         doc_loader_task_2 = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_loader, self.doc_ops[1], 0,
             batch_size=10, process_concurrency=8,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
 
         # Wait for doc_loader_task_2 to complete
         error_docs = self.task.jython_task_manager.get_task_result(
@@ -968,7 +967,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                     self.cluster, self.bucket, load_gen[server], doc_op, 0,
                     batch_size=20, process_concurrency=8,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout)
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using)
                 self.task.jython_task_manager.get_task_result(task)
 
                 if len(task.fail.keys()) != 0:
@@ -1063,7 +1063,7 @@ class TimeoutTests(DurabilityTestsBase):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                start_task=False)
+                start_task=False, load_using=self.load_docs_using)
 
             # Perform specified action
             for node in target_nodes:
@@ -1171,23 +1171,23 @@ class TimeoutTests(DurabilityTestsBase):
             self.cluster, self.bucket, gen_create, "create", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update, "update", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_read, "read", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_delete, "delete", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            durability=self.durability_level, timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Update num_items value accordingly to the CRUD performed
         self.num_items += self.crud_batch_size - int(self.num_items/3)
@@ -1366,9 +1366,8 @@ class TimeoutTests(DurabilityTestsBase):
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
                 timeout_secs=self.sdk_timeout,
-                print_ops_rate=False,
-                skip_read_on_error=True,
-                start_task=False)
+                print_ops_rate=False, skip_read_on_error=True,
+                start_task=False, load_using=self.load_docs_using)
 
         # Perform specified action
         for node in target_nodes:

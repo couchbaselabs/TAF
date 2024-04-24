@@ -414,7 +414,7 @@ class SubDocTimeouts(DurabilityTestsBase):
                 self.cluster, self.bucket, read_gen,
                 DocLoading.Bucket.DocOps.READ, 0,
                 batch_size=500, process_concurrency=1,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
             self.task_manager.get_task_result(read_task)
 
             failed_keys = TableView(self.log.error)
@@ -528,7 +528,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         create_task = self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_load, "create",
             batch_size=10, process_concurrency=8,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(create_task)
 
         # Verify initial doc load count
@@ -783,12 +783,10 @@ class DurabilityFailureTests(DurabilityTestsBase):
                                DocLoading.Bucket.DocOps.DELETE]:
             doc_loader_task_1 = self.task.async_load_gen_docs(
                 self.cluster, self.bucket, gen_loader[0], self.doc_ops[0], 0,
-                batch_size=1,
-                process_concurrency=self.crud_batch_size,
-                durability=self.durability_level,
-                timeout_secs=self.sdk_timeout,
-                print_ops_rate=False,
-                start_task=False)
+                batch_size=1, process_concurrency=self.crud_batch_size,
+                durability=self.durability_level, timeout_secs=self.sdk_timeout,
+                print_ops_rate=False, start_task=False,
+                load_using=self.load_docs_using)
         elif self.doc_ops[0] in [DocLoading.Bucket.SubDocOps.INSERT,
                                  DocLoading.Bucket.SubDocOps.UPSERT,
                                  DocLoading.Bucket.SubDocOps.REMOVE]:
@@ -811,9 +809,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 batch_size=self.crud_batch_size, process_concurrency=1,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=tem_durability, timeout_secs=5,
-                task_identifier="parallel_task2",
-                print_ops_rate=False,
-                start_task=False)
+                task_identifier="parallel_task2", print_ops_rate=False,
+                start_task=False, load_using=self.load_docs_using)
         elif self.doc_ops[1] in [DocLoading.Bucket.SubDocOps.INSERT,
                                  DocLoading.Bucket.SubDocOps.UPSERT,
                                  DocLoading.Bucket.SubDocOps.REMOVE]:
@@ -875,7 +872,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 self.cluster, self.bucket, gen_loader[0],
                 DocLoading.Bucket.DocOps.READ,
                 batch_size=self.crud_batch_size, process_concurrency=1,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
             self.task_manager.get_task_result(read_task)
             for key, doc_info in read_task.success.items():
                 if doc_info["cas"] != 0 \

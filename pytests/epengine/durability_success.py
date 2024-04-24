@@ -279,7 +279,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            start_task=False))
+            start_task=False,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update,
             DocLoading.Bucket.DocOps.UPDATE, 0,
@@ -287,7 +288,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            start_task=False))
+            start_task=False,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_update,
             DocLoading.Bucket.DocOps.READ, 0,
@@ -295,7 +297,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            start_task=False))
+            start_task=False,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, gen_delete,
             DocLoading.Bucket.DocOps.DELETE, 0,
@@ -303,7 +306,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            start_task=False))
+            start_task=False,
+            load_using=self.load_docs_using))
 
         for task in tasks:
             self.task_manager.add_new_task(task)
@@ -469,21 +473,24 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.cluster, self.bucket, doc_gen[0], doc_ops, 0,
             batch_size=10, process_concurrency=1,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Non_SyncWrites for doc_ops[1]
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, doc_gen[1], doc_ops, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Generic reader task
         tasks.append(self.task.async_load_gen_docs(
             self.cluster, self.bucket, read_gen,
             DocLoading.Bucket.DocOps.READ, 0,
             batch_size=10, process_concurrency=1,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Wait for all task to complete
         for task in tasks:
@@ -534,14 +541,16 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                     self.cluster, self.bucket, curr_doc_gen, op_type, 0,
                     batch_size=10, process_concurrency=1,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout))
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using))
             else:
                 # Non-SyncWrites for last two ops specified in doc_ops
                 tasks.append(self.task.async_load_gen_docs(
                     self.cluster, self.bucket, curr_doc_gen, op_type, 0,
                     batch_size=10, process_concurrency=1,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
-                    timeout_secs=self.sdk_timeout))
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using))
 
         # Update num_items according to the CRUD operations
         self.num_items += self.num_items - half_of_num_items
@@ -576,7 +585,8 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             self.cluster, self.bucket, doc_gen,
             DocLoading.Bucket.DocOps.UPDATE,
             durability=self.durability_level,
-            print_ops_rate=False)
+            print_ops_rate=False,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(load_task)
 
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,

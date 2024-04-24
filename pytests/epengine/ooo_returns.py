@@ -32,7 +32,8 @@ class OutOfOrderReturns(ClusterSetup):
         self.bucket = self.cluster.buckets[0]
 
         # Create sdk_clients for pool
-        if self.cluster.sdk_client_pool:
+        if self.load_docs_using == "default_loader" \
+                and self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
                 self.bucket,
@@ -109,8 +110,8 @@ class OutOfOrderReturns(ClusterSetup):
             replicate_to=self.replicate_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            batch_size=10,
-            process_concurrency=1)
+            batch_size=10, process_concurrency=1,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(dgm_task_init)
 
         dgm_gen = doc_generator(self.key, initial_load , initial_load + 1,
@@ -121,9 +122,9 @@ class OutOfOrderReturns(ClusterSetup):
             replicate_to=self.replicate_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            batch_size=10,
-            process_concurrency=4,
-            active_resident_threshold=self.active_resident_threshold)
+            batch_size=10, process_concurrency=4,
+            active_resident_threshold=self.active_resident_threshold,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(dgm_task)
         self.num_items = dgm_task.doc_index
 
@@ -290,8 +291,8 @@ class OutOfOrderReturns(ClusterSetup):
                 self.cluster, self.bucket, doc_gen,
                 DocLoading.Bucket.DocOps.CREATE,
                 timeout_secs=self.sdk_timeout,
-                process_concurrency=8,
-                batch_size=100)
+                process_concurrency=8, batch_size=100,
+                load_using=self.load_docs_using)
             self.task_manager.get_task_result(task)
         if transx_op != DocLoading.Bucket.DocOps.CREATE:
             t_doc_gen = self.trans_doc_gen(half_of_num_items, self.num_items,
@@ -316,8 +317,8 @@ class OutOfOrderReturns(ClusterSetup):
             replicate_to=replicate_to, persist_to=persist_to,
             durability=durability,
             timeout_secs=self.sdk_timeout,
-            process_concurrency=1,
-            batch_size=1)
+            process_concurrency=1, batch_size=1,
+            load_using=self.load_docs_using)
         trans_thread.start()
         trans_thread.join()
         self.task_manager.get_task_result(crud_task)
