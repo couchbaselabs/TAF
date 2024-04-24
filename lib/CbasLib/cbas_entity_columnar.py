@@ -7,6 +7,31 @@ Created on 08-Dec-2020
 from CbasLib.CBASOperations import CBASHelper
 
 
+class DatabaseUser(object):
+    """
+    Database user
+    """
+    def __init__(self, id, name, password):
+        self.id = id
+        self.name = name
+        self.password = password
+
+    def __str__(self):
+        return self.id
+
+    def to_dict(self):
+        return {"id": self.id, "name": self.name, "password": self.password}
+
+class ColumnarRole(object):
+    """
+    Analytics Role.
+    """
+    def __init__(self, role_name):
+        self.role_name = CBASHelper.format_name(role_name)
+
+    def __str__(self):
+        return self.role_name
+
 class Database(object):
     """
     Database object
@@ -437,7 +462,7 @@ class ExternalDB(object):
     :param mongo_connection_uri <str> Mongo DB connection URI
     :param dynamo_access_key <str> Access key for dynamo service
     :param dynamo_secret_key <str> Secret key for dynamo service
-    :param dynamo_region <str> Region in which dynamo table is present 
+    :param dynamo_region <str> Region in which dynamo table is present
     """
 
     def __init__(self, db_type, mongo_connection_uri=None,

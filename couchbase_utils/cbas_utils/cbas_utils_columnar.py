@@ -18,11 +18,12 @@ import requests
 
 from Columnar.templates.crudTemplate.docgen_template import Hotel
 from global_vars import logger
+from SecurityLib.rbac import RbacUtil
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity_columnar import (
     Database, Dataverse, Remote_Link, External_Link, Kafka_Link, Dataset,
     Remote_Dataset, External_Dataset, Standalone_Dataset, Synonym,
-    CBAS_Index)
+    CBAS_Index, DatabaseUser, ColumnarRole)
 from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
 from common_lib import sleep
 from Queue import Queue
@@ -202,10 +203,10 @@ class BaseUtil(object):
                 expected_error = expected_error.replace("`", "")
 
             if expected_error not in actual_error:
-                self.log.debug("Error message mismatch. Expected: %s, got: %s"
+                self.log.info("Error message mismatch. Expected: %s, got: %s"
                                % (expected_error, actual_error))
                 return False
-            self.log.debug("Error message matched. Expected: %s, got: %s"
+            self.log.info("Error message matched. Expected: %s, got: %s"
                            % (expected_error, actual_error))
             if expected_error_code is not None:
                 if isinstance(errors, list):
@@ -385,6 +386,258 @@ class BaseUtil(object):
     def metadata_format(name):
         return CBASHelper.metadata_format(name)
 
+
+class RBAC_Util(BaseUtil):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
+        super(RBAC_Util, self).__init__(server_task, run_query_using_sdk)
+        self.database_users = dict()
+        self.columnar_roles = dict()
+
+
+    def create_user(self, cluster, id, username, password):
+        """
+            Function to create server user.
+        """
+        user = DatabaseUser(id, username, password)
+        result = True
+        try:
+            RbacUtil().create_user_source([user.to_dict()], "builtin",
+                                          cluster.master)
+        except Exception as e:
+            self.log.error("Exception while creating new user: {}".format(e))
+            result = False
+
+        if result:
+            self.database_users[user.id] = user
+
+        return result
+
+    def get_user_obj(self, user_id):
+        """
+            Get user object by user id.
+        """
+        if user_id in self.database_users:
+            return self.database_users[user_id]
+
+        return None
+
+    def get_all_user_obj(self):
+        """
+            Get all user objects.
+        """
+        db_users = list()
+        db_users.extend(list(self.database_users.values()))
+
+        return db_users
+
+    def create_columnar_role(
+            self, cluster, role_name, username=None, password=None,
+            validate_error_msg=False, expected_error=None,
+            expected_error_code=None, timeout=300,
+            analytics_timeout=300):
+        """
+            Creates a new analytics role.
+        """
+
+        role_name = self.format_name(role_name)
+        create_role_cmd = "CREATE ROLE " + role_name
+        create_role_cmd += ";"
+
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, create_role_cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                self.log.error("Failed to create role {0}: {1}".format(
+                    role_name, str(errors)))
+                return False
+            else:
+                if not self.get_columnar_role_object(role_name):
+                    role = ColumnarRole(role_name)
+                    self.columnar_roles[role.role_name] = role
+                return True
+
+    def drop_columnar_role(
+            self, cluster, role_name, username=None, password=None,
+            validate_error_msg=False, expected_error=None,
+            expected_error_code=None, timeout=300,
+            analytics_timeout=300):
+        """
+            Creates a new analytics role.
+        """
+
+        role_name = self.format_name(role_name)
+        create_role_cmd = "DROP ROLE " + role_name
+        create_role_cmd += ";"
+
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, create_role_cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                self.log.error("Failed to drop role {0}: {1}".format(
+                    role_name, str(errors)))
+                return False
+            else:
+                if self.get_columnar_role_object(role_name):
+                    del self.columnar_roles[role_name]
+                return True
+
+    def get_columnar_role_object(self, role_name):
+        """
+        Get columnar role object by role name.
+        """
+        role_name = self.format_name(role_name)
+        if role_name in self.columnar_roles:
+            return self.columnar_roles[role_name]
+
+        return None
+
+    def get_all_columnar_role_objs(self):
+        """
+        Get all columnar role objects.
+        """
+        columnar_roles = list()
+        columnar_roles.extend(self.columnar_roles.values())
+
+        return columnar_roles
+
+    def find_resource_type(self, resource):
+        name_cardinality = len(resource.split('.'))
+
+        if name_cardinality == 3:
+            return "COLLECTION"
+        elif name_cardinality == 2:
+            return "SCOPE"
+        elif name_cardinality == 1:
+            return "DATABASE"
+
+    def grant_privileges_to_subjects(
+            self, cluster, privileges=[], subjects=[], resources=[],
+            privilege_resource_type="database", use_any=False,
+            use_subject_type=False, username=None, password=None,
+            validate_error_msg=False, expected_error=None,
+            expected_error_code=None, timeout=300,
+            analytics_timeout=300):
+        """
+        Grant privileges to users or roles on resources.
+
+        :param privileges: List of privileges to grant to users/roles.
+        :param roles: List of roles to assign to users.
+        :param subjects: List of users/roles to grant the privileges or assign roles.
+        :param resources: List of resources on which the privileges should be granted.
+        :param privilege_resource_type: The type of resource for which privilege is to be granted.
+        :param use_any: Boolean flag to determine whether to use the 'any' syntax when granting privileges.
+        :param subject_type: Boolean flag to determine wheter to use subject type(USER or ROLE)
+                             while granting privileges
+        """
+        grant_cmd = None
+        if privilege_resource_type == "database":
+            grant_cmd = "GRANT {0} DATABASE "
+        elif privilege_resource_type == "scope":
+            grant_cmd = "GRANT {0} SCOPE "
+            if not use_any:
+                grant_cmd += "IN DATABASE {1} "
+        elif privilege_resource_type == "collection_ddl":
+            grant_cmd = "GRANT {0} COLLECTION "
+            if not use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "IN " + resource_type + " {1} "
+        elif privilege_resource_type == "collection_dml":
+            grant_cmd = "GRANT {0} ON "
+            if use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "ANY COLLECTION IN " + resource_type + " {1} "
+            else:
+                grant_cmd += "COLLECTION {1} "
+        elif privilege_resource_type == "link_ddl":
+            grant_cmd = "GRANT {0} LINK "
+        elif privilege_resource_type == "link_dml" or \
+            privilege_resource_type == "link_connection":
+            grant_cmd = "GRANT {0} ON "
+            if use_any:
+                grant_cmd += "ANY LINK "
+            else:
+                grant_cmd += "LINK {1} "
+        elif privilege_resource_type == "role":
+            grant_cmd = "GRANT {0} ROLE "
+        elif privilege_resource_type == "synonym":
+            grant_cmd = "GRANT {0} SYNONYM "
+            if not use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "IN " + resource_type + " {1} "
+        elif privilege_resource_type == "index":
+            grant_cmd = "GRANT {0} INDEX ON "
+            if use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "ANY COLLECTION IN " + resource_type + " {1} "
+            else:
+                grant_cmd += "COLLECTION {1} "
+
+        if use_subject_type:
+            users_roles = ["USER {}".format(self.format_name(str(sub))) if isinstance(sub, DatabaseUser)
+                           else "ROLE {}".format(self.format_name(str(sub)))
+                           for sub in subjects]
+            users_roles = ','.join(users_roles)
+        else:
+            users_roles = ','.join([self.format_name(str(sub)) for sub in subjects])
+
+        grant_cmd += "TO {2}"
+        grant_cmd = grant_cmd.format(','.join(privileges),
+                                     ','.join([self.format_name(res) for res in resources]),
+                                     users_roles)
+        grant_cmd += ";"
+
+        self.log.info("Running GRANT statement: {}".format(grant_cmd))
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, grant_cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                self.log.error("Failed to grant privlege: {}".format(
+                    str(errors)))
+                return False
+            else:
+                return True
+
+    def assign_role_to_user(self, cluster, roles=[], users=[],
+                            username=None, password=None,
+                            validate_error_msg=False, expected_error=None,
+                            expected_error_code=None, timeout=300,
+                            analytics_timeout=300):
+
+        columnar_roles = ','.join([self.format_name(str(role)) for role in roles])
+        database_users = ','.join([self.format_name(str(user)) for user in users])
+
+        grant_cmd = "GRANT " + columnar_roles + " TO " + database_users + ";"
+
+        self.log.info("Running GRANT statement: {}".format(grant_cmd))
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, grant_cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                self.log.error("Failed to grant role to user: {}".format(
+                    str(errors)))
+                return False
+            else:
+                return True
 
 class Database_Util(BaseUtil):
     """
@@ -1186,7 +1439,7 @@ class Link_Util(Dataverse_Util):
         cmd += ";"
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cluster, cmd, username=username, password=password, 
+            cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(
@@ -1302,7 +1555,7 @@ class Link_Util(Dataverse_Util):
 
     def connect_link(self, cluster, link_name, validate_error_msg=False,
                      with_force=True, username=None, password=None,
-                     expected_error=None, expected_error_code=None, 
+                     expected_error=None, expected_error_code=None,
                      timeout=300, analytics_timeout=300):
         """
         Connects a Link
@@ -1310,7 +1563,7 @@ class Link_Util(Dataverse_Util):
         :param with_force: bool, use force flag while connecting a link
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate 
+        :param validate_error_msg: boolean, if set to true, then validate
         error raised with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -1339,7 +1592,7 @@ class Link_Util(Dataverse_Util):
 
     def disconnect_link(self, cluster, link_name, validate_error_msg=False,
                         username=None, password=None, expected_error=None,
-                        expected_error_code=None, timeout=300, 
+                        expected_error_code=None, timeout=300,
                         analytics_timeout=300):
         """
         Disconnects a link
@@ -3352,8 +3605,9 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             return True
 
     def upsert_into_standalone_collection(self, cluster, collection_name, new_item, dataverse_name=None,
-                                          database_name=None, username=None, password=None, analytics_timeout=300,
-                                          timeout=300):
+                                          database_name=None, username=None, validate_error_msg=None,
+                                          expected_error=None, expected_error_code=None, password=None,
+                                          analytics_timeout=300, timeout=300):
         """
         Upsert into standalone collection
         """
@@ -3367,12 +3621,14 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
         cmd += "({0});".format(new_item)
-
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
-        if status != "success":
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        elif status != "success":
             self.log.error(str(errors))
             return False
         else:
@@ -3380,7 +3636,8 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
     def delete_from_standalone_collection(
             self, cluster, collection_name, dataverse_name=None, database_name=None,
-            where_clause=None, use_alias=False, username=None, password=None,
+            where_clause=None, use_alias=False, username=None, validate_error_msg=None,
+            expected_error=None, expected_error_code=None, password=None,
             analytics_timeout=300, timeout=300):
         """
         Query to delete from standalone collection
@@ -3405,7 +3662,10 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
-        if status != "success":
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        elif status != "success":
             self.log.error(str(errors))
             return False
         else:
@@ -4077,8 +4337,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         return all(results)
 
     """
-    Note - Number of external collection should be same as number of 
-    standalone collections to be created. 
+    Note - Number of external collection should be same as number of
+    standalone collections to be created.
     """
     def create_standalone_dataset_for_external_db_from_spec(
             self, cluster, cbas_spec):
@@ -4175,7 +4435,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                               link.db_type == datasource]
 
             """
-            This is to make sure that we don't create 2 collection with same 
+            This is to make sure that we don't create 2 collection with same
             source collection and link
             include_kafka_topics should be of format -
             { "datasource" : [("region","collection_name")]}
@@ -4537,14 +4797,14 @@ class Synonym_Util(StandAlone_Collection_Util):
                     name=name, cbas_entity_name=cbas_entity.name,
                     cbas_entity_dataverse=cbas_entity.dataverse_name,
                     cbas_entity_database=cbas_entity.database_name,
-                    dataverse_name=dataverse.name, 
+                    dataverse_name=dataverse.name,
                     database_name=database.name,
                     synonym_on_synonym=synonym_on_synonym)
 
                 if not self.create_analytics_synonym(
-                        cluster=cluster, synonym_full_name=synonym.full_name, 
+                        cluster=cluster, synonym_full_name=synonym.full_name,
                         cbas_entity_full_name=synonym.cbas_entity_full_name,
-                        if_not_exists=False, 
+                        if_not_exists=False,
                         timeout=cbas_spec.get("api_timeout", 300),
                         analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
                     results.append(False)
@@ -4677,7 +4937,7 @@ class Index_Util(Synonym_Util):
 
     def create_cbas_index(
             self, cluster, index_name, indexed_fields, dataset_name,
-            analytics_index=False, validate_error_msg=False, 
+            analytics_index=False, validate_error_msg=False,
             expected_error=None, username=None, password=None,
             timeout=300, analytics_timeout=300, if_not_exists=False):
         """
@@ -4709,11 +4969,11 @@ class Index_Util(Synonym_Util):
         create_idx_statement += " on {0}({1});".format(
             dataset_name, index_fields)
 
-        self.log.debug("Executing cmd - \n{0}\n".format(create_idx_statement))
+        self.log.info("Executing cmd - \n{0}\n".format(create_idx_statement))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cluster, create_idx_statement, username=username, 
-            password=password, timeout=timeout, 
+            cluster, create_idx_statement, username=username,
+            password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(
@@ -4724,8 +4984,8 @@ class Index_Util(Synonym_Util):
             else:
                 return True
 
-    def drop_cbas_index(self, cluster, index_name, dataset_name, 
-                        analytics_index=False, validate_error_msg=False, 
+    def drop_cbas_index(self, cluster, index_name, dataset_name,
+                        analytics_index=False, validate_error_msg=False,
                         expected_error=None, username=None, password=None,
                         timeout=300, analytics_timeout=300, if_exists=False):
         """
@@ -4756,8 +5016,8 @@ class Index_Util(Synonym_Util):
         self.log.debug("Executing cmd - \n{0}\n".format(drop_idx_statement))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cluster, drop_idx_statement, username=username, 
-            password=password, timeout=timeout, 
+            cluster, drop_idx_statement, username=username,
+            password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
             return self.validate_error_in_response(
@@ -4886,11 +5146,11 @@ class UDFUtil(Index_Util):
         """
         super(UDFUtil, self).__init__(server_task, run_query_using_sdk)
 
-    def create_udf(self, cluster, name, dataverse=None, database=None, 
-                   or_replace=False, parameters=[], body=None, 
-                   if_not_exists=False, query_context=False, 
-                   use_statement=False, validate_error_msg=False, 
-                   expected_error=None, username=None, password=None, 
+    def create_udf(self, cluster, name, dataverse=None, database=None,
+                   or_replace=False, parameters=[], body=None,
+                   if_not_exists=False, query_context=False,
+                   use_statement=False, validate_error_msg=False,
+                   expected_error=None, username=None, password=None,
                    timeout=300, analytics_timeout=300):
         """
         Create CBAS User Defined Functions
@@ -4946,7 +5206,7 @@ class UDFUtil(Index_Util):
         status, metrics, errors, results, \
             _ = self.execute_parameter_statement_on_cbas_util(
             cluster, create_udf_statement, timeout=timeout, username=username,
-            password=password, analytics_timeout=analytics_timeout, 
+            password=password, analytics_timeout=analytics_timeout,
             parameters=param)
         if validate_error_msg:
             return self.validate_error_in_response(
@@ -4957,7 +5217,7 @@ class UDFUtil(Index_Util):
             else:
                 return True
 
-    def drop_udf(self, cluster, name, dataverse, database, parameters=[], 
+    def drop_udf(self, cluster, name, dataverse, database, parameters=[],
                  if_exists=False, use_statement=False, query_context=False,
                  validate_error_msg=False, expected_error=None,
                  username=None, password=None, timeout=300,
@@ -5020,7 +5280,7 @@ class UDFUtil(Index_Util):
             else:
                 return True
 
-    def get_udf_obj(self, cluster, name, dataverse_name=None, 
+    def get_udf_obj(self, cluster, name, dataverse_name=None,
                     database_name=None, parameters=[]):
         """
         Return CBAS_UDF object if the UDF with the required name already
@@ -5073,8 +5333,8 @@ class UDFUtil(Index_Util):
         return udfs
 
     def validate_udf_in_metadata(
-            self, cluster, udf_name, udf_dataverse_name, udf_database_name, 
-            parameters, body, dataset_dependencies=[], udf_dependencies=[], 
+            self, cluster, udf_name, udf_dataverse_name, udf_database_name,
+            parameters, body, dataset_dependencies=[], udf_dependencies=[],
             synonym_dependencies=[]):
         """
         Validates whether an entry for UDF is present in Metadata.Function.
