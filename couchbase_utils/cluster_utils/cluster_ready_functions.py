@@ -2177,9 +2177,9 @@ class ClusterUtils:
             if contains_text is not None and contains_text in logs[i]["text"]:
                 break
 
-        self.test_log.info("Latest logs from UI")
+        self.log.info("Latest logs from UI")
         for ui_log in result:
-            self.test_log.error(ui_log)
+            self.log.error(ui_log)
 
     def get_rebalance_status_and_progress(self, cluster, task_status_id=None):
         """
@@ -2221,7 +2221,7 @@ class ClusterUtils:
                     rebalance_status = "none"  # rebalance finished/notRunning scenario
                 if "errorMessage" in json_parsed:
                     msg = '{0} - rebalance failed'.format(json_parsed)
-                    self.test_log.error(msg)
+                    self.log.error(msg)
                     self.print_UI_logs(cluster_rest)
                     raise RebalanceFailedException(msg)
                 elif rebalance_status == "running":
@@ -2232,13 +2232,13 @@ class ClusterUtils:
                         # and new rebalance / failover task is running in cluster
                         rebalance_status = "none"
                         avg_percentage = 100
-                        self.test_log.warning(
+                        self.log.warning(
                             "Previous rebalance with status id '%s' changed to '%s'"
                             % (task_status_id, json_parsed["statusId"]))
                     else:
                         avg_percentage = round(json_parsed["progress"], 2)
-                        self.test_log.debug("Rebalance percentage: {0:.02f} %"
-                                            .format(avg_percentage))
+                        self.log.debug("Rebalance percentage: {0:.02f} %"
+                                       .format(avg_percentage))
                 else:
                     # Sleep before printing rebalance failure log
                     sleep(5, log_type="infra")
