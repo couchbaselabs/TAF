@@ -2253,17 +2253,32 @@ class ClusterUtils:
         return rebalance_status, avg_percentage
 
     def is_cluster_mixed(self, cluster):
+        """
+        :return bool: 'True' means the cluster is running in mixed mode
+        """
         rest = ClusterRestAPI(cluster.master)
         status, content = rest.cluster_details()
         if content == 'unknown pool' or status is False:
             return False
         try:
-            versions = list(set([node["version"][:1] for node in http_res["nodes"]]))
+            cb_version = None
+            release_type = None
+            for node in content["nodes"]:
+                # To populate cb_releases of format X.Y
+                node_ver = node["version"][:3]
+                # Fetch release type community / enterprise
+                node_rel_type = node["version"].split("-")[-1]
+                if cb_version is None:
+                    # Populate this only for the first node where
+                    # initial values are unset
+                    cb_version = node_ver
+                    release_type = node_rel_type
+                elif cb_version != node_ver:
+                    return True
+                elif release_type != node_rel_type:
+                    return True
         except Exception:
+            # not really clear what to return but False see to be
+            # a good start until we figure what is happening
             self.log.error(f'Error while processing cluster info {content}')
-            # not really clear what to return but False see to be a good start until we figure what is happening
-            return False
-
-        if '1' in versions and '2' in versions:
-            return True
         return False
