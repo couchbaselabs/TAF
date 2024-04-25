@@ -92,6 +92,8 @@ class SiriusClient(object):
                     raise Exception
 
             docker_file_data["services"]["sirius"]["ports"] = [f"{port}:4000"]
+            docker_file_data["services"]["sirius"][
+                "container_name"] = f"sirius_{port}"
             with open(docker_file_path, 'a') as outfile:
                 yaml.safe_dump(docker_file_data, outfile,
                                default_flow_style=False)
