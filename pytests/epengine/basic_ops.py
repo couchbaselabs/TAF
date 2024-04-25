@@ -22,10 +22,10 @@ from gsiLib.gsiHelper import GsiHelper
 
 from mc_bin_client import MemcachedClient, MemcachedError
 from platform_constants.os_constants import Linux
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from sdk_utils.sdk_options import SDKOptions
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 
 

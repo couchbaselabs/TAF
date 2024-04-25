@@ -398,8 +398,8 @@ class RebalanceDurability(RebalanceBaseTest):
         self.rest.update_autofailover_settings(False, 120)
         test_failure_condition = self.input.param("test_failure_condition")
         # induce the failure before the rebalance starts
-        self.retry_rebalance_util.induce_rebalance_test_condition(self.servers,
-                                                        test_failure_condition)
+        self.retry_rebalance_util.induce_rebalance_test_condition(
+            self.servers, test_failure_condition)
         self.gen_update = self.get_doc_generator(0, self.num_items)
         self.doc_ops = "update"
         self.sleep(sleep_time)

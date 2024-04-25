@@ -3,14 +3,14 @@ from random import randint, choice
 
 from BucketLib.bucket import Bucket
 from basetestcase import ClusterSetup
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class DurabilityTestsBase(ClusterSetup):
@@ -38,8 +38,8 @@ class DurabilityTestsBase(ClusterSetup):
             self.durability_level)
 
         # Disable auto-failover to avoid failover of nodes
-        status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120)
+        ClusterRestAPI(self.cluster.master).update_auto_failover_settings(
+            enabled="false")
 
         self.bucket = self.cluster.buckets[0]
 
@@ -120,8 +120,8 @@ class BucketDurabilityBase(ClusterSetup):
             self.fail("Not enough nodes for rebalance")
 
         # Disable auto-failover to avoid failover of nodes
-        status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120)
+        status, _ = ClusterRestAPI(self.cluster.master) \
+            .update_auto_failover_settings(enabled="false")
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         self.durability_helper = DurabilityHelper(

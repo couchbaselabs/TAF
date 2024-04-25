@@ -46,7 +46,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
                           .format(self.cluster.master))
             self.enable_diag_eval_on_non_local_hosts(self.cluster.master)
             self.log_on_cluster("started")
-        except Exception, e:
+        except Exception as e:
             self.fail(e)
 
         self.creds = self.input.membase_settings
@@ -95,16 +95,6 @@ class SwapRebalanceBase(RebalanceBaseTest):
                              self._testMethodName,
                              progress)
         RestConnection(self.servers[0]).log_client_error(msg)
-
-    # Used for items verification active vs. replica
-    def items_verification(self, test, master):
-        # Verify items count across all node
-        timeout = 600
-        for bucket in self.cluster.buckets:
-            verified = self.bucket_util.wait_till_total_numbers_match(
-                self.cluster, bucket, timeout_in_seconds=timeout)
-            test.assertTrue(verified, "Lost items!!.. failing test in {0} secs"
-                                      .format(timeout))
 
     def validate_docs(self):
         self.log.info("Validating docs")
@@ -254,9 +244,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
 
-        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
-                                                    inactive_added=True,
-                                                    inactive_failed=True)
+        self.cluster_util.update_cluster_nodes_service_list(
+            self.cluster, inactive_added=True, inactive_failed=True)
         self.validate_docs()
 
     def _common_test_body_failed_swap_rebalance(self):
@@ -383,9 +372,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: %s" % task.thread_name)
 
-        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
-                                                    inactive_added=True,
-                                                    inactive_failed=True)
+        self.cluster_util.update_cluster_nodes_service_list(
+            self.cluster, inactive_added=True, inactive_failed=True)
         self.validate_docs()
 
     def _add_back_failed_node(self):
@@ -481,9 +469,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: %s" % task.thread_name)
 
-        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
-                                                    inactive_added=True,
-                                                    inactive_failed=True)
+        self.cluster_util.update_cluster_nodes_service_list(
+            self.cluster, inactive_added=True, inactive_failed=True)
         self.validate_docs()
 
     def _failover_swap_rebalance(self):
@@ -547,9 +534,8 @@ class SwapRebalanceBase(RebalanceBaseTest):
                     task_info["ops_failed"],
                     "Doc ops failed for task: {}".format(task.thread_name))
 
-        self.cluster_util.update_cluster_nodes_service_list(self.cluster,
-                                                    inactive_added=True,
-                                                    inactive_failed=True)
+        self.cluster_util.update_cluster_nodes_service_list(
+            self.cluster, inactive_added=True, inactive_failed=True)
         self.validate_docs()
 
 
