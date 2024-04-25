@@ -3,6 +3,7 @@ import traceback
 
 from cb_constants import CbServer
 from basetestcase import ClusterSetup
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from membase.api.rest_client import RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
 from remote.remote_util import RemoteMachineShellConnection
@@ -19,12 +20,16 @@ class CasBaseTest(ClusterSetup):
         if self.doc_ops is not None:
             self.doc_ops = self.doc_ops.split(";")
 
-        self.rest = RestConnection(self.cluster.master)
-        node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
-        mem_quota = int(self.rest.get_nodes_self().mcdMemoryReserved *
-                        node_ram_ratio)
-        self.rest.set_service_mem_quota(
-            {CbServer.Settings.KV_MEM_QUOTA: mem_quota})
+        node_ram_ratio = self.bucket_util.base_bucket_ratio(
+            self.cluster.servers)
+        self.rest = ClusterRestAPI(self.cluster.master)
+        _, info = self.rest.node_details()
+        self.rest.initialize_node(
+            username=self.cluster.master.rest_username,
+            password=self.cluster.master.rest_password)
+        kv_mem_quota = int(info["mcdMemoryReserved"] * node_ram_ratio)
+        self.rest.configure_memory(
+            {CbServer.Settings.KV_MEM_QUOTA: kv_mem_quota})
 
         self.bucket_util.create_default_bucket(
             self.cluster,
@@ -54,7 +59,7 @@ class CasBaseTest(ClusterSetup):
         try:
             self.log.info("Modifying timeSynchronization value after bucket creation .....")
             self._modify_bucket()
-        except Exception, e:
+        except Exception as e:
             traceback.print_exc()
             self.fail('[ERROR] Modify testcase failed .., {0}'.format(e))
 
@@ -64,7 +69,7 @@ class CasBaseTest(ClusterSetup):
             self._restart_server(self.servers[:])
             self.log.info("Verifying bucket settings after restart ..")
             self._check_config()
-        except Exception, e:
+        except Exception as e:
             traceback.print_exc()
             self.fail("[ERROR] Check data after restart failed with exception {0}".format(e))
 
@@ -76,7 +81,7 @@ class CasBaseTest(ClusterSetup):
             self.cluster.rebalance(self.cluster, [], self.servers[1:num_nodes])
             self.log.info("Verifying bucket settings after failover ..")
             self._check_config()
-        except Exception, e:
+        except Exception as e:
             traceback.print_exc()
             self.fail('[ERROR]Failed to failover .. , {0}'.format(e))
 
@@ -86,7 +91,7 @@ class CasBaseTest(ClusterSetup):
             ClusterOperationHelper.add_and_rebalance(self.servers)
             self.log.info("Verifying bucket settings after rebalance ..")
             self._check_config()
-        except Exception, e:
+        except Exception as e:
             self.fail('[ERROR]Rebalance failed .. , {0}'.format(e))
 
     def test_backup_same_cluster(self):
@@ -138,7 +143,7 @@ class CasBaseTest(ClusterSetup):
         info = self.rest.get_nodes_self()
 
         status, content = self.rest.change_bucket_props(
-            bucket=self.pytests/castest/cas_base.pybucket, ramQuotaMB=512,
+            bucket=self.bucket, ramQuotaMB=512,
             timeSynchronization='enabledWithOutDrift')
         if re.search('TimeSyncronization not allowed in update bucket', content):
             self.log.info('[PASS]Expected modify bucket to disallow Time Synchronization.')
