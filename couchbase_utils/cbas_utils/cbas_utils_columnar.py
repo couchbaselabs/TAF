@@ -1531,7 +1531,7 @@ class Link_Util(Dataverse_Util):
             return content
 
     def alter_link_properties(
-            self, cluster, link_properties, username=None, password=None,
+            self, cluster, link_properties, dataverse=None, username=None, password=None,
             timeout=300, validate_error_msg=False, expected_error=None,
             expected_error_code=None):
         """
@@ -2996,8 +2996,8 @@ class Remote_Dataset_Util(Dataset_Util):
         # create a map of cluster and all their KV collections
         all_kv_collection_remote_cluster_map = {}
         for remote_cluster in remote_clusters:
-            kv_collection_used[remote_cluster.name] = []
-            all_kv_collection_remote_cluster_map[remote_cluster.name] = []
+            kv_collection_used[remote_cluster.id] = []
+            all_kv_collection_remote_cluster_map[remote_cluster.id] = []
             for bucket in remote_cluster.buckets:
                 if bucket in dataset_spec.get("exclude_buckets", []):
                     continue
@@ -3014,7 +3014,7 @@ class Remote_Dataset_Util(Dataset_Util):
                                     continue
                                 else:
                                     all_kv_collection_remote_cluster_map[
-                                        remote_cluster.name].append(
+                                        remote_cluster.id].append(
                                         (bucket, scope, collection))
 
         for i in range(0, num_of_remote_datasets):
@@ -3063,7 +3063,7 @@ class Remote_Dataset_Util(Dataset_Util):
             link = remote_link_objs[i % len(remote_link_objs)]
             remote_cluster = None
             for tmp_cluster in remote_clusters:
-                if tmp_cluster.master.ip == link.properties["hostname"]:
+                if tmp_cluster.srv == link.properties["hostname"]:
                     remote_cluster = tmp_cluster
                     break
 
@@ -3071,15 +3071,15 @@ class Remote_Dataset_Util(Dataset_Util):
             # bucket.
             while True:
                 kv_entity = random.choice(all_kv_collection_remote_cluster_map[
-                                      remote_cluster.name])
-                if kv_entity not in kv_collection_used[remote_cluster.name]:
-                    kv_collection_used[remote_cluster.name].append(kv_entity)
+                                      remote_cluster.id])
+                if kv_entity not in kv_collection_used[remote_cluster.id]:
+                    kv_collection_used[remote_cluster.id].append(kv_entity)
                     break
                 else:
-                    if len(kv_collection_used[remote_cluster.name]) == len(
+                    if len(kv_collection_used[remote_cluster.id]) == len(
                             all_kv_collection_remote_cluster_map[
-                                remote_cluster.name]):
-                        kv_collection_used[remote_cluster.name] = [kv_entity]
+                                remote_cluster.id]):
+                        kv_collection_used[remote_cluster.id] = [kv_entity]
                         break
 
             bucket, scope, collection = kv_entity
