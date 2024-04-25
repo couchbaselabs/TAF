@@ -7,7 +7,7 @@ from error_simulation.cb_error import CouchbaseError
 from error_simulation.disk_error import DiskError
 from sdk_client3 import SDKClient
 from constants.sdk_constants.java_client import SDKConstants
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class DurabilitySuccessTests(DurabilityTestsBase):
@@ -352,8 +352,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
             if self.bucket_type == Bucket.Type.EPHEMERAL:
                 retry_num = 0
                 while retry_num != 2:
-                    result = self.task.rebalance(
-                        self.cluster, [], [])
+                    result = self.task.rebalance(self.cluster, [], [])
                     if result:
                         break
                     retry_num += 1

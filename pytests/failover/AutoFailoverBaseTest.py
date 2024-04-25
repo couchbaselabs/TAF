@@ -5,6 +5,7 @@ from BucketLib.bucket import Bucket
 from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_cli import CouchbaseCLI
 from couchbase_helper.documentgenerator import doc_generator
@@ -35,7 +36,7 @@ class AutoFailoverBaseTest(ClusterSetup):
             ["com.couchbase.client.core.error.CouchbaseException: "
              "The range scan internal partition UUID could not be found on the server"])
         self.range_scan_collections = self.input.param("range_scan_collections", None)
-        self.rest = RestConnection(self.orchestrator)
+        self.rest = ClusterRestAPI(self.orchestrator)
         self.server_index_to_fail = self.input.param("server_index_to_fail",
                                                      None)
         self.key_size = self.input.param("key_size", 8)
@@ -127,7 +128,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         super(AutoFailoverBaseTest, self).setUp()
         self.spec_name = self.input.param("bucket_spec", None)
         self._get_params()
-        self.rest = RestConnection(self.orchestrator)
+        self.rest = ClusterRestAPI(self.orchestrator)
         if self.spec_name is None:
             self.initial_load_gen = doc_generator(self.key,
                                                   0,
@@ -171,8 +172,8 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.sleep(10)
         self.server_to_fail = self.cluster.servers[:self.nodes_init]
         self.disable_firewall()
-        self.rest = RestConnection(self.orchestrator)
-        self.rest.reset_autofailover()
+        self.rest = ClusterRestAPI(self.orchestrator)
+        self.rest.reset_auto_failover_count()
         self.disable_autofailover()
         if self.disk_optimized_thread_settings:
             self.bucket_util.update_memcached_num_threads_settings(
@@ -325,8 +326,8 @@ class AutoFailoverBaseTest(ClusterSetup):
         :return: True If the setting was set with the timeout, else return
         False
         """
-        status = self.rest.update_autofailover_settings(
-            True, self.timeout, maxCount=self.max_count)
+        status, _ = self.rest.update_auto_failover_settings(
+            'true', self.timeout, max_count=self.max_count)
         return status
 
     def enable_autoreprovision(self):
@@ -344,7 +345,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         :return: True If the setting was disabled, else return
         False
         """
-        status = self.rest.update_autofailover_settings(False, 120)
+        status, _ = self.rest.update_auto_failover_settings('false', 120)
         return status
 
     def disable_autoreprovision(self):
@@ -365,13 +366,13 @@ class AutoFailoverBaseTest(ClusterSetup):
         status = self.enable_autofailover()
         self.assertTrue(status, "Failed to enable autofailover_settings!")
         self.sleep(5)
-        settings = self.rest.get_autofailover_settings()
-        self.assertTrue(settings.enabled, "Failed to enable "
-                                          "autofailover_settings!")
-        self.assertEqual(self.timeout, settings.timeout,
+        _, settings = self.rest.get_auto_failover_settings()
+        self.assertTrue(settings["enabled"], "Failed to enable "
+                                             "autofailover_settings!")
+        self.assertEqual(self.timeout, settings["timeout"],
                          "Incorrect timeout set. Expected timeout : {0} "
                          "Actual timeout set : {1}"
-                         .format(self.timeout, settings.timeout))
+                         .format(self.timeout, settings["timeout"]))
 
     def disable_autofailover_and_validate(self):
         """
@@ -381,9 +382,9 @@ class AutoFailoverBaseTest(ClusterSetup):
         """
         status = self.disable_autofailover()
         self.assertTrue(status, "Failed to change autofailover_settings!")
-        settings = self.rest.get_autofailover_settings()
-        self.assertFalse(settings.enabled, "Failed to disable "
-                                           "autofailover_settings!")
+        _, settings = self.rest.get_auto_failover_settings()
+        self.assertFalse(settings["enabled"],
+                         "Failed to disable autofailover_settings!")
 
     def enable_firewall(self):
         """
@@ -655,7 +656,7 @@ class AutoFailoverBaseTest(ClusterSetup):
              self.pause_between_failover_action < self.timeout or
              self.num_replicas < self.max_count)
         self.failover_expected = not failover_not_expected
-        if self.failover_action is "restart_server":
+        if self.failover_action == "restart_server":
             self.num_items *= 100
         self.orchestrator = self.cluster.servers[0] if not \
             self.failover_orchestrator else self.cluster.servers[
@@ -963,9 +964,9 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                    self.orchestrator.rest_username,
                    self.orchestrator.rest_password))
             shell.disconnect()
-        status = self.rest.update_autofailover_settings(
-            True, self.timeout, enable_disk_failure=True,
-            disk_timeout=self.disk_timeout)
+        status, _ = self.rest.update_auto_failover_settings(
+            "true", self.timeout, fo_on_disk_issue="true",
+            fo_on_disk_timeout=self.disk_timeout)
         return status
 
     def enable_disk_autofailover_and_validate(self):
@@ -973,7 +974,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         self.assertTrue(status,
                         "Failed to enable disk autofailover for the cluster")
         self.sleep(5)
-        settings = self.rest.get_autofailover_settings()
+        _, settings = self.rest.get_auto_failover_settings()
         self.assertTrue(settings.enabled, "Failed to enable "
                                           "autofailover_settings!")
         self.assertEqual(self.timeout, settings.timeout,
@@ -990,9 +991,9 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                     settings.failoverOnDataDiskIssuesTimeout))
 
     def disable_disk_autofailover(self, disable_autofailover=False):
-        status = self.rest.update_autofailover_settings(
-            not disable_autofailover, self.timeout, enable_disk_failure=False,
-            disk_timeout=self.disk_timeout)
+        status, _ = self.rest.update_auto_failover_settings(
+            not disable_autofailover, self.timeout, fo_on_disk_issue="false",
+            fo_on_disk_timeout=self.disk_timeout)
         return status
 
     def disable_disk_autofailover_and_validate(self,
@@ -1000,10 +1001,10 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
         status = self.disable_disk_autofailover(disable_autofailover)
         self.assertTrue(status, "Failed to update autofailover settings. "
                                 "Failed to disable disk failover settings")
-        settings = self.rest.get_autofailover_settings()
+        _, settings = self.rest.get_auto_failover_settings()
         self.assertEqual(not disable_autofailover, settings.enabled,
                          "Failed to update autofailover settings.")
-        self.assertFalse(settings.failoverOnDataDiskIssuesEnabled,
+        self.assertFalse(settings["failoverOnDataDiskIssuesEnabled"],
                          "Failed to disable disk autofailover for the cluster")
 
     def _create_data_locations(self, server):
