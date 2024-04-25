@@ -1,55 +1,102 @@
 class SDKException(object):
-    CasMismatchException = \
-        "com.couchbase.client.core.error.CasMismatchException"
-    CollectionNotFoundException = \
-        "com.couchbase.client.core.error.CollectionNotFoundException"
-    CouchbaseException = \
-        "com.couchbase.client.core.error.CouchbaseException"
-    DecodingFailedException = \
-        "com.couchbase.client.core.error.DecodingFailedException"
-    DocumentExistsException = \
-        "com.couchbase.client.core.error.DocumentExistsException"
-    DocumentNotFoundException = \
-        "com.couchbase.client.core.error.DocumentNotFoundException"
-    DocumentLockedException = \
-        "com.couchbase.client.core.error.DocumentLockedException"
-    DurabilityAmbiguousException = \
-        "com.couchbase.client.core.error.DurabilityAmbiguousException"
-    DurabilityImpossibleException = \
-        "com.couchbase.client.core.error.DurabilityImpossibleException"
-    DurableWriteInProgressException = \
-        "com.couchbase.client.core.error.DurableWriteInProgressException"
-    FeatureNotAvailableException = \
-        "com.couchbase.client.core.error.FeatureNotAvailableException"
-    ScopeNotFoundException = \
-        "com.couchbase.client.core.error.ScopeNotFoundException"
+    CasMismatchException = [
+        "com.couchbase.client.core.error.CasMismatchException",
+        "CasMismatchException",
+    ]
+    CollectionNotFoundException = [
+        "com.couchbase.client.core.error.CollectionNotFoundException",
+        "CollectionNotFoundException",
+    ]
+    CouchbaseException = [
+        "com.couchbase.client.core.error.CouchbaseException",
+        "CouchbaseException",
+    ]
+    DecodingFailedException = [
+        "com.couchbase.client.core.error.DecodingFailedException",
+        "DecodingFailedException",
+    ]
+    DocumentExistsException = [
+        "com.couchbase.client.core.error.DocumentExistsException",
+        "DocumentExistsException",
+    ]
+    DocumentNotFoundException = [
+        "com.couchbase.client.core.error.DocumentNotFoundException",
+        "DocumentNotFoundException",
+    ]
+    DocumentLockedException = [
+        "com.couchbase.client.core.error.DocumentLockedException",
+        "DocumentLockedException",
+    ]
+    DurabilityAmbiguousException = [
+        "com.couchbase.client.core.error.DurabilityAmbiguousException",
+        "DurabilityAmbiguousException",
+    ]
+    DurabilityImpossibleException = [
+        "com.couchbase.client.core.error.DurabilityImpossibleException",
+        "DurabilityImpossibleException",
+    ]
+    DurableWriteInProgressException = [
+        "com.couchbase.client.core.error.DurableWriteInProgressException",
+        "DurableWriteInProgressException"
+    ]
+    FeatureNotAvailableException = [
+        "com.couchbase.client.core.error.FeatureNotAvailableException",
+        "FeatureNotAvailableException",
+    ]
+    ScopeNotFoundException = [
+        "com.couchbase.client.core.error.ScopeNotFoundException",
+        "ScopeNotFoundException",
+    ]
 
-    TimeoutException = \
-        "com.couchbase.client.core.error.TimeoutException"
-    AmbiguousTimeoutException = \
-        "com.couchbase.client.core.error.AmbiguousTimeoutException"
-    UnambiguousTimeoutException = \
-        "com.couchbase.client.core.error.UnambiguousTimeoutException"
+    TimeoutException = [
+        "com.couchbase.client.core.error.TimeoutException",
+        "TimeoutException",
+    ]
+    AmbiguousTimeoutException = [
+        "com.couchbase.client.core.error.AmbiguousTimeoutException",
+        "AmbiguousTimeoutException",
+    ]
+    UnambiguousTimeoutException = [
+        "com.couchbase.client.core.error.UnambiguousTimeoutException",
+        "UnambiguousTimeoutException",
+    ]
 
-    PathNotFoundException = \
-        "com.couchbase.client.core.error.subdoc.PathNotFoundException"
-    LookUpPathNotFoundException = \
-        "PATH_NOT_FOUND"
-    PathExistsException = \
-        "com.couchbase.client.java.error.subdoc.PathExistsException"
-    RequestCanceledException = \
-        "com.couchbase.client.core.error.RequestCanceledException"
-    TemporaryFailureException = \
-        "com.couchbase.client.core.error.TemporaryFailureException"
-    ValueTooLargeException = \
-        "com.couchbase.client.core.error.ValueTooLargeException"
+    PathNotFoundException = [
+        "com.couchbase.client.core.error.subdoc.PathNotFoundException",
+        "PathNotFoundException",
+    ]
+    LookUpPathNotFoundException = [
+        "PATH_NOT_FOUND",
+    ]
+    PathExistsException = [
+        "com.couchbase.client.java.error.subdoc.PathExistsException",
+    ]
+    RequestCanceledException = [
+        "com.couchbase.client.core.error.RequestCanceledException",
+        "RequestCanceledException",
+    ]
+    TemporaryFailureException = [
+        "com.couchbase.client.core.error.TemporaryFailureException",
+        "TemporaryFailureException",
+    ]
+    ValueTooLargeException = [
+        "com.couchbase.client.core.error.ValueTooLargeException",
+        "ValueTooLargeException",
+    ]
 
-    RetryExhaustedException = \
-        "com.couchbase.client.core.retry.reactor.RetryExhaustedException"
-    TransactionExpired = "com.couchbase.transactions.error.TransactionExpired"
+    RetryExhaustedException = [
+        "com.couchbase.client.core.retry.reactor.RetryExhaustedException",
+        "RetryExhaustedException",
+    ]
+    TransactionExpired = [
+        "com.couchbase.transactions.error.TransactionExpired",
+        "TransactionExpired",
+    ]
 
-    ServerOutOfMemoryException = \
-        "com.couchbase.client.core.error.ServerOutOfMemoryException"
+    ServerOutOfMemoryException = [
+        "com.couchbase.client.core.error.ServerOutOfMemoryException",
+        "ServerOutOfMemoryException",
+    ]
 
     class RetryReason(object):
         KV_SYNC_WRITE_IN_PROGRESS = \
