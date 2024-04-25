@@ -355,7 +355,7 @@ class SubdocDocumentGenerator(KVGenerator):
         while self.doc_keys_len < self.end:
             doc_key = super(SubdocDocumentGenerator,
                             self).next_key(self.key_counter)
-            tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
+            tem_vb = (((zlib.crc32(doc_key.encode())) >> 16) & 0x7fff) & \
                      (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
                 self.doc_keys.update({self.start+self.doc_keys_len: doc_key})
@@ -488,7 +488,7 @@ class DocumentGeneratorForTargetVbucket(KVGenerator):
         while self.doc_keys_len < self.end:
             doc_key = super(DocumentGeneratorForTargetVbucket,
                             self).next_key(self.key_counter)
-            tem_vb = (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & \
+            tem_vb = (((zlib.crc32(doc_key.encode())) >> 16) & 0x7fff) & \
                 (self.vbuckets-1)
             if tem_vb in self.target_vbucket:
                 self.doc_keys.update({self.start+self.doc_keys_len: doc_key})

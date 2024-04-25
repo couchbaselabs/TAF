@@ -2014,7 +2014,7 @@ class Durability(Task):
                     if self.generator_persist._doc_gen.has_next():
                         doc = self.generator_persist._doc_gen.next()
                         key, val = doc[0], doc[1]
-                        vBucket = (((zlib.crc32(key)) >> 16) & 0x7fff) & (
+                        vBucket = (((zlib.crc32(key.encode())) >> 16) & 0x7fff) & (
                                 len(self.bucket.vbuckets) - 1)
                         nodes = [self.bucket.vbuckets[vBucket].master]
                         if self.durability \

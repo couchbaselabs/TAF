@@ -29,7 +29,8 @@ class Cbstats(CbCmdBase):
         Returns:
         :vbucket_number calculated based on the 'doc_key'
         """
-        return (((zlib.crc32(doc_key)) >> 16) & 0x7fff) & (total_vbuckets-1)
+        return (((zlib.crc32(doc_key.encode())) >> 16) & 0x7fff) \
+               & (total_vbuckets-1)
 
     def get_scopes(self, bucket):
         """
