@@ -81,6 +81,7 @@ class SDKException(object):
     ]
     ValueTooLargeException = [
         "com.couchbase.client.core.error.ValueTooLargeException",
+        "Value is too big",
         "ValueTooLargeException",
     ]
 

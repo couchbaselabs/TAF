@@ -10,6 +10,7 @@ from SecurityLib.rbac import RbacUtil
 from basetestcase import ClusterSetup
 from cb_constants import constants, CbServer, DocLoading
 from cb_server_rest_util.rest_client import RestConnection
+from cb_tools.cb_cli import CbCli
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from cb_tools.mc_stat import McStat
@@ -429,7 +430,13 @@ class basic_ops(ClusterSetup):
         # Load a doc which is greater than 20MB
         # with compression enabled and check if it fails
         # check with compression_mode as active, passive and off
-        val_error = SDKException.ValueTooLargeException
+
+        def value_too_large_exception_exists(sdk_exception):
+            for exception_str in SDKException.ValueTooLargeException:
+                if exception_str in sdk_exception:
+                    return True
+            return False
+
         gens_load = self.generate_docs_bigdata(
             docs_per_day=1, document_size=(self.doc_size * 1024000))
         for bucket in self.cluster.buckets:
@@ -447,9 +454,10 @@ class basic_ops(ClusterSetup):
                 if len(task.fail.keys()) == 0:
                     self.log_failure("No failures during large doc insert")
                 for doc_id, doc_result in task.fail.items():
-                    if val_error not in str(doc_result["error"]):
+                    sdk_err = str(doc_result["error"])
+                    if not value_too_large_exception_exists(sdk_err):
                         self.log_failure("Invalid exception for key %s: %s"
-                                         % (doc_id, doc_result))
+                                         % (doc_id, sdk_err))
             else:
                 if len(task.fail.keys()) != 0:
                     self.log_failure("Failures during large doc insert")
@@ -480,14 +488,15 @@ class basic_ops(ClusterSetup):
                 if len(task.fail.keys()) == 0:
                     self.log_failure("No failures during large doc insert")
                 for key, crud_result in task.fail.items():
-                    if SDKException.ValueTooLargeException \
-                            not in str(crud_result["error"]):
+                    sdk_err = str(crud_result["error"])
+                    if not value_too_large_exception_exists(sdk_err):
                         self.log_failure("Unexpected error for key %s: %s"
-                                         % (key, crud_result["error"]))
+                                         % (key, sdk_err))
                 for doc_id, doc_result in task.fail.items():
-                    if val_error not in str(doc_result["error"]):
+                    sdk_err = str(doc_result["error"])
+                    if not value_too_large_exception_exists(sdk_err):
                         self.log_failure("Invalid exception for key %s: %s"
-                                         % (doc_id, doc_result))
+                                         % (doc_id, sdk_err))
                 self.bucket_util.verify_stats_all_buckets(self.cluster, 1)
         self.validate_test_failure()
 
@@ -1913,18 +1922,11 @@ class basic_ops(ClusterSetup):
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         remote = RemoteMachineShellConnection(self.cluster.master)
+        cb_cli = CbCli(remote)
         for bucket in self.cluster.buckets:
-            # change compression mode to off
-            output, _ = remote.execute_couchbase_cli(
-                cli_command='bucket-edit', cluster_host="localhost:8091",
-                user=self.cluster.master.rest_username,
-                password=self.cluster.master.rest_password,
-                options='--bucket=%s --compression-mode off' % bucket.name)
-            self.assertTrue(' '.join(output).find('SUCCESS') != -1,
-                            'compression mode set to off')
-
-            # sleep for 10 sec (minimum 250sec)
-            self.sleep(10)
+            cb_cli.edit_bucket(bucket.name, compressionMode="off")
+        remote.disconnect()
+        self.sleep(10, "Wait for new compressionMode to reflect")
 
         # Load data and check stats to see compression
         # is not done for newly added data
