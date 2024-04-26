@@ -91,10 +91,16 @@ class SiriusClient(object):
                 except Exception:
                     raise Exception
 
+            unique_name = f"sirius_{port}"
             docker_file_data["services"]["sirius"]["ports"] = [f"{port}:4000"]
             docker_file_data["services"]["sirius"][
-                "container_name"] = f"sirius_{port}"
-            with open(docker_file_path, 'a') as outfile:
+                "container_name"] = unique_name
+            docker_file_data["services"][unique_name] = \
+                docker_file_data["services"]["sirius"]
+            docker_file_data["services"].pop("sirius")
+            docker_file_data["networks"]['default']['name'] = unique_name
+
+            with open(docker_file_path, 'w') as outfile:
                 yaml.safe_dump(docker_file_data, outfile,
                                default_flow_style=False)
 
