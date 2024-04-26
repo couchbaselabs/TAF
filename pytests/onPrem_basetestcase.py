@@ -547,13 +547,16 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 self.fail("Services did not honor enforce tls")
 
     def tearDown(self):
-        for container in self.docker_containers:
-            self.docker.killContainer(container)
-            self.log.info("Container {} killed/removed".format(container))
-        if self.docker is not None:
-            if self.image_id is not None:
-                self.docker.deleteImage(self.image_id)
-            self.docker.close()
+        if hasattr(self, "docker_containers"):
+            for container in self.docker_containers:
+                self.docker.killContainer(container)
+                self.log.info("Container {} killed/removed".format(container))
+
+        if hasattr(self, "docker"):
+            if self.docker is not None:
+                if self.image_id is not None:
+                    self.docker.deleteImage(self.image_id)
+                self.docker.close()
         # Perform system event log validation and get failures (if any)
         sys_event_validation_failure = None
         if self.validate_system_event_logs:
