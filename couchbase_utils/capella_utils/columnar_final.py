@@ -71,7 +71,7 @@ class ColumnarUtils:
             self, name=None, description=None, provider=None, region=None,
             nodes=0):
         if not name:
-            name = "Columnar_instance{0}".format(random.randint(1, 100000))
+            name = "Columnar_{0}".format(random.randint(1, 100000))
 
         if not description:
             description = str(''.join(random.choice(
@@ -96,25 +96,63 @@ class ColumnarUtils:
         }
         return config
 
-    def create_instance(self, pod, tenant, project_id, instance_config=None):
+    def create_instance(self, pod, tenant, instance_config=None, timeout=7200):
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         if not instance_config:
             instance_config = self.generate_instance_configuration()
         resp = columnar_api.create_columnar_instance(
-            tenant.id, project_id, instance_config["name"],
+            tenant.id, tenant.project_id, instance_config["name"],
             instance_config["description"], instance_config["provider"],
             instance_config["region"], instance_config["nodes"]
         )
-        if resp.status_code != 201:
-            self.log.error("Unable to create columnar instance {0} in project "
-                           "{1}".format(instance_config["name"], project_id))
-            if resp.content:
-                self.log.error("Error - {}".format(resp.content))
-            return None
-        resp = json.loads(resp.content)
-        return resp["id"]
+        instance_id = None
+        if resp.status_code == 201:
+            instance_id = json.loads(resp.content).get("id")
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            raise Exception(str(resp.content))
+        elif resp.status_code == 422:
+            if resp.content.find("not allowed based on your activation status") != -1:
+                self.log.critical("Tenant is not activated yet...retrying")
+            else:
+                self.log.critical(resp.content)
+                raise Exception("Cluster deployment failed.")
+        else:
+            self.log.error("Unable to create goldfish cluster {0} in project "
+                           "{1}".format(instance_config["name"], tenant.project_id))
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+        time.sleep(5)
+        self.log.info("Cluster created with cluster ID: {}"\
+                              .format(instance_id))
+        
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = columnar_api.get_specific_columnar_instance(
+                tenant.id, tenant.project_id, instance_id)
+            if resp.status_code != 200:
+                self.log.error(
+                    "Unable to fetch details for goldfish cluster {0} with ID "
+                    "{1}".format(instance_config["name"], instance_id))
+                continue
+            state = json.loads(resp.content)["data"]["state"]
+            self.log.info("Cluster %s state: %s" % (instance_id, state))
+            if state == "deploying":
+                time.sleep(10)
+            else:
+                break
+        if state == "healthy":
+            self.log.info("Columnar instance is deployed successfully in %s s" % str(time.time() - start_time))
+        else:
+            self.log.error("Cluster {0} failed to deploy even after {"
+                           "1} seconds. Current cluster state - {2}".format(
+                               instance_config["name"], str(time.time() - start_time), state))
+
+        return instance_id
+
 
     def delete_instance(self, pod, tenant, project_id, instance):
         columnar_api = ColumnarAPI(
@@ -128,18 +166,18 @@ class ColumnarUtils:
             return False
         return True
 
-    def get_instance_info(self, pod, tenant, project_id, instance,
+    def get_instance_info(self, pod, tenant, project_id, instance_id,
                           columnar_api=None):
         if not columnar_api:
             columnar_api = ColumnarAPI(
                 pod.url_public, tenant.api_secret_key, tenant.api_access_key,
                 tenant.user, tenant.pwd)
         resp = columnar_api.get_specific_columnar_instance(
-            tenant.id, project_id, instance.instance_id)
+            tenant.id, project_id, instance_id)
         if resp.status_code != 200:
             self.log.error(
-                "Unable to fetch details for Columnar instance {0} with ID "
-                "{1}".format(instance.name, instance.instance_id))
+                "Unable to fetch details for Columnar instance with ID "
+                "{0}".format(instance_id))
             return None
         return json.loads(resp.content)
 
@@ -149,7 +187,7 @@ class ColumnarUtils:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         columnar_instance_info = self.get_instance_info(
-            pod, tenant, project_id, instance, columnar_api)
+            pod, tenant, project_id, instance.instance_id, columnar_api)
         resp = columnar_api.update_columnar_instance(
             tenant.id, project_id, instance.instance_id,
             columnar_instance_info["name"],
@@ -162,32 +200,6 @@ class ColumnarUtils:
             return False
         return resp
 
-    def wait_for_instance_to_be_deployed(
-            self, pod, tenant, project_id, instance, timeout=3600):
-        columnar_api = ColumnarAPI(
-            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
-            tenant.user, tenant.pwd)
-        end_time = time.time() + timeout
-        while time.time() < end_time:
-            resp = self.get_instance_info(
-                pod, tenant, project_id, instance, columnar_api)
-            if not resp:
-                state = None
-                continue
-            state = resp["data"]["state"]
-            if state == "deploying":
-                self.log.info("Instance is still deploying. Waiting for 10s.")
-                time.sleep(10)
-            else:
-                break
-        if state == "healthy":
-            return True
-        else:
-            self.log.error("Instance {0} failed to deploy even after {"
-                           "1} seconds. Current instance state - {2}".format(
-                instance.name, timeout, state))
-            return False
-
     def wait_for_instance_to_be_destroyed(
             self, pod, tenant, project_id, instance, timeout=3600):
         columnar_api = ColumnarAPI(
@@ -196,7 +208,7 @@ class ColumnarUtils:
         end_time = time.time() + timeout
         while time.time() < end_time:
             resp = self.get_instance_info(
-                pod, tenant, project_id, instance, columnar_api)
+                pod, tenant, project_id, instance.instance_id, columnar_api)
             if not resp:
                 state = None
                 break
@@ -229,7 +241,7 @@ class ColumnarUtils:
         end_time = time.time() + timeout
         while time.time() < end_time:
             state = self.get_instance_info(
-                pod, tenant, project_id, instance, columnar_api)["state"]
+                pod, tenant, project_id, instance.instance_id, columnar_api)["state"]
             if state == "scaling":
                 self.log.info("Instance is still scaling. Waiting for 10s.")
                 time.sleep(10)

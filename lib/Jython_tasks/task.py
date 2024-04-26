@@ -67,6 +67,7 @@ from constants.cloud_constants.capella_constants import AWS
 from java.util.concurrent.atomic import AtomicInteger
 from org.xbill.DNS import Lookup, Type
 from capella_utils.columnar import GoldfishUtils
+from capella_utils.columnar_final import ColumnarUtils
 
 
 class Task(Callable):
@@ -213,6 +214,27 @@ class TimerTask(Task):
         self.complete_task()
         return result
 
+
+class DeployColumnarInstanceNew(Task):
+    def __init__(self, pod, tenant, name, config, timeout=1800):
+        Task.__init__(self, "DeployingColumnarInstance-{}".format(name))
+        self.name = name
+        self.config = config
+        self.pod = pod
+        self.tenant = tenant
+        self.timeout = timeout
+
+    def call(self):
+        try:
+            instance_id = \
+                ColumnarUtils(self.log).create_instance(self.pod, self.tenant,
+                                              self.config)
+            self.instance_id = instance_id
+            self.result = True
+        except Exception as e:
+            self.log.error(e)
+            self.result = False
+        return self.result
 
 class DeployColumnarInstance(Task):
     def __init__(self, pod, tenant, name, config, timeout=1800):
