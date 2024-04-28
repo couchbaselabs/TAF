@@ -773,6 +773,7 @@ class APIBase(CouchbaseBaseTest):
                         expected_res[key], actual_res[key], id):
                     return False
             elif isinstance(expected_res[key], list):
+                j = 0
                 if key == "services":
                     for service in expected_res[key]:
                         if service not in actual_res[key]:
@@ -781,8 +782,10 @@ class APIBase(CouchbaseBaseTest):
                 for i in range(len(actual_res[key])):
                     if key == "data" and actual_res[key][i]["id"] != id:
                         continue
+                    if len(expected_res) > 1:
+                        j = i
                     if not self.validate_api_response(
-                            expected_res[key][0], actual_res[key][i], id):
+                            expected_res[key][j], actual_res[key][i], id):
                         return False
             elif expected_res[key] != actual_res[key]:
                 return False
