@@ -431,12 +431,6 @@ class basic_ops(ClusterSetup):
         # with compression enabled and check if it fails
         # check with compression_mode as active, passive and off
 
-        def value_too_large_exception_exists(sdk_exception):
-            for exception_str in SDKException.ValueTooLargeException:
-                if exception_str in sdk_exception:
-                    return True
-            return False
-
         gens_load = self.generate_docs_bigdata(
             docs_per_day=1, document_size=(self.doc_size * 1024000))
         for bucket in self.cluster.buckets:
@@ -455,7 +449,8 @@ class basic_ops(ClusterSetup):
                     self.log_failure("No failures during large doc insert")
                 for doc_id, doc_result in task.fail.items():
                     sdk_err = str(doc_result["error"])
-                    if not value_too_large_exception_exists(sdk_err):
+                    if not self.bucket_util.check_if_exception_exists(
+                            sdk_err, SDKException.ValueTooLargeException):
                         self.log_failure("Invalid exception for key %s: %s"
                                          % (doc_id, sdk_err))
             else:
@@ -489,12 +484,14 @@ class basic_ops(ClusterSetup):
                     self.log_failure("No failures during large doc insert")
                 for key, crud_result in task.fail.items():
                     sdk_err = str(crud_result["error"])
-                    if not value_too_large_exception_exists(sdk_err):
+                    if not self.bucket_util.check_if_exception_exists(
+                            sdk_err, SDKException.ValueTooLargeException):
                         self.log_failure("Unexpected error for key %s: %s"
                                          % (key, sdk_err))
                 for doc_id, doc_result in task.fail.items():
                     sdk_err = str(doc_result["error"])
-                    if not value_too_large_exception_exists(sdk_err):
+                    if not self.bucket_util.check_if_exception_exists(
+                            sdk_err, SDKException.ValueTooLargeException):
                         self.log_failure("Invalid exception for key %s: %s"
                                          % (doc_id, sdk_err))
                 self.bucket_util.verify_stats_all_buckets(self.cluster, 1)

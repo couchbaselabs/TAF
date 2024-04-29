@@ -28,7 +28,8 @@ from sdk_exceptions import SDKException
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import Cluster
 from couchbase.options import (ClusterOptions, ClusterTimeoutOptions,
-                               QueryOptions, WaitUntilReadyOptions)
+                               QueryOptions, WaitUntilReadyOptions,
+                               GetAllReplicasOptions)
 
 
 class SDKClientPool(object):
@@ -831,16 +832,16 @@ class SDKClient(object):
         return result
 
     def get_from_all_replicas(self, key):
-        result = []
-        get_result = self.collection.getAllReplicas(
-            key, GetAllReplicasOptions.getAllReplicasOptions())
+        result = list()
+        get_results = self.collection.get_all_replicas(
+            key, GetAllReplicasOptions(
+                timeout=SDKOptions.get_duration(60, "seconds")))
         try:
-            get_result = get_result.toArray()
-            if get_result:
-                for item in get_result:
-                    result.append({"key": key,
-                                   "value": item.contentAsObject(),
-                                   "cas": item.cas, "status": get_result.success})
+            for get_result in get_results:
+                result.append({"key": get_result.key,
+                               "value": get_result.content_as[dict],
+                               "cas": get_result.cas,
+                               "status": get_result.success})
         except Exception:
             pass
         return result

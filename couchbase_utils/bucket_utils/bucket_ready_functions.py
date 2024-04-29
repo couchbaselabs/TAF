@@ -100,12 +100,10 @@ class DocLoaderUtils(object):
     log = logger.get("test")
 
     @staticmethod
-    def check_if_exception_exists(target_exception, *Exceptions):
-        # type: (str, list) -> bool
-        for exceptions in Exceptions:
-            for e in exceptions:
-                if e in str(target_exception) or str(target_exception) in e:
-                    return True
+    def check_if_exception_exists(received_exception, expected_exceptions):
+        for expected_exception_str in expected_exceptions:
+            if expected_exception_str in received_exception:
+                return True
         return False
 
     @staticmethod
