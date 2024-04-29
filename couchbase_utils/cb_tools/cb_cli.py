@@ -186,16 +186,18 @@ class CbCli(CbCmdBase):
         for key, value in params.items():
             if key == Bucket.ramQuotaMB:
                 cmd += " --bucket-ramsize " + str(value)
-            if key == Bucket.evictionPolicy:
+            elif key == Bucket.evictionPolicy:
                 cmd += " --bucket-eviction-policy " + value
-            if key == Bucket.replicaNumber:
+            elif key == Bucket.replicaNumber:
                 cmd += " --bucket-replica " + str(value)
-            if key == Bucket.priority:
+            elif key == Bucket.priority:
                 cmd += " --bucket-priority " + value
-            if key == Bucket.flushEnabled:
+            elif key == Bucket.flushEnabled:
                 cmd += " --enable-flush " + str(value)
-            if key == Bucket.rank:
+            elif key == Bucket.rank:
                 cmd += " --rank " + str(value)
+            elif key == Bucket.compressionMode:
+                cmd += " --compression-mode " + str(value)
 
         cmd += self.cli_flags
         output, error = self._execute_cmd(cmd)
