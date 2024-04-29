@@ -581,6 +581,28 @@ class RBAC_Util(BaseUtil):
                 grant_cmd += "ANY COLLECTION IN " + resource_type + " {1} "
             else:
                 grant_cmd += "COLLECTION {1} "
+        elif privilege_resource_type == "udf_ddl":
+            grant_cmd = "GRANT {0} FUNCTION "
+            if not use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "IN " + resource_type + " {1} "
+        elif privilege_resource_type == "udf_execute":
+            grant_cmd = "GRANT {0} ON FUNCTION {1} "
+            if use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "ANY FUNCTION IN " + resource_type + " {1} "
+        elif privilege_resource_type == "view_ddl":
+            grant_cmd = "GRANT {0} VIEW "
+            if not use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "IN " + resource_type + " {1} "
+        elif privilege_resource_type == "view_select":
+            grant_cmd = "GRANT {0} ON "
+            if use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "ANY VIEW IN " + resource_type + " {1} "
+            else:
+                grant_cmd += "VIEW {1} "
 
         if use_subject_type:
             users_roles = ["USER {}".format(self.format_name(str(sub))) if isinstance(sub, DatabaseUser)
@@ -4493,7 +4515,6 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 results.append(True)
         return all(results)
 
-
 class Synonym_Util(StandAlone_Collection_Util):
 
     def __init__(self, server_task=None, run_query_using_sdk=False):
@@ -4834,8 +4855,88 @@ class Synonym_Util(StandAlone_Collection_Util):
                 break
         return synonyms_created
 
+class View_Util(Synonym_Util):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
+        """
+        :param server_task task object
+        """
+        super(View_Util, self).__init__(
+            server_task, run_query_using_sdk)
 
-class Index_Util(Synonym_Util):
+    def create_analytics_view(
+            self, cluster, view_full_name, view_defn,
+            if_not_exists=False, validate_error_msg=False, expected_error=None,
+            username=None, password=None, timeout=300, analytics_timeout=300):
+
+        cmd = "create analytics view {0}".format(view_full_name)
+
+        if if_not_exists:
+            cmd += " If Not Exists"
+
+        cmd += " as {0};".format(view_defn)
+
+        self.log.info("Executing cmd - \n{0}\n".format(cmd))
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        print("Create view errors: {}".format(errors))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def drop_analytics_view(
+            self, cluster, view_full_name, if_exists=False,
+            validate_error_msg=False, expected_error=None, username=None,
+            password=None, timeout=300, analytics_timeout=300):
+
+        cmd = "drop analytics view {0}".format(view_full_name)
+
+        if if_exists:
+            cmd += " if exists;"
+        else:
+            cmd += ";"
+
+        self.log.info("Executing cmd - \n{0}\n".format(cmd))
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def get_all_views_from_metadata(self, cluster):
+        views_created = []
+        views_query = "select value ds.DatabaseName || \".\" || " \
+                      "ds.DataverseName || \".\" || ds.DatasetName from " \
+                      "Metadata.`Dataset` as ds where ds.DataverseName " \
+                      "<> \"Metadata\" and ds.DatasetType = \"VIEW\";"
+        while not views_created:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, views_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success':
+                results = list(
+                    map(lambda result: result.encode('utf-8').split("."),
+                        results))
+                views_created = list(
+                    map(lambda result: CBASHelper.format_name(*result),
+                        results))
+                break
+        return views_created
+
+class Index_Util(View_Util):
 
     def __init__(self, server_task=None, run_query_using_sdk=False):
         """
@@ -5013,7 +5114,7 @@ class Index_Util(Synonym_Util):
         else:
             drop_idx_statement += ";"
 
-        self.log.debug("Executing cmd - \n{0}\n".format(drop_idx_statement))
+        self.log.info("Executing cmd - \n{0}\n".format(drop_idx_statement))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, drop_idx_statement, username=username,
@@ -5201,7 +5302,7 @@ class UDFUtil(Index_Util):
             else:
                 param["query_context"] = "default:Default"
 
-        self.log.debug("Executing cmd - \n{0}\n".format(create_udf_statement))
+        self.log.info("Executing cmd - \n{0}\n".format(create_udf_statement))
 
         status, metrics, errors, results, \
             _ = self.execute_parameter_statement_on_cbas_util(
@@ -5264,7 +5365,7 @@ class UDFUtil(Index_Util):
             else:
                 param["query_context"] = "default:Default"
 
-        self.log.debug("Executing cmd - \n{0}\n".format(drop_udf_statement))
+        self.log.info("Executing cmd - \n{0}\n".format(drop_udf_statement))
 
         status, metrics, errors, results, \
             _ = self.execute_parameter_statement_on_cbas_util(

@@ -7,7 +7,7 @@ spec = {
     # Accepted values are > 0
     "max_thread_count": 25,
 
-    "databases": {
+    "database": {
         "no_of_databases": 1
     },
 

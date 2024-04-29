@@ -50,6 +50,10 @@ class ColumnarRBAC(CBASBaseTest):
         self.role_privieleges = ["CREATE", "DROP"]
         self.synonym_privileges = ["CREATE", "DROP"]
         self.index_privileges = ["CREATE", "DROP"]
+        self.udf_ddl_privileges = ["CREATE", "DROP"]
+        self.udf_execute_privileges = ["EXECUTE"]
+        self.view_ddl_privileges = ["CREATE", "DROP"]
+        self.view_select_privileges = ["SELECT"]
 
         self.aws_region = "us-west-1"
         self.s3_source_bucket = "columnar-sanity-test-data-mohsin"
@@ -115,7 +119,6 @@ class ColumnarRBAC(CBASBaseTest):
                                                          username,
                                                          password)
             if not result:
-                self.sleep(3600, "Failed to create user1")
                 self.fail("Failed to create user1")
             user1 = self.columnar_rbac_util.get_user_obj(username)
             role_name = self.generate_random_entity_name(type="role")
@@ -437,10 +440,9 @@ class ColumnarRBAC(CBASBaseTest):
         result, error = self.columnar_cbas_utils.create_cbas_infra_from_spec(
                             cluster=self.analytics_cluster, cbas_spec=self.columnar_spec,
                             bucket_util=self.bucket_util, wait_for_ingestion=False,
-                            remote_clusters=self.remote_cluster)
+                            remote_clusters=[self.remote_cluster])
 
         if not result:
-            self.sleep(3600, "Wait before failing test")
             self.fail("Error while creating analytics entities: {}".format(error))
 
 
@@ -808,7 +810,6 @@ class ColumnarRBAC(CBASBaseTest):
                             result = self.columnar_cbas_utils.validate_error_in_response(
                                         status, errors, expected_error, None)
                             if not result:
-                                self.sleep(3600, "Wait before failing test")
                                 self.fail("Test case failed while attempting to get docs from standalone coll {}".
                                       format(res))
                         else:
@@ -865,7 +866,6 @@ class ColumnarRBAC(CBASBaseTest):
                                                                          validate_error_msg=test_case['validate_err_msg'],
                                                                          expected_error=expected_error)
                     if not result:
-                        self.sleep(3600, "Sleep before failing test")
                         self.fail("Test case failed while attempting to create remote link {}".
                                   format(remote_link_obj.name))
 
@@ -1031,6 +1031,20 @@ class ColumnarRBAC(CBASBaseTest):
         self.create_s3_sink_bucket()
 
         dataset = self.columnar_cbas_utils.get_all_dataset_objs("standalone")[0]
+        standalone_coll_obj = self.columnar_cbas_utils.create_standalone_dataset_obj(
+                                self.analytics_cluster,
+                                primary_key={"id": "string"},
+                                database_name="Default",
+                                dataverse_name="Default")[0]
+        result = self.columnar_cbas_utils.create_standalone_collection(
+                        self.analytics_cluster,
+                        standalone_coll_obj.name,
+                        dataverse_name=standalone_coll_obj.dataverse_name,
+                        database_name=standalone_coll_obj.database_name,
+                        primary_key=standalone_coll_obj.primary_key)
+        if not result:
+            self.fail("Failed to create copy from s3 datastaset")
+        dataset_copy_from = self.columnar_cbas_utils.get_all_dataset_objs("standalone")[1]
         no_of_docs = self.input.param("no_of_docs", 1000)
         jobs = Queue()
         results = []
@@ -1060,16 +1074,15 @@ class ColumnarRBAC(CBASBaseTest):
             privileges = test_case['privileges']
             resources = test_case['resources']
 
-            result = self.columnar_rbac_util.grant_privileges_to_subjects(self.analytics_cluster,
+            for priv in privileges:
+                if priv == "COPY TO":
+                    result = self.columnar_rbac_util.grant_privileges_to_subjects(self.analytics_cluster,
                                                                           ["SELECT"], [test_case['user']],
                                                                           [dataset.full_name],
                                                                           privilege_resource_type="collection_dml")
-            if not result:
-                self.fail("Failed to assing SELECT privilege to user {} on collection {}".
-                          format(str(test_case['user']), dataset.full_name))
-
-            for priv in privileges:
-                if priv == "COPY TO":
+                    if not result:
+                        self.fail("Failed to assing SELECT privilege to user {} on collection {}".
+                                format(str(test_case['user']), dataset.full_name))
                     for res in resources:
                         db_name = res.split(".")[0]
                         scope_name = res.split(".")[1]
@@ -1091,6 +1104,35 @@ class ColumnarRBAC(CBASBaseTest):
                         if not result:
                             self.fail("Test case failed while attempting to copy data to s3 from link {}".
                                       format(res))
+                if priv == "COPY FROM":
+                    result = self.columnar_rbac_util.grant_privileges_to_subjects(self.analytics_cluster,
+                                                                          ["INSERT"], [test_case['user']],
+                                                                          [dataset_copy_from.full_name],
+                                                                          privilege_resource_type="collection_dml")
+                    if not result:
+                        self.fail("Failed to assing INSERT privilege to user {} on collection {}".
+                                format(str(test_case['user']), dataset_copy_from.full_name))
+                    for res in resources:
+                        db_name = res.split(".")[0]
+                        scope_name = res.split(".")[1]
+                        link_name = res.split(".")[2]
+                        expected_error = self.ACCESS_DENIED_ERR.format("LINK", link_name,
+                                                                       "COPY_FROM")
+                        result = self.columnar_cbas_utils.copy_from_external_resource_into_standalone_collection(
+                                    self.analytics_cluster,
+                                    dataset_copy_from.name,
+                                    self.s3_source_bucket,
+                                    res,
+                                    dataset_copy_from.dataverse_name,
+                                    dataset_copy_from.database_name,
+                                    "*.json",
+                                    validate_error_msg=test_case['validate_err_msg'],
+                                    expected_error=expected_error,
+                                    username=test_case['user'].id,
+                                    password=test_case['user'].password)
+                        if not result:
+                            self.fail("Test case failed while attempting to copy data from s3 " \
+                                      "on link {} from coll {}".format(res, dataset_copy_from.full_name))
 
 
         self.collectionSetUp(cluster=self.remote_cluster, load_data=False)
@@ -1351,6 +1393,335 @@ class ColumnarRBAC(CBASBaseTest):
                         if not result:
                             self.fail("Test case failed while attempting to drop index {} on coll {}".
                                       format(index_name, res))
+
+    def test_rbac_udfs(self):
+        self.log.info("RBAC test for UDFs")
+        self.build_cbas_columnar_infra()
+
+        datasets = self.columnar_cbas_utils.get_all_dataset_objs("standalone")
+
+        no_of_docs = self.input.param("no_of_docs", 1000)
+        jobs = Queue()
+        results = []
+        self.log.info("Adding {} documents in standalone dataset. Default doc size is 1KB".format(no_of_docs))
+        for dataset in datasets:
+            jobs.put((self.columnar_cbas_utils.load_doc_to_standalone_collection,
+                      {"cluster": self.analytics_cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name
+                          , "no_of_docs": no_of_docs}))
+
+        self.columnar_cbas_utils.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        if not all(results):
+            self.log.error("Some documents were not inserted")
+
+        scopes = self.columnar_cbas_utils.get_all_dataverses_from_metadata(self.analytics_cluster)
+
+        testcases = self.create_rbac_testcases(self.udf_ddl_privileges, scopes,
+                                               privilege_resource_type="udf_ddl")
+        function_body = "select 1"
+
+        for idx, test_case in enumerate(testcases):
+            self.log.info("========== TEST CASE {} ===========".format(idx))
+            self.log.info(test_case['description'])
+            if test_case['validate_err_msg']:
+                self.log.info("EXPECTED: ERROR")
+            else:
+                self.log.info("EXPECTED: SUCCESS")
+
+            privileges = test_case['privileges']
+            resources = test_case['resources']
+
+            for priv in privileges:
+                for res in resources:
+                    if priv == "CREATE":
+                        udf_name = self.generate_random_entity_name(type="udf")
+                        full_resource_name = self.columnar_cbas_utils.unformat_name(res). \
+                                             replace(".", ":")
+                        udf_name = self.columnar_cbas_utils.format_name(udf_name)
+                        expected_error = self.ACCESS_DENIED_ERR.format("FUNCTION",
+                                                                       full_resource_name,
+                                                                       priv)
+                        result = self.columnar_cbas_utils.create_udf(
+                                    self.analytics_cluster,
+                                    udf_name,
+                                    res,
+                                    None,
+                                    body=function_body,
+                                    validate_error_msg=test_case['validate_err_msg'],
+                                    expected_error=expected_error,
+                                    username=test_case['user'].id,
+                                    password=test_case['user'].password)
+                        if not result:
+                            self.fail("Test case failed while attempting to create function "\
+                                      " {} in {}".format(udf_name, res))
+                    elif priv == "DROP":
+                        udf_name = self.generate_random_entity_name(type="udf")
+                        full_resource_name = self.columnar_cbas_utils.unformat_name(res). \
+                                             replace(".", ":")
+                        udf_name = self.columnar_cbas_utils.format_name(udf_name)
+                        expected_error = self.ACCESS_DENIED_ERR.format("FUNCTION",
+                                                                       full_resource_name,
+                                                                       priv)
+                        result = self.columnar_cbas_utils.create_udf(
+                                    self.analytics_cluster,
+                                    udf_name,
+                                    res,
+                                    None,
+                                    body=function_body)
+                        if not result:
+                            self.fail("Failed to create udf function {} in {}".format(udf_name,
+                                                                                      res))
+                        result = self.columnar_cbas_utils.drop_udf(
+                                    self.analytics_cluster,
+                                    udf_name,
+                                    res,
+                                    None,
+                                    validate_error_msg=test_case['validate_err_msg'],
+                                    expected_error=expected_error,
+                                    username=test_case['user'].id,
+                                    password=test_case['user'].password)
+                        if not result:
+                            self.fail("Test case failed while attempting to drop function "
+                                      " {} in {} ".format(udf_name, res))
+
+    def test_rbac_udf_execute(self):
+        self.log.info("RBAC udf execute test started")
+
+        analytics_udfs = []
+        num_of_udfs = self.input.param('num_of_udfs', 2)
+        for i in range(num_of_udfs):
+            udf_name = self.generate_random_entity_name(type="udf")
+            udf_name = self.columnar_cbas_utils.format_name(udf_name)
+            function_body = "select 1"
+            result = self.columnar_cbas_utils.create_udf(
+                                    self.analytics_cluster,
+                                    udf_name,
+                                    "Default.Default",
+                                    None,
+                                    body=function_body)
+            if not result:
+                self.fail("Failed to create UDF {}".format(udf_name))
+            udf_name_full_name = "Default.Default" + udf_name
+            analytics_udfs.append(udf_name_full_name)
+
+        testcases = self.create_rbac_testcases(self.udf_execute_privileges,
+                                               analytics_udfs,
+                                               privilege_resource_type="udf_execute")
+
+        for idx, test_case in enumerate(testcases):
+            self.log.info("========== TEST CASE {} ===========".format(idx))
+            self.log.info(test_case['description'])
+            if test_case['validate_err_msg']:
+                self.log.info("EXPECTED: ERROR")
+            else:
+                self.log.info("EXPECTED: SUCCESS")
+
+            privileges = test_case['privileges']
+            resources = test_case['resources']
+
+            for res in resources:
+                execute_cmd = "{}()".format(res)
+                expected_error = self.ACCESS_DENIED_ERR.format("FUNCTION", res,
+                                                               "EXECUTE")
+                status, metrics, errors, results, _ = (
+                            self.columnar_cbas_utils.execute_statement_on_cbas_util(
+                                self.analytics_cluster, execute_cmd,
+                                username=test_case['user'].id,
+                                password=test_case['user'].password,
+                                timeout=300, analytics_timeout=300))
+
+                if test_case['validate_err_msg']:
+                    result = self.columnar_cbas_utils.validate_error_in_response(
+                                status, errors, expected_error, None)
+                    if not result:
+                        self.fail("Test case failed while attempting to execute function {}".
+                                format(res))
+                else:
+                    if status != "success":
+                        self.fail("Test case failed while attempting to execute function {}".
+                                format(res))
+
+    def test_rbac_views(self):
+        self.log.info("RBAC views ddl test started")
+        self.build_cbas_columnar_infra()
+
+        datasets = self.columnar_cbas_utils.get_all_dataset_objs("standalone")
+
+        no_of_docs = self.input.param("no_of_docs", 1000)
+        jobs = Queue()
+        results = []
+        for dataset in datasets:
+            self.log.info("Adding {} documents in standalone dataset {}. Default doc size is 1KB".
+                          format(no_of_docs, dataset.full_name))
+            jobs.put((self.columnar_cbas_utils.load_doc_to_standalone_collection,
+                      {"cluster": self.analytics_cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name
+                          , "no_of_docs": no_of_docs}))
+
+        self.columnar_cbas_utils.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        if not all(results):
+            self.log.error("Some documents were not inserted")
+
+        scopes = self.columnar_cbas_utils.get_all_dataverses_from_metadata(self.analytics_cluster)
+        view_collection = datasets[0]
+
+        view_defn = "SELECT name, email from {0};".format(
+            self.columnar_cbas_utils.format_name(view_collection.full_name))
+
+        testcases = self.create_rbac_testcases(self.view_ddl_privileges,
+                                               scopes,
+                                               privilege_resource_type="view_ddl")
+
+        for idx, test_case in enumerate(testcases):
+            self.log.info("========== TEST CASE {} ===========".format(idx))
+            self.log.info(test_case['description'])
+            if test_case['validate_err_msg']:
+                self.log.info("EXPECTED: ERROR")
+            else:
+                self.log.info("EXPECTED: SUCCESS")
+
+            privileges = test_case['privileges']
+            resources = test_case['resources']
+
+            result = self.columnar_rbac_util.grant_privileges_to_subjects(self.analytics_cluster,
+                                                                          ["SELECT"], [test_case['user']],
+                                                                          [view_collection.full_name],
+                                                                          privilege_resource_type="collection_dml")
+            if not result:
+                self.fail("Failed to assing SELECT privilege to user {} on collection {}".
+                        format(str(test_case['user']), view_collection.full_name))
+
+            for priv in privileges:
+                for res in resources:
+                    if priv == "CREATE":
+                        view_name = self.generate_random_entity_name(type="view")
+                        view_full_name = "{}.{}".format(res, view_name)
+                        view_full_name = self.columnar_cbas_utils.format_name(view_full_name)
+                        full_resource_name = self.columnar_cbas_utils.unformat_name(res). \
+                                                replace(".", ":")
+                        expected_error = self.ACCESS_DENIED_ERR.format("VIEW", full_resource_name,
+                                                                    priv)
+                        result = self.columnar_cbas_utils.create_analytics_view(
+                                        self.analytics_cluster,
+                                        view_full_name,
+                                        view_defn,
+                                        validate_error_msg=test_case['validate_err_msg'],
+                                        expected_error=expected_error,
+                                        username=test_case['user'].id,
+                                        password=test_case['user'].password)
+                        if not result:
+                            self.fail("Test case failed while attempting to create view {}".
+                                    format(view_full_name))
+
+                    elif priv == "DROP":
+                        view_name = self.generate_random_entity_name(type="view")
+                        view_full_name = "{}.{}".format(res, view_name)
+                        view_full_name = self.columnar_cbas_utils.format_name(view_full_name)
+                        full_resource_name = self.columnar_cbas_utils.unformat_name(res). \
+                                                replace(".", ":")
+                        expected_error = self.ACCESS_DENIED_ERR.format("VIEW", full_resource_name,
+                                                                    priv)
+                        result = self.columnar_cbas_utils.create_analytics_view(
+                                        self.analytics_cluster,
+                                        view_full_name,
+                                        view_defn)
+                        if not result:
+                            self.fail("Failed to create analytics view {}".format(view_full_name))
+
+                        result = self.columnar_cbas_utils.drop_analytics_view(
+                                        self.analytics_cluster,
+                                        view_full_name,
+                                        validate_error_msg=test_case['validate_err_msg'],
+                                        expected_error=expected_error,
+                                        username=test_case['user'].id,
+                                        password=test_case['user'].password)
+                        if not result:
+                            self.fail("Test case failed while attempting to drop analytics view {}".
+                                      format(view_full_name))
+
+    def test_rbac_view_select(self):
+        self.log.info("RBAC views select test started")
+
+        self.build_cbas_columnar_infra()
+
+        datasets = self.columnar_cbas_utils.get_all_dataset_objs("standalone")
+
+        no_of_docs = self.input.param("no_of_docs", 1000)
+        jobs = Queue()
+        results = []
+        for dataset in datasets:
+            self.log.info("Adding {} documents in standalone dataset {}. Default doc size is 1KB".
+                          format(no_of_docs, dataset.full_name))
+            jobs.put((self.columnar_cbas_utils.load_doc_to_standalone_collection,
+                      {"cluster": self.analytics_cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name
+                          , "no_of_docs": no_of_docs}))
+
+        self.columnar_cbas_utils.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        if not all(results):
+            self.log.error("Some documents were not inserted")
+
+        view_collection = datasets[0]
+
+        num_views = self.input.param("num_of_views", 2)
+        view_defn = "SELECT name, email from {0};".format(
+            self.columnar_cbas_utils.format_name(view_collection.full_name))
+        for i in range(num_views):
+            view_name = self.generate_random_entity_name(type="view")
+            view_name = self.columnar_cbas_utils.format_name(view_name)
+            result = self.columnar_cbas_utils.create_analytics_view(
+                            self.analytics_cluster,
+                            view_name,
+                            view_defn)
+            if not result:
+                self.fail("Failed to create analytics view {}".format(view_name))
+
+        views = self.columnar_cbas_utils.get_all_views_from_metadata(self.analytics_cluster)
+
+        testcases = self.create_rbac_testcases(self.view_select_privileges,
+                                               views,
+                                               privilege_resource_type="view_select")
+        for idx, test_case in enumerate(testcases):
+            self.log.info("========== TEST CASE {} ===========".format(idx))
+            self.log.info(test_case['description'])
+            if test_case['validate_err_msg']:
+                self.log.info("EXPECTED: ERROR")
+            else:
+                self.log.info("EXPECTED: SUCCESS")
+
+            privileges = test_case['privileges']
+            resources = test_case['resources']
+
+            for res in resources:
+                select_cmd = "SELECT * FROM {0}". \
+                            format(self.columnar_cbas_utils.format_name(res))
+                full_resource_name = self.columnar_cbas_utils.unformat_name(res). \
+                                                replace(".", ":")
+                expected_error = self.ACCESS_DENIED_ERR.format("VIEW", full_resource_name,
+                                                               "SELECT")
+                status, metrics, errors, results, _ = (
+                            self.columnar_cbas_utils.execute_statement_on_cbas_util(
+                                self.analytics_cluster, select_cmd,
+                                username=test_case['user'].id,
+                                password=test_case['user'].password,
+                                timeout=300, analytics_timeout=300))
+
+                if test_case['validate_err_msg']:
+                    result = self.columnar_cbas_utils.validate_error_in_response(
+                                status, errors, expected_error, None)
+                    if not result:
+                        self.fail("Test case failed while attempting to get docs from view {}".
+                                format(res))
+                else:
+                    if status != "success":
+                        self.fail("Test case failed while attempting to get docs from view {}".
+                                format(res))
 
     def tearDown(self):
 
