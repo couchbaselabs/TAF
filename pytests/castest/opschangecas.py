@@ -72,7 +72,6 @@ class OpsChangeCasTests(CasBaseTest):
                             for exp in [0, 60, 0, 0]:
                                 result = client.touch(
                                     key, exp,
-                                    durability=self.durability_level,
                                     timeout=self.sdk_timeout)
                                 if exp == prev_exp:
                                     if result["cas"] != old_cas:
@@ -193,14 +192,14 @@ class OpsChangeCasTests(CasBaseTest):
 
         gen_load = doc_generator('nosql', 0, self.num_items,
                                  doc_size=self.doc_size)
-        gen_update = doc_generator('nosql', 0, self.num_items/2,
+        gen_update = doc_generator('nosql', 0, self.num_items//2,
                                    doc_size=self.doc_size)
         gen_delete = doc_generator('nosql',
-                                   self.num_items/2,
-                                   (self.num_items * 3 / 4),
+                                   self.num_items//2,
+                                   self.num_items * 3 // 4,
                                    doc_size=self.doc_size)
         gen_expire = doc_generator('nosql',
-                                   (self.num_items * 3 / 4),
+                                   self.num_items * 3 // 4,
                                    self.num_items,
                                    doc_size=self.doc_size)
         self._load_all_buckets(gen_load, "create")
