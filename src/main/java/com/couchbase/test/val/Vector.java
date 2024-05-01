@@ -1,9 +1,12 @@
 package com.couchbase.test.val;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.Arrays;
 import java.util.Random;
 
+import java.util.Base64;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -687,6 +690,7 @@ public class Vector {
             "Men Mufflers, Scarves & Gloves", "Men Phone Cases", "Men Rings & Wristwear", "Men Helmets" };
 
     private Random random;
+
     public Predictor<String, float[]> predictor = null;
     static final String digits = "0123456789";
     static final char[] key_chars = (digits).toCharArray();
@@ -705,8 +709,10 @@ public class Vector {
             return;
         }
         Vector.flt_buf = new float[1024*1024];
+
         for (int index=0; index<1024*1024; index++) {
             Vector.flt_buf[index] = this.random.nextFloat();
+
         }
         Vector.flt_buf_length = Vector.flt_buf.length;
     }
@@ -735,12 +741,24 @@ public class Vector {
         this.predictor = model.newPredictor();
     }
 
-    private float[] get_float_array(int length, Random random_obj) {
-        int _slice = random_obj.nextInt(Vector.flt_buf_length - length);
-        return Arrays.copyOfRange(Vector.flt_buf, _slice, _slice+length);
+    public static byte[] floatsToBytes(float[] floats) {
+        byte bytes[] = new byte[Float.BYTES * floats.length];
+        ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().put(floats);
+
+        return bytes;
     }
 
-    public Product next(String key) {
+    public static String convertToBase64Bytes(float[] floats) {
+        return Base64.getEncoder().encodeToString(floatsToBytes(floats));
+      }
+
+    private float[] get_float_array(int length, Random random_obj) {
+        int _slice = random_obj.nextInt(this.flt_buf_length - length);
+        return Arrays.copyOfRange(this.flt_buf, _slice, _slice+length);
+    }
+
+    public Object next(String key) {
+        this.random.setSeed(key.hashCode());
         float[] vector = null;
         String productDescription = "";
         productDescription += this.colors[this.random.nextInt(this.colors.length)] + " color ";
@@ -759,10 +777,12 @@ public class Vector {
                 e.printStackTrace();
             }
         }
-        return new Product(key, productDescription, vector);
+        if(!this.ws.base64)
+            return new Product1(key, productDescription, vector);
+        return new Product2(key, productDescription, convertToBase64Bytes(vector));
     }
 
-    public class Product {
+    public class Product1 {
 
         @JsonProperty
         private String productID;
@@ -773,13 +793,13 @@ public class Vector {
 
         @JsonCreator
         public
-        Product(
+        Product1(
                 @JsonProperty("productID") String productID,
                 @JsonProperty("productDescription") String productDescription,
-                @JsonProperty("embedding") float[] embedding2){
+                @JsonProperty("embedding") float[] vector){
             this.productID = productID;
             this.productDescription = productDescription;
-            this.embedding = embedding2;
+            this.embedding = vector;
         }
 
         public String getProductID() {
@@ -803,6 +823,51 @@ public class Vector {
         }
 
         public void setEmbedding(float[] embedding) {
+            this.embedding = embedding;
+        }
+    }
+
+    public class Product2 {
+
+        @JsonProperty
+        private String productID;
+        @JsonProperty
+        private String embedding;
+        @JsonProperty
+        private String productDescription;
+
+        @JsonCreator
+        public
+        Product2(
+                @JsonProperty("productID") String productID,
+                @JsonProperty("productDescription") String productDescription,
+                @JsonProperty("embedding") String vector){
+            this.productID = productID;
+            this.productDescription = productDescription;
+            this.embedding = vector;
+        }
+
+        public String getProductID() {
+            return this.productID;
+        }
+
+        public void setProductID(String productID) {
+            this.productID = productID;
+        }
+
+        public String getProductDescription() {
+            return this.productDescription;
+        }
+
+        public void setProductDescription(String productDescription) {
+            this.productDescription = productDescription;
+        }
+
+        public String getEmbedding() {
+            return this.embedding;
+        }
+
+        public void setEmbedding(String embedding) {
             this.embedding = embedding;
         }
     }

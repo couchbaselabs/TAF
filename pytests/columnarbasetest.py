@@ -106,7 +106,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         self.capella["clusters"] = ",".join([
             cluster.id for cluster in self.tenant.clusters])
 
-        instance_ids = self.capella.get("instance_id", "").split(',')
+        instance_ids = self.capella.get("instance_id", "")
+        if instance_ids:
+            instance_ids = instance_ids.split(",")
 
         for i in range(0, self.input.param("num_columnar_instances", 1)):
             if instance_ids and i < len(instance_ids):

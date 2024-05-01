@@ -117,6 +117,10 @@ class Murphy(BaseTestCase, OPD):
         self.query_result = True
 
         self.vector = self.input.param("vector", False)
+        self.fts_index_type = self.input.param("fts_index_type", "vector")
+        self.base64 = False
+        if self.fts_index_type == "vector_base64":
+            self.base64 = True
         self.esClient = None
         self.esHost = self.input.param("esHost", None)
         self.esAPIKey = self.input.param("esAPIKey", None)
@@ -493,14 +497,15 @@ class Murphy(BaseTestCase, OPD):
             self.drIndex.start_index_stats(self.cluster)
 
         if self.cluster.fts_nodes:
-            self.drFTS.create_fts_indexes(self.cluster, dims=self.dim)
+            self.drFTS.create_fts_indexes(self.cluster, dims=self.dim,
+                                          _type=self.fts_index_type)
             status = self.drFTS.wait_for_fts_index_online(self.cluster,
                                                           self.index_timeout)
             self.assertTrue(status, "FTS index build failed.")
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("ftsQPS", 0) > 0:
                     ql = FTSQueryLoad(self.cluster, bucket, self.esClient,
-                                  self.mockVector, self.dim)
+                                  self.mockVector, self.dim, self.base64)
                     ql.start_query_load()
                     self.ftsQL.append(ql)
 
