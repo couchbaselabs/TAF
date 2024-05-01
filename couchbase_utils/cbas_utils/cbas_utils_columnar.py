@@ -30,6 +30,11 @@ from Queue import Queue
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
 from cb_constants import CbServer
+from sirius_client_framework.multiple_database_config import ColumnarLoader
+from sirius_client_framework.operation_config import WorkloadOperationConfig
+from Jython_tasks.sirius_task import WorkLoadTask
+from Jython_tasks.task_manager import TaskManager
+from sirius_client_framework.sirius_constants import SiriusCodes
 from java.lang import System
 from java.util.concurrent import Executors, Callable, TimeUnit, CompletableFuture
 
@@ -3546,6 +3551,20 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
         def call(self):
             return self.instance.generate_docs(self.document_size, self.country_type, self.include_country)
+
+    def load_doc_to_standalone_collection_sirius(self, collection_name, dataverse_name, database_name,
+                                                 connection_string, start, end, sdk_batch_size=25, doc_size=1024,
+                                                 template="hotel", username=None, password=None):
+        sdk_batch_size = 5000000//sdk_batch_size
+        database_information = ColumnarLoader(username=username, password=password, connection_string=connection_string,
+                                              bucket=database_name, scope=dataverse_name, collection=collection_name,
+                                              sdk_batch_size=sdk_batch_size)
+        operation_config = WorkloadOperationConfig(start=start, end=end, template=template,doc_size=doc_size)
+        task_insert = WorkLoadTask(task_manager=self.task, op_type=SiriusCodes.DocOps.BULK_CREATE,
+                                   database_information=database_information, operation_config=operation_config)
+        task_manager = TaskManager(10)
+        task_manager.add_new_task(task_insert)
+        return task_manager.get_task_result(task_insert)
 
     def load_doc_to_standalone_collection(
             self, cluster, collection_name, dataverse_name, database_name,

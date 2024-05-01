@@ -37,7 +37,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         def populate_columnar_instance_obj(
                 tenant, instance_id, instance_name=None, instance_config=None):
-            resp = ColumnarUtils.get_instance_info(self.pod, tenant, instance_id)
+            resp = self.columnar_utils.get_instance_info(pod=self.pod, tenant=tenant,
+                                                   project_id=tenant.project_id, instance_id=instance_id)
 
             if not resp:
                 raise Exception("Failed fetching connection string for "
