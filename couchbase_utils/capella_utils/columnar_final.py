@@ -17,7 +17,7 @@ class ColumnarInstance:
 
     def __init__(self, tenant_id, project_id, instance_name=None,
                  instance_id=None, cluster_id=None, instance_endpoint=None,
-                 db_users=list()):
+                 db_users=list(), roles=list()):
         self.tenant_id = tenant_id
         self.project_id = project_id
 
@@ -35,6 +35,7 @@ class ColumnarInstance:
         self.cbas_cc_node = self.master
 
         self.db_users = db_users
+        self.columnar_roles = roles
         self.type = "columnar"
 
         # SDK related objects
@@ -55,9 +56,225 @@ class DBUser:
         self.id = userId
 
 class ColumnarRole:
-    def __init__(self, roleId=""):
+    def __init__(self, roleId="", role_name=""):
         self.id = roleId
+        self.name = role_name
         self.privileges = list()
+
+class ColumnarRBACUtil:
+    def __init__(self, log):
+        self.log = log
+
+
+    def create_custom_analytics_admin_user(
+            self, pod, tenant, project_id, instance,
+            username, password):
+        privileges_list = [
+            "database_create", "database_drop", "scope_create", "scope_drop", "collection_create",
+            "collection_drop", "collection_select", "collection_insert", "collection_upsert",
+            "collection_delete", "collection_analyze", "view_create", "view_drop", "view_select",
+            "index_create", "index_drop", "function_create", "function_drop", "function_execute",
+            "link_create", "link_drop", "link_alter", "link_connect", "link_disconnect",
+            "link_copy_to", "link_copy_from", "synonym_create", "synonym_drop"
+        ]
+
+        resources_privileges_map = {
+            "name": "",
+            "privileges": privileges_list,
+            "type": "instance"
+        }
+
+        privileges_payload = self.create_privileges_payload([resources_privileges_map])
+        analytics_admin_role = self.create_columnar_role(pod, tenant, project_id,
+                                                         instance, "analytics_admin",
+                                                         privileges_payload)
+        if not analytics_admin_role:
+            self.log.error("Failed to create analytics admin role")
+            return None
+        instance.columnar_roles.append(analytics_admin_role)
+
+        analytics_admin_user = self.create_api_keys(pod, tenant, project_id, instance,
+                                                    username, password,
+                                                    role_ids=[analytics_admin_role.id])
+        instance.db_users.append(analytics_admin_user)
+        return analytics_admin_user
+
+    def create_privileges_payload(self, resources_privileges_map=[]):
+
+        def get_entity_obj(entity_obj_arr=[], entity_name=""):
+            matched_entities =  [entity_obj for entity_obj in entity_obj_arr
+                                  if entity_obj["name"] == entity_name]
+            if len(matched_entities) > 0:
+                return matched_entities[0]
+            else:
+                entity_obj = {
+                    "name": entity_name,
+                    "privileges": []
+                }
+                entity_obj_arr.append(entity_obj)
+                return entity_obj
+
+        privileges_payload = {
+            "databases": [],
+            "links": [],
+            "privileges": []
+        }
+        for res_priv_map in resources_privileges_map:
+            res_name = res_priv_map["name"]
+            privs = res_priv_map["privileges"]
+            res_type = res_priv_map["type"]
+            res_entities = res_name.split(".") if res_name else []
+
+            if res_type == "instance":
+                privileges_payload["privileges"].extend(privs)
+            elif res_type == "link":
+                link_obj = get_entity_obj(privileges_payload["links"], res_name)
+                link_obj["privileges"].extend(privs)
+            else:
+                db_name = res_entities[0]
+                db_obj = get_entity_obj(privileges_payload["databases"], db_name)
+                if res_type == "database":
+                    db_obj["privileges"].extend(privs)
+                else:
+                    if "scopes" not in db_obj:
+                        db_obj["scopes"] = []
+                    scope_name = res_entities[1]
+                    scope_obj = get_entity_obj(db_obj["scopes"], scope_name)
+                    if res_type == "scope":
+                        scope_obj["privileges"].extend(privs)
+                    else:
+                        res_field_name = res_type + "s"
+                        entity_name = res_entities[2]
+                        if res_field_name not in scope_obj:
+                            scope_obj[res_field_name] = []
+                        entity_obj = get_entity_obj(scope_obj[res_field_name], entity_name)
+                        entity_obj["privileges"].extend(privs)
+
+        return privileges_payload
+
+    def create_api_keys(
+            self, pod, tenant, project_id, instance,
+            username, password, privileges_payload = None,
+            role_ids = []):
+
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        if not privileges_payload:
+            privileges_payload = self.create_privileges_payload()
+
+        api_key_payload = {
+            "name": username,
+            "password": password,
+            "privileges": privileges_payload,
+            "roles": role_ids
+        }
+
+        resp = columnar_api.create_instance_api_keys(
+            tenant.id, project_id, instance.instance_id,
+            api_key_payload
+        )
+
+        if resp.status_code == 201:
+            self.log.info("API keys created successfully")
+            user_id = json.loads(resp.content).get("id")
+            db_user = DBUser(user_id, username, password)
+            return db_user
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return None
+        else:
+            self.log.critical("Unable to create API keys")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return None
+
+    def delete_api_keys(
+            self, pod, tenant, project_id, instance,
+            api_key_id):
+
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        resp = columnar_api.delete_api_keys(tenant.id, project_id, instance.instance_id,
+                                            api_key_id)
+
+        if resp.status_code == 202:
+            self.log.info("Successfully deleted API key {}".format(api_key_id))
+            return True
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return False
+        else:
+            self.log.critical("Unable to delete API keys")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return False
+
+    def create_columnar_role(
+            self, pod, tenant, project_id, instance,
+            role_name, privileges_payload = None):
+
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        if not privileges_payload:
+            privileges_payload = self.create_privileges_payload()
+
+        role_payload = {
+            "name": role_name,
+            "privileges": privileges_payload
+        }
+
+        resp = columnar_api.create_columnar_role(
+            tenant.id, project_id, instance.instance_id,
+            role_payload
+        )
+
+        if resp.status_code == 201:
+            self.log.info("Columnar role created successfully")
+            role_id = json.loads(resp.content).get("id")
+            columnar_role = ColumnarRole(role_id, role_name)
+            return columnar_role
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return None
+        else:
+            self.log.critical("Unable to create columnar role")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return None
+
+    def delete_columnar_role(
+            self, pod, tenant, project_id, instance,
+            role_id):
+
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        resp = columnar_api.delete_columnar_role(tenant.id, project_id, instance.instance_id,
+                                                 role_id)
+
+        if resp.status_code == 204:
+            self.log.info("Successfully deleted columnar role {}".format(role_id))
+            return True
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return False
+        else:
+            self.log.critical("Unable to delete API keys")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return False
+
 
 class ColumnarUtils:
 
@@ -128,7 +345,7 @@ class ColumnarUtils:
         time.sleep(5)
         self.log.info("Cluster created with cluster ID: {}"\
                               .format(instance_id))
-        
+
         start_time = time.time()
         while time.time() < start_time + timeout:
             resp = columnar_api.get_specific_columnar_instance(
