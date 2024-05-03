@@ -13,7 +13,37 @@ run_populate_ini_script() {
   set +x
 }
 
+set +x
+echo "Setting ulimit values for this session"
+# Set data seg size
+ulimit -d unlimited
+# Set file size
+ulimit -f unlimited
+# Set pending signals
+ulimit -i 127868
+# Set max locked memory
+ulimit -l 3075360
+# Set max memory size
+ulimit -m unlimited
+# Set open files
+ulimit -n 204200
+# Set POSIX message queues
+ulimit -q 819200
+# Set stack size
+ulimit -s 8192
+# Set cpu time
+ulimit -t unlimited
+# Set max user processes
+ulimit -u 127868
+# Set virtual memory
+ulimit -v unlimited
+# Set file locks
+ulimit -x unlimited
+
+echo "########## ulimit values ###########"
 ulimit -a
+echo "####################################"
+
 pip_path=/opt/jython/bin/pip
 jython_path=/opt/jython/bin/jython
 
