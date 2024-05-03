@@ -4,12 +4,12 @@ import time
 
 from BucketLib.BucketOperations import BucketHelper
 from cb_constants.CBServer import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
-from magma_base import MagmaBaseTest
-from membase.api.rest_client import RestConnection
+from storage.magma.magma_base import MagmaBaseTest
+from shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
-from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaRebalance(MagmaBaseTest):
@@ -72,7 +72,7 @@ class MagmaRebalance(MagmaBaseTest):
                 self.cluster.master, bucket))
 
     def warmup_node(self, node):
-        self.log.info("Warmuping up node...")
+        self.log.info("Warming up node...")
         shell = RemoteMachineShellConnection(node)
         shell.stop_couchbase()
         self.sleep(30)
@@ -83,7 +83,7 @@ class MagmaRebalance(MagmaBaseTest):
     def set_ram_quota_cluster(self):
         self.sleep(45, "Wait for rebalance have some progress")
         self.log.info("Changing cluster RAM size")
-        status = self.rest.set_service_mem_quota(
+        status = self.rest.configure_memory(
             {CbServer.Settings.KV_MEM_QUOTA: 2500})
         self.assertTrue(status, "RAM quota wasn't changed")
 
@@ -143,14 +143,9 @@ class MagmaRebalance(MagmaBaseTest):
                       .format(actual_failover_count, time_end - time_start))
 
     def get_failover_count(self):
-        rest = RestConnection(self.cluster.master)
-        cluster_status = rest.cluster_status()
-        failover_count = 0
-        # check for inactiveFailed
-        for node in cluster_status['nodes']:
-            if node['clusterMembership'] == "inactiveFailed":
-                failover_count += 1
-        return failover_count
+        return len(self.cluster_util.get_nodes(
+                self.cluster.master, active=False,
+                inactive_failed=True))
 
     def forced_failover_operation(self, known_nodes=None, failover_nodes=None, wait_for_pending=120):
         self.log.info("Updating all the bucket replicas to {0}".format(self.updated_num_replicas))
@@ -649,7 +644,7 @@ class MagmaRebalance(MagmaBaseTest):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets)
                 for bucket in self.cluster.buckets:
-                    items = items + self.bucket_helper_obj.get_active_key_count(bucket)
+                    items = items + self.bucket_helper_obj.get_active_key_count(bucket.name)
                 if items != 0:
                     self.fail("TTL + rebalance failed")
             elif self.forced_hard_failover:
@@ -667,7 +662,7 @@ class MagmaRebalance(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.log.info("Initial loading with new loader starts")
-        self.new_loader(wait=True)
+        self.java_doc_loader(wait=True)
         self.compute_docs_ranges()
         self.create_perc = self.input.param("create_perc", 0)
         self.read_perc = self.input.param("read_perc", 0)
@@ -686,7 +681,7 @@ class MagmaRebalance(MagmaBaseTest):
 
         if self.data_load_stage == "before":
             self.log.info("Data loading before rebalance stage")
-            loader_tasks = self.new_loader(scopes=self.scopes, collections=collections)
+            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections)
 
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
@@ -763,7 +758,7 @@ class MagmaRebalance(MagmaBaseTest):
         if self.data_load_stage == "during":
             self.sleep(10, "wait for rebalance to start")
             self.log.info("Data loading during rebalance")
-            loader_tasks = self.new_loader(scopes=self.scopes, collections=collections)
+            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
@@ -783,7 +778,7 @@ class MagmaRebalance(MagmaBaseTest):
             self.wait_for_rebalance_to_complete(rebalance)
         if self.data_load_stage == "after":
             self.log.info("Data loading after rebalance")
-            loader_tasks = self.new_loader(scopes=self.scopes, collections=collections)
+            loader_tasks = self.java_doc_loader(scopes=self.scopes, collections=collections)
             if self.num_collections_to_drop > 0:
                 self.log.info("Starting to drop collections")
                 for collection in collections_to_drop:
@@ -799,10 +794,9 @@ class MagmaRebalance(MagmaBaseTest):
                 self.num_collections = len(self.collections)
                 #self.collections = self.buckets[0].scopes[CbServer.default_scope].collections.keys()
                 self.log.debug("collections list after dropping collections is {}".format(self.collections))
-        self.doc_loading_tm.getAllTaskResult()
-        self.retry_failures(loader_tasks)
+        for task in loader_tasks:
+            self.doc_loading_tm.get_task_result(task)
         self.sleep(30, "sleep before validation")
-        self.data_validation(scopes=self.scopes, collections=collections)
 
     def test_data_load_collections_with_rebalance_in(self):
         self.log.info("====test_data_load_collections_with_rebalance_in starts====")

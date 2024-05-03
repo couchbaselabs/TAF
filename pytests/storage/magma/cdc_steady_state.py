@@ -1,5 +1,5 @@
 import random
-from magma_base import MagmaBaseTest
+from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -21,7 +21,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.new_loader(wait=True)
+        self.java_doc_loader(wait=True)
         if not self.set_history_in_test:
             init_history_start_seq = self.get_history_start_seq_for_each_vb()
             for bucket in self.cluster.buckets:
@@ -36,7 +36,7 @@ class SteadyStateTests(MagmaBaseTest):
             self.update_end = self.init_items_per_collection
             self.update_perc = 100
             self.create_perc = 0
-            self.new_loader(wait=True)
+            self.java_doc_loader(wait=True)
 
             if count == 2 and self.set_history_in_test:
                 init_history_start_seq = self.get_history_start_seq_for_each_vb()
@@ -100,7 +100,7 @@ class SteadyStateTests(MagmaBaseTest):
                     history_retention_bytes=96000000000)
             self.update_start = 0
             self.update_end = 2000
-            self.new_loader(wait=True)
+            self.java_doc_loader(wait=True, doc_ops="update")
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.restart_couchbase()
@@ -125,7 +125,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.new_loader(wait=True)
+        self.java_doc_loader(wait=True)
         if not self.set_history_in_test:
             init_history_start_seq = self.get_history_start_seq_for_each_vb()
             for bucket in self.cluster.buckets:
@@ -137,17 +137,16 @@ class SteadyStateTests(MagmaBaseTest):
             self.PrintStep("Step 4.%s: Expire %s items/collection: %s" % (count, self.init_items_per_collection,
                                                                    self.key_type))
             self.bucket_util._expiry_pager(self.cluster, 10000000000)
-            self.doc_ops = "expiry"
-            self.expiry_start = 0
-            self.expiry_end = self.init_items_per_collection
-            self.expiry_perc = 100
-            self.create_perc = 0
+            self.doc_ops = "update"
+            self.reset_doc_params()
+            self.expiry_start = self.update_start = 0
+            self.expiry_end = self.update_end = self.init_items_per_collection
             self.num_items_per_collection -= self.expiry_end - self.expiry_start
-            tasks = self.new_loader(wait=False)
+            tasks = self.java_doc_loader(wait=False, exp_ttl=self.maxttl)
             self.sleep(self.maxttl, "Wait for docs to expire")
-            self.doc_loading_tm.getAllTaskResult()
+            for task in tasks:
+                self.doc_loading_tm.get_task_result(task)
             self.printOps.end_task()
-            self.retry_failures(tasks, wait_for_stats=False)
             self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
             self.sleep(self.exp_pager_stime, "Wait until exp_pager_stime for kv_purger\
              to kickoff")
@@ -236,11 +235,11 @@ class SteadyStateTests(MagmaBaseTest):
                     self.cluster.master, self.cluster.buckets[0],
                     history_retention_seconds=86400,
                     history_retention_bytes=96000000000)
-            self.expiry_start = 0
-            self.expiry_end = 2000
-            tasks = self.new_loader()
-            self.doc_loading_tm.getAllTaskResult()
-            self.printOps.end_task()
+            self.reset_doc_params()
+            self.expiry_start = self.update_start = 0
+            self.expiry_end = self.update_end = 2000
+            self.java_doc_loader(doc_ops="update", exp_ttl=self.maxttl)
+
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.restart_couchbase()
@@ -263,7 +262,7 @@ class SteadyStateTests(MagmaBaseTest):
         self.create_end = self.init_items_per_collection
         self.PrintStep("Step 1: Create %s items/collection: %s" % (self.init_items_per_collection,
                                                                    self.key_type))
-        self.new_loader(wait=True)
+        self.java_doc_loader(wait=True)
         init_history_start_seq = self.get_history_start_seq_for_each_vb()
 
         count = 0
@@ -273,12 +272,12 @@ class SteadyStateTests(MagmaBaseTest):
             self.reset_doc_params(doc_ops="update:read")
             self.update_start = self.read_start = 0
             self.update_end = self.read_end = self.init_items_per_collection
-            self.new_loader(wait=True)
+            self.java_doc_loader(wait=True, doc_ops="update:read")
             self.reset_doc_params(doc_ops="delete")
             self.delete_start = 0
             self.delete_end = self.init_items_per_collection
             self.num_items_per_collection -= self.delete_end - self.delete_start
-            self.new_loader(wait=True)
+            self.java_doc_loader(wait=True, doc_ops="delete")
             self.num_items_per_collection += self.delete_end - self.delete_start
 
             self.PrintStep("Step 2.%s.1: Comparing history start seq number"% (count+1))
@@ -335,7 +334,7 @@ class SteadyStateTests(MagmaBaseTest):
                     history_retention_bytes=1000000000000)
             self.update_start = 0
             self.update_end = 2000
-            self.new_loader(wait=True)
+            self.java_doc_loader(wait=True, doc_ops="update")
             for node in self.cluster.nodes_in_cluster:
                 shell = RemoteMachineShellConnection(node)
                 shell.restart_couchbase()

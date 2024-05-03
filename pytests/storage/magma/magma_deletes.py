@@ -2,7 +2,7 @@ import copy
 import time
 import threading
 
-from magma_basic_crud import BasicCrudTests
+from storage.magma.magma_basic_crud import BasicCrudTests
 
 
 class BasicDeleteTests(BasicCrudTests):
@@ -23,7 +23,7 @@ class BasicDeleteTests(BasicCrudTests):
         self.create_end = self.init_items_per_collection
         self.mutate = 0
         self.log.info("Initial loading with new loader starts")
-        self.new_loader(wait=True)
+        self.java_doc_loader(wait=True)
         self.sleep(60, "sleep after init loading in test")
         disk_usage = self.get_disk_usage(
             self.buckets[0], self.cluster.nodes_in_cluster)
@@ -52,7 +52,7 @@ class BasicDeleteTests(BasicCrudTests):
             self.expiry_perc = 0
             self.update_perc = 0
             self.num_items_per_collection -= self.delete_end - self.delete_start
-            self.new_loader(wait=True)
+            self.java_doc_loader(wait=True)
             ##################################################################
             '''
             STEP - 2
@@ -79,14 +79,14 @@ class BasicDeleteTests(BasicCrudTests):
                     _res = disk_usage[0]
                     self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
                     ".format(count+1, time_end - time.time(), _res))
-                    if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
+                    if _res < 1 * self.disk_usage[list(self.disk_usage.keys())[0]]:
                         break
 
                 msg = "Disk Usage={}MB > {} * init_Usage={}MB"
                 self.assertIs(_res > 1 * self.disk_usage[
-                    self.disk_usage.keys()[0]], False,
+                    list(self.disk_usage.keys())[0]], False,
                     msg.format(disk_usage[0], 1,
-                               self.disk_usage[self.disk_usage.keys()[0]]))
+                               self.disk_usage[list(self.disk_usage.keys())[0]]))
                 self.bucket_util._run_compaction(self.cluster, number_of_times=1)
                 if not self.windows_platform and self.count_ts:
                     ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
@@ -124,7 +124,7 @@ class BasicDeleteTests(BasicCrudTests):
                 self.expiry_perc = 0
                 self.update_perc = 0
                 self.num_items_per_collection += self.create_end - self.create_start
-                self.new_loader(wait=True)
+                self.java_doc_loader(wait=True)
             count += 1
         self.log.info("====test_create_delete_n_times_new ends====")
 
@@ -188,13 +188,13 @@ class BasicDeleteTests(BasicCrudTests):
                         _res = disk_usage[0]
                         self.log.info("DeleteIteration-{}, Disk Usage at time {} is {}MB \
                         ".format(count+1, time_end - time.time(), _res))
-                        if _res < 1 * self.disk_usage[self.disk_usage.keys()[0]]:
+                        if _res < 1 * self.disk_usage[list(self.disk_usage.keys())[0]]:
                             break
                     msg = "Disk Usage={}MB > {} * init_Usage={}MB"
                     self.assertIs(_res > 1 * self.disk_usage[
-                        self.disk_usage.keys()[0]], False,
+                        list(self.disk_usage.keys())[0]], False,
                         msg.format(disk_usage[0], 1,
-                                   self.disk_usage[self.disk_usage.keys()[0]]))
+                                   self.disk_usage[list(self.disk_usage.keys())[0]]))
                 self.bucket_util._run_compaction(self.cluster, number_of_times=1)
                 if not self.windows_platform and self.count_ts:
                     ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
@@ -382,13 +382,13 @@ class BasicDeleteTests(BasicCrudTests):
                         _res = disk_usage[0]
                         self.log.info("Iteration-{}, Disk Usage at time {} is {}MB \
                         ".format(count+1, time_end - time.time(), _res))
-                        if _res < 2.5 * self.disk_usage[self.disk_usage.keys()[0]]:
+                        if _res < 2.5 * self.disk_usage[list(self.disk_usage.keys())[0]]:
                             break
                     msg = "Disk Usage={}MB > {} * init_Usage={}MB"
                     self.assertIs(_res > 2.5 * self.disk_usage[
-                        self.disk_usage.keys()[0]], False,
+                        list(self.disk_usage.keys())[0]], False,
                         msg.format(disk_usage[0], 2,
-                                   self.disk_usage[self.disk_usage.keys()[0]]))
+                                   self.disk_usage[list(self.disk_usage.keys())[0]]))
                 expected_ts_count = self.items*(self.num_replicas+1)*(count+1)
                 if not self.windows_platform and self.count_ts:
                     ts = self.get_tombstone_count_key(self.cluster.nodes_in_cluster)
@@ -399,7 +399,7 @@ class BasicDeleteTests(BasicCrudTests):
                     disk_usage_after_compaction = self.get_disk_usage(self.buckets[0],
                                                                       self.cluster.nodes_in_cluster)[0]
                     expected_tombstone_size = float(expected_ts_count * (self.key_size+ 64)) / 1024 / 1024
-                    expected_size = 1.3 *(self.disk_usage[self.disk_usage.keys()[0]] + expected_tombstone_size)
+                    expected_size = 1.3 *(self.disk_usage[list(self.disk_usage.keys())[0]] + expected_tombstone_size)
                     self.log.info("Iteration--{}, disk usage after compaction--{}\
                     expected size == {},expected_tombstone_size =={} ".format(count+1, disk_usage_after_compaction,
                                                                               expected_size, expected_tombstone_size))

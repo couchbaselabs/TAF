@@ -12,10 +12,10 @@ import json as Json
 from cb_constants.CBServer import CbServer
 from TestInput import TestInputSingleton
 from couchbase_helper.documentgenerator import doc_generator
-from magma_base import MagmaBaseTest
+from storage.magma.magma_base import MagmaBaseTest
+from shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
-from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaCrashTests(MagmaBaseTest):
@@ -27,7 +27,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.sdk_timeout = self.input.param("sdk_timeout", 10)
         self.time_unit = "seconds"
         self.graceful = self.input.param("graceful", False)
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         self.crash_th = None
 
@@ -119,7 +119,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
         self.process_concurrency = self.standard_buckets * self.num_collections * self.num_scopes
-        self.new_loader(wait=True)
+        self.java_doc_loader(wait=True)
         if self.bucket_dedup_retention_seconds == 0 and self.bucket_dedup_retention_bytes == 0:
             for bucket in self.cluster.buckets:
                 self.bucket_util.update_bucket_property(
@@ -134,7 +134,7 @@ class MagmaCrashTests(MagmaBaseTest):
             self.reset_doc_params()
             self.compute_docs_ranges()
 
-            temp_tasks = self.new_loader(wait=False)
+            temp_tasks = self.java_doc_loader(wait=False)
             self.graceful = self.input.param("graceful", False)
             wait_warmup = self.input.param("wait_warmup", True)
 
@@ -152,7 +152,9 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.enable_disable_history_th = threading.Thread(target=self.start_stop_history_retention_for_collections)
                 self.enable_disable_history_th.start()
 
-            self.doc_loading_tm.getAllTaskResult()
+            for task in temp_tasks:
+                self.doc_loading_tm.get_task_result(task)
+            self.printOps.end_task()
 
             if self.induce_failures:
                 self.stop_crash = True
@@ -173,7 +175,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.create_start = create_start
                 self.create_end = create_end
                 self.num_items_per_collection += self.create_end - self.create_start
-                self.new_loader(wait=True)
+                self.java_doc_loader(wait=True)
             if "expiry" in self.doc_ops:
                 self.sleep(self.maxttl, "Wait for docs to expire")
                 self.bucket_util._expiry_pager(self.cluster, self.exp_pager_stime)
@@ -187,7 +189,7 @@ class MagmaCrashTests(MagmaBaseTest):
                 self.create_start = create_start
                 self.create_end = create_end
                 self.num_items_per_collection += self.create_end - self.create_start
-                self.new_loader(wait=True)
+                self.java_doc_loader(wait=True)
             count += 1
 
     def test_crash_during_dedupe(self):
@@ -264,7 +266,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
 
-        self.new_loader(wait=True)
+        self.java_doc_loader(wait=True)
         self.compute_docs_ranges()
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         self.ops_rate = self.ops_rate * 3
@@ -276,7 +278,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.track_failures = False
 
-        self.new_loader()
+        tasks = self.java_doc_loader(wait=False)
         self.graceful = self.input.param("graceful", False)
         wait_warmup = self.input.param("wait_warmup", True)
         self.crash_th = threading.Thread(target=self.crash,
@@ -286,7 +288,9 @@ class MagmaCrashTests(MagmaBaseTest):
         if self.drop_collections:
             self.drop_collection_th = threading.Thread(target=self.drop_recreate_collections)
             self.drop_collection_th.start()
-        self.doc_loading_tm.getAllTaskResult()
+        for task in tasks:
+            self.doc_loading_tm.get_task_result(task)
+        self.printOps.end_task()
         self.stop_crash = True
         if self.drop_collections:
             self.drop_collection_th.join()
@@ -305,7 +309,7 @@ class MagmaCrashTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = self.init_items_per_collection
 
-        self.new_loader(wait=True)
+        self.java_doc_loader(wait=True)
         self.compute_docs_ranges()
         self.sdk_retry_strategy = SDKConstants.RetryStrategy.FAIL_FAST
         self.ops_rate = self.ops_rate * 3
@@ -317,10 +321,12 @@ class MagmaCrashTests(MagmaBaseTest):
         self.expiry_perc = self.input.param("expiry_perc", 0)
         self.track_failures = False
 
-        self.new_loader()
+        tasks = self.java_doc_loader(wait=False)
         self.crash_th = threading.Thread(target=self.crash, kwargs={"kill_itr": 2})
         self.crash_th.start()
-        self.doc_loading_tm.getAllTaskResult()
+        for task in tasks:
+            self.doc_loading_tm.get_task_result(task)
+        self.printOps.end_task()
         self.stop_crash = True
         self.crash_th.join()
         self.assertFalse(self.crash_failure, "CRASH | CRITICAL | WARN messages found in cb_logs")
@@ -611,7 +617,8 @@ class MagmaCrashTests(MagmaBaseTest):
                     timeout_secs=self.sdk_timeout,
                     retry_exceptions=self.retry_exceptions,
                     ignore_exceptions=self.ignore_exceptions,
-                    suppress_error_table=False)
+                    suppress_error_table=False,
+                    validate_using=self.load_docs_using)
                 tasks_info.update(read_task_info.items())
                 count += 1
 

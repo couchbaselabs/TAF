@@ -67,8 +67,8 @@ class CollectionBase(ClusterSetup):
             self.log, len(self.cluster.kv_nodes), self.durability_level)
 
         # Disable auto-failover to avoid failover of nodes
-        status, _ = ClusterRestAPI(self.cluster.master)\
-            .update_auto_failover_settings("false")
+        status, _ = ClusterRestAPI(self.cluster.master) \
+                .update_auto_failover_settings("false")
         self.assertTrue(status, msg="Failure during disabling auto-failover")
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
         self.disk_optimized_thread_settings = \

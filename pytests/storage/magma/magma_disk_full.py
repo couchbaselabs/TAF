@@ -11,11 +11,12 @@ import time
 from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from sdk_client3 import SDKClient
-from sdk_constants.java_client import SDKConstants
+from storage.magma.magma_base import MagmaBaseTest
+from memcached.helper.data_helper import MemcachedClientHelper
 from shell_util.remote_connection import RemoteMachineShellConnection
+from sdk_constants.java_client import SDKConstants
 
 
 class MagmaDiskFull(MagmaBaseTest):
@@ -24,7 +25,7 @@ class MagmaDiskFull(MagmaBaseTest):
         super(MagmaDiskFull, self).setUp()
         self.free_disk(self.cluster.master)
         self.crash_on_disk_full = False
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
 
     def tearDown(self):

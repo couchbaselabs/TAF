@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from basetestcase import ClusterSetup
 from bucket_collections.collections_base import CollectionBase
 from cb_constants import DocLoading, CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cb_cli import CbCli
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
@@ -1543,8 +1544,8 @@ class DocHistoryRetention(ClusterSetup):
         cb_err = CouchbaseError(self.log,
                                 target_shell,
                                 node=self.cluster.servers[1])
-        rest = RestConnection(self.cluster.master)
-        rest.update_autofailover_settings(False, 10)
+        rest = ClusterRestAPI(self.cluster.master)
+        rest.update_auto_failover_settings("false", 10)
         replica_vbs = cb_stat.vbucket_list(bucket, Bucket.vBucket.REPLICA)
         cb_stat.disconnect()
         kill_both_nodes = self.input.param("kill_both_nodes", False)

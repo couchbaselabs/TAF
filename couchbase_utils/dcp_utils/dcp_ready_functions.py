@@ -7,7 +7,6 @@ from dcp_bin_client import DcpClient
 from global_vars import logger
 import uuid
 from mc_bin_client import MemcachedError
-import user
 
 
 class DCPUtils(object):

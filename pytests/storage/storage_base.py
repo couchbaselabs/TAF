@@ -7,23 +7,27 @@ import copy
 
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
+from Jython_tasks.task_manager import TaskManager
 from basetestcase import BaseTestCase
 from cb_constants import DocLoading
 from cb_constants.CBServer import CbServer
 from couchbase_helper.documentgenerator import doc_generator, SubdocDocumentGenerator
 from membase.api.rest_client import RestConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from sdk_constants.java_client import SDKConstants
 from Jython_tasks.task import PrintBucketStats
-from shell_util.remote_connection import RemoteMachineShellConnection
-
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 
 class StorageBase(BaseTestCase):
     def setUp(self):
         super(StorageBase, self).setUp()
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
         self.windows_platform = False
         self.data_path = self.fetch_data_path()
+        self.log.info("Data path = {}".format(self.data_path))
         self._data_validation = self.input.param("data_validation", True)
 
         # Bucket Params
@@ -52,18 +56,14 @@ class StorageBase(BaseTestCase):
         # Sets autocompaction at bucket level
         self.autoCompactionDefined = str(self.input.param("autoCompactionDefined", "false")).lower()
 
-        # Create Cluster
-        self.rest.init_cluster(username=self.cluster.master.rest_username,
-                               password=self.cluster.master.rest_password)
-
         nodes_init = self.cluster.servers[1:self.nodes_init]
         self.services = ["kv"] * self.nodes_init
 
         self.dcp_services = self.input.param("dcp_services", None)
         self.dcp_servers = []
         if self.dcp_services:
-            server = self.rest.get_nodes_self()
-            self.rest.set_service_mem_quota(
+            server = self.rest.node_details()
+            self.rest.configure_memory(
                 {CbServer.Settings.INDEX_MEM_QUOTA: int(server.mcdMemoryReserved - 100)})
             self.dcp_services = [service.replace(":", ",") for service in self.dcp_services.split("-")]
             self.services.extend(self.dcp_services)
@@ -86,7 +86,7 @@ class StorageBase(BaseTestCase):
         if self.set_kv_quota:
             self.kv_quota_mem = self.input.param("kv_quota_mem", None)
             self.log.info("Setting KV Memory quota to {0} MB".format(self.kv_quota_mem))
-            self.rest.set_service_mem_quota(
+            self.rest.configure_memory(
                 {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem})
         # Create Buckets
         if self.standard_buckets == 1:
@@ -348,12 +348,14 @@ class StorageBase(BaseTestCase):
             process_concurrency=self.process_concurrency,
             print_ops_rate=True,
             start_task=True,
-            track_failures=self.track_failures)
+            track_failures=self.track_failures,
+            load_using=self.load_docs_using)
 
         return task
 
     def data_load(self, buckets=None, skip_default=False):
         self._loader_dict(buckets, skip_default)
+        self.log.info("Loader dict = {}".format(self.loader_dict))
         return self.doc_loader(self.loader_dict)
 
     def wait_for_doc_load_completion(self, task, wait_for_stats=True):
@@ -586,14 +588,22 @@ class StorageBase(BaseTestCase):
         if self.rev_write:
             self.create_start = -int(self.init_items_per_collection - 1)
             self.create_end = 1
-
         self.generate_docs(doc_ops="create")
 
         self.log.debug("initial_items_in_each_collection {}".format(self.init_items_per_collection))
-        task = self.data_load()
-        self.wait_for_doc_load_completion(task)
-
-        self.num_items = self.init_items_per_collection * self.num_collections
+        if self.load_docs_using == "sirius_go_sdk":
+            tasks = self.data_load()
+            for task in tasks:
+                self.task_manager.get_task_result(task)
+        elif self.load_docs_using == "sirius_java_sdk":
+            self.java_doc_loader(generator=self.gen_create,
+                                doc_ops="create",
+                                process_concurrency=2,
+                                skip_default=False)
+        else:
+            task = self.data_load()
+            self.wait_for_doc_load_completion(task)
+            self.num_items = self.init_items_per_collection * self.num_collections
         self.read_start = 0
         self.read_end = self.init_items_per_collection
 
@@ -706,11 +716,6 @@ class StorageBase(BaseTestCase):
             if update_end is not None:
                 self.update_end = update_end
 
-            if self.update_start is None:
-                self.update_start = self.start
-            if self.update_end is None:
-                self.update_end = self.end*self.update_perc/100
-
             self.mutate += 1
             self.log.critical("Update:: %s:%s" % (self.update_start, self.update_end))
             self.gen_update = self.genrate_docs_basic(self.update_start,
@@ -723,11 +728,6 @@ class StorageBase(BaseTestCase):
             if delete_end is not None:
                 self.delete_end = delete_end
 
-            if self.delete_start is None:
-                self.delete_start = self.start
-            if self.delete_end is None:
-                self.delete_end = self.end*self.delete_perc/100
-
             self.log.critical("Delete :: %s:%s" % (self.delete_start, self.delete_end))
             self.gen_delete = self.genrate_docs_basic(self.delete_start,
                                                       self.delete_end,
@@ -736,15 +736,10 @@ class StorageBase(BaseTestCase):
         if "create" in doc_ops:
             if create_start is not None:
                 self.create_start = create_start
-            if self.create_start is None:
-                self.create_start = self.end
-            self.start = self.create_start
 
             if create_end is not None:
                 self.create_end = create_end
-            if self.create_end is None:
-                self.create_end = self.start+self.num_items*self.create_perc/100
-            self.end = self.create_end
+
             self.log.critical("Create :: %s:%s" % (self.create_start, self.create_end))
 
             self.gen_create = self.genrate_docs_basic(self.create_start,
@@ -770,15 +765,9 @@ class StorageBase(BaseTestCase):
         if "expiry" in doc_ops:
             if expiry_start is not None:
                 self.expiry_start = expiry_start
-            elif self.expiry_start is None:
-                self.expiry_start = self.start+(self.num_items *
-                                                self.delete_perc)/100
 
             if expiry_end is not None:
                 self.expiry_end = expiry_end
-            elif self.expiry_end is None:
-                self.expiry_end = self.start+self.num_items *\
-                                  (self.delete_perc + self.expiry_perc)/100
 
             self.log.critical("Exp:: %s:%s" % (self.expiry_start, self.expiry_end))
             self.gen_expiry = self.genrate_docs_basic(self.expiry_start,
@@ -817,6 +806,89 @@ class StorageBase(BaseTestCase):
                                            target_vbucket=target_vbucket,
                                            vbuckets=vbuckets,
                                            key_size=key_size)
+
+    def java_doc_loader(self, scopes=None, collections=None, generator=None, doc_ops=None,
+                        wait=True, process_concurrency=2, skip_default=True, exp_ttl=None):
+
+        doc_loading_tasks = list()
+        self.ops_rate = self.input.param("ops_rate", 50000)
+        validate_docs = self.input.param("validate_docs", False)
+        self.doc_loading_tm = TaskManager(self.process_concurrency)
+
+        # Mapping operations to their corresponding attributes
+        op_map = {
+            "create": "create_perc",
+            "update": "update_perc",
+            "read": "read_perc",
+            "delete": "delete_perc",
+            "expiry": "expiry_perc"
+        }
+
+        doc_ops = doc_ops or self.doc_ops
+        doc_ops_list = doc_ops.split(":")
+        op_count = 0
+        per_op_percent = 100 // len(doc_ops_list)
+        percent_left = 100
+
+        # Assigning values to doc op percent based on the number of doc_ops
+        for op in doc_ops_list:
+            if op in op_map:
+                setattr(self, op_map[op], per_op_percent)
+                percent_left -= per_op_percent
+                op_count += 1
+                if op_count == len(doc_ops_list) and percent_left > 0:
+                    setattr(self, op_map[op], getattr(self, op_map[op]) + percent_left)
+
+        self.log.info("Create perc = {}, Update perc = {}, Read perc = {}, Delete perc = {}, Expiry perc = {}"\
+            .format(self.create_perc, self.update_perc, self.read_perc, self.delete_perc, self.expiry_perc))
+
+        exp_time = exp_ttl if exp_ttl is not None else 0
+
+        for bucket in self.cluster.buckets:
+            self.printOps = PrintBucketStats(self.cluster, bucket,
+                                            monitor_stats=["doc_ops"], sleep=1)
+            self.task_manager.add_new_task(self.printOps)
+
+        for bucket in self.cluster.buckets:
+            scopes_keys = scopes or bucket.scopes.keys()
+            for scope in scopes_keys:
+                if scope == CbServer.system_scope:
+                    continue
+                collections_keys = collections or bucket.scopes[scope].collections.keys()
+                for collection in collections_keys:
+                    if skip_default and collection == "_default" and scope == "_default":
+                        continue
+                    self.log.info("Starting workload on {}:{}".format(scope, collection))
+                    _task = SiriusCouchbaseLoader(
+                            self.cluster.master.ip, self.cluster.master.port,
+                            generator, doc_ops,
+                            self.cluster.master.rest_username,
+                            self.cluster.master.rest_password,
+                            bucket, scope, collection,
+                            key_prefix=self.key, key_size=self.key_size,
+                            doc_size=self.doc_size,
+                            create_percent=self.create_perc, read_percent=self.read_perc,
+                            update_percent=self.update_perc, delete_percent=self.delete_perc,
+                            expiry_percent=self.expiry_perc,
+                            create_start_index=self.create_start, create_end_index=self.create_end,
+                            read_start_index=self.read_start, read_end_index=self.read_end,
+                            update_start_index=self.update_start, update_end_index=self.update_end,
+                            delete_start_index=self.delete_start, delete_end_index=self.delete_end,
+                            expiry_start_index=self.expiry_start, expiry_end_index=self.expiry_end,
+                            exp=exp_time,
+                            process_concurrency=process_concurrency,
+                            validate_docs=validate_docs,
+                            ops=self.ops_rate)
+                    _task.create_doc_load_task()
+                    self.doc_loading_tm.add_new_task(_task)
+                    doc_loading_tasks.append(_task)
+
+        if wait:
+            for task in doc_loading_tasks:
+                self.doc_loading_tm.get_task_result(task)
+                self.printOps.end_task()
+        else:
+            return doc_loading_tasks
 
     def loadgen_docs(self,
                      retry_exceptions=[],
@@ -915,7 +987,8 @@ class StorageBase(BaseTestCase):
                 scope=scope,
                 collection=collection,
                 suppress_error_table=suppress_error_table,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                validate_using=self.load_docs_using)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
             tem_tasks_info = self.bucket_util._async_load_all_buckets(
@@ -943,8 +1016,6 @@ class StorageBase(BaseTestCase):
             for task in tasks_info:
                 self.task_manager.get_task_result(task)
 
-            self.bucket_util.verify_doc_op_task_exceptions(
-                tasks_info, self.cluster, load_using=self.load_docs_using)
             self.bucket_util.log_doc_ops_task_failures(tasks_info)
 
         if read_task:
@@ -958,12 +1029,12 @@ class StorageBase(BaseTestCase):
         return tasks_info
 
     def get_bucket_dgm(self, bucket):
-        self.rest_client = BucketHelper(self.cluster.master)
+        self.rest_client = BucketRestApi(self.cluster.master)
         count = 0
         dgm = 100
         while count < 5:
             try:
-                dgm = self.rest_client.fetch_bucket_stats(
+                dgm = self.rest_client.get_bucket_info(
                     bucket.name)["op"]["samples"]["vb_active_resident_items_ratio"][-1]
                 self.log.info("Active Resident Threshold of {0} is {1}".format(
                     bucket.name, dgm))
@@ -1054,7 +1125,8 @@ class StorageBase(BaseTestCase):
                 scope=CbServer.default_scope,
                 collection=collection,
                 retry_exceptions=self.retry_exceptions,
-                ignore_exceptions=self.ignore_exceptions)
+                ignore_exceptions=self.ignore_exceptions,
+                validate_using=self.load_docs_using)
             validate_tasks_info.update(temp_tasks_info.items())
         if _sync:
             for task in validate_tasks_info:
@@ -1207,7 +1279,6 @@ class StorageBase(BaseTestCase):
             buckets = self.buckets
         if node is None:
             node = self.cluster.master
-        rest = RestConnection(node)
 
         shell = RemoteMachineShellConnection(node)
         shell.enable_diag_eval_on_non_local_hosts()
@@ -1219,7 +1290,8 @@ class StorageBase(BaseTestCase):
                   '1, BC, {purge_interval, %f})' \
                   ', ns_bucket:set_bucket_config("%s", BC2).' \
                   % (bucket.name, value, bucket.name)
-            rest.diag_eval(cmd)
+            status, content = self.rest.diag_eval(cmd)
+            self.log.info("Status = {0}, content = {1}".format(status, content))
 
         # Restart Memcached in all cluster nodes to reflect the settings
         for server in self.cluster_util.get_kv_nodes(self.cluster):
@@ -1236,7 +1308,9 @@ class StorageBase(BaseTestCase):
                               "within expected time")
 
     def fetch_data_path(self):
-        data_path = self.rest.get_data_path()
+        _, content = self.rest.node_details()
+        self.log.info("Node details content = {}".format(content))
+        data_path = content["storage"]["hdd"][0]["path"]
         if "c:/Program Files" in data_path:
             data_path = data_path.replace("c:/Program Files",
                                            "/cygdrive/c/Program\ Files")
@@ -1244,11 +1318,9 @@ class StorageBase(BaseTestCase):
         return data_path
 
     def set_writer_reader_storage_threads(self):
-        bucket_helper = BucketHelper(self.cluster.master)
-        bucket_helper.update_memcached_settings(
-            num_writer_threads=self.num_writer_threads,
-            num_reader_threads=self.num_reader_threads,
-            num_storage_threads=self.num_storage_threads)
+        self.rest.manage_cluster_connections(num_reader_threads=self.num_reader_threads,
+                                             num_writer_threads=self.num_writer_threads,
+                                             num_storage_threads=self.num_storage_threads)
 
     def load_data_cbc_pillowfight(self, server, bucket, items, doc_size,
                                   key_prefix="test_docs", threads=1,
@@ -1276,7 +1348,7 @@ class StorageBase(BaseTestCase):
         print("\n")
         print("\t", "#"*60)
         print("\t", "#")
-        print("\t", "#  %s" % msg)
+        print("\t", "#  {}".format(msg))
         print("\t", "#")
         print("\t", "#"*60)
         print("\n")

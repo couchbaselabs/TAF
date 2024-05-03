@@ -2,6 +2,7 @@ import threading
 import time
 
 from cb_constants import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
@@ -90,7 +91,7 @@ class CollectionsDropRecreateRebalance(CollectionBase):
         self.add_nodes = self.cluster.servers[self.nodes_init:self.nodes_init + self.nodes_in]
         self.remove_nodes = self.cluster.servers[:self.nodes_out]
         self.cluster.master = self.master = self.cluster.servers[self.nodes_out]
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
 
     def pick_nodes_for_failover(self, rebalance_operation):
         self.failover_nodes = self.cluster.servers[:self.nodes_failover]

@@ -3,17 +3,17 @@ import zlib
 from TestInput import TestInputServer
 
 from BucketLib.BucketOperations import BucketHelper
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from common_lib import sleep
-from global_vars import logger
+import global_vars
 from mc_bin_client import MemcachedClient, MemcachedError
-from membase.api.rest_client import RestConnection
 
 
 class MemcachedClientHelper(object):
     @staticmethod
     def direct_client(server, bucket, timeout=30,
                       admin_user=None, admin_pass=None):
-        log = logger.get("test")
+        log = global_vars.logger.get("test")
         log.debug("creating memcached client: {0}:{1} {2}"
                   .format(server.ip, server.memcached_port, bucket.name))
         BucketHelper(server).vbucket_map_ready(bucket, 60)
@@ -43,7 +43,7 @@ class MemcachedClientHelper(object):
         while retry_attempt > 0:
             try:
                 client.flush()
-                logger.get("test").info("Bucket %s flushed" % bucket)
+                global_vars.logger.get("test").info("Bucket %s flushed" % bucket)
                 break
             except MemcachedError:
                 retry_attempt -= 1
@@ -62,13 +62,13 @@ class VBucketAwareMemcached(object):
         self.vBucketMap = {}
         self.vBucketMapReplica = {}
         self.rest = rest
-        self.log = logger.get("test")
+        self.log = global_vars.logger.get("test")
         self.reset(rest)
         self.collections = collections
 
     def reset(self, rest=None):
         if not rest:
-            self.rest = RestConnection(self.info)
+            self.rest = ClusterRestAPI(self.info)
         m, v, r = self.request_map(self.rest, self.bucket)
         self.memcacheds = m
         self.vBucketMap = v
@@ -96,7 +96,7 @@ class VBucketAwareMemcached(object):
         if server_str not in memcacheds:
             server_ip = server_str.rsplit(":", 1)[0]
             server_port = int(server_str.rsplit(":", 1)[1])
-            nodes = rest.get_nodes()
+            nodes = global_vars.cluster_util.get_nodes(self.info)
 
             server = TestInputServer()
             server.ip = server_ip

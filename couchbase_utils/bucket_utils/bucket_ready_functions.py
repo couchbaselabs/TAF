@@ -68,8 +68,8 @@ from membase.helper.cluster_helper import ClusterOperationHelper
 from membase.helper.rebalance_helper import RebalanceHelper
 from memcached.helper.data_helper import MemcachedClientHelper, \
     VBucketAwareMemcached
-from sdk_exceptions import SDKException
 from shell_util.remote_connection import RemoteMachineShellConnection
+from sdk_exceptions import SDKException
 from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
     MIN_COMPACTION_THRESHOLD
@@ -1347,7 +1347,7 @@ class CollectionUtils(DocLoaderUtils):
         collection_name = collection_spec.get("name")
         CollectionUtils.log.debug("Creating Collection %s:%s:%s"
                                   % (bucket.name, scope_name, collection_name))
-        status, content = BucketHelper(node).create_collection(bucket.name,
+        status, content = BucketHelper(node).create_collection(bucket,
                                                                scope_name,
                                                                collection_spec,
                                                                session=session)
@@ -2962,8 +2962,7 @@ class BucketUtils(ScopeUtils):
             history_retention_bytes=0,
             history_retention_seconds=0):
         success = True
-        rest = RestConnection(cluster.master)
-        info = rest.get_nodes_self()
+        info = self.cluster_util.get_nodes_self(cluster.master)
         tasks = dict()
         if type(storage) is not dict:
             storage = {storage: bucket_count}
@@ -3037,7 +3036,7 @@ class BucketUtils(ScopeUtils):
                        .format(bucket, cluster.master))
         bucket_conn = BucketHelper(cluster.master)
         if self.bucket_exists(cluster, bucket):
-            status = bucket_conn.flush_bucket(bucket)
+            status = bucket_conn.flush_bucket(bucket.name)
             if not status:
                 self.log.error("Flush bucket '{0}' failed from {1}"
                                .format(bucket, cluster.master.ip))
@@ -3349,7 +3348,7 @@ class BucketUtils(ScopeUtils):
         replica_count = None
         while time.time() < end_time:
             bucket_helper = BucketHelper(cluster.master)
-            bucket_stats = bucket_helper.fetch_bucket_stats(bucket)
+            bucket_stats = bucket_helper.fetch_bucket_stats(bucket.name)
             try:
                 active_count = bucket_stats['op']['samples']['curr_items'][-1]
                 replica_count = bucket_stats['op']['samples'][
@@ -3788,6 +3787,8 @@ class BucketUtils(ScopeUtils):
         generator = doc_generator(key, start, end, mutate=mutate)
         for bucket in self.get_all_buckets(cluster):
             for _, scope in bucket.scopes.items():
+                if scope.name == "_system":
+                    continue
                 for _, collection in scope.collections.items():
                     task = self.task.async_load_gen_docs(
                         cluster, bucket,
@@ -3875,7 +3876,8 @@ class BucketUtils(ScopeUtils):
                              scope=CbServer.default_scope,
                              collection=CbServer.default_collection,
                              suppress_error_table=False,
-                             sdk_retry_strategy=None):
+                             sdk_retry_strategy=None,
+                             validate_using="default_loader"):
         task_info = dict()
         for bucket in cluster.buckets:
             gen = copy.deepcopy(kv_gen)
@@ -3885,7 +3887,8 @@ class BucketUtils(ScopeUtils):
                 process_concurrency, check_replica,
                 scope, collection,
                 suppress_error_table=suppress_error_table,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                validate_using=validate_using)
             task_info[task] = self.get_doc_op_info_dict(
                 bucket, op_type, exp,
                 scope=scope,
@@ -4603,12 +4606,12 @@ class BucketUtils(ScopeUtils):
             shell_conn.disconnect()
 
     def _run_compaction(self, cluster, number_of_times=1,
-                        async_run=False):
+                        async_run=False, timeout=300):
         compaction_tasks = dict()
         for _ in range(number_of_times):
             for bucket in cluster.buckets:
                 compaction_tasks[bucket.name] = self.task.async_compact_bucket(
-                    cluster.master, bucket)
+                    cluster.master, bucket, timeout)
             if not async_run:
                 for task in compaction_tasks.values():
                     self.task_manager.get_task_result(task)
@@ -4718,12 +4721,12 @@ class BucketUtils(ScopeUtils):
         start_time = time.time()
         end_time = start_time + timeout_in_seconds
         ready_vbuckets = dict()
-        rest = RestConnection(node)
+        rest = ClusterRestAPI(node)
         bucket_conn = BucketHelper(node)
         bucket_conn.vbucket_map_ready(bucket, 60)
         vbucket_count = len(bucket.vbuckets)
         vbuckets = bucket.vbuckets
-        obj = VBucketAwareMemcached(rest, bucket, info=node)
+        obj = VBucketAwareMemcached(rest, bucket, self.cluster_util, info=node)
         _, vbucket_map, _ = obj.request_map(rest, bucket)
         # Create dictionary with key:"ip:port" and value: a list of vbuckets
         server_dict = defaultdict(list)
@@ -4766,6 +4769,7 @@ class BucketUtils(ScopeUtils):
                         client.reconnect()
                         continue
 
+                    c = c.decode()
                     if c.find("\x01") > 0 or c.find("\x02") > 0:
                         ready_vbuckets[i] = True
                     elif i in ready_vbuckets:

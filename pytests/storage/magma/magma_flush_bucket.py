@@ -6,18 +6,18 @@ import time
 from cb_constants.CBServer import CbServer
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
-from magma_base import MagmaBaseTest
+from storage.magma.magma_base import MagmaBaseTest
+from shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
 from sdk_exceptions import SDKException
-from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class MagmaFlushBucketTests(MagmaBaseTest):
     def setUp(self):
         super(MagmaFlushBucketTests, self).setUp()
         self.sdk_timeout = self.input.param("sdk_timeout", 100)
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         self.sigkill = self.input.param("sigkill", False)
         self.multiplier = self.input.param("multiplier", 2)
@@ -93,7 +93,8 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                load_using=self.load_docs_using)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "update", 0,
                 scope=scope,
@@ -118,7 +119,8 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                load_using=self.load_docs_using)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "create", 0,
                 scope=scope,
@@ -144,7 +146,8 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                load_using=self.load_docs_using)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "update", 0,
                 scope=scope,
@@ -166,7 +169,8 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions,
                scope=scope,
-               collection=collection)
+               collection=collection,
+               load_using=self.load_docs_using)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
             task = self.bucket_util.async_load_bucket(
@@ -181,7 +185,8 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                load_using=self.load_docs_using)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "delete", 0,
                 scope=scope,
@@ -294,14 +299,14 @@ class MagmaFlushBucketTests(MagmaBaseTest):
         key, val = self.gen_update.next()
 
         def upsert_doc(start_num, end_num, key_obj, val_obj):
-            print threading.currentThread().getName(), 'Starting'
+            print(threading.currentThread().getName(), 'Starting')
             for i in range(start_num, end_num):
                 val_obj.put("mutated", i)
                 self.client.upsert(key_obj, val_obj)
             if threading.currentThread().getName() == 't'+str(self.num_threads):
                 self.bucket_util.flush_bucket(self.cluster, self.cluster.buckets[0])
 
-            print threading.currentThread().getName(), 'Exiting'
+            print(threading.currentThread().getName(), 'Exiting')
 
         while count < self.test_itr:
             self.log.info("Iteration : {}".format(count))
@@ -346,7 +351,7 @@ class MagmaFlushBucketTests(MagmaBaseTest):
          -- ReStart persistence on Node -x
          -- Repeat all the above steps for num_rollback times
         '''
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         items = copy.deepcopy(self.init_items_per_collection)
         mem_only_items = self.input.param("rollback_items", 10000)
@@ -505,7 +510,7 @@ class MagmaFlushBucketTests(MagmaBaseTest):
              -- Doc ops on buckets
              -- Repaeat all the above steps
         """
-        self.log.info("=====test_create_delete_bucket_n_times starts=====")
+        self.log.info("=====test_flush_bucket_during_create_delete_kvstores starts=====")
         count = 0
         self.num_delete_buckets = self.input.param("num_delete_buckets", 1)
         '''
@@ -652,7 +657,7 @@ class MagmaFlushBucketTests(MagmaBaseTest):
             count += 1
 
     def test_flush_bucket_during_data_persistence(self):
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         count = 0
         start = copy.deepcopy(self.init_items_per_collection)

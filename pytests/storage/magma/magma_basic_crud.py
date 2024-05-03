@@ -3,7 +3,7 @@ import math
 
 from cb_constants.CBServer import CbServer
 from couchbase_helper.documentgenerator import doc_generator
-from magma_base import MagmaBaseTest
+from storage.magma.magma_base import MagmaBaseTest
 from BucketLib.BucketOperations import BucketHelper
 
 
@@ -40,7 +40,7 @@ class BasicCrudTests(MagmaBaseTest):
             self.create_perc = 100
             self.create_end = self.init_items_per_collection
             self.log.info("Initial loading with new loader starts")
-            self.new_loader(wait=True)
+            self.java_doc_loader(wait=True)
             self.sleep(5)
 
         def set_input_perc():
@@ -60,7 +60,7 @@ class BasicCrudTests(MagmaBaseTest):
                 math.floor((self.end - self.start) * 0.60))
             self.start = self.delete_end
             self.num_items_per_collection = self.end - self.start
-            self.new_loader(wait=True)
+            self.java_doc_loader(wait=True)
 
         def load_from_spec():
             """ params start and end takes care of resuming
@@ -82,7 +82,7 @@ class BasicCrudTests(MagmaBaseTest):
                     (self.end - self.start) * (create_per_collection / 100.0)))
                 self.end = self.create_end
             self.num_items_per_collection = self.end - self.start
-            return self.new_loader(wait=wait_for_ops)
+            return self.java_doc_loader(wait=wait_for_ops)
 
         def reduce_mem(desired_mem, timeout=180):
             """
@@ -159,7 +159,8 @@ class BasicCrudTests(MagmaBaseTest):
                process_concurrency=self.process_concurrency,
                timeout_secs=self.sdk_timeout,
                retry_exceptions=self.retry_exceptions,
-               ignore_exceptions=self.ignore_exceptions)
+               ignore_exceptions=self.ignore_exceptions,
+               validate_using=self.load_docs_using)
 
         for task in tasks_info:
                 self.task_manager.get_task_result(task)
@@ -301,13 +302,13 @@ class BasicCrudTests(MagmaBaseTest):
             _res = disk_usage[0]
             self.assertIs(
                 _res > 2.5 * self.disk_usage[
-                    self.disk_usage.keys()[0]],
+                    list(self.disk_usage.keys())[0]],
                 False, "Disk Usage {}MB '\n' \
                 exceeds Actual'\n' \
                 disk usage {}MB by 2.5'\n' \
                 times".format(
                         _res,
-                        self.disk_usage[self.disk_usage.keys()[0]]))
+                        self.disk_usage[list(self.disk_usage.keys())[0]]))
         # # # # Space Amplification check ends # # # #
 
         self.log.info("====test_drop_collections_after_upserts====")

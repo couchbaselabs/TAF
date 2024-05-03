@@ -4,9 +4,9 @@ import threading
 from cb_constants.CBServer import CbServer
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
-from magma_base import MagmaBaseTest
-from sdk_constants.java_client import SDKConstants
+from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
+from sdk_constants.java_client import SDKConstants
 
 
 class MagmaCompactionTests(MagmaBaseTest):
@@ -15,7 +15,7 @@ class MagmaCompactionTests(MagmaBaseTest):
         self.sdk_timeout = self.input.param("sdk_timeout", 10)
         self.time_unit = "seconds"
         self.graceful = self.input.param("graceful", False)
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         self.crash_th = None
         self.compaction_th = None
@@ -113,7 +113,7 @@ class MagmaCompactionTests(MagmaBaseTest):
     def test_rollback_during_compaction(self):
         '''
         '''
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         items = copy.deepcopy(self.num_items)
         mem_only_items = self.input.param("rollback_items", 10000)

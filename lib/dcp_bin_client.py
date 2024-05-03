@@ -3,7 +3,7 @@ import random
 from common_lib import sleep
 from mc_bin_client import MemcachedClient,decodeCollectionID
 from memcacheConstants import *
-import Queue
+import queue
 import time
 
 MAX_SEQNO = 0xFFFFFFFFFFFFFFFF
@@ -374,7 +374,7 @@ class Operation(object):
         self.extras = extras
         self.vbucket = vbucket
         self.opaque = opaque or random.Random().randint(0, 2 ** 32)
-        self.queue = Queue.Queue()
+        self.queue = queue.Queue()
 
     def formated_response(self, opcode, keylen, extlen, dtype, status, cas, body, opaque, frameextralen):
         return {'opcode': opcode,

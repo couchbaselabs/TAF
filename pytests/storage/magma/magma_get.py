@@ -1,4 +1,4 @@
-from magma_basic_crud import BasicCrudTests
+from storage.magma.magma_basic_crud import BasicCrudTests
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -61,7 +61,8 @@ class BasicReadTests(BasicCrudTests):
                     process_concurrency=self.process_concurrency,
                     timeout_secs=self.sdk_timeout,
                     retry_exceptions=self.retry_exceptions,
-                    ignore_exceptions=self.ignore_exceptions)
+                    ignore_exceptions=self.ignore_exceptions,
+                    validate_using=self.load_docs_using)
                 tasks_info.update(read_task_info.items())
                 count += 1
             self.sleep(1,"Ensures all main read tasks will have unique names")

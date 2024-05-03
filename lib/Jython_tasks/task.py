@@ -812,7 +812,7 @@ class RebalanceTask(Task):
                     username, password, services_for_node)
             else:
                 status, content = self.rest.add_node(
-                    f"{hostname}:{node.port}", username, password,
+                    f"{hostname}", username, password,
                     services_for_node)
 
             if status is False:

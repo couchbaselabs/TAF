@@ -13,9 +13,8 @@ from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 from py_constants.cb_constants import DocLoading
 from couchbase_helper.documentgenerator import doc_generator
-from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
-from sdk_client3 import SDKClient, TransactionConfig
+from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
 
 
@@ -31,56 +30,6 @@ class MagmaRollbackTests(MagmaBaseTest):
 
     def tearDown(self):
         super(MagmaRollbackTests, self).tearDown()
-
-    def _run_transaction(self):
-        transaction_app = Transaction()
-        trans_conf = TransactionConfig(self.transaction_durability_level,
-                                       self.transaction_timeout)
-
-        workload = dict()
-        workload["keyPrefix"] = "trans_basics"
-        workload["keySize"] = 20
-        workload["docSize"] = 256
-        workload["mutated"] = 0
-        workload["keyRange"] = Tuples.of(0, self.num_items)
-        workload["batchSize"] = 1
-        workload["workers"] = 2
-        workload["transaction_pattern"] = [
-            [CbServer.default_scope, CbServer.default_collection,
-             [["C", "R"]]]
-        ]
-
-        work_load = WorkLoadSettings(
-            workload["keyPrefix"],
-            workload["keySize"],
-            workload["docSize"],
-            workload["mutated"],
-            workload["keyRange"],
-            workload["batchSize"],
-            workload["transaction_pattern"],
-            workload["workers"])
-        work_load.setTransactionRollback(True)
-        client = SDKClient(self.cluster, self.cluster.buckets[0],
-                           transaction_config=trans_conf)
-        for index, load_pattern in enumerate(work_load.transaction_pattern):
-            th_name = "Transaction_%s" % index
-            batch_size = load_pattern[0]
-            num_transactions = load_pattern[1]
-            trans_pattern = load_pattern[2]
-
-            task = TransactionWorkLoadGenerate(
-                th_name, client.cluster, client.bucketObj,
-                client.cluster.transactions(),
-                work_load.doc_gen, batch_size, num_transactions, trans_pattern,
-                work_load.commit_transaction, work_load.rollback_transaction,
-                transaction_app)
-            self.transaction_tasks.append(task)
-            self.tm.submit(task)
-        self.tm.getAllTaskResult()
-        client.close()
-        result = \
-            self.check_fragmentation_using_magma_stats(self.cluster.buckets[0])
-        self.assertTrue(result, "Magma framentation error")
 
     def crash_sigkill(self, nodes=None):
         nodes = nodes or self.cluster.nodes_in_cluster
@@ -156,7 +105,7 @@ class MagmaRollbackTests(MagmaBaseTest):
          -- Repeat all the above steps for num_rollback times
         '''
 
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         self.set_history_in_test = self.input.param("set_history_in_test", False)
         self.wipe_history = self.input.param("wipe_history", False)
@@ -344,7 +293,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                validate_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(data_validation)
 
         shell.disconnect()
@@ -362,7 +312,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
         ops_len = len(self.doc_ops.split(":"))
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
 
         if self.nodes_init < 2 or self.num_replicas < 1:
@@ -498,7 +448,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                validate_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
         shell.disconnect()
@@ -521,7 +472,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         mem_only_items = self.input.param("rollback_items", 10000)
         divisor = self.input.param("divisor", 5)
         ops_len = len(self.doc_ops.split(":"))
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
 
         if self.nodes_init < 2 or self.num_replicas < 1:
@@ -932,7 +883,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         items = copy.deepcopy(self.num_items)
         mem_only_items = self.input.param("rollback_items", 10000)
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
 
         ops_len = len(self.doc_ops.split(":"))
@@ -1086,7 +1037,8 @@ class MagmaRollbackTests(MagmaBaseTest):
                 self.gen_read, "create", 0,
                 batch_size=self.batch_size,
                 process_concurrency=self.process_concurrency,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                validate_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(data_validation)
         #######################################################################
 
@@ -1110,7 +1062,7 @@ class MagmaRollbackTests(MagmaBaseTest):
          -- ReStart persistence on Node -x
          -- Repeat all the above steps for num_rollback times
         '''
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         items = copy.deepcopy(self.num_items)
         mem_only_items = self.input.param("rollback_items", 10000)
@@ -1302,7 +1254,7 @@ class MagmaRollbackTests(MagmaBaseTest):
          -- After every iteration of roll back on all nodes
          -- Repeat all the above steps for num_rollback times
         '''
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         if self.nodes_init < 2 or self.num_replicas < 1:
             self.fail("Not enough nodes/replicas in the cluster/bucket \
@@ -1324,7 +1276,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 scope_name, {"name": collection_name})
             self.sleep(2)
 
-        collections = self.buckets[0].scopes[scope_name].collections.keys()
+        collections = list(self.buckets[0].scopes[scope_name].collections.keys())
         self.log.debug("Collections list == {}".format(collections))
 
         tasks_info = dict()
@@ -1540,7 +1492,7 @@ class MagmaRollbackTests(MagmaBaseTest):
          -- ReStart persistence on all the x nodes
          -- Repeat all the above steps for num_rollback times
         '''
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
         mem_only_items = self.input.param("rollback_items", 10000)
         target_active_nodes = self.input.param("target_active_nodes", 1)
@@ -1560,6 +1512,8 @@ class MagmaRollbackTests(MagmaBaseTest):
         '''
         start_items = self.num_items
         scope_name = CbServer.default_scope
+        self.create_start = 0
+        self.create_end = self.num_items
         '''
         Commenting below code, since we have
         added collection creation in magma_base
@@ -1575,7 +1529,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         #        scope_name, {"name": collection_name})
         #    self.sleep(2)
 
-        collections = self.buckets[0].scopes[scope_name].collections.keys()
+        collections = list(self.buckets[0].scopes[scope_name].collections.keys())
         self.log.debug("Collections list == {}".format(collections))
 
         tasks_info = dict()
@@ -1860,7 +1814,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         start_items = self.num_items
         scope_name = CbServer.default_scope
 
-        collections = self.buckets[0].scopes[scope_name].collections.keys()
+        collections = list(self.buckets[0].scopes[scope_name].collections.keys())
         self.log.debug("Collections list == {}".format(collections))
 
         tasks_info = dict()

@@ -41,7 +41,7 @@ class BucketHelper(BucketRestApi):
             return False
 
     def get_bucket_from_cluster(self, bucket, num_attempt=1, timeout=1):
-        status, parsed = self.get_bucket_info(bucket, basic_stats=True)
+        status, parsed = self.get_bucket_info(bucket.name, basic_stats=True)
         num = 1
         while not status and num_attempt > num:
             sleep(timeout, f"{bucket.name} - Retrying get_basic_stats...",
@@ -509,16 +509,16 @@ class BucketHelper(BucketRestApi):
         if storageBackend is not None:
             params_dict[Bucket.storageBackend] = storageBackend
 
-        status, response = self.edit_bucket(bucket.name, params_dict)
-
+        self.log.info("Updating bucket properties for {}".format(bucket.name))
+        status, content = self.edit_bucket(bucket.name, params_dict)
         if timeSynchronization:
             if status:
-                raise Exception(f"Erroneously able to set bucket settings "
-                                f"{params_dict} for {bucket.name} on time-sync")
-            return status, response
+                raise Exception("Erroneously able to set bucket settings %s for bucket %s on time-sync" % (params_dict, bucket.name))
+            return status, content
         if not status:
             raise Exception("Failure while setting bucket %s param %s: %s"
-                            % (bucket, params_dict, response))
+                            % (bucket.name, params_dict, content))
+        self.log.debug("Bucket %s updated" % bucket.name)
         bucket.__dict__.update(params_dict)
         return status
 

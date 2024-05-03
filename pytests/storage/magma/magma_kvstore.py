@@ -3,9 +3,9 @@ import threading
 import time
 
 from cb_constants.CBServer import CbServer
-from magma_base import MagmaBaseTest
-from sdk_exceptions import SDKException
+from storage.magma.magma_base import MagmaBaseTest
 from shell_util.remote_connection import RemoteMachineShellConnection
+from sdk_exceptions import SDKException
 
 
 class KVStoreTests(MagmaBaseTest):
@@ -78,7 +78,8 @@ class KVStoreTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                load_using=self.load_docs_using)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "update", 0,
                 scope=scope,
@@ -103,7 +104,8 @@ class KVStoreTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                load_using=self.load_docs_using)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "create", 0,
                 scope=scope,
@@ -129,7 +131,8 @@ class KVStoreTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                load_using=self.load_docs_using)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "update", 0,
                 scope=scope,
@@ -151,7 +154,8 @@ class KVStoreTests(MagmaBaseTest):
                retry_exceptions=retry_exceptions,
                ignore_exceptions=ignore_exceptions,
                scope=scope,
-               collection=collection)
+               collection=collection,
+               validate_using=self.load_docs_using)
             read_task = True
         if "delete" in doc_ops and self.gen_delete is not None:
             task = self.bucket_util.async_load_bucket(
@@ -166,7 +170,8 @@ class KVStoreTests(MagmaBaseTest):
                 scope=scope,
                 collection=collection,
                 monitor_stats=self.monitor_stats,
-                track_failures=track_failures)
+                track_failures=track_failures,
+                load_using=self.load_docs_using)
             tem_tasks_info[task] = self.bucket_util.get_doc_op_info_dict(
                 bucket, "delete", 0,
                 scope=scope,
@@ -408,14 +413,15 @@ class KVStoreTests(MagmaBaseTest):
         self.create_start = 0
         self.create_end = data_load_items
         self.PrintStep("Inserting {} items in each collection".format(self.create_end))
-        self.new_loader()
+        tasks = self.java_doc_loader(wait=False)
 
         # Running cbstats commands in parallel during data load
         cbstats_cmd = "/opt/couchbase/bin/cbstats {0}:11210 -u Administrator -p password -b {1} all" \
                         .format(self.cluster.master.ip, bucket.name)
         run_cbstats_loop(self.cluster.master, cbstats_cmd, cbstats_iter)
 
-        self.doc_loading_tm.getAllTaskResult()
+        for task in tasks:
+            self.doc_loading_tm.get_task_result(task)
         self.printOps.end_task()
 
         self.bucket_util.print_bucket_stats(self.cluster)

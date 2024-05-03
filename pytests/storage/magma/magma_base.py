@@ -7,8 +7,8 @@ import json
 
 from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
-from sdk_client3 import SDKClientPool
 from shell_util.remote_connection import RemoteMachineShellConnection
+from sdk_client3 import SDKClientPool
 from storage.storage_base import StorageBase
 from storage_utils.magma_utils import MagmaUtils
 
@@ -60,18 +60,19 @@ class MagmaBaseTest(StorageBase):
         self.disk_usage = dict()
 
         # Creating clients in SDK client pool
-        self.sdk_timeout = self.input.param("sdk_timeout", 60)
-        self.cluster.sdk_client_pool = SDKClientPool()
-        self.log.info("Creating SDK clients for client_pool")
-        max_clients = min(self.task_manager.number_of_threads, 20)
-        if self.standard_buckets > 20:
-            max_clients = self.standard_buckets
-        clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
-        for bucket in self.cluster.buckets:
-            self.cluster.sdk_client_pool.create_clients(
-                self.cluster, bucket,
-                req_clients=clients_per_bucket,
-                compression_settings=self.sdk_compression)
+        if self.load_docs_using == "default_loader":
+            self.cluster.sdk_client_pool = SDKClientPool()
+            self.log.info("Creating SDK clients for client_pool")
+            max_clients = min(self.task_manager.number_of_threads, 20)
+            if self.standard_buckets > 20:
+                max_clients = self.standard_buckets
+            clients_per_bucket = int(math.ceil(max_clients / self.standard_buckets))
+            for bucket in self.cluster.buckets:
+                self.cluster.sdk_client_pool.create_clients(
+                    self.cluster, bucket, [self.cluster.master],
+                    clients_per_bucket,
+                    compression_settings=self.sdk_compression)
+
         # Initial Data Load
         self.loader_dict = None
         self.init_loading = self.input.param("init_loading", True)

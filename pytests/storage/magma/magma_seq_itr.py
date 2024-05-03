@@ -8,11 +8,11 @@ import copy
 import json
 import time
 
-from shell_util.remote_connection import RemoteMachineShellConnection
 from storage.magma.magma_base import MagmaBaseTest
 from dcp_utils.dcp_ready_functions import DCPUtils
 from BucketLib.BucketOperations import BucketHelper
 from cb_constants import CbServer
+from shell_util.remote_connection import RemoteMachineShellConnection
 from cb_tools.cbepctl import Cbepctl
 from cb_tools.cbstats import Cbstats
 
@@ -231,7 +231,7 @@ class DCPSeqItr(MagmaBaseTest):
         items = self.num_items
         mem_only_items = self.input.param("rollback_items", 10000)
         ops_len = len(self.doc_ops.split(":"))
-        self.assertTrue(self.rest.update_autofailover_settings(False, 600),
+        self.assertTrue(self.rest.update_auto_failover_settings("false", 600)[0],
                         "AutoFailover disabling failed")
 
         if self.nodes_init < 2 or self.num_replicas < 1:

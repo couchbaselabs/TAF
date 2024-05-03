@@ -1240,7 +1240,7 @@ class ServerTasks(object):
         _task = self.async_bucket_flush(server, bucket)
         return _task.get_result(timeout)
 
-    def async_compact_bucket(self, server, bucket):
+    def async_compact_bucket(self, server, bucket, timeout=300):
         """Asynchronously starts bucket compaction
 
         Parameters:
@@ -1249,7 +1249,7 @@ class ServerTasks(object):
 
         Returns:
             CompactBucketTask - A task future that is a handle for scheduled task"""
-        _task = jython_tasks.CompactBucketTask(server, bucket)
+        _task = jython_tasks.CompactBucketTask(server, bucket, timeout)
         self.jython_task_manager.schedule(_task)
         return _task
 
