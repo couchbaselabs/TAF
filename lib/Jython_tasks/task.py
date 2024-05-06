@@ -302,7 +302,7 @@ class ScaleColumnarInstance(Task):
                                   "rebalanceFailed",
                                   "scaleFailed"]:
                     raise Exception("{} for cluster {}".format(
-                        self.state, self.cluster.id))
+                        self.state, self.cluster.instance_id))
                 if content.get("data") or self.state != "healthy":
                     for data in content.get("data"):
                         data = data.get("data")

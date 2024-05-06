@@ -27,7 +27,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         self.log_setup_status(self.__class__.__name__, "started")
 
         self.num_nodes_in_columnar_instance = self.input.param(
-            "num_nodes_in_columnar_instance", 0)
+            "num_nodes_in_columnar_instance", 2)
 
         self.columnar_utils = ColumnarUtils(self.log)
 
@@ -72,6 +72,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             instance_obj.master = instance_obj.servers[0]
             instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
+            instance_obj.username = self.rest_username
+            instance_obj.password = self.rest_password
             tenant.columnar_instances.append(instance_obj)
             CapellaUtils.create_db_user(
                         self.pod, tenant, cluster_id,
@@ -93,8 +95,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         # Set skip_redeploy to True if you want to reuse the columnar instance.
         self.skip_redeploy = self.input.param("skip_redeploy", True)
 
-        threads = list()
-        thread_results = list()
         tasks = list()
 
         # Single tenant, single project and multiple instances
@@ -108,7 +108,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         instance_ids = self.capella.get("instance_id", "")
         if instance_ids:
-            instance_ids = instance_ids.split(",")
+            instance_ids = instance_ids.split(',')
 
         for i in range(0, self.input.param("num_columnar_instances", 1)):
             if instance_ids and i < len(instance_ids):
@@ -143,12 +143,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 args=(self.tenant, self.tenant.project_id, instance,
                       allow_access_from_everywhere_thread_results,)
             ))
-        self.start_threads(threads)
-        if thread_results:
-            raise Exception("Failed while waiting for following instance "
-                            "to be deployed - {0}".format(thread_results))
-        purge_lists(threads, thread_results)
-
         self.start_threads(allow_access_from_everywhere_threads)
         if allow_access_from_everywhere_thread_results:
             raise Exception("Failed setting allow access from everywhere "

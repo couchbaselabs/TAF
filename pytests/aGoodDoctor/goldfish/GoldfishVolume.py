@@ -246,9 +246,11 @@ class Columnar(BaseTestCase, OPD):
                 self.workload_tasks.append(dataSource.perform_load(
                     [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
         self.iterations = self.input.param("iterations", 1)
+        nodes = self.num_nodes_in_columnar_instance
         for i in range(0, self.iterations):
             self.PrintStep("Scaling OUT operation: %s" % str(i+1))
             tasks = list()
+            nodes = nodes*2
             for tenant in self.tenants:
                 for cluster in tenant.columnar_instances:
                     servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
@@ -256,8 +258,10 @@ class Columnar(BaseTestCase, OPD):
                     tbl.set_headers(["Hostname", "Services"])
                     for server in servers:
                         tbl.add_row([server.get("hostname"), server.get("services")])
-                    tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.id, cluster.cluster_id))
-                    _task = ScaleColumnarInstance(self.pod, tenant, cluster, (i+1)*2, timeout=self.wait_timeout)
+                    tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.instance_id, cluster.cluster_id))
+                    _task = ScaleColumnarInstance(self.pod, tenant, cluster,
+                                                  nodes,
+                                                  timeout=self.wait_timeout)
                     self.task_manager.add_new_task(_task)
                     tasks.append(_task)
             for task in tasks:
@@ -267,6 +271,7 @@ class Columnar(BaseTestCase, OPD):
         for i in range(self.iterations-1, -1, -1):
             self.PrintStep("Scaling IN operation: %s" % str(i))
             tasks = list()
+            nodes = nodes/2
             for tenant in self.tenants:
                 for cluster in tenant.columnar_instances:
                     servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
@@ -274,9 +279,8 @@ class Columnar(BaseTestCase, OPD):
                     tbl.set_headers(["Hostname", "Services"])
                     for server in servers:
                         tbl.add_row([server.get("hostname"), server.get("services")])
-                    tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.id, cluster.cluster_id))
-                    count = i*2 if i > 0 else 1
-                    _task = ScaleColumnarInstance(self.pod, tenant, cluster, count, timeout=self.wait_timeout)
+                    tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.instance_id, cluster.cluster_id))
+                    _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
                     self.task_manager.add_new_task(_task)
                     tasks.append(_task)
             for task in tasks:

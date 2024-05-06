@@ -44,6 +44,34 @@ class ColumnarInstance:
         self.sdk_cluster_env = SDKClient.create_cluster_env()
         self.sdk_env_built = self.sdk_cluster_env.build()
 
+    def refresh_object(self, servers):
+        self.kv_nodes = list()
+        self.fts_nodes = list()
+        self.cbas_nodes = list()
+        self.index_nodes = list()
+        self.query_nodes = list()
+        self.eventing_nodes = list()
+        self.backup_nodes = list()
+        self.nodes_in_cluster = list()
+
+        for server in servers:
+            server.type = self.type
+            if self.type != "default":
+                server.memcached_port = "11207"
+            if "Data" in server.services or "kv" in server.services:
+                self.kv_nodes.append(server)
+            if "Query" in server.services or "n1ql" in server.services:
+                self.query_nodes.append(server)
+            if "Index" in server.services or "index" in server.services:
+                self.index_nodes.append(server)
+            if "Eventing" in server.services or "eventing" in server.services:
+                self.eventing_nodes.append(server)
+            if "Analytics" in server.services or "cbas" in server.services:
+                self.cbas_nodes.append(server)
+            if "Search" in server.services or "fts" in server.services:
+                self.fts_nodes.append(server)
+            self.nodes_in_cluster.append(server)
+        self.master = self.kv_nodes[0]
 
 class DBUser:
 
