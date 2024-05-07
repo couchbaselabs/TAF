@@ -649,12 +649,12 @@ class CopyToS3(ColumnarBaseTest):
 
         path_on_external_container = "{copy_dataset:string}"
         # create external dataset on the S3 bucket
-        dataset_obj = self.cbas_util.create_external_dataset_obj(self.cluster,
-                                                                 external_container_names={
-                                                                     self.sink_s3_bucket_name: self.aws_region},
-                                                                 paths_on_external_container=[
-                                                                     path_on_external_container],
-                                                                 file_format="json")[0]
+        dataset_obj = self.cbas_util.create_external_dataset_obj(
+            self.cluster,
+            external_container_names={
+                self.sink_s3_bucket_name: self.aws_region},
+            paths_on_external_container=[path_on_external_container],
+            file_format="json")[0]
 
         if not self.create_external_dataset(dataset_obj):
             self.fail("Failed to create external dataset on destination S3 bucket")

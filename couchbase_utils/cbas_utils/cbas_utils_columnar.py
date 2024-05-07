@@ -1750,9 +1750,8 @@ class Link_Util(Dataverse_Util):
 
     def get_all_links_from_metadata(self, cluster, link_type=None):
         links_created = []
-        links_query = "select value lnk.DatabaseName || \".\" || " \
-                      "lnk.DataverseName || \".\" || lnk.Name from Metadata." \
-                      "`Link` as lnk where lnk.Name <> \"Local\""
+        links_query = "select value lnk.Name from Metadata.`Link` as lnk " \
+                      "where lnk.Name <> \"Local\""
         if link_type:
             links_query += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
         while not links_created:
@@ -3917,13 +3916,14 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         """
         cmd = "COPY INTO "
         if database_name:
-            cmd += "{}.".format(CBASHelper.format_name(database_name))
-        if dataverse_name:
-            cmd += "{0}.{1} ".format(
-                CBASHelper.format_name(dataverse_name),
-                CBASHelper.format_name(collection_name))
+            cmd += "{0} ".format(CBASHelper.format_name(
+                database_name, dataverse_name, collection_name))
         else:
-            cmd += "{0} ".format(CBASHelper.format_name(collection_name))
+            if dataverse_name:
+                cmd += "{0} ".format(CBASHelper.format_name(
+                    dataverse_name, collection_name))
+            else:
+                cmd += "{0} ".format(CBASHelper.format_name(collection_name))
 
         if type_parsing_info:
             cmd += "AS ({0}) ".format(type_parsing_info)
@@ -4341,13 +4341,12 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             if len(data_sources) > 0:
                 data_source = data_sources[i % len(data_sources)]
                 if data_source is not None:
-                    links = set(
-                        self.get_all_link_objs(link_type=data_source).sort())
+                    links = self.get_all_link_objs(link_type=data_source).sort()
                     if dataset_spec.get("include_links", []):
                         for link_name in dataset_spec.get("include_links"):
                             link_obj = self.get_link_obj(cluster, link_name)
                             if link_obj not in links:
-                                links.add(link_obj)
+                                links.append(link_obj)
                     if dataset_spec.get("exclude_links", []):
                         for link_name in dataset_spec.get("exclude_links"):
                             link_obj = self.get_link_obj(cluster, link_name)
@@ -6987,6 +6986,9 @@ class CbasUtil(CBOUtil):
                    username=None, password=None,  timeout=300,
                    analytics_timeout=300, validate_error_msg=None,
                    expected_error=None, expected_error_code=None):
+        """
+        Method to copy query results to a KV collection using a remote link.
+        """
         # with clause yet to be decided.
         cmd = "COPY "
         if source_definition:

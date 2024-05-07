@@ -71,7 +71,7 @@ class CBASHelper(object):
             try:
                 output["results"] = [row.toMap() for row in
                                      result.rowsAsObject()]
-            except DecodingFailureException:
+            except (DecodingFailureException, AttributeError):
                 try:
                     output["results"] = result.rowsAs(str)
                 except DecodingFailureException:

@@ -5175,7 +5175,8 @@ class CBASRebalanceUtil(object):
         return task.result
 
     def rebalance(self, cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
-                  cbas_nodes_out=0, available_servers=[], exclude_nodes=[]):
+                  cbas_nodes_out=0, available_servers=[], exclude_nodes=[],
+                  in_node_services=""):
         if kv_nodes_out > 0:
             cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
                 cluster, service_type="kv", get_all_nodes=True,
@@ -5214,6 +5215,10 @@ class CBASRebalanceUtil(object):
             services += ["kv"] * kv_nodes_in
         if cbas_nodes_in > 0:
             services += ["cbas"] * cbas_nodes_in
+
+        if in_node_services:
+            services = [in_node_services] * (kv_nodes_in + cbas_nodes_in)
+
 
         rebalance_task = self.task.async_rebalance(
             cluster, servs_in, servs_out,
