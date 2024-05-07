@@ -122,6 +122,14 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.mix_key_size = self.input.param("mix_key_size", False)
         self.load_collections_exponentially = \
             self.input.param("load_collections_exponentially", False)
+        #Vector Dataload Params
+        self.vector = self.input.param("vector", False)
+        self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
+        self.mockVector = self.input.param("mockVector", False)
+        self.dim = self.input.param("dim", 384)
+        self.base64 = self.input.param("base64", False)
+        self.esClient = None
+        self.mutate = self.input.param("mutate", 0)
         # End of doc specific parameters
 
         # Transactions parameters

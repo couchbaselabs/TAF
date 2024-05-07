@@ -31,6 +31,7 @@ class ColumnarInstance:
         self.srv = instance_endpoint
 
         self.servers = list()
+        self.nodes_in_cluster = list()
         self.master = None
         self.cbas_cc_node = self.master
 
@@ -412,8 +413,8 @@ class ColumnarUtils:
         resp = columnar_api.delete_columnar_instance(
             tenant.id, project_id, instance.instance_id)
         if resp.status_code != 202:
-            self.log.error("Unable to delete columnar instance {0}".format(
-                instance.name))
+            self.log.error("Unable to delete columnar instance {0}/{1}: {2}".format(
+                instance.name, instance.instance_id, resp.content))
             return False
         return True
 

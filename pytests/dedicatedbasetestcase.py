@@ -348,8 +348,8 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             #                              "Cluster not healthy")
             cluster_info = CapellaUtils.get_cluster_info(self.pod, tenants[i],
                                                          cluster_id)
-            cluster_srv = cluster_info["data"]["connect"]["srv"]
-            CapellaUtils.allow_my_ip(self.pod, tenants[i], cluster_id)
+            cluster_srv = cluster_info.get("endpointsSrv")
+            CapellaUtils.allow_my_ip(self.pod, tenants[i], cluster_id, True)
             CapellaUtils.create_db_user(
                     self.pod, tenants[i], cluster_id,
                     self.rest_username, self.rest_password)

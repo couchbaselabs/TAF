@@ -540,7 +540,7 @@ class CBASHelper(RestConnection):
             self.log.error("Exception occured while calling rest APi through httplib2.")
             self.log.error("Exception msg - (0)".format(str(err)))
             self.log.info("Retrying again with requests module")
-            response = requests.request(method,api,headers=headers,data=params)
+            response = requests.request(method,api,headers=headers,data=params,verify=False)
             try:
                 content = response.json()
             except Exception:

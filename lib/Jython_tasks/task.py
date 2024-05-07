@@ -278,6 +278,10 @@ class ScaleColumnarInstance(Task):
             self.state = resp["meta"]["status"]["state"]
             self.sleep(5, "Wait until CP trigger the scaling job and change status")
             self.log.info("Current: {}, Expected: {}".format(self.state, "scaling"))
+            servers = DedicatedUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
+            if len(servers) == nodes:
+                self.log.info("Columnar cluster is already scale to % nodes" % nodes)
+                break
             count -= 1
 
     def call(self):

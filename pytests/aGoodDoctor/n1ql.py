@@ -312,7 +312,11 @@ class DoctorN1QL():
                             q += 1
                         counter += 1
 
-            print [v[0] + " == " + k for k, v in b.query_map.items()]
+            query_tbl = TableView()
+            query_tbl.set_headers(["Bucket", "##", "Query"])
+            for k, v in b.query_map.items():
+                query_tbl.add_row([b.name, v[0], k])
+            query_tbl.display("N1QL Queries to run during test:")
         return True
 
     def discharge_N1QL(self):

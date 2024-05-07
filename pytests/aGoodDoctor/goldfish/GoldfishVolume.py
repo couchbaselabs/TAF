@@ -7,23 +7,23 @@ import threading
 import time
 
 from CbasUtil import DoctorCBAS, CBASQueryLoad
-from aGoodDoctor.hostedOPD import OPD
 from basetestcase import BaseTestCase
 from table_view import TableView
 from datasources import MongoDB
 from com.couchbase.test.sdk import Server
 from com.couchbase.test.sdk import SDKClient
 from _collections import defaultdict
-from datasources import s3
+from datasources import s3, CouchbaseRemoteCluster
 from capella_utils.dedicated import CapellaUtils
 from Jython_tasks.task import ScaleColumnarInstance
+from aGoodDoctor.hostedOPD import hostedOPD
+from membase.api.rest_client import RestConnection
+import random
+import string
+from BucketLib.bucket import Bucket
 
 
-class Columnar(BaseTestCase, OPD):
-
-    # def threads_calculation(self):
-    #     self.process_concurrency = self.input.param("pc", self.process_concurrency)
-    #     self.doc_loading_tm = TaskManager(self.process_concurrency)
+class Columnar(BaseTestCase, hostedOPD):
 
     def init_doc_params(self):
         self.create_perc = self.input.param("create_perc", 100)
@@ -58,6 +58,7 @@ class Columnar(BaseTestCase, OPD):
         self.val_type = self.input.param("val_type", "SimpleValue")
         self.ops_rate = self.input.param("ops_rate", 10000)
         self.gtm = self.input.param("gtm", False)
+        self.fragmentation = int(self.input.param("fragmentation", 50))
         self.index_timeout = self.input.param("index_timeout", 3600)
         self.load_defn = list()
         self.cbasQL = list()
@@ -67,7 +68,7 @@ class Columnar(BaseTestCase, OPD):
         self.default_workload = {
             "valType": "Hotel",
             "database": 1,
-            "collections": 1,
+            "collections": self.input.param("collections", 1),
             "scopes": 1,
             "num_items": self.input.param("num_items", 10000),
             "start": 0,
@@ -76,12 +77,35 @@ class Columnar(BaseTestCase, OPD):
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
-            "cbasQPS": 10,
+            "cbasQPS": 1,
             "cbas": [10, 10]
             }
+        self.load_defn.append(self.default_workload)
 
         self.data_sources = defaultdict(list)
         self.mutation_perc = self.input.param("mutation_perc", 100)
+        self.ql = list()
+        self.ftsQL = list()
+        self.cbasQL = list()
+        self.drCBAS = DoctorCBAS()
+
+    def setupRemoteCouchbase(self):
+        for tenant in self.tenants:
+            for provisionedcluster in tenant.clusters:
+                resp = CapellaUtils.get_root_ca(self.pod, tenant, provisionedcluster.id)
+                provisionedcluster.root_ca = resp[1]["pem"]
+                remoteCluster = CouchbaseRemoteCluster(provisionedcluster, self.bucket_util)
+                remoteCluster.loadDefn = self.default_workload
+                self.data_sources["remoteCouchbase"].append(remoteCluster)
+        self.setup_buckets()
+
+    def setups3(self):
+        s3_obj = s3(self.input.datasources.get("s3_access"),
+                    self.input.datasources.get("s3_secret"))
+        s3_obj.loadDefn = self.default_workload
+        s3_obj.set_collections()
+        self.data_sources["s3"].append(s3_obj)
+
 
     def setupMongo(self, atlas=False):
         if not atlas:
@@ -102,15 +126,18 @@ class Columnar(BaseTestCase, OPD):
         mongo.key = "test_docs-"
         mongo.key_size = 18
         mongo.key_type = "Circular"
-        self.generate_docs(doc_ops=["create"],
-                           create_start=0,
-                           create_end=mongo.loadDefn.get("num_items"),
-                           bucket=mongo)
         self.data_sources["mongo"].append(mongo)
 
-        mongo.perform_load(self.data_sources["mongo"], wait_for_load=True,
-                           overRidePattern=[100, 0, 0, 0, 0],
-                           tm=self.doc_loading_tm)
+    def load_mongo_cluster(self):
+        for mongo in self.data_sources["mongo"]:
+            self.generate_docs(doc_ops=["create"],
+                               create_start=0,
+                               create_end=mongo.loadDefn.get("num_items"),
+                               bucket=mongo)
+    
+            mongo.perform_load(self.data_sources["mongo"], wait_for_load=True,
+                               overRidePattern=[100, 0, 0, 0, 0],
+                               tm=self.doc_loading_tm)
 
     def teardownMongo(self):
         for database in self.data_sources["mongo"]:
@@ -119,14 +146,17 @@ class Columnar(BaseTestCase, OPD):
                 task.sdk.disconnectCluster()
                 return
 
-    def setup_sdk_clients(self, cluster):
-        cluster.SDKClients = list()
-        master = Server(cluster.srv, cluster.master.port,
-                        cluster.master.rest_username, cluster.master.rest_password,
-                        str(cluster.master.memcached_port))
+    def setup_columnar_sdk_clients(self, columnar):
+        columnar.SDKClients = list()
+        master = Server(columnar.srv, columnar.master.port,
+                        columnar.master.rest_username, columnar.master.rest_password,
+                        str(columnar.master.memcached_port))
         client = SDKClient(master, "None")
         client.connectCluster()
-        cluster.SDKClients.append(client)
+        columnar.SDKClients.append(client)
+
+    def load_remote_couchbase_clusters(self):
+        self.initial_load()
 
     def tearDown(self):
         for tenant in self.tenants:
@@ -151,69 +181,31 @@ class Columnar(BaseTestCase, OPD):
         self.sleep(10)
         BaseTestCase.tearDown(self)
 
-    def monitor_query_status(self, print_duration=120):
-        self.query_result = True
-
-        def check_query_stats():
-            st_time = time.time()
-            while not self.stop_run:
-                if st_time + print_duration < time.time():
-                    self.CBAStable = TableView(self.log.info)
-                    self.CBAStable.set_headers(["Bucket",
-                                                "Total Queries",
-                                                "Failed Queries",
-                                                "Success Queries",
-                                                "Rejected Queries",
-                                                "Cancelled Queries",
-                                                "Timeout Queries",
-                                                "Errored Queries"])
-                    for ql in self.cbasQL:
-                        self.CBAStable.add_row([
-                            str(ql.bucket.name),
-                            str(ql.total_query_count),
-                            str(ql.failed_count),
-                            str(ql.success_count),
-                            str(ql.rejected_count),
-                            str(ql.cancel_count),
-                            str(ql.timeout_count),
-                            str(ql.error_count),
-                            ])
-                        if ql.failures > 0:
-                            self.query_result = False
-                    self.CBAStable.display("CBAS Query Statistics")
-
-                    st_time = time.time()
-                    time.sleep(10)
-
-        query_monitor = threading.Thread(target=check_query_stats)
-        query_monitor.start()
-
-    def initial_setup(self):
+    def infra_setup(self):
         self.monitor_query_status()
+        if self.input.param("s3", False):
+            self.setups3()
 
         if self.input.param("onPremMongo", False):
             self.setupMongo(atlas=False)
         if self.input.param("onCloudMongo", False):
             self.setupMongo(atlas=True)
 
-        s3_obj = s3(self.input.datasources.get("s3_access"),
-                    self.input.datasources.get("s3_secret"))
-        s3_obj.loadDefn = self.default_workload
-        s3_obj.set_collections()
-        self.data_sources["s3"].append(s3_obj)
+        self.setupRemoteCouchbase()
 
-        self.drCBAS = DoctorCBAS()
         for tenant in self.tenants:
-            for cluster in tenant.columnar_instances:
-                self.setup_sdk_clients(cluster)
+            for columnar in tenant.columnar_instances:
+                self.setup_columnar_sdk_clients(columnar)
                 for datasources in self.data_sources.values():
-                    self.drCBAS.create_links(cluster, datasources)
-                    # self.sleep(60)
+                    self.drCBAS.create_links(columnar, datasources)
 
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
                 for data_source in self.data_sources["mongo"]:
                     self.drCBAS.wait_for_link_connect(cluster, data_source.link_name, 3600)
+
+        self.load_remote_couchbase_clusters()
+        self.load_mongo_cluster()
 
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
@@ -234,17 +226,21 @@ class Columnar(BaseTestCase, OPD):
                             self.cbasQL.append(ql)
 
     def test_rebalance(self):
-        self.initial_setup()
-        self.sleep(300)
+        self.infra_setup()
+        self.sleep(0)
         self.mutate = 0
         self.workload_tasks = list()
         for key in self.data_sources.keys():
             if key == "s3":
                 continue
-            for dataSource in self.data_sources[key]:
-                self.generate_docs(bucket=dataSource)
-                self.workload_tasks.append(dataSource.perform_load(
-                    [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
+            if key == "mongo":
+                for dataSource in self.data_sources[key]:
+                    self.generate_docs(bucket=dataSource)
+                    self.workload_tasks.append(dataSource.perform_load(
+                        [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
+            if key == "remoteCouchbase":
+                self.live_kv_workload()
+
         self.iterations = self.input.param("iterations", 1)
         nodes = self.num_nodes_in_columnar_instance
         for i in range(0, self.iterations):
@@ -264,9 +260,10 @@ class Columnar(BaseTestCase, OPD):
                                                   timeout=self.wait_timeout)
                     self.task_manager.add_new_task(_task)
                     tasks.append(_task)
+            # self.wait_for_rebalances(tasks)
             for task in tasks:
                 self.task_manager.get_task_result(task)
-                self.assertTrue(task.result, "Cluster deployment failed!")
+                self.assertTrue(task.result, "Scaling OUT columnar failed!")
             self.sleep(60)
         for i in range(self.iterations-1, -1, -1):
             self.PrintStep("Scaling IN operation: %s" % str(i))
@@ -283,9 +280,10 @@ class Columnar(BaseTestCase, OPD):
                     _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
                     self.task_manager.add_new_task(_task)
                     tasks.append(_task)
+            # self.wait_for_rebalances(tasks)
             for task in tasks:
                 self.task_manager.get_task_result(task)
-                self.assertTrue(task.result, "Cluster deployment failed!")
+                self.assertTrue(task.result, "Scaling IN columnar failed!")
             self.sleep(600)
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:

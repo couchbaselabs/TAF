@@ -3,11 +3,9 @@ Created on May 2, 2022
 
 @author: ritesh.agarwal
 '''
-import random
 
 from membase.api.rest_client import RestConnection
 import threading
-from BucketLib.bucket import Bucket
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from pytests.basetestcase import BaseTestCase
 from constants.cb_constants.CBServer import CbServer
@@ -23,15 +21,11 @@ from hostedBackupRestore import DoctorHostedBackupRestore
 from hostedOnOff import DoctorHostedOnOff
 from hostedEventing import DoctorEventing
 from constants.cloud_constants.capella_constants import AWS, GCP, AZURE
-from table_view import TableView
 import time
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from com.couchbase.test.sdk import Server, SDKClientPool
-from capella_utils.dedicated import CapellaUtils as DedicatedUtils
 import pprint
-from custom_exceptions.exception import ServerUnavailableException
 from elasticsearch import EsClient
-import string
 from hostedOPD import hostedOPD
 
 
@@ -70,7 +64,6 @@ class Murphy(BaseTestCase, hostedOPD):
         self.threads_calculation()
         self.dgm = self.input.param("dgm", None)
         self.num_buckets = self.input.param("num_buckets", 1)
-        self.mutate = 0
         self.iterations = self.input.param("iterations", 10)
         self.key_prefix = "Users"
         self.crashes = self.input.param("crashes", 20)
@@ -107,7 +100,6 @@ class Murphy(BaseTestCase, hostedOPD):
         self.skip_init = self.input.param("skip_init", False)
         self.query_result = True
 
-        self.vector = self.input.param("vector", False)
         self.esHost = self.input.param("esHost", None)
         self.esAPIKey = self.input.param("esAPIKey", None)
         if self.esHost:
@@ -133,17 +125,6 @@ class Murphy(BaseTestCase, hostedOPD):
                         ql.stop_query_load()
         self.sleep(10)
         BaseTestCase.tearDown(self)
-
-    def create_sdk_client_pool(self, cluster, buckets, req_clients_per_bucket):
-        for bucket in buckets:
-            self.log.info("Using SDK endpoint %s" % cluster.srv)
-            server = Server(cluster.srv, cluster.master.port,
-                            cluster.master.rest_username,
-                            cluster.master.rest_password,
-                            str(cluster.master.memcached_port))
-            cluster.sdk_client_pool.create_clients(bucket.name, server, req_clients_per_bucket)
-            bucket.clients = cluster.sdk_client_pool.clients.get(bucket.name).get("idle_clients")
-        self.sleep(1, "Wait for SDK client pool to warmup")
 
     def rebalance_config(self, rebl_service_group=None, num=0):
         provider = self.input.param("provider", "aws").lower()
@@ -180,177 +161,6 @@ class Murphy(BaseTestCase, hostedOPD):
         self.PrintStep("Rebalance Config:")
         pprint.pprint(specs)
         return specs
-
-    def create_buckets(self, pod, tenant, cluster, sdk_init=True):
-        self.PrintStep("Step 2: Create required buckets and collections.")
-        self.log.info("Create CB buckets")
-        # Create Buckets
-        self.log.info("Get the available memory quota")
-        rest = RestConnection(cluster.master)
-        self.info = rest.get_nodes_self()
-        # threshold_memory_vagrant = 100
-        kv_memory = int(self.info.memoryQuota*0.8)
-        ramQuota = self.input.param("ramQuota", kv_memory)
-        buckets = ["default"] * self.num_buckets
-        bucket_type = self.bucket_type.split(';') * self.num_buckets
-        for i in range(self.num_buckets):
-            suffix = ''.join([random.choice(string.ascii_uppercase + string.digits) for _ in range(5)])
-            bucket = Bucket(
-                {Bucket.name: buckets[i] + str(i) + "_%s" % suffix,
-                 Bucket.ramQuotaMB: ramQuota / self.num_buckets,
-                 Bucket.maxTTL: self.bucket_ttl,
-                 Bucket.replicaNumber: self.num_replicas,
-                 Bucket.storageBackend: self.bucket_storage,
-                 Bucket.evictionPolicy: self.bucket_eviction_policy,
-                 Bucket.bucketType: bucket_type[i],
-                 Bucket.durabilityMinLevel: self.bucket_durability_level,
-                 Bucket.flushEnabled: True,
-                 Bucket.fragmentationPercentage: self.fragmentation})
-            self.bucket_params = {
-                "name": bucket.name,
-                "bucketConflictResolution": "seqno",
-                "memoryAllocationInMb": bucket.ramQuotaMB,
-                "flush": bucket.flushEnabled,
-                "replicas": bucket.replicaNumber,
-                "storageBackend": bucket.storageBackend,
-                "durabilityLevel": bucket.durabilityMinLevel,
-                "timeToLive": {"unit": "seconds", "value": bucket.maxTTL}
-            }
-            CapellaAPI.create_bucket(pod, tenant, cluster, self.bucket_params)
-            self.bucket_util.get_updated_bucket_server_list(cluster, bucket)
-            bucket.loadDefn = self.load_defn[i % len(self.load_defn)]
-            cluster.buckets.append(bucket)
-        if sdk_init:
-            num_clients = self.input.param("clients_per_db",
-                                           min(5, bucket.loadDefn.get("collections")))
-            for bucket in cluster.buckets:
-                self.create_sdk_client_pool(cluster, [bucket],
-                                            num_clients)
-        self.create_required_collections(cluster)
-
-    def restart_query_load(self, cluster, num=10):
-        self.log.info("Changing query load by: {}".format(num))
-        for ql in self.ql:
-            ql.stop_query_load()
-        for ql in self.ftsQL:
-            ql.stop_query_load()
-        for ql in self.cbasQL:
-            ql.stop_query_load()
-        self.sleep(10)
-        for bucket in cluster.buckets:
-            services = self.input.param("services", "data")
-            if (cluster.index_nodes or "index" in services) and bucket.loadDefn.get("2iQPS", 0) > 0:
-                bucket.loadDefn["2iQPS"] = bucket.loadDefn["2iQPS"] + num
-                ql = [ql for ql in self.ql if ql.bucket == bucket][0]
-                ql.start_query_load()
-            if (cluster.fts_nodes or "search" in services) and bucket.loadDefn.get("ftsQPS", 0) > 0:
-                bucket.loadDefn["ftsQPS"] = bucket.loadDefn["ftsQPS"] + num
-                ql = [ql for ql in self.ftsQL if ql.bucket == bucket][0]
-                ql.start_query_load()
-            if (cluster.cbas_nodes or "analytics" in services) and bucket.loadDefn.get("cbasQPS", 0) > 0:
-                bucket.loadDefn["cbasQPS"] = bucket.loadDefn["cbasQPS"] + num
-                ql = [ql for ql in self.cbasQL if ql.bucket == bucket][0]
-                ql.start_query_load()
-
-    def monitor_query_status(self, print_duration=120):
-        self.query_result = True
-
-        def check_query_stats():
-            st_time = time.time()
-            while not self.stop_run:
-                if st_time + print_duration < time.time():
-                    self.query_table = TableView(self.log.info)
-                    self.table = TableView(self.log.info)
-                    self.table.set_headers(["Bucket",
-                                            "Total Queries",
-                                            "Failed Queries",
-                                            "Success Queries",
-                                            "Rejected Queries",
-                                            "Cancelled Queries",
-                                            "Timeout Queries",
-                                            "Errored Queries"])
-                    for ql in self.ql:
-                        self.query_table.set_headers(["Bucket",
-                                                      "Query",
-                                                      "Count",
-                                                      "Avg Execution Time(ms)"])
-                        try:
-                            for query in sorted(ql.query_stats.keys()):
-                                if ql.query_stats[query][1] > 0:
-                                    self.query_table.add_row([str(ql.bucket.name),
-                                                              ql.bucket.query_map[query][0],
-                                                              ql.query_stats[query][1],
-                                                              ql.query_stats[query][0]/ql.query_stats[query][1]])
-                        except Exception as e:
-                            print(e)
-                        self.table.add_row([
-                            str(ql.bucket.name),
-                            str(ql.total_query_count),
-                            str(ql.failed_count),
-                            str(ql.success_count),
-                            str(ql.rejected_count),
-                            str(ql.cancel_count),
-                            str(ql.timeout_count),
-                            str(ql.error_count),
-                            ])
-                        if ql.failures > 0:
-                            self.query_result = False
-                    self.table.display("N1QL Query Statistics")
-                    self.query_table.display("N1QL Query Execution Stats")
-
-                    self.FTStable = TableView(self.log.info)
-                    self.FTStable.set_headers(["Bucket",
-                                               "Total Queries",
-                                               "Failed Queries",
-                                               "Success Queries",
-                                               "Rejected Queries",
-                                               "Cancelled Queries",
-                                               "Timeout Queries",
-                                               "Errored Queries"])
-                    for ql in self.ftsQL:
-                        self.FTStable.add_row([
-                            str(ql.bucket.name),
-                            str(ql.total_query_count),
-                            str(ql.failed_count),
-                            str(ql.success_count),
-                            str(ql.rejected_count),
-                            str(ql.cancel_count),
-                            str(ql.timeout_count),
-                            str(ql.error_count),
-                            ])
-                        if ql.failures > 0:
-                            self.query_result = False
-                    self.FTStable.display("FTS Query Statistics")
-
-                    self.CBAStable = TableView(self.log.info)
-                    self.CBAStable.set_headers(["Bucket",
-                                                "Total Queries",
-                                                "Failed Queries",
-                                                "Success Queries",
-                                                "Rejected Queries",
-                                                "Cancelled Queries",
-                                                "Timeout Queries",
-                                                "Errored Queries"])
-                    for ql in self.cbasQL:
-                        self.CBAStable.add_row([
-                            str(ql.bucket.name),
-                            str(ql.total_query_count),
-                            str(ql.failed_count),
-                            str(ql.success_count),
-                            str(ql.rejected_count),
-                            str(ql.cancel_count),
-                            str(ql.timeout_count),
-                            str(ql.error_count),
-                            ])
-                        if ql.failures > 0:
-                            self.query_result = False
-                    self.CBAStable.display("CBAS Query Statistics")
-
-                    st_time = time.time()
-                    time.sleep(10)
-
-        query_monitor = threading.Thread(target=check_query_stats)
-        query_monitor.start()
 
     def initial_setup(self):
         self.monitor_query_status()
@@ -410,9 +220,6 @@ class Murphy(BaseTestCase, hostedOPD):
         self.suppress_error_table = True
 
         self.esClient = None
-        self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
-        self.mockVector = self.input.param("mockVector", True)
-        self.dim = self.input.param("dim", 384)
         if self.esHost and self.esAPIKey:
             self.esClient = EsClient(self.esHost, self.esAPIKey)
             self.esClient.initializeSDK()
@@ -553,78 +360,6 @@ class Murphy(BaseTestCase, hostedOPD):
                     rebalance_tasks.append(rebalance_task)
             self.wait_for_rebalances(rebalance_tasks)
         self.sleep(self.input.param("steady_state_workload_sleep", 120))
-
-    def wait_for_rebalances(self, rebalance_tasks):
-        rebl_ths = list()
-        for task in rebalance_tasks:
-            th = threading.Thread(target=self.monitor_rebalance,
-                                  kwargs=dict({"tenant":task.tenant,
-                                               "cluster":task.cluster,
-                                               "rebalance_task":task}))
-            th.start()
-            rebl_ths.append(th)
-        for th in rebl_ths:
-            th.join()
-        for task in rebalance_tasks:
-            self.task_manager.get_task_result(task)
-            self.assertTrue(task.result, "Cluster Upgrade Failed...")
-
-    def find_master(self, tenant, cluster):
-        i = 30
-        task_details = None
-        while True:
-            try:
-                self.refresh_cluster(tenant, cluster)
-                rest = RestConnection(random.choice(cluster.nodes_in_cluster))
-                break
-            except ServerUnavailableException:
-                self.refresh_cluster(tenant, cluster)
-        while i > 0 and task_details is None:
-            task_details = rest.ns_server_tasks("rebalance", "rebalance")
-            self.sleep(10)
-            i -= 1
-        if task_details and task_details["status"] == "running":
-            cluster.master.ip = task_details["masterNode"].split("@")[1]
-            cluster.master.hostname = cluster.master.ip
-            self.log.info("NEW MASTER: {}".format(cluster.master.ip))
-
-    def monitor_rebalance(self, tenant, cluster, rebalance_task):
-        self.find_master(tenant, cluster)
-        self.rest = RestConnection(cluster.master)
-        state = DedicatedUtils.get_cluster_state(
-                    self.pod, tenant, cluster.id)
-        while rebalance_task.state not in ["healthy",
-                                                "upgradeFailed",
-                                                "deploymentFailed",
-                                                "redeploymentFailed",
-                                                "rebalanceFailed",
-                                                "scaleFailed"] and \
-            state != "healthy":
-            try:
-                result = self.rest.newMonitorRebalance(sleep_step=60,
-                                                       progress_count=1000)
-                if result is False:
-                    progress = self.rest.new_rebalance_status_and_progress()[1]
-                    if progress == -100:
-                        raise ServerUnavailableException
-                self.assertTrue(result,
-                                msg="Cluster rebalance failed")
-                self.sleep(60, "To give CP a chance to update the cluster status to healthy.")
-                state = DedicatedUtils.get_cluster_state(
-                    self.pod, tenant, cluster.id)
-                if state != "healthy":
-                    self.refresh_cluster(tenant, cluster)
-                    self.log.info("Rebalance task status: {}".format(rebalance_task.state))
-                    self.sleep(60, "Wait for CP to trigger sub-rebalance")
-            except ServerUnavailableException:
-                self.log.critical("Node to get rebalance progress is not part of cluster")
-                self.find_master(tenant, cluster)
-                self.rest = RestConnection(cluster.master)
-        state = DedicatedUtils.get_cluster_state(
-                    self.pod, tenant, cluster.id)
-        self.assertTrue(state == "healthy",
-                        msg="Cluster rebalance failed")
-        self.cluster_util.print_cluster_stats(cluster)
 
     def test_cluster_on_off(self):
         if self.turn_cluster_off:

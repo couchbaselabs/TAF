@@ -69,6 +69,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 temp_server.rest_username = self.rest_username
                 temp_server.rest_password = self.rest_password
                 instance_obj.servers.append(temp_server)
+            instance_obj.nodes_in_cluster = instance_obj.servers 
             instance_obj.master = instance_obj.servers[0]
             instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
@@ -199,6 +200,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         wait_for_instance_delete_results = list()
 
         def delete_instance(tenant, project_id, instance, result):
+            self.log.info("Attempt deleting instance: %s " % instance.instance_id)
             if not self.columnar_utils.delete_instance(
                     self.pod, tenant, project_id, instance):
                 result.append("Deleting Columnar Instance - {0}, "

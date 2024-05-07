@@ -18,6 +18,10 @@ from CbasUtil import execute_statement_on_cbas
 from com.couchbase.client.core.error import LinkExistsException
 import random
 import string
+from constants.cb_constants.CBServer import CbServer
+from global_vars import logger
+import pprint
+from capella_utils.dedicated import CapellaUtils
 
 
 class MongoDB(object):
@@ -77,7 +81,7 @@ class MongoDB(object):
     @staticmethod
     def perform_load(databases, wait_for_load=True, overRidePattern=None, tm=None, workers=10):
         loader_map = Loader._loader_dict(databases, overRidePattern)
-        self.tasks = list()
+        tasks = list()
         i = workers
         while i > 0:
             for database in databases:
@@ -90,14 +94,80 @@ class MongoDB(object):
                     time.sleep(1)
                     taskName = "Loader_%s_%s_%s" % (database.name, collection, time.time())
                     task = WorkLoadGenerate(taskName, loader_map[database.name+collection], client)
-                    self.tasks.append(task)
+                    tasks.append(task)
                     tm.submit(task)
                     i -= 1
 
         if wait_for_load:
             tm.getAllTaskResult()
         else:
-            return self.tasks
+            return tasks
+
+
+class CouchbaseRemoteCluster(object):
+
+    def __init__(self, remoteCluster, bucket_util):
+        self.log = logger.get("test")
+        self.remoteCluster = remoteCluster
+        self.remoteClusterCA = remoteCluster.root_ca
+        self.bucket_util = bucket_util
+        self.name = self.type = "remote"
+        self.dataset = "remote"
+        self.collections = list()
+        self.link_name = "remote_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+        self.cbas_queries = list()
+        self.cbas_collections = list()
+        self.query_map = dict()
+
+    def set_collections(self):
+        pass
+
+    def read_file(self, file_path):
+        try:
+            with open(file_path, "r") as fh:
+                return fh.read()
+        except Exception as err:
+            self.log.error(str(err))
+            return None
+
+    def create_link(self, columnar):
+        rest = CBASHelper(columnar.master)
+        params = {
+            "dataverse": "Default",
+            "name": self.link_name,
+            "type": "couchbase",
+            "hostname": str(self.remoteCluster.master.ip),
+            "username": self.remoteCluster.username,
+            "password": self.remoteCluster.password,
+            "encryption": "full",
+            "certificate": self.remoteClusterCA
+        }
+        # statement = 'CREATE LINK {} with {}'.format(self.link_name, params)
+        # print statement
+        # execute_statement_on_cbas(client, statement)
+        pprint.pprint(params)
+        result, status, content, errors = rest.analytics_link_operations(method="POST", params=params)
+        if not result:
+            raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
+
+    def create_cbas_collections(self, columnar, remote_collections=None):
+        i = 0
+        client = columnar.SDKClients[0].cluster
+        for b in self.remoteCluster.buckets:
+            for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                if s == CbServer.system_scope:
+                    continue
+                for _, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
+                    if c == CbServer.default_collection:
+                        continue
+                    cbas_coll_name = self.link_name + "_volCollection_" + str(i)
+                    self.coll_statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'.format(
+                                            cbas_coll_name, b.name, s, c, self.link_name)
+                    self.cbas_collections.append(cbas_coll_name)
+                    execute_statement_on_cbas(client, self.coll_statement)
+                    i += 1
+                    if remote_collections and i == remote_collections:
+                        return
 
 
 class s3(object):
@@ -124,8 +194,10 @@ class s3(object):
         params = {'dataverse': 'Default', "name": self.link_name, "type": "s3", 'accessKeyId': self.accessKeyId,
                   'secretAccessKey': self.secretAccessKey,
                   "region": self.region}
-        rest.analytics_link_operations(method="POST", params=params)
-        
+        result, status, content, errors = rest.analytics_link_operations(method="POST", params=params)
+        if not result:
+            raise Exception("Status: %s, content: %s, Errors: %s".format(status, content, errors))
+
     def create_cbas_collections(self, cluster, external_collections=None):
         client = cluster.SDKClients[0].cluster
         num_collections = external_collections or len(self.collections)
@@ -137,7 +209,7 @@ class s3(object):
             self.coll_statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
                                     cbas_coll_name, "columnartest", self.link_name, "hotel")
             execute_statement_on_cbas(client, self.coll_statement)
-    
+
     def copy_from_s3_into_standalone(self, cluster, standalone_collections=None):
         client = cluster.SDKClients[0].cluster
         num_collections = standalone_collections or len(self.collections)

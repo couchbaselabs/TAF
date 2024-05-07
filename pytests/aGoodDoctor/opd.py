@@ -1009,8 +1009,8 @@ class OPD:
                             ])
                         if ql.failures > 0:
                             self.query_result = False
-                    self.table.display("N1QL Query Statistics")
-                    self.query_table.display("N1QL Query Execution Stats")
+                    self.table.display("N1QL Results Stats")
+                    self.query_table.display("N1QL Performance Stats")
 
                     self.FTStable = TableView(self.log.info)
                     self.FTStable.set_headers(["Bucket",
@@ -1034,7 +1034,7 @@ class OPD:
                             ])
                         if ql.failures > 0:
                             self.query_result = False
-                    self.FTStable.display("FTS Query Statistics")
+                    self.FTStable.display("FTS Query Result Stats")
 
                     self.CBAStable = TableView(self.log.info)
                     self.CBAStable.set_headers(["Bucket",
@@ -1045,6 +1045,11 @@ class OPD:
                                                 "Cancelled Queries",
                                                 "Timeout Queries",
                                                 "Errored Queries"])
+                    self.cbas_query_perf = TableView(self.log.info)
+                    self.cbas_query_perf.set_headers(["Bucket",
+                                                      "Query",
+                                                      "Count",
+                                                      "Avg Execution Time(ms)"])
                     for ql in self.cbasQL:
                         self.CBAStable.add_row([
                             str(ql.bucket.name),
@@ -1056,9 +1061,19 @@ class OPD:
                             str(ql.timeout_count),
                             str(ql.error_count),
                             ])
+                        try:
+                            for query in sorted(ql.query_stats.keys()):
+                                if ql.query_stats[query][1] > 0:
+                                    self.cbas_query_perf.add_row([str(ql.bucket.name),
+                                                                  ql.bucket.query_map[query][0],
+                                                                  ql.query_stats[query][1],
+                                                                  ql.query_stats[query][0]/ql.query_stats[query][1]])
+                        except Exception as e:
+                            print(e)
                         if ql.failures > 0:
                             self.query_result = False
-                    self.CBAStable.display("CBAS Query Statistics")
+                    self.CBAStable.display("CBAS Query Result Stats")
+                    self.cbas_query_perf.display("CBAS Query Performance")
 
                     st_time = time.time()
                     time.sleep(10)

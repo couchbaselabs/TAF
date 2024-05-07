@@ -116,11 +116,6 @@ class Murphy(BaseTestCase, OPD):
         self.skip_init = self.input.param("skip_init", False)
         self.query_result = True
 
-        self.vector = self.input.param("vector", False)
-        self.fts_index_type = self.input.param("fts_index_type", "vector")
-        self.base64 = False
-        if self.fts_index_type == "vector_base64":
-            self.base64 = True
         self.esClient = None
         self.esHost = self.input.param("esHost", None)
         self.esAPIKey = self.input.param("esAPIKey", None)
@@ -165,11 +160,6 @@ class Murphy(BaseTestCase, OPD):
         if self.vector:
             self.load_defn = list()
             self.load_defn.append(vector_load)
-
-        #Vector Dataload Params
-        self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
-        self.mockVector = self.input.param("mockVector", False)
-        self.dim = self.input.param("dim", 384)
 
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
