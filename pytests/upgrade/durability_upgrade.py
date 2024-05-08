@@ -41,6 +41,28 @@ class UpgradeTests(UpgradeBase):
             self.assertTrue(result, "unexpected failures in range scans")
         super(UpgradeTests, self).tearDown()
 
+    def verify_server_groups_for_zones(self, initial_spare_node):
+        # MB_59866
+        rest = RestConnection(initial_spare_node)
+        for server_group_info in rest.get_all_zones_info()["groups"]:
+            self.assertTrue("name" in server_group_info,
+                            "Expected this node to have group info")
+
+    def verify_server_group_info(self):
+        # MB_59866
+        for node in self.cluster_util.get_nodes(self.cluster.master):
+            node_info = RestConnection(node).get_nodes_self(10)
+            expect_param = False
+            if self.is_version_greater(str(node_info.version.split('-')[0]), "7.6.2"):
+                expect_param = True
+            bucket_helper = BucketHelper(node)
+            bucket_CCCP_info = bucket_helper.get_bucket_CCCP(
+                bucket=self.cluster.buckets[0].name)
+            array_of_objects = bucket_CCCP_info['nodesExt']
+            for obj in array_of_objects:
+                self.assertTrue(("serverGroup" in obj) == expect_param)
+
+
     def __wait_for_persistence_and_validate(self):
         self.bucket_util._wait_for_stats_all_buckets(
             self.cluster, self.cluster.buckets,
@@ -201,7 +223,7 @@ class UpgradeTests(UpgradeBase):
     def test_upgrade(self):
         large_docs_start_num = 0
         range_scan_started = False
-        range_scan_spare_node = self.spare_node
+        initial_spare_node = self.spare_node
 
         ### Upserting all docs to increase fragmentation value ###
         ### Compaction operation is called once frag val hits 50% ###
@@ -330,6 +352,9 @@ class UpgradeTests(UpgradeBase):
 
                 self.PrintStep("Upgrade of node {0} done".format(itr+1))
 
+                if self.test_server_group_info_in_bucket_CCCP:
+                    self.verify_server_group_info()
+
                 if self.include_indexing_query:
                     self.log.info("Creating indexes for new collections")
                     bucket = self.cluster.buckets[0]
@@ -353,7 +378,7 @@ class UpgradeTests(UpgradeBase):
 
                 ### Starting Range Scans if enabled ##
                 if self.range_scan_collections > 0 and not range_scan_started:
-                    self.cluster.master = range_scan_spare_node
+                    self.cluster.master = initial_spare_node
                     range_scan_started = True
                     CollectionBase.range_scan_load_setup(self)
 
@@ -373,6 +398,9 @@ class UpgradeTests(UpgradeBase):
         self.cluster_util.print_cluster_stats(self.cluster)
         self.PrintStep("Upgrade of the whole cluster to {0} complete".format(
                                                             self.upgrade_version))
+
+        if self.test_server_group_info_in_bucket_CCCP:
+            self.verify_server_groups_for_zones(initial_spare_node)
 
         self.cluster.nodes_in_cluster = self.cluster_util.get_kv_nodes(self.cluster)
         self.servers = self.cluster_util.get_kv_nodes(self.cluster)

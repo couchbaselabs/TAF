@@ -29,6 +29,8 @@ class UpgradeBase(BaseTestCase):
                                                    testconstants.COUCHBASE_DATA_PATH)
         self.disk_location_index = self.input.param("index_location",
                                                     testconstants.COUCHBASE_DATA_PATH)
+        self.test_server_group_info_in_bucket_CCCP = \
+            self.input.param("test_server_group_info_in_bucket_CCCP", False)
         self.test_storage_upgrade = \
             self.input.param("test_storage_upgrade", False)
         self.upgrade_type = self.input.param("upgrade_type", "online_swap")
@@ -301,6 +303,19 @@ class UpgradeBase(BaseTestCase):
 
     def tearDown(self):
         super(UpgradeBase, self).tearDown()
+
+    @staticmethod
+    def is_version_greater(version1, version2):
+        version1_list = version1.split(".")
+        version2_list = version2.split(".")
+        for v1, v2 in zip(version1_list, version2_list):
+            v1_numeric = ''.join(filter(str.isdigit, v1))
+            v2_numeric = ''.join(filter(str.isdigit, v2))
+            if int(v1_numeric) > int(v2_numeric):
+                return True
+            elif int(v1_numeric) < int(v2_numeric):
+                return False
+        return True
 
     def add_system_scope_to_all_buckets(self):
         for bucket in self.cluster.buckets:
