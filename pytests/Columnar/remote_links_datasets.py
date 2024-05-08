@@ -85,13 +85,14 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         else:
             self.fail("Failed to get cluster certificate")
         if self.input.param("no_of_remote_links", 1):
-            self.columnar_spec["remote_link"]["properties"] = {
-                "type": "couchbase", "hostname": self.remote_cluster.srv,
-                "username": self.rest_username,
-                "password": self.rest_password,
-                "encryption": "full",
-                "certificate": remote_cluster_certificate
-                }
+            remote_link_properties = list()
+            remote_link_properties.append(
+                {"type": "couchbase", "hostname": self.remote_cluster.srv,
+                    "username": self.rest_username,
+                    "password": self.rest_password,
+                    "encryption": "full",
+                    "certificate": remote_cluster_certificate})
+            self.columnar_spec["remote_link"]["properties"] = remote_link_properties
             self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = \
             self.input.param("num_of_remote_coll", 1)
 
@@ -226,8 +227,8 @@ class RemoteLinksDatasets(ColumnarBaseTest):
                 self.fail("Failed to disconnect link")
 
         remote_link_properties = self.columnar_spec["remote_link"]["properties"]
-        remote_link_properties["encryption"] = "half"
-        self.cbas_util.alter_link_properties(self.cluster, remote_link_properties)
+        remote_link_properties[0]["encryption"] = "half"
+        self.cbas_util.alter_link_properties(self.cluster, remote_link_properties[0])
 
         self.load_doc_to_remote_collections(self.bucket_name, self.scope_name,
                                             self.collection_name, 0, self.initial_doc_count)
