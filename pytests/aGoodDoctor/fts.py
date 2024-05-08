@@ -227,10 +227,10 @@ class FTSQueryLoad:
             thread.join()
 
     def _run_vector_query(self):
-        if FTSQueryLoad.predictor is None:
+        _input = TestInputSingleton.input
+        vector = Vector(None)
+        if not self.mockVector and FTSQueryLoad.predictor is None:
             try:
-                _input = TestInputSingleton.input
-                vector = Vector(None)
                 vector.setEmbeddingsModel(_input.param("model", "sentence-transformers/all-MiniLM-L6-v2"))
                 FTSQueryLoad.predictor = vector.predictor
             except Exception or NoClassDefFoundError as e:
