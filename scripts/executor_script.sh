@@ -2,7 +2,7 @@
 
 run_populate_ini_script() {
   set -x
-  python3 scripts/populateIni.py $skip_mem_info \
+  $1 scripts/populateIni.py $skip_mem_info \
   -s ${servers} $internal_servers_param \
   -d ${addPoolServerId} \
   -a ${addPoolServers} \
@@ -11,6 +11,39 @@ run_populate_ini_script() {
   -o $WORKSPACE/testexec.$$.ini \
   -k '{'${UPDATE_INI_VALUES}'}'
   set +x
+}
+
+check_and_build_testrunner_install_docker() {
+  docker_img=testrunner:install
+  docker_img_id=$(docker images -q $docker_img)
+  if [ "$docker_img_id" == "" ]; then
+    echo '
+    FROM python:3.8.4
+    WORKDIR /
+    RUN git clone https://github.com/couchbase/testrunner.git
+    WORKDIR /testrunner
+
+    # Install couchbase first to avoid fetching unsupported six package version
+    RUN python -m pip install couchbase==3.2.0
+    # Now install all other dependencies
+    RUN python -m pip install -r requirements.txt
+
+    RUN git submodule init
+    RUN git submodule update --init --force --remote
+    WORKDIR /
+
+    RUN echo "cd /testrunner" > new_install.sh
+    RUN echo "git remote update origin --prune" >> new_install.sh
+    RUN echo "git pull -q" >> new_install.sh
+    RUN echo "\"\$@\"
+    # Set entrypoint for the docker container
+    ENTRYPOINT ["sh", "new_install.sh"]' > Dockerfile
+    echo "Building docker image $docker_img"
+    docker build . --tag $docker_img --quiet
+    echo "Docker build '${docker_img}' done"
+  else
+    echo "Docker image '${docker_img}' exists"
+  fi
 }
 
 set +x
@@ -44,22 +77,9 @@ echo "########## ulimit values ###########"
 ulimit -a
 echo "####################################"
 
-pip_path=/opt/jython/bin/pip
 jython_path=/opt/jython/bin/jython
+jython_pip=/opt/jython/bin/pip
 
-support_ver="6.5"
-small_ver=${version_number:0:3}
-py_executable=python
-
-code=`echo ${version_number} | cut -d "-" -f1 | cut -d "." -f1,2`
-if [[ ( $code == 6.6* && "${component}" = "backup_recovery" ) || ( $code == 6.6* && "${subcomponent}" = "import-export-"* ) ]]; then
-	py_executable=python3
-  branch=master
-  testrunner_tag=master
-fi
-
-# Py3 since the version_num is > "6.X"
-py_executable=python3
 # True since the version_num is > "6.5"
 rerun_job=true
 
@@ -142,20 +162,18 @@ fi
 status=0
 if [ "${slave}" == "deb12_executor" ]; then
   pyenv local 3.10.14
-
   py_executable=python
-  alias python3=python
 
   # Switch to py3 branch that has all dependent modules for execution
   git checkout master_py3_dev
   git submodule init
   git submodule update --init --force --remote
-  run_populate_ini_script
+  run_populate_ini_script $py_executable
 
   if [ "$server_type" != "CAPELLA_LOCAL" ]; then
     cd platform_utils/ssh_util
     export PYTHONPATH="../../couchbase_utils:../../py_constants"
-    python -m install_util.install -i $WORKSPACE/testexec.$$.ini -v ${version_number} --skip_local_download
+    $py_executable -m install_util.install -i $WORKSPACE/testexec.$$.ini -v ${version_number} --skip_local_download
     status=$?
     # Come back to TAF root dir
     cd ../..
@@ -164,33 +182,30 @@ if [ "${slave}" == "deb12_executor" ]; then
   # Come back to the requested branch for test execution
   git checkout ${branch}
 else
-  # Regular jython_slave executor
-  ${py_executable} -m easy_install httplib2
-  if [ "$component" = "analytics" ]; then
-	  ${py_executable} -m pip install boto3==1.17.112 pyspark
-  fi
-
   # Adding this to install libraries
-  $pip_path install requests futures
+  $jython_pip install requests futures
 
-  # Clone testrunner.git - to utilize latest populateIni changes
-  mkdir tr_for_install
-  cd tr_for_install
-  git clone https://github.com/couchbase/testrunner.git
-  cd testrunner
-
-  cp ../../${iniFile} nodes.ini
-  iniFile=nodes.ini
-
-  echo "#### Testrunner last commit ####"
-  git log -1
-  git submodule init
-  git submodule update --init --force --remote
-  echo "################################"
-  run_populate_ini_script
+  # run_populate_ini_script $py_executable
+  check_and_build_testrunner_install_docker
+  touch $WORKSPACE/testexec.$$.ini
+  docker run --rm \
+    -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini \
+    -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini  \
+    testrunner:install python3 scripts/populateIni.py $skip_mem_info \
+    -s ${servers} $internal_servers_param \
+    -d ${addPoolServerId} \
+    -a ${addPoolServers} \
+    -i testexec_reformat.$$.ini \
+    -p ${os} \
+    -o testexec.$$.ini \
+    -k '{'${UPDATE_INI_VALUES}'}'
   if [ "$server_type" != "CAPELLA_LOCAL" ]; then
-    if [ "$os" = "windows" ] || [ $(${py_executable} -c "print($small_ver < $support_ver)") = True ]; then
-      python3 scripts/new_install.py -i $WORKSPACE/testexec.$$.ini -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
+    if [ "$os" = "windows" ] ; then
+      docker run --rm \
+        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
+        testrunner:install python3 scripts/new_install.py \
+        -i testexec.$$.ini \
+        -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
       status=$?
     else
       # To handle nonroot user
@@ -210,29 +225,23 @@ else
       	skip_local_download_val=True
       fi
 
-      cd tr_for_install/testrunner
-      git checkout ${branch}
-      git pull origin ${branch}
-
-      git submodule init
-      git submodule update --init --force --remote
-      py_executable=python3
-      echo "Server install cmd:"
-
       if [ "$component" = "os_certify" ]; then
         new_install_params="timeout=7200,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
       else
         new_install_params="force_reinstall=False,timeout=2000,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
       fi
+
+      # Install requirements for this venv
       set -x
-      ${py_executable} scripts/new_install.py -i $WORKSPACE/testexec.$$.ini -p $new_install_params
+      docker run --rm \
+        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
+        testrunner:install python3 scripts/new_install.py \
+        -i testexec.$$.ini \
+        -p $new_install_params
       status=$?
       set +x
     fi
   fi
-  cd ../..
-  # Remove testrunner dir to reclaim disk space
-  rm -rf tr_for_install
 fi
 
 # To pass client-versions to use from cmd_line
@@ -273,6 +282,7 @@ if [ $status -eq 0 ]; then
 
   # To kill all python processes older than 10days
   killall --older-than 240h python
+  killall --older-than 240h python3
   killall --older-than 10h jython
 
   echo ${rerun_params_manual}
@@ -324,3 +334,4 @@ fi
 
 # To reduce the disk consumption post run
 rm -rf .git b build conf guides pytests
+docker system  prune -f
