@@ -35,7 +35,7 @@ check_and_build_testrunner_install_docker() {
     RUN echo "cd /testrunner" > new_install.sh
     RUN echo "git remote update origin --prune" >> new_install.sh
     RUN echo "git pull -q" >> new_install.sh
-    RUN echo "\"\$@\"
+    RUN echo "\"\$@\"" >> new_install.sh
     # Set entrypoint for the docker container
     ENTRYPOINT ["sh", "new_install.sh"]' > Dockerfile
     echo "Building docker image $docker_img"
