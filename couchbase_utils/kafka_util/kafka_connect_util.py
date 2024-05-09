@@ -6,7 +6,9 @@ Created on 3-May-2024
 This utility is for making rest calls to Kafka Connect server in order to
 deploy/undeploy connectors
 """
-from couchbase_utils.kafka_util.common_utils import APIRequests
+from capellaAPI.capella.lib.APIRequests import APIRequests
+import logging
+import time
 
 
 class ConnectorConfigTemplate(object):
@@ -44,11 +46,12 @@ class ConnectorConfigTemplate(object):
 class KafkaConnectUtil(object):
 
     def __init__(self, connect_server_hostname):
-        self.host = connect_server_hostname
-        self.api_request = APIRequests()
+        self.api_request = APIRequests(connect_server_hostname)
 
-        self.connector_endpoint = self.host + "/connectors"
-        self.connector_plugins = self.host + "/connector-plugins"
+        self.connector_endpoint = "/connectors"
+        self.connector_plugins = "/connector-plugins"
+
+        self.log = logging.getLogger(__name__)
 
     def generate_mongo_connector_config(
             self, mongo_connection_str, mongo_collections, topic_prefix,
@@ -74,7 +77,8 @@ class KafkaConnectUtil(object):
         """
         Method verifies whether kafka connect cluster is running.
         """
-        response = self.api_request.api_get(self.host)
+        self.log.debug("Checking if Kafka Connect Cluster is running")
+        response = self.api_request.api_get()
         if response.status_code == 200:
             return True
         else:
@@ -97,6 +101,8 @@ class KafkaConnectUtil(object):
         returns <list/dict> If both flags are false, then it will return list
         of active connector names
         """
+        self.log.debug("Fetching all active connectors deployed on Kafka "
+                       "Connect Cluster")
         if get_connector_status and get_connector_info:
             query_str = "?expand=status&expand=info"
         elif get_connector_status:
@@ -120,6 +126,8 @@ class KafkaConnectUtil(object):
         param connector_name <str> name of the connector
         param connector_config <dict> config for the connector
         """
+        self.log.debug("Creating connector {0} with config {1}".format(
+            connector_name, connector_config))
         config = {
             "name": connector_name,
             "config": connector_config
@@ -137,6 +145,7 @@ class KafkaConnectUtil(object):
         Get information about the connector.
         param connector_name <str> name of the connector
         """
+        self.log.debug("Fetching info for {} connector".format(connector_name))
         response = self.api_request.api_get(
             self.connector_endpoint + "/{0}".format(connector_name))
         if response.status_code == 200:
@@ -152,6 +161,8 @@ class KafkaConnectUtil(object):
         Get the configuration for the connector.
         param connector_name <str> name of the connector
         """
+        self.log.debug("Fetching configuration for {} connector".format(
+            connector_name))
         response = self.api_request.api_get(
             self.connector_endpoint + "/{0}/config".format(connector_name))
         if response.status_code == 200:
@@ -171,6 +182,8 @@ class KafkaConnectUtil(object):
         param connector_name <str> name of the connector
         param connector_config <dict> config for the connector
         """
+        self.log.debug("Updating connector {0} with config {1}".format(
+            connector_name, connector_config))
         response = self.api_request.api_put(
             self.connector_endpoint + "/{0}/config".format(connector_name),
             connector_config)
@@ -192,6 +205,8 @@ class KafkaConnectUtil(object):
 
         param connector_name <str> name of the connector
         """
+        self.log.debug("Fetching status for {} connector".format(
+            connector_name))
         response = self.api_request.api_get(
             self.connector_endpoint + "/{0}/status".format(connector_name))
         if response.status_code == 200:
@@ -207,6 +222,8 @@ class KafkaConnectUtil(object):
         Get a list of tasks currently running for the connector.
         param connector_name <str> name of the connector
         """
+        self.log.debug("Fetching all tasks for {} connector".format(
+            connector_name))
         response = self.api_request.api_get(
             self.connector_endpoint + "/{0}/tasks".format(connector_name))
         if response.status_code == 200:
@@ -219,9 +236,12 @@ class KafkaConnectUtil(object):
 
     def list_all_connector_topics(self, connector_name):
         """
-        Get a list of tasks currently running for the connector.
+        The set of topic names the connector has been using since its creation
+        or since the last time its set of active topics was reset.
         param connector_name <str> name of the connector
         """
+        self.log.debug("Fetching all topics for {} connector".format(
+            connector_name))
         response = self.api_request.api_get(
             self.connector_endpoint + "/{0}/topics".format(connector_name))
         if response.status_code == 200:
@@ -238,6 +258,8 @@ class KafkaConnectUtil(object):
         Return 409 (Conflict) if rebalance is in process.
         param connector_name <str> name of the connector
         """
+        self.log.debug("Deleting {} connector".format(
+            connector_name))
         response = self.api_request.api_del(
             self.connector_endpoint + "/{0}/".format(connector_name))
         if response.status_code == 204:
@@ -257,3 +279,31 @@ class KafkaConnectUtil(object):
                 "Listing installed connector pluging failed. Response "
                 "Code: {0}, Error: {1}".format(
                     response.status_code, response.content))
+
+    def deploy_connector(self, connector_name, connector_config):
+        """
+        Deploys a connector on Kafka connect cluster.
+        """
+        try:
+            self.is_kafka_connect_running()
+            response = self.create_connector(
+                connector_name, connector_config)
+            if not response:
+                self.log.error("Unable to deploy connectors")
+                return False
+            connector_status = (
+                self.get_connector_status(connector_name))
+            while connector_status["connector"]["state"] != "RUNNING":
+                if connector_status["connector"]["state"] == "FAILED":
+                    raise Exception("Connector failed to deploy, current "
+                                    "state is FAILED")
+                self.log.info(
+                    "Connector is in {0} state, waiting for it to be in "
+                    "RUNNING state".format(
+                        connector_status["connector"]["state"]))
+                time.sleep(10)
+                connector_status = self.get_connector_status(connector_name)
+            return True
+        except Exception as err:
+            self.log.error(str(err))
+            return False

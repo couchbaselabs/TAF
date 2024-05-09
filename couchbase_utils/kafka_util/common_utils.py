@@ -6,18 +6,18 @@ Created on 3-May-2024
 This utility is for making rest calls.
 """
 
-import requests
-import base64
-from requests.auth import AuthBase
 import logging
-from capellaAPI.capella.lib.CapellaExceptions import (
-    CbcAPIError, MissingAccessKeyError, MissingSecretKeyError,
-    GenericHTTPError)
+from confluent_kafka.admin import AdminClient, NewTopic, NewPartitions
+from confluent_kafka import KafkaException
 
 
 class KafkaCluster(object):
+    """
+    KafkaCluster stores information regarding topics and connectors.
+    """
 
     def __init__(self):
+        self.connector_configs = dict()
         # Topic Details
         self.topic_prefix = None
         self.topics = list()
@@ -29,189 +29,190 @@ class KafkaCluster(object):
         # Connector Info
         self.connectors = {}
 
-
-class APIAuth(AuthBase):
-    # Extends requests AuthBase for API Authentication Handler.
-
-    def __init__(self, access, secret):
-        # Create an authentication handler for API calls
-        # :param str access_key: access key for API calls
-        # :param str secret_key: secret key for API calls
-
-        self.ACCESS_KEY = access
-        self.SECRET_KEY = secret
-
-    def __call__(self, r):
-        # Values for the header
-        base64_encoded_auth = base64.b64encode("{0}:{1}".format(
-            self.ACCESS_KEY, self.SECRET_KEY))
-        api_request_headers = {
-            'Authorization': 'Basic ' + base64_encoded_auth,
-            'Content-Type': 'application/json'
+    def generate_connection_config(
+            self, bootstrap_servers, security_protocal, sasl_mechanism,
+            sasl_username, sasl_password, **kwargs):
+        """
+        Generates config containing connection details for kafka cluster.
+        """
+        config = {
+            'bootstrap.servers': bootstrap_servers,
+            'security.protocol': security_protocal,
+            'sasl.mechanisms': sasl_mechanism,
+            'sasl.username': sasl_username,
+            'sasl.password': sasl_password
         }
-        # Add our key:values to the request header
-        r.headers.update(api_request_headers)
-
-        # Return the request back
-        return r
+        if kwargs:
+            config.update(kwargs)
+        return config
 
 
-class APIRequests(object):
+class KafkaClusterUtils(object):
+    """
+    KafkaClusterUtils provides admin operations for Kafka brokers, topics,
+    partitions, groups, and other resource types supported by the broker.
+    Note - Currently only operations related to topics and partitions are
+    supported by this utility.
+    """
 
-    def __init__(self, access=None, secret=None):
-        # handles http requests - GET , PUT, POST, DELETE
-        self.SECRET = secret
-        self.ACCESS = access
+    def __init__(self, connect_config):
+        self.client = AdminClient(connect_config)
+        self.log = logging.getLogger(__name__)
 
-        self._log = logging.getLogger(__name__)
-
-        # We will re-use the first session we setup to avoid
-        # the overhead of creating new sessions for each request
-        self.network_session = requests.Session()
-
-    def api_get(self, url, params=None, headers=None):
-        api_response = None
-        self._log.info(url)
-
+    def create_topic(self, topic_name, configs={}, partitions_count=0,
+                     replication_factor=0, validate_only=False,
+                     operation_timeout=300, request_timeout=300):
+        """
+        Creates a new topic on kafka cluster
+        :param topic_name Topic name
+        :param configs Dict of topic configuration.
+            See http://kafka.apache.org/documentation.html#topicconfigs
+        :param partitions_count Number of partitions to create
+        :param replication_factor Replication factor of partitions,
+        :param validate_only If true, the request is only validated without
+        creating the topic.
+        :param operation_timeout The operation timeout in seconds, controlling
+            how long the CreateTopics request will block on the broker
+            waiting for the topic creation to propagate in the cluster.
+            A value of 0 returns immediately.
+        :param request_timeout The overall request timeout in seconds,
+            including broker lookup, request transmission, operation time on
+            broker, and response.
+        """
+        topic = NewTopic(topic_name, num_partitions=partitions_count,
+                         replication_factor=replication_factor)
+        if configs:
+            topic.config = configs
         try:
-            api_response = self.network_session.get(
-                url,
-                auth=APIAuth(self.ACCESS, self.SECRET),
-                params=params, verify=False, headers=headers)
-            self._log.info(api_response.content)
+            self.log.info(
+                "Creating topic {0} with {1} partitions and {2} replication "
+                "factor".format(
+                    topic_name, partitions_count, replication_factor))
+            response = self.client.create_topics(
+                new_topics=[topic], operation_timeout=operation_timeout,
+                request_timeout=request_timeout, validate_only=validate_only)
+            response[topic_name].result()
+            return True
 
-        except requests.exceptions.HTTPError:
-            raise GenericHTTPError(api_response.json())
+        except KafkaException as err:
+            raise Exception(err.args[0].str())
 
-        except MissingAccessKeyError:
-            self._log.debug("Missing Access Key environment variable")
-            print("Missing Access Key environment variable")
-
-        except MissingSecretKeyError:
-            self._log.debug("Missing Access Key environment variable")
-            print("Missing Access Key environment variable")
-
-        # Grab any other exception and send to our generic exception
-        # handler
-        except Exception as e:
-            raise CbcAPIError(e)
-
-        return api_response
-
-    def api_post(self, url, request_body, headers=None):
-        api_response = None
-
-        self._log.info(url)
-        self._log.debug("Request body: " + str(request_body))
-
+    def delete_topics(self, topics, operation_timeout=300, request_timeout=300):
+        """
+        Deletes topic/s on kafka cluster
+        :param topics List of Topic names
+        :param operation_timeout The operation timeout in seconds, controlling
+            how long the CreateTopics request will block on the broker
+            waiting for the topic creation to propagate in the cluster.
+            A value of 0 returns immediately.
+        :param request_timeout The overall request timeout in seconds,
+            including broker lookup, request transmission, operation time on
+            broker, and response.
+        """
         try:
-            api_response = self.network_session.post(
-                url, json=request_body,
-                auth=APIAuth(self.ACCESS, self.SECRET),
-                verify=False, headers=headers)
-            self._log.debug(api_response.content)
+            self.log.info("Deleting topics {}".format(topics))
+            response = self.client.delete_topics(
+                topics, operation_timeout=operation_timeout,
+                request_timeout=request_timeout)
+            for topic in response:
+                topic.result()
 
-        except requests.exceptions.HTTPError:
-            raise GenericHTTPError(api_response.json())
+        except KafkaException as err:
+            raise Exception(err.args[0].str())
 
-        except MissingAccessKeyError:
-            print("Missing Access Key environment variable")
-
-        except MissingSecretKeyError:
-            print("Missing Access Key environment variable")
-
-        # Grab any other exception and send to our generic exception
-        # handler
-        except Exception as e:
-            raise CbcAPIError(e)
-
-        return api_response
-
-    def api_put(self, url, request_body, headers=None):
-        api_response = None
-
-        self._log.info(url)
-        self._log.debug("Request body: " + str(request_body))
-
+    def list_all_topics(self, timeout=-1):
+        """
+        List all the topics in kafka cluster
+        :param timeout The maximum response time before timing out, or -1 for
+            infinite timeout.
+        """
         try:
-            api_response = self.network_session.put(
-                url, json=request_body,
-                auth=APIAuth(self.ACCESS, self.SECRET),
-                verify=False, headers=headers)
-            self._log.debug(api_response.content)
+            self.log.debug("Listing all topics")
+            response = self.client.list_topics(timeout=timeout)
+            return response.topics.keys()
+        except KafkaException as err:
+            raise Exception(err.args[0].str())
 
-        except requests.exceptions.HTTPError:
-            raise GenericHTTPError(api_response.json())
-
-        except MissingAccessKeyError:
-            print("Missing Access Key environment variable")
-
-        except MissingSecretKeyError:
-            print("Missing Access Key environment variable")
-
-        return api_response
-
-    def api_patch(self, url, request_body, headers=None):
-        api_response = None
-
-        self._log.info(url)
-        self._log.debug("Request body: " + str(request_body))
-
+    def get_topic_info(self, topic_name, timeout=-1):
+        """
+        Get info on a topic of a kafka cluster
+        :param topic_name Name of the topic whose info has to be fetched.
+        :param timeout The maximum response time before timing out, or -1 for
+            infinite timeout.
+        """
         try:
-            api_response = self.network_session.patch(
-                url, json=request_body,
-                auth=APIAuth(self.ACCESS, self.SECRET),
-                verify=False, headers=headers)
-            self._log.debug(api_response.content)
+            self.log.info("Fetching info for topic {}".format(topic_name))
+            response = self.client.list_topics(topic_name, timeout)
+            response = response.__dict__
+            for broker_index, broker in response["brokers"].iteritems():
+                response["brokers"][broker_index] = broker.__dict__
+            for topic_name, topic in response["topics"].iteritems():
+                response["topics"][topic_name] = topic.__dict__
+                for partition_idx, partition in response["topics"][
+                    topic_name]["partitions"].iteritems():
+                    response["topics"][topic_name]["partitions"][
+                        partition_idx] = partition.__dict__
+            return response
+        except KafkaException as err:
+            raise Exception(err.args[0].str())
 
-        except requests.exceptions.HTTPError:
-            raise GenericHTTPError(api_response.json())
+    def list_all_partitions(self, topic_name, timeout=-1):
+        """
+        Lists all the partitions in a topic of a kafka cluster
+        :param topic_name Name of the topic whose partitions have to be
+            fetched.
+        :param timeout The maximum response time before timing out, or -1 for
+            infinite timeout.
+        """
+        self.log.info("Listing all partitions for topic {}".format(topic_name))
+        response = self.get_topic_info(topic_name, timeout)
+        return response["topics"][topic_name]["partitions"]
 
-        except MissingAccessKeyError:
-            print("Missing Access Key environment variable")
+    def get_partition_info(self, topic_name, partition_id, timeout=-1):
+        """
+        Get info of a partition on a topic in a kafka cluster
+        :param topic_name Name of the topic where partition is present.
+        :param partition_id ID of the partition whose info has to be fetched.
+        :param timeout The maximum response time before timing out, or -1 for
+            infinite timeout.
+        """
+        self.log.info("Fetching info for partition {0} in topic {1}".format(
+            partition_id, topic_name))
+        response = self.list_all_partitions(topic_name, timeout)
+        return response[partition_id]
 
-        except MissingSecretKeyError:
-            print("Missing Access Key environment variable")
-
-        return api_response
-
-    def api_del(self, url, request_body=None, params=None, headers=None):
-        api_response = None
-
-        self._log.info(url)
-        self._log.debug("Request body: " + str(request_body))
-
+    def update_partition_count_for_topic(
+            self, topic_name, partition_count, operation_timeout=300,
+            request_timeout=300, validate_only=False):
+        self.log.info("Updating topic {0} partition count to {1}".format(
+            topic_name, partition_count))
+        partition = NewPartitions(topic_name, partition_count)
         try:
-            if request_body:
-                api_response = self.network_session.delete(
-                    url, json=request_body,
-                    auth=APIAuth(self.ACCESS, self.SECRET),
-                    verify=False, headers=headers)
-            elif params:
-                api_response = self.network_session.delete(
-                    url, params=params,
-                    auth=APIAuth(self.ACCESS, self.SECRET),
-                    verify=False, headers=headers)
-            else:
-                api_response = self.network_session.delete(
-                    url,
-                    auth=APIAuth(self.ACCESS, self.SECRET),
-                    verify=False, headers=headers)
+            response = self.client.create_partitions(
+                [partition], operation_timeout=operation_timeout,
+                request_timeout=request_timeout, validate_only=validate_only)
+            response[topic_name].result()
+            return True
+        except KafkaException as err:
+            raise Exception(err.args[0].str())
 
-            self._log.debug(api_response.content)
+    def list_all_topics_by_topic_prefix(self, topic_prefix):
+        topics = self.list_all_topics()
+        filtered_topics = list()
+        for topic in topics:
+            if topic_prefix in topic:
+                filtered_topics.append(topic)
+        return filtered_topics
 
-        except requests.exceptions.HTTPError:
-            raise GenericHTTPError(api_response.json())
+    def update_topics_in_kafka_cluster_obj(self, kafka_cluster_obj):
+        topics = self.list_all_topics_by_topic_prefix(
+            kafka_cluster_obj.topic_prefix)
+        for topic in topics:
+            if topic not in kafka_cluster_obj.topics:
+                kafka_cluster_obj.topics.append(topic)
 
-        except MissingAccessKeyError:
-            print("Missing Access Key environment variable")
+    def delete_topic_by_topic_prefix(self, topic_prefix):
+        topics = self.list_all_topics_by_topic_prefix(topic_prefix)
+        self.delete_topics(topics)
 
-        except MissingSecretKeyError:
-            print("Missing Access Key environment variable")
 
-        # Grab any other exception and send to our generic exception
-        # handler
-        except Exception as e:
-            raise CbcAPIError(e)
-
-        return api_response
