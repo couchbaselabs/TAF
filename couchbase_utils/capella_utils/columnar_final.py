@@ -83,11 +83,17 @@ class DBUser:
         self.privileges = list()
         self.id = userId
 
+    def __str__(self):
+        return self.username
+
 class ColumnarRole:
     def __init__(self, roleId="", role_name=""):
         self.id = roleId
         self.name = role_name
         self.privileges = list()
+
+    def __str__(self):
+        return self.name
 
 class ColumnarRBACUtil:
     def __init__(self, log):
