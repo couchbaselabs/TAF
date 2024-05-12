@@ -38,7 +38,7 @@ class S3LinksDatasets(ColumnarBaseTest):
 
         self.doc_count_level_1_folder_1 = {
             "json": 1560000, "parquet": 1560000,
-            "csv": 1560000, "tsv": 1560000, "avro": 0}
+            "csv": 1560000, "tsv": 1560000, "avro": 1560000}
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)

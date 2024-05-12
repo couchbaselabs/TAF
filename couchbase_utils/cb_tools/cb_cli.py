@@ -284,7 +284,10 @@ class CbCli(CbCmdBase):
         output, error = self._execute_cmd(cmd)
         if len(error) != 0:
             raise Exception(str(error))
-        json_acceptable_string = output[0].replace("'", "\"")
+        if "WARNING" in output[0]:
+            json_acceptable_string = output[1].replace("'", "\"")
+        else:
+            json_acceptable_string = output[0].replace("'", "\"")
         security_dict = json.loads(json_acceptable_string)
         if "clusterEncryptionLevel" in security_dict:
             return security_dict["clusterEncryptionLevel"]

@@ -270,7 +270,7 @@ class ClusterUtils:
             rest = RestConnection(server)
             result = rest.get_pools_info()
             version = RestConnection(server).get_nodes_self(10).version[:5]
-            if not ClusterRun.is_enabled and version < '7.5.0':
+            if not ClusterRun.is_enabled and "1.0.0" < version < '7.5.0':
                 profiles.append("default")
             else:
                 profiles.append(result["configProfile"])
@@ -298,11 +298,7 @@ class ClusterUtils:
             else:
                 break
         for node in pools_default_res["nodes"]:
-            if CbServer.cluster_profile != "columnar":
-                version, build, type = node["version"].split("-")
-            else:
-                version, type = node["version"].split("-")
-                build = ""
+            version, build, type = node["version"].split("-")
             node_ipaddr = node["hostname"].split(":")[0]
             if version > highest_version or \
                 (version == highest_version and build > highest_build):

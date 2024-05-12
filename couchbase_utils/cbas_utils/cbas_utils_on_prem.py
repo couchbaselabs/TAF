@@ -5219,7 +5219,6 @@ class CBASRebalanceUtil(object):
         if in_node_services:
             services = [in_node_services] * (kv_nodes_in + cbas_nodes_in)
 
-
         rebalance_task = self.task.async_rebalance(
             cluster, servs_in, servs_out,
             check_vbucket_shuffling=self.vbucket_check,
