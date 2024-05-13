@@ -1,9 +1,12 @@
+import json
 import random
 import string
 from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capella_utils.columnar_final import (ColumnarUtils, ColumnarRBACUtil)
 from cbas_utils.cbas_utils_columnar import CbasUtil as columnarCBASUtil
+from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
+from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 
 from Queue import Queue
 
@@ -23,11 +26,16 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.doc_loader_url = self.input.param("sirius_url", None)
         self.doc_loader_port = self.input.param("sirius_port", None)
         self.no_of_docs = self.input.param("no_of_docs", 1000)
-        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
+        self.capellaAPIv4 = CapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
+        self.capellaAPIv2 = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key,
+                                         self.tenant.api_access_key, self.tenant.user,
+                                         self.tenant.pwd)
         self.columnar_utils = ColumnarUtils(self.log)
         self.columnar_rbac_util = ColumnarRBACUtil(self.log)
         self.columnar_cbas_utils = columnarCBASUtil(
             self.task, self.use_sdk_for_cbas)
+        self.project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
+                              "projectDataWriter", "projectDataViewer"]
 
         self.ACCESS_DENIED_ERR = "User must have permission (cluster.analytics.grant.{}[{}]!{})"
         self.database_privileges = ["database_create", "database_drop"]
@@ -52,9 +60,92 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.aws_region = "us-west-1"
         self.aws_bucket_name = "columnar-sanity-test-data-mohsin"
 
+        self.create_different_organization_roles()
+
+    @staticmethod
+    def generate_random_string(length=10, special_characters=True,
+                               prefix=""):
+        """
+        Generates random name of specified length
+        """
+        if special_characters:
+            special_characters = "!@#$%^&*()-_=+{[]}\|;:'\",.<>/?" + " " + "\t"
+        else:
+            special_characters = ""
+
+        characters = string.ascii_letters + string.digits + special_characters
+        name = ""
+        for i in range(length):
+            name += random.choice(characters)
+
+        if prefix:
+            name = prefix + name
+
+        return name
+
+    def create_different_organization_roles(self):
+        self.log.info("Creating Different Organization Roles")
+        self.test_users = {}
+        roles = ["organizationOwner", "projectCreator", "organizationMember"]
+        setup_capella_api = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key,
+                                         self.tenant.api_access_key, self.tenant.user,
+                                         self.tenant.pwd)
+
+        num = 1
+        for role in roles:
+            usrname = self.tenant.user.split('@')
+            username = usrname[0] + "+" + self.generate_random_string(9, False) + "@" + usrname[1]
+            name = "Test_User_" + str(num)
+            self.log.info("Creating user {} with role {}".format(username, role))
+            create_user_resp = setup_capella_api.create_user(self.tenant.id,
+                                                             name,
+                                                             username,
+                                                             "Password@123",
+                                                             [role])
+            self.log.info("User creation response - {}".format(create_user_resp.content))
+            if create_user_resp.status_code == 200:
+                self.log.info("User {} created successfully".format(username))
+                self.test_users["User" + str(num)] = {
+                    "name": create_user_resp.json()["data"]["name"],
+                    "mailid": create_user_resp.json()["data"]["email"],
+                    "role": role,
+                    "password": "Password@123",
+                    "userid": create_user_resp.json()["data"]["id"]
+                }
+
+            elif create_user_resp.status_code == 422:
+                msg = "is already in use. Please sign-in."
+                if msg in create_user_resp.json()["message"]:
+                    self.log.info("User is already in use. Please sign-in")
+                    num = num + 1
+                    continue
+                else:
+                    self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+            else:
+                self.fail("Not able to create user. Reason -".format(create_user_resp.content))
+
+            num = num + 1
+
+    def delete_different_organization_roles(self):
+        self.log.info("Deleting different Organization Roles")
+        for user in self.test_users:
+            user_id = self.test_users[user]["userid"]
+            self.log.info("Deleting user from organization. User Id: {}".format(user_id))
+
+            resp = self.capellaAPIv2.delete_user(self.tenant.id,
+                                                 user_id)
+
+            if resp.status_code != 204:
+                self.log.info("Failed to delete user with user id: {}. Reason: {} {}".format(
+                    user_id, resp.json()["message"], resp.json()["hint"]))
+                raise Exception("Failed to delete user")
+
+        self.log.info("Deleted all the Organization Roles successfully")
+
     def get_remote_cluster_certificate(self, remote_cluster):
         remote_cluster_certificate_request = (
-            self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.tenant.id, self.tenant.project_id,
+            self.capellaAPIv4.cluster_ops_apis.get_cluster_certificate(self.tenant.id, self.tenant.project_id,
                                                                      remote_cluster.id))
         if remote_cluster_certificate_request.status_code == 200:
             remote_cluster_certificate = (remote_cluster_certificate_request.json()["certificate"])
@@ -73,14 +164,14 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.columnar_spec["remote_link"]["no_of_remote_links"] = self.input.param(
             "no_of_remote_links", 0)
 
-        resp = (self.capellaAPI.create_control_plane_api_key(self.tenant.id, 'init api keys')).json()
-        self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
-        self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
-        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.tenant.id,
+        resp = (self.capellaAPIv4.create_control_plane_api_key(self.tenant.id, 'init api keys')).json()
+        self.capellaAPIv4.cluster_ops_apis.SECRET = resp['secretKey']
+        self.capellaAPIv4.cluster_ops_apis.ACCESS = resp['id']
+        self.capellaAPIv4.cluster_ops_apis.bearer_token = resp['token']
+        self.capellaAPIv4.org_ops_apis.SECRET = resp['secretKey']
+        self.capellaAPIv4.org_ops_apis.ACCESS = resp['id']
+        self.capellaAPIv4.org_ops_apis.bearer_token = resp['token']
+        resp = self.capellaAPIv4.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.tenant.id,
                                                                                self.tenant.project_id,
                                                                                self.remote_cluster.id, "0.0.0.0/0")
         if resp.status_code == 201 or resp.status_code == 422:
@@ -88,7 +179,7 @@ class ColumnarRBAC(ColumnarBaseTest):
         else:
             self.fail("Failed to add allowed IP")
 
-        resp = self.capellaAPI.load_sample_bucket(self.tenant.id, self.tenant.project_id,
+        resp = self.capellaAPIv4.load_sample_bucket(self.tenant.id, self.tenant.project_id,
                                             self.remote_cluster.id, "travel-sample")
         if resp.status_code != 201:
             self.fail("Failed to load sample bucket")
@@ -314,6 +405,90 @@ class ColumnarRBAC(ColumnarBaseTest):
                     if not result:
                         self.fail("Test case failed while attempting to drop database")
 
+        self.log.info("Testing for cloud roles")
+        create_database_cmd = "CREATE DATABASE {};"
+        drop_database_cmd = "DROP DATABASE {};"
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+
+            for priv in self.database_privileges:
+                if priv == "database_create":
+                    database_name = self.generate_random_entity_name(type="database")
+                    database_name = self.columnar_cbas_utils.format_name(database_name)
+                    execute_cmd = create_database_cmd.format(database_name)
+                elif priv == "database_drop":
+                    database_name = self.generate_random_entity_name(type="database")
+                    database_name = self.columnar_cbas_utils.format_name(database_name)
+                    result = self.columnar_cbas_utils.create_database(self.cluster,
+                                                                      database_name)
+                    if not result:
+                        self.fail("Failed to create database")
+                    execute_cmd = drop_database_cmd.format(database_name)
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403,
+                                                              self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+            "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                role))
+            payload = {
+            "resourceId": self.tenant.project_id,
+            "resourceType": "project",
+            "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                            json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                            200))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
+            for priv in self.database_privileges:
+                if priv == "database_create":
+                    database_name = self.generate_random_entity_name(type="database")
+                    database_name = self.columnar_cbas_utils.format_name(database_name)
+                    execute_cmd = create_database_cmd.format(database_name)
+                elif priv == "database_drop":
+                    database_name = self.generate_random_entity_name(type="database")
+                    database_name = self.columnar_cbas_utils.format_name(database_name)
+                    result = self.columnar_cbas_utils.create_database(self.cluster,
+                                                                      database_name)
+                    if not result:
+                        self.fail("Failed to create database")
+                    execute_cmd = drop_database_cmd.format(database_name)
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                             self.tenant.project_id,
+                                                             self.cluster.instance_id,
+                                                             execute_cmd)
+                if role == "projectOwner" or role == "projectClusterManager" or \
+                    role == "projectClusterViewer": # Bug
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 200, role))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403, role))
+
     def test_rbac_scope(self):
         self.log.info("RBAC test for scope started")
         self.build_cbas_columnar_infra()
@@ -371,6 +546,93 @@ class ColumnarRBAC(ColumnarBaseTest):
                         if not result:
                             self.fail("Test case failed while attempting to drop scope {}".format(
                                 scope_name))
+
+        self.log.info("Testing for cloud roles")
+        create_scope_cmd = "CREATE SCOPE {};"
+        drop_scope_cmd = "DROP SCOPE {};"
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+            for priv in self.scope_privileges:
+                if priv == "scope_create":
+                    scope_name = self.generate_random_entity_name(type="scope")
+                    scope_name = self.columnar_cbas_utils.format_name(scope_name)
+                    execute_cmd = create_scope_cmd.format(scope_name)
+                elif priv == "scope_drop":
+                    scope_name = self.generate_random_entity_name(type="scope")
+                    scope_name = self.columnar_cbas_utils.format_name(scope_name)
+                    result = self.columnar_cbas_utils.create_dataverse(self.cluster,
+                                                                       scope_name,
+                                                                       res)
+                    if not result:
+                        self.fail("Failed to create scope {}".format(scope_name))
+                    execute_cmd = drop_scope_cmd.format(scope_name)
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                                200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403,
+                                                            self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+            "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                role))
+            payload = {
+            "resourceId": self.tenant.project_id,
+            "resourceType": "project",
+            "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                            json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                            200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
+            for priv in self.scope_privileges:
+                if priv == "scope_create":
+                    scope_name = self.generate_random_entity_name(type="scope")
+                    scope_name = self.columnar_cbas_utils.format_name(scope_name)
+                    execute_cmd = create_scope_cmd.format(scope_name)
+                elif priv == "scope_drop":
+                    scope_name = self.generate_random_entity_name(type="scope")
+                    scope_name = self.columnar_cbas_utils.format_name(scope_name)
+                    result = self.columnar_cbas_utils.create_dataverse(self.cluster,
+                                                                           scope_name,
+                                                                           res)
+                    if not result:
+                        self.fail("Failed to create scope {}".format(scope_name))
+                    execute_cmd = drop_scope_cmd.format(scope_name)
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                                self.tenant.project_id,
+                                                                self.cluster.instance_id,
+                                                                execute_cmd)
+                if role == "projectOwner" or role == "projectClusterManager" or \
+                    role == "projectClusterViewer": # Bug
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 200, role))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403, role))
 
     def test_rbac_collection_ddl(self):
         self.log.info("RBAC collection ddl test started")
@@ -468,6 +730,132 @@ class ColumnarRBAC(ColumnarBaseTest):
                             self.fail("Test case failed while attempting to delete documents from standalone coll {}".
                                       format(res))
 
+        self.log.info("Testing for cloud roles")
+        standalone_coll = collections[0]
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+            for priv in self.collection_dml_privileges:
+                if priv == "collection_insert":
+                    sample_doc = self.columnar_cbas_utils.generate_docs(1024)
+                    execute_cmd = self.columnar_cbas_utils.generate_insert_into_cmd(
+                        [sample_doc],
+                        collection_name=standalone_coll)
+                elif priv == "collection_upsert":
+                    sample_doc = self.columnar_cbas_utils.generate_docs(1024)
+                    execute_cmd = self.columnar_cbas_utils.generate_upsert_into_cmd(
+                        standalone_coll,
+                        [sample_doc])
+                elif priv == "collection_select":
+                    execute_cmd = "SELECT * from " + \
+                        self.columnar_cbas_utils.format_name(standalone_coll) + ";"
+                elif priv == "collection_delete":
+                    execute_cmd = self.columnar_cbas_utils.generate_delete_from_cmd(standalone_coll)
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                                200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403,
+                                                            self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+            "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                role))
+            payload = {
+            "resourceId": self.tenant.project_id,
+            "resourceType": "project",
+            "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                            json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                            200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
+            for priv in self.collection_dml_privileges:
+                if priv == "collection_insert":
+                    sample_doc = self.columnar_cbas_utils.generate_docs(1024)
+                    execute_cmd = self.columnar_cbas_utils.generate_insert_into_cmd(
+                        [sample_doc],
+                        collection_name=standalone_coll)
+                    resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                    if role == "projectOwner" or role == "projectDataWriter" or \
+                        role == "projectClusterViewer": #Bug
+                        self.assertEqual(200, resp.status_code,
+                                        msg='FAIL, Outcome:{}, Expected: {}.' \
+                                            'For role: {}'.format(resp.status_code, 200, role))
+                    else:
+                        self.assertEqual(403, resp.status_code,
+                                        msg='FAIL, Outcome:{}, Expected: {}.' \
+                                            'For role: {}'.format(resp.status_code, 403, role))
+                elif priv == "collection_upsert":
+                    sample_doc = self.columnar_cbas_utils.generate_docs(1024)
+                    execute_cmd = self.columnar_cbas_utils.generate_upsert_into_cmd(
+                        standalone_coll,
+                        [sample_doc])
+                    resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                    if role == "projectOwner" or role == "projectDataWriter" or \
+                        role == "projectClusterViewer": #Bug
+                        self.assertEqual(200, resp.status_code,
+                                        msg='FAIL, Outcome:{}, Expected: {}.' \
+                                            'For role: {}'.format(resp.status_code, 200, role))
+                    else:
+                        self.assertEqual(403, resp.status_code,
+                                        msg='FAIL, Outcome:{}, Expected: {}.' \
+                                            'For role: {}'.format(resp.status_code, 403, role))
+                elif priv == "collection_select":
+                    execute_cmd = "SELECT * from " + \
+                        self.columnar_cbas_utils.format_name(standalone_coll) + ";"
+                    resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                    if role == "projectOwner" or role == "projectDataWriter" or \
+                        role == "projectDataViewer": #Bug
+                        self.assertEqual(200, resp.status_code,
+                                        msg='FAIL, Outcome:{}, Expected: {}.' \
+                                            'For role: {}'.format(resp.status_code, 200, role))
+                    else:
+                        self.assertEqual(403, resp.status_code,
+                                        msg='FAIL, Outcome:{}, Expected: {}.' \
+                                            'For role: {}'.format(resp.status_code, 403, role))
+                elif priv == "collection_delete":
+                    execute_cmd = self.columnar_cbas_utils.generate_delete_from_cmd(standalone_coll)
+                    if role == "projectOwner" or role == "projectDataWriter" or \
+                        role == "projectDataViewer": #Bug
+                        self.assertEqual(200, resp.status_code,
+                                        msg='FAIL, Outcome:{}, Expected: {}.' \
+                                            'For role: {}'.format(resp.status_code, 200, role))
+                    else:
+                        self.assertEqual(403, resp.status_code,
+                                        msg='FAIL, Outcome:{}, Expected: {}.' \
+                                            'For role: {}'.format(resp.status_code, 403, role))
+
     def test_rbac_synonym(self):
         self.log.info("RBAC synonym test started")
         self.build_cbas_columnar_infra()
@@ -534,6 +922,99 @@ class ColumnarRBAC(ColumnarBaseTest):
                         if not result:
                             self.fail("Test case failed while attempting to create synonym {}".
                                       format(synonym_full_name))
+
+        self.log.info("Testing for cloud roles")
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+            for priv in self.synonym_privileges:
+                if priv == "synonym_create":
+                    synonym_name = self.generate_random_entity_name(type="synonym")
+                    synonym_full_name = "{}.{}".format(res, synonym_name)
+                    synonym_full_name = self.columnar_cbas_utils.format_name(synonym_full_name)
+                    execute_cmd = self.columnar_cbas_utils.generate_create_analytics_synonym_cmd(
+                        synonym_full_name, collection.full_name)
+                elif priv == "synonym_drop":
+                    synonym_name = self.generate_random_entity_name(type="synonym")
+                    synonym_full_name = "{}.{}".format(res, synonym_name)
+                    synonym_full_name = self.columnar_cbas_utils.format_name(synonym_full_name)
+                    result = self.columnar_cbas_utils.create_analytics_synonym(self.cluster,
+                                                                               synonym_full_name,
+                                                                               collection.full_name)
+                    if not result:
+                        self.fail("Failed to create synonym {}".format(synonym_full_name))
+                    execute_cmd = self.columnar_cbas_utils.generate_drop_analytics_synonym_cmd(
+                        synonym_full_name)
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                                200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403,
+                                                            self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+            "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                role))
+            payload = {
+            "resourceId": self.tenant.project_id,
+            "resourceType": "project",
+            "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                            json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                            200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
+            for priv in self.synonym_privileges:
+                if priv == "synonym_create":
+                    synonym_name = self.generate_random_entity_name(type="synonym")
+                    synonym_full_name = "{}.{}".format(res, synonym_name)
+                    synonym_full_name = self.columnar_cbas_utils.format_name(synonym_full_name)
+                    execute_cmd = self.columnar_cbas_utils.generate_create_analytics_synonym_cmd(
+                        synonym_full_name, collection.full_name)
+                elif priv == "synonym_drop":
+                    synonym_name = self.generate_random_entity_name(type="synonym")
+                    synonym_full_name = "{}.{}".format(res, synonym_name)
+                    synonym_full_name = self.columnar_cbas_utils.format_name(synonym_full_name)
+                    result = self.columnar_cbas_utils.create_analytics_synonym(self.cluster,
+                                                                               synonym_full_name,
+                                                                               collection.full_name)
+                    if not result:
+                        self.fail("Failed to create synonym {}".format(synonym_full_name))
+                    execute_cmd = self.columnar_cbas_utils.generate_drop_analytics_synonym_cmd(
+                        synonym_full_name)
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                                self.tenant.project_id,
+                                                                self.cluster.instance_id,
+                                                                execute_cmd)
+                if role == "projectOwner" or role == "projectClusterManager" or \
+                    role == "projectClusterViewer": # Bug
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 200, role))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403, role))
 
     def test_rbac_index(self):
         self.log.info("RBAC index test started")
@@ -619,6 +1100,101 @@ class ColumnarRBAC(ColumnarBaseTest):
                             self.fail("Test case failed while attempting to drop index {} on coll {}".
                                       format(index_name, res))
 
+        self.log.info("Testing for cloud roles")
+        coll = collections[0]
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+            for priv in self.index_privileges:
+                if priv == "index_create":
+                    index_name = self.generate_random_entity_name(type="index")
+                    index_name = self.columnar_cbas_utils.format_name(index_name)
+                    execute_cmd = self.columnar_cbas_utils.generate_create_index_cmd(
+                        index_name, index_fields, coll)
+                elif priv == "index_drop":
+                    index_name = self.generate_random_entity_name(type="index")
+                    index_name = self.columnar_cbas_utils.format_name(index_name)
+                    result = self.columnar_cbas_utils.create_cbas_index(self.cluster,
+                                                                        index_name,
+                                                                        index_fields,
+                                                                        coll)
+                    if not result:
+                        self.fail("Failed to create index {} on coll {}".
+                                    format(index_name, coll))
+                    execute_cmd = self.columnar_cbas_utils.generate_drop_index_cmd(
+                        index_name, coll)
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                                200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403,
+                                                            self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+            "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                role))
+            payload = {
+            "resourceId": self.tenant.project_id,
+            "resourceType": "project",
+            "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                            json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                            200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
+            for priv in self.index_privileges:
+                if priv == "index_create":
+                    index_name = self.generate_random_entity_name(type="index")
+                    index_name = self.columnar_cbas_utils.format_name(index_name)
+                    execute_cmd = self.columnar_cbas_utils.generate_create_index_cmd(
+                        index_name, index_fields, coll)
+                elif priv == "index_drop":
+                    index_name = self.generate_random_entity_name(type="index")
+                    index_name = self.columnar_cbas_utils.format_name(index_name)
+                    result = self.columnar_cbas_utils.create_cbas_index(self.cluster,
+                                                                        index_name,
+                                                                        index_fields,
+                                                                        coll)
+                    if not result:
+                        self.fail("Failed to create index {} on coll {}".
+                                    format(index_name, coll))
+                    execute_cmd = self.columnar_cbas_utils.generate_drop_index_cmd(
+                        index_name, coll)
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                                self.tenant.project_id,
+                                                                self.cluster.instance_id,
+                                                                execute_cmd)
+                if role == "projectOwner" or role == "projectClusterManager" or \
+                    role == "projectClusterViewer": # Bug
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 200, role))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403, role))
+
     def test_rbac_udfs(self):
         self.log.info("RBAC test for UDFs started")
         self.build_cbas_columnar_infra()
@@ -693,6 +1269,105 @@ class ColumnarRBAC(ColumnarBaseTest):
                             self.fail("Test case failed while attempting to drop function "
                                       " {} in {} ".format(udf_name, res))
 
+        self.log.info("Testing for cloud roles")
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+            for priv in self.udf_ddl_privileges:
+                if priv == "function_create":
+                    udf_name = self.generate_random_entity_name(type="udf")
+                    udf_name = self.columnar_cbas_utils.format_name(udf_name)
+                    execute_cmd = self.columnar_cbas_utils.generate_create_udf_cmd(
+                        udf_name, "Default.Default", body=function_body)
+                elif priv == "function_drop":
+                    udf_name = self.generate_random_entity_name(type="udf")
+                    udf_name = self.columnar_cbas_utils.format_name(udf_name)
+                    result = self.columnar_cbas_utils.create_udf(
+                                    self.cluster,
+                                    udf_name,
+                                    "Default.Default",
+                                    None,
+                                    body=function_body)
+                    if not result:
+                        self.fail("Failed to create udf function {} in {}".format(udf_name,
+                                                                                    res))
+                    execute_cmd = self.columnar_cbas_utils.generate_drop_udf_cmd(
+                        udf_name, "Default.Default")
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                                200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403,
+                                                            self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+            "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                role))
+            payload = {
+            "resourceId": self.tenant.project_id,
+            "resourceType": "project",
+            "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                            json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                            200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
+            for priv in self.udf_ddl_privileges:
+                if priv == "function_create":
+                    udf_name = self.generate_random_entity_name(type="udf")
+                    udf_name = self.columnar_cbas_utils.format_name(udf_name)
+                    execute_cmd = self.columnar_cbas_utils.generate_create_udf_cmd(
+                        udf_name, "Default.Default", body=function_body)
+                elif priv == "function_drop":
+                    udf_name = self.generate_random_entity_name(type="udf")
+                    udf_name = self.columnar_cbas_utils.format_name(udf_name)
+                    result = self.columnar_cbas_utils.create_udf(
+                                    self.cluster,
+                                    udf_name,
+                                    "Default.Default",
+                                    None,
+                                    body=function_body)
+                    if not result:
+                        self.fail("Failed to create udf function {} in {}".format(udf_name,
+                                                                                    res))
+                    execute_cmd = self.columnar_cbas_utils.generate_drop_udf_cmd(
+                        udf_name, "Default.Default")
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                                self.tenant.project_id,
+                                                                self.cluster.instance_id,
+                                                                execute_cmd)
+                if role == "projectOwner" or role == "projectClusterManager" or \
+                    role == "projectClusterViewer": # Bug
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 200, role))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403, role))
+
     def test_rbac_udf_execute(self):
         self.log.info("RBAC udf execute test started")
 
@@ -752,8 +1427,72 @@ class ColumnarRBAC(ColumnarBaseTest):
                         self.fail("Test case failed while attempting to execute function {}".
                                 format(res))
 
-    def tearDown(self):
+        self.log.info("Testing for cloud roles")
+        func_name = analytics_udfs[0]
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+            for priv in self.udf_execute_privileges:
+                execute_cmd = "{}()".format(func_name)
 
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                                200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403,
+                                                            self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+            "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                role))
+            payload = {
+            "resourceId": self.tenant.project_id,
+            "resourceType": "project",
+            "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                            json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                                msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                            200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                                user["mailid"],
+                                                user["password"])
+            for priv in self.udf_execute_privileges:
+                execute_cmd = "{}()".format(func_name)
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if role == "projectOwner" or role == "projectClusterManager" or \
+                    role == "projectClusterViewer": # Bug
+                    self.assertEqual(200, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 200, role))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                    msg='FAIL, Outcome:{}, Expected: {}.' \
+                                        'For role: {}'.format(resp.status_code, 403, role))
+
+    def tearDown(self):
+        self.delete_different_organization_roles()
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
                 self.cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")

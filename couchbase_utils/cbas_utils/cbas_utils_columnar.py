@@ -3616,13 +3616,8 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             time_spent / 1000.0, no_of_docs))
         return True
 
-    def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None,
-                                          database_name=None, username=None, validate_error_msg=None,
-                                          expected_error=None, expected_error_code=None, password=None,
-                                          analytics_timeout=300, timeout=300):
-        """
-        Query to insert into standalone collection
-        """
+    def generate_insert_into_cmd(self, document, collection_name, database_name=None,
+                                 dataverse_name=None):
         doc_to_insert = []
         doc_to_insert.extend(document)
         cmd = "INSERT INTO "
@@ -3635,6 +3630,18 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
         cmd += "({0});".format(doc_to_insert)
+
+        return cmd
+
+    def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None,
+                                          database_name=None, username=None, validate_error_msg=None,
+                                          expected_error=None, expected_error_code=None, password=None,
+                                          analytics_timeout=300, timeout=300):
+        """
+        Query to insert into standalone collection
+        """
+        cmd = self.generate_insert_into_cmd(document, collection_name, database_name,
+                                            dataverse_name)
         self.log.info("Inserting into: {0}.{1}".format(CBASHelper.format_name(dataverse_name),
                                                        CBASHelper.format_name(collection_name)))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
@@ -3650,13 +3657,8 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return True
 
-    def upsert_into_standalone_collection(self, cluster, collection_name, new_item, dataverse_name=None,
-                                          database_name=None, username=None, validate_error_msg=None,
-                                          expected_error=None, expected_error_code=None, password=None,
-                                          analytics_timeout=300, timeout=300):
-        """
-        Upsert into standalone collection
-        """
+    def generate_upsert_into_cmd(self, collection_name, new_item, dataverse_name=None,
+                                 database_name=None):
         cmd = "UPSERT INTO "
         if database_name:
             cmd += "{}.".format(database_name)
@@ -3667,6 +3669,18 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
         cmd += "({0});".format(new_item)
+
+        return cmd
+
+    def upsert_into_standalone_collection(self, cluster, collection_name, new_item, dataverse_name=None,
+                                          database_name=None, username=None, validate_error_msg=None,
+                                          expected_error=None, expected_error_code=None, password=None,
+                                          analytics_timeout=300, timeout=300):
+        """
+        Upsert into standalone collection
+        """
+        cmd = self.generate_upsert_into_cmd(collection_name, new_item, dataverse_name,
+                                            database_name)
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
@@ -3680,14 +3694,8 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return True
 
-    def delete_from_standalone_collection(
-            self, cluster, collection_name, dataverse_name=None, database_name=None,
-            where_clause=None, use_alias=False, username=None, validate_error_msg=None,
-            expected_error=None, expected_error_code=None, password=None,
-            analytics_timeout=300, timeout=300):
-        """
-        Query to delete from standalone collection
-        """
+    def generate_delete_from_cmd(self, collection_name, dataverse_name=None, database_name=None,
+                                 where_clause=None, use_alias=False):
         cmd = "DELETE FROM "
         if database_name:
             cmd += "{}.".format(database_name)
@@ -3703,6 +3711,19 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
         if where_clause:
             cmd += "WHERE {}".format(where_clause)
+
+        return cmd
+
+    def delete_from_standalone_collection(
+            self, cluster, collection_name, dataverse_name=None, database_name=None,
+            where_clause=None, use_alias=False, username=None, validate_error_msg=None,
+            expected_error=None, expected_error_code=None, password=None,
+            analytics_timeout=300, timeout=300):
+        """
+        Query to delete from standalone collection
+        """
+        cmd = self.generate_delete_from_cmd(collection_name, dataverse_name,
+                                            database_name, where_clause, use_alias)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
@@ -4592,6 +4613,17 @@ class Synonym_Util(StandAlone_Collection_Util):
         else:
             return False
 
+    def generate_create_analytics_synonym_cmd(self, synonym_full_name,
+                                              cbas_entity_full_name, if_not_exists=False):
+        cmd = "create analytics synonym {0}".format(synonym_full_name)
+
+        if if_not_exists:
+            cmd += " If Not Exists"
+
+        cmd += " for {0};".format(cbas_entity_full_name)
+
+        return cmd
+
     def create_analytics_synonym(
             self, cluster, synonym_full_name, cbas_entity_full_name,
             if_not_exists=False, validate_error_msg=False, expected_error=None,
@@ -4608,12 +4640,8 @@ class Synonym_Util(StandAlone_Collection_Util):
         :param timeout : str
         :param analytics_timeout : str
         """
-        cmd = "create analytics synonym {0}".format(synonym_full_name)
-
-        if if_not_exists:
-            cmd += " If Not Exists"
-
-        cmd += " for {0};".format(cbas_entity_full_name)
+        cmd = self.generate_create_analytics_synonym_cmd(synonym_full_name,
+                                                         cbas_entity_full_name, if_not_exists)
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
 
@@ -4628,6 +4656,16 @@ class Synonym_Util(StandAlone_Collection_Util):
                 return False
             else:
                 return True
+
+    def generate_drop_analytics_synonym_cmd(self, synonym_full_name, if_exists=False):
+        cmd = "drop analytics synonym {0}".format(synonym_full_name)
+
+        if if_exists:
+            cmd += " if exists;"
+        else:
+            cmd += ";"
+
+        return cmd
 
     def drop_analytics_synonym(
             self, cluster, synonym_full_name, if_exists=False,
@@ -4644,12 +4682,7 @@ class Synonym_Util(StandAlone_Collection_Util):
         :param analytics_timeout : str
         """
 
-        cmd = "drop analytics synonym {0}".format(synonym_full_name)
-
-        if if_exists:
-            cmd += " if exists;"
-        else:
-            cmd += ";"
+        cmd = self.generate_drop_analytics_synonym_cmd(synonym_full_name, if_exists)
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
 
@@ -4907,7 +4940,6 @@ class View_Util(Synonym_Util):
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
-        print("Create view errors: {}".format(errors))
         if validate_error_msg:
             return self.validate_error_in_response(
                 status, errors, expected_error)
@@ -5063,6 +5095,25 @@ class Index_Util(View_Util):
         else:
             return False
 
+    def generate_create_index_cmd(self, index_name, indexed_fields, dataset_name,
+                                  analytics_index=False, if_not_exists=False):
+        index_fields = ""
+        for index_field in indexed_fields:
+            index_fields += index_field + ","
+        index_fields = index_fields[:-1]
+
+        if analytics_index:
+            create_idx_statement = "create analytics index {0}".format(
+                index_name)
+        else:
+            create_idx_statement = "create index {0}".format(index_name)
+        if if_not_exists:
+            create_idx_statement += " IF NOT EXISTS"
+        create_idx_statement += " on {0}({1});".format(
+            dataset_name, index_fields)
+
+        return create_idx_statement
+
     def create_cbas_index(
             self, cluster, index_name, indexed_fields, dataset_name,
             analytics_index=False, validate_error_msg=False,
@@ -5082,20 +5133,9 @@ class Index_Util(View_Util):
         :param analytics_timeout : str
         :param if_not_exists : bool, checks if index doesn't exist before issuing create command
         """
-        index_fields = ""
-        for index_field in indexed_fields:
-            index_fields += index_field + ","
-        index_fields = index_fields[:-1]
-
-        if analytics_index:
-            create_idx_statement = "create analytics index {0}".format(
-                index_name)
-        else:
-            create_idx_statement = "create index {0}".format(index_name)
-        if if_not_exists:
-            create_idx_statement += " IF NOT EXISTS"
-        create_idx_statement += " on {0}({1});".format(
-            dataset_name, index_fields)
+        create_idx_statement = self.generate_create_index_cmd(index_name, indexed_fields,
+                                                              dataset_name, analytics_index,
+                                                              if_not_exists)
 
         self.log.info("Executing cmd - \n{0}\n".format(create_idx_statement))
 
@@ -5111,6 +5151,20 @@ class Index_Util(View_Util):
                 return False
             else:
                 return True
+
+    def generate_drop_index_cmd(self, index_name, dataset_name,
+                                analytics_index=False, if_exists=False):
+        if analytics_index:
+            drop_idx_statement = "drop analytics index {0}.{1}".format(
+                dataset_name, index_name)
+        else:
+            drop_idx_statement = "drop index {0}.{1}".format(
+                dataset_name, index_name)
+        if if_exists:
+            drop_idx_statement += " IF EXISTS;"
+        else:
+            drop_idx_statement += ";"
+
 
     def drop_cbas_index(self, cluster, index_name, dataset_name,
                         analytics_index=False, validate_error_msg=False,
@@ -5275,6 +5329,34 @@ class UDFUtil(Index_Util):
         """
         super(UDFUtil, self).__init__(server_task, run_query_using_sdk)
 
+    def generate_create_udf_cmd(self, name, dataverse=None, database=None, or_replace=False,
+                                parameters=[], body=None, if_not_exists=False,
+                                query_context=False, use_statement=False):
+
+        create_udf_statement = ""
+        if use_statement:
+            create_udf_statement += 'use ' + dataverse + ';\n'
+        create_udf_statement += "create"
+        if or_replace:
+            create_udf_statement += " or replace"
+        create_udf_statement += " analytics function "
+        if database and dataverse and not query_context and not use_statement:
+            create_udf_statement += "{0}.{1}.".format(database, dataverse)
+        elif dataverse and not query_context and not use_statement:
+            create_udf_statement += "{0}.".format(dataverse)
+        create_udf_statement += name
+        # The below "if" is for a negative test scenario where we do not put
+        # function parenthesis.
+        if parameters is not None:
+            param_string = ",".join(parameters)
+            create_udf_statement += "({0})".format(param_string)
+        if if_not_exists:
+            create_udf_statement += " if not exists "
+        if body:
+            create_udf_statement += "{" + body + "}"
+
+        return create_udf_statement
+
     def create_udf(self, cluster, name, dataverse=None, database=None,
                    or_replace=False, parameters=[], body=None,
                    if_not_exists=False, query_context=False,
@@ -5302,33 +5384,9 @@ class UDFUtil(Index_Util):
         :param analytics_timeout : int
         """
         param = {}
-        create_udf_statement = ""
-        if use_statement:
-            create_udf_statement += 'use ' + dataverse + ';\n'
-        create_udf_statement += "create"
-        if or_replace:
-            create_udf_statement += " or replace"
-        create_udf_statement += " analytics function "
-        if database and dataverse and not query_context and not use_statement:
-            create_udf_statement += "{0}.{1}.".format(database, dataverse)
-        elif dataverse and not query_context and not use_statement:
-            create_udf_statement += "{0}.".format(dataverse)
-        create_udf_statement += name
-        # The below "if" is for a negative test scenario where we do not put
-        # function parenthesis.
-        if parameters is not None:
-            param_string = ",".join(parameters)
-            create_udf_statement += "({0})".format(param_string)
-        if if_not_exists:
-            create_udf_statement += " if not exists "
-        if body:
-            create_udf_statement += "{" + body + "}"
-
-        if query_context:
-            if dataverse:
-                param["query_context"] = "default:{0}".format(dataverse)
-            else:
-                param["query_context"] = "default:Default"
+        create_udf_statement = self.generate_create_udf_cmd(name, dataverse, database, or_replace,
+                                                            parameters, body, if_not_exists,
+                                                            query_context, use_statement)
 
         self.log.info("Executing cmd - \n{0}\n".format(create_udf_statement))
 
@@ -5345,6 +5403,27 @@ class UDFUtil(Index_Util):
                 return False
             else:
                 return True
+
+    def generate_drop_udf_cmd(self, name, dataverse, database=None, parameters=[],
+                              if_exists=False, use_statement=False, query_context=False):
+        drop_udf_statement = ""
+        if use_statement:
+            drop_udf_statement += 'use ' + dataverse + ';\n'
+        drop_udf_statement += "drop analytics function "
+        if database and dataverse and not query_context and not use_statement:
+            drop_udf_statement += "{0}.{1}.".format(database, dataverse)
+        if dataverse and not query_context and not use_statement:
+            drop_udf_statement += "{0}.".format(dataverse)
+        drop_udf_statement += name
+        # The below "if" is for a negative test scenario where we do not put
+        # function parenthesis.
+        if parameters is not None:
+            param_string = ",".join(parameters)
+            drop_udf_statement += "({0})".format(param_string)
+        if if_exists:
+            drop_udf_statement += " if exists"
+
+        return drop_udf_statement
 
     def drop_udf(self, cluster, name, dataverse, database, parameters=[],
                  if_exists=False, use_statement=False, query_context=False,
@@ -5370,22 +5449,9 @@ class UDFUtil(Index_Util):
         :param analytics_timeout : str
         """
         param = {}
-        drop_udf_statement = ""
-        if use_statement:
-            drop_udf_statement += 'use ' + dataverse + ';\n'
-        drop_udf_statement += "drop analytics function "
-        if database and dataverse and not query_context and not use_statement:
-            drop_udf_statement += "{0}.{1}.".format(database, dataverse)
-        if dataverse and not query_context and not use_statement:
-            drop_udf_statement += "{0}.".format(dataverse)
-        drop_udf_statement += name
-        # The below "if" is for a negative test scenario where we do not put
-        # function parenthesis.
-        if parameters is not None:
-            param_string = ",".join(parameters)
-            drop_udf_statement += "({0})".format(param_string)
-        if if_exists:
-            drop_udf_statement += " if exists"
+        drop_udf_statement = self.generate_drop_udf_cmd(name, dataverse, database,
+                                                        parameters, if_exists, use_statement,
+                                                        query_context)
 
         if query_context:
             if dataverse:
