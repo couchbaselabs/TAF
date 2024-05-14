@@ -829,6 +829,7 @@ class Database_Util(BaseUtil):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 obj = self.get_database_obj(database_name)
@@ -1012,6 +1013,7 @@ class Dataverse_Util(Database_Util):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 obj = self.get_dataverse_obj(dataverse_name, database_name)
@@ -1473,6 +1475,7 @@ class Link_Util(Dataverse_Util):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -1645,6 +1648,7 @@ class Link_Util(Dataverse_Util):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -2584,6 +2588,7 @@ class Dataset_Util(KafkaLink_Util):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -2999,7 +3004,7 @@ class Remote_Dataset_Util(Dataset_Util):
             kv_collection_used[remote_cluster.name] = []
             all_kv_collection_remote_cluster_map[remote_cluster.name] = []
             for bucket in remote_cluster.buckets:
-                if bucket in dataset_spec.get("exclude_buckets", []):
+                if bucket.name in dataset_spec.get("exclude_buckets", []):
                     continue
                 else:
                     for scope in bucket_util.get_active_scopes(bucket):
@@ -3339,7 +3344,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 database_obj = self.get_database_obj(
                     self.format_name(database_name))
                 dataverse_obj = self.get_dataverse_obj(
-                    database_obj.name, self.format_name(dataverse_name))
+                    self.format_name(dataverse_name), database_obj.name)
 
             dataset = External_Dataset(
                 name=self.generate_name(
@@ -3963,8 +3968,10 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     with_parameters["decimal-to-double"] = False
         if bool(with_parameters):
             cmd += "WITH {0};".format(json.dumps(with_parameters))
-        self.log.info("Copying into {0} from {1}".format(
-            collection_name, external_link_name))
+        self.log.info("Copying into {0} using external link {1} from "
+                      "S3 bucket path {2}/{3}".format(
+            collection_name, external_link_name, aws_bucket_name, path_on_aws_bucket))
+        self.log.debug(cmd)
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
@@ -4341,7 +4348,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             if len(data_sources) > 0:
                 data_source = data_sources[i % len(data_sources)]
                 if data_source is not None:
-                    links = self.get_all_link_objs(link_type=data_source).sort()
+                    links = self.get_all_link_objs(link_type=data_source)
                     if dataset_spec.get("include_links", []):
                         for link_name in dataset_spec.get("include_links"):
                             link_obj = self.get_link_obj(cluster, link_name)
@@ -4653,6 +4660,7 @@ class Synonym_Util(StandAlone_Collection_Util):
                 status, errors, expected_error)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -5143,6 +5151,7 @@ class Index_Util(View_Util):
                 status, errors, expected_error)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -5213,8 +5222,8 @@ class Index_Util(View_Util):
                 name=name, dataset_name=dataset.name,
                 dataverse_name=dataset.dataverse_name,
                 database_name=dataset.database_name,
-                indexed_fields=random.choice(
-                    index_spec.get("indexed_fields", [])))
+                indexed_fields=index_spec["indexed_fields"][i % len(
+                    index_spec["indexed_fields"])])
 
             if index_spec.get("creation_method", "all") == "all":
                 creation_method = random.choice(["cbas_index", "index"])
@@ -5395,6 +5404,7 @@ class UDFUtil(Index_Util):
                 status, errors, expected_error)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True

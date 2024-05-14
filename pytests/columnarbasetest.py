@@ -272,7 +272,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             for thread in thread_list:
                 thread.join()
 
-    def init_sdk_pool_object(self, instance, num_clients=1,
+    @staticmethod
+    def init_sdk_pool_object(instance, num_clients=1,
                              username="Administrator", password="password"):
         """
         Overriding the method from CouchbaseBaseTest class
