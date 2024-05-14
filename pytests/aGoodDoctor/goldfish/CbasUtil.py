@@ -144,7 +144,7 @@ class DoctorCBAS():
             if dataSource.type != "s3":
                 self.connect_link(cluster, dataSource.link_name)
 
-            query_tbl = TableView(logger["test"])
+            query_tbl = TableView(self.log.info)
             query_tbl.set_headers(["Bucket", "##", "Query"])
             for k, v in dataSource.query_map.items():
                 query_tbl.add_row([dataSource.name, v[0], k])
