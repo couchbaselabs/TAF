@@ -3068,7 +3068,8 @@ class Remote_Dataset_Util(Dataset_Util):
             link = remote_link_objs[i % len(remote_link_objs)]
             remote_cluster = None
             for tmp_cluster in remote_clusters:
-                if tmp_cluster.master.ip == link.properties["hostname"]:
+                if (tmp_cluster.master.ip == link.properties["hostname"]
+                        or tmp_cluster.srv == link.properties["hostname"]):
                     remote_cluster = tmp_cluster
                     break
 
@@ -4259,7 +4260,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 database_obj = self.get_database_obj(
                     self.format_name(database_name))
                 dataverse_obj = self.get_dataverse_obj(
-                    database_obj.name, self.format_name(dataverse_name))
+                     self.format_name(dataverse_name), database_obj.name,)
 
             dataset_name = self.generate_name(
                 name_cardinality=1, max_length=name_length,
