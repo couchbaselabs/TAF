@@ -37,6 +37,7 @@ class SiriusCodes(object):
         VALIDATE_COLUMNAR = "validateColumnar"
         RETRY_EXCEPTIONS = "retryExceptions"
         VALIDATE = "validate"
+        CLEAR = "clear"
 
     class DBMgmtOps(object):
         CREATE = "createDB"
@@ -44,7 +45,6 @@ class SiriusCodes(object):
         LIST = "listDB"
         COUNT = "countDB"
         WARMUP = "warmupDB"
-        CLEAR = "clearDB"
 
     class SubDocOps(object):
         INSERT = "insertSubDoc"
@@ -84,6 +84,7 @@ class SiriusCodes(object):
         DocOps.VALIDATE,
         DocOps.VALIDATE_COLUMNAR,
         DocOps.RETRY_EXCEPTIONS,
+        DocOps.CLEAR
     ]
 
     SUB_DOC_OPS = [
@@ -95,7 +96,6 @@ class SiriusCodes(object):
 
     DB_MGMT_OPS = [
         DBMgmtOps.CREATE,
-        DBMgmtOps.CLEAR,
         DBMgmtOps.COUNT,
         DBMgmtOps.DELETE,
         DBMgmtOps.LIST,
@@ -134,6 +134,7 @@ WORKLOAD_PATH = {
     SiriusCodes.DocOps.VALIDATE_COLUMNAR: "/validate-columnar",
     SiriusCodes.DocOps.RETRY_EXCEPTIONS: "/retry-exceptions",
     SiriusCodes.DocOps.VALIDATE: "/validate",
+    SiriusCodes.DocOps.CLEAR: "/clear_data",
 }
 
 DB_MGMT_PATH = {
@@ -142,7 +143,6 @@ DB_MGMT_PATH = {
     SiriusCodes.DBMgmtOps.LIST: "/list-database",
     SiriusCodes.DBMgmtOps.COUNT: "/count",
     SiriusCodes.DBMgmtOps.WARMUP: "/warmup-bucket",
-    SiriusCodes.DBMgmtOps.CLEAR: "/clear_data",
 }
 
 BLOB_PATH = {
