@@ -248,8 +248,7 @@ class FTSQueryLoad:
             query = random.choice(queries)
             k = random.randint(2, 50)
             query = {"query": {"match_none": {}}, "explain": False, "knn":
-                     [{"field": "embedding", "k": k,
-                       "vector": []}], "size": k}
+                     [{"field": "embedding", "k": k}], "size": k}
             text_options = random.choice(([vector.colors, vector.clothingType, vector.fashionBrands],
                                  [vector.colors, vector.clothingType],
                                  [vector.clothingType, vector.fashionBrands]))

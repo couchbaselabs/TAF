@@ -127,6 +127,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
         self.mockVector = self.input.param("mockVector", False)
         self.dim = self.input.param("dim", 384)
+        self.fts_index_type = self.input.param("fts_index_type", "vector")
         self.base64 = self.input.param("base64", False)
         self.esClient = None
         self.mutate = self.input.param("mutate", 0)
