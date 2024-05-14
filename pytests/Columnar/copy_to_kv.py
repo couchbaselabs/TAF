@@ -145,7 +145,7 @@ class CopyToKv(ColumnarBaseTest):
             }]
             self.columnar_spec["external_dataset"][
                 "external_dataset_properties"] = external_dataset_properties
-        if not hasattr("self", "remote_cluster"):
+        if not hasattr(self, "remote_cluster"):
             remote_cluster = None
         else:
             remote_cluster = [self.remote_cluster]
