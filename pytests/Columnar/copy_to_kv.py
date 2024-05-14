@@ -145,8 +145,12 @@ class CopyToKv(ColumnarBaseTest):
             }]
             self.columnar_spec["external_dataset"][
                 "external_dataset_properties"] = external_dataset_properties
+        if not hasattr("self", "remote_cluster"):
+            remote_cluster = None
+        else:
+            remote_cluster = [self.remote_cluster]
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.columnar_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False, remote_clusters=remote_cluster)
         if not result:
             self.fail(msg)
 
@@ -321,8 +325,8 @@ class CopyToKv(ColumnarBaseTest):
                 self.log.error("Failed to create remote dataset on KV")
                 results.append(False)
             # validate doc count at columnar and KV side
-            columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)[0]
-            kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)[0]
+            columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
+            kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if not primary_key:
                 columnar_count = 2 * columnar_count
             if columnar_count != kv_count:
@@ -369,8 +373,8 @@ class CopyToKv(ColumnarBaseTest):
                 self.log.error("Failed to create remote dataset on KV")
                 results.append(False)
             # validate doc count at columnar and KV side
-            columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)[0]
-            kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)[0]
+            columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
+            kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if columnar_count != kv_count:
                 self.log.error("Doc count mismatch in KV and columnar {0}, {1}, expected: {2} got: {3}".
                                format(provisioned_collections[i], datasets[i].full_name,
@@ -475,8 +479,8 @@ class CopyToKv(ColumnarBaseTest):
                 self.log.error("Failed to create remote dataset on KV")
                 results.append(False)
             # validate doc count at columnar and KV side
-            columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)[0]
-            kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)[0]
+            columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
+            kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if columnar_count != kv_count:
                 self.log.error("Doc count mismatch in KV and columnar {0}, {1}, expected: {2} got: {3}".
                                format(provisioned_collections[i], datasets[i].full_name,
