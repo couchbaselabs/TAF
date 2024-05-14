@@ -13,8 +13,7 @@ import time
 from CbasLib.CBASOperations import CBASHelper
 from com.couchbase.client.core.error import RequestCanceledException, \
     CouchbaseException, AmbiguousTimeoutException, PlanningFailureException, \
-    UnambiguousTimeoutException, TimeoutException, DatasetExistsException, \
-    LinkExistsException
+    UnambiguousTimeoutException, TimeoutException
 from com.couchbase.client.java.analytics import AnalyticsOptions, \
     AnalyticsScanConsistency, AnalyticsStatus
 from global_vars import logger
@@ -145,7 +144,7 @@ class DoctorCBAS():
             if dataSource.type != "s3":
                 self.connect_link(cluster, dataSource.link_name)
 
-            query_tbl = TableView()
+            query_tbl = TableView(logger["test"])
             query_tbl.set_headers(["Bucket", "##", "Query"])
             for k, v in dataSource.query_map.items():
                 query_tbl.add_row([dataSource.name, v[0], k])

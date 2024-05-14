@@ -312,7 +312,7 @@ class DoctorN1QL():
                             q += 1
                         counter += 1
 
-            query_tbl = TableView()
+            query_tbl = TableView(logger["test"])
             query_tbl.set_headers(["Bucket", "##", "Query"])
             for k, v in b.query_map.items():
                 query_tbl.add_row([b.name, v[0], k])
