@@ -15,7 +15,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         super(S3LinksDatasets, self).setUp()
 
         # Since all the test cases are being run on 1 cluster only
-        self.instance = self.tenant.columnar_instances[0]
+        self.cluster = self.tenant.columnar_instances[0]
 
         self.aws_access_key = self.input.param("aws_access_key")
         self.aws_secret_key = self.input.param("aws_secret_key")
@@ -47,7 +47,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
-                self.instance, self.columnar_spec):
+                self.cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
         super(S3LinksDatasets, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished",
@@ -104,7 +104,7 @@ class S3LinksDatasets(ColumnarBaseTest):
             dataset_properties["timezone"] = "GMT"
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.instance, self.columnar_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False)
         if not result:
             self.fail(msg)
 
@@ -115,7 +115,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         for dataset in datasets:
             jobs.put((
                 self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.instance, "dataset_name": dataset.full_name,
+                {"cluster": self.cluster, "dataset_name": dataset.full_name,
                  "timeout": 3600, "analytics_timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -131,7 +131,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         for dataset in datasets:
             jobs.put((
                 self.cbas_util.execute_statement_on_cbas_util,
-                {"cluster": self.instance,
+                {"cluster": self.cluster,
                  "statement": query.format(dataset.full_name)}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -152,7 +152,7 @@ class S3LinksDatasets(ColumnarBaseTest):
                  "1").format(dataset.full_name)
         status, metrics, errors, results, _ = \
             self.cbas_util.execute_statement_on_cbas_util(
-                self.instance, query, timeout=300, analytics_timeout=300)
+                self.cluster, query, timeout=300, analytics_timeout=300)
         if not ("level_no" in results[0][dataset.name] and
                 "folder_no" in results[0][dataset.name]):
             self.fail("Dynamic prefix computated fields are not present in "
