@@ -807,6 +807,7 @@ class APIBase(CouchbaseBaseTest):
                     org, proj, name, cloudProvider, couchbaseServer,
                     serviceGroups, availability, support, header, **kwargs)
             if result.status_code != 422:
+                self.log.error(result.content)
                 return result
             elif "Please ensure you are passing a unique CIDR block" in \
                     result.json()["message"]:
