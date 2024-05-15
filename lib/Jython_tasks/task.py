@@ -6356,7 +6356,6 @@ class NodeFailureTask(Task):
     def call(self):
         self.start_task()
         self.shell = RemoteMachineShellConnection(self.target_node)
-
         if self.task_type == "induce_failure":
             self.__induce_node_failure()
         elif self.task_type == "revert_failure":
@@ -6373,7 +6372,10 @@ class ConcurrentFailoverTask(Task):
                  disk_location=None, disk_size=200,
                  expected_fo_nodes=1, monitor_failover=True,
                  task_type="induce_failure", grace_timeout=5,
-                 validate_bucket_ranking=True):
+                 validate_bucket_ranking=True, override_timeout=None,
+                 skip_failure_induction=None,
+                 ignore_rebalance_id_update=False,
+                 override_initial_failover_count=None):
         """
         :param servers_to_fail: Dict of nodes to fail mapped with their
                                 corresponding failure method.
@@ -6386,13 +6388,17 @@ class ConcurrentFailoverTask(Task):
         # To assist failover monitoring
         self.rest = RestConnection(master)
         self.initial_fo_settings = self.rest.get_autofailover_settings()
-
+        self.skip_failure_induction = skip_failure_induction
         self.task_manager = task_manager
         self.master = master
+        self.ignore_rebalance_id_update = ignore_rebalance_id_update
+        if override_initial_failover_count is not None:
+            self.initial_fo_settings.count = override_initial_failover_count
         self.servers_to_fail = servers_to_fail
         self.timeout = self.initial_fo_settings.timeout
+        if override_timeout is not None:
+            self.timeout = float(str(override_timeout))
         self.grace_timeout = grace_timeout
-
         # Takes either of induce_failure / revert_failure
         self.task_type = task_type
 
@@ -6427,16 +6433,19 @@ class ConcurrentFailoverTask(Task):
         max_fo_time_allowed = expect_fo_after_time + 2
         while time.time() < expect_fo_after_time:
             curr_fo_settings = self.rest.get_autofailover_settings()
-            if self.initial_fo_settings.count != curr_fo_settings.count:
-                self.test_log.critical("Auto failover triggered before "
-                                       "grace period. Initial %s vs %s current"
-                                       % (self.initial_fo_settings.count,
-                                          curr_fo_settings.count))
+            if self.initial_fo_settings.count < curr_fo_settings.count:
+                self.test_log.critical(
+                    "Auto failover triggered before "
+                    "grace period. Initial %s vs %s current"
+                    % (self.initial_fo_settings.count,
+                       curr_fo_settings.count))
                 self.set_result(False)
         if time.time() > max_fo_time_allowed:
-            self.test_log.critical("Auto failover triggered outside the "
-                                   "timeout window")
+            self.test_log.critical(
+                "Auto failover triggered outside the "
+                "timeout window")
             self.set_result(False)
+
 
     def call(self):
         self.start_task()
@@ -6446,6 +6455,10 @@ class ConcurrentFailoverTask(Task):
         for node, failure_info in self.servers_to_fail.items():
             if current_orchestrator == node.ip:
                 self.grace_timeout += 15
+            if self.skip_failure_induction is not None:
+                if 'ip' in self.skip_failure_induction and \
+                        self.skip_failure_induction['ip'] == node.ip:
+                    continue
             self.sub_tasks.append(
                 NodeFailureTask(self.task_manager, node, failure_info,
                                 task_type=self.task_type))
@@ -6465,7 +6478,6 @@ class ConcurrentFailoverTask(Task):
 
         if self.result:
             self.wait_for_fo_attempt()
-
             if self.result and self.monitor_failover:
                 self.log.info("Wait for failover to actually start running")
                 timeout = time.time() + self.grace_timeout
@@ -6482,7 +6494,7 @@ class ConcurrentFailoverTask(Task):
                 if task_id_changed:
                     status = self.rest.monitorRebalance()
                 else:
-                    sleep(4,"waiting for fo count to reflect in REST")
+                    sleep(6,"waiting for fo count to reflect in REST")
                     curr_fo_settings = self.rest.get_autofailover_settings()
                     if self.expected_nodes_to_fo == curr_fo_settings.count:
                         status = True
