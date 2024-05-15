@@ -56,7 +56,6 @@ from couchbase_helper.data_analysis_helper import DataCollector, DataAnalyzer, \
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator, sub_doc_generator_for_edit
-from doc_loader.sirius_client import RESTClient
 from error_simulation.cb_error import CouchbaseError
 from global_vars import logger
 
@@ -3586,7 +3585,6 @@ class BucketUtils(ScopeUtils):
                         break
                 if found:
                     continue
-                ambiguous_state = False
                 dict_key = "unwanted"
                 for ex in task_info["retry_exceptions"]:
                     if DocLoaderUtils.check_if_exception_exists(str(exception), ex):

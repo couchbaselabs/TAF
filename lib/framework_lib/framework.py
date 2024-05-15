@@ -9,8 +9,8 @@ from signal import signal, SIGINT, SIGTERM
 from unittest import TestLoader
 from xml.dom.minidom import parse as xml_parse
 
-from doc_loader.sirius import SiriusClient
 from platform_constants import taf
+from sirius_client_framework.sirius_setup import SiriusSetup
 
 
 class HelperLib(object):
@@ -36,8 +36,8 @@ class HelperLib(object):
 
     @staticmethod
     def cleanup():
-        SiriusClient.terminate_sirius()
-        SiriusClient.stop_sirius_docker()
+        SiriusSetup.terminate_sirius()
+        SiriusSetup.stop_sirius_docker()
 
     @staticmethod
     def validate_python_version(current_version):
@@ -456,8 +456,8 @@ class HelperLib(object):
         """
         port = (urls.split(";")[0]).split(':')[-1]
         if process_type == "standalone_process":
-            SiriusClient.start_sirius(taf_path, port=port)
+            SiriusSetup.start_sirius(taf_path, port=port)
         elif process_type == "docker_process":
-            SiriusClient.start_sirius_docker(port=port)
+            SiriusSetup.start_sirius_docker(port=port)
         else:
             raise Exception(f"Invalid Sirius process {process_type}")

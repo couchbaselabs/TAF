@@ -6,14 +6,16 @@ from signal import SIGTERM
 from subprocess import Popen
 
 from common_lib import sleep
+from sirius_client_framework.sirius_constants import DB_MGMT_PATH, SiriusCodes
 
 
-class SiriusClient(object):
+class SiriusSetup(object):
     __running_process = None
+    sirius_url = "http://0.0.0.0:4000"
 
     @staticmethod
     def get_running_pid():
-        return SiriusClient.__running_process
+        return SiriusSetup.__running_process
 
     @staticmethod
     def is_sirius_online(url):
@@ -42,16 +44,16 @@ class SiriusClient(object):
         print(f"Starting Sirius client on port '{port}'")
         fp = open("logs/sirius.log", "a")
         cmd = [f"{taf_path}/sirius/sirius", "-port", port]
-        SiriusClient.__running_process = Popen(cmd, stdout=fp, stderr=fp)
+        SiriusSetup.__running_process = Popen(cmd, stdout=fp, stderr=fp)
 
     @staticmethod
     def terminate_sirius():
-        if SiriusClient.__running_process:
-            pid = SiriusClient.__running_process.pid
+        if SiriusSetup.__running_process:
+            pid = SiriusSetup.__running_process.pid
             print(f"Killing Sirius pid '{pid}'")
             os.kill(pid, SIGTERM)
-            SiriusClient.__running_process.communicate()
-        SiriusClient.__running_process = None
+            SiriusSetup.__running_process.communicate()
+        SiriusSetup.__running_process = None
 
     def __init__(self):
         pass
@@ -66,7 +68,7 @@ class SiriusClient(object):
             exception = None
             for i in range(5):
                 try:
-                    path = "/clear_data"
+                    path = DB_MGMT_PATH[SiriusCodes.DBMgmtOps.CLEAR]
                     response = requests.post(url=base_url + path,
                                              headers=headers,
                                              json=json_data_request)

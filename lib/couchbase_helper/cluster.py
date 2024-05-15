@@ -1,18 +1,18 @@
 from copy import deepcopy
 
 import Jython_tasks.task as jython_tasks
+from Jython_tasks import sirius_task
 from cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask
 from capella_utils.dedicated import CapellaUtils
-from common_lib import IDENTIFIER_TOKEN
 from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
-from doc_loader.sirius_client import RESTClient
 from global_vars import logger
 from sdk_client3 import SDKClient, TransactionConfig
 from BucketLib.BucketOperations import BucketHelper
 from constants.sdk_constants.java_client import SDKConstants
+from sirius_client_framework.sirius_constants import SiriusCodes
 
 """An API for scheduling tasks that run against Couchbase Server
 
@@ -172,43 +172,34 @@ class ServerTasks(object):
         clients = list()
         if active_resident_threshold == 100:
             if not ryow:
+                if not task_identifier:
+                    task_identifier = "%s_%s_%s" % (op_type,
+                                                    generator.start,
+                                                    generator.end)
+                    if exp:
+                        task_identifier += "_ttl=%s" % str(exp)
                 if load_using == "sirius_go_sdk":
-                    sirius_client = RESTClient(
-                        servers=[cluster.master], bucket=bucket, scope=scope,
-                        collection=collection, username=cluster.username,
-                        password=cluster.password,
-                        compression_settings=compression)
-                    sirius_client.warmup_bucket(
-                        identifier_token=IDENTIFIER_TOKEN)
-                    _task = jython_tasks.RestBasedDocLoaderAbstract(
-                        cluster=cluster, task_manager=self.jython_task_manager,
-                        bucket=bucket,
-                        generator=[generator], op_type=op_type,
-                        exp=exp, random_exp=random_exp, exp_unit="seconds",
-                        flag=flag,
-                        persist_to=persist_to, replicate_to=replicate_to,
+                    _task = sirius_task.LoadCouchbaseDocs(
+                        self.jython_task_manager, cluster, CbServer.use_https,
+                        bucket, scope, collection, generator, op_type,
+                        exp=exp,
+                        persist_to=persist_to,
+                        replicate_to=replicate_to,
+                        durability=durability,
+                        timeout_secs=timeout_secs,
                         batch_size=batch_size,
-                        timeout_secs=timeout_secs, time_unit=time_unit,
-                        compression=compression,
                         process_concurrency=process_concurrency,
-                        print_ops_rate=print_ops_rate, retries=retries,
-                        durability=durability, task_identifier=task_identifier,
-                        skip_read_on_error=skip_read_on_error,
-                        scope=scope, collection=collection,
-                        monitor_stats=monitor_stats,
+                        active_resident_threshold=active_resident_threshold,
+                        print_ops_rate=print_ops_rate,
+                        task_identifier=task_identifier,
+                        dgm_batch=dgm_batch,
                         track_failures=track_failures,
                         preserve_expiry=preserve_expiry,
                         sdk_retry_strategy=sdk_retry_strategy,
-                        iterations=iterations,
                         ignore_exceptions=ignore_exceptions,
-                        retry_exception=retry_exception, retry_attempts=0)
+                        retry_exception=retry_exception,
+                        iterations=iterations).create_sirius_task()
                 else:
-                    if not task_identifier:
-                        task_identifier = "%s_%s_%s" % (op_type,
-                                                        generator.start,
-                                                        generator.end)
-                        if exp:
-                            task_identifier += "_ttl=%s" % str(exp)
                     gen_start = int(generator.start)
                     gen_end = int(generator.end)
                     gen_range = max(int((generator.end - generator.start)
@@ -309,23 +300,21 @@ class ServerTasks(object):
             raise Exception("Document generator needs to be of "
                             "type SubdocDocumentGenerator")
         if load_using == "sirius_go_sdk":
-            _task = jython_tasks.RestBasedSubDocLoaderAbstract(
-                cluster=cluster, task_manager=self.jython_task_manager,
-                bucket=bucket,
-                generators=[generator], op_type=op_type, exp=exp,
+            _task = sirius_task.LoadCouchbaseDocs(
+                self.jython_task_manager, cluster, CbServer.use_https,
+                bucket, scope, collection, generator, op_type, exp,
+                persist_to, replicate_to, durability,
                 create_paths=path_create, xattr=xattr,
-                exp_unit="seconds", flag=flag, persist_to=persist_to,
-                replicate_to=replicate_to,
-                scope=scope, collection=collection, batch_size=batch_size,
-                timeout_secs=timeout_secs, compression=compression,
-                process_concurrency=process_concurrency,
-                print_ops_rate=print_ops_rate, durability=durability,
-                task_identifier=task_identifier,
-                preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy,
                 store_semantics=store_semantics,
                 access_deleted=access_deleted,
-                create_as_deleted=create_as_deleted)
+                timeout_secs=timeout_secs,
+                batch_size=batch_size,
+                process_concurrency=process_concurrency,
+                print_ops_rate=print_ops_rate,
+                task_identifier=task_identifier,
+                preserve_expiry=preserve_expiry,
+                create_as_deleted=create_as_deleted,
+                sdk_retry_strategy=sdk_retry_strategy).create_sirius_task()
         else:
             clients = []
             gen_start = int(generator.start)
@@ -519,16 +508,16 @@ class ServerTasks(object):
                             ignore_exceptions=[], retry_exception=[],
                             validate_using="default_loader"):
         if validate_using == "sirius_go_sdk":
-            _task = jython_tasks.RestBasedDocLoaderAbstract(
-                cluster=cluster, task_manager=self.jython_task_manager,
-                bucket=bucket, op_type="validate",
-                generator=[generator], exp=exp,
+            _task = sirius_task.LoadCouchbaseDocs(
+                self.jython_task_manager, cluster, CbServer.use_https,
+                bucket, scope, collection, generator,
+                op_type=SiriusCodes.DocOps.VALIDATE,
+                timeout_secs=timeout_secs,
+                batch_size=batch_size,
+                process_concurrency=process_concurrency,
                 sdk_retry_strategy=sdk_retry_strategy,
-                compression=compression, timeout_secs=timeout_secs,
-                time_unit=time_unit,
-                flag=flag, batch_size=batch_size,
                 ignore_exceptions=ignore_exceptions,
-                retry_exception=retry_exception)
+                retry_exception=retry_exception).create_sirius_task()
         else:
             clients = list()
             gen_start = int(generator.start)

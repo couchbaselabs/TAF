@@ -14,6 +14,7 @@ from common_lib import sleep
 from couchbase_helper.cluster import ServerTasks
 from global_vars import logger
 from node_utils.node_ready_functions import NodeUtils
+from sirius_client_framework.sirius_setup import SiriusSetup
 from test_summary import TestSummary
 
 
@@ -191,6 +192,11 @@ class CouchbaseBaseTest(unittest.TestCase):
 
         # Alias to the common sleep function
         self.sleep = sleep
+
+        # Set Sirius URL if given in params
+        # else the SiriusSetup still holds the default 'localhost:4000'
+        if self.sirius_url:
+            SiriusSetup.sirius_url = self.sirius_url
 
         # Support lib objects for testcase execution
         self.task_manager = TaskManager(max_workers=self.thread_to_use)

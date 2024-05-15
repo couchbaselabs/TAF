@@ -38,6 +38,7 @@ jython_path=/opt/jython/bin/jython
 go_version=1.21.0
 wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz
 tar -xzf go${go_version}.linux-amd64.tar.gz
+rm -f https://golang.org/dl/go${go_version}.linux-amd64.tar.gz
 export PATH=`pwd`/go/bin:${PATH}
 
 # Set desired python env
