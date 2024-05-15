@@ -29,6 +29,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.auto_reprovision = self.input.param("auto_reprovision", False)
         self.skip_collections_during_data_load = self.input.param(
             "skip_col_dict", None)
+        self.afo_delay_time = self.input.param("afo_delay_time", None)
         self._get_params()
         self.range_scan_timeout = self.input.param("range_scan_timeout",
                                                    None)
