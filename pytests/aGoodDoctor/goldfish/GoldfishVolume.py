@@ -191,7 +191,8 @@ class Columnar(BaseTestCase, hostedOPD):
         if self.input.param("onCloudMongo", False):
             self.setupMongo(atlas=True)
 
-        self.setupRemoteCouchbase()
+        if self.input.param("remoteCouchbase", False):
+            self.setupRemoteCouchbase()
 
         for tenant in self.tenants:
             for columnar in tenant.columnar_instances:

@@ -74,9 +74,9 @@ class MongoDB(object):
             cbas_coll_name = self.link_name + "_volCollection_" + str(i)
             self.cbas_collections.append(cbas_coll_name)
             i += 1
-            self.coll_statement = "CREATE COLLECTION `{}` PRIMARY KEY (`_id`: string) ON {}.{} AT {};".format(
+            statement = "CREATE COLLECTION `{}` PRIMARY KEY (`_id`: string) ON {}.{} AT {};".format(
                                     cbas_coll_name, self.source_name, mongo_collection, self.link_name)
-            execute_statement_on_cbas(client, self.coll_statement)
+            execute_statement_on_cbas(client, statement)
 
     @staticmethod
     def perform_load(databases, wait_for_load=True, overRidePattern=None, tm=None, workers=10):
@@ -161,10 +161,11 @@ class CouchbaseRemoteCluster(object):
                     if c == CbServer.default_collection:
                         continue
                     cbas_coll_name = self.link_name + "_volCollection_" + str(i)
-                    self.coll_statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'.format(
+                    self.log.info("creating remote collections on couchbase: %s" % cbas_coll_name)
+                    statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'.format(
                                             cbas_coll_name, b.name, s, c, self.link_name)
                     self.cbas_collections.append(cbas_coll_name)
-                    execute_statement_on_cbas(client, self.coll_statement)
+                    execute_statement_on_cbas(client, statement)
                     i += 1
                     if remote_collections and i == remote_collections:
                         return
@@ -184,12 +185,14 @@ class s3(object):
         self.cbas_queries = list()
         self.cbas_collections = list()
         self.query_map = dict()
+        self.log = logger.get("test")
 
     def set_collections(self):
         for i in range(self.loadDefn.get("collections")):
             self.collections.append("volCollection" + str(i))
 
     def create_link(self, cluster):
+        self.log.info("creating link over s3")
         rest = CBASHelper(cluster.master)
         params = {'dataverse': 'Default', "name": self.link_name, "type": "s3", 'accessKeyId': self.accessKeyId,
                   'secretAccessKey': self.secretAccessKey,
@@ -206,24 +209,32 @@ class s3(object):
             cbas_coll_name = self.link_name + "_external_volCollection_" + str(i)
             self.cbas_collections.append(cbas_coll_name)
             i += 1
-            self.coll_statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
-                                    cbas_coll_name, "columnartest", self.link_name, "hotel")
-            execute_statement_on_cbas(client, self.coll_statement)
+            self.log.info("creating external collections: %s" % cbas_coll_name)
+            statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
+                cbas_coll_name, "columnartest", self.link_name, "hotel")
+            self.log.info(statement)
+            execute_statement_on_cbas(client, statement)
+        self.copy_from_s3_into_standalone(cluster, external_collections)
 
     def copy_from_s3_into_standalone(self, cluster, standalone_collections=None):
         client = cluster.SDKClients[0].cluster
         num_collections = standalone_collections or len(self.collections)
+        self.log.info("creating standalone collections - datasource is s3")
         i = 0
         while i < num_collections:
             cbas_coll_name = self.link_name + "_standalone_volCollection_" + str(i)
             self.cbas_collections.append(cbas_coll_name)
             i += 1
-            self.coll_statement = 'CREATE STANDANOLE COLLECTION `%s`  PRIMARY KEY (%s:%s)' % (
-                                    cbas_coll_name, "columnartest", self.link_name, "hotel")
-            execute_statement_on_cbas(client, self.coll_statement)
-            
+
+            self.log.info("Creating standalone collections: %s" % cbas_coll_name)
+            statement = 'CREATE COLLECTION `%s`  PRIMARY KEY (%s:%s)' % (
+                                    cbas_coll_name, "_id", "String")
+            execute_statement_on_cbas(client, statement)
+
             statement = 'COPY into %s FROM %s AT %s PATH "%s" WITH { "format": "json"};'.format(
                 cbas_coll_name, "columnartest", self.link_name, "hotel")
+            self.log.info("COPYING into standalone collections: %s" % cbas_coll_name)
+            self.log.info(statement)
             execute_statement_on_cbas(client, statement)
 
 
