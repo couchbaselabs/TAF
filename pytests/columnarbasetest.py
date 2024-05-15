@@ -31,14 +31,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         self.columnar_utils = ColumnarUtils(self.log)
 
-        def purge_lists(*args):
-            for l in args:
-                del l[:]
-
         def populate_columnar_instance_obj(
                 tenant, instance_id, instance_name=None, instance_config=None):
-            resp = self.columnar_utils.get_instance_info(pod=self.pod, tenant=tenant,
-                                                   project_id=tenant.project_id, instance_id=instance_id)
+
+            resp = self.columnar_utils.get_instance_info(
+                pod=self.pod, tenant=tenant, project_id=tenant.project_id,
+                instance_id=instance_id)
 
             if not resp:
                 raise Exception("Failed fetching connection string for "
@@ -165,9 +163,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 server.rest_password = str(resp["secret"])
 
         if self.skip_redeploy:
-            self.capella["instance_id"] = [
+            self.capella["instance_id"] = ",".join([
                 instance.instance_id for instance in
-                self.tenant.columnar_instances]
+                self.tenant.columnar_instances])
 
         self.cluster_util = ClusterUtils(self.task_manager)
         self.bucket_util = BucketUtils(self.cluster_util, self.task)
@@ -255,7 +253,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 CapellaUtils.revoke_access_secret_key(
                     self.pod, tenant, tenant.api_key_id)
 
-        if self.input.param("skip_redeploy", True):
+        if self.skip_redeploy:
             if (TestInputSingleton.input.test_params["case_number"] ==
                     TestInputSingleton.input.test_params["no_of_test_identified"]):
                 delete_cloud_infra()
@@ -264,7 +262,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                     CapellaUtils.revoke_access_secret_key(
                         self.pod, tenant, tenant.api_key_id)
         else:
-            self.capella["project_id"] = self.capella["instance_id"] = ""
+            self.capella["project"] = self.capella["instance_id"] = ""
             delete_cloud_infra()
 
     def start_threads(self, thread_list, async=False):

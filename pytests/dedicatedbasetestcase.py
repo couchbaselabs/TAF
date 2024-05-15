@@ -328,16 +328,17 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             for delete_th in th:
                 delete_th.join()
 
-        if not TestInputSingleton.input.capella.get("project", None):
-            th = list()
-            for tenant in self.tenants:
-                delete_th = threading.Thread(
-                    target=CapellaUtils.delete_project, name=tenant.id,
-                    args=(self.pod, tenant, tenant.projects))
-                delete_th.start()
-                th.append(delete_th)
-            for delete_th in th:
-                delete_th.join()
+        if hasattr(self, "skip_redeploy") and not self.skip_redeploy:
+            if not TestInputSingleton.input.capella.get("project", None):
+                th = list()
+                for tenant in self.tenants:
+                    delete_th = threading.Thread(
+                        target=CapellaUtils.delete_project, name=tenant.id,
+                        args=(self.pod, tenant, tenant.projects))
+                    delete_th.start()
+                    th.append(delete_th)
+                for delete_th in th:
+                    delete_th.join()
 
     def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1
