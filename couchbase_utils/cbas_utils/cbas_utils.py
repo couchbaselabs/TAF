@@ -2,7 +2,7 @@ from TestInput import TestInputSingleton
 
 runtype = TestInputSingleton.input.param("runtype", "default").lower()
 if runtype in ["columnar", "columnar1"]:
-    from cbas_utils_columnar import (
+    from cbas_utils.cbas_utils_columnar import (
         CbasUtil as utils,
         FlushToDiskTask as flushtodisktask,
         DisconnectConnectLinksTask as disconnectconnectlinkstask,

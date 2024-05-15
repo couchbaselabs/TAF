@@ -1,8 +1,7 @@
 import json
 import random
 import string
-from java.util import Date
-from java.lang import StringBuilder
+from datetime import datetime
 
 
 class Rating:
@@ -22,13 +21,12 @@ class Review:
     """
 
     def __init__(self):
-        self.date = str(Date())
+        self.date = str(datetime.now())
         self.author = self.generate_author()
         self.rating = Rating()
 
     def generate_author(self):
-        author_builder = StringBuilder()
-        author_builder.append(''.join(random.choice(string.ascii_letters + ' ') for _ in range(random.randint(10, 20))))
+        author_builder = ''.join(random.choice(string.ascii_letters + ' ') for _ in range(random.randint(10, 20)))
         return str(author_builder)
 
 
@@ -42,7 +40,7 @@ class Hotel:
         self.characters_without_spaces = string.ascii_letters + string.digits
         self.document_size = None
         self.address = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(30, 100)))
-        self.free_parking = int(random.choice([True, False]))
+        self.free_parking = random.choice([True, False])
         self.city = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(5, 20)))
         self.type = "Hotel"
         username = ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(10, 100)))
@@ -53,7 +51,7 @@ class Hotel:
         self.price = random.choice([1000.0, 2000.0, 3000.0, 4000.0, 5000.0, 6000.0,
                                     7000.0, 8000.0, 9000.0, 10000.0])
         self.avg_rating = random.uniform(0, 1)
-        self.free_breakfast = int(random.choice([True, False]))
+        self.free_breakfast = random.choice([True, False])
         self.name = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(5, 20)))
         self.public_likes = self.build_public_likes(random.randint(0, 10))
         self.email = "{0}@{1}.com".format(username, domain)
@@ -61,12 +59,12 @@ class Hotel:
         self.padding = ""
 
     def country_selector(self, field_type="string"):
-        country_names = ["Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Anguilla", "Antigua &amp; Barbuda",
+        country_names = ["Afghanistan", "Albania", "Algeria", "Andorra", "Angola", "Anguilla", "Antigua & Barbuda",
                          "Argentina",
                          "Armenia", "Aruba", "Australia", "Austria", "Azerbaijan", "Bahamas", "Bahrain", "Bangladesh",
                          "Barbados",
                          "Belarus", "Belgium", "Belize", "Benin", "Bermuda", "Bhutan", "Bolivia",
-                         "Bosnia &amp; Herzegovina",
+                         "Bosnia & Herzegovina",
                          "Botswana", "Brazil", "British Virgin Islands", "Brunei", "Bulgaria", "Burkina Faso",
                          "Burundi", "Cambodia",
                          "Cameroon", "Cape Verde", "Cayman Islands", "Chad", "Chile", "China", "Colombia", "Congo",
@@ -97,15 +95,15 @@ class Hotel:
                          "Peru",
                          "Philippines", "Poland", "Portugal", "Puerto Rico", "Qatar", "Reunion", "Romania", "Russia",
                          "Rwanda",
-                         "Saint Pierre &amp; Miquelon", "Samoa", "San Marino", "Satellite", "Saudi Arabia", "Senegal",
+                         "Saint Pierre & Miquelon", "Samoa", "San Marino", "Satellite", "Saudi Arabia", "Senegal",
                          "Serbia",
                          "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "South Africa",
                          "South Korea", "Spain",
-                         "Sri Lanka", "St Kitts &amp; Nevis", "St Lucia", "St Vincent", "St. Lucia", "Sudan",
+                         "Sri Lanka", "St Kitts & Nevis", "St Lucia", "St Vincent", "St. Lucia", "Sudan",
                          "Suriname", "Swaziland",
                          "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand",
                          "Timor L'Este", "Togo",
-                         "Tonga", "Trinidad &amp; Tobago", "Tunisia", "Turkey", "Turkmenistan", "Turks &amp; Caicos",
+                         "Tonga", "Trinidad & Tobago", "Tunisia", "Turkey", "Turkmenistan", "Turks & Caicos",
                          "Uganda",
                          "Ukraine", "United Arab Emirates", "United Kingdom", "Uruguay", "Uzbekistan", "Venezuela",
                          "Vietnam",

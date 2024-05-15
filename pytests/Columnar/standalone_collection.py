@@ -7,7 +7,7 @@ import json
 import time
 import random
 import requests
-from Queue import Queue
+from queue import Queue
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from Columnar.columnar_base import ColumnarBaseTest

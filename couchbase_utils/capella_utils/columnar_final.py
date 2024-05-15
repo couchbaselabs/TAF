@@ -17,7 +17,7 @@ class ColumnarInstance:
 
     def __init__(self, tenant_id, project_id, instance_name=None,
                  instance_id=None, cluster_id=None, instance_endpoint=None,
-                 db_users=list()):
+                 db_users=list(), roles=list()):
         self.tenant_id = tenant_id
         self.project_id = project_id
 
@@ -35,14 +35,43 @@ class ColumnarInstance:
         self.cbas_cc_node = self.master
 
         self.db_users = db_users
+        self.columnar_roles = roles
         self.type = "columnar"
 
         # SDK related objects
         self.sdk_client_pool = None
         # Note: Referenced only for sdk_client3.py SDKClient
-        self.sdk_cluster_env = SDKClient.create_cluster_env()
-        self.sdk_env_built = self.sdk_cluster_env.build()
+        # self.sdk_cluster_env = SDKClient.create_cluster_env()
+        # self.sdk_env_built = self.sdk_cluster_env.build()
 
+    def refresh_object(self, servers):
+        self.kv_nodes = list()
+        self.fts_nodes = list()
+        self.cbas_nodes = list()
+        self.index_nodes = list()
+        self.query_nodes = list()
+        self.eventing_nodes = list()
+        self.backup_nodes = list()
+        self.nodes_in_cluster = list()
+
+        for server in servers:
+            server.type = self.type
+            if self.type != "default":
+                server.memcached_port = "11207"
+            if "Data" in server.services or "kv" in server.services:
+                self.kv_nodes.append(server)
+            if "Query" in server.services or "n1ql" in server.services:
+                self.query_nodes.append(server)
+            if "Index" in server.services or "index" in server.services:
+                self.index_nodes.append(server)
+            if "Eventing" in server.services or "eventing" in server.services:
+                self.eventing_nodes.append(server)
+            if "Analytics" in server.services or "cbas" in server.services:
+                self.cbas_nodes.append(server)
+            if "Search" in server.services or "fts" in server.services:
+                self.fts_nodes.append(server)
+            self.nodes_in_cluster.append(server)
+        self.master = self.kv_nodes[0]
 
 class DBUser:
 
@@ -54,10 +83,232 @@ class DBUser:
         self.privileges = list()
         self.id = userId
 
+    def __str__(self):
+        return self.username
+
 class ColumnarRole:
-    def __init__(self, roleId=""):
+    def __init__(self, roleId="", role_name=""):
         self.id = roleId
+        self.name = role_name
         self.privileges = list()
+
+    def __str__(self):
+        return self.name
+
+class ColumnarRBACUtil:
+    def __init__(self, log):
+        self.log = log
+
+
+    def create_custom_analytics_admin_user(
+            self, pod, tenant, project_id, instance,
+            username, password):
+        privileges_list = [
+            "database_create", "database_drop", "scope_create", "scope_drop", "collection_create",
+            "collection_drop", "collection_select", "collection_insert", "collection_upsert",
+            "collection_delete", "collection_analyze", "view_create", "view_drop", "view_select",
+            "index_create", "index_drop", "function_create", "function_drop", "function_execute",
+            "link_create", "link_drop", "link_alter", "link_connect", "link_disconnect",
+            "link_copy_to", "link_copy_from", "synonym_create", "synonym_drop"
+        ]
+
+        resources_privileges_map = {
+            "name": "",
+            "privileges": privileges_list,
+            "type": "instance"
+        }
+
+        privileges_payload = self.create_privileges_payload([resources_privileges_map])
+        analytics_admin_role = self.create_columnar_role(pod, tenant, project_id,
+                                                         instance, "analytics_admin",
+                                                         privileges_payload)
+        if not analytics_admin_role:
+            self.log.error("Failed to create analytics admin role")
+            return None
+        instance.columnar_roles.append(analytics_admin_role)
+
+        analytics_admin_user = self.create_api_keys(pod, tenant, project_id, instance,
+                                                    username, password,
+                                                    role_ids=[analytics_admin_role.id])
+        instance.db_users.append(analytics_admin_user)
+        return analytics_admin_user
+
+    def create_privileges_payload(self, resources_privileges_map=[]):
+
+        def get_entity_obj(entity_obj_arr=[], entity_name=""):
+            matched_entities =  [entity_obj for entity_obj in entity_obj_arr
+                                  if entity_obj["name"] == entity_name]
+            if len(matched_entities) > 0:
+                return matched_entities[0]
+            else:
+                entity_obj = {
+                    "name": entity_name,
+                    "privileges": []
+                }
+                entity_obj_arr.append(entity_obj)
+                return entity_obj
+
+        privileges_payload = {
+            "databases": [],
+            "links": [],
+            "privileges": []
+        }
+        for res_priv_map in resources_privileges_map:
+            res_name = res_priv_map["name"]
+            privs = res_priv_map["privileges"]
+            res_type = res_priv_map["type"]
+            res_entities = res_name.split(".") if res_name else []
+
+            if res_type == "instance":
+                privileges_payload["privileges"].extend(privs)
+            elif res_type == "link":
+                link_obj = get_entity_obj(privileges_payload["links"], res_name)
+                link_obj["privileges"].extend(privs)
+            else:
+                db_name = res_entities[0]
+                db_obj = get_entity_obj(privileges_payload["databases"], db_name)
+                if res_type == "database":
+                    db_obj["privileges"].extend(privs)
+                else:
+                    if "scopes" not in db_obj:
+                        db_obj["scopes"] = []
+                    scope_name = res_entities[1]
+                    scope_obj = get_entity_obj(db_obj["scopes"], scope_name)
+                    if res_type == "scope":
+                        scope_obj["privileges"].extend(privs)
+                    else:
+                        res_field_name = res_type + "s"
+                        entity_name = res_entities[2]
+                        if res_field_name not in scope_obj:
+                            scope_obj[res_field_name] = []
+                        entity_obj = get_entity_obj(scope_obj[res_field_name], entity_name)
+                        entity_obj["privileges"].extend(privs)
+
+        return privileges_payload
+
+    def create_api_keys(
+            self, pod, tenant, project_id, instance,
+            username, password, privileges_payload = None,
+            role_ids = []):
+
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        if not privileges_payload:
+            privileges_payload = self.create_privileges_payload()
+
+        api_key_payload = {
+            "name": username,
+            "password": password,
+            "privileges": privileges_payload,
+            "roles": role_ids
+        }
+
+        resp = columnar_api.create_instance_api_keys(
+            tenant.id, project_id, instance.instance_id,
+            api_key_payload
+        )
+
+        if resp.status_code == 201:
+            self.log.info("API keys created successfully")
+            user_id = json.loads(resp.content).get("id")
+            db_user = DBUser(user_id, username, password)
+            return db_user
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return None
+        else:
+            self.log.critical("Unable to create API keys")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return None
+
+    def delete_api_keys(
+            self, pod, tenant, project_id, instance,
+            api_key_id):
+
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        resp = columnar_api.delete_api_keys(tenant.id, project_id, instance.instance_id,
+                                            api_key_id)
+
+        if resp.status_code == 202:
+            self.log.info("Successfully deleted API key {}".format(api_key_id))
+            return True
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return False
+        else:
+            self.log.critical("Unable to delete API keys")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return False
+
+    def create_columnar_role(
+            self, pod, tenant, project_id, instance,
+            role_name, privileges_payload = None):
+
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        if not privileges_payload:
+            privileges_payload = self.create_privileges_payload()
+
+        role_payload = {
+            "name": role_name,
+            "privileges": privileges_payload
+        }
+
+        resp = columnar_api.create_columnar_role(
+            tenant.id, project_id, instance.instance_id,
+            role_payload
+        )
+
+        if resp.status_code == 201:
+            self.log.info("Columnar role created successfully")
+            role_id = json.loads(resp.content).get("id")
+            columnar_role = ColumnarRole(role_id, role_name)
+            return columnar_role
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return None
+        else:
+            self.log.critical("Unable to create columnar role")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return None
+
+    def delete_columnar_role(
+            self, pod, tenant, project_id, instance,
+            role_id):
+
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+
+        resp = columnar_api.delete_columnar_role(tenant.id, project_id, instance.instance_id,
+                                                 role_id)
+
+        if resp.status_code == 204:
+            self.log.info("Successfully deleted columnar role {}".format(role_id))
+            return True
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            return False
+        else:
+            self.log.critical("Unable to delete API keys")
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+            return False
+
 
 class ColumnarUtils:
 
@@ -71,7 +322,7 @@ class ColumnarUtils:
             self, name=None, description=None, provider=None, region=None,
             nodes=0):
         if not name:
-            name = "Columnar_instance{0}".format(random.randint(1, 100000))
+            name = "Columnar_{0}".format(random.randint(1, 100000))
 
         if not description:
             description = str(''.join(random.choice(
@@ -96,25 +347,63 @@ class ColumnarUtils:
         }
         return config
 
-    def create_instance(self, pod, tenant, project_id, instance_config=None):
+    def create_instance(self, pod, tenant, instance_config=None, timeout=7200):
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         if not instance_config:
             instance_config = self.generate_instance_configuration()
         resp = columnar_api.create_columnar_instance(
-            tenant.id, project_id, instance_config["name"],
+            tenant.id, tenant.project_id, instance_config["name"],
             instance_config["description"], instance_config["provider"],
             instance_config["region"], instance_config["nodes"]
         )
-        if resp.status_code != 201:
-            self.log.error("Unable to create columnar instance {0} in project "
-                           "{1}".format(instance_config["name"], project_id))
-            if resp.content:
-                self.log.error("Error - {}".format(resp.content))
-            return None
-        resp = json.loads(resp.content)
-        return resp["id"]
+        instance_id = None
+        if resp.status_code == 201:
+            instance_id = json.loads(resp.content).get("id")
+        elif resp.status_code == 500:
+            self.log.critical(str(resp.content))
+            raise Exception(str(resp.content))
+        elif resp.status_code == 422:
+            if resp.content.find("not allowed based on your activation status") != -1:
+                self.log.critical("Tenant is not activated yet...retrying")
+            else:
+                self.log.critical(resp.content)
+                raise Exception("Cluster deployment failed.")
+        else:
+            self.log.error("Unable to create goldfish cluster {0} in project "
+                           "{1}".format(instance_config["name"], tenant.project_id))
+            self.log.critical("Capella API returned " + str(
+                resp.status_code))
+            self.log.critical(resp.json()["message"])
+        time.sleep(5)
+        self.log.info("Cluster created with cluster ID: {}"\
+                              .format(instance_id))
+
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = columnar_api.get_specific_columnar_instance(
+                tenant.id, tenant.project_id, instance_id)
+            if resp.status_code != 200:
+                self.log.error(
+                    "Unable to fetch details for goldfish cluster {0} with ID "
+                    "{1}".format(instance_config["name"], instance_id))
+                continue
+            state = json.loads(resp.content)["data"]["state"]
+            self.log.info("Cluster %s state: %s" % (instance_id, state))
+            if state == "deploying":
+                time.sleep(10)
+            else:
+                break
+        if state == "healthy":
+            self.log.info("Columnar instance is deployed successfully in %s s" % str(time.time() - start_time))
+        else:
+            self.log.error("Cluster {0} failed to deploy even after {"
+                           "1} seconds. Current cluster state - {2}".format(
+                               instance_config["name"], str(time.time() - start_time), state))
+
+        return instance_id
+
 
     def delete_instance(self, pod, tenant, project_id, instance):
         columnar_api = ColumnarAPI(
@@ -128,18 +417,18 @@ class ColumnarUtils:
             return False
         return True
 
-    def get_instance_info(self, pod, tenant, project_id, instance,
+    def get_instance_info(self, pod, tenant, project_id, instance_id,
                           columnar_api=None):
         if not columnar_api:
             columnar_api = ColumnarAPI(
                 pod.url_public, tenant.api_secret_key, tenant.api_access_key,
                 tenant.user, tenant.pwd)
         resp = columnar_api.get_specific_columnar_instance(
-            tenant.id, project_id, instance.instance_id)
+            tenant.id, project_id, instance_id)
         if resp.status_code != 200:
             self.log.error(
-                "Unable to fetch details for Columnar instance {0} with ID "
-                "{1}".format(instance.name, instance.instance_id))
+                "Unable to fetch details for Columnar instance with ID "
+                "{0}".format(instance_id))
             return None
         return json.loads(resp.content)
 
@@ -149,7 +438,7 @@ class ColumnarUtils:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         columnar_instance_info = self.get_instance_info(
-            pod, tenant, project_id, instance, columnar_api)
+            pod, tenant, project_id, instance.instance_id, columnar_api)
         resp = columnar_api.update_columnar_instance(
             tenant.id, project_id, instance.instance_id,
             columnar_instance_info["name"],
@@ -162,32 +451,6 @@ class ColumnarUtils:
             return False
         return resp
 
-    def wait_for_instance_to_be_deployed(
-            self, pod, tenant, project_id, instance, timeout=3600):
-        columnar_api = ColumnarAPI(
-            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
-            tenant.user, tenant.pwd)
-        end_time = time.time() + timeout
-        while time.time() < end_time:
-            resp = self.get_instance_info(
-                pod, tenant, project_id, instance, columnar_api)
-            if not resp:
-                state = None
-                continue
-            state = resp["data"]["state"]
-            if state == "deploying":
-                self.log.info("Instance is still deploying. Waiting for 10s.")
-                time.sleep(10)
-            else:
-                break
-        if state == "healthy":
-            return True
-        else:
-            self.log.error("Instance {0} failed to deploy even after {"
-                           "1} seconds. Current instance state - {2}".format(
-                instance.name, timeout, state))
-            return False
-
     def wait_for_instance_to_be_destroyed(
             self, pod, tenant, project_id, instance, timeout=3600):
         columnar_api = ColumnarAPI(
@@ -196,7 +459,7 @@ class ColumnarUtils:
         end_time = time.time() + timeout
         while time.time() < end_time:
             resp = self.get_instance_info(
-                pod, tenant, project_id, instance, columnar_api)
+                pod, tenant, project_id, instance.instance_id, columnar_api)
             if not resp:
                 state = None
                 break
@@ -229,7 +492,7 @@ class ColumnarUtils:
         end_time = time.time() + timeout
         while time.time() < end_time:
             state = self.get_instance_info(
-                pod, tenant, project_id, instance, columnar_api)["state"]
+                pod, tenant, project_id, instance.instance_id, columnar_api)["state"]
             if state == "scaling":
                 self.log.info("Instance is still scaling. Waiting for 10s.")
                 time.sleep(10)

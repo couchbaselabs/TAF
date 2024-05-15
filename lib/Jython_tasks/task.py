@@ -60,6 +60,7 @@ from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
     CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 from constants.cloud_constants.capella_constants import AWS
+from capella_utils.columnar_final import ColumnarUtils
 
 
 class Task(Future):
@@ -206,7 +207,7 @@ class TimerTask(Task):
         return result
 
 
-class DeployColumnarInstance(Task):
+class DeployColumnarInstanceNew(Task):
     def __init__(self, pod, tenant, name, config, timeout=1800):
         Task.__init__(self, "DeployingColumnarInstance-{}".format(name))
         self.name = name
@@ -217,13 +218,10 @@ class DeployColumnarInstance(Task):
 
     def call(self):
         try:
-            instance_id, cluster_id, srv, servers = \
-                GoldfishUtils.create_cluster(self.pod, self.tenant,
-                                             self.config)
+            instance_id = \
+                ColumnarUtils(self.log).create_instance(self.pod, self.tenant,
+                                              self.config)
             self.instance_id = instance_id
-            self.cluster_id = cluster_id
-            self.servers = servers
-            self.srv = srv
             self.result = True
         except Exception as e:
             self.log.error(e)
@@ -882,10 +880,10 @@ class RebalanceTask(Task):
             self.table.add_row([node.ip, str(zone_name),
                                 ",".join(services_for_node), "", "",
                                 "<--- IN ---", ""])
-            
+
             hostname = node.ip
             add_node = self.rest.join_node_to_cluster
-            
+
             if self.use_hostnames:
                 hostname = node.hostname
 
