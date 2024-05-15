@@ -34,7 +34,16 @@ echo "####################################"
 pip_path=/opt/jython/bin/pip
 jython_path=/opt/jython/bin/jython
 
+# Setup GoLang in local dir
+go_version=1.21.0
+wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz
+tar -xzf go${go_version}.linux-amd64.tar.gz
+export PATH=`pwd`/go/bin:${PATH}
+
 # Set desired python env
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
 pyenv local 3.10.14
 
 echo "Set ALLOW_HTP to False so test could run."
