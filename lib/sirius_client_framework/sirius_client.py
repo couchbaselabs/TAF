@@ -145,3 +145,17 @@ class SiriusClient(object):
         except requests.exceptions.RequestException as e:
             raise Exception("An error occurred: {}".format(str(e)))
         return self.workload_result(response=response)
+
+    def clear_test_information(self):
+        payload = {'identifierToken': self.identifier_token}
+        try:
+            endpoint = sirius_constants.WORKLOAD_PATH[
+                sirius_constants.SiriusCodes.DB_MGMT_OPS.CLEAR]
+            response = self.send_request_to_sirius(path=endpoint,
+                                                   payload=payload)
+            response_data = json.loads(response.content)
+            self.log.debug(("cleaning {0}".format(response_data)))
+            if not response_data["error"]:
+                self.log.debug("{0}".format(response_data))
+        except Exception as e:
+            self.log.critical((str(e)))

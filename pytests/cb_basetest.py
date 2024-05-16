@@ -10,10 +10,11 @@ from Jython_tasks.task_manager import TaskManager
 from SystemEventLogLib.Events import EventHelper
 from TestInput import TestInputSingleton
 from constants.sdk_constants.java_client import SDKConstants
-from common_lib import sleep
+from common_lib import sleep, IDENTIFIER_TOKEN
 from couchbase_helper.cluster import ServerTasks
 from global_vars import logger
 from node_utils.node_ready_functions import NodeUtils
+from sirius_client_framework.sirius_client import SiriusClient
 from sirius_client_framework.sirius_setup import SiriusSetup
 from test_summary import TestSummary
 
@@ -211,7 +212,11 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.summary = TestSummary(self.log)
 
     def tearDown(self):
-        pass
+        if self.load_docs_using == "sirius_go_sdk":
+            self.log.info("Clearing Sirius meta_data")
+            SiriusClient(self.sirius_url,
+                         identifier_token=IDENTIFIER_TOKEN)\
+                .clear_test_information()
 
     def log_setup_status(self, class_name, status, stage="setup"):
         self.log.info(
