@@ -1,4 +1,5 @@
 from connections.Rest_Connection import RestConnection
+import json
 
 
 class FtsHelper(RestConnection):
@@ -17,7 +18,7 @@ class FtsHelper(RestConnection):
     def run_fts_query_curl(self, index_name, param_data):
         api = self.ftsUrl + "api/index/%s/query" % index_name
         json_header = self.get_headers_for_content_type_json()
-        status, content, _ = self._http_request(api, "POST",
+        status, content, _ = self._urllib_request(api, "POST",
                                                 params=param_data,
                                                 headers=json_header,
                                                 timeout=120)

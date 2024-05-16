@@ -284,7 +284,7 @@ class CBASQueryLoad:
             e = ""
             try:
                 self.total_query_count.next()
-                query_tuple = random.choice(self.queries)
+                query_tuple = self.queries[i%len(self.queries)]
                 query = query_tuple[0]
                 original_query = query_tuple[1]
                 # print query

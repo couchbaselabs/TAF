@@ -80,6 +80,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}".format(
             instance_id, cluster_id))
+            self.cluster_util.print_cluster_stats(cluster)
 
         def allow_access_from_everywhere_on_instance(
                 tenant, project_id, instance_obj, result):
@@ -166,13 +167,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             self.capella["instance_id"] = ",".join([
                 instance.instance_id for instance in
                 self.tenant.columnar_instances])
-
-        self.cluster_util = ClusterUtils(self.task_manager)
-        self.bucket_util = BucketUtils(self.cluster_util, self.task)
-
-        # Setting global_vars for future reference
-        global_vars.cluster_util = self.cluster_util
-        global_vars.bucket_util = self.bucket_util
 
     def tearDown(self):
         self.shutdown_task_manager()

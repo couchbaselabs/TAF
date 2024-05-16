@@ -78,7 +78,7 @@ vector_load = {
     "pattern": [0, 0, 100, 0, 0], # CRUDE
     "load_type": ["update"],
     "2iQPS": 10,
-    "ftsQPS": 10,
+    "ftsQPS": _input.param("ftsQPS", 10),
     "cbasQPS": 0,
     "collections_defn": [
         {

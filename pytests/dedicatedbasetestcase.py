@@ -22,6 +22,7 @@ from table_view import TableView
 import random
 import string
 import threading
+import global_vars
 
 
 class CapellaBaseTest(CouchbaseBaseTest):
@@ -275,6 +276,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
 
             self.cluster_util = ClusterUtils(self.task_manager)
             self.bucket_util = BucketUtils(self.cluster_util, self.task)
+            # Setting global_vars for future reference
+            global_vars.cluster_util = self.cluster_util
+            global_vars.bucket_util = self.bucket_util
 
             for _, cluster in self.cb_clusters.items():
                 self.cluster_util.print_cluster_stats(cluster)
