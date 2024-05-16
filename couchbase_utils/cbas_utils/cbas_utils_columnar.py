@@ -1758,14 +1758,12 @@ class Link_Util(Dataverse_Util):
                       "where lnk.Name <> \"Local\""
         if link_type:
             links_query += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
-        while not links_created:
-            status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, links_query, mode="immediate",
-                timeout=300, analytics_timeout=300)
-            if status.encode('utf-8') == 'success':
-                links_created = list(
-                    map(lambda lnk: lnk.encode('utf-8'), results))
-                break
+        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+            cluster, links_query, mode="immediate",
+            timeout=300, analytics_timeout=300)
+        if status.encode('utf-8') == 'success':
+            links_created = list(
+                map(lambda lnk: lnk.encode('utf-8'), results))
         return links_created
 
 
@@ -2781,21 +2779,19 @@ class Dataset_Util(KafkaLink_Util):
             datasets_query = 'SELECT * ' \
                              'FROM Metadata.`Dataset` d ' \
                              'WHERE d.DataverseName <> "Metadata"'
-        while not datasets_created:
-            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+        status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, datasets_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-            if status.encode('utf-8') == 'success':
-                if fields:
-                    results = CBASHelper.get_json(json_data=results)
-                    for result in results:
-                        ds = result['d']
-                        datasets_created.append(
-                            {field: ds[field] for field in fields})
-                else:
-                    datasets_created = list(
-                        map(lambda dv: dv.encode('utf-8'), results))
-                break
+        if status.encode('utf-8') == 'success':
+            if fields:
+                results = CBASHelper.get_json(json_data=results)
+                for result in results:
+                    ds = result['d']
+                    datasets_created.append(
+                        {field: ds[field] for field in fields})
+            else:
+                datasets_created = list(
+                    map(lambda dv: dv.encode('utf-8'), results))
         return datasets_created
 
     def create_datasets_for_tpch(self, cluster):
@@ -4901,18 +4897,16 @@ class Synonym_Util(StandAlone_Collection_Util):
                          "syn.DataverseName || \".\" || syn.SynonymName from " \
                          "Metadata.`Synonym` as syn where syn.DataverseName " \
                          "<> \"Metadata\";"
-        while not synonyms_created:
-            status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, synonyms_query, mode="immediate", timeout=300,
-                analytics_timeout=300)
-            if status.encode('utf-8') == 'success':
-                results = list(
-                    map(lambda result: result.encode('utf-8').split("."),
-                        results))
-                synonyms_created = list(
-                    map(lambda result: CBASHelper.format_name(*result),
-                        results))
-                break
+        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+            cluster, synonyms_query, mode="immediate", timeout=300,
+            analytics_timeout=300)
+        if status.encode('utf-8') == 'success':
+            results = list(
+                map(lambda result: result.encode('utf-8').split("."),
+                    results))
+            synonyms_created = list(
+                map(lambda result: CBASHelper.format_name(*result),
+                    results))
         return synonyms_created
 
 class View_Util(Synonym_Util):
@@ -5310,14 +5304,12 @@ class Index_Util(View_Util):
                         "\".\" || idx.IndexName from Metadata.`Index` as " \
                         "idx where idx.DataverseName <> \"Metadata\" and " \
                         "idx.IsPrimary <> true"
-        while not indexes_created:
-            status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, indexes_query, mode="immediate", timeout=300,
-                analytics_timeout=300)
-            if status.encode('utf-8') == 'success':
-                indexes_created = list(
-                    map(lambda idx: idx.encode('utf-8'), results))
-                break
+        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+            cluster, indexes_query, mode="immediate", timeout=300,
+            analytics_timeout=300)
+        if status.encode('utf-8') == 'success':
+            indexes_created = list(
+                map(lambda idx: idx.encode('utf-8'), results))
         return indexes_created
 
 
@@ -5643,20 +5635,18 @@ class UDFUtil(Index_Util):
     def get_all_udfs_from_metadata(self, cluster):
         udfs_created = []
         udf_query = "select value(fn) from Metadata.`Function` as fn"
-        while not udfs_created:
-            status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, udf_query, mode="immediate",
-                timeout=300, analytics_timeout=300)
-            if status.encode('utf-8') == 'success':
-                for r in results:
-                    udf_full_name = ".".join(
-                        [r["DatabaseName"], r["DataverseName"], r["Name"]])
-                    if int(r["Arity"]) == -1:
-                        param = ["..."]
-                    else:
-                        param = r["Params"]
-                    udfs_created.append([udf_full_name, param])
-                break
+        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+            cluster, udf_query, mode="immediate",
+            timeout=300, analytics_timeout=300)
+        if status.encode('utf-8') == 'success':
+            for r in results:
+                udf_full_name = ".".join(
+                    [r["DatabaseName"], r["DataverseName"], r["Name"]])
+                if int(r["Arity"]) == -1:
+                    param = ["..."]
+                else:
+                    param = r["Params"]
+                udfs_created.append([udf_full_name, param])
         return udfs_created
 
 
