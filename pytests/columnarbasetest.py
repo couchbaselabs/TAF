@@ -257,6 +257,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             if (TestInputSingleton.input.test_params["case_number"] ==
                     TestInputSingleton.input.test_params["no_of_test_identified"]):
                 delete_cloud_infra()
+                # This is required to delete project in
+                # dedicatedbasetestcase.py teardown method.
+                self.skip_redeploy = False
             else:
                 for tenant in self.tenants:
                     CapellaUtils.revoke_access_secret_key(
