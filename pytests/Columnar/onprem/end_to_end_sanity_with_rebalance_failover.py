@@ -33,7 +33,7 @@ import json
 from Queue import Queue
 import random
 import time
-from Columnar.build_verification_sanity.columnar_bfv_base import BFVBase
+from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
 from couchbase_utils.security_utils.x509main import x509main
 from columnarbasetest import ColumnarBaseTest
 from cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
@@ -49,7 +49,7 @@ from sirius_client_framework.sirius_constants import SiriusCodes
 from awsLib.s3_data_helper import perform_S3_operation
 
 
-class E2EBuildVerification(BFVBase):
+class E2EBuildVerification(ColumnarOnPremBase):
     """
     This test is meant to validate columnar server build before promoting
     it to AMI for Capella Columnar
