@@ -91,8 +91,8 @@ class basic_ops(ClusterSetup):
         if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
+                self.cluster,
                 self.cluster.buckets[0],
-                [self.cluster.master],
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
 
@@ -593,7 +593,8 @@ class basic_ops(ClusterSetup):
                     data_op_dict[dict_key]["doc_gen"], doc_op, 0,
                     batch_size=self.batch_size,
                     process_concurrency=self.process_concurrency,
-                    suppress_error_table=suppress_err_tbl)
+                    suppress_error_table=suppress_err_tbl,
+                    validate_using=self.load_docs_using)
                 self.task.jython_task_manager.get_task_result(task)
 
         self.validate_test_failure()
@@ -742,7 +743,7 @@ class basic_ops(ClusterSetup):
                     break
                 vb_details = cbstat[node].vbucket_details(bucket.name)
                 for _, vb_stats in vb_details.items():
-                    total_gets += long(vb_stats["ops_get"])
+                    total_gets += int(vb_stats["ops_get"])
             if self.test_failure:
                 break
             self.sleep(120, "Total_gets: %s, itr: %s" % (total_gets,
@@ -825,7 +826,7 @@ class basic_ops(ClusterSetup):
                 for node in list(cb_stat_obj.keys()):
                     vb_details = cb_stat_obj[node].vbucket_details(bucket.name)
                     for _, vb_stats in vb_details.items():
-                        total_gets += long(vb_stats["ops_get"])
+                        total_gets += int(vb_stats["ops_get"])
             except Exception as err:
                 self.log_failure(err)
 

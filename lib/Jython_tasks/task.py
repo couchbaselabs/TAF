@@ -3347,15 +3347,12 @@ class ValidateDocumentsTask(GenericLoadingTask):
         wrong_values = []
         for key, value in key_value.items():
             if key in map:
-                if type(value) == JsonObject:
-                    expected_val = json.loads(value.toString())
-                else:
+                if not isinstance(value, dict):
                     expected_val = json.loads(value)
                 if map[key]['cas'] != 0:
-                    actual_val = json.loads(map[key][
-                                                'value'].toString())
+                    actual_val = map[key]['value']
                 elif map[key]['error'] is not None:
-                    actual_val = map[key]['error'].toString()
+                    actual_val = map[key]['error']
                 else:
                     missing_keys.append(key)
                     continue

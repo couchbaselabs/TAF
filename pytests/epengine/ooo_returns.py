@@ -3,12 +3,11 @@ from threading import Thread, Lock
 
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 
 from sdk_client3 import TransactionConfig, SDKClient
 
@@ -25,8 +24,8 @@ class OutOfOrderReturns(ClusterSetup):
         self.doc_ops = self.input.param("doc_ops", "update;update").split(";")
 
         # Disable auto-failover to avoid failover of nodes
-        status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120)
+        status, _ = ClusterRestAPI(self.cluster.master) \
+            .update_auto_failover_settings("false", 120)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         self.bucket = self.cluster.buckets[0]
@@ -36,8 +35,8 @@ class OutOfOrderReturns(ClusterSetup):
                 and self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
+                self.cluster,
                 self.bucket,
-                self.cluster.nodes_in_cluster,
                 req_clients=self.sdk_pool_capacity,
                 compression_settings=self.sdk_compression)
 
@@ -45,10 +44,9 @@ class OutOfOrderReturns(ClusterSetup):
         self.kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         self.node_data = dict()
         for node in self.kv_nodes:
-            shell = RemoteMachineShellConnection(node)
             cb_stat = Cbstats(node)
             self.node_data[node] = dict()
-            self.node_data[node]["shell"] = shell
+            self.node_data[node]["shell"] = cb_stat.shellConn
             self.node_data[node]["cb_stat"] = cb_stat
             self.node_data[node]["active_vbs"] = \
                 cb_stat.vbucket_list(self.bucket.name, vbucket_type="active")

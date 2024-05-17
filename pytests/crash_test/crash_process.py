@@ -3,16 +3,15 @@ from random import randint, choice
 from BucketLib.bucket import Bucket
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
-from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
-from sdk_client3 import SDKClient
-
 from sdk_exceptions import SDKException
+from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CrashTest(ClusterSetup):
@@ -51,9 +50,8 @@ class CrashTest(ClusterSetup):
             self.log.info("Creating SDK clients for client_pool")
             for bucket in self.cluster.buckets:
                 self.cluster.sdk_client_pool.create_clients(
-                    bucket,
-                    [self.cluster.master],
-                    self.sdk_pool_capacity,
+                    self.cluster, bucket,
+                    req_clients=self.sdk_pool_capacity,
                     compression_settings=self.sdk_compression)
 
         self.__is_sync_write_enabled = DurabilityHelper.is_sync_write_enabled(
@@ -117,7 +115,7 @@ class CrashTest(ClusterSetup):
                         self.fail("Cbstats verification failed")
 
                 self.bucket_util.verify_stats_all_buckets(self.cluster,
-                                                        self.num_items)
+                                                          self.num_items)
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("==========Finished CrashTest setup========")
@@ -377,8 +375,8 @@ class CrashTest(ClusterSetup):
         self.sdk_timeout = 60
 
         # Disable auto-failover to avoid failover of nodes
-        status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120)
+        status, _ = ClusterRestAPI(self.cluster.master) \
+            .update_auto_failover_settings("false", 120)
         self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         # Can take 'all_nodes' / 'single node'
@@ -451,7 +449,7 @@ class CrashTest(ClusterSetup):
            and check that ht_mem_used_replica (cbstats memory) is the same
         '''
 
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
 
         # Creating ephemeral buckets with full eviction
         for i in range(self.num_buckets):
@@ -466,12 +464,12 @@ class CrashTest(ClusterSetup):
 
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        status = self.rest.update_autoreprovision_settings(False)
-        self.assertTrue(status,"Could not turn off auto reprovision")
+        status = self.rest.update_auto_reprovision_settings("false")
+        self.assertTrue(status, "Could not turn off auto reprovision")
         self.log.info("Auto reprovision successfully turned off")
 
-        status = self.rest.update_autofailover_settings(False, 1800)
-        self.assertTrue(status,"Could not turn off auto failover")
+        status = self.rest.update_auto_failover_settings("false", 1800)
+        self.assertTrue(status, "Could not turn off auto failover")
         self.log.info("Auto failover successfully turned off")
 
         self.doc_gen = doc_generator(key=self.key,
@@ -496,7 +494,7 @@ class CrashTest(ClusterSetup):
                                    remote,
                                    node=node_to_stop)
         error_sim.create(action=CouchbaseError.KILL_MEMCACHED)
-        self.sleep(10,"Wait for memcached to be back up")
+        self.sleep(10, "Wait for memcached to be back up")
 
         for task in tasks:
             self.task_manager.stop_task(task)

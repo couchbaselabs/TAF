@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 
 from basetestcase import ClusterSetup
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
 from couchbase_helper.document import View
 
 
@@ -107,19 +107,21 @@ class DocumentKeysTests(ClusterSetup):
         self._persist_and_verify()
 
         # assert if there are not enough nodes to failover
-        rest = RestConnection(self.cluster.master)
-        num_nodes = len(rest.node_statuses())
+        num_nodes = 0
+        rest = ClusterRestAPI(self.cluster.master)
+        status, json_content = rest.cluster_details()
+        if status:
+            num_nodes = len(json_content["nodes"])
         self.assertTrue(num_nodes > 1,
                         "ERROR: Not enough nodes to do failover")
 
         # failover 1 node(we have 1 replica) and verify the keys
-        rest = RestConnection(self.cluster.master)
-        node_status = rest.node_statuses()
+        node_status = self.cluster_util.get_otp_nodes(self.cluster.master)
         for node_to_failover in self.servers[(num_nodes - 1):num_nodes]:
             for node in node_status:
                 if node_to_failover.ip == node.ip \
                         and int(node_to_failover.port) == int(node.port):
-                    rest.fail_over(node.id, graceful=False)
+                    rest.perform_hard_failover(node.id)
         self._persist_and_verify()
 
     def test_dockey_whitespace_data_ops(self):
