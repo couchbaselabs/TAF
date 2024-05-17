@@ -661,3 +661,16 @@ class MagmaBaseTest(StorageBase):
             seq_stats[bucket] = self.bucket_util.get_vb_details_for_bucket(bucket,
                                                                            self.cluster.nodes_in_cluster)
         return seq_stats
+
+    def fetch_vbucket_size(self, bucket):
+
+        self.log.info("Sizes of each vbucket in bucket: {}".format(bucket.name))
+        for node in self.cluster.kv_nodes:
+            shell = RemoteMachineShellConnection(node)
+            path_to_bucket = os.path.join(self.data_path, bucket.name)
+            path_arr, e = shell.execute_command("find {} -name kvstore-*".format(path_to_bucket))
+            for path in path_arr:
+                o = shell.execute_command("du -H {}".format(path))
+                kvstore_du = o[0][-1].split('\t')[0]
+                kvstore_path = o[0][-1].split('\t')[1][-10:-1]
+                self.log.info("DU of {0} = {1}".format(kvstore_path, kvstore_du))

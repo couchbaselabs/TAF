@@ -773,6 +773,7 @@ class APIBase(CouchbaseBaseTest):
                         expected_res[key], actual_res[key], id):
                     return False
             elif isinstance(expected_res[key], list):
+                j = 0
                 if key == "services":
                     for service in expected_res[key]:
                         if service not in actual_res[key]:
@@ -781,30 +782,32 @@ class APIBase(CouchbaseBaseTest):
                 for i in range(len(actual_res[key])):
                     if key == "data" and actual_res[key][i]["id"] != id:
                         continue
+                    if len(expected_res) > 1:
+                        j = i
                     if not self.validate_api_response(
-                            expected_res[key][0], actual_res[key][i], id):
+                            expected_res[key][j], actual_res[key][i], id):
                         return False
             elif expected_res[key] != actual_res[key]:
                 return False
         return True
 
     def select_CIDR(self, org, proj, name, cloudProvider, serviceGroups,
-                    availability, support, header=None, **kwargs):
+                    availability, support, couchbaseServer=None, header=None,
+                    **kwargs):
         self.log.info("Selecting CIDR for cluster deployment.")
 
         start_time = time.time()
         while time.time() - start_time < 1800:
             result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                org, proj, name, cloudProvider, serviceGroups=serviceGroups,
-                availability=availability, support=support, headers=header,
-                **kwargs)
+                org, proj, name, cloudProvider, couchbaseServer,
+                serviceGroups, availability, support, header, **kwargs)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
-                    org, proj, name, cloudProvider,
-                    serviceGroups=serviceGroups, availability=availability,
-                    support=support, headers=header, **kwargs)
+                    org, proj, name, cloudProvider, couchbaseServer,
+                    serviceGroups, availability, support, header, **kwargs)
             if result.status_code != 422:
+                self.log.error(result.content)
                 return result
             elif "Please ensure you are passing a unique CIDR block" in \
                     result.json()["message"]:

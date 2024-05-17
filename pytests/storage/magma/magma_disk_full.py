@@ -10,9 +10,11 @@ import time
 
 from cb_constants.CBServer import CbServer
 from cb_tools.cbstats import Cbstats
+from couchbase_helper.documentgenerator import doc_generator
 from magma_base import MagmaBaseTest
 from memcached.helper.data_helper import MemcachedClientHelper
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 from sdk_constants.java_client import SDKConstants
 
 
@@ -26,8 +28,8 @@ class MagmaDiskFull(MagmaBaseTest):
                         "AutoFailover disabling failed")
 
     def tearDown(self):
-        for node in self.servers:
-            self.free_disk(node)
+        # for node in self.servers:
+        #     self.free_disk(node)
         MagmaBaseTest.tearDown(self)
 
     def simulate_persistence_failure(self, servers=None):
@@ -823,3 +825,103 @@ class MagmaDiskFull(MagmaBaseTest):
         for task, task_info in tasks_info.items():
             self.assertFalse(task_info["ops_failed"],
                              "Doc ops failed for task: {}".format(task.thread_name))
+
+    def test_disk_full_with_large_docs(self):
+        # Number of docs of different sizes
+        num_2mb_docs = self.input.param("num_2mb_docs", 1000)
+        num_4mb_docs = self.input.param("num_4mb_docs", 1000)
+        num_8mb_docs = self.input.param("num_8mb_docs", 1000)
+        num_16mb_docs = self.input.param("num_16mb_docs", 500)
+        num_20mb_docs = self.input.param("num_20mb_docs", 500)
+        read_on_disk_full = self.input.param("read_on_disk_full", False)
+        self.log.info("====test_disk_full_with_large_docs starts====")
+
+        bucket = self.cluster.buckets[0]
+        self.cluster.kv_nodes = self.cluster_util.get_kv_nodes(
+            self.cluster, self.cluster.nodes_in_cluster)
+
+        # Initial data load
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket,
+                                       num_2mb_docs, 2548000, "2mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket,
+                                       num_4mb_docs, 4548000, "4mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket,
+                                       num_8mb_docs, 8548000, "8mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket,
+                                       num_16mb_docs, 16548000, "16mbbig_docs")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket,
+                                       num_20mb_docs, 20548000, "20mbbig_docs")
+
+        self.sleep(20, "Wait for num_items to get reflected")
+        self.bucket_util.print_bucket_stats(self.cluster)
+        self.fetch_vbucket_size(bucket)
+
+        th = list()
+        for node in self.cluster.nodes_in_cluster:
+            t = threading.Thread(target=self.fill_disk,
+                                 kwargs=dict(server=node, free=100))
+            t.start()
+            th.append(t)
+        for t in th:
+            t.join()
+
+        servers = self.cluster.nodes_in_cluster
+        ep_data_write_failed = dict()
+        for server in servers:
+            ep_data_write_failed.update({server: 0})
+
+        # Loading data to simulate persistence failure
+        self.log.info("Loading data during disk full scenario")
+        sdk_client = SDKClient(self.cluster, bucket)
+
+        large_doc = doc_generator(key="sample_large_doc", start=0, end=2000,
+                                  doc_size=2048000, doc_type=self.doc_type,
+                                  vbuckets=self.cluster.vbuckets,
+                                  key_size=self.key_size,
+                                  randomize_value=True)
+
+        for i in range(2000):
+            key = "large_doc" + str(i)
+            key_obj, val_obj = large_doc.next()
+            res = sdk_client.insert(key, val_obj, timeout=15)
+            if res["error"] is not None:
+                self.log.info("Insert failed for key: {0}. Error = {1}"
+                              .format(key, res["error"]))
+            else:
+                self.log.info("Insert of key: {0} succeeded".format(key))
+        sdk_client.close()
+
+        for bucket in self.cluster.buckets:
+            self.bucket_util._wait_for_stat(bucket, ep_data_write_failed,
+                                            cbstat_cmd="all",
+                                            stat_name="ep_data_write_failed",
+                                            stat_cond=">", timeout=60)
+
+        if read_on_disk_full:
+            sdk_client2 = SDKClient(self.cluster, bucket)
+            doc_key_prefixes = ["2mbbig_docs", "4mbbig_docs", "8mbbig_docs",
+                                "16mbbig_docs", "20mbbig_docs"]
+            for prefix in doc_key_prefixes:
+                for i in range(20):
+                    doc_key = prefix + ("0" * (20 - len(str(i)))) + str(i)
+                    self.log.info("Reading doc: {}".format(doc_key))
+                    try:
+                        _ = sdk_client2.read(doc_key, timeout=30)
+                    except Exception as e:
+                        self.log.info("Exception while reading doc:{0} = {1}"
+                                      .format(doc_key, e))
+            sdk_client2.close()
+
+        for node in self.cluster.nodes_in_cluster:
+            self.free_disk(node)
+
+        # Loading data after freeing disk space
+        self.log.info("Loading after freeing up disk")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, 2500,
+                                       2548000, "2mbbig_docs3")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, 500,
+                                       16548000, "16mbbig_docs3")
+        self.load_data_cbc_pillowfight(self.cluster.master, bucket, 500,
+                                       20548000, "20mbbig_docs3")
+
+        self.bucket_util.print_bucket_stats(self.cluster)

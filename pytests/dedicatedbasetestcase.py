@@ -21,6 +21,7 @@ from table_view import TableView
 import random
 import string
 import threading
+import global_vars
 
 
 class CapellaBaseTest(CouchbaseBaseTest):
@@ -273,6 +274,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
 
             self.cluster_util = ClusterUtils(self.task_manager)
             self.bucket_util = BucketUtils(self.cluster_util, self.task)
+            # Setting global_vars for future reference
+            global_vars.cluster_util = self.cluster_util
+            global_vars.bucket_util = self.bucket_util
 
             for _, cluster in self.cb_clusters.items():
                 self.cluster_util.print_cluster_stats(cluster)
@@ -326,16 +330,17 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             for delete_th in th:
                 delete_th.join()
 
-        if not TestInputSingleton.input.capella.get("project", None):
-            th = list()
-            for tenant in self.tenants:
-                delete_th = threading.Thread(
-                    target=CapellaUtils.delete_project, name=tenant.id,
-                    args=(self.pod, tenant, tenant.projects))
-                delete_th.start()
-                th.append(delete_th)
-            for delete_th in th:
-                delete_th.join()
+        if hasattr(self, "skip_redeploy") and not self.skip_redeploy:
+            if not TestInputSingleton.input.capella.get("project", None):
+                th = list()
+                for tenant in self.tenants:
+                    delete_th = threading.Thread(
+                        target=CapellaUtils.delete_project, name=tenant.id,
+                        args=(self.pod, tenant, tenant.projects))
+                    delete_th.start()
+                    th.append(delete_th)
+                for delete_th in th:
+                    delete_th.join()
 
     def __get_existing_cluster_details(self, tenants, cluster_ids):
         cluster_index = 1
@@ -347,7 +352,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             cluster_info = CapellaUtils.get_cluster_info(self.pod, tenants[i],
                                                          cluster_id)
             cluster_srv = cluster_info.get("endpointsSrv")
-            CapellaUtils.allow_my_ip(self.pod, tenants[i], cluster_id)
+            CapellaUtils.allow_my_ip(self.pod, tenants[i], cluster_id, True)
             CapellaUtils.create_db_user(
                     self.pod, tenants[i], cluster_id,
                     self.rest_username, self.rest_password)

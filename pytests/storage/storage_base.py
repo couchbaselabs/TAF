@@ -16,7 +16,6 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from sdk_constants.java_client import SDKConstants
 from Jython_tasks.task import PrintBucketStats
-from java.util import HashMap
 
 
 class StorageBase(BaseTestCase):
@@ -1251,11 +1250,33 @@ class StorageBase(BaseTestCase):
             num_reader_threads=self.num_reader_threads,
             num_storage_threads=self.num_storage_threads)
 
+    def load_data_cbc_pillowfight(self, server, bucket, items, doc_size,
+                                  key_prefix="test_docs", threads=1,
+                                  ops_rate=None):
+        self.log.info(f"Loading {items} items of doc size: {doc_size} "
+                      f"into the bucket with cbc-pillowfight")
+        shell = RemoteMachineShellConnection(server)
+        pillowfight_base_cmd = \
+            "/opt/couchbase/bin/cbc-pillowfight -U {0}/{1} " \
+            "-u Administrator -P password -I {2}" \
+            " -t {3} -m {4} -M {4} --populate-only --random-body " \
+            "--key-prefix={5} -Dtimeout=10"
+
+        cmd = pillowfight_base_cmd.format(server.ip, bucket.name, items,
+                                          threads, doc_size, key_prefix)
+        if ops_rate is not None:
+            cmd += " --rate-limit {}".format(ops_rate)
+
+        self.log.info("Executing pillowfight command = {}".format(cmd))
+        _, _ = shell.execute_command(cmd)
+        self.sleep(30, "Wait after executing pillowfight command")
+        shell.disconnect()
+
     def PrintStep(self, msg=None):
-        print "\n"
-        print "\t", "#"*60
-        print "\t", "#"
-        print "\t", "#  %s" % msg
-        print "\t", "#"
-        print "\t", "#"*60
-        print "\n"
+        print("\n")
+        print("\t", "#"*60)
+        print("\t", "#")
+        print("\t", "#  %s" % msg)
+        print("\t", "#")
+        print("\t", "#"*60)
+        print("\n")

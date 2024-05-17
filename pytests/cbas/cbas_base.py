@@ -610,14 +610,15 @@ class CBASBaseTest(BaseTestCase):
                                     memory_quota_available))
                             cluster.rest.set_service_mem_quota(
                                 {CbServer.Settings.CBAS_MEM_QUOTA: memory_quota_available})
-                        self.service_mem_dict[service][2] = memory_quota_available
+                        self.service_mem_dict[CbServer.Services.CBAS][2] \
+                            = memory_quota_available
                     else:
                         self.fail("Error while setting service memory quota {0} "
                                   "for CBAS".format(memory_quota_available))
 
     def collectionSetUp(
             self, cluster, load_data=True, buckets_spec=None,
-            doc_loading_spec=None):
+            doc_loading_spec=None, create_sdk_clients=True):
         """
         Setup the buckets, scopes and collecitons based on the spec passed.
         """
@@ -660,7 +661,8 @@ class CBASBaseTest(BaseTestCase):
         # Prints bucket stats before doc_ops
         self.bucket_util.print_bucket_stats(cluster)
 
-        CollectionBase.create_clients_for_sdk_pool(self, cluster)
+        if create_sdk_clients:
+            CollectionBase.create_clients_for_sdk_pool(self, cluster)
         self.cluster_util.print_cluster_stats(cluster)
         if load_data:
             self.load_data_into_buckets(cluster, doc_loading_spec)

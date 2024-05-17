@@ -115,7 +115,6 @@ class Murphy(BaseTestCase, OPD):
         self.skip_init = self.input.param("skip_init", False)
         self.query_result = True
 
-        self.vector = self.input.param("vector", False)
         self.esClient = None
         self.esHost = self.input.param("esHost", None)
         self.esAPIKey = self.input.param("esAPIKey", None)
@@ -160,11 +159,6 @@ class Murphy(BaseTestCase, OPD):
         if self.vector:
             self.load_defn = list()
             self.load_defn.append(vector_load)
-
-        #Vector Dataload Params
-        self.model = self.input.param("model", "sentence-transformers/all-MiniLM-L6-v2")
-        self.mockVector = self.input.param("mockVector", False)
-        self.dim = self.input.param("dim", 384)
 
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
@@ -301,7 +295,7 @@ class Murphy(BaseTestCase, OPD):
             self.sleep(10, "sleep  after setting indexer params")
         if self.fts_nodes>0 and self.fts_nodes > len(self.cluster.fts_nodes):
             self.rest.set_service_mem_quota({CbServer.Settings.FTS_MEM_QUOTA:
-                                             int(server.mcdMemoryReserved - 100
+                                             int(server.mcdMemoryReserved*0.7
                                                  )})
             nodes = len(self.cluster.nodes_in_cluster)
             self.task.rebalance(self.cluster,
@@ -492,14 +486,16 @@ class Murphy(BaseTestCase, OPD):
             self.drIndex.start_index_stats(self.cluster)
 
         if self.cluster.fts_nodes:
-            self.drFTS.create_fts_indexes(self.cluster, dims=self.dim)
+            self.drFTS.create_fts_indexes(self.cluster, dims=self.dim,
+                                          _type=self.fts_index_type)
             status = self.drFTS.wait_for_fts_index_online(self.cluster,
                                                           self.index_timeout)
             self.assertTrue(status, "FTS index build failed.")
+            self.sleep(300, "Wait for memory to be released after FTS index build.")
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("ftsQPS", 0) > 0:
                     ql = FTSQueryLoad(self.cluster, bucket, self.esClient,
-                                  self.mockVector, self.dim)
+                                  self.mockVector, self.dim, self.base64)
                     ql.start_query_load()
                     self.ftsQL.append(ql)
 

@@ -11,7 +11,7 @@ if runtype in ["columnar", "columnar1"]:
         BackupUtils as backuputil
     )
 else:
-    from cbas_utils_on_prem import (
+    from cbas_utils.cbas_utils_on_prem import (
         CbasUtil as utils,
         FlushToDiskTask as flushtodisktask,
         DisconnectConnectLinksTask as disconnectconnectlinkstask,

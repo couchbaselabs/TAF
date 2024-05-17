@@ -1,5 +1,6 @@
+from queue import Queue
+
 from Columnar.columnar_base import ColumnarBaseTest
-from Queue import Queue
 
 
 class DynamicPrefix(ColumnarBaseTest):

@@ -4,8 +4,9 @@ Created on 25-OCTOBER-2023
 @author: umang.agrawal
 """
 
+from queue import Queue
+
 from Columnar.columnar_base import ColumnarBaseTest
-from Queue import Queue
 
 
 class StandaloneCollection(ColumnarBaseTest):

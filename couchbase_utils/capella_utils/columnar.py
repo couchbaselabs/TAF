@@ -116,10 +116,10 @@ class GoldfishUtils:
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
                             tenant.api_access_key, tenant.user, tenant.pwd)
         resp = gf_api.delete_columnar_instance(
-            tenant.id, tenant.project_id, cluster.id,)
+            tenant.id, tenant.project_id, cluster.instance_id,)
         if resp.status_code != 202:
             GoldfishUtils.log.error("Unable to delete goldfish cluster {0}: {1}".format(
-                cluster.id, resp.content))
+                cluster.instance_id, resp.content))
             return False
         return True
 
@@ -127,9 +127,9 @@ class GoldfishUtils:
     def scale_cluster(pod, tenant, cluster, nodes):
         gf_api = CapellaAPI(pod.url_public, tenant.api_secret_key,
                             tenant.api_access_key, tenant.user, tenant.pwd)
-        gf_instance_info = GoldfishUtils.get_cluster_info(pod, tenant, cluster.id)
+        gf_instance_info = GoldfishUtils.get_cluster_info(pod, tenant, cluster.instance_id)
         resp = gf_api.update_columnar_instance(
-            tenant.id, tenant.project_id, cluster.id,
+            tenant.id, tenant.project_id, cluster.instance_id,
             gf_instance_info["data"]["name"], gf_instance_info["data"]["description"],
             nodes)
         GoldfishUtils.log.info(resp)
@@ -160,14 +160,14 @@ class GoldfishUtils:
         start_time = time.time()
         while time.time() < start_time + timeout:
             resp = gf_api.get_specific_columnar_instance(
-                tenant.id, tenant.project_id, cluster.id)
+                tenant.id, tenant.project_id, cluster.instance_id)
             if resp.status_code != 200:
                 GoldfishUtils.log.error(
                     "Unable to fetch details for goldfish cluster {0} with ID "
-                    "{1}".format(cluster.name, cluster.id))
+                    "{1}".format(cluster.name, cluster.instance_id))
                 continue
             state = json.loads(resp.content)["data"]["state"]
-            GoldfishUtils.log.info("Cluster %s state: %s" % (cluster.id, state))
+            GoldfishUtils.log.info("Cluster %s state: %s" % (cluster.instance_id, state))
             if state == "deploying":
                 time.sleep(10)
             else:
@@ -188,13 +188,13 @@ class GoldfishUtils:
         start_time = time.time()
         while time.time() < start_time + timeout:
             resp = gf_api.get_specific_columnar_instance(
-                tenant.id, tenant.project_id, cluster.id)
+                tenant.id, tenant.project_id, cluster.instance_id)
             if resp.status_code != 200:
                 GoldfishUtils.log.info("Columnar instance is deleted successfully in %s s" % str((time.time() - start_time)))
                 return True
             content = json.loads(resp.content)
             state = content["state"]
-            GoldfishUtils.log.info("Cluster %s current state: %s" % (cluster.id, state))
+            GoldfishUtils.log.info("Cluster %s current state: %s" % (cluster.instance_id, state))
             if state == "destroying" or state == "healthy":
                 time.sleep(10)
             else:
@@ -212,14 +212,14 @@ class GoldfishUtils:
         start_time = time.time()
         while time.time() < start_time + timeout:
             resp = gf_api.get_specific_columnar_instance(
-                tenant.id, tenant.project_id, cluster.id)
+                tenant.id, tenant.project_id, cluster.instance_id)
             if resp.status_code != 200:
                 GoldfishUtils.log.error(
                     "Unable to fetch details for goldfish cluster {0} with ID "
-                    "{1}".format(cluster.name, cluster.id))
+                    "{1}".format(cluster.name, cluster.instance_id))
                 continue
             state = json.loads(resp.content)["data"]["state"]
-            GoldfishUtils.log.info("Cluster %s state: %s" % (cluster.id, state))
+            GoldfishUtils.log.info("Cluster %s state: %s" % (cluster.instance_id, state))
             if state == "scaling":
                 GoldfishUtils.log.info("Cluster is still scaling. Waiting for 10s.")
                 time.sleep(10)

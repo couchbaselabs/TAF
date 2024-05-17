@@ -11,6 +11,7 @@ from queue import Queue
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from Columnar.columnar_base import ColumnarBaseTest
+from BucketLib.bucket import Bucket
 
 
 class StandaloneCollection(ColumnarBaseTest):
@@ -32,157 +33,65 @@ class StandaloneCollection(ColumnarBaseTest):
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 0)
         self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
-        self.remote_cluster_id = None
+        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
 
     def capella_provisioned_cluster_setup(self):
 
-        self.pod.url_public = (self.pod.url_public).replace("https://api", "https://cloudapi")
-        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.user.email, self.user.password, '')
-        resp = (self.capellaAPI.create_control_plane_api_key(self.user.org_id, 'init api keys')).json()
+        self.remote_cluster = self.cb_clusters['C1']
+        resp = (self.capellaAPI.create_control_plane_api_key(self.tenant.id, 'init api keys')).json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
         self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
         self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
         self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
         self.capellaAPI.org_ops_apis.ACCESS = resp['id']
         self.capellaAPI.org_ops_apis.bearer_token = resp['token']
-
-        # create the first V4 API KEY WITH organizationOwner role, which will
-        # be used to perform further operations on capella cluster
-        resp = self.capellaAPI.org_ops_apis.create_api_key(
-            organizationId=self.user.org_id,
-            name=self.cbas_util.generate_name(),
-            organizationRoles=["organizationOwner"],
-            description=self.cbas_util.generate_name())
-        if resp.status_code == 201:
-            self.capella_cluster_keys = resp.json()
-        else:
-            self.fail("Error while creating API key for organization owner")
-
-        cluster_name = "columnar-regression-cluster-" + str(random.randint(1, 1000))
-        self.expected_result = {
-            "name": cluster_name,
-            "description": None,
-            "cloudProvider": {
-                "type": "aws",
-                "region": "us-east-1",
-                "cidr": CapellaUtils.get_next_cidr() + "/20"
-            },
-            "couchbaseServer": {
-                "version": self.input.capella.get(
-                    "capella_server_version", "7.2")
-            },
-            "serviceGroups": [
-                {
-                    "node": {
-                        "compute": {
-                            "cpu": 4,
-                            "ram": 16
-                        },
-                        "disk": {
-                            "storage": 100,
-                            "type": "gp3",
-                            "iops": 7000,
-                            "autoExpansion": "on"
-                        }
-                    },
-                    "numOfNodes": 3,
-                    "services": [
-                        "data"
-                    ]
-                }
-            ],
-            "availability": {
-                "type": "single"
-            },
-            "support": {
-                "plan": "basic",
-                "timezone": "GMT"
-            },
-            "currentState": None,
-            "audit": {
-                "createdBy": None,
-                "createdAt": None,
-                "modifiedBy": None,
-                "modifiedAt": None,
-                "version": None
-            }
-        }
-        cluster_created = False
-        while not cluster_created:
-            resp = self.capellaAPI.cluster_ops_apis.create_cluster(
-                self.user.org_id, self.user.project.project_id, cluster_name,
-                self.expected_result['cloudProvider'],
-                self.expected_result['couchbaseServer'],
-                self.expected_result['serviceGroups'],
-                self.expected_result['availability'],
-                self.expected_result['support'])
-            if resp.status_code == 202:
-                cluster_created = True
-            else:
-                self.expected_result['cloudProvider'][
-                    "cidr"] = CapellaUtils.get_next_cidr() + "/20"
-        self.remote_cluster_id = resp.json()['id']
-        # wait for cluster to be deployed
-
-        wait_start_time = time.time()
-        health_status = "deploying"
-        while time.time() < wait_start_time + 1500:
-            resp = (self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.user.org_id,
-                                                                        self.user.project.project_id,
-                                                                        self.remote_cluster_id)).json()
-            health_status = resp[
-                "currentState"]
-            if health_status == "healthy":
-                self.log.info("Successfully deployed remote cluster")
-                self.remote_cluster_connection_string = resp["connectionString"]
-                break
-            else:
-                self.log.info("Cluster is still deploying, waiting 15 seconds")
-                time.sleep(15)
-
-        if health_status != "healthy":
-            self.fail("Unable to deploy a provisioned cluster for remote links")
-
-        # allow 0.0.0.0/0 to allow access from anywhere
-        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.user.org_id,
-                                                                               self.user.project.project_id,
-                                                                               self.remote_cluster_id, "0.0.0.0/0")
-        if resp.status_code == 201:
+        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.tenant.id,
+                                                                               self.tenant.project_id,
+                                                                               self.remote_cluster.id, "0.0.0.0/0")
+        if resp.status_code == 201 or resp.status_code == 422:
             self.log.info("Added allowed IP 0.0.0.0/0")
         else:
             self.fail("Failed to add allowed IP")
-
-        # create a database access credentials
-        access = [{
-            "privileges": ["data_reader",
-                           "data_writer"],
-            "resources": {}
-        }]
-
-        self.remote_cluster_username = "Administrator"
-        self.remote_cluster_password = "Password#123"
-        resp = self.capellaAPI.cluster_ops_apis.create_database_user(self.user.org_id,
-                                                                     self.user.project.project_id,
-                                                                     self.remote_cluster_id, "Administrator", access,
-                                                                     "Password#123")
-        if resp.status_code == 201:
-            self.log.info("Database user added")
+        remote_cluster_certificate_request = (
+            self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.tenant.id, self.tenant.project_id,
+                                                                     self.remote_cluster.id))
+        if remote_cluster_certificate_request.status_code == 200:
+            self.remote_cluster_certificate = (remote_cluster_certificate_request.json()["certificate"])
         else:
-            self.fail("Failed to add database user")
+            self.fail("Failed to get cluster certificate")
 
         # creating bucket scope and collection to pump data
         bucket_name = "hotel"
         scope = None
         collection = None
 
-        resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.user.org_id,
-                                                              self.user.project.project_id,
-                                                              self.remote_cluster_id,
-                                                              bucket_name, "couchbase", "couchstore", 2000, "seqno",
-                                                              "majorityAndPersistActive", 0, True, 1000000)
+        resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.remote_cluster.id,
+                                                              bucket_name, "couchbase", "couchstore", 1000, "seqno",
+                                                              "majorityAndPersistActive", 1, True, 1000000)
+        buckets = json.loads(CapellaUtils.get_all_buckets(self.pod, self.tenant, self.remote_cluster)
+                             .content)["buckets"]["data"]
+        for bucket in buckets:
+            bucket = bucket["data"]
+            bucket_obj = Bucket({
+                Bucket.name: bucket["name"],
+                Bucket.ramQuotaMB: bucket["memoryAllocationInMb"],
+                Bucket.replicaNumber: bucket["replicas"],
+                Bucket.conflictResolutionType:
+                    bucket["bucketConflictResolution"],
+                Bucket.flushEnabled: bucket["flush"],
+                Bucket.durabilityMinLevel: bucket["durabilityLevel"],
+                Bucket.maxTTL: bucket["timeToLive"],
+            })
+            bucket_obj.uuid = bucket["id"]
+            bucket_obj.stats.itemCount = bucket["stats"]["itemCount"]
+            bucket_obj.stats.memUsed = bucket["stats"]["memoryUsedInMib"]
+            self.remote_cluster.buckets.append(bucket_obj)
+
         if resp.status_code == 201:
             self.bucket_id = resp.json()["id"]
             self.log.info("Bucket created successfully")
@@ -193,9 +102,9 @@ class StandaloneCollection(ColumnarBaseTest):
             self.remote_collection = "{}.{}.{}".format(bucket_name, scope, collection)
         else:
             self.remote_collection = "{}.{}.{}".format(bucket_name, "_default", "_default")
-        resp = self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.user.org_id,
-                                                                        self.user.project.project_id,
-                                                                        self.remote_cluster_id)
+        resp = self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.tenant.id,
+                                                                        self.tenant.project_id,
+                                                                        self.remote_cluster.id)
         if resp.status_code == 200:
             self.remote_cluster_certificate = (resp.json())["certificate"]
         else:
@@ -205,20 +114,11 @@ class StandaloneCollection(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
 
-        if self.remote_cluster_id:
-            resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.user.org_id,
-                                                                   self.user.project.project_id,
-                                                                   self.remote_cluster_id)
-            if resp.status_code == 202:
-                self.log.info("Provisioned cluster scheduled for deletion")
-            else:
-                self.log.error("Provisioned cluster is not deleted, please delete is manually")
-
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
                 self.cluster):
             self.fail("Error while deleting cbas entities")
 
-        super(StandaloneCollection, self).tearDown()
+        # super(StandaloneCollection, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def start_source_ingestion(self, no_of_docs=1000000, doc_size=100000):
@@ -233,33 +133,23 @@ class StandaloneCollection(ColumnarBaseTest):
             bucket = collection.split(".")[0]
             scope = collection.split(".")[1]
             collection = collection.split(".")[2]
-            url = self.input.param("sirius_url", None)
-            resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.user.org_id,
-                                                                      self.user.project.project_id,
-                                                                      self.remote_cluster_id,
-                                                                      self.bucket_id)
-            if resp.status_code == 200:
-                current_doc_count = (resp.json())["stats"]["itemCount"]
-            else:
-                current_doc_count = 0
+            url = self.input.param("sirius_url", "127.0.0.1:4000")
             data = {
                 "identifierToken": "hotel",
-                "clusterConfig": {
-                    "username": self.remote_cluster_username,
-                    "password": self.remote_cluster_password,
-                    "connectionString": "couchbases://" + self.remote_cluster_connection_string
+                "dbType": "couchbase",
+                "username": self.remote_cluster.username,
+                "password": self.remote_cluster.password,
+                "connectionString": "couchbases://" + str(self.remote_cluster.srv),
+                "extra": {
+                    "bucket": bucket,
+                    "scope": scope,
+                    "collection": collection,
                 },
-                "bucket": bucket,
-                "scope": scope,
-                "collection": collection,
                 "operationConfig": {
-                    "start": current_doc_count,
+                    "start": 0,
                     "end": no_of_docs,
                     "docSize": doc_size,
                     "template": "hotel"
-                },
-                "insertOptions": {
-                    "timeout": 5
                 }
             }
             if url is not None:
@@ -274,9 +164,9 @@ class StandaloneCollection(ColumnarBaseTest):
         while time.time() < start_time + timeout:
             self.log.info("Waiting for data to be loaded in source databases")
             for collection in remote_collection:
-                resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.user.org_id,
-                                                                          self.user.project.project_id,
-                                                                          self.remote_cluster_id,
+                resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.tenant.id,
+                                                                          self.tenant.project_id,
+                                                                          self.remote_cluster.id,
                                                                           self.bucket_id)
                 if resp.status_code == 200 and (resp.json())["stats"]["itemCount"] == no_of_docs:
                     self.log.info("Doc loading complete for remote collection: {}".format(collection))
@@ -298,8 +188,7 @@ class StandaloneCollection(ColumnarBaseTest):
             cmd = "Create Dataset {} Primary Key({})".format(dataset_name, key)
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, cmd)
             if not self.cbas_util.validate_error_in_response(status, errors, expected_error):
-                self.fail("Verification pending because of issue")
-            # verficiation pending due to opened issue
+                self.fail("Able to create collection with duplicate keys")
     def test_create_drop_standalone_collection(self):
         database_name = self.input.param("database", "Default")
         dataverse_name = self.input.param("dataverse", "Default")
@@ -478,9 +367,9 @@ class StandaloneCollection(ColumnarBaseTest):
 
         remote_link_properties = list()
         remote_link_properties.append(
-            {"type": "couchbase", "hostname": self.remote_cluster_connection_string,
-             "username": self.remote_cluster_username,
-             "password": self.remote_cluster_password,
+            {"type": "couchbase", "hostname": str(self.remote_cluster.srv),
+             "username": self.remote_cluster.username,
+             "password": self.remote_cluster.password,
              "encryption": "full",
              "certificate": self.remote_cluster_certificate})
         self.columnar_spec["remote_link"]["properties"] = remote_link_properties
@@ -488,7 +377,7 @@ class StandaloneCollection(ColumnarBaseTest):
         self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.cluster, self.columnar_spec, self.bucket_util, False)
+            self.cluster, self.columnar_spec, self.bucket_util, False, remote_clusters=[self.remote_cluster])
         if not result:
             self.fail(msg)
         remote_dataset = self.cbas_util.get_all_dataset_objs("remote")[0]
@@ -509,7 +398,7 @@ class StandaloneCollection(ColumnarBaseTest):
             # verify the data
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                subquery_execute)
-            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)[0]
+            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if len(result) != doc_count_in_dataset:
                 self.fail("Document count mismatch in {}".format(dataset.full_name))
 
@@ -517,7 +406,7 @@ class StandaloneCollection(ColumnarBaseTest):
         links = self.cbas_util.get_all_link_objs("couchbase")[0]
         self.cbas_util.disconnect_link(self.cluster, link_name=links.full_name)
         for dataset in datasets:
-            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)[0]
+            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)
             if doc_count_in_dataset == 0:
                 self.fail("No document found after link is disconnected")
 

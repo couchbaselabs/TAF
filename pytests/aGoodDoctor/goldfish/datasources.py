@@ -10,6 +10,10 @@ from CbasLib.CBASOperations import CBASHelper
 from CbasUtil import execute_statement_on_cbas
 import random
 import string
+from constants.cb_constants.CBServer import CbServer
+from global_vars import logger
+import pprint
+from capella_utils.dedicated import CapellaUtils
 
 
 class MongoDB(object):
@@ -62,14 +66,14 @@ class MongoDB(object):
             cbas_coll_name = self.link_name + "_volCollection_" + str(i)
             self.cbas_collections.append(cbas_coll_name)
             i += 1
-            self.coll_statement = "CREATE COLLECTION `{}` PRIMARY KEY (`_id`: string) ON {}.{} AT {};".format(
+            statement = "CREATE COLLECTION `{}` PRIMARY KEY (`_id`: string) ON {}.{} AT {};".format(
                                     cbas_coll_name, self.source_name, mongo_collection, self.link_name)
-            execute_statement_on_cbas(client, self.coll_statement)
+            execute_statement_on_cbas(client, statement)
 
     @staticmethod
     def perform_load(databases, wait_for_load=True, overRidePattern=None, tm=None, workers=10):
         loader_map = Loader._loader_dict(databases, overRidePattern)
-        self.tasks = list()
+        tasks = list()
         i = workers
         while i > 0:
             for database in databases:
@@ -82,14 +86,81 @@ class MongoDB(object):
                     time.sleep(1)
                     taskName = "Loader_%s_%s_%s" % (database.name, collection, time.time())
                     task = WorkLoadGenerate(taskName, loader_map[database.name+collection], client)
-                    self.tasks.append(task)
+                    tasks.append(task)
                     tm.submit(task)
                     i -= 1
 
         if wait_for_load:
             tm.getAllTaskResult()
         else:
-            return self.tasks
+            return tasks
+
+
+class CouchbaseRemoteCluster(object):
+
+    def __init__(self, remoteCluster, bucket_util):
+        self.log = logger.get("test")
+        self.remoteCluster = remoteCluster
+        self.remoteClusterCA = remoteCluster.root_ca
+        self.bucket_util = bucket_util
+        self.name = self.type = "remote"
+        self.dataset = "remote"
+        self.collections = list()
+        self.link_name = "remote_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+        self.cbas_queries = list()
+        self.cbas_collections = list()
+        self.query_map = dict()
+
+    def set_collections(self):
+        pass
+
+    def read_file(self, file_path):
+        try:
+            with open(file_path, "r") as fh:
+                return fh.read()
+        except Exception as err:
+            self.log.error(str(err))
+            return None
+
+    def create_link(self, columnar):
+        rest = CBASHelper(columnar.master)
+        params = {
+            "dataverse": "Default",
+            "name": self.link_name,
+            "type": "couchbase",
+            "hostname": str(self.remoteCluster.master.ip),
+            "username": self.remoteCluster.username,
+            "password": self.remoteCluster.password,
+            "encryption": "full",
+            "certificate": self.remoteClusterCA
+        }
+        # statement = 'CREATE LINK {} with {}'.format(self.link_name, params)
+        # print statement
+        # execute_statement_on_cbas(client, statement)
+        pprint.pprint(params)
+        result, status, content, errors = rest.analytics_link_operations(method="POST", params=params)
+        if not result:
+            raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
+
+    def create_cbas_collections(self, columnar, remote_collections=None):
+        i = 0
+        client = columnar.SDKClients[0].cluster
+        for b in self.remoteCluster.buckets:
+            for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                if s == CbServer.system_scope:
+                    continue
+                for _, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
+                    if c == CbServer.default_collection:
+                        continue
+                    cbas_coll_name = self.link_name + "_volCollection_" + str(i)
+                    self.log.info("creating remote collections on couchbase: %s" % cbas_coll_name)
+                    statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'.format(
+                                            cbas_coll_name, b.name, s, c, self.link_name)
+                    self.cbas_collections.append(cbas_coll_name)
+                    execute_statement_on_cbas(client, statement)
+                    i += 1
+                    if remote_collections and i == remote_collections:
+                        return
 
 
 class s3(object):
@@ -106,17 +177,21 @@ class s3(object):
         self.cbas_queries = list()
         self.cbas_collections = list()
         self.query_map = dict()
+        self.log = logger.get("test")
 
     def set_collections(self):
         for i in range(self.loadDefn.get("collections")):
             self.collections.append("volCollection" + str(i))
 
     def create_link(self, cluster):
+        self.log.info("creating link over s3")
         rest = CBASHelper(cluster.master)
         params = {'dataverse': 'Default', "name": self.link_name, "type": "s3", 'accessKeyId': self.accessKeyId,
                   'secretAccessKey': self.secretAccessKey,
                   "region": self.region}
-        rest.analytics_link_operations(method="POST", params=params)
+        result, status, content, errors = rest.analytics_link_operations(method="POST", params=params)
+        if not result:
+            raise Exception("Status: %s, content: %s, Errors: %s".format(status, content, errors))
 
     def create_cbas_collections(self, cluster, external_collections=None):
         client = cluster.SDKClients[0].cluster
@@ -126,29 +201,36 @@ class s3(object):
             cbas_coll_name = self.link_name + "_external_volCollection_" + str(i)
             self.cbas_collections.append(cbas_coll_name)
             i += 1
-            self.coll_statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
-                                    cbas_coll_name, "columnartest", self.link_name, "hotel")
-            execute_statement_on_cbas(client, self.coll_statement)
+            self.log.info("creating external collections: %s" % cbas_coll_name)
+            statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
+                cbas_coll_name, "columnartest", self.link_name, "hotel")
+            self.log.info(statement)
+            execute_statement_on_cbas(client, statement)
+        self.copy_from_s3_into_standalone(cluster, external_collections)
 
     def copy_from_s3_into_standalone(self, cluster, standalone_collections=None):
         client = cluster.SDKClients[0].cluster
         num_collections = standalone_collections or len(self.collections)
+        self.log.info("creating standalone collections - datasource is s3")
         i = 0
         while i < num_collections:
             cbas_coll_name = self.link_name + "_standalone_volCollection_" + str(i)
             self.cbas_collections.append(cbas_coll_name)
             i += 1
-            self.coll_statement = 'CREATE STANDANOLE COLLECTION `%s`  PRIMARY KEY (%s:%s)' % (
-                                    cbas_coll_name, "columnartest", self.link_name, "hotel")
-            execute_statement_on_cbas(client, self.coll_statement)
+
+            self.log.info("Creating standalone collections: %s" % cbas_coll_name)
+            statement = 'CREATE COLLECTION `%s`  PRIMARY KEY (%s:%s)' % (
+                                    cbas_coll_name, "_id", "String")
+            execute_statement_on_cbas(client, statement)
 
             statement = 'COPY into %s FROM %s AT %s PATH "%s" WITH { "format": "json"};'.format(
                 cbas_coll_name, "columnartest", self.link_name, "hotel")
+            self.log.info("COPYING into standalone collections: %s" % cbas_coll_name)
+            self.log.info(statement)
             execute_statement_on_cbas(client, statement)
 
 
 class Loader():
-
     @staticmethod
     def _loader_dict(databases, overRidePattern=None, workers=10, cmd={}):
         workers = workers

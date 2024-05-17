@@ -4,9 +4,10 @@ Created on 25-OCTOBER-2023
 @author: umang.agrawal
 """
 
-from Columnar.columnar_base import ColumnarBaseTest
-from Queue import Queue
+from queue import Queue
+
 from CbasLib.CBASOperations import CBASHelper
+from Columnar.columnar_base import ColumnarBaseTest
 
 
 class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
@@ -24,7 +25,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         # For sanity tests we are hard coding the bucket from which the data
         # will be read. This will ensure stable and consistent test runs.
         self.aws_region = "us-west-1"
-        self.aws_bucket_name = "columnar-sanity-test-data"
+        self.aws_bucket_name = "columnar-functional-sanity-test-data"
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "sanity.copy_into_standalone_collection_from_s3"
@@ -33,14 +34,14 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             self.columnar_spec_name)
 
         self.doc_count_per_format = {
-            "json": 7400000, "parquet": 7300000,
-            "csv": 7400000, "tsv": 7400000}
+            "json": 7920000, "parquet": 7920000,
+            "csv": 7920000, "tsv": 7920000}
 
         self.files_to_use_in_include = {
-            "json": [["*/0.json", "*/10.json"], 1594120],
-            "csv": [["*/1.csv", "*/11.csv"], 1594200],
-            "tsv": [["*/12.tsv", "*/17.tsv"], 1594141],
-            "parquet": [["*/14.parquet", "*/17.parquet"], 798522]
+            "json": [["*/file_1.json"], 7800000],
+            "csv": [["*/file_2.csv"], 7800000],
+            "tsv": [["*/file_3.tsv"], 7800000],
+            "parquet": [["*/file_5.parquet"], 7800000]
         }
 
         self.log_setup_status(self.__class__.__name__, "Finished",
@@ -77,14 +78,14 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
 
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.aws_bucket_name
         dataset_properties["file_format"] = file_format
-        dataset_properties["path_on_external_container"] = "Depth_0_Folder_0"
+        dataset_properties["path_on_external_container"] = "level_1_folder_1"
         use_include = self.input.param("use_include", False)
         if use_include:
             dataset_properties["file_format"] = self.files_to_use_in_include[file_format][0]
@@ -94,10 +95,14 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
         if file_format in ["csv", "tsv"]:
             dataset_properties["object_construction_def"] = (
-                "address string,avgrating double,city string,country string,"
-                "email string,freebreakfast boolean,freeparking boolean,"
-                "name string,phone string,price double,publiclikes string,"
-                "reviews string,`type` string,url string,extra string")
+                "id int,product_name string,product_link string,"
+                "product_features string,product_specs string,"
+                "product_image_links string,product_reviews string,"
+                "product_category string, price double,avg_rating double,"
+                "num_sold int,upload_date string,weight double,quantity int,"
+                "seller_name string,seller_location string,"
+                "seller_verified boolean,template_name string,mutated int,"
+                "padding string")
             dataset_properties["header"] = True
             dataset_properties["redact_warning"] = False
             dataset_properties["null_string"] = None
@@ -143,7 +148,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             self.fail("Copy into command failure")
 
         doc_count = {
-            "json": 6310404, "csv": 6310311, "tsv": 6310891, "parquet": 6213490
+            "json": 1560000, "csv": 1560000, "tsv": 1560000, "parquet": 1560000
         }
         jobs = Queue()
         results = []
@@ -197,7 +202,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
 
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["standalone_dataset"][
@@ -213,10 +218,14 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
         if file_format in ["csv", "tsv"]:
             dataset_properties["object_construction_def"] = (
-                "address string,avgrating double,city string,country string,"
-                "email string,freebreakfast boolean,freeparking boolean,"
-                "name string,phone string,price double,publiclikes string,"
-                "reviews string,`type` string,url string,extra string")
+                "id string,product_name string,product_link string,"
+                "product_features string,product_specs string,"
+                "product_image_links string,product_reviews string,"
+                "product_category string, price double,avg_rating double,"
+                "num_sold int,upload_date string,weight double,quantity int,"
+                "seller_name string,seller_location string,"
+                "seller_verified boolean,template_name string,mutated int,"
+                "padding string")
             dataset_properties["header"] = True
             dataset_properties["redact_warning"] = False
             dataset_properties["null_string"] = None
@@ -266,133 +275,11 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
             jobs, results, self.sdk_clients_per_user, async_run=False)
         for result in results:
             if use_include:
-                if not (0 < result <= self.files_to_use_in_include[file_format][1]):
+                if not result == self.files_to_use_in_include[file_format][1]:
                     self.fail("Expected doc count between 0-{0}. Actual doc "
                               "count {1}".format(self.files_to_use_in_include[file_format][1], result))
             else:
-                if not (0 < result <= self.doc_count_per_format[file_format]):
-                    self.fail("Expected doc count between 0-{0}. Actual doc "
-                              "count {1}".format(self.doc_count_per_format[file_format], result))
-
-        results = []
-        query = "select * from {} limit 1000"
-        for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
-            jobs.put((
-                self.cbas_util.execute_statement_on_cbas_util,
-                {"cluster": self.instance,
-                 "statement": query.format(dataset.full_name)}))
-        self.cbas_util.run_jobs_in_parallel(
-            jobs, results, self.sdk_clients_per_user, async_run=False)
-        for result in results:
-            if result[0] != "success":
-                self.fail("Query execution failed with error - {}".format(
-                    result[2]))
-            elif len(result[3]) != 1000:
-                self.fail("Doc count mismatch. Expected - 1000, Actual - {0}".format(len(result[3])))
-
-    def test_create_copyinto_query_missing_field_typedef_drop_standalone_collection(self):
-        # Update columnar spec based on conf file params
-        self.columnar_spec["database"]["no_of_databases"] = self.input.param(
-            "no_of_DBs", 1)
-        self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
-            "no_of_scopes", 1)
-
-        self.columnar_spec["external_link"][
-            "no_of_external_links"] = self.input.param(
-            "no_of_links", 1)
-        self.columnar_spec["external_link"]["properties"] = [{
-            "type": "s3",
-            "region": self.aws_region,
-            "accessKeyId": self.aws_access_key,
-            "secretAccessKey": self.aws_secret_key,
-            "serviceEndpoint": None
-        }]
-
-        self.columnar_spec["standalone_dataset"][
-            "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
-
-        file_format = self.input.param("file_format", "json")
-        dataset_properties = self.columnar_spec["standalone_dataset"][
-            "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
-        dataset_properties["file_format"] = file_format
-        use_include = self.input.param("use_include", False)
-        if use_include:
-            dataset_properties["include"] = self.files_to_use_in_include[file_format][0]
-        else:
-            dataset_properties["include"] = "*.{0}".format(file_format)
-        dataset_properties["region"] = self.aws_region
-
-        if file_format in ["csv", "tsv"]:
-            dataset_properties["object_construction_def"] = (
-                "address string,avgrating double,city string,country string,"
-                "email string,freebreakfast boolean,"
-                "name string,phone string,price double,publiclikes string,"
-                "reviews string,`type` string,url string,extra string")
-            dataset_properties["header"] = True
-            dataset_properties["redact_warning"] = False
-            dataset_properties["null_string"] = None
-
-        elif file_format == "parquet":
-            dataset_properties["parse_json_string"] = 1
-            dataset_properties["convert_decimal_to_double"] = 1
-            dataset_properties["timezone"] = "GMT"
-
-        result, msg = self.cbas_util.create_cbas_infra_from_spec(
-            self.instance, self.columnar_spec, self.bucket_util, False)
-        if not result:
-            self.fail(msg)
-
-        datasets = self.cbas_util.get_all_dataset_objs("standalone")
-
-        for standalone_coll in datasets:
-            if not (
-                    self.cbas_util.copy_from_external_resource_into_standalone_collection(
-                        self.instance, standalone_coll.name,
-                        standalone_coll.dataset_properties["external_container_name"],
-                        standalone_coll.link_name, standalone_coll.dataverse_name,
-                        standalone_coll.database_name,
-                        standalone_coll.dataset_properties["include"],
-                        standalone_coll.dataset_properties["file_format"],
-                        standalone_coll.dataset_properties["object_construction_def"],
-                        standalone_coll.dataset_properties["path_on_external_container"],
-                        standalone_coll.dataset_properties["header"],
-                        standalone_coll.dataset_properties["null_string"],
-                        standalone_coll.dataset_properties["exclude"],
-                        standalone_coll.dataset_properties["parse_json_string"],
-                        standalone_coll.dataset_properties["convert_decimal_to_double"],
-                        standalone_coll.dataset_properties["timezone"]
-                    )):
-                self.fail("Error while copying data from S3 into {0} "
-                          "standalone collection".format(standalone_coll.full_name))
-
-        for standalone_coll in datasets:
-            statement = "select * from {0} limit 1".format(standalone_coll.full_name)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(
-                self.instance, statement)
-            doc_retrived = dict((result[0])[CBASHelper.unformat_name(standalone_coll.name)])
-            if 'freeparking' in doc_retrived:
-                self.fail("Field error for the docs parsed from S3")
-
-        jobs = Queue()
-        results = []
-
-        for dataset in self.cbas_util.get_all_dataset_objs("standalone"):
-            jobs.put((
-                self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.instance, "dataset_name": dataset.full_name,
-                 "timeout": 3600, "analytics_timeout": 3600}))
-        self.cbas_util.run_jobs_in_parallel(
-            jobs, results, self.sdk_clients_per_user, async_run=False)
-        for result in results:
-            if use_include:
-                if not (0 < result <= self.files_to_use_in_include[file_format][1]):
-                    self.fail("Expected doc count between 0-{0}. Actual doc "
-                              "count {1}".format(self.files_to_use_in_include[file_format][1], result))
-            else:
-                if not (0 < result <= self.doc_count_per_format[file_format]):
+                if not result == self.doc_count_per_format[file_format]:
                     self.fail("Expected doc count between 0-{0}. Actual doc "
                               "count {1}".format(self.doc_count_per_format[file_format], result))
 
@@ -566,7 +453,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.aws_bucket_name

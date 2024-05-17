@@ -8,13 +8,13 @@ This utility is for performing actions on Capella Columnar only.
 import json
 import urllib
 import time
-from threading import Thread
-import threading
 import string
 import random
 import importlib
 import copy
 import requests
+from concurrent.futures import ThreadPoolExecutor
+from threading import Thread, current_thread
 
 from Columnar.templates.crudTemplate.docgen_template import Hotel
 from global_vars import logger
@@ -22,15 +22,13 @@ from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity_columnar import (
     Database, Dataverse, Remote_Link, External_Link, Kafka_Link,
     Remote_Dataset, External_Dataset, Standalone_Dataset, Synonym,
-    CBAS_Index)
+    CBAS_Index, DatabaseUser, ColumnarRole)
 from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
 from common_lib import sleep
 from queue import Queue
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
 from py_constants.cb_constants.CBServer import CbServer
-import concurrent.futures
-import time
 
 
 class BaseUtil(object):
@@ -201,10 +199,10 @@ class BaseUtil(object):
                 expected_error = expected_error.replace("`", "")
 
             if expected_error not in actual_error:
-                self.log.debug("Error message mismatch. Expected: %s, got: %s"
+                self.log.error("Error message mismatch. Expected: %s, got: %s"
                                % (expected_error, actual_error))
                 return False
-            self.log.debug("Error message matched. Expected: %s, got: %s"
+            self.log.error("Error message matched. Expected: %s, got: %s"
                            % (expected_error, actual_error))
             if expected_error_code is not None:
                 if isinstance(errors, list):
@@ -343,9 +341,8 @@ class BaseUtil(object):
             jobs.join()
 
     @staticmethod
-    def get_kv_entity(cluster, bucket_util, bucket_cardinality=1,
-                      include_buckets=[], exclude_buckets=[],
-                      include_scopes=[], exclude_scopes=[],
+    def get_kv_entity(cluster, bucket_util, include_buckets=[],
+                      exclude_buckets=[], include_scopes=[], exclude_scopes=[],
                       include_collections=[], exclude_collections=[]):
         bucket = None
         while not bucket:
@@ -354,28 +351,24 @@ class BaseUtil(object):
                 bucket = None
             if exclude_buckets and bucket.name in exclude_buckets:
                 bucket = None
-        if bucket_cardinality > 1:
-            scope = None
-            while not scope:
-                scope = random.choice(bucket_util.get_active_scopes(bucket))
-                if include_scopes and scope.name not in include_scopes:
-                    scope = None
-                if exclude_scopes and scope.name in exclude_scopes:
-                    scope = None
-            if bucket_cardinality > 2:
+
+        scope = None
+        while not scope:
+            scope = random.choice(bucket_util.get_active_scopes(bucket))
+            if include_scopes and scope.name not in include_scopes:
+                scope = None
+            if exclude_scopes and scope.name in exclude_scopes:
+                scope = None
+
+        collection = None
+        while not collection:
+            collection = random.choice(
+                bucket_util.get_active_collections(bucket, scope.name))
+            if include_collections and collection.name not in include_collections:
                 collection = None
-                while not collection:
-                    collection = random.choice(
-                        bucket_util.get_active_collections(bucket, scope.name))
-                    if include_collections and collection.name not in include_collections:
-                        collection = None
-                    if exclude_collections and collection.name in exclude_collections:
-                        collection = None
-                return bucket, scope, collection
-            else:
-                return bucket, scope, None
-        else:
-            return bucket, None, None
+            if exclude_collections and collection.name in exclude_collections:
+                collection = None
+        return bucket, scope, collection
 
     @staticmethod
     def format_name(*args):
@@ -389,6 +382,280 @@ class BaseUtil(object):
     def metadata_format(name):
         return CBASHelper.metadata_format(name)
 
+
+class RBAC_Util(BaseUtil):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
+        super(RBAC_Util, self).__init__(server_task, run_query_using_sdk)
+        self.database_users = dict()
+        self.columnar_roles = dict()
+
+
+    def create_user(self, cluster, id, username, password):
+        """
+            Function to create server user.
+        """
+        user = DatabaseUser(id, username, password)
+        result = True
+        try:
+            RbacUtil().create_user_source([user.to_dict()], "builtin",
+                                          cluster.master)
+        except Exception as e:
+            self.log.error("Exception while creating new user: {}".format(e))
+            result = False
+
+        if result:
+            self.database_users[user.id] = user
+
+        return result
+
+    def get_user_obj(self, user_id):
+        """
+            Get user object by user id.
+        """
+        if user_id in self.database_users:
+            return self.database_users[user_id]
+
+        return None
+
+    def get_all_user_obj(self):
+        """
+            Get all user objects.
+        """
+        db_users = list()
+        db_users.extend(list(self.database_users.values()))
+
+        return db_users
+
+    def create_columnar_role(
+            self, cluster, role_name, username=None, password=None,
+            validate_error_msg=False, expected_error=None,
+            expected_error_code=None, timeout=300,
+            analytics_timeout=300):
+        """
+            Creates a new analytics role.
+        """
+
+        role_name = self.format_name(role_name)
+        create_role_cmd = "CREATE ROLE " + role_name
+        create_role_cmd += ";"
+
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, create_role_cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                self.log.error("Failed to create role {0}: {1}".format(
+                    role_name, str(errors)))
+                return False
+            else:
+                if not self.get_columnar_role_object(role_name):
+                    role = ColumnarRole(role_name)
+                    self.columnar_roles[role.role_name] = role
+                return True
+
+    def drop_columnar_role(
+            self, cluster, role_name, username=None, password=None,
+            validate_error_msg=False, expected_error=None,
+            expected_error_code=None, timeout=300,
+            analytics_timeout=300):
+        """
+            Creates a new analytics role.
+        """
+
+        role_name = self.format_name(role_name)
+        create_role_cmd = "DROP ROLE " + role_name
+        create_role_cmd += ";"
+
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, create_role_cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                self.log.error("Failed to drop role {0}: {1}".format(
+                    role_name, str(errors)))
+                return False
+            else:
+                if self.get_columnar_role_object(role_name):
+                    del self.columnar_roles[role_name]
+                return True
+
+    def get_columnar_role_object(self, role_name):
+        """
+        Get columnar role object by role name.
+        """
+        role_name = self.format_name(role_name)
+        if role_name in self.columnar_roles:
+            return self.columnar_roles[role_name]
+
+        return None
+
+    def get_all_columnar_role_objs(self):
+        """
+        Get all columnar role objects.
+        """
+        columnar_roles = list()
+        columnar_roles.extend(self.columnar_roles.values())
+
+        return columnar_roles
+
+    def find_resource_type(self, resource):
+        name_cardinality = len(resource.split('.'))
+
+        if name_cardinality == 3:
+            return "COLLECTION"
+        elif name_cardinality == 2:
+            return "SCOPE"
+        elif name_cardinality == 1:
+            return "DATABASE"
+
+    def grant_privileges_to_subjects(
+            self, cluster, privileges=[], subjects=[], resources=[],
+            privilege_resource_type="database", use_any=False,
+            use_subject_type=False, username=None, password=None,
+            validate_error_msg=False, expected_error=None,
+            expected_error_code=None, timeout=300,
+            analytics_timeout=300):
+        """
+        Grant privileges to users or roles on resources.
+
+        :param privileges: List of privileges to grant to users/roles.
+        :param roles: List of roles to assign to users.
+        :param subjects: List of users/roles to grant the privileges or assign roles.
+        :param resources: List of resources on which the privileges should be granted.
+        :param privilege_resource_type: The type of resource for which privilege is to be granted.
+        :param use_any: Boolean flag to determine whether to use the 'any' syntax when granting privileges.
+        :param subject_type: Boolean flag to determine wheter to use subject type(USER or ROLE)
+                             while granting privileges
+        """
+        grant_cmd = None
+        if privilege_resource_type == "database":
+            grant_cmd = "GRANT {0} DATABASE "
+        elif privilege_resource_type == "scope":
+            grant_cmd = "GRANT {0} SCOPE "
+            if not use_any:
+                grant_cmd += "IN DATABASE {1} "
+        elif privilege_resource_type == "collection_ddl":
+            grant_cmd = "GRANT {0} COLLECTION "
+            if not use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "IN " + resource_type + " {1} "
+        elif privilege_resource_type == "collection_dml":
+            grant_cmd = "GRANT {0} ON "
+            if use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "ANY COLLECTION IN " + resource_type + " {1} "
+            else:
+                grant_cmd += "COLLECTION {1} "
+        elif privilege_resource_type == "link_ddl":
+            grant_cmd = "GRANT {0} LINK "
+        elif privilege_resource_type == "link_dml" or \
+            privilege_resource_type == "link_connection":
+            grant_cmd = "GRANT {0} ON "
+            if use_any:
+                grant_cmd += "ANY LINK "
+            else:
+                grant_cmd += "LINK {1} "
+        elif privilege_resource_type == "role":
+            grant_cmd = "GRANT {0} ROLE "
+        elif privilege_resource_type == "synonym":
+            grant_cmd = "GRANT {0} SYNONYM "
+            if not use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "IN " + resource_type + " {1} "
+        elif privilege_resource_type == "index":
+            grant_cmd = "GRANT {0} INDEX ON "
+            if use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "ANY COLLECTION IN " + resource_type + " {1} "
+            else:
+                grant_cmd += "COLLECTION {1} "
+        elif privilege_resource_type == "udf_ddl":
+            grant_cmd = "GRANT {0} FUNCTION "
+            if not use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "IN " + resource_type + " {1} "
+        elif privilege_resource_type == "udf_execute":
+            grant_cmd = "GRANT {0} ON FUNCTION {1} "
+            if use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "ANY FUNCTION IN " + resource_type + " {1} "
+        elif privilege_resource_type == "view_ddl":
+            grant_cmd = "GRANT {0} VIEW "
+            if not use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "IN " + resource_type + " {1} "
+        elif privilege_resource_type == "view_select":
+            grant_cmd = "GRANT {0} ON "
+            if use_any:
+                resource_type = self.find_resource_type(resources[0])
+                grant_cmd += "ANY VIEW IN " + resource_type + " {1} "
+            else:
+                grant_cmd += "VIEW {1} "
+
+        if use_subject_type:
+            users_roles = ["USER {}".format(self.format_name(str(sub))) if isinstance(sub, DatabaseUser)
+                           else "ROLE {}".format(self.format_name(str(sub)))
+                           for sub in subjects]
+            users_roles = ','.join(users_roles)
+        else:
+            users_roles = ','.join([self.format_name(str(sub)) for sub in subjects])
+
+        grant_cmd += "TO {2}"
+        grant_cmd = grant_cmd.format(','.join(privileges),
+                                     ','.join([self.format_name(res) for res in resources]),
+                                     users_roles)
+        grant_cmd += ";"
+
+        self.log.info("Running GRANT statement: {}".format(grant_cmd))
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, grant_cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                self.log.error("Failed to grant privlege: {}".format(
+                    str(errors)))
+                return False
+            else:
+                return True
+
+    def assign_role_to_user(self, cluster, roles=[], users=[],
+                            username=None, password=None,
+                            validate_error_msg=False, expected_error=None,
+                            expected_error_code=None, timeout=300,
+                            analytics_timeout=300):
+
+        columnar_roles = ','.join([self.format_name(str(role)) for role in roles])
+        database_users = ','.join([self.format_name(str(user)) for user in users])
+
+        grant_cmd = "GRANT " + columnar_roles + " TO " + database_users + ";"
+
+        self.log.info("Running GRANT statement: {}".format(grant_cmd))
+        status, metrics, errors, results, _ = (
+            self.execute_statement_on_cbas_util(
+                cluster, grant_cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout))
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        else:
+            if status != "success":
+                self.log.error("Failed to grant role to user: {}".format(
+                    str(errors)))
+                return False
+            else:
+                return True
 
 class Database_Util(BaseUtil):
     """
@@ -553,6 +820,7 @@ class Database_Util(BaseUtil):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 obj = self.get_database_obj(database_name)
@@ -736,6 +1004,7 @@ class Dataverse_Util(Database_Util):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 obj = self.get_dataverse_obj(dataverse_name, database_name)
@@ -1197,6 +1466,7 @@ class Link_Util(Dataverse_Util):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -1255,7 +1525,7 @@ class Link_Util(Dataverse_Util):
             return content
 
     def alter_link_properties(
-            self, cluster, link_properties, username=None, password=None,
+            self, cluster, link_properties, dataverse=None, username=None, password=None,
             timeout=300, validate_error_msg=False, expected_error=None,
             expected_error_code=None):
         """
@@ -1314,7 +1584,7 @@ class Link_Util(Dataverse_Util):
         :param with_force: bool, use force flag while connecting a link
         :param username: str
         :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate 
+        :param validate_error_msg: boolean, if set to true, then validate
         error raised with expected error msg and code.
         :param expected_error: str
         :param expected_error_code: str
@@ -1369,6 +1639,7 @@ class Link_Util(Dataverse_Util):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -1474,9 +1745,8 @@ class Link_Util(Dataverse_Util):
 
     def get_all_links_from_metadata(self, cluster, link_type=None):
         links_created = []
-        links_query = "select value lnk.DatabaseName || \".\" || " \
-                      "lnk.DataverseName || \".\" || lnk.Name from Metadata." \
-                      "`Link` as lnk where lnk.Name <> \"Local\""
+        links_query = "select value lnk.Name from Metadata.`Link` as lnk " \
+                      "where lnk.Name <> \"Local\""
         if link_type:
             links_query += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
@@ -1489,7 +1759,6 @@ class Link_Util(Dataverse_Util):
 
 
 class RemoteLink_Util(Link_Util):
-
     def __init__(self, server_task=None, run_query_using_sdk=False):
         """
         :param server_task task object
@@ -1957,6 +2226,11 @@ class KafkaLink_Util(ExternalLink_Util):
         results = list()
         num_of_external_links = link_spec.get("no_of_kafka_links", 0)
 
+        # This is to store index value of the last chosen external db
+        # connection specs of a particular type of db. This will ensure all
+        # the specs for a particular db is used for creating kafka links in
+        # case where we are creating multiple links.
+        chosen_db_spec_index = {}
         for i in range(0, num_of_external_links):
             if link_spec.get("name_key", "random").lower() == "random":
                 name = self.generate_name(name_cardinality=1)
@@ -1998,8 +2272,28 @@ class KafkaLink_Util(ExternalLink_Util):
             else:
                 db_type = random.choice(["mongo", "dynamo", "rds"])
 
-            external_db_details = random.choice(
-                link_spec["external_database_details"][db_type])
+            # This logic will ensure all the external_database_details for a
+            # particular database_type are picked up in round-robin fashion.
+            index = i % len(link_spec["external_database_details"][db_type])
+
+            if db_type not in chosen_db_spec_index:
+                # if db_type is not present in chosen_db_spec_index add it with
+                # current index value.
+                chosen_db_spec_index[db_type] = index
+            elif chosen_db_spec_index[db_type] == index:
+                # if db_type is present and equal to the last index then
+                # increase index by 1, now if index > the length of list of
+                # external db details then reassign index to 0
+                index += 1
+                if index > len(link_spec["external_database_details"][
+                                   db_type]):
+                    index = 0
+                chosen_db_spec_index[db_type] = index
+            else:
+                chosen_db_spec_index[db_type] = index
+
+            external_db_details = link_spec["external_database_details"][
+                db_type][chosen_db_spec_index[db_type]]
 
             link = Kafka_Link(
                 name=name, dataverse_name=dataverse.name,
@@ -2282,6 +2576,7 @@ class Dataset_Util(KafkaLink_Util):
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -2685,6 +2980,33 @@ class Remote_Dataset_Util(Dataset_Util):
         remote_link_objs = list(remote_link_objs)
 
         num_of_remote_datasets = dataset_spec.get("num_of_remote_datasets", 0)
+        if num_of_remote_datasets == 0:
+            return True
+
+        kv_collection_used = {}
+        # create a map of cluster and all their KV collections
+        all_kv_collection_remote_cluster_map = {}
+        for remote_cluster in remote_clusters:
+            kv_collection_used[remote_cluster.name] = []
+            all_kv_collection_remote_cluster_map[remote_cluster.name] = []
+            for bucket in remote_cluster.buckets:
+                if bucket.name in dataset_spec.get("exclude_buckets", []):
+                    continue
+                else:
+                    for scope in bucket_util.get_active_scopes(bucket):
+                        if scope.name in dataset_spec.get(
+                                "exclude_scopes", []):
+                            continue
+                        else:
+                            for collection in bucket_util.get_active_collections(
+                                    bucket, scope.name):
+                                if collection.name in dataset_spec.get(
+                                        "exclude_collections", []):
+                                    continue
+                                else:
+                                    all_kv_collection_remote_cluster_map[
+                                        remote_cluster.name].append(
+                                        (bucket, scope, collection))
 
         for i in range(0, num_of_remote_datasets):
 
@@ -2729,35 +3051,32 @@ class Remote_Dataset_Util(Dataset_Util):
             creation_method = random.choice(
                 dataset_spec["creation_methods"])
 
-            if dataset_spec.get("bucket_cardinality", 0) == 0:
-                bucket_cardinality = random.choice([1, 3])
-            else:
-                bucket_cardinality = dataset_spec["bucket_cardinality"]
-
             link = remote_link_objs[i % len(remote_link_objs)]
             remote_cluster = None
             for tmp_cluster in remote_clusters:
-                if tmp_cluster.master.ip == link.properties["hostname"]:
+                if (tmp_cluster.master.ip == link.properties["hostname"]
+                        or tmp_cluster.srv == link.properties["hostname"]):
                     remote_cluster = tmp_cluster
+                    break
 
-                bucket, scope, collection = self.get_kv_entity(
-                    remote_cluster, bucket_util, bucket_cardinality,
-                    dataset_spec.get("include_buckets", []),
-                    dataset_spec.get("exclude_buckets", []),
-                    dataset_spec.get("include_scopes", []),
-                    dataset_spec.get("exclude_scopes", []),
-                    dataset_spec.get("include_collections", []),
-                    dataset_spec.get("exclude_collections", []))
-
-            if collection:
-                if isinstance(collection, dict):
-                    num_of_items = collection.num_items
+            # Logic to ensure remote dataset is made on all collections of a
+            # bucket.
+            while True:
+                kv_entity = random.choice(all_kv_collection_remote_cluster_map[
+                                      remote_cluster.name])
+                if kv_entity not in kv_collection_used[remote_cluster.name]:
+                    kv_collection_used[remote_cluster.name].append(kv_entity)
+                    break
                 else:
-                    num_of_items = 0
-            else:
-                num_of_items = bucket_util.get_collection_obj(
-                    bucket_util.get_scope_obj(bucket, "_default"),
-                    "_default").num_items
+                    if len(kv_collection_used[remote_cluster.name]) == len(
+                            all_kv_collection_remote_cluster_map[
+                                remote_cluster.name]):
+                        kv_collection_used[remote_cluster.name] = [kv_entity]
+                        break
+
+            bucket, scope, collection = kv_entity
+            num_of_items = collection.num_items
+
 
             if dataset_spec["storage_format"] == "mixed":
                 storage_format = random.choice(["row", "column"])
@@ -3011,7 +3330,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 database_obj = self.get_database_obj(
                     self.format_name(database_name))
                 dataverse_obj = self.get_dataverse_obj(
-                    database_obj.name, self.format_name(dataverse_name))
+                    self.format_name(dataverse_name), database_obj.name)
 
             dataset = External_Dataset(
                 name=self.generate_name(
@@ -3120,12 +3439,13 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 return False
             link = external_link_objs[i % len(external_link_objs)]
             while True:
-                dataset_properties = random.choice(
-                    dataset_spec.get(
-                        "external_dataset_properties", [{}]))
+                dataset_properties = dataset_spec[
+                    "external_dataset_properties"][i % len(dataset_spec[
+                    "external_dataset_properties"])]
                 if link.properties["region"] == dataset_properties.get(
                         "region", None):
                     break
+
             dataset_obj = External_Dataset(
                 name=name, dataverse_name=dataverse.name,
                 database_name=dataverse.database_name,
@@ -3222,6 +3542,20 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         def call(self):
             return self.instance.generate_docs(self.document_size, self.country_type, self.include_country)
 
+    def load_doc_to_standalone_collection_sirius(self, collection_name, dataverse_name, database_name,
+                                                 connection_string, start, end, sdk_batch_size=25, doc_size=1024,
+                                                 template="hotel", username=None, password=None):
+        sdk_batch_size = 5000000//sdk_batch_size
+        database_information = ColumnarLoader(username=username, password=password, connection_string=connection_string,
+                                              bucket=database_name, scope=dataverse_name, collection=collection_name,
+                                              sdk_batch_size=sdk_batch_size)
+        operation_config = WorkloadOperationConfig(start=start, end=end, template=template,doc_size=doc_size)
+        task_insert = WorkLoadTask(task_manager=self.task, op_type=SiriusCodes.DocOps.BULK_CREATE,
+                                   database_information=database_information, operation_config=operation_config)
+        task_manager = TaskManager(10)
+        task_manager.add_new_task(task_insert)
+        return task_manager.get_task_result(task_insert)
+
     def load_doc_to_standalone_collection(
             self, cluster, collection_name, dataverse_name, database_name,
             no_of_docs, document_size=1024, batch_size=500,
@@ -3231,7 +3565,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         Load documents to a standalone collection.
         """
         start = time.time()
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent_batches)
+        executor = ThreadPoolExecutor(max_workers=max_concurrent_batches)
         try:
             for i in range(0, no_of_docs, batch_size):
                 batch_start = i
@@ -3239,7 +3573,8 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 tasks = []
 
                 for j in range(batch_start, batch_end):
-                    tasks.append(self.GenerateDocsCallable(self, document_size, country_type, include_country))
+                    tasks.append(self.GenerateDocsCallable(
+                        self, document_size, country_type, include_country))
 
                 batch_docs = []
                 futures = executor.map(lambda task: task.call(), tasks)
@@ -3248,8 +3583,9 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
                 retry_count = 0
                 while retry_count < 3:
-                    result = self.insert_into_standalone_collection(cluster, collection_name,
-                                                                    batch_docs, dataverse_name, database_name)
+                    result = self.insert_into_standalone_collection(
+                        cluster, collection_name,
+                        batch_docs, dataverse_name, database_name)
                     if result:
                         break
                     elif retry_count == 2:
@@ -3267,13 +3603,8 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             time_spent, no_of_docs))
         return True
 
-    def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None,
-                                          database_name=None, username=None, validate_error_msg=None,
-                                          expected_error=None, expected_error_code=None, password=None,
-                                          analytics_timeout=300, timeout=300):
-        """
-        Query to insert into standalone collection
-        """
+    def generate_insert_into_cmd(self, document, collection_name, database_name=None,
+                                 dataverse_name=None):
         doc_to_insert = []
         doc_to_insert.extend(document)
         cmd = "INSERT INTO "
@@ -3286,6 +3617,17 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
         cmd += "({0});".format(doc_to_insert)
+        return cmd
+
+    def insert_into_standalone_collection(self, cluster, collection_name, document, dataverse_name=None,
+                                          database_name=None, username=None, validate_error_msg=None,
+                                          expected_error=None, expected_error_code=None, password=None,
+                                          analytics_timeout=300, timeout=300):
+        """
+        Query to insert into standalone collection
+        """
+        cmd = self.generate_insert_into_cmd(document, collection_name, database_name,
+                                            dataverse_name)
         self.log.info("Inserting into: {0}.{1}".format(CBASHelper.format_name(dataverse_name),
                                                        CBASHelper.format_name(collection_name)))
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
@@ -3301,12 +3643,8 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return True
 
-    def upsert_into_standalone_collection(self, cluster, collection_name, new_item, dataverse_name=None,
-                                          database_name=None, username=None, password=None, analytics_timeout=300,
-                                          timeout=300):
-        """
-        Upsert into standalone collection
-        """
+    def generate_upsert_into_cmd(self, collection_name, new_item, dataverse_name=None,
+                                 database_name=None):
         cmd = "UPSERT INTO "
         if database_name:
             cmd += "{}.".format(database_name)
@@ -3318,23 +3656,32 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
         cmd += "({0});".format(new_item)
 
+        return cmd
+
+    def upsert_into_standalone_collection(self, cluster, collection_name, new_item, dataverse_name=None,
+                                          database_name=None, username=None, validate_error_msg=None,
+                                          expected_error=None, expected_error_code=None, password=None,
+                                          analytics_timeout=300, timeout=300):
+        """
+        Upsert into standalone collection
+        """
+        cmd = self.generate_upsert_into_cmd(collection_name, new_item, dataverse_name,
+                                            database_name)
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
-        if status != "success":
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        elif status != "success":
             self.log.error(str(errors))
             return False
         else:
             return True
 
-    def delete_from_standalone_collection(
-            self, cluster, collection_name, dataverse_name=None, database_name=None,
-            where_clause=None, use_alias=False, username=None, password=None,
-            analytics_timeout=300, timeout=300):
-        """
-        Query to delete from standalone collection
-        """
+    def generate_delete_from_cmd(self, collection_name, dataverse_name=None, database_name=None,
+                                 where_clause=None, use_alias=False):
         cmd = "DELETE FROM "
         if database_name:
             cmd += "{}.".format(database_name)
@@ -3351,11 +3698,27 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         if where_clause:
             cmd += "WHERE {}".format(where_clause)
 
+        return cmd
+
+    def delete_from_standalone_collection(
+            self, cluster, collection_name, dataverse_name=None, database_name=None,
+            where_clause=None, use_alias=False, username=None, validate_error_msg=None,
+            expected_error=None, expected_error_code=None, password=None,
+            analytics_timeout=300, timeout=300):
+        """
+        Query to delete from standalone collection
+        """
+        cmd = self.generate_delete_from_cmd(collection_name, dataverse_name,
+                                            database_name, where_clause, use_alias)
+
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
-        if status != "success":
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error, expected_error_code)
+        elif status != "success":
             self.log.error(str(errors))
             return False
         else:
@@ -3566,13 +3929,14 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         """
         cmd = "COPY INTO "
         if database_name:
-            cmd += "{}.".format(CBASHelper.format_name(database_name))
-        if dataverse_name:
-            cmd += "{0}.{1} ".format(
-                CBASHelper.format_name(dataverse_name),
-                CBASHelper.format_name(collection_name))
+            cmd += "{0} ".format(CBASHelper.format_name(
+                database_name, dataverse_name, collection_name))
         else:
-            cmd += "{0} ".format(CBASHelper.format_name(collection_name))
+            if dataverse_name:
+                cmd += "{0} ".format(CBASHelper.format_name(
+                    dataverse_name, collection_name))
+            else:
+                cmd += "{0} ".format(CBASHelper.format_name(collection_name))
 
         if type_parsing_info:
             cmd += "AS ({0}) ".format(type_parsing_info)
@@ -3612,8 +3976,10 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     with_parameters["decimal-to-double"] = False
         if bool(with_parameters):
             cmd += "WITH {0};".format(json.dumps(with_parameters))
-        self.log.info("Copying into {0} from {1}".format(
-            collection_name, external_link_name))
+        self.log.info("Copying into {0} using external link {1} from "
+                      "S3 bucket path {2}/{3}".format(
+            collection_name, external_link_name, aws_bucket_name, path_on_aws_bucket))
+        self.log.debug(cmd)
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
@@ -3933,6 +4299,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         results = list()
 
         num_of_standalone_coll = dataset_spec.get("num_of_standalone_coll", 0)
+
         for i in range(0, num_of_standalone_coll):
             database = None
             while not database:
@@ -3988,33 +4355,27 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             link = None
             if len(data_sources) > 0:
                 data_source = data_sources[i % len(data_sources)]
-                if data_source is None:
-                    link = None
-                else:
-                    links = set(self.get_all_link_objs(link_type=data_source))
+                if data_source is not None:
+                    links = self.get_all_link_objs(link_type=data_source)
                     if dataset_spec.get("include_links", []):
                         for link_name in dataset_spec.get("include_links"):
                             link_obj = self.get_link_obj(cluster, link_name)
                             if link_obj not in links:
-                                links.add(link_obj)
+                                links.append(link_obj)
                     if dataset_spec.get("exclude_links", []):
                         for link_name in dataset_spec.get("exclude_links"):
                             link_obj = self.get_link_obj(cluster, link_name)
                             if link_obj in links:
                                 links.remove(link_obj)
-                    link = random.choice(list(links)) if len(links) > 0 \
-                        else None
-                    if link is None:
-                        data_source = None
+                    link = random.choice(links)
             else:
                 data_source = None
 
             link_name = link.full_name if link else None
             dataset_obj = Standalone_Dataset(
-                name, data_source, random.choice(dataset_spec["primary_key"]),
+                name, data_source, dataset_spec["primary_key"][i % len(dataset_spec["primary_key"])],
                 dataverse.name, database.name, link_name, None,
-                random.choice(
-                    dataset_spec.get("standalone_collection_properties", [{}])),
+                dataset_spec["standalone_collection_properties"][i % len(dataset_spec["standalone_collection_properties"])],
                 0, storage_format)
 
             results.append(
@@ -4031,8 +4392,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         return all(results)
 
     """
-    Note - Number of external collection should be same as number of 
-    standalone collections to be created. 
+    Note - Number of external collection should be same as number of
+    standalone collections to be created.
     """
 
     def create_standalone_dataset_for_external_db_from_spec(
@@ -4040,7 +4401,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         self.log.info("Creating Standalone Datasets for external database "
                       "based on CBAS Spec")
 
-        dataset_spec = self.get_standalone_dataset_spec(cbas_spec, spec_name="kafka_dataset")
+        dataset_spec = self.get_standalone_dataset_spec(
+            cbas_spec, spec_name="kafka_dataset")
         results = list()
 
         kafka_link_objs = set(self.get_all_link_objs("kafka"))
@@ -4109,31 +4471,29 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             else:
                 datasource = dataset_spec["data_source"][i % len(dataset_spec["data_source"])]
 
-            if (dataset_spec["include_external_collections"].get(
+            if (dataset_spec["include_kafka_topics"].get(
                     datasource, {}) and dataset_spec[
-                "exclude_external_collections"].get(datasource, {})
-                    and (set(dataset_spec["include_external_collections"][
+                "exclude_kafka_topics"].get(datasource, {})
+                    and (set(dataset_spec["include_kafka_topics"][
                                  datasource]) == set(
-                        dataset_spec["exclude_external_collections"][
+                        dataset_spec["exclude_kafka_topics"][
                             datasource]))):
                 self.log.error("Both include and exclude "
-                               "external collections cannot be "
-                               "same")
+                               "kafka topics cannot be same")
                 return False
-            elif dataset_spec["exclude_external_collections"].get(datasource,
-                                                                  {}):
-                dataset_spec["include_external_collections"][datasource] = (
-                        set(dataset_spec["include_external_collections"][
+            elif dataset_spec["exclude_kafka_topics"].get(datasource, {}):
+                dataset_spec["include_kafka_topics"][datasource] = (
+                        set(dataset_spec["include_kafka_topics"][
                                 datasource]) - set(
-                    dataset_spec["exclude_external_collections"][datasource]))
+                    dataset_spec["exclude_kafka_topics"][datasource]))
 
             eligible_links = [link for link in kafka_link_objs if
                               link.db_type == datasource]
 
             """
-            This is to make sure that we don't create 2 collection with same 
+            This is to make sure that we don't create 2 collection with same
             source collection and link
-            include_external_collections should be of format -
+            include_kafka_topics should be of format -
             { "datasource" : [("region","collection_name")]}
             for mongo and MySQL, region should be empty string
             This is to support Dynamo tables multiple regions.
@@ -4142,9 +4502,9 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             while retry < 100:
                 link = random.choice(eligible_links)
 
-                if dataset_spec["include_external_collections"][datasource]:
+                if dataset_spec["include_kafka_topics"][datasource]:
                     external_collection_name = random.choice(
-                        dataset_spec["include_external_collections"][
+                        dataset_spec["include_kafka_topics"][
                             datasource])
 
                     # this will be True for Dynamo only
@@ -4153,7 +4513,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                                link.external_database_details[
                                    "connectionFields"]["region"]):
                             external_collection_name = random.choice(
-                                dataset_spec["include_external_collections"][
+                                dataset_spec["include_kafka_topics"][
                                     datasource])
                     external_collection_name = external_collection_name[1]
                 else:
@@ -4188,7 +4548,6 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     dataset_obj.name] = dataset_obj
                 results.append(True)
         return all(results)
-
 
 class Synonym_Util(StandAlone_Collection_Util):
 
@@ -4241,6 +4600,13 @@ class Synonym_Util(StandAlone_Collection_Util):
         else:
             return False
 
+    def generate_create_analytics_synonym_cmd(self, synonym_full_name,
+                                              cbas_entity_full_name, if_not_exists=False):
+        cmd = f"create analytics synonym {synonym_full_name}"
+        cmd += " If Not Exists" if if_not_exists \
+            else f" for {cbas_entity_full_name};"
+        return cmd
+
     def create_analytics_synonym(
             self, cluster, synonym_full_name, cbas_entity_full_name,
             if_not_exists=False, validate_error_msg=False, expected_error=None,
@@ -4257,12 +4623,8 @@ class Synonym_Util(StandAlone_Collection_Util):
         :param timeout : str
         :param analytics_timeout : str
         """
-        cmd = "create analytics synonym {0}".format(synonym_full_name)
-
-        if if_not_exists:
-            cmd += " If Not Exists"
-
-        cmd += " for {0};".format(cbas_entity_full_name)
+        cmd = self.generate_create_analytics_synonym_cmd(synonym_full_name,
+                                                         cbas_entity_full_name, if_not_exists)
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
 
@@ -4277,6 +4639,12 @@ class Synonym_Util(StandAlone_Collection_Util):
                 return False
             else:
                 return True
+
+    def generate_drop_analytics_synonym_cmd(self, synonym_full_name,
+                                            if_exists=False):
+        cmd = "drop analytics synonym {0}".format(synonym_full_name)
+        cmd += " if exists;" if if_exists else ";"
+        return cmd
 
     def drop_analytics_synonym(
             self, cluster, synonym_full_name, if_exists=False,
@@ -4293,12 +4661,7 @@ class Synonym_Util(StandAlone_Collection_Util):
         :param analytics_timeout : str
         """
 
-        cmd = "drop analytics synonym {0}".format(synonym_full_name)
-
-        if if_exists:
-            cmd += " if exists;"
-        else:
-            cmd += ";"
+        cmd = self.generate_drop_analytics_synonym_cmd(synonym_full_name, if_exists)
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
 
@@ -4310,6 +4673,7 @@ class Synonym_Util(StandAlone_Collection_Util):
                 status, errors, expected_error)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -4523,13 +4887,13 @@ class Synonym_Util(StandAlone_Collection_Util):
                 results = list(
                     map(lambda result: result.encode('utf-8').split("."),
                         results))
-                synonyms_created = list(
+                views_created = list(
                     map(lambda result: CBASHelper.format_name(*result),
                         results))
         return synonyms_created
 
 
-class Index_Util(Synonym_Util):
+class Index_Util(View_Util):
 
     def __init__(self, server_task=None, run_query_using_sdk=False):
         """
@@ -4629,6 +4993,25 @@ class Index_Util(Synonym_Util):
         else:
             return False
 
+    def generate_create_index_cmd(self, index_name, indexed_fields, dataset_name,
+                                  analytics_index=False, if_not_exists=False):
+        index_fields = ""
+        for index_field in indexed_fields:
+            index_fields += index_field + ","
+        index_fields = index_fields[:-1]
+
+        if analytics_index:
+            create_idx_statement = "create analytics index {0}".format(
+                index_name)
+        else:
+            create_idx_statement = "create index {0}".format(index_name)
+        if if_not_exists:
+            create_idx_statement += " IF NOT EXISTS"
+        create_idx_statement += " on {0}({1});".format(
+            dataset_name, index_fields)
+
+        return create_idx_statement
+
     def create_cbas_index(
             self, cluster, index_name, indexed_fields, dataset_name,
             analytics_index=False, validate_error_msg=False,
@@ -4648,22 +5031,11 @@ class Index_Util(Synonym_Util):
         :param analytics_timeout : str
         :param if_not_exists : bool, checks if index doesn't exist before issuing create command
         """
-        index_fields = ""
-        for index_field in indexed_fields:
-            index_fields += index_field + ","
-        index_fields = index_fields[:-1]
+        create_idx_statement = self.generate_create_index_cmd(index_name, indexed_fields,
+                                                              dataset_name, analytics_index,
+                                                              if_not_exists)
 
-        if analytics_index:
-            create_idx_statement = "create analytics index {0}".format(
-                index_name)
-        else:
-            create_idx_statement = "create index {0}".format(index_name)
-        if if_not_exists:
-            create_idx_statement += " IF NOT EXISTS"
-        create_idx_statement += " on {0}({1});".format(
-            dataset_name, index_fields)
-
-        self.log.debug("Executing cmd - \n{0}\n".format(create_idx_statement))
+        self.log.info("Executing cmd - \n{0}\n".format(create_idx_statement))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, create_idx_statement, username=username,
@@ -4707,7 +5079,7 @@ class Index_Util(Synonym_Util):
         else:
             drop_idx_statement += ";"
 
-        self.log.debug("Executing cmd - \n{0}\n".format(drop_idx_statement))
+        self.log.info("Executing cmd - \n{0}\n".format(drop_idx_statement))
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, drop_idx_statement, username=username,
@@ -4718,6 +5090,7 @@ class Index_Util(Synonym_Util):
                 status, errors, expected_error)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -4788,8 +5161,8 @@ class Index_Util(Synonym_Util):
                 name=name, dataset_name=dataset.name,
                 dataverse_name=dataset.dataverse_name,
                 database_name=dataset.database_name,
-                indexed_fields=random.choice(
-                    index_spec.get("indexed_fields", [])))
+                indexed_fields=index_spec["indexed_fields"][i % len(
+                    index_spec["indexed_fields"])])
 
             if index_spec.get("creation_method", "all") == "all":
                 creation_method = random.choice(["cbas_index", "index"])
@@ -4887,13 +5260,40 @@ class UDFUtil(Index_Util):
         if body:
             create_udf_statement += "{" + body + "}"
 
-        if query_context:
-            if dataverse:
-                param["query_context"] = "default:{0}".format(dataverse)
-            else:
-                param["query_context"] = "default:Default"
+        return create_udf_statement
 
-        self.log.debug("Executing cmd - \n{0}\n".format(create_udf_statement))
+    def create_udf(self, cluster, name, dataverse=None, database=None,
+                   or_replace=False, parameters=[], body=None,
+                   if_not_exists=False, query_context=False,
+                   use_statement=False, validate_error_msg=False,
+                   expected_error=None, username=None, password=None,
+                   timeout=300, analytics_timeout=300):
+        """
+        Create CBAS User Defined Functions
+        :param name str, name of the UDF to be created.
+        :param dataverse str, name of the dataverse in which the UDF will be created.
+        :param or_replace Bool, Whether to use 'or replace' flag or not.
+        :param parameters list/None, if None then the create UDF is passed
+        without function parenthesis.
+        :param body str/None, if None then no function body braces are passed.
+        :param if_not_exists bool, whether to use "if not exists" flag
+        :param query_context bool, whether to use query_context while
+        executing query using REST API calls
+        :param use_statement bool, Whether to use 'Use' statement while
+        executing query.
+        :param validate_error_msg : boolean, validate error while creating synonym
+        :param expected_error : str, error msg
+        :param username : str
+        :param password : str
+        :param timeout : int
+        :param analytics_timeout : int
+        """
+        param = {}
+        create_udf_statement = self.generate_create_udf_cmd(name, dataverse, database, or_replace,
+                                                            parameters, body, if_not_exists,
+                                                            query_context, use_statement)
+
+        self.log.info("Executing cmd - \n{0}\n".format(create_udf_statement))
 
         status, metrics, errors, results, \
             _ = self.execute_parameter_statement_on_cbas_util(
@@ -4933,22 +5333,9 @@ class UDFUtil(Index_Util):
         :param analytics_timeout : str
         """
         param = {}
-        drop_udf_statement = ""
-        if use_statement:
-            drop_udf_statement += 'use ' + dataverse + ';\n'
-        drop_udf_statement += "drop analytics function "
-        if database and dataverse and not query_context and not use_statement:
-            drop_udf_statement += "{0}.{1}.".format(database, dataverse)
-        if dataverse and not query_context and not use_statement:
-            drop_udf_statement += "{0}.".format(dataverse)
-        drop_udf_statement += name
-        # The below "if" is for a negative test scenario where we do not put
-        # function parenthesis.
-        if parameters is not None:
-            param_string = ",".join(parameters)
-            drop_udf_statement += "({0})".format(param_string)
-        if if_exists:
-            drop_udf_statement += " if exists"
+        drop_udf_statement = self.generate_drop_udf_cmd(name, dataverse, database,
+                                                        parameters, if_exists, use_statement,
+                                                        query_context)
 
         if query_context:
             if dataverse:
@@ -4968,6 +5355,7 @@ class UDFUtil(Index_Util):
                 status, errors, expected_error)
         else:
             if status != "success":
+                self.log.error(str(errors))
                 return False
             else:
                 return True
@@ -5450,10 +5838,11 @@ class CbasUtil(CBOUtil):
                                 % (self.failed_count, self.error_count))
         return self.handles
 
-    def _run_query(self, cluster, query, mode, rest=None, validate_item_count=False,
+    def _run_query(self, cluster, query, mode, rest=None,
+                   validate_item_count=False,
                    expected_count=0, timeout=300, analytics_timeout=300):
         # Execute query (with sleep induced)
-        name = threading.currentThread().getName()
+        name = current_thread().name
         client_context_id = name
         try:
             status, metrics, errors, results, handle = \
@@ -5461,7 +5850,8 @@ class CbasUtil(CBOUtil):
                     cluster, query, mode=mode, timeout=timeout,
                     client_context_id=client_context_id,
                     analytics_timeout=analytics_timeout)
-            # Validate if the status of the request is success, and if the count matches num_items
+            # Validate if the status of the request is success,
+            # and if the count matches num_items
             if mode == "immediate":
                 if status == "success":
                     if validate_item_count:
@@ -6559,6 +6949,9 @@ class CbasUtil(CBOUtil):
                    username=None, password=None, timeout=300,
                    analytics_timeout=300, validate_error_msg=None,
                    expected_error=None, expected_error_code=None):
+        """
+        Method to copy query results to a KV collection using a remote link.
+        """
         # with clause yet to be decided.
         cmd = "COPY "
         if source_definition:

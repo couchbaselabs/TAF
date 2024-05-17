@@ -4,9 +4,9 @@ Created on 2-March-2023
 @author: umang.agrawal
 '''
 
-import re
 import json
-from Queue import Queue
+import re
+from queue import Queue
 
 from cbas.cbas_base import CBASBaseTest
 from security.rbac_base import RbacBase
@@ -17,6 +17,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from membase.api.rest_client import RestConnection
 from SystemEventLogLib.analytics_events import AnalyticsEvents
 from CbasLib.CBASOperations import CBASHelper
+
 
 class CBASCBO(CBASBaseTest):
 

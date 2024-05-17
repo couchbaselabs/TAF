@@ -13,13 +13,14 @@ remove this hard coded value.
 import json
 import urllib
 import time
-from threading import Thread
 import threading
 import string
 import random
 import importlib
 import copy
 import requests
+from threading import Thread
+from queue import Queue
 
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
@@ -28,7 +29,6 @@ from CbasLib.cbas_entity_on_prem import Dataverse, CBAS_Scope, Link, Dataset, \
     CBAS_Collection, Synonym, CBAS_Index
 from remote.remote_util import RemoteMachineShellConnection, RemoteMachineHelper
 from common_lib import sleep
-from Queue import Queue
 from sdk_exceptions import SDKException
 from collections_helper.collections_spec_constants import MetaCrudParams
 from Jython_tasks.task import Task, RunQueriesTask
@@ -170,8 +170,7 @@ class BaseUtil(object):
                 metrics = None
 
             return response["status"], metrics, errors, results, handle
-
-        except Exception, e:
+        except Exception as e:
             raise Exception(str(e))
 
     def validate_error_in_response(self, status, errors, expected_error=None,
@@ -5175,7 +5174,8 @@ class CBASRebalanceUtil(object):
         return task.result
 
     def rebalance(self, cluster, kv_nodes_in=0, kv_nodes_out=0, cbas_nodes_in=0,
-                  cbas_nodes_out=0, available_servers=[], exclude_nodes=[]):
+                  cbas_nodes_out=0, available_servers=[], exclude_nodes=[],
+                  in_node_services=""):
         if kv_nodes_out > 0:
             cluster_kv_nodes = self.cluster_util.get_nodes_from_services_map(
                 cluster, service_type="kv", get_all_nodes=True,
@@ -5214,6 +5214,9 @@ class CBASRebalanceUtil(object):
             services += ["kv"] * kv_nodes_in
         if cbas_nodes_in > 0:
             services += ["cbas"] * cbas_nodes_in
+
+        if in_node_services:
+            services = [in_node_services] * (kv_nodes_in + cbas_nodes_in)
 
         rebalance_task = self.task.async_rebalance(
             cluster, servs_in, servs_out,

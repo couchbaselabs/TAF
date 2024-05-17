@@ -12,6 +12,7 @@ import time
 
 from CbasLib.CBASOperations import CBASHelper
 from global_vars import logger
+from table_view import TableView
 
 
 datasets = ['create dataset {} on {}.{}.{};']
@@ -138,6 +139,12 @@ class DoctorCBAS():
             if dataSource.type != "s3":
                 self.connect_link(cluster, dataSource.link_name)
 
+            query_tbl = TableView(self.log.info)
+            query_tbl.set_headers(["Bucket", "##", "Query"])
+            for k, v in dataSource.query_map.items():
+                query_tbl.add_row([dataSource.name, v[0], k])
+            query_tbl.display("N1QL Queries to run during test:")
+
     def connect_link(self, cluster, link_name):
         client = cluster.SDKClients[0].cluster
         statement = "CONNECT LINK %s" % link_name
@@ -167,7 +174,7 @@ class DoctorCBAS():
 
     def wait_for_link_disconnect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
-        rest = CBASHelper(cluster.nebula.endpoint)
+        rest = CBASHelper(cluster.master)
         while time.time() < st_time + timeout:
             time.sleep(10)
             result, code, content, errors = rest.analytics_link_operations(uri="/Default/{}".format(link_name))
@@ -181,7 +188,7 @@ class DoctorCBAS():
 
     def wait_for_link_connect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
-        rest = CBASHelper(cluster.nebula.endpoint)
+        rest = CBASHelper(cluster.master)
         while time.time() < st_time + timeout:
             time.sleep(10)
             result, code, content, errors = rest.analytics_link_operations(uri="/Default/{}".format(link_name))
@@ -211,7 +218,7 @@ class DoctorCBAS():
                                        .format(collection, _status,
                                                json.loads(str(results))[0]["cnt"],
                                                database.loadDefn.get("num_items")))
-                        if json.loads(str(results))[0]["cnt"] == database.loadDefn.get("num_items"):
+                        if json.loads(str(results))[0]["cnt"] >= database.loadDefn.get("num_items"):
                             self.log.info("CBAS dataset is ready: {}".format(collection))
                             status = True
                             break
@@ -272,7 +279,7 @@ class CBASQueryLoad:
             e = ""
             try:
                 self.total_query_count.next()
-                query_tuple = random.choice(self.queries)
+                query_tuple = self.queries[i%len(self.queries)]
                 query = query_tuple[0]
                 original_query = query_tuple[1]
                 # print query

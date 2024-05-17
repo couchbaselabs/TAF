@@ -70,7 +70,8 @@ class GetCluster(GetProject):
             self.expected_result['cloudProvider'],
             self.expected_result['serviceGroups'],
             self.expected_result['availability'],
-            self.expected_result['support'])
+            self.expected_result['support'],
+            self.expected_result['couchbaseServer'])
         if result.status_code != 202:
             self.log.error("Failed while deploying cluster")
             self.tearDown()

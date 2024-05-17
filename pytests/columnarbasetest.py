@@ -23,22 +23,17 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
     def setUp(self):
         super(ColumnarBaseTest, self).setUp()
-
         self.log_setup_status(self.__class__.__name__, "started")
-
         self.num_nodes_in_columnar_instance = self.input.param(
             "num_nodes_in_columnar_instance", 2)
-
         self.columnar_utils = ColumnarUtils(self.log)
 
-        def purge_lists(*args):
-            for l in args:
-                del l[:]
-
-        def populate_columnar_instance_obj(
-                tenant, instance_id, instance_name=None, instance_config=None):
-            resp = self.columnar_utils.get_instance_info(pod=self.pod, tenant=tenant,
-                                                         project_id=tenant.project_id, instance_id=instance_id)
+        def populate_columnar_instance_obj(tenant, instance_id,
+                                           instance_name=None,
+                                           instance_config=None):
+            resp = self.columnar_utils.get_instance_info(
+                pod=self.pod, tenant=tenant, project_id=tenant.project_id,
+                instance_id=instance_id)
 
             if not resp:
                 raise Exception("Failed fetching connection string for "
@@ -69,6 +64,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 temp_server.rest_username = self.rest_username
                 temp_server.rest_password = self.rest_password
                 instance_obj.servers.append(temp_server)
+            instance_obj.nodes_in_cluster = instance_obj.servers 
             instance_obj.master = instance_obj.servers[0]
             instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
@@ -79,8 +75,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 self.pod, tenant, cluster_id,
                 self.rest_username, self.rest_password)
 
-            self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}".format(
-                instance_id, cluster_id))
+            self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}"
+                          .format(instance_id, cluster_id))
 
         def allow_access_from_everywhere_on_instance(
                 tenant, project_id, instance_obj, result):
@@ -117,13 +113,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 instance_config = (
                     self.columnar_utils.generate_instance_configuration(
                         nodes=self.num_nodes_in_columnar_instance))
-
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))
 
-                deploy_task = DeployColumnarInstanceNew(self.pod, self.tenant, instance_config["name"],
-                                                        instance_config,
-                                                        timeout=self.wait_timeout)
+                deploy_task = DeployColumnarInstanceNew(
+                    self.pod, self.tenant, instance_config["name"],
+                    instance_config, timeout=self.wait_timeout)
                 self.task_manager.add_new_task(deploy_task)
                 tasks.append(deploy_task)
 
@@ -144,9 +139,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             ))
         self.start_threads(allow_access_from_everywhere_threads)
         if allow_access_from_everywhere_thread_results:
-            raise Exception("Failed setting allow access from everywhere "
-                            "on instances- {0}".format(
-                allow_access_from_everywhere_thread_results))
+            raise Exception(
+                "Failed setting allow access from everywhere on instances - "
+                f"{allow_access_from_everywhere_thread_results}")
 
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
@@ -198,18 +193,18 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         wait_for_instance_delete_results = list()
 
         def delete_instance(tenant, project_id, instance, result):
+            self.log.info(f"Attempt deleting instance: {instance.instance_id}")
             if not self.columnar_utils.delete_instance(
                     self.pod, tenant, project_id, instance):
-                result.append("Deleting Columnar Instance - {0}, "
-                              "Instance ID - {1} failed".format(
-                    instance.name, instance.instance_id))
+                result.append(f"Deleting Columnar Instance - {instance.name}, "
+                              f"Instance ID - {instance.instance_id} failed")
 
         def wait_for_instance_deletion(tenant, project_id, instance, results):
             result = self.columnar_utils.wait_for_instance_to_be_destroyed(
                 self.pod, tenant, project_id, instance)
             if not result:
-                results.append("Columnar Instance {0} failed to be "
-                               "deleted".format(instance.instance_id))
+                results.append(f"Columnar Instance {instance.instance_id} "
+                               "failed to be deleted")
 
         def delete_cloud_infra():
             for tenant in self.tenants:
@@ -252,16 +247,19 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 CapellaUtils.revoke_access_secret_key(
                     self.pod, tenant, tenant.api_key_id)
 
-        if self.input.param("skip_redeploy", True):
+        if self.skip_redeploy:
             if (TestInputSingleton.input.test_params["case_number"] ==
                     TestInputSingleton.input.test_params["no_of_test_identified"]):
                 delete_cloud_infra()
+                # This is required to delete project in
+                # dedicatedbasetestcase.py teardown method.
+                self.skip_redeploy = False
             else:
                 for tenant in self.tenants:
                     CapellaUtils.revoke_access_secret_key(
                         self.pod, tenant, tenant.api_key_id)
         else:
-            self.capella["project_id"] = self.capella["instance_id"] = ""
+            self.capella["project"] = self.capella["instance_id"] = ""
             delete_cloud_infra()
 
     def start_threads(self, thread_list, async_run=False):

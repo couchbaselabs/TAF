@@ -4,8 +4,8 @@ Created on 25-OCTOBER-2023
 @author: umang.agrawal
 '''
 import random
-from Queue import Queue
 import time
+from queue import Queue
 
 from CbasLib.cbas_entity_columnar import ExternalDB
 from Columnar.columnar_base import ColumnarBaseTest

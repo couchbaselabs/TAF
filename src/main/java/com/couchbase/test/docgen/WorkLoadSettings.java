@@ -44,6 +44,7 @@ public class WorkLoadSettings extends WorkLoadBase {
     public String model;
     public boolean mockVector;
     public int dim;
+    public boolean base64;
 
     /**** Constructors ****/
     public WorkLoadSettings(String keyPrefix,
@@ -77,7 +78,7 @@ public class WorkLoadSettings extends WorkLoadBase {
             int workers, int ops, String loadType,
             String keyType, String valueType,
             boolean validate, boolean gtm, boolean deleted, int mutated,
-            String model, boolean mockVector, int dim) {
+            String model, boolean mockVector, int dim, boolean base64) {
         super();
         this.keyPrefix = keyPrefix;
         this.keySize = keySize;
@@ -100,6 +101,7 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.model = model;
         this.mockVector = mockVector;
         this.dim = dim;
+        this.base64 = base64;
     };
 
     public WorkLoadSettings(

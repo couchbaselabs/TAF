@@ -141,8 +141,9 @@ class CreateAuditLogExport(GetAuditLogExport):
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"],
             }
-            if not any(element in ["organizationOwner", "projectOwner",
-                                   "projectManager"] for
+            if not any(element in ["organizationOwner", "projectViewer",
+                                   "projectOwner", "projectDataReaderWriter",
+                                   "projectDataReader", "projectManager"] for
                        element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,

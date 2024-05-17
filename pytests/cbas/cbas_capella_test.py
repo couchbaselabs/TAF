@@ -6,9 +6,9 @@ Created on 30-August-2020
 
 import json
 import random
-from Queue import Queue
-from threading import Thread
 import time
+from queue import Queue
+from threading import Thread
 
 from BucketLib.BucketOperations import BucketHelper
 from CbasLib.CBASOperations import CBASHelper

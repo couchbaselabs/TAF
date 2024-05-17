@@ -231,6 +231,7 @@ class DoctorN1QL():
             b.queries = list()
             b.query_map = dict()
             self.log.info("Creating GSI indexes on {}".format(b.name))
+            prev_valType = None
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 if s == CbServer.system_scope:
                     continue
@@ -246,18 +247,23 @@ class DoctorN1QL():
                     indexType = indexes
                     queryType = queries
                     queryParams = []
+                    if valType != prev_valType:
+                        counter = 0
                     if valType == "Hotel":
                         indexType = HotelIndexes
                         queryType = HotelQueries
                         queryParams = HotelQueriesParams
+                        prev_valType = valType
                     if valType == "NimbusP":
                         indexType = NimbusPIndexes
                         queryType = NimbusPQueries
                         queryParams = NimbusPQueriesParams
+                        prev_valType = valType
                     if valType == "NimbusM":
                         indexType = NimbusMIndexes
                         queryType = NimbusMQueries
                         queryParams = NimbusMQueriesParams
+                        prev_valType = valType
                     i = 0
                     q = 0
                     while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
@@ -288,7 +294,7 @@ class DoctorN1QL():
                             query = unformatted_q.format(c)
                             print query
                             if unformatted_q not in b.query_map.keys():
-                                b.query_map[unformatted_q] = ["Q%s" % counter]
+                                b.query_map[unformatted_q] = ["Q%s" % len(b.query_map.keys())]
                                 if queryParams:
                                     b.query_map[unformatted_q].append(queryParams[counter % len(queryParams)])
                                 else:
@@ -297,7 +303,11 @@ class DoctorN1QL():
                             q += 1
                         counter += 1
 
-            print [v[0] + " == " + k for k, v in b.query_map.items()]
+            query_tbl = TableView(self.log.info)
+            query_tbl.set_headers(["Bucket", "##", "Query"])
+            for k, v in b.query_map.items():
+                query_tbl.add_row([b.name, v[0], k])
+            query_tbl.display("N1QL Queries to run during test:")
         return True
 
     def discharge_N1QL(self):
@@ -466,7 +476,7 @@ class QueryLoad:
             e = ""
             try:
                 self.total_query_count.next()
-                query_tuple = random.choice(self.queries)
+                query_tuple = self.queries[counter%len(self.queries)]
                 query = query_tuple[0]
                 original_query = query_tuple[2]
                 # print query

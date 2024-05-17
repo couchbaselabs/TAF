@@ -34,11 +34,9 @@ Assumption for test -
 
 import copy
 import random
-import time
-
 import requests
-from Queue import Queue
-
+import time
+from queue import Queue
 
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI

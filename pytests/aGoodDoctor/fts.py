@@ -4,22 +4,23 @@ Created on May 31, 2022
 @author: ritesh.agarwal
 '''
 
-from copy import deepcopy
 import itertools
 import json
 import random
-from threading import Thread
+import sys
 import threading
 import time
+from copy import deepcopy
+from threading import Thread
 
 from FtsLib.FtsOperations import FtsHelper
 from TestInput import TestInputSingleton
 from serverlessfts import ftsQueries, ftsIndex, HotelQueries, \
     HotelIndex, template
 from global_vars import logger
-from java.net import SocketTimeoutException
 from elasticsearch import EsClient
 from constants.cb_constants.CBServer import CbServer
+import traceback
 
 
 NimbusPQueries = [
@@ -47,7 +48,7 @@ vectorIndex = {
                     "index": True,
                     "name": "embedding",
                     "similarity": "l2_norm",
-                    "type": "vector"
+                    "type": "vector_base64"
                     }
                 ]
             }
@@ -66,7 +67,7 @@ class DoctorFTS:
         self.indexes = dict()
         self.stop_run = False
 
-    def create_fts_indexes(self, cluster, dims=1536, similarity="l2_norm"):
+    def create_fts_indexes(self, cluster, dims=1536, similarity="l2_norm", _type="vector"):
         status = False
         fts_helper = FtsHelper(cluster.fts_nodes[0])
         for b in cluster.buckets:
@@ -87,8 +88,11 @@ class DoctorFTS:
                     indexType = ftsIndex
                     if valType == "Vector":
                         indexType = vectorIndex
-                        indexType["properties"]["embedding"]["fields"][0].update({"dims": dims,
-                                                                                "similarity": similarity})
+                        indexType["properties"]["embedding"]["fields"][0].update(
+                            {"dims": dims,
+                             "similarity": similarity,
+                             "type": _type})
+
                     if valType == "Hotel":
                         queryTypes = HotelQueries
                         indexType = HotelIndex
@@ -164,7 +168,8 @@ class DoctorFTS:
 
 class FTSQueryLoad:
     predictor = None
-    def __init__(self, cluster, bucket, esClient=None, mockVector=None, dim=None):
+    def __init__(self, cluster, bucket, esClient=None, mockVector=None, dim=None,
+                 base64=False):
         self.bucket = bucket
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
@@ -183,6 +188,7 @@ class FTSQueryLoad:
         self.esClient = esClient
         self.mockVector = mockVector
         self.dim = dim
+        self.base64 = base64
 
     def start_query_load(self):
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -214,14 +220,19 @@ class FTSQueryLoad:
             thread.join()
 
     def _run_vector_query(self):
-        if FTSQueryLoad.predictor is None:
+        _input = TestInputSingleton.input
+        vector = Vector(None)
+        if not self.mockVector and FTSQueryLoad.predictor is None:
             try:
-                _input = TestInputSingleton.input
-                vector = Vector(None)
                 vector.setEmbeddingsModel(_input.param("model", "sentence-transformers/all-MiniLM-L6-v2"))
                 FTSQueryLoad.predictor = vector.predictor
-            except Exception as e:
+            except Exception or NoClassDefFoundError as e:
                 print(e)
+                traceback.print_exc()
+                exc_info = sys.exc_info()
+                traceback.print_exception(*exc_info)
+                traceback.print_stack()
+                del exc_info
         while not self.stop_run:
             # import pydevd
             # pydevd.settrace(trace_only_current_thread=False)
@@ -230,8 +241,7 @@ class FTSQueryLoad:
             query = random.choice(queries)
             k = random.randint(2, 50)
             query = {"query": {"match_none": {}}, "explain": False, "knn":
-                     [{"field": "embedding", "k": k,
-                       "vector": []}], "size": k}
+                     [{"field": "embedding", "k": k}], "size": k}
             text_options = random.choice(([vector.colors, vector.clothingType, vector.fashionBrands],
                                  [vector.colors, vector.clothingType],
                                  [vector.clothingType, vector.fashionBrands]))
@@ -247,10 +257,14 @@ class FTSQueryLoad:
                     text += random.choice(option) + " "
                 text_vector = FTSQueryLoad.predictor.predict(text)
                 embedding = text_vector.tolist()
-            vector_float = []
+
             for value in embedding:
                 vector_float.append(float(value))
-            query["knn"][0].update({"vector": vector_float})
+            if self.base64:
+                vector_float = vector.convertToBase64Bytes(embedding)
+                query["knn"][0].update({"vector_base64": vector_float})
+            else:
+                query["knn"][0].update({"vector": vector_float})
             query = json.dumps(query)
             start = time.time()
             e = ""

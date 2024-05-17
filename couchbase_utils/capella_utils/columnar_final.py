@@ -1,10 +1,10 @@
-'''
+"""
 Created on Oct 13, 2023
 
 @author: umang.agrawal
 This file is temporary and will be merged with columnar.py in the same
 folder.
-'''
+"""
 import json
 import random
 import string
@@ -21,9 +21,8 @@ class ColumnarInstance:
         self.tenant_id = tenant_id
         self.project_id = project_id
 
-        if instance_name:
-            self.name = instance_name
-        else:
+        self.name = instance_name
+        if not instance_name:
             self.name = "Columnar_instance{0}".format(random.randint(1, 100000))
 
         self.instance_id = instance_id
@@ -31,6 +30,7 @@ class ColumnarInstance:
         self.srv = instance_endpoint
 
         self.servers = list()
+        self.nodes_in_cluster = list()
         self.master = None
         self.cbas_cc_node = self.master
 
@@ -73,8 +73,8 @@ class ColumnarInstance:
             self.nodes_in_cluster.append(server)
         self.master = self.kv_nodes[0]
 
-class DBUser:
 
+class DBUser:
     def __init__(self, userId="", username="Administrator",
                  password="password"):
         self.username = username
@@ -86,6 +86,7 @@ class DBUser:
     def __str__(self):
         return self.username
 
+
 class ColumnarRole:
     def __init__(self, roleId="", role_name=""):
         self.id = roleId
@@ -95,21 +96,27 @@ class ColumnarRole:
     def __str__(self):
         return self.name
 
+
 class ColumnarRBACUtil:
     def __init__(self, log):
         self.log = log
-
 
     def create_custom_analytics_admin_user(
             self, pod, tenant, project_id, instance,
             username, password):
         privileges_list = [
-            "database_create", "database_drop", "scope_create", "scope_drop", "collection_create",
-            "collection_drop", "collection_select", "collection_insert", "collection_upsert",
-            "collection_delete", "collection_analyze", "view_create", "view_drop", "view_select",
-            "index_create", "index_drop", "function_create", "function_drop", "function_execute",
-            "link_create", "link_drop", "link_alter", "link_connect", "link_disconnect",
-            "link_copy_to", "link_copy_from", "synonym_create", "synonym_drop"
+            "database_create", "database_drop",
+            "scope_create", "scope_drop",
+            "collection_create", "collection_drop",
+            "collection_select", "collection_insert",
+            "collection_upsert", "collection_delete", "collection_analyze",
+            "view_create", "view_drop", "view_select",
+            "index_create", "index_drop",
+            "function_create", "function_drop", "function_execute",
+            "link_create", "link_drop", "link_alter",
+            "link_connect", "link_disconnect",
+            "link_copy_to", "link_copy_from",
+            "synonym_create", "synonym_drop"
         ]
 
         resources_privileges_map = {
@@ -119,14 +126,13 @@ class ColumnarRBACUtil:
         }
 
         privileges_payload = self.create_privileges_payload([resources_privileges_map])
-        analytics_admin_role = self.create_columnar_role(pod, tenant, project_id,
-                                                         instance, "analytics_admin",
-                                                         privileges_payload)
+        analytics_admin_role = self.create_columnar_role(
+            pod, tenant, project_id, instance, "analytics_admin",
+            privileges_payload)
         if not analytics_admin_role:
             self.log.error("Failed to create analytics admin role")
             return None
         instance.columnar_roles.append(analytics_admin_role)
-
         analytics_admin_user = self.create_api_keys(pod, tenant, project_id, instance,
                                                     username, password,
                                                     role_ids=[analytics_admin_role.id])
@@ -134,10 +140,9 @@ class ColumnarRBACUtil:
         return analytics_admin_user
 
     def create_privileges_payload(self, resources_privileges_map=[]):
-
         def get_entity_obj(entity_obj_arr=[], entity_name=""):
-            matched_entities =  [entity_obj for entity_obj in entity_obj_arr
-                                  if entity_obj["name"] == entity_name]
+            matched_entities = [entity_obj for entity_obj in entity_obj_arr
+                                if entity_obj["name"] == entity_name]
             if len(matched_entities) > 0:
                 return matched_entities[0]
             else:
@@ -189,7 +194,7 @@ class ColumnarRBACUtil:
     def create_api_keys(
             self, pod, tenant, project_id, instance,
             username, password, privileges_payload = None,
-            role_ids = []):
+            role_ids=[]):
 
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
@@ -233,7 +238,8 @@ class ColumnarRBACUtil:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
 
-        resp = columnar_api.delete_api_keys(tenant.id, project_id, instance.instance_id,
+        resp = columnar_api.delete_api_keys(tenant.id, project_id,
+                                            instance.instance_id,
                                             api_key_id)
 
         if resp.status_code == 202:
@@ -293,11 +299,12 @@ class ColumnarRBACUtil:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
 
-        resp = columnar_api.delete_columnar_role(tenant.id, project_id, instance.instance_id,
+        resp = columnar_api.delete_columnar_role(tenant.id, project_id,
+                                                 instance.instance_id,
                                                  role_id)
 
         if resp.status_code == 204:
-            self.log.info("Successfully deleted columnar role {}".format(role_id))
+            self.log.info(f"Successfully deleted columnar role {role_id}")
             return True
         elif resp.status_code == 500:
             self.log.critical(str(resp.content))
@@ -311,7 +318,6 @@ class ColumnarRBACUtil:
 
 
 class ColumnarUtils:
-
     def __init__(self, log):
         self.log = log
 
@@ -371,16 +377,17 @@ class ColumnarUtils:
                 self.log.critical(resp.content)
                 raise Exception("Cluster deployment failed.")
         else:
-            self.log.error("Unable to create goldfish cluster {0} in project "
-                           "{1}".format(instance_config["name"], tenant.project_id))
+            self.log.error("Unable to create goldfish cluster "
+                           f"{instance_config['name']} "
+                           f"in project {tenant.project_id}")
             self.log.critical("Capella API returned " + str(
                 resp.status_code))
             self.log.critical(resp.json()["message"])
         time.sleep(5)
-        self.log.info("Cluster created with cluster ID: {}"\
-                              .format(instance_id))
+        self.log.info(f"Cluster created with cluster ID: {instance_id}")
 
         start_time = time.time()
+        state = None
         while time.time() < start_time + timeout:
             resp = columnar_api.get_specific_columnar_instance(
                 tenant.id, tenant.project_id, instance_id)
@@ -396,14 +403,15 @@ class ColumnarUtils:
             else:
                 break
         if state == "healthy":
-            self.log.info("Columnar instance is deployed successfully in %s s" % str(time.time() - start_time))
+            self.log.info("Columnar instance is deployed successfully in %s s"
+                          % str(time.time() - start_time))
         else:
-            self.log.error("Cluster {0} failed to deploy even after {"
-                           "1} seconds. Current cluster state - {2}".format(
-                               instance_config["name"], str(time.time() - start_time), state))
+            self.log.error("Cluster {0} failed to deploy even after {1} "
+                           "seconds. Current cluster state - {2}"
+                           .format(instance_config["name"],
+                                   str(time.time() - start_time), state))
 
         return instance_id
-
 
     def delete_instance(self, pod, tenant, project_id, instance):
         columnar_api = ColumnarAPI(
@@ -412,8 +420,9 @@ class ColumnarUtils:
         resp = columnar_api.delete_columnar_instance(
             tenant.id, project_id, instance.instance_id)
         if resp.status_code != 202:
-            self.log.error("Unable to delete columnar instance {0}".format(
-                instance.name))
+            self.log.error("Unable to delete columnar instance {0}/{1}: {2}"
+                           .format(instance.name, instance.instance_id,
+                                   resp.content))
             return False
         return True
 
@@ -457,6 +466,7 @@ class ColumnarUtils:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         end_time = time.time() + timeout
+        state = None
         while time.time() < end_time:
             resp = self.get_instance_info(
                 pod, tenant, project_id, instance.instance_id, columnar_api)
@@ -490,6 +500,7 @@ class ColumnarUtils:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         end_time = time.time() + timeout
+        state = None
         while time.time() < end_time:
             state = self.get_instance_info(
                 pod, tenant, project_id, instance.instance_id, columnar_api)["state"]
@@ -552,6 +563,6 @@ class ColumnarUtils:
                     "Unable to add IP {0} to Columnar instance {1} with ID "
                     "{2}".format(ip, instance.name, instance.instance_id))
                 if resp.text:
-                    self.log.error("Following error recieved {}".format(resp.text))
+                    self.log.error(f"Following error recieved {resp.text}")
                 return False
         return True

@@ -43,6 +43,10 @@ class RetryRebalanceUtil:
             sub_cond = 'delay, {}'.format(delay_time)
             set_command = 'testconditions:set(backfill_done, {' \
                           + condition + '{' + sub_cond + '}})'
+        elif test_failure_condition == 'delay_failover_start':
+            condition = 'delay, {}'.format(delay_time)
+            set_command = 'testconditions:set(failover_start, {' \
+                          + condition + '}).'
         else:
             set_command = "testconditions:set({}, fail)" \
                           .format(test_failure_condition)

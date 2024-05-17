@@ -3,7 +3,8 @@ import threading
 from basetestcase import BaseTestCase
 from cb_constants import CbServer
 import Jython_tasks.task as jython_tasks
-from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
+from collections_helper.collections_spec_constants import \
+    MetaConstants, MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from pytests.ns_server.enforce_tls import EnforceTls
 from BucketLib.bucket import Bucket, Collection, Scope
@@ -26,10 +27,12 @@ class UpgradeBase(BaseTestCase):
 
         self.creds = self.input.membase_settings
         self.key = "update_docs"
-        self.disk_location_data = self.input.param("data_location",
-                                                   testconstants.COUCHBASE_DATA_PATH)
-        self.disk_location_index = self.input.param("index_location",
-                                                    testconstants.COUCHBASE_DATA_PATH)
+        self.disk_location_data = \
+            self.input.param("data_location",
+                             testconstants.COUCHBASE_DATA_PATH)
+        self.disk_location_index = \
+            self.input.param("index_location",
+                             testconstants.COUCHBASE_DATA_PATH)
         self.test_storage_upgrade = \
             self.input.param("test_storage_upgrade", False)
         self.upgrade_type = self.input.param("upgrade_type", "online_swap")
@@ -40,62 +43,88 @@ class UpgradeBase(BaseTestCase):
         self.tls_level = self.input.param('tls_level', "all")
         self.upgrade_with_data_load = \
             self.input.param("upgrade_with_data_load", True)
-        self.retry_get_process_num = self.input.param("retry_get_process_num", 25)
+        self.retry_get_process_num = \
+            self.input.param("retry_get_process_num", 25)
         self.test_abort_snapshot = self.input.param("test_abort_snapshot",
                                                     False)
         self.sync_write_abort_pattern = \
             self.input.param("sync_write_abort_pattern", "all_aborts")
-        self.migrate_storage_backend = self.input.param("migrate_storage_backend", False)
-        self.preferred_storage_mode = self.input.param("preferred_storage_mode",
-                                                      Bucket.StorageBackend.magma)
-        self.range_scan_timeout = self.input.param("range_scan_timeout",
-                                                   None)
-        self.range_scan_collections = self.input.param("range_scan_collections", None)
+        self.migrate_storage_backend = \
+            self.input.param("migrate_storage_backend", False)
+        self.preferred_storage_mode = \
+            self.input.param("preferred_storage_mode",
+                             Bucket.StorageBackend.magma)
+        self.range_scan_timeout = self.input.param("range_scan_timeout", None)
+        self.range_scan_collections = \
+            self.input.param("range_scan_collections", None)
         self.rest = RestConnection(self.cluster.master)
-        self.server_index_to_fail = self.input.param("server_index_to_fail",
-                                                     None)
+        self.server_index_to_fail = \
+            self.input.param("server_index_to_fail", None)
         self.key_size = self.input.param("key_size", 8)
         self.range_scan_task = self.input.param("range_scan_task", None)
-        self.expect_range_scan_exceptions = self.input.param("expect_range_scan_exceptions",
-                                                             ["com.couchbase.client.core.error.FeatureNotAvailableException: "
-                                                              "The cluster does not support the scan operation (Only supported"
-                                                              " with Couchbase Server 7.5 and later)."])
+        self.expect_range_scan_exceptions = \
+            self.input.param("expect_range_scan_exceptions",
+                             ["com.couchbase.client.core.error.FeatureNotAvailableException: "
+                              "The cluster does not support the scan operation (Only supported"
+                              " with Couchbase Server 7.5 and later)."])
         self.skip_range_scan_collection_mutation = self.input.param(
             "skip_range_scan_collection_mutation", True)
         self.range_scan_runs_per_collection = self.input.param(
             "range_scan_runs_per_collection", 1)
-        self.migration_procedure = self.input.param("migration_procedure", "swap_rebalance")
-        self.test_guardrail_migration = self.input.param("test_guardrail_migration", False)
-        self.test_guardrail_upgrade = self.input.param("test_guardrail_upgrade", False)
-        self.guardrail_type = self.input.param("guardrail_type", "resident_ratio")
+        self.migration_procedure = \
+            self.input.param("migration_procedure", "swap_rebalance")
+        self.test_guardrail_migration = \
+            self.input.param("test_guardrail_migration", False)
+        self.test_guardrail_upgrade = \
+            self.input.param("test_guardrail_upgrade", False)
+        self.guardrail_type = \
+            self.input.param("guardrail_type", "resident_ratio")
         self.breach_guardrail = self.input.param("breach_guardrail", False)
 
         self.cluster_profile = self.input.param("cluster_profile", None)
 
-        #### Spec File Parameters ####
-
-        self.spec_name = self.input.param("bucket_spec", "single_bucket.default")
-        self.initial_data_spec = self.input.param("initial_data_spec", "initial_load")
-        self.sub_data_spec = self.input.param("sub_data_spec", "subsequent_load_magma")
-        self.upsert_data_spec = self.input.param("upsert_data_spec", "upsert_load")
-        self.sync_write_spec = self.input.param("sync_write_spec", "sync_write_magma")
-        self.collection_spec = self.input.param("collection_spec","collections_magma")
-        self.load_large_docs = self.input.param("load_large_docs", False)
-        self.collection_operations = self.input.param("collection_operations", True)
+        # Spec File Parameters
+        self.spec_name = \
+            self.input.param("bucket_spec", "single_bucket.default")
+        self.initial_data_spec = \
+            self.input.param("initial_data_spec", "initial_load")
+        self.sub_data_spec = \
+            self.input.param("sub_data_spec", "subsequent_load_magma")
+        self.upsert_data_spec = \
+            self.input.param("upsert_data_spec", "upsert_load")
+        self.sync_write_spec = \
+            self.input.param("sync_write_spec", "sync_write_magma")
+        self.collection_spec = \
+            self.input.param("collection_spec","collections_magma")
+        self.load_large_docs = \
+            self.input.param("load_large_docs", False)
+        self.collection_operations = \
+            self.input.param("collection_operations", True)
         ####
         self.rebalance_op = self.input.param("rebalance_op", "all")
         self.dur_level = self.input.param("dur_level", "default")
         self.alternate_load = self.input.param("alternate_load", False)
         self.magma_upgrade = self.input.param("magma_upgrade", False)
-        self.perform_collection_ops = self.input.param("perform_collection_ops", False)
-        self.collection_ops_iterations = self.input.param("collection_ops_iterations", 1)
+        self.perform_collection_ops = \
+            self.input.param("perform_collection_ops", False)
+        self.collection_ops_iterations = \
+            self.input.param("collection_ops_iterations", 1)
 
-        self.include_indexing_query = self.input.param("include_indexing_query", False)
-        self.redistribute_indexes = self.input.param("redistribute_indexes", True)
-        self.enable_shard_affinity = self.input.param("enable_shard_affinity", True)
-        self.create_partitioned_indexes = self.input.param("create_partitioned_indexes", True)
+        self.include_indexing_query = \
+            self.input.param("include_indexing_query", False)
+        self.redistribute_indexes = \
+            self.input.param("redistribute_indexes", True)
+        self.enable_shard_affinity = \
+            self.input.param("enable_shard_affinity", True)
+        self.create_partitioned_indexes = \
+            self.input.param("create_partitioned_indexes", True)
         self.index_quota_mem = self.input.param("index_quota_mem", 512)
         self.kv_quota_mem = self.input.param("kv_quota_mem", 6000)
+
+        # Input params for large doc upgrade tests
+        self.large_doc_upgrade = self.input.param("large_doc_upgrade", False)
+        self.bucket_replicas = self.input.param("bucket_replicas", 0)
+        self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
 
         # Works only for versions > 1.7 release
         self.product = "couchbase-server"
@@ -225,18 +254,21 @@ class UpgradeBase(BaseTestCase):
             self.assertTrue(status, msg="Failure during disabling auto-failover")
 
         if self.enable_auto_retry_rebalance:
-            afterTimePeriod = self.input.param("afterTimePeriod", 100)
-            maxAttempts = self.input.param("maxAttempts", 3)
+            after_time_period = self.input.param("afterTimePeriod", 100)
+            max_attempts = self.input.param("maxAttempts", 3)
             body = dict()
             body["enabled"] = "true"
-            body["afterTimePeriod"] = afterTimePeriod
-            body["maxAttempts"] = maxAttempts
+            body["afterTimePeriod"] = after_time_period
+            body["maxAttempts"] = max_attempts
             rest = RestConnection(self.cluster.master)
             res = rest.set_retry_rebalance_settings(body)
             self.log.info("Rebalance retry settings = {}".format(res))
 
         # Creating buckets from spec file
-        CollectionBase.deploy_buckets_from_spec_file(self)
+        if not self.large_doc_upgrade:
+            CollectionBase.deploy_buckets_from_spec_file(self)
+        else:
+            self.create_bucket_for_large_doc_upgrades()
 
         self.spec_bucket = self.bucket_util.get_bucket_template_from_package(
             self.spec_name)
@@ -263,9 +295,9 @@ class UpgradeBase(BaseTestCase):
         if self.dur_level == "majority":
             for bucket in self.cluster.buckets:
                 if bucket.name == "bucket-1":
-                    self.bucket_util.update_bucket_property(self.cluster.master,
-                                    bucket,
-                                    bucket_durability=Bucket.DurabilityMinLevel.MAJORITY)
+                    self.bucket_util.update_bucket_property(
+                        self.cluster.master, bucket,
+                        bucket_durability=Bucket.DurabilityMinLevel.MAJORITY)
 
         # Load initial async_write docs into the cluster
         self.PrintStep("Initial doc generation process starting...")
@@ -292,11 +324,11 @@ class UpgradeBase(BaseTestCase):
                                       randomize_value=True,
                                       randomize=True)
         if self.include_indexing_query:
-            self.log.info("Setting kv mem quota to {} MB".format(self.kv_quota_mem))
-            self.log.info("Setting index mem quota to {} MB".format(self.index_quota_mem))
+            self.log.info(f"Setting kv mem quota={self.kv_quota_mem} MB")
+            self.log.info(f"Setting index mem quota={self.index_quota_mem} MB")
             RestConnection(self.cluster.master).set_service_mem_quota(
                 {CbServer.Settings.KV_MEM_QUOTA: self.kv_quota_mem,
-                CbServer.Settings.INDEX_MEM_QUOTA: self.index_quota_mem})
+                 CbServer.Settings.INDEX_MEM_QUOTA: self.index_quota_mem})
 
         self.retry_rebalance_util = RetryRebalanceUtil()
 
@@ -375,12 +407,13 @@ class UpgradeBase(BaseTestCase):
             if CbServer.Services.CBAS in selection_criteria:
                 for node in self.cluster_util.get_nodes(self.cluster.master):
                     node_info = RestConnection(node).get_nodes_self(10)
-                    if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
+                    if (self.upgrade_version not in node_info.version
+                            or "community" in node_info.version) \
                             and check_node_runs_service(node_info.services):
                         if "exclude_node" in selection_criteria[
-                            CbServer.Services.CBAS]:
+                                CbServer.Services.CBAS]:
                             if selection_criteria[CbServer.Services.CBAS][
-                                "exclude_node"].ip == node.ip:
+                                    "exclude_node"].ip == node.ip:
                                 continue
                             else:
                                 cluster_node = node
@@ -388,7 +421,7 @@ class UpgradeBase(BaseTestCase):
                         elif "select_node" in selection_criteria[
                             CbServer.Services.CBAS]:
                             if selection_criteria[CbServer.Services.CBAS][
-                                "select_node"].ip == node.ip:
+                                    "select_node"].ip == node.ip:
                                 cluster_node = node
                                 break
                             else:
@@ -399,14 +432,16 @@ class UpgradeBase(BaseTestCase):
         else:
             if self.prefer_master:
                 node_info = RestConnection(self.cluster.master).get_nodes_self(10)
-                if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
+                if (self.upgrade_version not in node_info.version
+                        or "community" in node_info.version) \
                         and check_node_runs_service(node_info["services"]):
                     cluster_node = self.cluster.master
 
             if cluster_node is None:
                 for node in self.cluster_util.get_nodes(self.cluster.master):
                     node_info = RestConnection(node).get_nodes_self(10)
-                    if (self.upgrade_version not in node_info.version or "community" in node_info.version) \
+                    if (self.upgrade_version not in node_info.version
+                            or "community" in node_info.version) \
                             and check_node_runs_service(node_info.services):
                         cluster_node = node
                         break
@@ -490,7 +525,8 @@ class UpgradeBase(BaseTestCase):
 
         delta_recovery_buckets = list()
         if recovery_type == "delta":
-            delta_recovery_buckets=[bucket.name for bucket in self.cluster.buckets]
+            delta_recovery_buckets = [bucket.name
+                                      for bucket in self.cluster.buckets]
 
         # Validate orchestrator selection
         self.cluster_util.validate_orchestrator_selection(self.cluster)
@@ -509,6 +545,7 @@ class UpgradeBase(BaseTestCase):
 
     def online_swap(self, node_to_upgrade, version,
                     install_on_spare_node=True):
+        rebalance_fail = None
         vb_details = dict()
         vb_verification = dict()
         vb_types = ["active", "replica"]
@@ -538,13 +575,15 @@ class UpgradeBase(BaseTestCase):
 
         if self.rebalance_failure_condition is not None:
             nodes_to_induce = self.cluster.nodes_in_cluster + [self.spare_node]
-            self.retry_rebalance_util.induce_rebalance_test_condition(nodes_to_induce,
-                                            self.rebalance_failure_condition,
-                                            self.cluster.buckets[0].name,
-                                            delay_time=self.delay_time)
+            self.retry_rebalance_util.induce_rebalance_test_condition(
+                nodes_to_induce,
+                self.rebalance_failure_condition,
+                self.cluster.buckets[0].name,
+                delay_time=self.delay_time)
             rebalance_fail = False
-            if self.rebalance_failure_condition in ["backfill_done", "verify_replication",
-                                        "after_apply_delta_recovery", "rebalance_start"]:
+            if self.rebalance_failure_condition in \
+                    ["backfill_done", "verify_replication",
+                     "after_apply_delta_recovery", "rebalance_start"]:
                 rebalance_fail = True
         self.sleep(10)
         # Perform swap rebalance for node_to_upgrade <-> spare_node
@@ -560,7 +599,8 @@ class UpgradeBase(BaseTestCase):
         self.sleep(10)
 
         if self.upgrade_with_data_load:
-            update_task = self.load_during_rebalance(self.sub_data_spec, async_load=True)
+            update_task = self.load_during_rebalance(
+                self.sub_data_spec, async_load=True)
             if self.include_indexing_query:
                 self.run_queries_during_rebalance(node_to_upgrade)
             self.task_manager.get_task_result(update_task)
@@ -569,18 +609,21 @@ class UpgradeBase(BaseTestCase):
         self.task_manager.get_task_result(rebalance_passed)
         if rebalance_passed.result is True:
             self.log.info("Swap Rebalance passed")
-        elif rebalance_passed.result is False and self.rebalance_failure_condition is None:
+        elif rebalance_passed.result is False \
+                and self.rebalance_failure_condition is None:
             self.fail("Swap rebalance failed")
-        elif rebalance_passed.result is False and self.rebalance_failure_condition is not None \
-                                                 and not rebalance_fail:
-            self.fail("Swap rebalance failed even though test condition was {}".format(
-                                                self.rebalance_failure_condition))
+        elif rebalance_passed.result is False \
+                and self.rebalance_failure_condition is not None \
+                and not rebalance_fail:
+            self.fail("Swap rebalance failed even though test condition was {}"
+                      .format(self.rebalance_failure_condition))
         else:
             delete_condition_nodes = self.cluster.nodes_in_cluster + [self.spare_node]
-            self.retry_rebalance_util.delete_rebalance_test_condition(delete_condition_nodes,
-                                                        self.rebalance_failure_condition)
+            self.retry_rebalance_util.delete_rebalance_test_condition(
+                delete_condition_nodes, self.rebalance_failure_condition)
             self.sleep(30, "Wait for 30 seconds before retrying rebalance")
-            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(self.cluster.master)
+            status = self.retry_rebalance_util.check_retry_rebalance_succeeded(
+                self.cluster.master)
             self.assertTrue(status, "Retry rebalance didn't succeed")
 
         # VBuckets shuffling verification
@@ -632,8 +675,8 @@ class UpgradeBase(BaseTestCase):
             return
 
         # Validate orchestrator selection
-        self.cluster_util.validate_orchestrator_selection(self.cluster,
-                                                          removed_nodes=[node_to_upgrade])
+        self.cluster_util.validate_orchestrator_selection(
+            self.cluster, removed_nodes=[node_to_upgrade])
 
         # Install target version on spare node
         if install_on_spare_node:
@@ -819,7 +862,7 @@ class UpgradeBase(BaseTestCase):
                         .format(node_to_upgrade))
                     return
             else:
-                self.log_failure("Cluster reported (/pools/default) balanced=false")
+                self.log_failure("Got /pools/default::balanced=false")
                 return
 
     def full_offline(self, nodes_to_upgrade, version):
@@ -848,7 +891,6 @@ class UpgradeBase(BaseTestCase):
                 self.log_failure("Server not started post upgrade")
                 return
 
-
         self.cluster_util.print_cluster_stats(self.cluster)
 
         rest = RestConnection(self.cluster.master)
@@ -857,11 +899,10 @@ class UpgradeBase(BaseTestCase):
         if not balanced:
             self.log.info("Cluster not balanced. Rebalance starting...")
             otp_nodes = [node.id for node in rest.node_statuses()]
-            rebalance_task = rest.rebalance(otpNodes=otp_nodes, ejectedNodes=[])
-            if rebalance_task:
-                self.log.info("Rebalance successful")
-            else:
-                self.log.info("Rebalance failed")
+            rebalance_task = rest.rebalance(otpNodes=otp_nodes,
+                                            ejectedNodes=[])
+            self.log.info("Rebalance successful") if rebalance_task \
+                else self.log.info("Rebalance failed")
 
             self.cluster_util.print_cluster_stats(self.cluster)
 
@@ -872,8 +913,10 @@ class UpgradeBase(BaseTestCase):
         iter = self.collection_ops_iterations
         spec_collection = self.bucket_util.get_crud_template_from_package(
             collections_spec)
-        CollectionBase.over_ride_doc_loading_template_params(self, spec_collection)
-        CollectionBase.set_retry_exceptions(spec_collection, self.durability_level)
+        CollectionBase.over_ride_doc_loading_template_params(
+            self, spec_collection)
+        CollectionBase.set_retry_exceptions(
+            spec_collection, self.durability_level)
 
         spec_collection["doc_crud"][
             MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = self.items_per_col
@@ -890,19 +933,21 @@ class UpgradeBase(BaseTestCase):
                 process_concurrency=4)
 
             if collection_task.result is True:
-                self.log.info("Iteration {0} of collection ops done".format(iterations+1))
+                self.log.info(f"Itr {iterations+1} of collection ops done")
                 if iterations < iter - 1:
-                    self.sleep(5, "Wait for 5 seconds before starting with the next iteration")
+                    self.sleep(5, "Sleep before starting the next iteration")
                 else:
                     self.log.info("Collection ops load done")
 
     def load_during_rebalance(self, data_spec, async_load=False):
+        sub_load_spec = self.bucket_util.get_crud_template_from_package(
+            data_spec)
+        CollectionBase.over_ride_doc_loading_template_params(
+            self, sub_load_spec)
+        CollectionBase.set_retry_exceptions(
+            sub_load_spec, self.durability_level)
 
-        sub_load_spec = self.bucket_util.get_crud_template_from_package(data_spec)
-        CollectionBase.over_ride_doc_loading_template_params(self,sub_load_spec)
-        CollectionBase.set_retry_exceptions(sub_load_spec, self.durability_level)
-
-        data_load_task = self.bucket_util.run_scenario_from_spec(
+        return self.bucket_util.run_scenario_from_spec(
             self.task,
             self.cluster,
             self.cluster.buckets,
@@ -911,8 +956,6 @@ class UpgradeBase(BaseTestCase):
             async_load=async_load,
             batch_size=500,
             process_concurrency=4)
-
-        return data_load_task
 
     def check_resident_ratio(self, cluster):
         """
@@ -941,13 +984,10 @@ class UpgradeBase(BaseTestCase):
                         bucket_rr[bucket_name] = [resident_ratio]
                     else:
                         bucket_rr[bucket_name].append(resident_ratio)
-
         return bucket_rr
 
     def check_bucket_data_size_per_node(self, cluster):
-
         bucket_data_size = dict()
-
         for server in cluster.kv_nodes:
             _, res = RestConnection(server).query_prometheus("kv_logical_data_size_bytes")
 
@@ -976,7 +1016,7 @@ class UpgradeBase(BaseTestCase):
                                  vbuckets=self.cluster.vbuckets,
                                  key_size=self.key_size,
                                  randomize_value=True)
-        self.log.info("Inserting {0} documents into bucket: {1}".format(num_docs, bucket))
+        self.log.info(f"Inserting {num_docs} documents into bucket: {bucket}")
         for i in range(num_docs):
             key_obj, val_obj = new_docs.next()
             self.document_keys.append(key_obj)
@@ -987,13 +1027,12 @@ class UpgradeBase(BaseTestCase):
         return result
 
     def run_queries_during_rebalance(self, upgrade_node):
+        global success_query_count, failed_queries
         bucket = self.cluster.buckets[0]
         thread_array = []
         query_node = None
-        global success_query_count
         success_query_count = 0
         total_queries = 0
-        global failed_queries
         failed_queries = dict()
 
         for node in self.cluster.query_nodes:
@@ -1024,48 +1063,124 @@ class UpgradeBase(BaseTestCase):
 
         self.log.info("Running queries during rebalance...")
         for scope in self.bucket_util.get_active_scopes(bucket):
-            for col in self.bucket_util.get_active_collections(bucket, scope.name):
-                index_name = "{0}_{1}_{2}_index".format(bucket.name, scope.name, col.name)
+            for col in self.bucket_util.get_active_collections(
+                    bucket,  scope.name):
+                index_name = f"{bucket.name}_{scope.name}_{col.name}_index"
                 if index_name in self.indexes:
-                    query = "SELECT name from `{0}`.`{1}`.`{2}` USE INDEX(`{3}`) limit 1000".format(
-                                            bucket.name, scope.name, col.name, index_name)
+                    query = \
+                        "SELECT name from " \
+                        f"`{bucket.name}`.`{scope.name}`.`{col.name}` " \
+                        f"USE INDEX(`{index_name}`) limit 1000"
                     self.log.info("Query = {}".format(query))
                     total_queries += 750
                     t = threading.Thread(target=run_query_thread, args=[query, self.query_client, 750])
                     t.start()
                     thread_array.append(t)
 
-                mutation_index_name = "{0}_{1}_{2}_sec_mutation_index".format(bucket.name,
-                                                                    scope.name, col.name)
+                mutation_index_name = "{0}_{1}_{2}_sec_mutation_index"\
+                    .format(bucket.name, scope.name, col.name)
                 if mutation_index_name in self.indexes:
-                    query = "SELECT mutation_type, count(*) from `{0}`.`{1}`.`{2}` USE INDEX(`{3}`)" \
-                        " group by mutation_type limit 10000".format(bucket.name, scope.name, col.name,
-                                                                   mutation_index_name)
+                    query = \
+                        "SELECT mutation_type, count(*) from " \
+                        f"`{bucket.name}`.`{scope.name}`.`{col.name}` " \
+                        f"USE INDEX(`{mutation_index_name}`)" \
+                        " group by mutation_type limit 10000"
                     self.log.info("Query = {}".format(query))
                     total_queries += 250
                     t = threading.Thread(target=run_query_thread, args=[query, self.query_client, 250])
                     t.start()
                     thread_array.append(t)
 
-        complex_queries = ['select name from `bucket-0`.`myscope`.`mycoll` where age between 30 and 50 limit 10;',
-           'select age, count(*) from `bucket-0`.`myscope`.`mycoll` where marital = "M" group by age order by age limit 10;',
-           'select v.name, animal from `bucket-0`.`myscope`.`mycoll` as v unnest animals as animal where v.attributes.hair = "Burgundy" limit 10;',
-           'SELECT v.name, ARRAY hobby.name FOR hobby IN v.attributes.hobbies END FROM `bucket-0`.`myscope`.`mycoll` as v WHERE v.attributes.hair = "Burgundy" and gender = "F" and ANY hobby IN v.attributes.hobbies SATISFIES hobby.type = "Music" END limit 10;',
-           'select name, ROUND(attributes.dimensions.weight / attributes.dimensions.height,2) from `bucket-0`.`myscope`.`mycoll` WHERE gender is not MISSING limit 10;']
+        complex_queries = [
+            'select name from `bucket-0`.`myscope`.`mycoll` '
+            'where age between 30 and 50 limit 10;',
+
+            'select age, count(*) from `bucket-0`.`myscope`.`mycoll` '
+            'where marital = "M" group by age order by age limit 10;',
+
+            'select v.name, animal from `bucket-0`.`myscope`.`mycoll` as v '
+            'unnest animals as animal where v.attributes.hair="Burgundy" '
+            'limit 10;',
+
+            'SELECT v.name, ARRAY hobby.name FOR hobby '
+            'IN v.attributes.hobbies END FROM `bucket-0`.`myscope`.`mycoll` '
+            'as v WHERE v.attributes.hair = "Burgundy" and gender = "F" '
+            'and ANY hobby IN v.attributes.hobbies '
+            'SATISFIES hobby.type="Music" END limit 10;',
+
+            'select name, ROUND'
+            '(attributes.dimensions.weight/attributes.dimensions.height,2) '
+            'from `bucket-0`.`myscope`.`mycoll` '
+            'WHERE gender is not MISSING limit 10;']
 
         for complex_query in complex_queries:
             self.log.info("Complexy query = {}".format(complex_query))
             total_queries += 200
-            t = threading.Thread(target=run_query_thread, args=[complex_query, self.query_client, 200])
+            t = threading.Thread(target=run_query_thread,
+                                 args=[complex_query, self.query_client, 200])
             t.start()
             thread_array.append(t)
 
         for th in thread_array:
             th.join()
 
-        self.log.info("Number of successful queries during rebalance = {}".format(success_query_count))
-        self.log.info("Number of failed queries = {}".format(total_queries - success_query_count))
-        self.log.info("Failed queries = {}".format(failed_queries))
+        self.log.info("Number of successful queries during rebalance = {}"
+                      .format(success_query_count))
+        self.log.info("Number of failed queries = {}"
+                      .format(total_queries - success_query_count))
+        self.log.info("Failed queries = {}"
+                      .format(failed_queries))
+
+    def create_bucket_for_large_doc_upgrades(self):
+
+        rest = RestConnection(self.cluster.master)
+        pools_info = rest.get_pools_default()
+        kv_quota = pools_info["memoryQuota"]
+        bucket_spec = self.bucket_util.get_bucket_template_from_package(
+            self.spec_name)
+        bucket_spec[MetaConstants.USE_SIMPLE_NAMES] = True
+        bucket_spec[Bucket.replicaNumber] = self.bucket_replicas
+        if self.bucket_ram_quota is None:
+            bucket_spec[Bucket.ramQuotaMB] = kv_quota - 2000
+        else:
+            bucket_spec[Bucket.ramQuotaMB] = self.bucket_ram_quota
+
+        CollectionBase.over_ride_bucket_template_params(
+            self, self.bucket_storage, bucket_spec)
+        self.bucket_util.create_buckets_using_json_data(
+            self.cluster, bucket_spec)
+
+        if float(self.upgrade_chain[0][:3]) < 7.6:
+            for bucket in self.cluster.buckets:
+                for coll in bucket.scopes[CbServer.system_scope].collections:
+                    bucket.scopes[CbServer.system_scope].collections.pop(coll)
+                bucket.scopes.pop(CbServer.system_scope)
+        self.bucket_util.wait_for_collection_creation_to_complete(self.cluster)
+        self.bucket_util.print_bucket_stats(self.cluster)
+
+    def load_data_cbc_pillowfight(self, server, bucket, items, doc_size,
+                                  key_prefix="test_docs", threads=1,
+                                  ops_rate=None):
+        shell = RemoteMachineShellConnection(server)
+
+        self.log.info(f"Loading {items} items of doc size: {doc_size} "
+                      f"into the bucket with cbc-pillowfight")
+        pillowfight_base_cmd = \
+            "/opt/couchbase/bin/cbc-pillowfight -U {0}/{1} " \
+            "-u Administrator -P password -I {2}" \
+            " -t {3} -m {4} -M {4} --populate-only --random-body " \
+            "--key-prefix={5} -Dtimeout=10"
+
+        cmd = pillowfight_base_cmd.format(server.ip, bucket.name, items,
+                                          threads, doc_size, key_prefix)
+
+        if ops_rate is not None:
+            cmd += " --rate-limit {}".format(ops_rate)
+
+        self.log.info("Executing pillowfight command = {}".format(cmd))
+        o, e = shell.execute_command(cmd)
+        self.sleep(30, "Wait after executing pillowfight command")
+        shell.disconnect()
 
     def PrintStep(self, msg=None):
         print("\n")

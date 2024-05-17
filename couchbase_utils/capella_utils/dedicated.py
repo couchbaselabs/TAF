@@ -168,6 +168,7 @@ class CapellaUtils(object):
             elif resp.status_code == 422:
                 if resp.content.find("not allowed based on your activation status") != -1:
                     CapellaUtils.log.critical("Tenant is not activated yet...retrying")
+                    time.sleep(5)
                 if resp.content.find("CIDR") != -1:
                     subnet = CapellaUtils.get_next_cidr() + "/20"
                 else:
@@ -178,7 +179,7 @@ class CapellaUtils(object):
                 CapellaUtils.log.critical("Capella API returned " + str(
                     resp.status_code))
                 CapellaUtils.log.critical(resp.json()["message"])
-            time.sleep(5)
+
 
         CapellaUtils.log.info("Cluster created with cluster ID: {}"\
                               .format(cluster_id))
@@ -186,7 +187,7 @@ class CapellaUtils(object):
                                      "Creating Cluster {}".format(cluster_id),
                                      timeout=timeout)
         cluster_srv = CapellaUtils.get_cluster_srv(pod, tenant, cluster_id)
-        CapellaUtils.allow_my_ip(pod, tenant, cluster_id)
+        CapellaUtils.allow_my_ip(pod, tenant, cluster_id, True)
         servers = CapellaUtils.get_nodes(pod, tenant, cluster_id)
         return cluster_id, cluster_srv, servers
 
@@ -436,6 +437,7 @@ class CapellaUtils(object):
                                  tenant.user,
                                  tenant.pwd)
         resp = capella_api.get_cluster_info(cluster_id)
+
         if resp.status_code != 200:
             CapellaUtils.log.critical("LOG A BUG: Fetch Cluster API returns :\
             {}".format(resp.status_code))
@@ -458,7 +460,7 @@ class CapellaUtils(object):
             {}".format(resp.status_code))
             print(resp.content)
             time.sleep(5)
-            return CapellaUtils.get_cluster_info_internal(cluster_id)
+            return CapellaUtils.get_cluster_info_internal(pod, tenant, cluster_id)
         return json.loads(resp.content)
 
 
@@ -531,21 +533,21 @@ class CapellaUtils(object):
         return json.loads(resp.content)
 
     @staticmethod
-    def allow_my_ip(pod, tenant, cluster_id):
+    def allow_my_ip(pod, tenant, cluster_id, allowall=False):
         capella_api = CapellaAPI(pod.url_public,
                                  tenant.api_secret_key,
                                  tenant.api_access_key,
                                  tenant.user,
                                  tenant.pwd)
         resp = capella_api.allow_my_ip(tenant.id, tenant.projects[0],
-                                        cluster_id)
+                                        cluster_id, allowall)
         if resp.status_code != 202:
             result = json.loads(resp.content)
             if result["errorType"] == "ErrAllowListsCreateDuplicateCIDR":
                 CapellaUtils.log.warn("IP is already added: %s" % result["message"])
-                return
-            CapellaUtils.log.critical(resp.content)
-            raise Exception("Adding allowed IP failed.")
+            else:
+                CapellaUtils.log.critical(resp.content)
+                raise Exception("Adding allowed IP failed.")
 
     @staticmethod
     def load_sample_bucket(pod, tenant, cluster_id, bucket_name):
@@ -659,5 +661,20 @@ class CapellaUtils(object):
             CapellaUtils.log.critical("Logs collection failed:{}".
                                       format(resp.status_code))
             raise Exception("Logs collection failed: {}".
+                            format(resp.content))
+        return json.loads(resp.content)
+
+    @staticmethod
+    def get_root_ca(pod, tenant, cluster_id):
+        capella_api = CapellaAPI(pod.url_public,
+                                 tenant.api_secret_key,
+                                 tenant.api_access_key,
+                                 tenant.user,
+                                 tenant.pwd)
+        resp = capella_api.get_root_ca(cluster_id)
+        if resp.status_code != 200:
+            CapellaUtils.log.critical("Fetching Root CA Cert failed for cluster {}:{}".
+                                      format(cluster_id, resp.status_code))
+            raise Exception("Fetching Root CA Cert failed: {}".
                             format(resp.content))
         return json.loads(resp.content)
