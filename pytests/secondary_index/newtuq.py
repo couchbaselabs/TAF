@@ -105,7 +105,7 @@ class QueryTests(BaseTestCase):
                 self.n1ql_helper.create_primary_index(
                     using_gsi=self.use_gsi_for_primary,
                     server=self.n1ql_node)
-            except Exception, ex:
+            except Exception as ex:
                 self.log.info(ex)
                 raise ex
         self.log.info("=== QueryTests setUp complete ===")
@@ -140,7 +140,7 @@ class QueryTests(BaseTestCase):
                 return self.generate_docs_array(num_items, start)
             return getattr(self, 'generate_docs_' + self.dataset)(num_items,
                                                                   start)
-        except Exception, ex:
+        except Exception as ex:
             self.log.error(str(ex))
             self.fail("There is no dataset %s, please enter a valid one"
                       % self.dataset)

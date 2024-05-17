@@ -609,7 +609,7 @@ class N1QLHelper:
             if value == '':
                 return 0
             value = int(val.split("(")[1].split(")")[0])
-        except Exception, ex:
+        except Exception as ex:
             self.log.info(ex)
         finally:
             return value
@@ -747,7 +747,7 @@ class N1QLHelper:
                 check = self._is_index_in_list(bucket.name, "#primary", server = server)
                 if check:
                     self.run_cbq_query(query=self.query, server=server)
-            except Exception, ex:
+            except Exception as ex:
                 self.log.error('ERROR during index creation %s' % str(ex))
 
     def create_primary_index(self, using_gsi=True, server=None):
@@ -769,7 +769,7 @@ class N1QLHelper:
                             raise Exception(" Timed-out Exception while building primary index for bucket {0} !!!".format(bucket.name))
                     else:
                         raise Exception(" Primary Index Already present, This looks like a bug !!!")
-                except Exception, ex:
+                except Exception as ex:
                     self.log.error('ERROR during index creation %s' % str(ex))
                     raise ex
 
@@ -799,7 +799,7 @@ class N1QLHelper:
                     else:
                         raise Exception(
                             " Primary Index Already present, This looks like a bug !!!")
-                except Exception, ex:
+                except Exception as ex:
                     self.log.error('ERROR during index creation %s' % str(ex))
                     raise ex
 
@@ -829,7 +829,7 @@ class N1QLHelper:
                 else:
                     return "ran query with success and validated results", True
                 check = True
-            except Exception, ex:
+            except Exception as ex:
                 if next_time - init_time > timeout or try_count >= max_try:
                     return ex, False
             finally:
@@ -1013,7 +1013,7 @@ class N1QLHelper:
                 map[val["_id"]] = val
             keys = map.keys()
             keys.sort()
-        except Exception, ex:
+        except Exception as ex:
             self.log.info(ex)
             raise
         if len(duplicate_keys) > 0:
@@ -1151,7 +1151,7 @@ class N1QLHelper:
                 try:
                     index_replica_hostname, index_replica_id = self.get_index_details_using_index_name(
                         index_replica_name, index_map)
-                except Exception, ex:
+                except Exception as ex:
                     self.log.info(str(ex))
                     raise Exception(str(ex))
 
@@ -1194,7 +1194,7 @@ class N1QLHelper:
                 index_replica_name = index_name + " (replica {0})".format(str(i))
                 try:
                     index_replica_status, index_replica_progress = self.get_index_status_using_index_name(index_replica_name, index_map)
-                except Exception, ex:
+                except Exception as ex:
                     self.log.info(str(ex))
                     raise Exception(str(ex))
 

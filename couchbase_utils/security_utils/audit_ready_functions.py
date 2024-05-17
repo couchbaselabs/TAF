@@ -540,7 +540,7 @@ class audit:
                     self.log.info("Mis-match in values for timestamp - time")
                     return False
 
-        except Exception, e:
+        except Exception as e:
             self.log.info ("Value of execption is {0}".format(e))
             return False
 

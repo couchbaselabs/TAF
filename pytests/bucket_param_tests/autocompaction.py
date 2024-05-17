@@ -86,7 +86,7 @@ class AutoCompactionTests(CollectionBase):
                     else:
                         continue
                     break
-            except Exception, ex:
+            except Exception as ex:
                 self.is_crashed.set()
                 self.log.error("Load cannot be performed: %s" % str(ex))
         if monitor_fragm.result is False and self.autocompaction_value==0: #fragmentation level will never reach the expected value as auto-compaction kicks in before that threshold is achieved if opted

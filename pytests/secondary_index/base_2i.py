@@ -270,7 +270,7 @@ class BaseSecondaryIndexingTests(QueryTests):
             if verify_drop:
                 check = self.n1ql_helper._is_index_in_list(bucket, query_definition.index_name, server = self.n1ql_node)
                 self.assertFalse(check, "index {0} failed to be deleted".format(query_definition.index_name))
-        except Exception, ex:
+        except Exception as ex:
             self.log.info(ex)
             query = "select * from system:indexes"
             actual_result = self.n1ql_helper.run_cbq_query(
@@ -520,7 +520,7 @@ class BaseSecondaryIndexingTests(QueryTests):
                     expected_results,
                     scan_consistency=scan_consistency,
                     scan_vectors=scan_vectors)
-        except Exception, ex:
+        except Exception as ex:
             self.log.info(ex)
             raise
         finally:
@@ -550,7 +550,7 @@ class BaseSecondaryIndexingTests(QueryTests):
             if drop_index:
                 tasks += self.async_multi_drop_index(self.cluster.buckets,
                                                      query_definitions)
-        except Exception, ex:
+        except Exception as ex:
             self.log.info(ex)
             raise
         return tasks
@@ -599,7 +599,7 @@ class BaseSecondaryIndexingTests(QueryTests):
                     else:
                         tasks += self.async_multi_drop_index(
                             self.cluster.buckets, query_definitions)
-            except Exception, ex:
+            except Exception as ex:
                 self.log.error(ex)
                 raise
         return tasks

@@ -3910,7 +3910,7 @@ class CbasUtil(CBOUtil):
                 payload, username, password)
             self.log.info(status)
             return status
-        except Exception, e:
+        except Exception as e:
             raise Exception(str(e))
 
     def retrieve_request_status_using_handle(self, cluster, server, handle, shell=None):
@@ -4112,7 +4112,7 @@ class CbasUtil(CBOUtil):
                     self.log.error("*** Thread %s: failure ***", name)
                     self.failed_count += 1
 
-        except Exception, e:
+        except Exception as e:
             if str(e) == "Request Rejected":
                 self.log.debug("Error 503 : Request Rejected")
                 self.rejected_count += 1
