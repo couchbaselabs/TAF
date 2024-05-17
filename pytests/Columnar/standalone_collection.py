@@ -118,7 +118,7 @@ class StandaloneCollection(ColumnarBaseTest):
                 self.cluster):
             self.fail("Error while deleting cbas entities")
 
-        # super(StandaloneCollection, self).tearDown()
+        super(StandaloneCollection, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def start_source_ingestion(self, no_of_docs=1000000, doc_size=100000):
