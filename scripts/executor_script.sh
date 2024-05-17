@@ -1,5 +1,35 @@
 #!/bin/bash
 
+check_and_build_testrunner_install_docker() {
+  docker_img=testrunner:install
+  docker_img_id=$(docker images -q $docker_img)
+  if [ "$docker_img_id" == "" ]; then
+    echo '
+    FROM python:3.8.4
+    WORKDIR /
+    RUN git clone https://github.com/couchbase/testrunner.git
+    WORKDIR /testrunner
+    # Install couchbase first to avoid fetching unsupported six package version
+    RUN python -m pip install couchbase==3.2.0
+    # Now install all other dependencies
+    RUN python -m pip install -r requirements.txt
+    RUN git submodule init
+    RUN git submodule update --init --force --remote
+    WORKDIR /
+    RUN echo "cd /testrunner" > new_install.sh
+    RUN echo "git remote update origin --prune" >> new_install.sh
+    RUN echo "git pull -q" >> new_install.sh
+    RUN echo "\"\$@\"" >> new_install.sh
+    # Set entrypoint for the docker container
+    ENTRYPOINT ["sh", "new_install.sh"]' > Dockerfile
+    echo "Building docker image $docker_img"
+    docker build . --tag $docker_img --quiet
+    echo "Docker build '${docker_img}' done"
+  else
+    echo "Docker image '${docker_img}' exists"
+  fi
+}
+
 set +x
 echo "Setting ulimit values for this session"
 # Set data seg size
@@ -31,8 +61,8 @@ echo "########## ulimit values ###########"
 ulimit -a
 echo "####################################"
 
-pip_path=/opt/jython/bin/pip
 jython_path=/opt/jython/bin/jython
+jython_pip=/opt/jython/bin/pip
 
 # Setup GoLang in local dir
 go_version=1.21.0
@@ -94,8 +124,28 @@ fi
 git submodule init
 git submodule update --init --force --remote
 
+check_and_build_testrunner_install_docker
+touch $WORKSPACE/testexec.$$.ini
 set -x
-python scripts/populateIni.py $skip_mem_info -s ${servers} $internal_servers_param -d ${addPoolServerId} -a ${addPoolServers} -i $WORKSPACE/testexec_reformat.$$.ini -p ${os} -o $WORKSPACE/testexec.$$.ini -k '{'${UPDATE_INI_VALUES}'}'
+docker run --rm \
+    -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini \
+    -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini  \
+    testrunner:install python3 scripts/populateIni.py $skip_mem_info \
+    -s ${servers} $internal_servers_param \
+    -d ${addPoolServerId} \
+    -a ${addPoolServers} \
+    -i testexec_reformat.$$.ini \
+    -p ${os} \
+    -o testexec.$$.ini \
+    -k '{'${UPDATE_INI_VALUES}'}'
+# python scripts/populateIni.py $skip_mem_info \
+# -s ${servers} $internal_servers_param \
+# -d ${addPoolServerId} \
+# -a ${addPoolServers} \
+# -i $WORKSPACE/testexec_reformat.$$.ini \
+# -p ${os} \
+# -o $WORKSPACE/testexec.$$.ini \
+# -k '{'${UPDATE_INI_VALUES}'}'
 set +x
 
 parallel=true
@@ -126,12 +176,27 @@ if [ "$component" = "analytics" ]; then
 	parameters="${parameters},aws_access_key=${aws_access_key},aws_secret_key=${aws_secret_key}"
 fi
 
+if [ "$component" = "os_certify" ]; then
+  new_install_params="timeout=7200,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
+else
+  new_install_params="force_reinstall=False,timeout=2000,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
+fi
+
 # Perform Installation of builds on target servers
-cd platform_utils/ssh_util
-export PYTHONPATH="../../couchbase_utils:../../py_constants"
-python -m install_util.install -i $WORKSPACE/testexec.$$.ini -v ${version_number} --skip_local_download
+set -x
+docker run --rm \
+  -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
+  testrunner:install python3 scripts/new_install.py \
+  -i testexec.$$.ini \
+  -p $new_install_params
 status=$?
-cd ../..
+set +x
+
+# cd platform_utils/ssh_util
+# export PYTHONPATH="../../couchbase_utils:../../py_constants"
+# python -m install_util.install -i $WORKSPACE/testexec.$$.ini -v ${version_number} --skip_local_download
+# status=$?
+# cd ../..
 
 if [ $status -eq 0 ]; then
   desc2=`echo $descriptor | awk '{split($0,r,"-");print r[1],r[2]}'`
