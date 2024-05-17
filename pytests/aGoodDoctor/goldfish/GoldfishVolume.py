@@ -231,6 +231,7 @@ class Columnar(BaseTestCase, hostedOPD):
         self.sleep(0)
         self.mutate = 0
         self.workload_tasks = list()
+        self.ingestion_ths = list()
         for key in self.data_sources.keys():
             if key == "s3":
                 continue
@@ -244,8 +245,11 @@ class Columnar(BaseTestCase, hostedOPD):
                     for tenant in self.tenants:
                         for columnar in tenant.columnar_instances:
                             dataSource.create_cbas_collections(columnar, dataSource.loadDefn.get("cbas")[0])
-                            threading.Thread(target = self.drCBAS.wait_for_ingestion,
-                                             args=(columnar, [dataSource], self.index_timeout)).start()
+                            th = threading.Thread(
+                                target=self.drCBAS.wait_for_ingestion,
+                                args=(columnar, [dataSource], self.index_timeout))
+                            th.start()
+                            self.ingestion_ths.append(th)
                 self.live_kv_workload()
 
         self.iterations = self.input.param("iterations", 1)
@@ -297,6 +301,8 @@ class Columnar(BaseTestCase, hostedOPD):
                 for ql in self.cbasQL:
                     ql.stop_query_load()
 
+        for th in self.ingestion_ths:
+            th.join()
         self.teardownMongo()
         self.sleep(10, "Wait for 10s until all the query workload stops.")
         self.assertTrue(self.query_result, "Please check the logs for query failures")
