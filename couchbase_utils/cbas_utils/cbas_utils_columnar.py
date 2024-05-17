@@ -18,6 +18,7 @@ from threading import Thread, current_thread
 
 from Columnar.templates.crudTemplate.docgen_template import Hotel
 from global_vars import logger
+from SecurityLib.rbac import RbacUtil
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity_columnar import (
     Database, Dataverse, Remote_Link, External_Link, Kafka_Link,
@@ -29,6 +30,12 @@ from queue import Queue
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
 from py_constants.cb_constants.CBServer import CbServer
+from sirius_client_framework.multiple_database_config import ColumnarLoader
+from sirius_client_framework.operation_config import WorkloadOperationConfig
+from sirius_client_framework.sirius_constants import SiriusCodes
+from Jython_tasks.sirius_task import WorkLoadTask
+from Jython_tasks.task_manager import TaskManager
+
 
 
 class BaseUtil(object):
@@ -656,6 +663,7 @@ class RBAC_Util(BaseUtil):
                 return False
             else:
                 return True
+
 
 class Database_Util(BaseUtil):
     """
@@ -4549,6 +4557,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 results.append(True)
         return all(results)
 
+
 class Synonym_Util(StandAlone_Collection_Util):
 
     def __init__(self, server_task=None, run_query_using_sdk=False):
@@ -4893,6 +4902,87 @@ class Synonym_Util(StandAlone_Collection_Util):
         return synonyms_created
 
 
+class View_Util(Synonym_Util):
+    def __init__(self, server_task=None, run_query_using_sdk=False):
+        """
+        :param server_task task object
+        """
+        super(View_Util, self).__init__(
+            server_task, run_query_using_sdk)
+
+    def create_analytics_view(
+            self, cluster, view_full_name, view_defn,
+            if_not_exists=False, validate_error_msg=False, expected_error=None,
+            username=None, password=None, timeout=300, analytics_timeout=300):
+
+        cmd = "create analytics view {0}".format(view_full_name)
+
+        if if_not_exists:
+            cmd += " If Not Exists"
+
+        cmd += " as {0};".format(view_defn)
+
+        self.log.info("Executing cmd - \n{0}\n".format(cmd))
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def drop_analytics_view(
+            self, cluster, view_full_name, if_exists=False,
+            validate_error_msg=False, expected_error=None, username=None,
+            password=None, timeout=300, analytics_timeout=300):
+
+        cmd = "drop analytics view {0}".format(view_full_name)
+
+        if if_exists:
+            cmd += " if exists;"
+        else:
+            cmd += ";"
+
+        self.log.info("Executing cmd - \n{0}\n".format(cmd))
+
+        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            cluster, cmd, username=username, password=password, timeout=timeout,
+            analytics_timeout=analytics_timeout)
+        if validate_error_msg:
+            return self.validate_error_in_response(
+                status, errors, expected_error)
+        else:
+            if status != "success":
+                return False
+            else:
+                return True
+
+    def get_all_views_from_metadata(self, cluster):
+        views_created = []
+        views_query = "select value ds.DatabaseName || \".\" || " \
+                      "ds.DataverseName || \".\" || ds.DatasetName from " \
+                      "Metadata.`Dataset` as ds where ds.DataverseName " \
+                      "<> \"Metadata\" and ds.DatasetType = \"VIEW\";"
+        while not views_created:
+            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+                cluster, views_query, mode="immediate", timeout=300,
+                analytics_timeout=300)
+            if status.encode('utf-8') == 'success':
+                results = list(
+                    map(lambda result: result.encode('utf-8').split("."),
+                        results))
+                views_created = list(
+                    map(lambda result: CBASHelper.format_name(*result),
+                        results))
+                break
+        return views_created
+
+
 class Index_Util(View_Util):
 
     def __init__(self, server_task=None, run_query_using_sdk=False):
@@ -5049,6 +5139,19 @@ class Index_Util(View_Util):
                 return False
             else:
                 return True
+
+    def generate_drop_index_cmd(self, index_name, dataset_name,
+                                analytics_index=False, if_exists=False):
+        if analytics_index:
+            drop_idx_statement = "drop analytics index {0}.{1}".format(
+                dataset_name, index_name)
+        else:
+            drop_idx_statement = "drop index {0}.{1}".format(
+                dataset_name, index_name)
+        if if_exists:
+            drop_idx_statement += " IF EXISTS;"
+        else:
+            drop_idx_statement += ";"
 
     def drop_cbas_index(self, cluster, index_name, dataset_name,
                         analytics_index=False, validate_error_msg=False,
@@ -5211,33 +5314,10 @@ class UDFUtil(Index_Util):
         """
         super(UDFUtil, self).__init__(server_task, run_query_using_sdk)
 
-    def create_udf(self, cluster, name, dataverse=None, database=None,
-                   or_replace=False, parameters=[], body=None,
-                   if_not_exists=False, query_context=False,
-                   use_statement=False, validate_error_msg=False,
-                   expected_error=None, username=None, password=None,
-                   timeout=300, analytics_timeout=300):
-        """
-        Create CBAS User Defined Functions
-        :param name str, name of the UDF to be created.
-        :param dataverse str, name of the dataverse in which the UDF will be created.
-        :param or_replace Bool, Whether to use 'or replace' flag or not.
-        :param parameters list/None, if None then the create UDF is passed
-        without function parenthesis.
-        :param body str/None, if None then no function body braces are passed.
-        :param if_not_exists bool, whether to use "if not exists" flag
-        :param query_context bool, whether to use query_context while
-        executing query using REST API calls
-        :param use_statement bool, Whether to use 'Use' statement while
-        executing query.
-        :param validate_error_msg : boolean, validate error while creating synonym
-        :param expected_error : str, error msg
-        :param username : str
-        :param password : str
-        :param timeout : int
-        :param analytics_timeout : int
-        """
-        param = {}
+    def generate_create_udf_cmd(self, name, dataverse=None, database=None, or_replace=False,
+                                parameters=[], body=None, if_not_exists=False,
+                                query_context=False, use_statement=False):
+
         create_udf_statement = ""
         if use_statement:
             create_udf_statement += 'use ' + dataverse + ';\n'
@@ -5309,6 +5389,27 @@ class UDFUtil(Index_Util):
             else:
                 return True
 
+    def generate_drop_udf_cmd(self, name, dataverse, database=None, parameters=[],
+                              if_exists=False, use_statement=False, query_context=False):
+        drop_udf_statement = ""
+        if use_statement:
+            drop_udf_statement += 'use ' + dataverse + ';\n'
+        drop_udf_statement += "drop analytics function "
+        if database and dataverse and not query_context and not use_statement:
+            drop_udf_statement += "{0}.{1}.".format(database, dataverse)
+        if dataverse and not query_context and not use_statement:
+            drop_udf_statement += "{0}.".format(dataverse)
+        drop_udf_statement += name
+        # The below "if" is for a negative test scenario where we do not put
+        # function parenthesis.
+        if parameters is not None:
+            param_string = ",".join(parameters)
+            drop_udf_statement += "({0})".format(param_string)
+        if if_exists:
+            drop_udf_statement += " if exists"
+
+        return drop_udf_statement
+
     def drop_udf(self, cluster, name, dataverse, database, parameters=[],
                  if_exists=False, use_statement=False, query_context=False,
                  validate_error_msg=False, expected_error=None,
@@ -5343,7 +5444,7 @@ class UDFUtil(Index_Util):
             else:
                 param["query_context"] = "default:Default"
 
-        self.log.debug("Executing cmd - \n{0}\n".format(drop_udf_statement))
+        self.log.info("Executing cmd - \n{0}\n".format(drop_udf_statement))
 
         status, metrics, errors, results, \
             _ = self.execute_parameter_statement_on_cbas_util(
