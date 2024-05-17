@@ -9,7 +9,7 @@ class CMEKTest(SecurityBase):
     def setUp(self):
         SecurityBase.setUp(self)
         self.base_url = "https://" + self.url
-        print(self.base_url)
+        self.log.info("Base URL: {0}".format(self.base_url))
         self.url = self.input.capella.get("pod")
         self.user = self.input.capella.get("capella_user")
         self.passwd = self.input.capella.get("capella_pwd")
@@ -18,7 +18,7 @@ class CMEKTest(SecurityBase):
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         self.bearer_token_key = self.input.capella.get("bearer_token_key")
         self.cmek_base_url = "{0}/v4/organizations/{1}".format(self.base_url, self.tenant_id)
-        print(self.cmek_base_url)
+        self.log.info("CMEK Base URL: {0}".format(self.cmek_base_url))
 
     def tearDown(self):
         super(CMEKTest, self).tearDown()
@@ -31,8 +31,9 @@ class CMEKTest(SecurityBase):
                              '{0}'.format(self.capellaAPI.cluster_ops_apis.bearer_token),
         }
 
-        print(self.cmek_base_url)
-        response = requests.get("{0}/cmek".format(self.cmek_base_url), headers=headers)
+        self.log.info("CMEK Base URL: {0}".format(self.cmek_base_url))
+        # verify=False
+        response = requests.get("{0}/cmek".format(self.cmek_base_url), headers=headers, verify=False)
 
         data = json.loads(response.content.decode())
 
@@ -101,8 +102,8 @@ class CMEKTest(SecurityBase):
                                  headers=headers,
                                  json=json_data,
                                  )
-        print(response.status_code)
-        print(response.content)
+        self.log.info("Response Status Code of creating a key: {0}".format(response.status_code))
+        self.log.info("Response Status Content of creating a key: {0}".format(response.content))
 
         data = json.loads(response.content.decode())
 
@@ -123,7 +124,8 @@ class CMEKTest(SecurityBase):
         }
 
         self.log.info("AWS key id detail: ")
-        response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, aws_key_id), headers=headers)
+        response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, aws_key_id), headers=headers,
+                                verify=False)
 
         data = json.loads(response.content.decode())
 
@@ -134,7 +136,8 @@ class CMEKTest(SecurityBase):
         self.log.info(pretty_json)
 
         self.log.info("GCP key id detail: ")
-        response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, gcp_key_id), headers=headers)
+        response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, gcp_key_id), headers=headers,
+                                verify=False)
 
         data = json.loads(response.content.decode())
 
@@ -388,7 +391,7 @@ class CMEKTest(SecurityBase):
                              '{0}'.format(self.capellaAPI.cluster_ops_apis.bearer_token),
         }
 
-        response = requests.get("{0}/cloudAccounts".format(self.cmek_base_url), headers=headers)
+        response = requests.get("{0}/cloudAccounts".format(self.cmek_base_url), headers=headers, verify=False)
 
         data = json.loads(response.content.decode())
 
@@ -489,6 +492,7 @@ class CMEKTest(SecurityBase):
         self.log.info("Cluster id: {0}".format(self.cluster_id))
         self.log.info("Token: {0}".format(self.capellaAPI.cluster_ops_apis.bearer_token))
 
+        # check flag to ignore
         self.del_delete_key()
         cmek_id_list = self.get_list_cmek_keys()
         self.log.info(cmek_id_list)
@@ -743,7 +747,7 @@ class CMEKTest(SecurityBase):
         try:
             self.post_deploy_cluster_gcp(gcp_key_id)
         except Exception as e:
-            print(e)
+            self.log.info("Ran into an Exception: {0}".format(e))
             self.log.info("Failed as expected as different region")
         else:
             self.fail("Should have failed for different region")
