@@ -240,6 +240,12 @@ class Columnar(BaseTestCase, hostedOPD):
                     self.workload_tasks.append(dataSource.perform_load(
                         [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
             if key == "remoteCouchbase":
+                for dataSource in self.data_sources[key]:
+                    for tenant in self.tenants:
+                        for columnar in tenant.columnar_instances:
+                            dataSource.create_cbas_collections(columnar, dataSource.loadDefn.get("cbas")[0])
+                            threading.Thread(target = self.drCBAS.wait_for_ingestion,
+                                             args=(columnar, [dataSource], self.index_timeout)).start()
                 self.live_kv_workload()
 
         self.iterations = self.input.param("iterations", 1)

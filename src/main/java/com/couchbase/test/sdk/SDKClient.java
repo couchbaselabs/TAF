@@ -30,14 +30,14 @@ public class SDKClient {
     public Collection connection;
 
     public static ClusterEnvironment env1 = ClusterEnvironment.builder()
-            .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
+            .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)).analyticsTimeout(Duration.ofSeconds(36000)))
             .securityConfig(SecurityConfig.enableTls(true)
             .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
             .ioConfig(IoConfig.enableDnsSrv(true))
             .build();
 
     public static ClusterEnvironment env2 = ClusterEnvironment.builder()
-            .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)))
+            .timeoutConfig(TimeoutConfig.builder().kvTimeout(Duration.ofSeconds(10)).analyticsTimeout(Duration.ofSeconds(36000)))
             .ioConfig(IoConfig.enableDnsSrv(true))
             .build();
 
