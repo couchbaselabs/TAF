@@ -17,6 +17,3 @@
 	path = py_constants
 	url = https://github.com/couchbaselabs/py_constants.git
 	branch = master
-[submodule "lib/goldfishAPI"]
-	path = lib/goldfishAPI
-	url = https://github.com/couchbaselabs/GoldfishRESTAPIs
