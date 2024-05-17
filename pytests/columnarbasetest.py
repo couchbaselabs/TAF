@@ -80,7 +80,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}".format(
             instance_id, cluster_id))
-            self.cluster_util.print_cluster_stats(cluster)
 
         def allow_access_from_everywhere_on_instance(
                 tenant, project_id, instance_obj, result):
@@ -151,6 +150,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
+            self.cluster_util.print_cluster_stats(instance)
             resp = None
             count = 0
             while not resp and count < 5:
