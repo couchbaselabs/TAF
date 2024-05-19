@@ -3,9 +3,8 @@ Created on 4-March-2024
 
 @author: abhay.aggrawal@couchbase.com
 """
-import json
 import random
-import threading
+import string
 import time
 from Queue import Queue
 
@@ -264,6 +263,71 @@ class CopyToKv(ColumnarBaseTest):
                 results.append(columnar_count != kv_count)
             if not all(results):
                 self.fail("Mismatch found in Copy To KV")
+
+    def test_crate_copyToKv_key_size(self):
+        self.base_infra_setup()
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        jobs = Queue()
+        results = []
+        characters = string.ascii_letters + string.digits + string.punctuation
+        valid_key_count = 0
+        for dataset in datasets:
+            docs = []
+            for i in range(self.no_of_docs):
+                doc = self.cbas_util.generate_docs(document_size=1024)
+                key_size = random.choice([249, 250])
+                if key_size == 249:
+                    valid_key_count += 1
+                doc["kv_key"] = ''.join(random.choice(characters) for _ in range(key_size))
+                docs.append(doc)
+            if not self.cbas_util.insert_into_standalone_collection(self.cluster, dataset.name, docs,
+                                                             dataset.dataverse_name, dataset.database_name):
+                self.fail("Failed to insert document with key size: {}".format(key_size))
+        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
+        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
+        provisioned_collections = []
+        primary_key = "kv_key"
+        for dataset in datasets:
+            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
+                                                             self.provisioned_scope_name)
+            provisioned_collections.append(collection_name)
+            collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
+                                           collection_name)
+
+            jobs.put((self.cbas_util.copy_to_kv,
+                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
+                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
+                       "link_name": remote_link.full_name, "primary_key": primary_key,
+                       "validate_error_msg": self.input.param("validate_error", False),
+                       "expected_error": self.input.param("expected_error", None),
+                       "expected_error_code": self.input.param("expected_error_code", None)}))
+
+        self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
+        if not all(results):
+            self.fail("Copy to kv statement failed")
+
+        for i in range (len(datasets)):
+            remote_dataset = self.cbas_util.create_remote_dataset_obj(self.cluster, self.provisioned_bucket_name,
+                                                                      self.provisioned_scope_name,
+                                                                      provisioned_collections[i], remote_link,
+                                                                      capella_as_source=True)[0]
+            if not self.cbas_util.create_remote_dataset(self.cluster, remote_dataset.name,
+                                                        remote_dataset.full_kv_entity_name,
+                                                        remote_dataset.link_name,
+                                                        dataverse_name=remote_dataset.dataverse_name,
+                                                        database_name=remote_dataset.database_name):
+                self.log.error("Failed to create remote dataset on KV")
+                results.append(False)
+                # validate doc count at columnar and KV side
+                kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
+                if valid_key_count != kv_count:
+                    self.log.error("Doc count mismatch in KV and columnar {0}, {1}, expected: {2} got: {3}".
+                                   format(provisioned_collections[i], datasets[i].full_name,
+                                          valid_key_count, kv_count))
+                    results.append(valid_key_count != kv_count)
+                if not all(results):
+                    self.fail("Mismatch found in Copy To KV")
 
     def test_create_copyToKv_duplicate_data_key(self):
         self.base_infra_setup()
