@@ -782,7 +782,7 @@ class APIBase(CouchbaseBaseTest):
                 for i in range(len(actual_res[key])):
                     if key == "data" and actual_res[key][i]["id"] != id:
                         continue
-                    if len(expected_res["data"]) > 1:
+                    if len(expected_res[key]) > 1:
                         j = i
                     if not self.validate_api_response(
                             expected_res[key][j], actual_res[key][i], id):
