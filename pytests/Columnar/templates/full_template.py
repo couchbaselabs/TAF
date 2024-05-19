@@ -44,18 +44,6 @@ spec = {
         # Accepted value is list of property dicts.
         # Dicts should contain link properties for couchbase link
         "properties": [{}],
-        # Accepted values are list of database names. These are the
-        # databases where the link will be created.
-        "include_databases": [],
-        # Accepted values are list of database names. These are the
-        # databases where the link will not be created.
-        "exclude_databases": [],
-        # Accepted values are list of dataverse names. These are the
-        # dataverses where the link will be created.
-        "include_dataverses": [],
-        # Accepted values are list of dataverse names. These are the
-        # dataverses where the link will not be created.
-        "exclude_dataverses": [],
     },
 
     "external_link": {
@@ -66,18 +54,6 @@ spec = {
         # Accepted value is list of property dicts.
         # Dicts should contain link properties for s3 link
         "properties": [{}],
-        # Accepted values are list of database names. These are the
-        # databases where the link will be created.
-        "include_databases": [],
-        # Accepted values are list of database names. These are the
-        # databases where the link will not be created.
-        "exclude_databases": [],
-        # Accepted values are list of dataverse names. These are the
-        # dataverses where the link will be created.
-        "include_dataverses": [],
-        # Accepted values are list of dataverse names. These are the
-        # dataverses where the link will not be created.
-        "exclude_dataverses": [],
     },
 
     "kafka_link": {
@@ -85,27 +61,12 @@ spec = {
         "no_of_kafka_links": 0,
         # Accepted values are random or any string.
         "name_key": "random",
-        # Accepted values are list of database names. These are the
-        # databases where the link will be created.
-        "include_databases": [],
-        # Accepted values are list of database names. These are the
-        # databases where the link will not be created.
-        "exclude_databases": [],
-        # Accepted values are list of dataverse names. These are the
-        # dataverses where the link will be created.
-        "include_dataverses": [],
-        # Accepted values are list of dataverse names. These are the
-        # dataverses where the link will not be created.
-        "exclude_dataverses": [],
-
-        # Accepted values are "mongo", "dynamo", "rds"
-        "database_type": [],
-        # External database connection details
-        # Dict format - {
-        # "mongo":[{mongo source details}],
-        # "dynamo":[{dynamo source details}] ...
-        # }
-        "external_database_details": {},
+        # List of vendors. Accepted values confluent and aws_msk
+        "vendors": [],
+        # Dict of List of kakfa cluster detail objects
+        "kafka_cluster_details": {"confluent": [], "aws_msk": []},
+        # Dict of List of schema registry detail objects
+        "schema_registry_details": {"confluent": [], "aws_msk": []},
     },
 
     "remote_dataset": {

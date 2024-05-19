@@ -5,6 +5,7 @@ Created on 08-Dec-2020
 """
 
 from CbasLib.CBASOperations import CBASHelper
+from copy import deepcopy
 
 
 class DatabaseUser(object):
@@ -22,6 +23,7 @@ class DatabaseUser(object):
     def to_dict(self):
         return {"id": self.id, "name": self.name, "password": self.password}
 
+
 class ColumnarRole(object):
     """
     Analytics Role.
@@ -31,6 +33,7 @@ class ColumnarRole(object):
 
     def __str__(self):
         return self.role_name
+
 
 class Database(object):
     """
@@ -60,10 +63,6 @@ class Dataverse(object):
         self.full_name = CBASHelper.format_name(
             self.database_name, self.name)
 
-        self.remote_links = dict()
-        self.external_links = dict()
-        self.kafka_links = dict()
-
         self.datasets = dict()
         self.remote_datasets = dict()
         self.external_datasets = dict()
@@ -76,40 +75,28 @@ class Dataverse(object):
         return self.name
 
 
-class CBAS_Scope(object):
-    """ Dummy class"""
-    pass
-
-
 class Link(object):
     """
     Link object
     """
 
-    def __init__(self, name, dataverse_name="Default",
-                 database_name="Default"):
+    def __init__(self, name):
         """
         :param name str, name of the link, not needed in case of a link of
         type Local
         :param dataverse_name str, dataverse where the link is present.
         """
         self.name = CBASHelper.format_name(name)
-        self.dataverse_name = CBASHelper.format_name(dataverse_name)
-        self.database_name = CBASHelper.format_name(database_name)
-        self.full_name = CBASHelper.format_name(
-            self.database_name, self.dataverse_name, self.name)
 
     def __str__(self):
-        return self.full_name
+        return self.name
 
 
 class Remote_Link(Link):
 
-    def __init__(self, name, dataverse_name="Default",
-                 database_name="Default", properties={}):
+    def __init__(self, name, properties={}):
         """
         :param name str, name of the link
-        :param dataverse_name str, dataverse where the link is present.
 
         <Required> hostname : The hostname of the link
         <Optional> username : The username for host authentication.
@@ -127,22 +114,17 @@ class Remote_Link(Link):
         <Optional> clientKey : The client key for user authentication.
         Required only if encryption is set to "full" and username and password is not used.
         """
-        super(Remote_Link, self).__init__(name, dataverse_name, database_name)
+        super(Remote_Link, self).__init__(name)
         self.properties = properties
         self.properties["name"] = CBASHelper.unformat_name(self.name)
-        self.properties["dataverse"] = CBASHelper.unformat_name(
-            self.dataverse_name)
-        self.properties["database"] = CBASHelper.unformat_name(self.database_name)
         self.link_type = "couchbase"
 
 
 class External_Link(Link):
 
-    def __init__(self, name, dataverse_name="Default",
-                 database_name="Default", properties={}):
+    def __init__(self, name,  properties={}):
         """
         :param name str, name of the link
-        :param dataverse_name str, dataverse where the link is present.
 
         <Required> accessKeyId : The access key of the link
         <Required> secretAccessKey : The secret key of the link
@@ -150,36 +132,30 @@ class External_Link(Link):
         <Optional> serviceEndpoint : The service endpoint of the link.
         Note - please use the exact key names as provided above in link properties dict.
         """
-        super(External_Link, self).__init__(
-            name, dataverse_name, database_name)
+        super(External_Link, self).__init__(name)
         self.properties = properties
         self.properties["name"] = CBASHelper.unformat_name(self.name)
-        self.properties["dataverse"] = CBASHelper.unformat_name(
-            self.dataverse_name)
-        self.properties["database"] = CBASHelper.unformat_name(
-            self.database_name)
         self.link_type = self.properties["type"].lower()
 
 
 class Kafka_Link(Link):
 
-    def __init__(self, name, dataverse_name="Default", database_name="Default",
-                 db_type="mongo", external_database_details={}):
+    def __init__(self, name, kafka_type="confluent",
+                 kafka_cluster_details={}, schema_registry_details={}):
         """
         :param name str, name of the link
-        :param dataverse_name str, dataverse where the link is present.
-        :param db_type <str> Type of the external database. Accepted values
-        are mongo, dynamo and cassandra
+        :param kafka_type <str> Type of kafka cluster. Accepted values
+        are confluent and aws_msk
         :param kafka_cluster_details <dict> kafka cluster info like
         connection URI and authentication.
-        :param external_database_details <dict> connection, authentication
-        and other details required to connect to external databases like
-        mongo, dynamo or cassandra
+        :param schema_registry_details <dict> info to connect to schema
+        registry
         """
-        super(Kafka_Link, self).__init__(name, dataverse_name, database_name)
+        super(Kafka_Link, self).__init__(name)
         self.link_type = "kafka"
-        self.db_type = db_type.lower()
-        self.external_database_details = external_database_details
+        self.kafka_type = kafka_type
+        self.kafka_cluster_details = kafka_cluster_details
+        self.schema_registry_details = schema_registry_details
 
 
 class Dataset(object):
@@ -239,11 +215,6 @@ class Dataset(object):
     def reset_full_name(self):
         self.full_name = CBASHelper.format_name(
             self.database_name, self.dataverse_name, self.name)
-
-
-class CBAS_Collection(object):
-    """ Dummy class"""
-    pass
 
 
 class Remote_Dataset(Dataset):
@@ -449,6 +420,201 @@ class CBAS_UDF(object):
 
     def reset_full_name(self):
         self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
+
+
+class KafkaClusterDetails(object):
+
+    # Auth Types
+    CONFLUENT_AUTH_TYPES = ["PLAIN", "OAUTH", "SCRAM_SHA_256",
+                            "SCRAM_SHA_512"],
+    AWS_AUTH_TYPES = ["SCRAM_SHA_512", "IAM"]
+
+    # Encryption Types
+    ENCRYPTION_TYPES = ["PLAINTEXT", "TLS"]
+
+    KAFKA_CLUSTER_DETAILS_TEMPLATE = {
+        "vendor": None,
+        "brokersUrl": None,  # Comma separated list of brokers
+        "authenticationDetails": {
+            "authenticationType": None,
+            "encryptionType": None,
+            "credentials": {}
+        }
+    }
+
+    # Use this if authenticationType is PLAIN,SCRAM_SHA_256,SCRAM_SHA_512
+    CONFLUENT_CREDENTIALS = {
+        "apiKey": None,
+        "apiSecret": None
+    }
+
+    # Use this if authenticationType is OAUTH
+    CONFLUENT_CREDENTIALS_OAUTH = {
+        "oauthTokenEndpointURL": None,
+        "clientId": None,
+        "clientSecret": None,
+        "scope": None,  # optional
+        "extension_logicalCluster": None,  # optional
+        "extension_identityPoolId": None  # optional
+    }
+
+    # Use this if authenticationType is SCRAM_SHA_512
+    AWS_MSK_CREDENTIALS = {
+        "username": None,
+        "password": None
+    }
+
+    CONFLUENT_SCHEMA_REGISTRY_DETAILS_TEMPLATE = {
+        "connectionFields": {
+            "schemaRegistryURL": None,
+            "schemaRegistryCredentials": None  # Format "Api Key:Api Secret"
+        }
+    }
+
+    AWS_MSK_SCHEMA_REGISTRY_DETAILS_TEMPLATE = {
+        "connectionFields": {
+            "awsRegion": None,
+            "accessKeyId": None,
+            "secretAccessKey": None,
+            "sessionToken": None,
+            "registryName": None  # optional
+        }
+    }
+
+    def __init__(self):
+        pass
+
+    def generate_confluent_kafka_cluster_detail(
+            self, brokers_url, auth_type, encryption_type, api_key=None,
+            api_secret=None, oauthTokenEndpointURL=None, clientId=None,
+            clientSecret=None, scope=None, extension_logicalCluster=None,
+            extension_identityPoolId=None):
+        kafka_cluster_details = deepcopy(self.KAFKA_CLUSTER_DETAILS_TEMPLATE)
+        kafka_cluster_details["vendor"] = "CONFLUENT"
+        kafka_cluster_details["brokersUrl"] = brokers_url
+
+        auth_type = auth_type.upper()
+        if auth_type in self.CONFLUENT_AUTH_TYPES:
+            kafka_cluster_details["authenticationDetails"][
+                "authenticationType"] = auth_type
+            if auth_type == "OAUTH":
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"] = deepcopy(self.CONFLUENT_CREDENTIALS_OAUTH)
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"][
+                    "oauthTokenEndpointURL"] = oauthTokenEndpointURL
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["clientId"] = clientId
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["clientSecret"] = clientSecret
+                if scope:
+                    kafka_cluster_details["authenticationDetails"][
+                        "credentials"]["scope"] = scope
+                else:
+                    del(kafka_cluster_details["authenticationDetails"][
+                        "credentials"]["scope"])
+                if extension_logicalCluster:
+                    kafka_cluster_details["authenticationDetails"][
+                        "credentials"][
+                        "extension_logicalCluster"] = extension_logicalCluster
+                else:
+                    del(kafka_cluster_details["authenticationDetails"][
+                        "credentials"]["extension_logicalCluster"])
+                if extension_identityPoolId:
+                    kafka_cluster_details["authenticationDetails"][
+                        "credentials"][
+                        "extension_identityPoolId"] = extension_identityPoolId
+                else:
+                    del(kafka_cluster_details["authenticationDetails"][
+                        "credentials"]["extension_identityPoolId"])
+            else:
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"] = deepcopy(self.CONFLUENT_CREDENTIALS)
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["apiKey"] = api_key
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["apiSecret"] = api_secret
+        else:
+            raise Exception(
+                "Invalid Authentication type. Supported authentication types "
+                "are {0}.".format(self.CONFLUENT_AUTH_TYPES))
+
+        if encryption_type.upper() in self.ENCRYPTION_TYPES:
+            kafka_cluster_details["authenticationDetails"][
+                "encryptionType"] = encryption_type.upper()
+        else:
+            raise Exception(
+                "Invalid Encryption type. Supported Encryption types "
+                "are {0}.".format(self.ENCRYPTION_TYPES))
+        return KafkaClusterDetails
+
+    def generate_aws_msk_cluster_detail(
+            self, brokers_url, auth_type, encryption_type, username=None,
+            password=None):
+        kafka_cluster_details = deepcopy(self.KAFKA_CLUSTER_DETAILS_TEMPLATE)
+        kafka_cluster_details["vendor"] = "AWS_MSK"
+        kafka_cluster_details["brokersUrl"] = brokers_url
+
+        auth_type = auth_type.upper()
+        if auth_type in self.AWS_AUTH_TYPES:
+            kafka_cluster_details["authenticationDetails"][
+                "authenticationType"] = auth_type
+            if auth_type == "SCRAM_SHA_512":
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"] = deepcopy(self.AWS_MSK_CREDENTIALS)
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["username"] = username
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["password"] = password
+        else:
+            raise Exception(
+                "Invalid Authentication type. Supported authentication types "
+                "are {0}.".format(self.AWS_AUTH_TYPES))
+
+        if encryption_type.upper() is "TLS":
+            kafka_cluster_details["authenticationDetails"][
+                "encryptionType"] = encryption_type.upper()
+        else:
+            raise Exception(
+                "Invalid Encryption type. Supported Encryption types "
+                "are {0}.".format("TLS"))
+        return KafkaClusterDetails
+
+    def generate_confluent_schema_registry_detail(
+            self, schema_registry_url, api_key, api_secret):
+        schema_registry_details = deepcopy(
+            self.CONFLUENT_SCHEMA_REGISTRY_DETAILS_TEMPLATE)
+        schema_registry_details["connectionFields"][
+            "schemaRegistryURL"] = schema_registry_url
+        schema_registry_details["connectionFields"][
+            "schemaRegistryCredentials"] = "{0}:{1}".format(
+            api_key, api_secret)
+        return schema_registry_details
+
+    def generate_aws_msk_schema_registry_detail(
+            self, aws_region, access_key_id, secret_access_key,
+            session_token=None, registry_name=None):
+        schema_registry_details = deepcopy(
+            self.AWS_MSK_SCHEMA_REGISTRY_DETAILS_TEMPLATE)
+        schema_registry_details["connectionFields"][
+            "awsRegion"] = aws_region
+        schema_registry_details["connectionFields"][
+            "accessKeyId"] = access_key_id
+        schema_registry_details["connectionFields"][
+            "secretAccessKey"] = secret_access_key
+        if session_token:
+            schema_registry_details["connectionFields"][
+                "sessionToken"] = session_token
+        else:
+            del(schema_registry_details["connectionFields"]["sessionToken"])
+
+        if registry_name:
+            schema_registry_details["connectionFields"][
+                "registryName"] = registry_name
+        else:
+            del(schema_registry_details["connectionFields"]["registryName"])
+
+        return schema_registry_details
 
 
 class ExternalDB(object):

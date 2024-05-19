@@ -6,7 +6,7 @@ Created on 1-March-2024
 This utility is for performing actions on Capella Columnar only.
 """
 import json
-import urllib
+import urllib.parse
 import time
 import string
 import random
@@ -35,7 +35,6 @@ from sirius_client_framework.operation_config import WorkloadOperationConfig
 from sirius_client_framework.sirius_constants import SiriusCodes
 from Jython_tasks.sirius_task import WorkLoadTask
 from Jython_tasks.task_manager import TaskManager
-
 
 
 class BaseUtil(object):
@@ -218,7 +217,7 @@ class BaseUtil(object):
                     error_code = errors["code"]
 
                 if expected_error_code != error_code:
-                    self.log.debug("Error code mismatch. Expected: %s, got: %s"
+                    self.log.error("Error code mismatch. Expected: %s, got: %s"
                                    % (expected_error_code, error_code))
                     return False
                 self.log.info("Error code matched. Expected: %s, got: %s"
@@ -395,7 +394,6 @@ class RBAC_Util(BaseUtil):
         super(RBAC_Util, self).__init__(server_task, run_query_using_sdk)
         self.database_users = dict()
         self.columnar_roles = dict()
-
 
     def create_user(self, cluster, id, username, password):
         """
@@ -777,7 +775,7 @@ class Database_Util(BaseUtil):
         :param analytics_timeout int, analytics query timeout
         :return boolean
         """
-        self.log.debug("Validating database entry in Metadata")
+        self.log.info("Validating database entry in Metadata")
         cmd = ("select value db from Metadata.`Database` as db where "
                "db.DatabaseName = \"{0}\";".format(
             self.unformat_name(database_name)))
@@ -872,7 +870,7 @@ class Dataverse_Util(Database_Util):
         :param analytics_timeout int, analytics query timeout
         :return boolean
         """
-        self.log.debug("Validating dataverse entry in Metadata")
+        self.log.info("Validating dataverse entry in Metadata")
         cmd = "select value dv from Metadata.`Dataverse` as dv where\
          dv.DataverseName = \"{0}\"".format(
             self.unformat_name(dataverse_name))
@@ -1301,17 +1299,18 @@ class Link_Util(Dataverse_Util):
         :param server_task task object
         """
         super(Link_Util, self).__init__(server_task, run_query_using_sdk)
+        self.remote_links = dict()
+        self.external_links = dict()
+        self.kafka_links = dict()
 
     def validate_link_in_metadata(
-            self, cluster, link_name, dataverse_name, database_name="Default",
-            link_type="Local", username=None, password=None,
-            is_active=False, timeout=300, analytics_timeout=300):
+            self, cluster, link_name, link_type="Local", username=None,
+            password=None, is_active=False, timeout=300,
+            analytics_timeout=300):
         """
         Validates whether a link is present in Metadata.Link
         :param cluster: cluster, cluster object
         :param link_name: str, Name of the link to be validated.
-        :param dataverse_name: str, dataverse name where the link is present
-        :param database_name: str, database name where the dataverse is present
         :param link_type: str, type of link, valid values are Local, s3 or couchbase
         :param username : str
         :param password : str
@@ -1320,12 +1319,9 @@ class Link_Util(Dataverse_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
-        self.log.debug("Validating link entry in Metadata")
+        self.log.info("Validating link entry in Metadata")
         cmd = ("select value lnk from Metadata.`Link` as lnk where "
-               "lnk.DataverseName = \"{0}\" and lnk.Name = \"{1}\" and "
-               "lnk.DatabaseName = \"{2}\"").format(
-            self.unformat_name(dataverse_name), self.unformat_name(link_name),
-            self.unformat_name(database_name))
+               "lnk.Name = \"{0}\" ").format(self.unformat_name(link_name))
 
         if link_type != "Local":
             cmd += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
@@ -1350,9 +1346,8 @@ class Link_Util(Dataverse_Util):
             return False
 
     def is_link_active(
-            self, cluster, link_name, dataverse_name, database_name="Default",
-            link_type="Local", username=None, password=None, timeout=300,
-            analytics_timeout=300):
+            self, cluster, link_name, link_type="Local", username=None,
+            password=None, timeout=300, analytics_timeout=300):
         """
         Validates whether a link is active or not. Valid only for
         Local and couchbase links
@@ -1367,7 +1362,7 @@ class Link_Util(Dataverse_Util):
         :param analytics_timeout int, analytics query timeout
         """
         return self.validate_link_in_metadata(
-            cluster, link_name, dataverse_name, database_name, link_type,
+            cluster, link_name, link_type,
             username, password, True, timeout, analytics_timeout)
 
     def create_link(
@@ -1394,33 +1389,20 @@ class Link_Util(Dataverse_Util):
         exists = False
         if create_if_not_exists:
             exists = self.validate_link_in_metadata(
-                cluster, link_properties["name"], link_properties["dataverse"],
-                link_properties["database"], link_properties["type"],
+                cluster, link_properties["name"], link_properties["type"],
                 username, password)
 
         if not exists:
             link_prop = copy.deepcopy(link_properties)
-            if "database" in link_prop and link_prop["database"]:
-                link_prop["dataverse"] = "{0}.{1}".format(
-                    link_prop["database"], link_prop["dataverse"])
-                del link_prop["database"]
 
             if self.run_query_using_sdk:
-                link_prop["dataverse"] = self.metadata_format(
-                    link_prop["dataverse"])
                 status, content, errors = cbas_helper.create_link(link_prop)
             else:
                 params = dict()
                 uri = ""
-                if "dataverse" in link_prop:
-                    dataverse = link_prop["dataverse"]
-                    del link_prop["dataverse"]
-                if dataverse:
-                    uri += "/{0}".format(urllib.quote_plus(
-                        self.metadata_format(dataverse), safe=""))
 
                 if "name" in link_prop:
-                    uri += "/{0}".format(urllib.quote_plus(
+                    uri += "/{0}".format(urllib.parse.quote_plus(
                         self.unformat_name(link_prop["name"]), safe=""))
                     del link_prop["name"]
 
@@ -1430,7 +1412,7 @@ class Link_Util(Dataverse_Util):
                             params[key] = str(value)
                         else:
                             params[key] = value
-                params = urllib.urlencode(params)
+                params = urllib.parse.urlencode(params)
                 status, status_code, content, errors = cbas_helper.analytics_link_operations(
                     method="POST", uri=uri, params=params, timeout=timeout,
                     username=username, password=password)
@@ -1479,14 +1461,12 @@ class Link_Util(Dataverse_Util):
             else:
                 return True
 
-    def get_link_info(self, cluster, dataverse=None, database=None,
-                      link_name=None, link_type=None, username=None,
-                      password=None, timeout=300, validate_error_msg=False,
-                      expected_error=None, expected_error_code=None):
+    def get_link_info(
+            self, cluster, link_name=None, link_type=None, username=None,
+            password=None, timeout=300, validate_error_msg=False,
+            expected_error=None, expected_error_code=None):
         """
         Fetch the list of links based on parameters passed.
-        :param dataverse (optional) Dataverse name where the links reside.
-        If not specified, all the links from all the dataverses will be retrieved.
         :param link_name (optional) The name of the link to be retrieved instead of
         retrieving all links. If this parameter is specified, the dataverse name
         has to be specified as well.
@@ -1498,31 +1478,17 @@ class Link_Util(Dataverse_Util):
         """
         cbas_helper = self.get_cbas_helper_object(cluster)
         if self.run_query_using_sdk:
-            if database == "Default" or database is None:
-                status, content, errors = cbas_helper.get_link_info(
-                    "{}".format(self.unformat_name(dataverse)),
-                    self.unformat_name(link_name), link_type)
-            else:
-                status, content, errors = cbas_helper.get_link_info(
-                    "{}".format(
-                        self.metadata_format(database + "." + dataverse)),
-                    self.unformat_name(link_name), link_type)
+            status, content, errors = cbas_helper.get_link_info(
+                None,self.unformat_name(link_name), link_type)
         else:
             params = dict()
             uri = ""
-            if database and dataverse:
-                dataverse = "{}".format(self.unformat_name(
-                    database, dataverse))
-
-            if dataverse:
-                uri += "/{0}".format(urllib.quote_plus(
-                    self.unformat_name(dataverse), safe=""))
             if link_name:
-                uri += "/{0}".format(urllib.quote_plus(
+                uri += "/{0}".format(urllib.parse.quote_plus(
                     self.unformat_name(link_name), safe=""))
             if link_type:
                 params["type"] = link_type
-            params = urllib.urlencode(params)
+            params = urllib.parse.urlencode(params)
             status, status_code, content, errors = cbas_helper.analytics_link_operations(
                 method="GET", uri=uri, params=params, timeout=timeout,
                 username=username, password=password)
@@ -1533,7 +1499,7 @@ class Link_Util(Dataverse_Util):
             return content
 
     def alter_link_properties(
-            self, cluster, link_properties, dataverse=None, username=None, password=None,
+            self, cluster, link_properties, username=None, password=None,
             timeout=300, validate_error_msg=False, expected_error=None,
             expected_error_code=None):
         """
@@ -1551,19 +1517,9 @@ class Link_Util(Dataverse_Util):
         link_prop = copy.deepcopy(link_properties)
         params = dict()
         uri = ""
-        if "database" in link_prop and link_prop["database"]:
-            dataverse = "{0}.{1}".format(
-                link_prop["database"], link_prop["dataverse"])
-            del link_prop["database"]
-        elif "dataverse" in link_prop:
-            dataverse = link_prop["dataverse"]
-            del link_prop["dataverse"]
-        if dataverse:
-            uri += "/{0}".format(urllib.quote_plus(self.metadata_format(
-                dataverse), safe=""))
 
         if "name" in link_prop:
-            uri += "/{0}".format(urllib.quote(
+            uri += "/{0}".format(urllib.parse.quote(
                 self.unformat_name(link_prop["name"]), safe=""))
             del link_prop["name"]
 
@@ -1573,10 +1529,10 @@ class Link_Util(Dataverse_Util):
                     params[key] = str(value)
                 else:
                     params[key] = value
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         status, status_code, content, errors = cbas_helper.analytics_link_operations(
-            method="PUT", uri=uri, params=params, timeout=timeout, username=username,
-            password=password)
+            method="PUT", uri=uri, params=params, timeout=timeout,
+            username=username, password=password)
         if validate_error_msg:
             return self.validate_error_in_response(
                 status, errors, expected_error, expected_error_code)
@@ -1652,94 +1608,45 @@ class Link_Util(Dataverse_Util):
             else:
                 return True
 
-    def get_link_obj(self, cluster, link_name, link_type=None,
-                     dataverse_name=None, database_name=None):
+    def get_link_obj(self, link_name):
         """
         Return Link object if the link with the required name already exists.
         If dataverse_name or link_type is not mentioned then it will return first
         link found with the link_name.
         :param link_name str, name of the link whose object has to returned.
-        :param link_type str, s3 or couchbase
-        :param dataverse_name str, name of the dataverse where the link is present
         """
-        if not dataverse_name or not database_name:
-            cmd = "select value lnk from Metadata.`Link` as lnk where " \
-                  "lnk.Name = \"{0}\"".format(self.unformat_name(link_name))
-
-            if link_type:
-                cmd += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
-
-            if database_name:
-                cmd += " and lnk.DatabaseName = \"{0}\"".format(
-                    self.unformat_name(database_name))
-            if dataverse_name:
-                cmd += " and lnk.DataverseName = \"{0}\"".format(
-                    self.unformat_name(dataverse_name))
-            cmd += ";"
-
-            self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-                cluster, cmd)
-            if status == "success":
-                if results:
-                    if not database_name:
-                        database_name = self.format_name(results[0]["DatabaseName"])
-                    if not dataverse_name:
-                        dataverse_name = self.format_name(
-                            results[0]["DataverseName"])
-                    link_type = results[0]["Type"]
-                else:
-                    return None
-            else:
-                return None
-        else:
-            database_name = self.format_name(database_name)
-            dataverse_name = self.format_name(dataverse_name)
-        dataverse_obj = self.get_dataverse_obj(dataverse_name, database_name)
-        all_link_objs = (dataverse_obj.remote_links +
-                         dataverse_obj.external_links +
-                         dataverse_obj.kafka_links)
-        link = all_link_objs[self.format_name(link_name)]
-        if link and link_type:
-            if link_type.lower() == link.link_type:
-                return link
-            else:
-                return None
-        return link
+        all_link_objs = (self.remote_links + self.external_links +
+                         self.kafka_links)
+        return all_link_objs[self.format_name(link_name)]
 
     def get_all_link_objs(self, link_type=None):
         """
-        Returns list of all link objects across all the dataverses.
+        Returns list of all link objects.
         :param link_type <str> s3, azureblob, gcp, kafka or couchbase, if None
-        returns all
-        link
-        types
+        returns all link types
         """
         link_objs = list()
-        for databases in self.databases.values():
-            for dataverse in databases.dataverses.values():
-                if not link_type:
-                    link_objs.extend(dataverse.remote_links.values())
-                    link_objs.extend(dataverse.external_links.values())
-                    link_objs.extend(dataverse.kafka_links.values())
-                else:
-                    if link_type == "kafka":
-                        link_objs.extend(dataverse.kafka_links.values())
-                    elif link_type == "couchbase":
-                        link_objs.extend(dataverse.remote_links.values())
-                    else:
-                        for link in dataverse.external_links.values():
-                            if link.link_type == link_type.lower():
-                                link_objs.append(link)
+        if not link_type:
+            link_objs.extend(self.remote_links.values())
+            link_objs.extend(self.external_links.values())
+            link_objs.extend(self.kafka_links.values())
+        else:
+            if link_type == "kafka":
+                link_objs.extend(self.kafka_links.values())
+            elif link_type == "couchbase":
+                link_objs.extend(self.remote_links.values())
+            else:
+                for link in self.external_links.values():
+                    if link.link_type == link_type.lower():
+                        link_objs.append(link)
         return link_objs
 
     def validate_get_link_info_response(
             self, cluster, link_properties, username=None, password=None,
             timeout=300):
         response = self.get_link_info(
-            cluster, link_properties["dataverse"], link_properties["database"], link_properties["name"],
-            link_properties["type"], username=username, password=password,
-            timeout=timeout)
+            cluster, link_properties["name"],link_properties["type"],
+            username=username, password=password, timeout=timeout)
         if "secretAccessKey" in link_properties:
             link_properties["secretAccessKey"] = "<redacted sensitive entry>"
         entry_present = False
@@ -1761,8 +1668,8 @@ class Link_Util(Dataverse_Util):
                 cluster, links_query, mode="immediate",
                 timeout=300, analytics_timeout=300)
         if status.encode('utf-8') == 'success':
-                links_created = list(
-                    map(lambda lnk: lnk.encode('utf-8'), results))
+            links_created = list(
+                map(lambda lnk: lnk.encode('utf-8'), results))
         return links_created
 
 
@@ -1807,14 +1714,8 @@ class RemoteLink_Util(Link_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
-        if "database" in link_properties and link_properties["database"]:
-            dataverse = "{0}.{1}".format(link_properties["database"], link_properties["dataverse"])
-        elif "dataverse" in link_properties and link_properties["dataverse"]:
-            dataverse = link_properties["dataverse"]
-        self.log.info("Creating remote link {0}.{1} to remote cluster "
-                      "{2}".format(dataverse,
-                                   link_properties["name"],
-                                   link_properties["hostname"]))
+        self.log.info("Creating remote link {0} to remote cluster {1}".format(
+            link_properties["name"], link_properties["hostname"]))
         return self.create_link(
             cluster, link_properties, username, password, validate_error_msg,
             expected_error, expected_error_code, create_if_not_exists,
@@ -1843,100 +1744,38 @@ class RemoteLink_Util(Link_Util):
             else:
                 name = link_spec.get("name_key") + "_{0}".format(str(i))
 
-            database = None
-            while not database:
-                database = random.choice(self.databases.values())
-                if link_spec.get("include_databases",
-                                 []) and CBASHelper.unformat_name(
-                    database.name) not in link_spec.get(
-                    "include_databases"):
-                    database = None
-                if link_spec.get("exclude_databases",
-                                 []) and CBASHelper.unformat_name(
-                    database.name) in link_spec.get(
-                    "exclude_databases"):
-                    database = None
-
-            dataverse = None
-            while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(
-                    database.name))
-                if link_spec.get("include_dataverses",
-                                 []) and CBASHelper.unformat_name(
-                    dataverse.name) not in link_spec.get(
-                    "include_dataverses"):
-                    dataverse = None
-                if link_spec.get("exclude_dataverses",
-                                 []) and CBASHelper.unformat_name(
-                    dataverse.name) in link_spec.get(
-                    "exclude_dataverses"):
-                    dataverse = None
-
             link = Remote_Link(
-                name=name, dataverse_name=dataverse.name,
-                database_name=dataverse.database_name,
-                properties=properties[i % properties_size])
+                name=name, properties=properties[i % properties_size])
 
             if not self.create_remote_link(
                     cluster, link.properties, create_if_not_exists=True,
                     timeout=cbas_spec.get("api_timeout", 300)):
                 results.append(False)
             else:
-                dataverse.remote_links[link.name] = link
+                self.remote_links[link.name] = link
                 results.append(True)
         return all(results)
 
     def create_remote_link_obj(
-            self, cluster, database=None, dataverse=None, link_cardinality=1,
-            hostname=None, username=None, password=None, encryption=None,
-            certificate=None, clientCertificate=None, clientKey=None,
-            no_of_objs=1, name_length=30, fixed_length=False):
+            self, cluster, hostname=None, username=None, password=None,
+            encryption=None, certificate=None, clientCertificate=None,
+            clientKey=None, no_of_objs=1, name_length=30, fixed_length=False):
         """
         Generates Remote Link objects.
         """
         count = 0
         while count < no_of_objs:
-            if (not database) and link_cardinality > 2:
-                database_name = self.format_name(self.generate_name(
-                    max_length=name_length - 1,
-                    fixed_length=fixed_length))
-                if not self.create_database(
-                        cluster, database_name,
-                        if_not_exists=True):
-                    raise Exception("Error while creating database {"
-                                    "}".format(database_name))
-                database = self.get_database_obj(database_name)
-
-            if link_cardinality > 1:
-                if not dataverse:
-                    dataverse_name = CBASHelper.format_name(self.generate_name(
-                        max_length=name_length - 1,
-                        fixed_length=fixed_length))
-                    if database:
-                        database_name = database.name
-                    else:
-                        database_name = None
-                    if not self.create_dataverse(
-                            cluster, dataverse_name, database_name,
-                            if_not_exists=True):
-                        raise Exception("Error while creating dataverse {"
-                                        "}".format(dataverse_name))
-                    dataverse = self.get_dataverse_obj(
-                        dataverse_name, database_name)
-            else:
-                dataverse = self.get_dataverse_obj("Default")
 
             link = Remote_Link(
-                name=self.generate_name(max_length=name_length, fixed_length=fixed_length),
-                dataverse_name=dataverse.name,
-                database_name=dataverse.database_name,
+                name=self.generate_name(
+                    max_length=name_length, fixed_length=fixed_length),
                 properties={
                     "type": "couchbase", "hostname": hostname,
                     "username": username, "password": password,
                     "encryption": encryption, "certificate": certificate,
                     "clientCertificate": clientCertificate,
                     "clientKey": clientKey})
-            dataverse.remote_links[link.name] = link
+            self.remote_links[link.name] = link
             count += 1
 
 
@@ -1974,14 +1813,9 @@ class ExternalLink_Util(RemoteLink_Util):
         :param create_if_not_exists bool, check link exists before creation
         :param timeout int, REST API timeout
         """
-        if "database" in link_properties and link_properties["database"]:
-            dataverse = "{0}.{1}".format(link_properties["database"], link_properties["dataverse"])
-        else:
-            dataverse = link_properties["dataverse"]
         self.log.info(
-            "Creating link - {0}.{1} in region {2}".format(
-                dataverse, link_properties["name"],
-                link_properties["region"]))
+            "Creating link - {0} in region {1}".format(
+                link_properties["name"], link_properties["region"]))
         return self.create_link(
             cluster, link_properties, username, password, validate_error_msg,
             expected_error, expected_error_code, create_if_not_exists,
@@ -2009,52 +1843,20 @@ class ExternalLink_Util(RemoteLink_Util):
             else:
                 name = link_spec.get("name_key") + "_{0}".format(str(i))
 
-            database = None
-            while not database:
-                database = random.choice(self.databases.values())
-                if link_spec.get("include_databases",
-                                 []) and CBASHelper.unformat_name(
-                    database.name) not in link_spec.get(
-                    "include_databases"):
-                    database = None
-                if link_spec.get("exclude_databases",
-                                 []) and CBASHelper.unformat_name(
-                    database.name) in link_spec.get(
-                    "exclude_databases"):
-                    database = None
-
-            dataverse = None
-            while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(
-                    database.name))
-
-                if link_spec.get("include_dataverses",
-                                 []) and CBASHelper.unformat_name(
-                    dataverse.name) not in link_spec.get(
-                    "include_dataverses"):
-                    dataverse = None
-                if link_spec.get("exclude_dataverses",
-                                 []) and CBASHelper.unformat_name(
-                    dataverse.name) in link_spec.get(
-                    "exclude_dataverses"):
-                    dataverse = None
             link = External_Link(
-                name=name, dataverse_name=dataverse.name,
-                database_name=dataverse.database_name,
-                properties=properties[i % properties_size])
+                name=name, properties=properties[i % properties_size])
 
             if not self.create_external_link(
                     cluster, link.properties, create_if_not_exists=True,
                     timeout=cbas_spec.get("api_timeout", 300)):
                 results.append(False)
             else:
-                dataverse.external_links[link.name] = link
+                self.external_links[link.name] = link
                 results.append(True)
         return all(results)
 
     def create_external_link_obj(
-            self, cluster, dataverse=None, database=None, link_cardinality=1,
-            accessKeyId=None, secretAccessKey=None, regions=[],
+            self, cluster, accessKeyId=None, secretAccessKey=None, regions=[],
             serviceEndpoint=None, link_type="s3", no_of_objs=1, name_length=30,
             fixed_length=False, link_perm=False):
         """
@@ -2063,41 +1865,12 @@ class ExternalLink_Util(RemoteLink_Util):
         external_link_list = []
         count = 0
         while count < no_of_objs:
-            if (not database) and link_cardinality > 2:
-                database_name = CBASHelper.format_name(self.generate_name(
-                    max_length=name_length - 1,
-                    fixed_length=fixed_length))
-                if not self.create_database(
-                        cluster, database_name,
-                        if_not_exists=True):
-                    raise Exception("Error while creating database {"
-                                    "}".format(database_name))
-                database = self.get_database_obj(database_name)
-
-            if link_cardinality > 1:
-                if not dataverse:
-                    dataverse_name = CBASHelper.format_name(self.generate_name(
-                        max_length=name_length - 1,
-                        fixed_length=fixed_length))
-                    if database:
-                        database_name = database.name
-                    else:
-                        database_name = None
-                    if not self.create_dataverse(
-                            cluster, dataverse_name, database_name,
-                            if_not_exists=True):
-                        raise Exception("Error while creating dataverse")
-                    dataverse = self.get_dataverse_obj(dataverse_name)
-            else:
-                dataverse = self.get_dataverse_obj("Default")
 
             if link_type.lower() == "s3":
                 link = External_Link(
                     name=self.generate_name(
                         name_cardinality=1, max_length=name_length,
                         fixed_length=fixed_length),
-                    dataverse_name=dataverse.name,
-                    database_name=dataverse.database_name,
                     properties={"type": "s3", "accessKeyId": accessKeyId,
                                 "secretAccessKey": secretAccessKey,
                                 "region": random.choice(regions),
@@ -2108,8 +1881,6 @@ class ExternalLink_Util(RemoteLink_Util):
                         name=self.generate_name(
                             name_cardinality=1, max_length=name_length,
                             fixed_length=fixed_length),
-                        dataverse_name=dataverse.name,
-                        database_name=dataverse.database_name,
                         properties={"type": "azureblob",
                                     "endpoint": serviceEndpoint,
                                     "accountName": accessKeyId,
@@ -2120,12 +1891,10 @@ class ExternalLink_Util(RemoteLink_Util):
                         name=self.generate_name(
                             name_cardinality=1, max_length=name_length,
                             fixed_length=fixed_length),
-                        dataverse_name=dataverse.name,
-                        database_name=dataverse.database_name,
                         properties={"type": "azureblob",
                                     "endpoint": serviceEndpoint,
                                     })
-            dataverse.external_links[link.name] = link
+            self.external_links[link.name] = link
             external_link_list.append(link)
             count += 1
         return external_link_list
@@ -2139,49 +1908,17 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         super(KafkaLink_Util, self).__init__(server_task, run_query_using_sdk)
 
-    def wait_for_kafka_links(self, cluster, state="CONNECTED",
-                             links=[], timeout=1200):
-        if not links:
-            kafka_links = set(self.get_all_link_objs("kafka"))
-        else:
-            kafka_links = copy.deepcopy(links)
-        end_time = time.time() + timeout
-        while len(kafka_links) > 0 and time.time() < end_time:
-            self.log.info("Waiting for KAFKA links to be {}".format(state))
-            links_in_desired_state = []
-            for link in kafka_links:
-                link_info = self.get_link_info(
-                    cluster, link.dataverse_name,
-                    link.database_name, link.name, link.link_type)
-                if ((type(link_info) is not None) and len(link_info) > 0 and
-                        "linkState" in link_info[0] and link_info[0][
-                            "linkState"] == state):
-                    links_in_desired_state.append(link)
-            while links_in_desired_state:
-                kafka_links.remove(links_in_desired_state.pop())
-            if kafka_links:
-                time.sleep(60)
-
-        if kafka_links:
-            for link in kafka_links:
-                self.log.error("Link {} was not in {} state even after {} "
-                               "seconds".format(link.full_name, state, timeout))
-            return False
-        return True
-
     def create_kafka_link(
-            self, cluster, link_name, external_db_details, dataverse_name=None,
-            database_name=None, validate_error_msg=False, username=None,
-            password=None, expected_error=None, timeout=300,
+            self, cluster, link_name, kafka_cluster_details,
+            schema_registry_details=None, validate_error_msg=False,
+            username=None, password=None, expected_error=None, timeout=300,
             analytics_timeout=300):
         """
         Creates a dataset/analytics collection on a KV bucket.
         :param link_name str, fully qualified dataset name.
-        :param external_db_details <Kafka object> details of the kafka cluster
+        :param kafka_cluster_details dict, details of the kafka cluster
         that will be used to stream data from external database.
-        :param external_db_details <ExternalDB object> details of the source
-        database cluster from data is to be fetched.
-        :param dataverse_name str, Dataverse where link is to be created.
+        :param schema_registry_details dict, details of the schema registry.
         :param username: str
         :param password: str
         :param validate_error_msg: boolean, if set to true, then validate error raised
@@ -2190,17 +1927,13 @@ class KafkaLink_Util(ExternalLink_Util):
         :param timeout int, REST API timeout
         :param analytics_timeout int, analytics query timeout
         """
-        if database_name:
-            full_link_name = ".".join([database_name, dataverse_name, link_name])
-        elif dataverse_name:
-            full_link_name = ".".join([dataverse_name, link_name])
-        else:
-            full_link_name = link_name
 
         cmd = "CREATE LINK {0} TYPE KAFKA WITH ".format(
-            CBASHelper.format_name(full_link_name))
+            CBASHelper.format_name(link_name))
 
-        source_details = {"sourceDetails": external_db_details}
+        source_details = {"kafkaClusterDetails": kafka_cluster_details}
+        if schema_registry_details:
+            source_details["schemaRegistryDetails"] = schema_registry_details
         cmd += json.dumps(source_details)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
@@ -2233,131 +1966,71 @@ class KafkaLink_Util(ExternalLink_Util):
         link_spec = self.get_kafka_link_spec(cbas_spec)
         results = list()
         num_of_external_links = link_spec.get("no_of_kafka_links", 0)
+        vendors = link_spec.get("vendors", [])
+        if not vendors:
+            vendors = ["confluent", "aws_msk"]
 
-        # This is to store index value of the last chosen external db
-        # connection specs of a particular type of db. This will ensure all
-        # the specs for a particular db is used for creating kafka links in
-        # case where we are creating multiple links.
-        chosen_db_spec_index = {}
         for i in range(0, num_of_external_links):
             if link_spec.get("name_key", "random").lower() == "random":
                 name = self.generate_name(name_cardinality=1)
             else:
                 name = link_spec.get("name_key") + "_{0}".format(str(i))
 
-            database = None
-            while not database:
-                database = random.choice(self.databases.values())
-                if link_spec.get("include_databases",
-                                 []) and CBASHelper.unformat_name(
-                    database.name) not in link_spec.get(
-                    "include_databases"):
-                    database = None
-                if link_spec.get("exclude_databases",
-                                 []) and CBASHelper.unformat_name(
-                    database.name) in link_spec.get(
-                    "exclude_databases"):
-                    database = None
+            vendor = vendors[i % len(vendors)]
+            kafka_cluster_details = link_spec.get("kafka_cluster_details")[
+                vendor]
+            kafka_cluster_detail = kafka_cluster_details[
+                i % len(kafka_cluster_details)]
 
-            dataverse = None
-            while not dataverse:
-                dataverse = random.choice(self.get_all_dataverse_obj(
-                    database.name))
-
-                if link_spec.get("include_dataverses",
-                                 []) and CBASHelper.unformat_name(
-                    dataverse.name) not in link_spec.get(
-                    "include_dataverses"):
-                    dataverse = None
-                if link_spec.get("exclude_dataverses",
-                                 []) and CBASHelper.unformat_name(
-                    dataverse.name) in link_spec.get(
-                    "exclude_dataverses"):
-                    dataverse = None
-
-            if len(link_spec.get("database_type")) > 0:
-                db_type = link_spec["database_type"][i % len(link_spec["database_type"])]
+            schema_registry_details = link_spec.get("schema_registry_details")[
+                vendor]
+            if schema_registry_details:
+                schema_registry_detail = schema_registry_details[
+                    i % len(schema_registry_details)]
             else:
-                db_type = random.choice(["mongo", "dynamo", "rds"])
-
-            # This logic will ensure all the external_database_details for a
-            # particular database_type are picked up in round-robin fashion.
-            index = i % len(link_spec["external_database_details"][db_type])
-
-            if db_type not in chosen_db_spec_index:
-                # if db_type is not present in chosen_db_spec_index add it with
-                # current index value.
-                chosen_db_spec_index[db_type] = index
-            elif chosen_db_spec_index[db_type] == index:
-                # if db_type is present and equal to the last index then
-                # increase index by 1, now if index > the length of list of
-                # external db details then reassign index to 0
-                index += 1
-                if index > len(link_spec["external_database_details"][
-                                   db_type]):
-                    index = 0
-                chosen_db_spec_index[db_type] = index
-            else:
-                chosen_db_spec_index[db_type] = index
-
-            external_db_details = link_spec["external_database_details"][
-                db_type][chosen_db_spec_index[db_type]]
+                schema_registry_detail = None
 
             link = Kafka_Link(
-                name=name, dataverse_name=dataverse.name,
-                database_name=dataverse.database_name,
-                db_type=db_type, external_database_details=external_db_details)
+                name=name, kafka_type=vendor,
+                kafka_cluster_details=kafka_cluster_detail,
+                schema_registry_details=schema_registry_detail)
 
             if not self.create_kafka_link(
-                    cluster, name, external_db_details,
-                    dataverse.name, dataverse.database_name,
+                    cluster, name, kafka_cluster_detail,
+                    schema_registry_detail,
                     timeout=cbas_spec.get("api_timeout", 300),
                     analytics_timeout=cbas_spec.get("cbas_timeout", 300)):
                 results.append(False)
             else:
-                dataverse.kafka_links[link.name] = link
+                self.kafka_links[link.name] = link
                 results.append(True)
         return all(results)
 
     def create_kafka_link_obj(
-            self, cluster, dataverse=None, database=None, link_cardinality=1,
-            db_type="", external_db_details={}, no_of_objs=1,
-            name_length=30, fixed_length=False):
+            self, vendors, kafka_cluster_details,
+            schema_registry_details={}, no_of_objs=1, name_length=30,
+            fixed_length=False):
         """
         Generates Kafka Link objects.
+        vendors <list> List of kafka vendors. Accepted values are confluent
+        and aws_msk
+        kafka_cluster_details <dict> Dict of List of kakfa cluster detail objects
+        schema_registry_details <dict> Dict of List of schema registry detail objects
         """
         links = list()
-        while len(links) < no_of_objs:
-            if link_cardinality == 3:
-                if not database:
-                    database = CBASHelper.format_name(self.generate_name())
-                    if not self.create_database(
-                            cluster, database,
-                            if_not_exists=True):
-                        raise Exception("Error while creating database {"
-                                        "}".format(database))
-                else:
-                    database = CBASHelper.format_name(database)
-                link_cardinality -= 1
-            if link_cardinality == 2:
-                if not database:
-                    database = "Default"
-                if not dataverse:
-                    dataverse_name = CBASHelper.format_name(self.generate_name())
-                    if not self.create_dataverse(
-                            cluster, dataverse_name,
-                            database, if_not_exists=True):
-                        raise Exception("Error while creating dataverse")
-                    dataverse = self.get_dataverse_obj(dataverse_name, database)
-            else:
-                dataverse = self.get_dataverse_obj("Default")
+        for i in range(0, no_of_objs):
+            vendor = vendors[i % len(vendors)]
+            kafka_cluster_detail = kafka_cluster_details[vendor][
+                i % len(kafka_cluster_details[vendor])]
+            schema_registry_detail = schema_registry_details[vendor][
+                i % len(schema_registry_details[vendor])]
 
             link = Kafka_Link(
                 name=self.generate_name(
                     name_cardinality=1, max_length=name_length,
-                    fixed_length=fixed_length), dataverse_name=dataverse.name,
-                database_name=dataverse.database_name, db_type=db_type,
-                external_database_details=external_db_details)
+                    fixed_length=fixed_length),
+                kafka_type= vendor, kafka_cluster_details=kafka_cluster_detail,
+                schema_registry_details=schema_registry_detail)
             links.append(link)
         return links
 
@@ -2389,7 +2062,8 @@ class Dataset_Util(KafkaLink_Util):
         validated.
         """
         self.log.debug("Validating dataset entry in Metadata")
-        cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE DatasetName="{0}"'.format(
+        cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE '\
+              'DatasetName="{0}"'.format(
             CBASHelper.unformat_name(dataset_name))
         if dataverse_name:
             cmd += ' and DataverseName = "{0}"'.format(
@@ -2857,10 +2531,9 @@ class Remote_Dataset_Util(Dataset_Util):
 
     def create_remote_dataset_obj(
             self, cluster, bucket, scope, collection, link=None,
-            bucket_util=None, same_db_same_dv_for_link_and_dataset=False,
-            same_db_diff_dv_for_link_and_dataset=False,
-            storage_format=None, name_length=30, fixed_length=False,
-            no_of_objs=1, capella_as_source=False):
+            bucket_util=None, use_only_existing_db=False,
+            use_only_existing_dv=False, storage_format=None, name_length=30,
+            fixed_length=False, no_of_objs=1, capella_as_source=False):
         """
         Generates remote dataset objects.
         """
@@ -2872,44 +2545,39 @@ class Remote_Dataset_Util(Dataset_Util):
             if not link:
                 link = random.choice(self.get_all_link_objs("couchbase"))
 
-            if (same_db_same_dv_for_link_and_dataset or
-                    same_db_diff_dv_for_link_and_dataset):
-                database_obj = self.get_database_obj(link.database_name)
-                link_dataverse_obj = self.get_dataverse_obj(
-                    link.dataverse_name, link.database_name)
-                if same_db_diff_dv_for_link_and_dataset:
-                    all_dataverses_in_link_db = self.get_all_dataverse_obj()
-                    if len(all_dataverses_in_link_db) > 1:
-                        while True:
-                            dataverse = random.choice(all_dataverses_in_link_db)
-                            if link_dataverse_obj != dataverse:
-                                break
-                        dataverse_obj = dataverse
-                    else:
-                        dataverse_name = self.generate_name()
-                        if not self.create_dataverse(
-                                cluster, dataverse_name, database_obj.name):
-                            self.log.error("Error while creating dataverse {0} in "
-                                           "database {1}".format(
-                                dataverse_name, database_obj.name))
-                        database_obj = self.get_dataverse_obj(
-                            database_obj.name, self.format_name(dataverse_name))
-                else:
-                    dataverse_obj = link_dataverse_obj
+            if use_only_existing_db:
+                database_obj = random.choice(self.databases.values())
             else:
                 database_name = self.generate_name()
-                dataverse_name = self.generate_name()
                 if not self.create_database(cluster, database_name):
-                    self.log.error("Error while creating database {0}".format(
-                        dataverse_name, database_name))
+                    self.log.error(
+                        "Error while creating database {0}".format(
+                            database_name))
+                database_obj = self.get_database_obj(self.format_name(
+                    database_name))
+                dataverse_name = self.generate_name()
                 if not self.create_dataverse(
-                        cluster, dataverse_name, database_name):
-                    self.log.error("Error while creating dataverse {0} in "
-                                   "database {1}".format(
-                        dataverse_name, database_name))
-                database_obj = self.get_database_obj(self.format_name(database_name))
+                        cluster, dataverse_name, database_obj.name):
+                    self.log.error(
+                        "Error while creating dataverse {0} in "
+                        "database {1}".format(
+                            dataverse_name, database_obj.name))
+
+            if use_only_existing_dv:
+                dataverse_obj = random.choice(self.get_all_dataverse_obj(
+                    database_obj.name))
+            else:
+                dataverse_name = self.generate_name()
+                if not self.create_dataverse(
+                        cluster, dataverse_name, database_obj.name):
+                    self.log.error(
+                        "Error while creating dataverse {0} in "
+                        "database {1}".format(
+                            dataverse_name, database_obj.name))
                 dataverse_obj = self.get_dataverse_obj(
-                    self.format_name(dataverse_name), database_obj.name)
+                    self.format_name(dataverse_name),
+                    database_obj.name)
+
             return database_obj, dataverse_obj, link
 
         def data_source_capella(dataset_name, bucket, scope, collection, link):
@@ -2920,7 +2588,7 @@ class Remote_Dataset_Util(Dataset_Util):
             database, dataverse, link = get_database_dataverse_link(link)
 
             dataset_obj = Remote_Dataset(
-                name=dataset_name, link_name=link.full_name,
+                name=dataset_name, link_name=link.name,
                 dataverse_name=dataverse.name, database_name=database.name,
                 bucket=bucket, scope=scope, collection=collection,
                 storage_format=storage_format, capella_as_source=True)
@@ -2939,7 +2607,7 @@ class Remote_Dataset_Util(Dataset_Util):
             database, dataverse, link = get_database_dataverse_link(link)
 
             dataset_obj = Remote_Dataset(
-                name=dataset_name, link_name=link.full_name,
+                name=dataset_name, link_name=link.name,
                 dataverse_name=dataverse.name, database_name=database.name,
                 bucket=bucket, scope=scope, collection=collection,
                 num_of_items=collection.num_items,
@@ -3092,8 +2760,7 @@ class Remote_Dataset_Util(Dataset_Util):
                 storage_format = dataset_spec["storage_format"]
 
             dataset_obj = Remote_Dataset(
-                name=name, link_name=link.full_name,
-                dataverse_name=dataverse.name,
+                name=name, link_name=link.name, dataverse_name=dataverse.name,
                 database_name=dataverse.database_name, bucket=bucket,
                 scope=scope, collection=collection, num_of_items=num_of_items,
                 storage_format=storage_format)
@@ -3109,7 +2776,7 @@ class Remote_Dataset_Util(Dataset_Util):
             results.append(
                 self.create_remote_dataset(
                     cluster, dataset_obj.name,
-                    dataset_obj.full_kv_entity_name, link.full_name,
+                    dataset_obj.full_kv_entity_name, link.name,
                     dataverse_name, dataset_obj.database_name, False, False,
                     None, None, storage_format, analytics_collection,
                     False, None, None, None,
@@ -3273,8 +2940,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
 
     def create_external_dataset_obj(
             self, cluster, external_container_names, link_type="s3",
-            same_db_same_dv_for_link_and_dataset=False,
-            same_db_diff_dv_for_link_and_dataset=False,
+            use_only_existing_db=False, use_only_existing_dv=False,
             object_construction_def=None, paths_on_external_container=[],
             file_format="json", redact_warning=None, header=None,
             null_string=None, include=None, exclude=None, name_length=30,
@@ -3295,57 +2961,44 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 external_container]:
                 link = random.choice(all_links)
 
-            if (same_db_same_dv_for_link_and_dataset or
-                    same_db_diff_dv_for_link_and_dataset):
-                database_obj = self.get_database_obj(link.database_name)
-                link_dataverse_obj = self.get_dataverse_obj(
-                    link.dataverse_name, link.database_name)
-                if same_db_diff_dv_for_link_and_dataset:
-                    all_dataverses_in_link_db = self.get_all_dataverse_obj()
-                    if len(all_dataverses_in_link_db) > 1:
-                        while True:
-                            dataverse = random.choice(
-                                all_dataverses_in_link_db)
-                            if link_dataverse_obj != dataverse:
-                                break
-                        dataverse_obj = dataverse
-                    else:
-                        dataverse_name = self.generate_name()
-                        if not self.create_dataverse(
-                                cluster, dataverse_name,
-                                database_obj.name):
-                            self.log.error(
-                                "Error while creating dataverse {0} in "
-                                "database {1}".format(
-                                    dataverse_name, database_obj.name))
-                        database_obj = self.get_dataverse_obj(
-                            database_obj.name,
-                            self.format_name(dataverse_name))
-                else:
-                    dataverse_obj = link_dataverse_obj
+            if use_only_existing_db:
+                database_obj = random.choice(self.databases.values())
             else:
                 database_name = self.generate_name()
-                dataverse_name = self.generate_name()
                 if not self.create_database(cluster, database_name):
                     self.log.error(
                         "Error while creating database {0}".format(
-                            dataverse_name, database_name))
+                            database_name))
+                database_obj = self.get_database_obj(self.format_name(
+                    database_name))
+                dataverse_name = self.generate_name()
                 if not self.create_dataverse(
-                        cluster, dataverse_name, database_name):
-                    self.log.error("Error while creating dataverse {0} in "
-                                   "database {1}".format(
-                        dataverse_name, database_name))
-                database_obj = self.get_database_obj(
-                    self.format_name(database_name))
+                        cluster, dataverse_name, database_obj.name):
+                    self.log.error(
+                        "Error while creating dataverse {0} in "
+                        "database {1}".format(
+                            dataverse_name, database_obj.name))
+
+            if use_only_existing_dv:
+                dataverse_obj = self.get_all_dataverse_obj(database_obj.name)
+            else:
+                dataverse_name = self.generate_name()
+                if not self.create_dataverse(
+                        cluster, dataverse_name, database_obj.name):
+                    self.log.error(
+                        "Error while creating dataverse {0} in "
+                        "database {1}".format(
+                            dataverse_name, database_obj.name))
                 dataverse_obj = self.get_dataverse_obj(
-                    self.format_name(dataverse_name), database_obj.name)
+                    self.format_name(dataverse_name),
+                    database_obj.name)
 
             dataset = External_Dataset(
                 name=self.generate_name(
                     name_cardinality=1, max_length=name_length,
                     fixed_length=fixed_length),
                 dataverse_name=dataverse_obj.name,
-                database_name=database_obj.name, link_name=link.full_name,
+                database_name=database_obj.name, link_name=link.name,
                 dataset_properties={})
 
             dataset.dataset_properties["external_container_name"] = external_container
@@ -3457,7 +3110,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             dataset_obj = External_Dataset(
                 name=name, dataverse_name=dataverse.name,
                 database_name=dataverse.database_name,
-                link_name=link.full_name,
+                link_name=link.name,
                 dataset_properties=dataset_properties)
 
             results.append(
@@ -6787,7 +6440,7 @@ class CbasUtil(CBOUtil):
         settings page.
         """
         params = {"numReplicas": replica_num}
-        params = urllib.urlencode(params)
+        params = urllib.parse.urlencode(params)
         return self.get_replica_number_from_settings(
             node, "POST", params, username, password, validate_error_msg,
             expected_error, expected_error_code)
@@ -6863,9 +6516,9 @@ class CbasUtil(CBOUtil):
         url = "http://{0}:8095/analytics/connector?".format(
             cbas_node.ip)
         for dv_part in dataverse_name.split("."):
-            url += "dataverseName={0}&".format(urllib.quote_plus(
+            url += "dataverseName={0}&".format(urllib.parse.quote_plus(
                 CBASHelper.unformat_name(dv_part), safe=""))
-        url += "datasetName={0}".format(urllib.quote_plus(
+        url += "datasetName={0}".format(urllib.parse.quote_plus(
             CBASHelper.unformat_name(dataset_name), safe=""))
 
         if not username:

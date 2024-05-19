@@ -7,11 +7,6 @@ Created on 08-Dec-2020
 from CbasLib.CBASOperations import CBASHelper
 
 
-class Database(object):
-    """ Dummy class"""
-    pass
-
-
 class Dataverse(object):
     """
     Dataverse object
@@ -84,21 +79,6 @@ class Link(object):
 
     def __str__(self):
         return self.full_name
-
-
-class Remote_Link(object):
-    """ Dummy class"""
-    pass
-
-
-class External_Link(object):
-    """ Dummy class"""
-    pass
-
-
-class Kafka_Link(object):
-    """ Dummy class"""
-    pass
 
 
 class Dataset(object):
@@ -204,21 +184,6 @@ class CBAS_Collection(Dataset):
             name, dataverse_name, link_name, dataset_source,
             dataset_properties,
             bucket, scope, collection, enabled_from_KV, num_of_items)
-
-
-class Remote_Dataset(object):
-    """ Dummy class"""
-    pass
-
-
-class External_Dataset(object):
-    """ Dummy class"""
-    pass
-
-
-class Standalone_Dataset(object):
-    """ Dummy class"""
-    pass
 
 
 class Synonym(object):
@@ -329,8 +294,3 @@ class CBAS_UDF(object):
 
     def reset_full_name(self):
         self.full_name = CBASHelper.format_name(self.dataverse_name, self.name)
-
-
-class ExternalDB(object):
-    """ Dummy class"""
-    pass
