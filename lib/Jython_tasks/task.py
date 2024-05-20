@@ -31,12 +31,12 @@ from BucketLib.bucket import Bucket, Serverless
 from cb_constants import constants, CbServer, DocLoading
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity_on_prem import Dataverse, Dataset, Synonym, \
-    CBAS_Index, CBAS_UDF, Remote_Dataset
+    CBAS_Index, CBAS_UDF
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
 from collections_helper.collections_spec_constants import MetaConstants
-from common_lib import sleep, IDENTIFIER_TOKEN
+from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
     SubdocDocumentGenerator
