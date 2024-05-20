@@ -276,9 +276,6 @@ class SSOTest(BaseTestCase):
         self.log.info(s.to_string())
         response = s.to_base64()
 
-        # CODE 1 START
-        # Code throws connection abort error
-
         try:
             response = self.sso.send_saml_response(self.realm_callback, response,
                                                    saml_request_dict["RelayState"],
@@ -288,29 +285,18 @@ class SSOTest(BaseTestCase):
             pass
         else:
             self.log.info("Got Response: {0} {1}".format(response.status_code, response.content))
-            self.fail("Oversize payload should have been ignored by auth0")
+            if response.status_code // 100 == 3:
+                new_url = urlparse(response.headers['Location'])
+                new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
+                                                           new_url.query)
+                finish_flow = self.sso.continue_saml_response(new_url)
 
-        # CODE 1 END
+                self.log.info(finish_flow.headers)
+                self.log.info(finish_flow.content)
 
-        # CODE 2 START
-
-        # response = self.sso.send_saml_response(self.realm_callback, response,
-        #                                        saml_request_dict["RelayState"],
-        #                                        cookies=c)
-        #
-        # self.assertEqual(response.status_code // 100, 3)
-        #
-        # new_url = urlparse(response.headers['Location'])
-        # new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
-        #                                            new_url.query)
-        # finish_flow = self.sso.continue_saml_response(new_url)
-        #
-        # self.log.info(finish_flow.headers)
-        # self.log.info(finish_flow.content)
-        #
-        # self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
-
-        # CODE 2 END
+                self.assertNotEqual(finish_flow.status_code // 100, 2, finish_flow.content)
+            else:
+                self.fail("Oversize payload should have been ignored by auth0")
 
     def test_high_quantity_saml_to_auth0(self):
         no_of_iters = self.input.param("no_of_iters", 10000)
@@ -522,7 +508,7 @@ class SSOTest(BaseTestCase):
         s.subject("test-user1")
         s.attribute("uid", ["test-user1"])
         s.attribute("mail", ["test-user1@capella.test"])
-        s.attribute("group", [""+str(1)])
+        s.attribute("group", ["" + str(1)])
 
         ss = SAMLSignatory()
         dgst = ss.digest(s.to_string())
