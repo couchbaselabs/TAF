@@ -9,7 +9,7 @@ import json
 import time
 import get_jenkins_params as jenkins_api
 
-host = 'greenboard.sc.couchbase.com'
+host = '172.23.120.87'
 bucket_name = 'rerun_jobs'
 
 
