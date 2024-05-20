@@ -31,6 +31,7 @@ class ListOrganization(APIBase):
                     "preferences": {
                         "sessionDuration": None
                     },
+                    "subdomain": None,
                     "audit": {
                         "createdBy": None,
                         "createdAt": None,
