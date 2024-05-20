@@ -307,13 +307,22 @@ class UpdateProject(APIBase):
                                    'incorrect JSON type for field "{}".'
                         .format(key)
                     }
-                elif len(value) >= 128:
+                elif key == "description" and len(value) > 256:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
-                        "code": 422,
-                        "hint": "Please review your request and ensure "
-                                "that all required parameters are "
-                                "correctly provided.",
+                        "code": 2003,
+                        "hint": "Retry with a description with a maximum "
+                                "length 256 characters.",
+                        "httpStatusCode": 422,
+                        "message": "Unable to save project. The description "
+                                   "provided exceeds 256 characters."
+                    }
+                elif key == "name" and len(value) >= 128:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 2004,
+                        "hint": "Retry with a name with a maximum length 128 "
+                                "characters.",
                         "httpStatusCode": 422,
                         "message": "Unable to save project. A project name "
                                    "must be less than 128 characters."
