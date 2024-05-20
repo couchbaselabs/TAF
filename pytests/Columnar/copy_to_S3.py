@@ -14,7 +14,6 @@ from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils_columnar import External_Dataset, Standalone_Dataset, Remote_Dataset
-from goldfishAPI.GoldfishAPIs.DocloadingAPIs.DocloadingAPIs import DocloadingAPIs
 from itertools import combinations, product
 import requests
 from Queue import Queue
