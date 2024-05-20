@@ -66,7 +66,7 @@ jython_pip=/opt/jython/bin/pip
 
 # Setup GoLang in local dir
 go_version=1.21.0
-wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz
+wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz --quiet
 tar -xzf go${go_version}.linux-amd64.tar.gz
 rm -f https://golang.org/dl/go${go_version}.linux-amd64.tar.gz
 export PATH=`pwd`/go/bin:${PATH}
