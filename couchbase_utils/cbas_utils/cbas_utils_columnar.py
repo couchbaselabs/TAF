@@ -648,7 +648,7 @@ class RBAC_Util(BaseUtil):
         columnar_roles = ','.join([self.format_name(str(role)) for role in roles])
         database_users = ','.join([self.format_name(str(user)) for user in users])
 
-        grant_cmd = "GRANT " + columnar_roles + " TO " + database_users + ";"
+        grant_cmd = "GRANT ROLE " + columnar_roles + " TO " + database_users + ";"
 
         self.log.info("Running GRANT statement: {}".format(grant_cmd))
         status, metrics, errors, results, _ = (
