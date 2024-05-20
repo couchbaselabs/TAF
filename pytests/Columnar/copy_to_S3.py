@@ -31,8 +31,6 @@ class CopyToS3(ColumnarBaseTest):
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.doc_loader_url = self.input.param("doc_loader_url", None)
         self.doc_loader_port = self.input.param("doc_loader_port", None)
-        if self.doc_loader_url and self.doc_loader_port:
-            self.doc_loader = DocloadingAPIs(self.doc_loader_url, self.doc_loader_port)
 
         self.aws_region = "ap-south-1"
         self.aws_bucket_name = "columnar-functional-sanity-test-data"
