@@ -123,14 +123,6 @@ class CouchbaseRemoteCluster(object):
     def set_collections(self):
         pass
 
-    def read_file(self, file_path):
-        try:
-            with open(file_path, "r") as fh:
-                return fh.read()
-        except Exception as err:
-            self.log.error(str(err))
-            return None
-
     def create_link(self, columnar):
         rest = CBASHelper(columnar.master)
         params = {
@@ -143,9 +135,6 @@ class CouchbaseRemoteCluster(object):
             "encryption": "full",
             "certificate": self.remoteClusterCA
         }
-        # statement = 'CREATE LINK {} with {}'.format(self.link_name, params)
-        # print statement
-        # execute_statement_on_cbas(client, statement)
         pprint.pprint(params)
         result, status, content, errors = rest.analytics_link_operations(method="POST", params=params)
         if not result:
@@ -154,6 +143,7 @@ class CouchbaseRemoteCluster(object):
     def create_cbas_collections(self, columnar, remote_collections=None):
         i = 0
         client = columnar.SDKClients[0].cluster
+        self.cbas_collections = list()
         for b in self.remoteCluster.buckets:
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 if s == CbServer.system_scope:

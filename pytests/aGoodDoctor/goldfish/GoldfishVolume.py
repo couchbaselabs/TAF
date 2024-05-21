@@ -77,7 +77,7 @@ class Columnar(BaseTestCase, hostedOPD):
             "doc_size": 1024,
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
-            "cbasQPS": 1,
+            "cbasQPS": self.input.param("cbasQPS", 1),
             "cbas": [10, 10]
             }
         self.load_defn.append(self.default_workload)
@@ -230,79 +230,85 @@ class Columnar(BaseTestCase, hostedOPD):
         self.infra_setup()
         self.sleep(0)
         self.mutate = 0
-        self.workload_tasks = list()
-        self.ingestion_ths = list()
-        for key in self.data_sources.keys():
-            if key == "s3":
-                continue
-            if key == "mongo":
-                for dataSource in self.data_sources[key]:
-                    self.generate_docs(bucket=dataSource)
-                    self.workload_tasks.append(dataSource.perform_load(
-                        [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
-            if key == "remoteCouchbase":
-                for dataSource in self.data_sources[key]:
-                    for tenant in self.tenants:
-                        for columnar in tenant.columnar_instances:
-                            dataSource.create_cbas_collections(columnar, dataSource.loadDefn.get("cbas")[0])
-                            th = threading.Thread(
-                                target=self.drCBAS.wait_for_ingestion,
-                                args=(columnar, [dataSource], self.index_timeout))
-                            th.start()
-                            self.ingestion_ths.append(th)
-                self.live_kv_workload()
+        loop = self.input.param("loop", 2)
 
-        self.iterations = self.input.param("iterations", 1)
-        nodes = self.num_nodes_in_columnar_instance
-        for i in range(0, self.iterations):
-            self.PrintStep("Scaling OUT operation: %s" % str(i+1))
-            tasks = list()
-            nodes = nodes*2
-            for tenant in self.tenants:
-                for cluster in tenant.columnar_instances:
-                    servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
-                    tbl = TableView(self.log.info)
-                    tbl.set_headers(["Hostname", "Services"])
-                    for server in servers:
-                        tbl.add_row([server.get("hostname"), server.get("services")])
-                    tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.instance_id, cluster.cluster_id))
-                    _task = ScaleColumnarInstance(self.pod, tenant, cluster,
-                                                  nodes,
-                                                  timeout=self.wait_timeout)
-                    self.task_manager.add_new_task(_task)
-                    tasks.append(_task)
-            # self.wait_for_rebalances(tasks)
-            for task in tasks:
-                self.task_manager.get_task_result(task)
-                self.assertTrue(task.result, "Scaling OUT columnar failed!")
-            self.sleep(60)
-        for i in range(self.iterations-1, -1, -1):
-            self.PrintStep("Scaling IN operation: %s" % str(i))
-            tasks = list()
-            nodes = nodes/2
-            for tenant in self.tenants:
-                for cluster in tenant.columnar_instances:
-                    servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
-                    tbl = TableView(self.log.info)
-                    tbl.set_headers(["Hostname", "Services"])
-                    for server in servers:
-                        tbl.add_row([server.get("hostname"), server.get("services")])
-                    tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.instance_id, cluster.cluster_id))
-                    _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
-                    self.task_manager.add_new_task(_task)
-                    tasks.append(_task)
-            # self.wait_for_rebalances(tasks)
-            for task in tasks:
-                self.task_manager.get_task_result(task)
-                self.assertTrue(task.result, "Scaling IN columnar failed!")
-            self.sleep(600)
+        # start KV workload on couchbase remote clusters
+        self.live_kv_workload()
+
+        # start KV workload on Mongo clusters
+        for dataSource in self.data_sources["mongo"]:
+            self.generate_docs(bucket=dataSource)
+            self.workload_tasks.append(dataSource.perform_load(
+                [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
+
+        while loop > 0:
+            self.workload_tasks = list()
+            self.ingestion_ths = list()
+            loop -= 1
+
+            # Create new remote collections
+            for dataSource in self.data_sources["remoteCouchbase"]:
+                for tenant in self.tenants:
+                    for columnar in tenant.columnar_instances:
+                        dataSource.create_cbas_collections(columnar, dataSource.loadDefn.get("cbas")[0])
+                        th = threading.Thread(
+                            target=self.drCBAS.wait_for_ingestion,
+                            args=(columnar, [dataSource], self.index_timeout))
+                        th.start()
+                        self.ingestion_ths.append(th)
+    
+            iterations = self.input.param("iterations", 1)
+            nodes = self.num_nodes_in_columnar_instance
+            for i in range(0, iterations):
+                self.PrintStep("Scaling OUT operation: %s" % str(i+1))
+                tasks = list()
+                nodes = nodes*2
+                for tenant in self.tenants:
+                    for cluster in tenant.columnar_instances:
+                        servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
+                        tbl = TableView(self.log.info)
+                        tbl.set_headers(["Hostname", "Services"])
+                        for server in servers:
+                            tbl.add_row([server.get("hostname"), server.get("services")])
+                        tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.instance_id, cluster.cluster_id))
+                        _task = ScaleColumnarInstance(self.pod, tenant, cluster,
+                                                      nodes,
+                                                      timeout=self.wait_timeout)
+                        self.task_manager.add_new_task(_task)
+                        tasks.append(_task)
+                # self.wait_for_rebalances(tasks)
+                for task in tasks:
+                    self.task_manager.get_task_result(task)
+                    self.assertTrue(task.result, "Scaling OUT columnar failed!")
+                self.sleep(60)
+            for i in range(iterations-1, -1, -1):
+                self.PrintStep("Scaling IN operation: %s" % str(i))
+                tasks = list()
+                nodes = nodes/2
+                for tenant in self.tenants:
+                    for cluster in tenant.columnar_instances:
+                        servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
+                        tbl = TableView(self.log.info)
+                        tbl.set_headers(["Hostname", "Services"])
+                        for server in servers:
+                            tbl.add_row([server.get("hostname"), server.get("services")])
+                        tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.instance_id, cluster.cluster_id))
+                        _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
+                        self.task_manager.add_new_task(_task)
+                        tasks.append(_task)
+                # self.wait_for_rebalances(tasks)
+                for task in tasks:
+                    self.task_manager.get_task_result(task)
+                    self.assertTrue(task.result, "Scaling IN columnar failed!")
+                self.sleep(600)
+            for th in self.ingestion_ths:
+                th.join()
+
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
                 for ql in self.cbasQL:
                     ql.stop_query_load()
 
-        for th in self.ingestion_ths:
-            th.join()
         self.teardownMongo()
         self.sleep(10, "Wait for 10s until all the query workload stops.")
         self.assertTrue(self.query_result, "Please check the logs for query failures")
