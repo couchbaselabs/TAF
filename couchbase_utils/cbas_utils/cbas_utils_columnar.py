@@ -3555,14 +3555,16 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
     def load_doc_to_standalone_collection_sirius(self, collection_name, dataverse_name, database_name,
                                                  connection_string, start, end, sdk_batch_size=25, doc_size=1024,
-                                                 template="hotel", username=None, password=None):
+                                                 template="hotel", username=None, password=None,
+                                                 sirius_url="http://127.0.0.1:4000"):
         sdk_batch_size = 5000000//sdk_batch_size
         database_information = ColumnarLoader(username=username, password=password, connection_string=connection_string,
                                               bucket=database_name, scope=dataverse_name, collection=collection_name,
-                                              sdk_batch_size=sdk_batch_size)
-        operation_config = WorkloadOperationConfig(start=start, end=end, template=template,doc_size=doc_size)
+                                              sdk_batch_size=int(sdk_batch_size))
+        operation_config = WorkloadOperationConfig(start=int(start), end=int(end), template=template,doc_size=doc_size)
         task_insert = WorkLoadTask(task_manager=self.task, op_type=SiriusCodes.DocOps.BULK_CREATE,
-                                   database_information=database_information, operation_config=operation_config)
+                                   database_information=database_information, operation_config=operation_config,
+                                   default_sirius_base_url=sirius_url)
         task_manager = TaskManager(10)
         task_manager.add_new_task(task_insert)
         return task_manager.get_task_result(task_insert)
@@ -7151,12 +7153,12 @@ class BackupUtils(object):
     pass
 class ColumnarStats(object):
     def cpu_utalization_rate(self, cluster):
-        uri = cluster.srv + ":18091/pools/default"
+        uri = "https://"+ cluster.srv + ":18091/pools/default"
         username = cluster.servers[0].rest_username
         password = cluster.servers[0].rest_password
         utilization = 0
         resp = (requests.get(uri, auth=(username, password), verify=False)).json()
         for nodes in resp["nodes"]:
             utilization += nodes["systemStats"]["cpu_utilization_rate"]
-        cpu_node_average = utilization / resp["nodes"]
+        cpu_node_average = utilization / len(resp["nodes"])
         return cpu_node_average
