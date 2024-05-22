@@ -3149,6 +3149,10 @@ class RemoteMachineShellConnection(KeepRefs):
         else:
             self.extract_remote_info()
 
+        if "iptables -F" in command and self.info.distribution_type == "CBL-Mariner/Linux":
+            msg = "iptables -F is disabled on Mariner Linux"
+            return [msg], [msg]
+
         if self.info.type.lower() == Windows.NAME:
             self.use_sudo = False
 
