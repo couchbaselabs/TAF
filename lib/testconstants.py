@@ -32,7 +32,8 @@ SYSTEMD_SERVER = ["centos 8", "centos 7",
                   "alma 9",
                   "rocky 9",
                   "amazon linux release 2 (karoo)",
-                  "amazon linux release 2023 (amazon linux)"]
+                  "amazon linux release 2023 (amazon linux)",
+                  "cbl-mariner/linux 2"]
 
 VERSION_FILE = "VERSION.txt"
 MIN_COMPACTION_THRESHOLD = 2
