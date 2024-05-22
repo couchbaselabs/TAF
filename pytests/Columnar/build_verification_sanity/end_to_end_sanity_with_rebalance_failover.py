@@ -96,13 +96,7 @@ class E2EBuildVerification(BFVBase):
         if self.copy_to_s3_bucket_created:
             self.log.info("Deleting AWS S3 bucket for Copy to S3 - {}".format(
                 self.copy_to_s3_bucket))
-            if not perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    delete_bucket=True,
-                    bucket_name=self.copy_to_s3_bucket,
-                    region=self.aws_bucket_region):
+            if not self.s3_obj.delete_bucket(self.copy_to_s3_bucket):
                 self.log.error("AWS bucket failed to delete")
         super(E2EBuildVerification, self).tearDown()
 
@@ -535,12 +529,8 @@ class E2EBuildVerification(BFVBase):
                 self.copy_to_s3_bucket = "copy-to-s3-" + str(int(
                     time.time()))
                 self.log.info("Creating S3 bucket")
-                self.copy_to_s3_bucket_created = perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    create_bucket=True, bucket_name=self.copy_to_s3_bucket,
-                    region=self.aws_bucket_region)
+                self.copy_to_s3_bucket_created = self.s3_obj.create_bucket(
+                    self.copy_to_s3_bucket, self.aws_bucket_region)
                 break
             except Exception as e:
                 self.log.error(

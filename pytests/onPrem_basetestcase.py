@@ -29,7 +29,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from ssh_util.shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
 from docker_utils.DockerSDK import DockerClient
-from awsLib.s3_data_helper import perform_S3_operation
+from awsLib.S3 import S3
 
 
 class OnPremBaseTest(CouchbaseBaseTest):
@@ -425,17 +425,15 @@ class OnPremBaseTest(CouchbaseBaseTest):
         self.aws_bucket_created = False
         if (self.analytics_compute_storage_separation and
                 CbServer.cluster_profile == "columnar"):
+            self.s3_obj = S3(self.aws_access_key, self.aws_secret_key,
+                             region=self.aws_bucket_region)
             for i in range(5):
                 try:
                     self.aws_bucket_name = "columnar-build-sanity-" + str(int(
                         time.time()))
                     self.log.info("Creating S3 bucket")
-                    self.aws_bucket_created = perform_S3_operation(
-                        aws_access_key=self.aws_access_key,
-                        aws_secret_key=self.aws_secret_key,
-                        aws_session_token=self.aws_session_token,
-                        create_bucket=True, bucket_name=self.aws_bucket_name,
-                        region=self.aws_bucket_region)
+                    self.aws_bucket_created = self.s3_obj.create_bucket(
+                        self.aws_bucket_name, self.aws_bucket_region)
                     break
                 except Exception as e:
                     self.log.error(
@@ -616,13 +614,7 @@ class OnPremBaseTest(CouchbaseBaseTest):
                                                     cluster)
             self.log.info("Deleting AWS S3 bucket - {}".format(
                 self.aws_bucket_name))
-            if not perform_S3_operation(
-                    aws_access_key=self.aws_access_key,
-                    aws_secret_key=self.aws_secret_key,
-                    aws_session_token=self.aws_session_token,
-                    delete_bucket=True,
-                    bucket_name=self.aws_bucket_name,
-                    region=self.aws_bucket_region):
+            if not self.s3_obj.delete_bucket(self.aws_bucket_name):
                 self.log.error("AWS bucket failed to delete")
 
         result = self.check_coredump_exist(self.servers, force_collect=True)

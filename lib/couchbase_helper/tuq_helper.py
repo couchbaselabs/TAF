@@ -10,7 +10,7 @@ from platform_constants.os_constants import Linux, Windows
 from remote.remote_util import RemoteMachineShellConnection
 from n1ql_exceptions import N1qlException
 from bucket_utils.bucket_ready_functions import BucketUtils
-from random_query_template import WhereClause
+from couchbase_helper.random_query_template import WhereClause
 from collections_helper.collections_spec_constants import MetaCrudParams
 
 
