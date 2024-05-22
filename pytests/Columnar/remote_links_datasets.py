@@ -241,15 +241,13 @@ class RemoteLinksDatasets(ColumnarBaseTest):
         results = []
         for dataset in remote_datasets:
             jobs.put((
-                self.cbas_util.get_num_items_in_cbas_dataset,
+                self.cbas_util.wait_for_ingestion_complete,
                 {"cluster": self.cluster, "dataset_name": dataset.full_name,
-                 "timeout": 3600, "analytics_timeout": 3600}))
+                 "num_items": self.initial_doc_count, "timeout": 3600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
-        for result in results:
-            if result != self.initial_doc_count:
-                self.fail("Doc count mismatch. Expected - {0}, Actual - {"
-                          "1}".format(self.initial_doc_count, result))
+        if not all(results):
+            self.fail("Data ingestion did not complete for all datasets")
 
         for link in remote_links:
             if not self.cbas_util.disconnect_link(self.cluster, link.full_name):
@@ -270,15 +268,17 @@ class RemoteLinksDatasets(ColumnarBaseTest):
 
         capella_cluster_config = self.capella_cluster_config
         capella_cluster_config["specs"][0]["count"] += 2
+        capella_cluster_config["specs"][0]["services"] = [{"type": "kv"}]
+        capella_cluster_config["specs"][0]["compute"] = {"type": self.compute["data"]}
         rebalance_task = self.task.async_rebalance_capella(self.pod, self.tenant,
                                                            self.remote_cluster,
-                                                           capella_cluster_config)
+                                                           capella_cluster_config["specs"])
         self.task_manager.get_task_result(rebalance_task)
 
         capella_cluster_config["specs"][0]["count"] -= 2
         rebalance_task = self.task.async_rebalance_capella(self.pod, self.tenant,
                                                            self.remote_cluster,
-                                                           capella_cluster_config)
+                                                           capella_cluster_config["specs"])
         self.task_manager.get_task_result(rebalance_task)
 
         jobs = Queue()
@@ -327,10 +327,10 @@ class RemoteLinksDatasets(ColumnarBaseTest):
                           "1}".format(self.initial_doc_count, result))
 
         cluster_on_off = DoctorHostedOnOff(self.pod, self.tenant, self.remote_cluster)
-        cluster_off_result = cluster_on_off.turn_off_cluster()
+        cluster_off_result = cluster_on_off.turn_off_cluster(timeout=1200)
         self.assertTrue(cluster_off_result, "Failed to turn off cluster")
         self.sleep(60, "Wait before turning cluster on")
-        cluster_on_result = cluster_on_off.turn_on_cluster()
+        cluster_on_result = cluster_on_off.turn_on_cluster(timeout=1200)
         self.assertTrue(cluster_on_result, "Failed to turn on cluster")
         self.sleep(60, "Wait after cluster is turned on")
 
