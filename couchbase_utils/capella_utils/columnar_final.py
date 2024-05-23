@@ -11,6 +11,7 @@ import string
 import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
+import pprint
 
 
 class ColumnarInstance:
@@ -322,7 +323,8 @@ class ColumnarUtils:
     """
     def generate_instance_configuration(
             self, name=None, description=None, provider=None, region=None,
-            nodes=0, instance_types=None, support_package=None, availability_zone="single"):
+            nodes=0, instance_types=None, support_package=None, availability_zone="single",
+            token=None, image=None):
         if not name:
             name = "Columnar_{0}".format(random.randint(1, 100000))
 
@@ -362,6 +364,15 @@ class ColumnarUtils:
             "support_package": support_package,
             "availability_zone": availability_zone
         }
+        if image:
+            config.update(
+                {"overRide": {
+                    "token": token,
+                    "image": image
+                    }
+                }
+            )
+        pprint.pprint(config)
         return config
 
     def create_instance(self, pod, tenant, instance_config=None, timeout=7200):

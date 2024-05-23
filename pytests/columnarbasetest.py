@@ -30,6 +30,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             "num_nodes_in_columnar_instance", 2)
 
         self.columnar_utils = ColumnarUtils(self.log)
+        self.columnar_image = self.input.capella.get("columnar_image")
 
         def populate_columnar_instance_obj(
                 tenant, instance_id, instance_name=None, instance_config=None):
@@ -115,7 +116,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             else:
                 instance_config = (
                     self.columnar_utils.generate_instance_configuration(
-                        nodes=self.num_nodes_in_columnar_instance))
+                        nodes=self.num_nodes_in_columnar_instance,
+                        image=self.columnar_image,
+                        token=self.pod.override_key))
     
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))
