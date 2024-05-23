@@ -136,17 +136,17 @@ class CMEKTest(SecurityBase):
         # self.log.info the pretty JSON
         self.log.info(pretty_json)
 
-        self.log.info("GCP key id detail: ")
-        response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, gcp_key_id), headers=headers,
-                                verify=False)
-
-        data = json.loads(response.content.decode())
-
-        # Convert dictionary to JSON with indentation for pretty self.log.infoing
-        pretty_json = json.dumps(data, indent=4)
-
-        # self.log.info the pretty JSON
-        self.log.info(pretty_json)
+        # self.log.info("GCP key id detail: ")
+        # response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, gcp_key_id), headers=headers,
+        #                         verify=False)
+        #
+        # data = json.loads(response.content.decode())
+        #
+        # # Convert dictionary to JSON with indentation for pretty self.log.infoing
+        # pretty_json = json.dumps(data, indent=4)
+        #
+        # # self.log.info the pretty JSON
+        # self.log.info(pretty_json)
 
     # PUT UPDATE KEY
     def put_update_key(self, cmek_key_id, arn):
