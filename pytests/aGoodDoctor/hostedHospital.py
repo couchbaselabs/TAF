@@ -328,6 +328,7 @@ class Murphy(BaseTestCase, hostedOPD):
                     status = self.drFTS.wait_for_fts_index_online(cluster,
                                                                   self.index_timeout)
                     self.assertTrue(status, "FTS index build failed.")
+                    self.sleep(300, "Wait for memory to be released after FTS index build.")
                     for bucket in cluster.buckets:
                         if bucket.loadDefn.get("ftsQPS", 0) > 0:
                             ql = FTSQueryLoad(cluster, bucket, mockVector=self.mockVector,
