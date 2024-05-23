@@ -3,6 +3,8 @@ import urllib
 from random import choice, randint
 from threading import Thread
 
+from couchbase.exceptions import CouchbaseException, AmbiguousTimeoutException
+
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 
@@ -2366,24 +2368,30 @@ class basic_ops(ClusterSetup):
                 if "KV_TEMPORARY_FAILURE" in str(e):
                     self.fail("Key '{}' - KV_TEMPORARY_FAILURE".format(t_key))
             except CouchbaseException as e:
+                err_found = False
                 for exp_err in expected_errors:
-                    if exp_err not in str(e):
-                        self.fail("Key '{}' - Unexpected error message: {}"
-                                  .format(t_key, e))
+                    if exp_err in str(e):
+                        err_found = True
+                        break
+                self.assertTrue(err_found,
+                                f"Key '{t_key}' - Unexpected error: {e}")
 
         key_1 = "test_doc_1"
         key_2 = "test_doc_2"
         key_3 = "test_doc_3"
         bucket = self.cluster.buckets[0]
-        client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
+        if self.cluster.sdk_client_pool:
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(bucket)
+        else:
+            client = SDKClient(self.cluster, bucket)
 
         not_locked_msgs = ["Requested resource is not locked", "NOT_LOCKED"]
         self.log.info("Test for multiple doc-unlock")
         result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
         original_cas = result["cas"]
-        result = client.collection.getAndLock(
+        result = client.collection.get_and_lock(
             key_1, SDKOptions.get_duration(15, "seconds"))
-        locked_cas = result.cas()
+        locked_cas = result.cas
         self.assertNotEqual(original_cas, locked_cas, "CAS not updated")
         client.collection.unlock(key_1, locked_cas)
         validate_unlock_exception(key_1, locked_cas, not_locked_msgs)
@@ -2400,16 +2408,16 @@ class basic_ops(ClusterSetup):
                           key_3, {}, exp=2)["cas"]
         self.sleep(3, "Wait for doc_to_expire")
         validate_unlock_exception(key_3, cas,
-                                  [SDKException.DocumentNotFoundException])
+                                  SDKException.DocumentNotFoundException)
 
         # Test with evicted docs
         self.log.info("Testing evicted keys with lock expired")
         client.crud(DocLoading.Bucket.DocOps.UPDATE, key_1, {})
         client.crud(DocLoading.Bucket.DocOps.UPDATE, key_2, {})
-        doc_1_cas = client.collection.getAndLock(
-            key_1, SDKOptions.get_duration(15, "seconds")).cas()
-        doc_2_cas = client.collection.getAndLock(
-            key_2, SDKOptions.get_duration(15, "seconds")).cas()
+        doc_1_cas = client.collection.get_and_lock(
+            key_1, SDKOptions.get_duration(15, "seconds")).cas
+        doc_2_cas = client.collection.get_and_lock(
+            key_2, SDKOptions.get_duration(15, "seconds")).cas
         doc_3_cas = client.crud(DocLoading.Bucket.DocOps.UPDATE,
                                 key_3, {}, exp=10)["cas"]
         self.log.info("Loading more docs for eviction to get trigger")
@@ -2425,12 +2433,12 @@ class basic_ops(ClusterSetup):
         validate_unlock_exception(key_1, doc_1_cas, not_locked_msgs)
         validate_unlock_exception(key_2, doc_2_cas, not_locked_msgs)
         validate_unlock_exception(key_3, doc_3_cas,
-                                  [SDKException.DocumentNotFoundException])
+                                  SDKException.DocumentNotFoundException)
         # Invalid CAS test
         validate_unlock_exception(key_1, doc_1_cas+1, not_locked_msgs)
         validate_unlock_exception(key_2, doc_2_cas+1, not_locked_msgs)
         validate_unlock_exception(key_3, doc_3_cas+1,
-                                  [SDKException.DocumentNotFoundException])
+                                  SDKException.DocumentNotFoundException)
 
     def test_mutate_prepare_evict(self):
         """
