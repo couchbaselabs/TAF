@@ -1,3 +1,5 @@
+from couchbase import subdocument
+
 from BucketLib.bucket import Bucket
 from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
@@ -646,10 +648,11 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 durability = self.durability_level
             client.crud(DocLoading.Bucket.DocOps.CREATE, key, {},
                         durability=durability)
-            result = client.collection.lookupIn(
-                key, Collections.singletonList(LookupInSpec.get(
-                    LookupInMacro.REV_ID).xattr()))
-            rev_ids[key] = int(result.contentAs(0, String))
+            result = client.collection.lookup_in(
+                key,  [subdocument.get(subdocument.LookupInMacro.rev_id(),
+                       xattr=True)])
+            result = result.content_as
+            rev_ids[key] = int(result._parse_content_at_index(0, str))
         client.close()
 
         # Rev_id validation
