@@ -156,9 +156,10 @@ class WorkLoadTask(Task):
             self.test_log.debug("success_count : " + str(self.success_count))
             self.test_log.debug("fail_count : " + str(self.fail_count))
             self.test_log.debug("failed_items: " + "".join(self.fail.items()))
+            self.set_result(True)
         except Exception as e:
             self.log.critical(e)
-        self.set_result(True)
+            self.set_result(False)
         self.complete_task()
 
     def get_total_doc_ops(self):

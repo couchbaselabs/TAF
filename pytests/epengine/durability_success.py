@@ -267,7 +267,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                                    target_vbucket=target_vbuckets)
         gen_delete = doc_generator(self.key, 0, 50,
                                    target_vbucket=target_vbuckets)
-        gen_update = doc_generator(self.key, self.num_items/2, 50,
+        gen_update = doc_generator(self.key, int(self.num_items/2), 50,
                                    target_vbucket=target_vbuckets)
 
         # Perform CRUDs with induced error scenario is active
