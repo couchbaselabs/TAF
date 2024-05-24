@@ -23,7 +23,7 @@ class GoldfishUtils:
     @staticmethod
     def generate_cluster_configuration(
             name=None, description=None, provider=None, region=None,
-            nodes=0):
+            nodes=0, instance_types=None, support_package=None, availability_zone="single"):
         if not name:
             name = "Goldfish_{0}".format(random.randint(1, 100000))
 
@@ -39,12 +39,27 @@ class GoldfishUtils:
         if not nodes:
             nodes = 2
 
+        if not instance_types:
+            instance_types = {
+                "vcpus":"4vCPUs",
+                "memory":"16GB"
+            }
+
+        if not support_package:
+            support_package = {
+                "key":"developerPro",
+                "timezone":"PT"
+            }
+
         config = {
             "name": name,
             "description": description,
             "provider": provider,
             "region": region,
-            "nodes": nodes
+            "nodes": nodes,
+            "instance_types": instance_types,
+            "support_package": support_package,
+            "availability_zone": availability_zone
         }
         return config
 
@@ -57,7 +72,9 @@ class GoldfishUtils:
         resp = gf_api.create_columnar_instance(
             tenant.id, tenant.project_id, cluster_config["name"],
             cluster_config["description"], cluster_config["provider"],
-            cluster_config["region"], cluster_config["nodes"]
+            cluster_config["region"], cluster_config["nodes"],
+            cluster_config["instance_types"], cluster_config["support_package"],
+            cluster_config["availability_zone"]
         )
         instance_id = None
         if resp.status_code == 201:
@@ -84,7 +101,7 @@ class GoldfishUtils:
         resp = GoldfishUtils.get_cluster_info(pod, tenant, instance_id)
         srv = resp["data"]["config"]["endpoint"]
         cluster_id = resp["data"]["config"]["clusterId"]
-        
+
         start_time = time.time()
         while time.time() < start_time + timeout:
             resp = gf_api.get_specific_columnar_instance(

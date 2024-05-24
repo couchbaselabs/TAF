@@ -278,12 +278,15 @@ class CreateProject(APIBase):
                 self.generate_random_string(500, special_characters=False),
             ]
             for value in values:
+                actual_key = key
+                if key == "desc":
+                    actual_key = "description"
                 testcase = copy.deepcopy(expected_result)
                 testcase[key] = value
                 testcase["description"] = "Testing '{}' with value: {}".format(
                     key, str(value))
                 testcase["expected_status_code"] = 201
-                if key == "desc" and value == 0:
+                if actual_key == "description" and value == 0:
                     testcases.append(testcase)
                     continue
                 if not isinstance(value, str):
@@ -294,15 +297,24 @@ class CreateProject(APIBase):
                         "httpStatusCode": 400,
                         "message": 'Bad Request. Error: body contains '
                                    'incorrect JSON type for field "{}".'
-                        .format(key)
+                        .format(actual_key)
+                    }
+                elif actual_key == "description" and len(value) > 256:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 2003,
+                        "hint": "Retry with a description with a maximum "
+                                "length 256 characters.",
+                        "httpStatusCode": 422,
+                        "message": "Unable to save project. The description "
+                                   "provided exceeds 256 characters."
                     }
                 elif key == "name" and len(value) >= 128:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
-                        "code": 422,
-                        "hint": "Please review your request and ensure "
-                                "that all required parameters are "
-                                "correctly provided.",
+                        "code": 2004,
+                        "hint": "Retry with a name with a maximum length 128 "
+                                "characters.",
                         "httpStatusCode": 422,
                         "message": "Unable to save project. A project name "
                                    "must be less than 128 characters."

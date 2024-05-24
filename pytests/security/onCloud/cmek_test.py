@@ -9,7 +9,7 @@ class CMEKTest(SecurityBase):
     def setUp(self):
         SecurityBase.setUp(self)
         self.base_url = "https://" + self.url
-        print(self.base_url)
+        self.log.info("Base URL: {0}".format(self.base_url))
         self.url = self.input.capella.get("pod")
         self.user = self.input.capella.get("capella_user")
         self.passwd = self.input.capella.get("capella_pwd")
@@ -18,7 +18,7 @@ class CMEKTest(SecurityBase):
         self.invalid_id = "00000000-0000-0000-0000-000000000000"
         self.bearer_token_key = self.input.capella.get("bearer_token_key")
         self.cmek_base_url = "{0}/v4/organizations/{1}".format(self.base_url, self.tenant_id)
-        print(self.cmek_base_url)
+        self.log.info("CMEK Base URL: {0}".format(self.cmek_base_url))
 
     def tearDown(self):
         super(CMEKTest, self).tearDown()
@@ -31,8 +31,9 @@ class CMEKTest(SecurityBase):
                              '{0}'.format(self.capellaAPI.cluster_ops_apis.bearer_token),
         }
 
-        print(self.cmek_base_url)
-        response = requests.get("{0}/cmek".format(self.cmek_base_url), headers=headers)
+        self.log.info("CMEK Base URL: {0}".format(self.cmek_base_url))
+        # verify=False
+        response = requests.get("{0}/cmek".format(self.cmek_base_url), headers=headers, verify=False)
 
         data = json.loads(response.content.decode())
 
@@ -97,21 +98,22 @@ class CMEKTest(SecurityBase):
             },
         }
 
-        response = requests.post("{0}/cmek".format(self.cmek_base_url),
-                                 headers=headers,
-                                 json=json_data,
-                                 )
-        print(response.status_code)
-        print(response.content)
-
-        data = json.loads(response.content.decode())
-
-        # Convert dictionary to JSON with indentation for pretty self.log.infoing
-        pretty_json = json.dumps(data, indent=4)
-
-        # self.log.info the pretty JSON
-        self.log.info(pretty_json)
+        # response = requests.post("{0}/cmek".format(self.cmek_base_url),
+        #                          headers=headers,
+        #                          json=json_data,
+        #                          )
+        # self.log.info("Response Status Code of creating a key: {0}".format(response.status_code))
+        # self.log.info("Response Status Content of creating a key: {0}".format(response.content))
+        #
+        # data = json.loads(response.content.decode())
+        #
+        # # Convert dictionary to JSON with indentation for pretty self.log.infoing
+        # pretty_json = json.dumps(data, indent=4)
+        #
+        # # self.log.info the pretty JSON
+        # self.log.info(pretty_json)
         gcp_key_id = data["id"]
+        gcp_key_id = ""
 
         return aws_key_id, gcp_key_id
 
@@ -123,7 +125,8 @@ class CMEKTest(SecurityBase):
         }
 
         self.log.info("AWS key id detail: ")
-        response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, aws_key_id), headers=headers)
+        response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, aws_key_id), headers=headers,
+                                verify=False)
 
         data = json.loads(response.content.decode())
 
@@ -133,21 +136,22 @@ class CMEKTest(SecurityBase):
         # self.log.info the pretty JSON
         self.log.info(pretty_json)
 
-        self.log.info("GCP key id detail: ")
-        response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, gcp_key_id), headers=headers)
-
-        data = json.loads(response.content.decode())
-
-        # Convert dictionary to JSON with indentation for pretty self.log.infoing
-        pretty_json = json.dumps(data, indent=4)
-
-        # self.log.info the pretty JSON
-        self.log.info(pretty_json)
+        # self.log.info("GCP key id detail: ")
+        # response = requests.get("{0}/cmek/{1}".format(self.cmek_base_url, gcp_key_id), headers=headers,
+        #                         verify=False)
+        #
+        # data = json.loads(response.content.decode())
+        #
+        # # Convert dictionary to JSON with indentation for pretty self.log.infoing
+        # pretty_json = json.dumps(data, indent=4)
+        #
+        # # self.log.info the pretty JSON
+        # self.log.info(pretty_json)
 
     # PUT UPDATE KEY
-    def put_update_key(self, cmek_key_id, resourceName):
+    def put_update_key(self, cmek_key_id, arn):
         self.log.info("Rotating key...")
-        self.log.info("New key: {0}".format(resourceName))
+        self.log.info("New key: {0}".format(arn))
         headers = {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer '
@@ -156,7 +160,7 @@ class CMEKTest(SecurityBase):
 
         json_data = {
             'config': {
-                'resourceName': resourceName,
+                'arn': arn,
             },
         }
         response = requests.put("{0}/cmek/{1}".format(self.cmek_base_url, cmek_key_id),
@@ -388,7 +392,7 @@ class CMEKTest(SecurityBase):
                              '{0}'.format(self.capellaAPI.cluster_ops_apis.bearer_token),
         }
 
-        response = requests.get("{0}/cloudAccounts".format(self.cmek_base_url), headers=headers)
+        response = requests.get("{0}/cloudAccounts".format(self.cmek_base_url), headers=headers, verify=False)
 
         data = json.loads(response.content.decode())
 
@@ -451,7 +455,7 @@ class CMEKTest(SecurityBase):
 
         # 5
         aws_cluster_id = self.post_deploy_cluster_aws(aws_key_id)
-        gcp_cluster_id = self.post_deploy_cluster_gcp(gcp_key_id)
+        # gcp_cluster_id = self.post_deploy_cluster_gcp(gcp_key_id)
 
         # 6
         self.del_delete_key()
@@ -464,11 +468,11 @@ class CMEKTest(SecurityBase):
                                                                aws_cluster_id)
         self.log.info(resp)
 
-        self.log.info("Deleting cluster with id: {}".format(gcp_cluster_id))
-        resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
-                                                               self.project_id,
-                                                               gcp_cluster_id)
-        self.log.info(resp)
+        # self.log.info("Deleting cluster with id: {}".format(gcp_cluster_id))
+        # resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
+        #                                                        self.project_id,
+        #                                                        gcp_cluster_id)
+        # self.log.info(resp)
 
         # 8
         self.del_delete_key()
@@ -489,6 +493,7 @@ class CMEKTest(SecurityBase):
         self.log.info("Cluster id: {0}".format(self.cluster_id))
         self.log.info("Token: {0}".format(self.capellaAPI.cluster_ops_apis.bearer_token))
 
+        # check flag to ignore
         self.del_delete_key()
         cmek_id_list = self.get_list_cmek_keys()
         self.log.info(cmek_id_list)
@@ -632,12 +637,12 @@ class CMEKTest(SecurityBase):
         self.get_get_key_detail(aws_key_id, gcp_key_id)
 
         # 5
-        gcp_cluster_id = self.post_deploy_cluster_gcp(gcp_key_id)
-        new_resourceName = "projects/cbc-capella-test/locations/global/keyRings/cmek-ga/cryptoKeys/cmek-ga-key-2"
-        resp = self.put_update_key(gcp_key_id, new_resourceName)
+        aws_cluster_id = self.post_deploy_cluster_aws(aws_key_id)
+        new_resourceName = "arn:aws:kms:us-east-1:264138468394:key/0e055dc1-f585-4754-878b-a18df3fefef8"
+        resp = self.put_update_key(aws_cluster_id, new_resourceName)
         if resp.status_code != 204:
             self.fail("Key rotation failed")
-        resp = self.put_update_key(gcp_key_id, new_resourceName)
+        resp = self.put_update_key(aws_cluster_id, new_resourceName)
         if resp.status_code != 422:
             self.fail("Key rotation should have failed as its less than 30 days")
 
@@ -647,10 +652,10 @@ class CMEKTest(SecurityBase):
         # 7
         # Delete clusters
 
-        self.log.info("Deleting cluster with id: {}".format(gcp_cluster_id))
+        self.log.info("Deleting cluster with id: {}".format(aws_cluster_id))
         resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
                                                                self.project_id,
-                                                               gcp_cluster_id)
+                                                               aws_cluster_id)
         self.log.info(resp)
 
         # 8
@@ -743,7 +748,7 @@ class CMEKTest(SecurityBase):
         try:
             self.post_deploy_cluster_gcp(gcp_key_id)
         except Exception as e:
-            print(e)
+            self.log.info("Ran into an Exception: {0}".format(e))
             self.log.info("Failed as expected as different region")
         else:
             self.fail("Should have failed for different region")

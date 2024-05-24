@@ -34,23 +34,20 @@ import random
 import time
 from queue import Queue
 
-from Columnar.build_verification_sanity.columnar_bfv_base import BFVBase
+from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
 from couchbase_utils.security_utils.x509main import x509main
 from columnarbasetest import ColumnarBaseTest
 from cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
 
 # Imports for Sirius data loaders
 from sirius_client_framework.multiple_database_config import (
-    MongoLoader, CouchbaseLoader, CassandraLoader, MySQLLoader,
-    DynamoDBLoader, ColumnarLoader)
+    CouchbaseLoader, ColumnarLoader)
 from sirius_client_framework.operation_config import WorkloadOperationConfig
-from Jython_tasks.sirius_task import WorkLoadTask, DatabaseManagementTask, \
-    BlobLoadTask
+from Jython_tasks.sirius_task import WorkLoadTask
 from sirius_client_framework.sirius_constants import SiriusCodes
-from awsLib.s3_data_helper import perform_S3_operation
 
 
-class E2EBuildVerification(BFVBase):
+class E2EBuildVerification(ColumnarOnPremBase):
     """
     This test is meant to validate columnar server build before promoting
     it to AMI for Capella Columnar
@@ -254,19 +251,21 @@ class E2EBuildVerification(BFVBase):
                             self.task_manager.add_new_task(task_insert)
                             self.task_manager.get_task_result(task_insert)
                             if task_insert.fail_count == self.num_items:
-                                self.fail("Doc loading failed for {0}.{1}.{"
-                                          "2}".format(remote_bucket.name, scope_name,
-                                                      collection_name))
+                                self.fail("Doc loading failed for {0}.{1}.{2}"
+                                          .format(remote_bucket.name,
+                                                  scope_name,
+                                                  collection_name))
                             else:
                                 if task_insert.fail_count > 0:
                                     self.log.error(
-                                        "{0} Docs failed to load for {1}.{2}.{"
-                                        "3}".format(
-                                            task_insert.fail_count,
-                                            remote_bucket.name, scope_name,
-                                            collection_name))
-                                    collection.num_items = (self.num_items -
-                                                            task_insert.fail_count)
+                                        "{0} Docs failed to load "
+                                        "for {1}.{2}.{3}"
+                                        .format(task_insert.fail_count,
+                                                remote_bucket.name, scope_name,
+                                                collection_name))
+                                    collection.num_items = (
+                                            self.num_items -
+                                            task_insert.fail_count)
                                 else:
                                     collection.num_items = self.num_items
 
@@ -309,12 +308,11 @@ class E2EBuildVerification(BFVBase):
             else:
                 if task_insert.fail_count > 0:
                     self.log.error(
-                        "{0} Docs failed to load for {1}.{2}.{"
-                        "3}".format(
-                            task_insert.fail_count,
-                            standalone_collection.database_name,
-                            standalone_collection.dataverse_name,
-                            standalone_collection.name))
+                        "{0} Docs failed to load for {1}.{2}.{3}"
+                        .format(task_insert.fail_count,
+                                standalone_collection.database_name,
+                                standalone_collection.dataverse_name,
+                                standalone_collection.name))
                     standalone_collection.num_of_items = (
                             self.num_items - task_insert.fail_count)
                 else:
@@ -406,24 +404,24 @@ class E2EBuildVerification(BFVBase):
                         "external_link_name": standalone_coll.link_name,
                         "dataverse_name": standalone_coll.dataverse_name,
                         "database_name": standalone_coll.database_name,
-                         "files_to_include": standalone_coll.dataset_properties[
+                        "files_to_include": standalone_coll.dataset_properties[
                              "include"],
-                         "file_format": standalone_coll.dataset_properties[
+                        "file_format": standalone_coll.dataset_properties[
                              "file_format"],
-                         "type_parsing_info": standalone_coll.dataset_properties[
+                        "type_parsing_info": standalone_coll.dataset_properties[
                              "object_construction_def"],
-                         "path_on_aws_bucket": "",
-                         "header": standalone_coll.dataset_properties["header"],
-                         "null_string": standalone_coll.dataset_properties[
+                        "path_on_aws_bucket": "",
+                        "header": standalone_coll.dataset_properties["header"],
+                        "null_string": standalone_coll.dataset_properties[
                              "null_string"],
-                         "files_to_exclude": standalone_coll.dataset_properties[
+                        "files_to_exclude": standalone_coll.dataset_properties[
                              "exclude"],
-                         "parse_json_string": standalone_coll.dataset_properties[
+                        "parse_json_string": standalone_coll.dataset_properties[
                              "parse_json_string"],
-                         "convert_decimal_to_double":
+                        "convert_decimal_to_double":
                              standalone_coll.dataset_properties[
                                  "convert_decimal_to_double"],
-                         "timezone": standalone_coll.dataset_properties[
+                        "timezone": standalone_coll.dataset_properties[
                              "timezone"]
                     }))
 

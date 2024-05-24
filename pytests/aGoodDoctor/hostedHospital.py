@@ -319,16 +319,19 @@ class Murphy(BaseTestCase, hostedOPD):
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 if cluster.fts_nodes:
-                    self.drFTS.create_fts_indexes(cluster, dims=self.dim)
+                    self.drFTS.create_fts_indexes(cluster, dims=self.dim,
+                                                  _type=self.fts_index_type)
         for tenant in self.tenants:
             for cluster in tenant.clusters:
                 if cluster.fts_nodes:
                     status = self.drFTS.wait_for_fts_index_online(cluster,
                                                                   self.index_timeout)
                     self.assertTrue(status, "FTS index build failed.")
+                    self.sleep(300, "Wait for memory to be released after FTS index build.")
                     for bucket in cluster.buckets:
                         if bucket.loadDefn.get("ftsQPS", 0) > 0:
-                            ql = FTSQueryLoad(cluster, bucket)
+                            ql = FTSQueryLoad(cluster, bucket, mockVector=self.mockVector,
+                                              dim=self.dim, base64=self.base64)
                             ql.start_query_load()
                             self.ftsQL.append(ql)
 

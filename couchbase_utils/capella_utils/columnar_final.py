@@ -326,7 +326,7 @@ class ColumnarUtils:
     """
     def generate_instance_configuration(
             self, name=None, description=None, provider=None, region=None,
-            nodes=0):
+            nodes=0, instance_types=None, support_package=None, availability_zone="single"):
         if not name:
             name = "Columnar_{0}".format(random.randint(1, 100000))
 
@@ -344,12 +344,27 @@ class ColumnarUtils:
         if not nodes:
             nodes = random.choice([1, 2, 4, 8])
 
+        if not instance_types:
+            instance_types = {
+                "vcpus":"4vCPUs",
+                "memory":"16GB"
+            }
+
+        if not support_package:
+            support_package = {
+                "key":"developerPro",
+                "timezone":"PT"
+            }
+
         config = {
             "name": name,
             "description": description,
             "provider": provider,
             "region": region,
-            "nodes": nodes
+            "nodes": nodes,
+            "instance_types": instance_types,
+            "support_package": support_package,
+            "availability_zone": availability_zone
         }
         return config
 
@@ -362,7 +377,9 @@ class ColumnarUtils:
         resp = columnar_api.create_columnar_instance(
             tenant.id, tenant.project_id, instance_config["name"],
             instance_config["description"], instance_config["provider"],
-            instance_config["region"], instance_config["nodes"]
+            instance_config["region"], instance_config["nodes"],
+            instance_config["instance_types"], instance_config["support_package"],
+            instance_config["availability_zone"]
         )
         instance_id = None
         if resp.status_code == 201:

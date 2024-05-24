@@ -1,23 +1,20 @@
-'''
+"""
 Created on Nov 3, 2023
 
 @author: ritesh.agarwal
-'''
-# from mongo.loader import MongoSDKClient
+"""
+import pprint
+import random
+import string
 import time
 
 from CbasLib.CBASOperations import CBASHelper
 from CbasUtil import execute_statement_on_cbas
-import random
-import string
-from constants.cb_constants.CBServer import CbServer
+from py_constants.cb_constants.CBServer import CbServer
 from global_vars import logger
-import pprint
-from capella_utils.dedicated import CapellaUtils
 
 
 class MongoDB(object):
-
     def __init__(self, hostname, username, password, atlas=False):
         self.hostname = hostname
         self.username = username
@@ -37,9 +34,11 @@ class MongoDB(object):
         self.query_map = dict()
 
         if self.atlas:
-            self.connString = self.connString + "+srv";
+            self.connString = self.connString + "+srv"
             self.type = "onCloud"
-        self.connString = self.connString + "://" + self.username + ":" + self.password + "@" + self.hostname + ":27017/"
+        self.connString = self.connString + "://" \
+            + self.username + ":" + self.password \
+            + "@" + self.hostname + ":27017/"
 
     def set_mongo_database(self, name):
         self.database = name
@@ -97,7 +96,6 @@ class MongoDB(object):
 
 
 class CouchbaseRemoteCluster(object):
-
     def __init__(self, remoteCluster, bucket_util):
         self.log = logger.get("test")
         self.remoteCluster = remoteCluster
@@ -114,14 +112,6 @@ class CouchbaseRemoteCluster(object):
     def set_collections(self):
         pass
 
-    def read_file(self, file_path):
-        try:
-            with open(file_path, "r") as fh:
-                return fh.read()
-        except Exception as err:
-            self.log.error(str(err))
-            return None
-
     def create_link(self, columnar):
         rest = CBASHelper(columnar.master)
         params = {
@@ -134,9 +124,6 @@ class CouchbaseRemoteCluster(object):
             "encryption": "full",
             "certificate": self.remoteClusterCA
         }
-        # statement = 'CREATE LINK {} with {}'.format(self.link_name, params)
-        # print statement
-        # execute_statement_on_cbas(client, statement)
         pprint.pprint(params)
         result, status, content, errors = rest.analytics_link_operations(method="POST", params=params)
         if not result:
@@ -145,6 +132,7 @@ class CouchbaseRemoteCluster(object):
     def create_cbas_collections(self, columnar, remote_collections=None):
         i = 0
         client = columnar.SDKClients[0].cluster
+        self.cbas_collections = list()
         for b in self.remoteCluster.buckets:
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 if s == CbServer.system_scope:
@@ -153,9 +141,10 @@ class CouchbaseRemoteCluster(object):
                     if c == CbServer.default_collection:
                         continue
                     cbas_coll_name = self.link_name + "_volCollection_" + str(i)
+                    cbas_coll_name = cbas_coll_name + "_" + "".join([random.choice(string.ascii_lowercase) for _ in range(5)])
                     self.log.info("creating remote collections on couchbase: %s" % cbas_coll_name)
-                    statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'.format(
-                                            cbas_coll_name, b.name, s, c, self.link_name)
+                    statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'\
+                        .format(cbas_coll_name, b.name, s, c, self.link_name)
                     self.cbas_collections.append(cbas_coll_name)
                     execute_statement_on_cbas(client, statement)
                     i += 1
@@ -164,7 +153,6 @@ class CouchbaseRemoteCluster(object):
 
 
 class s3(object):
-
     def __init__(self, username=None, password=None):
         self.accessKeyId = username
         self.secretAccessKey = password
@@ -186,12 +174,15 @@ class s3(object):
     def create_link(self, cluster):
         self.log.info("creating link over s3")
         rest = CBASHelper(cluster.master)
-        params = {'dataverse': 'Default', "name": self.link_name, "type": "s3", 'accessKeyId': self.accessKeyId,
+        params = {'dataverse': 'Default', "name": self.link_name,
+                  "type": "s3", 'accessKeyId': self.accessKeyId,
                   'secretAccessKey': self.secretAccessKey,
                   "region": self.region}
-        result, status, content, errors = rest.analytics_link_operations(method="POST", params=params)
+        result, status, content, errors = rest.analytics_link_operations(
+            method="POST", params=params)
         if not result:
-            raise Exception("Status: %s, content: %s, Errors: %s".format(status, content, errors))
+            raise Exception("Status: %s, content: %s, Errors: %s"
+                            .format(status, content, errors))
 
     def create_cbas_collections(self, cluster, external_collections=None):
         client = cluster.SDKClients[0].cluster
@@ -208,7 +199,7 @@ class s3(object):
             execute_statement_on_cbas(client, statement)
         self.copy_from_s3_into_standalone(cluster, external_collections)
 
-    def copy_from_s3_into_standalone(self, cluster, standalone_collections=None):
+    def copy_from_s3_into_standalone(self, cluster, standalone_collections=1):
         client = cluster.SDKClients[0].cluster
         num_collections = standalone_collections or len(self.collections)
         self.log.info("creating standalone collections - datasource is s3")
@@ -219,15 +210,17 @@ class s3(object):
             i += 1
 
             self.log.info("Creating standalone collections: %s" % cbas_coll_name)
-            statement = 'CREATE COLLECTION `%s`  PRIMARY KEY (%s:%s)' % (
-                                    cbas_coll_name, "_id", "String")
+            statement = 'CREATE COLLECTION `{}`  PRIMARY KEY (_id: UUID) AUTOGENERATED'.format(cbas_coll_name)
             execute_statement_on_cbas(client, statement)
 
-            statement = 'COPY into %s FROM %s AT %s PATH "%s" WITH { "format": "json"};'.format(
-                cbas_coll_name, "columnartest", self.link_name, "hotel")
+            statement = 'COPY into {0} FROM {1} AT {2} PATH "{3}" '.format(
+                cbas_coll_name, "columnartest", self.link_name, "hotel") + 'WITH { "format": "json"};'
             self.log.info("COPYING into standalone collections: %s" % cbas_coll_name)
             self.log.info(statement)
-            execute_statement_on_cbas(client, statement)
+            try:
+                execute_statement_on_cbas(client, statement)
+            except AmbiguousTimeoutException:
+                pass
 
 
 class Loader():

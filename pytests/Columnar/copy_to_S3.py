@@ -16,7 +16,6 @@ from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils_columnar import External_Dataset, Standalone_Dataset, Remote_Dataset
-from goldfishAPI.GoldfishAPIs.DocloadingAPIs.DocloadingAPIs import DocloadingAPIs
 from itertools import combinations, product
 from BucketLib.bucket import Bucket
 
@@ -32,10 +31,8 @@ class CopyToS3(ColumnarBaseTest):
         self.aws_session_token = self.input.param("aws_session_token", "")
         self.doc_loader_url = self.input.param("doc_loader_url", None)
         self.doc_loader_port = self.input.param("doc_loader_port", None)
-        if self.doc_loader_url and self.doc_loader_port:
-            self.doc_loader = DocloadingAPIs(self.doc_loader_url, self.doc_loader_port)
 
-        self.aws_region = "ap-south-1"
+        self.aws_region = self.input.param("aws_region", "us-west-1")
         self.aws_bucket_name = "columnar-functional-sanity-test-data"
         self.sink_s3_bucket_name = None
         for i in range(5):
@@ -1178,7 +1175,7 @@ class CopyToS3(ColumnarBaseTest):
         results = []
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
-            query = "select * from {0} where country = {1}".format(datasets[i].full_name, "country")
+            query = "select * from {0} where country = \"{1}\"".format(datasets[i].full_name, "Dominican Republic")
             jobs.put((self.cbas_util.copy_to_s3,
                       {"cluster": self.cluster, "source_definition_query": query, "alias_identifier": "ally",
                        "destination_bucket": self.sink_s3_bucket_name,
@@ -1202,7 +1199,8 @@ class CopyToS3(ColumnarBaseTest):
         results = []
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
-            statement_dataset = "select count(*) from {0} where country = {1}".format(datasets[i].full_name, "country")
+            statement_dataset = "select count(*) from {0} where country = \"{1}\"".format(datasets[i].full_name,
+                                                                                      "Dominican Republic")
             dynamic_copy_result = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name,
                                                                                                  path)
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,

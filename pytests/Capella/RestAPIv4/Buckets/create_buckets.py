@@ -527,24 +527,26 @@ class CreateBucket(GetCluster):
                             "code": 6026,
                             "hint": "The replica count provided for the "
                                     "bucket is not valid. The minimum number "
-                                    "of replicas is 0. Please increase the "
+                                    "of replicas is 1. Please increase the "
                                     "number of replicas for the bucket.",
                             "httpStatusCode": 422,
                             "message": "The replica count provided for the "
                                        "buckets is not valid. The minimum "
-                                       "number of replicas is (0)."
+                                       "number of replicas is (1)."
                         }
                     elif value > 3:
                         testcase["expected_error"] = {
-                            "code": 6024,
-                            "hint": "The replica count provided for the "
-                                    "bucket is not valid. The maximum number "
-                                    "of replicas is 3. Please reduce the "
-                                    "number of replicas for the bucket.",
+                            "code": 6006,
+                            "hint": "The requested number of replicas exceeds "
+                                    "the maximum allowed replicas based on "
+                                    "the cluster configuration. Please reduce "
+                                    "the number of replicas for the bucket.",
                             "httpStatusCode": 422,
-                            "message": "The replica count provided for the "
-                                       "buckets is not valid. The maximum "
-                                       "number of replicas is (3)."
+                            "message": "Unable to process request for the "
+                                       "provided bucket. The requested "
+                                       "replica count is not supported "
+                                       "based on the cluster configuration. "
+                                       "Please reduce the replica count."
                         }
                 elif key == "name":
                     testcase["expected_status_code"] = 422

@@ -4,7 +4,7 @@ Created on 22-April-2024
 import json
 import time
 
-from Columnar.build_verification_sanity.columnar_bfv_base import BFVBase
+from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
 from couchbase_utils.security_utils.x509main import x509main
 from queue import Queue
 from membase.helper.cluster_helper import ClusterOperationHelper
@@ -14,7 +14,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from couchbase_utils.cbas_utils.cbas_utils_on_prem import CBASRebalanceUtil
 
 
-class CopyToKV(BFVBase):
+class CopyToKV(ColumnarOnPremBase):
     def setUp(self):
         super(CopyToKV, self).setUp()
 

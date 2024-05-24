@@ -14,15 +14,20 @@ class GetProject(APIBase):
         # Create project.
         # The project ID will be used to create API keys for roles that
         # require project ID
-        self.project_name = self.prefix + nomenclature
-        self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, self.project_name,
-            self.generate_random_string(0, self.prefix)).json()["id"]
+        res = self.capellaAPI.org_ops_apis.create_project(
+            self.organisation_id, self.prefix + nomenclature,
+            self.generate_random_string(0, self.prefix))
+        if res.status_code != 201:
+            self.log.error(res.content)
+            self.tearDown()
+        else:
+            self.log.info("Project Creation Successful")
+            self.project_id = res.json()["id"]
 
         self.expected_result = {
             "id": self.project_id,
             "description": None,
-            "name": self.project_name,
+            "name": self.prefix + nomenclature,
             "audit": {
                 "createdBy": None,
                 "createdAt": None,

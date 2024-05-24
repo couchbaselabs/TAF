@@ -6768,3 +6768,14 @@ class CBASRebalanceUtil(object):
 
 class BackupUtils(object):
     pass
+class ColumnarStats(object):
+    def cpu_utalization_rate(self, cluster):
+        uri = cluster.srv + ":18091/pools/default"
+        username = cluster.servers[0].rest_username
+        password = cluster.servers[0].rest_password
+        utilization = 0
+        resp = (requests.get(uri, auth=(username, password), verify=False)).json()
+        for nodes in resp["nodes"]:
+            utilization += nodes["systemStats"]["cpu_utilization_rate"]
+        cpu_node_average = utilization / resp["nodes"]
+        return cpu_node_average

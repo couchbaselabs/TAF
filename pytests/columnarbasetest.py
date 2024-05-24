@@ -10,7 +10,7 @@ from cluster_utils.cluster_ready_functions import ClusterUtils
 from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
 
 import global_vars
-from capella_utils.columnar_final import DBUser, ColumnarInstance, ColumnarUtils
+from capella_utils.columnar_final import ColumnarInstance, ColumnarUtils
 from threading import Thread
 from sdk_client3 import SDKClientPool
 from TestInput import TestInputSingleton, TestInputServer
@@ -20,7 +20,6 @@ from Jython_tasks.task import DeployColumnarInstanceNew
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
-
     def setUp(self):
         super(ColumnarBaseTest, self).setUp()
         self.log_setup_status(self.__class__.__name__, "started")
@@ -31,17 +30,17 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         def populate_columnar_instance_obj(tenant, instance_id,
                                            instance_name=None,
                                            instance_config=None):
-            resp = self.columnar_utils.get_instance_info(
+            info_resp = self.columnar_utils.get_instance_info(
                 pod=self.pod, tenant=tenant, project_id=tenant.project_id,
                 instance_id=instance_id)
 
-            if not resp:
+            if not info_resp:
                 raise Exception("Failed fetching connection string for "
                                 "following instance - {0}".format(instance_id))
 
-            srv = resp["data"]["config"]["endpoint"]
-            cluster_id = resp["data"]["config"]["clusterId"]
-            name = instance_name or str(resp["data"]["name"])
+            srv = info_resp["data"]["config"]["endpoint"]
+            cluster_id = info_resp["data"]["config"]["clusterId"]
+            name = instance_name or str(info_resp["data"]["name"])
             servers = CapellaUtils.get_nodes(self.pod, tenant, cluster_id)
 
             instance_obj = ColumnarInstance(
@@ -53,11 +52,11 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 instance_endpoint=srv,
                 db_users=list())
 
-            for server in servers:
+            for t_server in servers:
                 temp_server = TestInputServer()
-                temp_server.ip = server.get("hostname")
-                temp_server.hostname = server.get("hostname")
-                temp_server.services = server.get("services")
+                temp_server.ip = t_server.get("hostname")
+                temp_server.hostname = t_server.get("hostname")
+                temp_server.services = t_server.get("services")
                 temp_server.port = "18091"
                 temp_server.type = "columnar"
                 temp_server.memcached_port = "11207"
@@ -74,7 +73,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             CapellaUtils.create_db_user(
                 self.pod, tenant, cluster_id,
                 self.rest_username, self.rest_password)
-
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}"
                           .format(instance_id, cluster_id))
 
@@ -145,6 +143,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
+            self.cluster_util.print_cluster_stats(instance)
             resp = None
             count = 0
             while not resp and count < 5:
@@ -225,13 +224,13 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             self.start_threads(delete_instance_threads)
             if delete_instance_results:
                 raise Exception("Following Columnar Instance deletion APIs "
-                                "failed - {0}".format(delete_instance_results))
+                                f"failed - {delete_instance_results}")
 
             self.start_threads(wait_for_instance_delete_threads)
             if wait_for_instance_delete_results:
-                raise Exception("Failure while waiting for Columnar Instance  "
-                                "to be deleted - {0}".format(
-                    wait_for_instance_delete_results))
+                raise Exception(
+                    f"Failure while waiting for Columnar Instance "
+                    f"to be deleted - {wait_for_instance_delete_results}")
 
             # So that the capella cluster get's destroyed in
             # ProvisionedBaseTestCase teardown

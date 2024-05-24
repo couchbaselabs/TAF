@@ -782,7 +782,7 @@ class APIBase(CouchbaseBaseTest):
                 for i in range(len(actual_res[key])):
                     if key == "data" and actual_res[key][i]["id"] != id:
                         continue
-                    if len(expected_res) > 1:
+                    if len(expected_res[key]) > 1:
                         j = i
                     if not self.validate_api_response(
                             expected_res[key][j], actual_res[key][i], id):
@@ -806,12 +806,15 @@ class APIBase(CouchbaseBaseTest):
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
                     org, proj, name, cloudProvider, couchbaseServer,
                     serviceGroups, availability, support, header, **kwargs)
+            if result.status_code == 202:
+                return result
             if result.status_code != 422:
                 self.log.error(result.content)
                 return result
-            elif "Please ensure you are passing a unique CIDR block" in \
+            if "Please ensure you are passing a unique CIDR block" in \
                     result.json()["message"]:
                 cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
+                self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
             if time.time() - start_time >= 1800:
                 self.log.error("Couldn't find CIDR within half an hour.")
 
