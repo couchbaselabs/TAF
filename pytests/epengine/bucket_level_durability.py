@@ -588,7 +588,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 self.durability_helper.get_vb_and_error_type(bucket_durability)
 
             # Pick a random node to perform error sim and load
-            random_node = choice(self.vbs_in_node.keys())
+            random_node = choice(list(self.vbs_in_node.keys()))
             error_sim = CouchbaseError(
                 self.log,
                 self.vbs_in_node[random_node]["shell"],
@@ -719,8 +719,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
                 doc_loading_task = self.task.async_load_gen_docs(
                     self.cluster, bucket, gen_loader_1, "create", 0,
                     batch_size=crud_batch_size, process_concurrency=1,
-                    timeout_secs=10, print_ops_rate=False,
-                    load_using=self.load_docs_using)
+                    timeout_secs=10, print_ops_rate=False)
                 self.task_manager.get_task_result(doc_loading_task)
                 if doc_loading_task.fail:
                     self.log_failure("Failure while loading initial docs")
@@ -733,8 +732,7 @@ class BucketDurabilityTests(BucketDurabilityBase):
             doc_loader_task = self.task.async_load_gen_docs(
                 self.cluster, bucket, gen_loader_1, doc_ops[0], 0,
                 batch_size=crud_batch_size, process_concurrency=8,
-                timeout_secs=60, print_ops_rate=False, start_task=False,
-                load_using=self.load_docs_using)
+                timeout_secs=60, print_ops_rate=False, start_task=False)
 
             # SDK client for performing individual ops
             client = SDKClient(self.cluster, bucket)
@@ -781,9 +779,15 @@ class BucketDurabilityTests(BucketDurabilityBase):
                             .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
 
                     # Validate the returned error from the SDK
-                    if expected_exception not in str(fail["error"]):
+                    err_found = False
+                    for exception in expected_exception:
+                        if exception in str(fail["error"]):
+                            err_found = True
+                            break
+                    if not err_found:
                         self.log_failure("Invalid exception for {0}: {1}"
                                          .format(key, fail["error"]))
+
                     if retry_reason not in str(fail["error"]):
                         self.log_failure("Invalid retry reason for {0}: {1}"
                                          .format(key, fail["error"]))

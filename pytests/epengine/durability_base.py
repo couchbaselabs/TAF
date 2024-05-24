@@ -203,7 +203,7 @@ class BucketDurabilityBase(ClusterSetup):
         return verification_dict
 
     def get_vbucket_type_mapping(self, bucket_name):
-        for node in self.vbs_in_node.keys():
+        for node in list(self.vbs_in_node.keys()):
             cb_stat = Cbstats(node)
             self.vbs_in_node[node]["active"] = \
                 cb_stat.vbucket_list(bucket_name, "active")
@@ -265,7 +265,7 @@ class BucketDurabilityBase(ClusterSetup):
         # So only perform CRUD without error_sim
         if len(self.vbs_in_node.keys()) > 1:
             # Pick a random node to perform error sim and load
-            random_node = choice(self.vbs_in_node.keys())
+            random_node = choice(list(self.vbs_in_node.keys()))
 
             target_vb_type, simulate_error = \
                 self.durability_helper.get_vb_and_error_type(d_level_to_test)
