@@ -1,26 +1,17 @@
-import math
-import json
-import os.path
 import random
 import string
-import time
 from queue import Queue
 
-from cbas.cbas_base import CBASBaseTest
 from couchbase_utils.security_utils.x509main import x509main
-from CbasLib.CBASOperations import CBASHelper
-from cbas_utils.cbas_utils_columnar import CbasUtil as columnarCBASUtil
 from cbas_utils.cbas_utils_columnar import RBAC_Util as ColumnarRBACUtil
 from awsLib.s3_data_helper import perform_S3_operation
+from Columnar.onprem.columnar_onprem_base import ColumnarOnPremBase
 
 
-class ColumnarRBAC(CBASBaseTest):
+class ColumnarRBAC(ColumnarOnPremBase):
 
     def setUp(self):
         super(ColumnarRBAC, self).setUp()
-        self.use_sdk_for_cbas = self.input.param("use_sdk_for_cbas", False)
-        self.columnar_cbas_utils = columnarCBASUtil(
-            self.task, self.use_sdk_for_cbas)
         self.columnar_rbac_util = ColumnarRBACUtil(
             self.task, self.use_sdk_for_cbas)
         self.sdk_clients_per_user = self.input.param("sdk_clients_per_user", 1)
@@ -53,12 +44,7 @@ class ColumnarRBAC(CBASBaseTest):
         self.view_ddl_privileges = ["CREATE", "DROP"]
         self.view_select_privileges = ["SELECT"]
 
-        self.aws_region = "us-west-1"
-        self.s3_source_bucket = "columnar-sanity-test-data-mohsin"
         self.sink_s3_bucket_name = None
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
 
 
     def generate_random_password(self, length=12):
@@ -409,7 +395,7 @@ class ColumnarRBAC(CBASBaseTest):
         self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
         if self.input.param("num_of_external_coll", 0):
             external_dataset_properties = [{
-                "external_container_name": self.input.param("s3_source_bucket", None),
+                "external_container_name": self.s3_source_bucket,
                 "path_on_external_container": None,
                 "file_format": self.input.param("file_format", "json"),
                 "include": ["*.{0}".format(self.input.param("file_format", "json"))],

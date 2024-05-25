@@ -34,10 +34,6 @@ class CopyToKV(ColumnarOnPremBase):
             self.analytics_cluster.master.rest_password
         )
 
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
-
         self.no_of_docs = self.input.param("no_of_docs", 10000)
         self.doc_size = self.input.param("doc_size", 1024)
 
@@ -67,7 +63,6 @@ class CopyToKV(ColumnarOnPremBase):
             self.input.param("no_of_databases", 1)
         self.columnar_spec["remote_link"]["no_of_remote_links"] = \
             self.input.param("no_of_remote_links", 1)
-        self.aws_region = self.input.param("aws_region", "ap-south-1")
         self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
             "no_of_external_links", 0)
@@ -87,10 +82,9 @@ class CopyToKV(ColumnarOnPremBase):
         self.columnar_spec["external_dataset"]["num_of_external_datasets"] \
             = self.input.param("num_of_external_coll", 0)
         file_format = self.input.param("file_format", "json")
-        s3_source_bucket = self.input.param("s3_source_bucket", None)
         if self.input.param("num_of_external_coll", 0):
             external_dataset_properties = [{
-                "external_container_name": s3_source_bucket,
+                "external_container_name": self.s3_source_bucket,
                 "path_on_external_container": None,
                 "file_format": file_format,
                 "include": [f"*.{file_format}"],

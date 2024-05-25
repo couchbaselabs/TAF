@@ -326,7 +326,8 @@ class ColumnarUtils:
     """
     def generate_instance_configuration(
             self, name=None, description=None, provider=None, region=None,
-            nodes=0, instance_types=None, support_package=None, availability_zone="single"):
+            nodes=0, instance_types=None, support_package=None,
+            availability_zone="single"):
         if not name:
             name = "Columnar_{0}".format(random.randint(1, 100000))
 
@@ -342,7 +343,19 @@ class ColumnarUtils:
             region = random.choice(["us-east-2"])
 
         if not nodes:
-            nodes = random.choice([1, 2, 4, 8])
+            nodes = random.choice([1, 2, 4, 8, 16, 32])
+
+        if not instance_types:
+            instance_types = {
+                "vcpus": "4vCPUs",
+                "memory": "16GB"
+            }
+
+        if not support_package:
+            support_package = {
+                "key": "developerPro",
+                "timezone": "PT"
+            }
 
         if not instance_types:
             instance_types = {
@@ -378,7 +391,8 @@ class ColumnarUtils:
             tenant.id, tenant.project_id, instance_config["name"],
             instance_config["description"], instance_config["provider"],
             instance_config["region"], instance_config["nodes"],
-            instance_config["instance_types"], instance_config["support_package"],
+            instance_config["instance_types"],
+            instance_config["support_package"],
             instance_config["availability_zone"]
         )
         instance_id = None
@@ -388,23 +402,24 @@ class ColumnarUtils:
             self.log.critical(str(resp.content))
             raise Exception(str(resp.content))
         elif resp.status_code == 422:
-            if resp.content.find("not allowed based on your activation status") != -1:
+            if resp.content.find(
+                    "not allowed based on your activation status") != -1:
                 self.log.critical("Tenant is not activated yet...retrying")
             else:
                 self.log.critical(resp.content)
                 raise Exception("Cluster deployment failed.")
         else:
-            self.log.error("Unable to create goldfish cluster "
-                           f"{instance_config['name']} "
-                           f"in project {tenant.project_id}")
+            self.log.error("Unable to create goldfish cluster {0} in project "
+                           "{1}".format(instance_config["name"],
+                                        tenant.project_id))
             self.log.critical("Capella API returned " + str(
                 resp.status_code))
             self.log.critical(resp.json()["message"])
         time.sleep(5)
-        self.log.info(f"Cluster created with cluster ID: {instance_id}")
+        self.log.info("Cluster created with cluster ID: {}" \
+                      .format(instance_id))
 
         start_time = time.time()
-        state = None
         while time.time() < start_time + timeout:
             resp = columnar_api.get_specific_columnar_instance(
                 tenant.id, tenant.project_id, instance_id)
@@ -420,13 +435,13 @@ class ColumnarUtils:
             else:
                 break
         if state == "healthy":
-            self.log.info("Columnar instance is deployed successfully in %s s"
-                          % str(time.time() - start_time))
+            self.log.info(
+                "Columnar instance is deployed successfully in %s s" % str(
+                    time.time() - start_time))
         else:
-            self.log.error("Cluster {0} failed to deploy even after {1} "
-                           "seconds. Current cluster state - {2}"
-                           .format(instance_config["name"],
-                                   str(time.time() - start_time), state))
+            self.log.error("Cluster {0} failed to deploy even after {"
+                           "1} seconds. Current cluster state - {2}".format(
+                instance_config["name"], str(time.time() - start_time), state))
 
         return instance_id
 

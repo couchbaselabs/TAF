@@ -15,5 +15,8 @@ class ColumnarOnPremBase(CBASBaseTest):
         self.columnar_cbas_utils = columnarCBASUtil(
             self.task, self.use_sdk_for_cbas)
 
+        self.aws_region = self.input.param("aws_region", "ap-south-1")
+        self.s3_source_bucket = self.input.param("s3_source_bucket", None)
+
     def tearDown(self):
         super(ColumnarOnPremBase, self).tearDown()
