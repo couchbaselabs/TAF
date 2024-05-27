@@ -44,6 +44,17 @@ echo "########## ulimit values ###########"
 ulimit -a
 echo "####################################"
 
+echo "###### Checking Docker status ######"
+systemctl status docker > /dev/null
+docker_status=$?
+if [ $docker_status -ne 0 ]; then
+  echo "Starting docker service"
+  systemctl start docker
+else
+  echo "Docker up and running"
+fi
+echo "####################################"
+
 pip_path=/opt/jython/bin/pip
 jython_path=/opt/jython/bin/jython
 
