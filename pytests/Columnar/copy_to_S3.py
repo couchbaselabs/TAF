@@ -26,14 +26,9 @@ class CopyToS3(ColumnarBaseTest):
     def setUp(self):
         super(CopyToS3, self).setUp()
         self.cluster = self.tenant.columnar_instances[0]
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
         self.doc_loader_url = self.input.param("doc_loader_url", None)
         self.doc_loader_port = self.input.param("doc_loader_port", None)
 
-        self.aws_region = self.input.param("aws_region", "us-west-1")
-        self.aws_bucket_name = "columnar-functional-sanity-test-data"
         self.sink_s3_bucket_name = None
         for i in range(5):
             try:
@@ -414,7 +409,7 @@ class CopyToS3(ColumnarBaseTest):
         self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
         if self.input.param("num_of_external_coll", 0):
             external_dataset_properties = [{
-                "external_container_name": self.input.param("s3_source_bucket", None),
+                "external_container_name": self.s3_source_bucket,
                 "path_on_external_container": None,
                 "file_format": self.input.param("file_format", "json"),
                 "include": ["*.{0}".format(self.input.param("file_format", "json"))],
@@ -1156,12 +1151,11 @@ class CopyToS3(ColumnarBaseTest):
         self.base_infra_setup()
         path_on_external_container = "{country:string}"
         # create external dataset on the S3 bucket
-        s3_source_bucket = self.input.param("s3_source_bucket", None)
         no_of_dynamic_collection = self.input.param("no_of_dynamic_collection", 1)
         for i in range(no_of_dynamic_collection):
             dataset_obj = self.cbas_util.create_external_dataset_obj(self.cluster,
                                                                      external_container_names={
-                                                                         s3_source_bucket: self.aws_region},
+                                                                         self.s3_source_bucket: self.aws_region},
                                                                      paths_on_external_container=[
                                                                          path_on_external_container],
                                                                      file_format="json")[0]

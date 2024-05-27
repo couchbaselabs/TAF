@@ -16,7 +16,7 @@ from sdk_client3 import SDKClientPool
 from TestInput import TestInputSingleton, TestInputServer
 
 from capella_utils.dedicated import CapellaUtils
-from Jython_tasks.task import DeployColumnarInstanceNew
+from Jython_tasks.task import DeployColumnarInstance
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
@@ -114,7 +114,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))
 
-                deploy_task = DeployColumnarInstanceNew(
+                deploy_task = DeployColumnarInstance(
                     self.pod, self.tenant, instance_config["name"],
                     instance_config, timeout=self.wait_timeout)
                 self.task_manager.add_new_task(deploy_task)

@@ -96,7 +96,7 @@ class BaseUtil(object):
                 analytics_timeout=analytics_timeout,
                 time_out_unit=time_out_unit,
                 scan_consistency=scan_consistency, scan_wait=scan_wait)
-            if type(response) == str:
+            if type(response) in [str, bytes]:
                 response = json.loads(response)
             if "errors" in response:
                 errors = response["errors"]
@@ -1159,7 +1159,7 @@ class Dataverse_Util(Database_Util):
         """
         for i in range(0, no_of_dataverses):
             name = self.generate_name(name_cardinality=1)
-            database = random.choice(self.databases.values())
+            database = random.choice(list(self.databases.values()))
             dataverse = Dataverse(name)
             creation_method = random.choice(["dataverse", "analytics_scope",
                                              "scope"])
@@ -1198,7 +1198,7 @@ class Dataverse_Util(Database_Util):
         # create_from_spec methods and if the database does not have a
         # dataverse then it will throw index out of range exception.
         no_of_dataverses = dataverse_spec.get("no_of_dataverses", 1)
-        for db in self.databases.values():
+        for db in list(self.databases.values()):
             if db.name != "Default":
                 name = self.generate_name(name_cardinality=1)
                 if self.create_dataverse(
@@ -1217,7 +1217,7 @@ class Dataverse_Util(Database_Util):
         if no_of_dataverses > 1:
             for i in range(1, dataverse_spec.get("no_of_dataverses")):
                 while True:
-                    database = random.choice(self.databases.values())
+                    database = random.choice(list(self.databases.values()))
                     if (dataverse_spec.get(
                             "include_databases", []) and
                             self.unformat_name(database.name) not in
@@ -1286,7 +1286,7 @@ class Dataverse_Util(Database_Util):
         if database:
             databases = [self.get_database_obj(database)]
         else:
-            databases = self.databases.values()
+            databases = list(self.databases.values())
         for database in databases:
             dataverses.extend(list(database.dataverses.values()))
         return dataverses
@@ -2394,7 +2394,7 @@ class Dataset_Util(KafkaLink_Util):
         Returns list of all Dataset/CBAS_Collection objects across all the dataverses.
         """
         dataset_objs = list()
-        for database in self.databases.values():
+        for database in list(self.databases.values()):
             for dataverse in database.dataverses.values():
                 if not dataset_source:
                     dataset_objs.extend(dataverse.datasets.values())
@@ -2546,7 +2546,7 @@ class Remote_Dataset_Util(Dataset_Util):
                 link = random.choice(self.get_all_link_objs("couchbase"))
 
             if use_only_existing_db:
-                database_obj = random.choice(self.databases.values())
+                database_obj = random.choice(list(self.databases.values()))
             else:
                 database_name = self.generate_name()
                 if not self.create_database(cluster, database_name):
@@ -2688,7 +2688,7 @@ class Remote_Dataset_Util(Dataset_Util):
 
             database = None
             while not database:
-                database = random.choice(self.databases.values())
+                database = random.choice(list(self.databases.values()))
                 if dataset_spec.get(
                         "include_databases", []) and CBASHelper.unformat_name(
                     database.name) not in dataset_spec.get(
@@ -2962,7 +2962,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 link = random.choice(all_links)
 
             if use_only_existing_db:
-                database_obj = random.choice(self.databases.values())
+                database_obj = random.choice(list(self.databases.values()))
             else:
                 database_name = self.generate_name()
                 if not self.create_database(cluster, database_name):
@@ -3063,7 +3063,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
 
             database = None
             while not database:
-                database = random.choice(self.databases.values())
+                database = random.choice(list(self.databases.values()))
                 if dataset_spec.get(
                         "include_databases", []) and CBASHelper.unformat_name(
                     database.name) not in dataset_spec.get(
@@ -3964,7 +3964,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         for i in range(0, num_of_standalone_coll):
             database = None
             while not database:
-                database = random.choice(self.databases.values())
+                database = random.choice(list(self.databases.values()))
                 if dataset_spec.get(
                         "include_databases", []) and CBASHelper.unformat_name(
                     database.name) not in dataset_spec.get(
@@ -4081,7 +4081,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         link_source_db_pairs = []
         for i in range(0, num_of_ds_on_external_db):
             while not database:
-                database = random.choice(self.databases.values())
+                database = random.choice(list(self.databases.values()))
                 if dataset_spec.get(
                         "include_databases", []) and CBASHelper.unformat_name(
                     database.name) not in dataset_spec.get(
@@ -4437,7 +4437,7 @@ class Synonym_Util(StandAlone_Collection_Util):
         Returns list of all Synonym objects across all the dataverses.
         """
         synonym_objs = list()
-        for database in self.databases.values():
+        for database in list(self.databases.values()):
             for dataverse in database.dataverses.values():
                 synonym_objs.extend(dataverse.synonyms.values())
         return synonym_objs
@@ -4468,7 +4468,7 @@ class Synonym_Util(StandAlone_Collection_Util):
 
                 database = None
                 while not database:
-                    database = random.choice(self.databases.values())
+                    database = random.choice(list(self.databases.values()))
                     if synonym_spec.get("include_databases",
                                         []) and CBASHelper.unformat_name(
                         database.name) not in synonym_spec.get(
@@ -5160,7 +5160,7 @@ class UDFUtil(Index_Util):
         Returns list of all CBAS_UDF objects across all the dataverses.
         """
         udfs = list()
-        for database in self.databases.values():
+        for database in list(self.databases.values()):
             for dataverse in database.dataverses.values():
                 udfs.extend(dataverse.udfs.values())
 
@@ -6050,8 +6050,6 @@ class CbasUtil(CBOUtil):
             if not all(results):
                 return False, "Failed at connect_link"
 
-            if not self.wait_for_kafka_links(cluster):
-                return False, "Failed at connect_link"
             return True, ""
 
         if not self.create_database_from_spec(cluster, cbas_spec):
@@ -6127,7 +6125,8 @@ class CbasUtil(CBOUtil):
             self, cluster, cbas_spec={}, expected_index_drop_fail=True,
             expected_synonym_drop_fail=True, expected_dataset_drop_fail=True,
             expected_link_drop_fail=True, expected_dataverse_drop_fail=True,
-            delete_dataverse_object=True, delete_database_object=True, retry_link_disconnect_fail=True):
+            delete_dataverse_object=True, delete_database_object=True,
+            retry_link_disconnect_fail=True):
 
         results = list()
 
@@ -6181,8 +6180,8 @@ class CbasUtil(CBOUtil):
         self.log.info("Disconnecting all the Links")
         for link in self.get_all_link_objs():
             if link.link_type != "s3":
-                link_info = self.get_link_info(cluster, link.dataverse_name, link.database_name,
-                                               link.name, link.link_type)
+                link_info = self.get_link_info(
+                    cluster, link.name, link.link_type)
                 if ((type(link_info) is not None) and len(link_info) > 0 and
                         "linkState" in link_info[0] and link_info[0][
                             "linkState"] == "DISCONNECTED"):
@@ -6190,19 +6189,14 @@ class CbasUtil(CBOUtil):
                 else:
                     retry_func(
                         link, self.disconnect_link,
-                        {"cluster": cluster, "link_name": link.full_name,
+                        {"cluster": cluster, "link_name": link.name ,
                          "timeout": cbas_spec.get("api_timeout", 300),
                          "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
             if any(results):
                 if retry_link_disconnect_fail:
-                    if link.link_type == "kafka":
-                        self.log.info("Waiting for kafka link to get "
-                                      "connected before disconnecting")
-                        if not self.wait_for_kafka_links(cluster, "CONNECTED"):
-                            self.log.error("Kafka links did not get connected")
                     retry_func(
                         link, self.disconnect_link,
-                        {"cluster": cluster, "link_name": link.full_name,
+                        {"cluster": cluster, "link_name": link.name,
                          "timeout": cbas_spec.get("api_timeout", 300),
                          "analytics_timeout": cbas_spec.get("cbas_timeout",
                                                             300)})
@@ -6210,8 +6204,6 @@ class CbasUtil(CBOUtil):
                         return False
                 else:
                     print_failures("Disconnect Links", results)
-        if not self.wait_for_kafka_links(cluster, "DISCONNECTED"):
-            self.log.error("Kafka links did not get disconnected")
 
         self.log.info("Dropping all the Datasets")
         for dataset in self.get_all_dataset_objs():
@@ -6237,7 +6229,7 @@ class CbasUtil(CBOUtil):
         for link in self.get_all_link_objs():
             retry_func(
                 link, self.drop_link,
-                {"cluster": cluster, "link_name": link.full_name,
+                {"cluster": cluster, "link_name": link.name,
                  "if_exists": True, "timeout": cbas_spec.get("api_timeout", 300),
                  "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
 
@@ -6359,34 +6351,10 @@ class CbasUtil(CBOUtil):
 
             # Disconnect all Kafka links
             kafka_links = self.get_all_links_from_metadata(cluster, "kafka")
-            kafka_links_to_be_disconnected = list()
-            kafka_link_objs = list()
-
             for kafka_link in kafka_links:
-                link_name_parts = kafka_link.split(".")
-                link_obj = Kafka_Link(link_name_parts[2], link_name_parts[1],
-                                      link_name_parts[0])
-                result = self.get_link_info(cluster, link_name_parts[1],
-                                            link_name_parts[0], link_name_parts[2])
-                if result[0]["linkState"] in ["CONNECTING", "CONNECTED",
-                                              "CONFIG_UPDATED"]:
-                    kafka_links_to_be_disconnected.append(link_obj)
-                kafka_link_objs.append(link_obj)
-
-            # Wait for kafka link in CONNECTING and CONFIG_UPDATED state to
-            # be in connected state
-            if not self.wait_for_kafka_links(
-                    cluster, "CONNECTED", kafka_links_to_be_disconnected):
-                self.log.error("Some Kafka links were unable to connect")
-
-            for kafka_link in kafka_links_to_be_disconnected:
-                if not self.disconnect_link(cluster, kafka_link.full_name):
-                    self.log.error("Unable to disconnect Link {0}".format(
-                        kafka_link.full_name))
-
-            if not self.wait_for_kafka_links(
-                    cluster, "DISCONNECTED", kafka_link_objs):
-                self.log.error("Some Kafka links were unable to connect")
+                if not self.disconnect_link(cluster, kafka_link):
+                    self.log.error(
+                        "Unable to disconnect Link {0}".format(kafka_link))
 
             # Drop all datasets
             for ds in self.get_all_datasets_from_metadata(cluster):

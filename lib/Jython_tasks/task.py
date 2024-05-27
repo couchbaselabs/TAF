@@ -207,7 +207,7 @@ class TimerTask(Task):
         return result
 
 
-class DeployColumnarInstanceNew(Task):
+class DeployColumnarInstance(Task):
     def __init__(self, pod, tenant, name, config, timeout=1800):
         Task.__init__(self, "DeployingColumnarInstance-{}".format(name))
         self.name = name
@@ -218,9 +218,8 @@ class DeployColumnarInstanceNew(Task):
 
     def call(self):
         try:
-            instance_id = \
-                ColumnarUtils(self.log).create_instance(self.pod, self.tenant,
-                                              self.config)
+            instance_id = ColumnarUtils(self.log).create_instance(
+                self.pod, self.tenant, self.config)
             self.instance_id = instance_id
             self.result = True
         except Exception as e:

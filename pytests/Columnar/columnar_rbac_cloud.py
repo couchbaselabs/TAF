@@ -18,9 +18,6 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.remote_cluster = self.cluster
         if self.num_clusters > 0:
             self.remote_cluster = self.tenant.clusters[0]
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
         self.doc_loader_url = self.input.param("sirius_url", None)
         self.doc_loader_port = self.input.param("sirius_port", None)
         self.no_of_docs = self.input.param("no_of_docs", 1000)
@@ -54,9 +51,6 @@ class ColumnarRBAC(ColumnarBaseTest):
 
         self.columnar_spec = self.cbas_util.get_columnar_spec(
             self.columnar_spec_name)
-
-        self.aws_region = "us-west-1"
-        self.aws_bucket_name = "columnar-sanity-test-data-mohsin"
 
         self.create_different_organization_roles()
 
@@ -221,7 +215,7 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
         if self.input.param("num_of_external_coll", 0):
             external_dataset_properties = [{
-                "external_container_name": self.input.param("s3_source_bucket", None),
+                "external_container_name": self.s3_source_bucket,
                 "path_on_external_container": None,
                 "file_format": self.input.param("file_format", "json"),
                 "include": ["*.{0}".format(self.input.param("file_format", "json"))],

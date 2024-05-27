@@ -6,7 +6,6 @@ Created on 25-OCTOBER-2023
 
 from queue import Queue
 
-from CbasLib.CBASOperations import CBASHelper
 from Columnar.columnar_base import ColumnarBaseTest
 
 
@@ -17,15 +16,6 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
         # Since all the test cases are being run on 1 cluster only
         self.instance = self.tenant.columnar_instances[0]
-
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
-
-        # For sanity tests we are hard coding the bucket from which the data
-        # will be read. This will ensure stable and consistent test runs.
-        self.aws_region = "us-west-1"
-        self.aws_bucket_name = "columnar-functional-sanity-test-data"
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "sanity.copy_into_standalone_collection_from_s3"
@@ -83,7 +73,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["file_format"] = file_format
         dataset_properties["path_on_external_container"] = "level_1_folder_1"
         use_include = self.input.param("use_include", False)
@@ -207,7 +197,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["file_format"] = file_format
         use_include = self.input.param("use_include", False)
         if use_include:
@@ -325,7 +315,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["file_format"] = file_format
         use_include = self.input.param("use_include", False)
         if use_include:
@@ -399,7 +389,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["region"] = self.aws_region
 
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
@@ -456,7 +446,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["region"] = self.aws_region
         dataset_properties["file_format"] = "null"
 

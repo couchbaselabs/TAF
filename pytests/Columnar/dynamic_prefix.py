@@ -11,16 +11,8 @@ class DynamicPrefix(ColumnarBaseTest):
         # Since all the test cases are being run on 1 cluster only
         self.cluster = self.tenant.columnar_instances[0]
 
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
         self.skip_item_count_check = \
             self.input.param("skip_item_count_check", False)
-
-        # For sanity tests we are hard coding the bucket from which the data
-        # will be read. This will ensure stable and consistent test runs.
-        self.aws_region = "us-west-1"
-        self.aws_bucket_name = "columnar-functional-sanity-test-data"
 
         if not self.columnar_spec_name:
             self.columnar_spec_name = "sanity.S3_external_datasets"
@@ -77,7 +69,7 @@ class DynamicPrefix(ColumnarBaseTest):
 
                 self.cbas_util.create_external_dataset_obj(
                     self.cluster, external_container_names={
-                        self.aws_bucket_name: self.aws_region},
+                        self.s3_source_bucket: self.aws_region},
                     paths_on_external_container=testcase["path"])
 
                 for dataset_obj in self.cbas_util.get_all_dataset_objs():
@@ -135,7 +127,7 @@ class DynamicPrefix(ColumnarBaseTest):
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["external_dataset"][
             "external_dataset_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["file_format"] = file_format
         dataset_properties["include"] = "*.{0}".format(file_format)
         dataset_properties["region"] = self.aws_region
@@ -204,7 +196,7 @@ class DynamicPrefix(ColumnarBaseTest):
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["external_dataset"][
             "external_dataset_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["file_format"] = file_format
         dataset_properties["include"] = "*.{0}".format(file_format)
         dataset_properties["region"] = self.aws_region

@@ -17,15 +17,6 @@ class S3LinksDatasets(ColumnarBaseTest):
         # Since all the test cases are being run on 1 cluster only
         self.cluster = self.tenant.columnar_instances[0]
 
-        self.aws_access_key = self.input.param("aws_access_key")
-        self.aws_secret_key = self.input.param("aws_secret_key")
-        self.aws_session_token = self.input.param("aws_session_token", "")
-
-        # For sanity tests we are hard coding the bucket from which the data
-        # will be read. This will ensure stable and consistent test runs.
-        self.aws_region = "us-west-1"
-        self.aws_bucket_name = "columnar-functional-sanity-test-data"
-
         if not self.columnar_spec_name:
             self.columnar_spec_name = "sanity.S3_external_datasets"
 

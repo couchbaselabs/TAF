@@ -68,6 +68,19 @@ class ColumnarBaseTest(BaseTestCase):
         self.perform_gf_instance_cleanup = self.input.param(
             "perform_gf_instance_cleanup", True)
 
+        # AWS credentials and other info
+        self.aws_access_key = self.input.param("aws_access_key", "")
+        self.aws_secret_key = self.input.param("aws_secret_key", "")
+        self.aws_session_token = self.input.param("aws_session_token", "")
+        self.aws_region = self.input.param("aws_region", "us-west-1")
+
+        # For sanity tests we are hard coding the bucket from which the data
+        # will be read. This will ensure stable and consistent test runs.
+        # Override this variable in your test setup if you want to use a
+        # different bucket
+        self.s3_source_bucket = self.input.param(
+            "s3_source_bucket", "columnar-functional-sanity-test-data")
+
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 
