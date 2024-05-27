@@ -63,6 +63,7 @@ class RestConnection(object):
         query_port = constants.n1ql_port
         eventing_port = constants.eventing_port
         backup_port = constants.backup_port
+        cbas_port = constants.cbas_port
         if isinstance(serverInfo, dict):
             self.ip = serverInfo["ip"]
             self.username = serverInfo["username"]
@@ -76,6 +77,9 @@ class RestConnection(object):
             if "eventing_port" in serverInfo.keys():
                 if serverInfo['eventing_port']:
                     self.eventing_port = serverInfo["eventing_port"]
+            if "cbas_port" in serverInfo.keys():
+                if serverInfo['cbas_port']:
+                    self.cbas_port = serverInfo["cbas_port"]
             self.hostname = ''
             self.services = ''
             if "hostname" in serverInfo:
@@ -103,6 +107,9 @@ class RestConnection(object):
             if hasattr(serverInfo, 'eventing_port') \
                     and serverInfo.eventing_port:
                 self.eventing_port = serverInfo.eventing_port
+            if hasattr(serverInfo, 'cbas_port') \
+                    and serverInfo.cbas_port:
+                self.cbas_port = serverInfo.cbas_port
             if hasattr(serverInfo, 'hostname') and serverInfo.hostname \
                     and serverInfo.hostname.find(self.ip) == -1:
                 self.hostname = serverInfo.hostname
@@ -119,6 +126,7 @@ class RestConnection(object):
                 fts_port = CbServer.ssl_fts_port
                 eventing_port = CbServer.ssl_eventing_port
                 backup_port = CbServer.ssl_backup_port
+                cbas_port = CbServer.ssl_cbas_port
         self.input = TestInputSingleton.input
         if self.input is not None:
             """ from watson, services param order and format:
@@ -140,6 +148,7 @@ class RestConnection(object):
         self.ftsUrl = generic_url.format(url_host, fts_port)
         self.eventing_baseUrl = generic_url.format(url_host, eventing_port)
         self.backup_url = generic_url.format(url_host, backup_port)
+        self.cbas_url = generic_url.format(url_host, cbas_port)
         try:
             self.type = serverInfo.type
         except:

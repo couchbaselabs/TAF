@@ -31,3 +31,9 @@ class FtsHelper(RestConnection):
         status, content, _ = self._http_request(api, "POST",
                                                 timeout=60)
         return status, content
+
+    def get_all_fts_indexes(self):
+        api = self.ftsUrl + "api/index"
+        status, content, _ = self._http_request(api, "GET",
+                                                timeout=60)
+        return status, content

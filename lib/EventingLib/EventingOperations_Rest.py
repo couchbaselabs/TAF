@@ -40,7 +40,7 @@ class EventingHelper(RestConnection):
     '''
 
     def get_all_functions(self):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
+        authorization = base64.b64encode('{}:{}'.format(self.username, self.password).encode()).decode()
         url = "api/v1/functions"
         api = self.eventing_baseUrl + url
         headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
@@ -406,7 +406,7 @@ class EventingHelper(RestConnection):
         return status, content
 
     def create_function(self, name, body):
-        authorization = base64.encodestring('%s:%s' % (self.username, self.password))
+        authorization = base64.b64encode('{}:{}'.format(self.username, self.password).encode()).decode()
         url = "api/v1/functions/" + name
         api = self.eventing_baseUrl + url
         headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
@@ -415,6 +415,22 @@ class EventingHelper(RestConnection):
         if not status:
             raise Exception(content)
         return content
+
+    def deploy_eventing_function(self, name):
+        authorization = base64.b64encode('{}:{}'.format(self.username, self.password).encode()).decode()
+        url = "api/v1/functions/" + name + "/deploy"
+        api = self.eventing_baseUrl + url
+        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
+        status, content, _ = self._http_request(api, 'POST', headers=headers)
+        return status, content
+
+    def pause_eventing_function(self, name):
+        authorization = base64.b64encode('{}:{}'.format(self.username, self.password).encode()).decode()
+        url = "api/v1/functions/" + name + "/pause"
+        api = self.eventing_baseUrl + url
+        headers = {'Content-type': 'application/json', 'Authorization': 'Basic %s' % authorization}
+        status, content, _ = self._http_request(api, 'POST', headers=headers)
+        return status, content
 
     def update_function(self, name, body):
         authorization = base64.encodestring('%s:%s' % (self.username, self.password))

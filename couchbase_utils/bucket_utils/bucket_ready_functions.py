@@ -6515,6 +6515,8 @@ class BucketUtils(ScopeUtils):
                     replica_stat[field] = vb_details[str(vb)][field]
                 stat_dict[vb][replica].append(replica_stat)
             cb_stat.disconnect()
+            if "history_start_seqno" not in vb_details_fields:
+                vb_details_fields.append("history_start_seqno")
         return stat_dict
 
     def validate_history_start_seqno_stat(

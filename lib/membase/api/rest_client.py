@@ -747,6 +747,12 @@ class RestConnection(newRC):
                                 "failed with error {1}".format(self.ip, content))
             raise Exception("Setting encryption failed")
 
+    def set_alternate_addresses(self, alternate_ip):
+        api = self.baseUrl + 'node/controller/setupAlternateAddresses/external'
+        params = urllib.urlencode({'hostname': alternate_ip})
+        status, content, header = self._http_request(api, 'PUT', params)
+        return status
+
     def get_cluster_ceritificate(self):
         api = self.baseUrl + 'pools/default/certificate'
         status, content, _ = self._http_request(api, 'GET')
@@ -1523,10 +1529,9 @@ class RestConnection(newRC):
         if not status:
             self.test_log.error('Unable to logClientError')
 
-    def execute_statement_on_cbas(self, statement, mode, pretty=True,
+    def execute_statement_on_cbas(self, statement, mode=None, pretty=True,
                                   timeout=70, client_context_id=None):
-        self.cbas_base_url = "{0}://{1}:{2}".format(self.protocol, self.ip, self.cbas_port)
-        api = self.cbas_base_url + "analytics/service"
+        api = self.cbas_url + "analytics/service"
         headers = self._create_capi_headers()
 
         params = {'statement': statement, 'pretty': pretty, 'client_context_id': client_context_id}
