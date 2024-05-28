@@ -7,7 +7,7 @@ import copy
 import json
 
 from BucketLib.bucket import Bucket
-from cb_constants import CbServer
+from py_constants import CbServer
 from TestInput import TestInputSingleton, TestInputServer
 from bucket_utils.bucket_ready_functions import BucketUtils
 from capella_utils.dedicated import CapellaUtils

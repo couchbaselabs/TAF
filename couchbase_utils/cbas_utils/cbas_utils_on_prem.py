@@ -34,7 +34,7 @@ from collections_helper.collections_spec_constants import MetaCrudParams
 from Jython_tasks.task import Task, RunQueriesTask
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
-from cb_constants import CbServer
+from py_constants import CbServer
 
 
 class BaseUtil(object):

@@ -10,7 +10,7 @@ import socket
 import time
 
 from TestInput import TestInputSingleton
-from cb_constants import constants, CbServer, ClusterRun
+from py_constants import constants, CbServer, ClusterRun
 from common_lib import sleep
 from global_vars import logger
 from custom_exceptions.exception import ServerUnavailableException

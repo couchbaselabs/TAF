@@ -11,7 +11,7 @@ import TestInput
 from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
-from cb_constants import CbServer, constants, ClusterRun
+from py_constants import CbServer, constants, ClusterRun
 from cluster_run_manager import KeepRefs
 from common_lib import sleep
 from global_vars import logger

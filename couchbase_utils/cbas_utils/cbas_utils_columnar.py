@@ -835,16 +835,14 @@ class Database_Util(BaseUtil):
                 return True
 
     def get_all_databases_from_metadata(self, cluster):
-        databases_created = []
         database_query = ("select value db.DatabaseName from Metadata."
                           "`Database` as db where db.SystemDatabase = false;")
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
             cluster, database_query, mode="immediate", timeout=300,
             analytics_timeout=300)
-        if status.encode('utf-8') == 'success':
-            databases_created = list(
-                map(lambda dv: dv.encode('utf-8'), results))
-        return databases_created
+        if status == 'success':
+            return results
+        return []
 
 
 class Dataverse_Util(Database_Util):
@@ -1266,17 +1264,15 @@ class Dataverse_Util(Database_Util):
         return True
 
     def get_all_dataverses_from_metadata(self, cluster):
-        dataverses_created = []
         dataverse_query = "select value dv.DatabaseName || \".\" || " \
                           "dv.DataverseName from Metadata.`Dataverse` as dv " \
                           "where dv.DataverseName <> \"Metadata\";"
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
             cluster, dataverse_query, mode="immediate", timeout=300,
             analytics_timeout=300)
-        if status.encode('utf-8') == 'success':
-            dataverses_created = list(
-                map(lambda dv: dv.encode('utf-8'), results))
-        return dataverses_created
+        if status == 'success':
+            return results
+        return []
 
     def get_all_dataverse_obj(self, database=None):
         """
@@ -1406,7 +1402,7 @@ class Link_Util(Dataverse_Util):
                         self.unformat_name(link_prop["name"]), safe=""))
                     del link_prop["name"]
 
-                for key, value in link_prop.iteritems():
+                for key, value in link_prop.items():
                     if value:
                         if isinstance(value, str):
                             params[key] = str(value)
@@ -1523,7 +1519,7 @@ class Link_Util(Dataverse_Util):
                 self.unformat_name(link_prop["name"]), safe=""))
             del link_prop["name"]
 
-        for key, value in link_prop.iteritems():
+        for key, value in link_prop.items():
             if value:
                 if isinstance(value, str):
                     params[key] = str(value)
@@ -1659,7 +1655,6 @@ class Link_Util(Dataverse_Util):
         return entry_present
 
     def get_all_links_from_metadata(self, cluster, link_type=None):
-        links_created = []
         links_query = "select value lnk.Name from Metadata.`Link` as lnk " \
                       "where lnk.Name <> \"Local\""
         if link_type:
@@ -1667,10 +1662,9 @@ class Link_Util(Dataverse_Util):
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, links_query, mode="immediate",
                 timeout=300, analytics_timeout=300)
-        if status.encode('utf-8') == 'success':
-            links_created = list(
-                map(lambda lnk: lnk.encode('utf-8'), results))
-        return links_created
+        if status == 'success':
+            return results
+        return []
 
 
 class RemoteLink_Util(Link_Util):
@@ -2454,16 +2448,15 @@ class Dataset_Util(KafkaLink_Util):
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, datasets_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-        if status.encode('utf-8') == 'success':
-                if fields:
-                    results = CBASHelper.get_json(json_data=results)
-                    for result in results:
-                        ds = result['d']
-                        datasets_created.append(
-                            {field: ds[field] for field in fields})
-                else:
-                    datasets_created = list(
-                        map(lambda dv: dv.encode('utf-8'), results))
+        if status == 'success':
+            if fields:
+                results = CBASHelper.get_json(json_data=results)
+                for result in results:
+                    ds = result['d']
+                    datasets_created.append(
+                        {field: ds[field] for field in fields})
+            else:
+                return results
         return datasets_created
 
     def create_datasets_for_tpch(self, cluster):
@@ -3700,7 +3693,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
 
         if primary_key:
             pk = ""
-            for field_name, field_type in primary_key.iteritems():
+            for field_name, field_type in primary_key.items():
                 pk += "{0}: {1}, ".format(field_name, field_type)
             pk = pk.rstrip(pk[-1:-3:-1])
         else:
@@ -3934,7 +3927,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 name_cardinality=1, max_length=name_length,
                 fixed_length=fixed_length)
 
-            link_name = link.full_name if link else None
+            link_name = link.name if link else None
 
             dataset_obj = Standalone_Dataset(
                 dataset_name, datasource, primary_key, dataverse_obj.name,
@@ -4032,7 +4025,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             else:
                 data_source = None
 
-            link_name = link.full_name if link else None
+            link_name = link.name if link else None
             dataset_obj = Standalone_Dataset(
                 name, data_source, dataset_spec["primary_key"][i % len(dataset_spec["primary_key"])],
                 dataverse.name, database.name, link_name, None,
@@ -4179,7 +4172,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     external_collection_name = external_collection_name[1]
                 else:
                     return False
-                link_source_db_pair = (link.full_name, external_collection_name)
+                link_source_db_pair = (link.name, external_collection_name)
                 if link_source_db_pair not in link_source_db_pairs:
                     link_source_db_pairs.append(link_source_db_pair)
                     break
@@ -4190,7 +4183,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 name=name, data_source=datasource, primary_key=random.choice(
                     dataset_spec["primary_key"]),
                 dataverse_name=dataverse.name, database_name=database.name,
-                link_name=link.full_name,
+                link_name=link.name,
                 external_collection_name=external_collection_name,
                 storage_format=storage_format)
 
@@ -4199,7 +4192,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     ddl_format=creation_method, if_not_exists=False,
                     dataverse_name=dataverse.name, database_name=database.name,
                     primary_key=dataset_obj.primary_key,
-                    link_name=link.full_name,
+                    link_name=link.name,
                     external_collection=external_collection_name,
                     storage_format=storage_format):
                 self.log.error("Failed to create dataset {}".format(name))
@@ -4537,7 +4530,6 @@ class Synonym_Util(StandAlone_Collection_Util):
         return True
 
     def get_all_synonyms_from_metadata(self, cluster):
-        synonyms_created = []
         synonyms_query = "select value syn.DatabaseName || \".\" || " \
                          "syn.DataverseName || \".\" || syn.SynonymName from " \
                          "Metadata.`Synonym` as syn where syn.DataverseName " \
@@ -4545,14 +4537,9 @@ class Synonym_Util(StandAlone_Collection_Util):
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, synonyms_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-        if status.encode('utf-8') == 'success':
-                results = list(
-                    map(lambda result: result.encode('utf-8').split("."),
-                        results))
-                views_created = list(
-                    map(lambda result: CBASHelper.format_name(*result),
-                        results))
-        return synonyms_created
+        if status == 'success':
+            return results
+        return []
 
 
 class View_Util(Synonym_Util):
@@ -4944,7 +4931,6 @@ class Index_Util(View_Util):
         return all(results)
 
     def get_all_indexes_from_metadata(self, cluster):
-        indexes_created = []
         indexes_query = "select value idx.DatabaseName || \".\" || " \
                         "idx.DataverseName || \".\" || idx.DatasetName || " \
                         "\".\" || idx.IndexName from Metadata.`Index` as " \
@@ -4953,10 +4939,9 @@ class Index_Util(View_Util):
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
                 cluster, indexes_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-        if status.encode('utf-8') == 'success':
-                indexes_created = list(
-                    map(lambda idx: idx.encode('utf-8'), results))
-        return indexes_created
+        if status == 'success':
+            return results
+        return []
 
 
 class UDFUtil(Index_Util):
@@ -5284,7 +5269,7 @@ class UDFUtil(Index_Util):
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
             cluster, udf_query, mode="immediate",
             timeout=300, analytics_timeout=300)
-        if status.encode('utf-8') == 'success':
+        if status == 'success':
             for r in results:
                 udf_full_name = ".".join(
                     [r["DatabaseName"], r["DataverseName"], r["Name"]])
@@ -6007,13 +5992,15 @@ class CbasUtil(CBOUtil):
             self.log.info("Connecting all remote and kafka Links")
             for link in links:
                 if not self.connect_link(
-                        cluster, link.full_name,
+                        cluster, link.name,
                         timeout=cbas_spec.get("api_timeout", 300),
                         analytics_timeout=cbas_spec.get("cbas_timeout",
                                                         300)):
-                    self.log.error("Failed to connect link {0}".format(link.full_name))
+                    self.log.error("Failed to connect link {0}".format(
+                        link.name))
                 else:
-                    self.log.info("Successfully connected link {0}".format(link.full_name))
+                    self.log.info("Successfully connected link {0}".format(
+                        link.name))
 
     def create_cbas_infra_from_spec(
             self, cluster, cbas_spec, bucket_util,
@@ -6039,7 +6026,7 @@ class CbasUtil(CBOUtil):
                 self.log.info("Connecting all remote and kafka Links")
                 for link in links:
                     if not self.connect_link(
-                            cluster, link.full_name,
+                            cluster, link.name,
                             timeout=cbas_spec.get("api_timeout", 300),
                             analytics_timeout=cbas_spec.get("cbas_timeout",
                                                             300)):

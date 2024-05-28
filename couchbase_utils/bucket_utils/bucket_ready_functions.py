@@ -29,7 +29,8 @@ import global_vars
 import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
-from cb_constants import CbServer, DocLoading
+from py_constants import CbServer
+from py_constants.cb_constants import DocLoading
 from Jython_tasks.task import \
     BucketCreateTask, \
     BucketCreateFromSpecTask, \
