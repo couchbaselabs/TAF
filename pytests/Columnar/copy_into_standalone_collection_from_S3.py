@@ -95,7 +95,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
         if file_format in ["csv", "tsv"]:
             dataset_properties["object_construction_def"] = (
-                "id int,product_name string,product_link string,"
+                "id string,product_name string,product_link string,"
                 "product_features string,product_specs string,"
                 "product_image_links string,product_reviews string,"
                 "product_category string, price double,avg_rating double,"

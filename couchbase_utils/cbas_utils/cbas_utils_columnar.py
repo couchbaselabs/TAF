@@ -3573,7 +3573,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self, cluster, collection_name, dataverse_name, database_name,
             no_of_docs, document_size=1024, batch_size=500,
             max_concurrent_batches=10, country_type="string",
-            include_country=True):
+            include_country=True, analytics_timeout=1800, timeout=1800):
         """
         Load documents to a standalone collection.
         """
@@ -3596,7 +3596,9 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 retry_count = 0
                 while retry_count < 3:
                     result = self.insert_into_standalone_collection(cluster, collection_name,
-                                                                    batch_docs, dataverse_name, database_name)
+                                                                    batch_docs, dataverse_name, database_name,
+                                                                    analytics_timeout=analytics_timeout,
+                                                                    timeout=timeout)
                     if result:
                         break
                     elif retry_count == 2:
