@@ -6,56 +6,16 @@ Created on August 22, 2023
 
 import copy
 import time
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.Buckets.get_buckets import GetBucket
 
 
-class UpdateBucket(GetCluster):
+class UpdateBucket(GetBucket):
 
     def setUp(self, nomenclature="Buckets_Update"):
-        GetCluster.setUp(self, nomenclature)
+        GetBucket.setUp(self, nomenclature)
         self.priority = 1
 
-        # Initialise bucket params and create a bucket.
-        self.expected_result = {
-            "name": self.prefix + nomenclature,
-            "type": "couchbase",
-            "storageBackend": "couchstore",
-            "memoryAllocationInMb": 100,
-            "bucketConflictResolution": "seqno",
-            "durabilityLevel": "none",
-            "replicas": 2,
-            "flush": False,
-            "timeToLiveInSeconds": 0,
-            "evictionPolicy": "fullEviction",
-            "priority": 0,
-            "stats": {
-                "itemCount": None,
-                "opsPerSecond": None,
-                "diskUsedInMib": None,
-                "memoryUsedInMib": None
-            }
-        }
-        res = self.capellaAPI.cluster_ops_apis.create_bucket(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_result['name'], "couchbase", "couchstore", 100,
-            "seqno", "none", 1, False, 0)
-        if res.status_code != 201:
-            self.tearDown()
-            self.fail("!!!..Bucket creation failed...!!!")
-        self.bucket_id = res.json()['id']
-
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
-
-        # Delete the bucket that was created.
-        self.log.info("Deleting bucket: {}".format(self.bucket_id))
-        if self.capellaAPI.cluster_ops_apis.delete_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id).status_code != 204:
-            self.log.error("Error while deleting bucket.")
-        else:
-            self.log.info("Successfully deleted bucket.")
-
         super(UpdateBucket, self).tearDown()
 
     def test_api_path(self):
@@ -522,24 +482,26 @@ class UpdateBucket(GetCluster):
                             "code": 6026,
                             "hint": "The replica count provided for the "
                                     "bucket is not valid. The minimum number "
-                                    "of replicas is 0. Please increase the "
+                                    "of replicas is 1. Please increase the "
                                     "number of replicas for the bucket.",
                             "httpStatusCode": 422,
                             "message": "The replica count provided for the "
                                        "buckets is not valid. The minimum "
-                                       "number of replicas is (0)."
+                                       "number of replicas is (1)."
                         }
                     elif value > 3:
                         testcase["expected_error"] = {
-                            "code": 6024,
-                            "hint": "The replica count provided for the "
-                                    "bucket is not valid. The maximum number "
-                                    "of replicas is 3. Please reduce the "
-                                    "number of replicas for the bucket.",
+                            "code": 6006,
+                            "hint": "The requested number of replicas exceeds "
+                                    "the maximum allowed replicas based on "
+                                    "the cluster configuration. Please reduce "
+                                    "the number of replicas for the bucket.",
                             "httpStatusCode": 422,
-                            "message": "The replica count provided for the "
-                                       "buckets is not valid. The maximum "
-                                       "number of replicas is (3)."
+                            "message": "Unable to process request for the "
+                                       "provided bucket. The requested "
+                                       "replica count is not supported "
+                                       "based on the cluster configuration. "
+                                       "Please reduce the replica count."
                         }
                 elif key == "timeToLiveInSeconds":
                     testcase["expected_status_code"] = 422
