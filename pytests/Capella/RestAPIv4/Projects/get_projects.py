@@ -20,6 +20,7 @@ class GetProject(APIBase):
         if res.status_code != 201:
             self.log.error(res.content)
             self.tearDown()
+            self.fail("!!!..Project creation failed...!!!")
         else:
             self.log.info("Project Creation Successful")
             self.project_id = res.json()["id"]
