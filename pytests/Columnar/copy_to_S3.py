@@ -1086,8 +1086,8 @@ class CopyToS3(ColumnarBaseTest):
                        "database_name": datasets[i].database_name,
                        "destination_bucket": self.cbas_util.generate_name(),
                        "destination_link_name": s3_link.full_name, "path": path, "validate_error_msg": True,
-                       "expected_error": "External source error. software.amazon.awssdk.services.s3.model.NoSuchBucketException: The specified bucket does not exist",
-                       "expected_error_code": 24086}))
+                       "expected_error": "External sink error. software.amazon.awssdk.services.s3.model.NoSuchBucketException: The specified bucket does not exist",
+                       "expected_error_code": 24230}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
 

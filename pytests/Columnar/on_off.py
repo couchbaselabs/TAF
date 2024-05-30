@@ -24,6 +24,7 @@ class OnOff(ColumnarBaseTest):
         self.cluster = self.tenant.columnar_instances[0]
         self.columnarAPI = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user,
                                        self.tenant.pwd, '')
+        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
         self.doc_size = self.input.param("doc_size", 1000)
 
         if not self.columnar_spec_name:
@@ -90,6 +91,142 @@ class OnOff(ColumnarBaseTest):
             self.log.info("Started turning on instance")
         else:
             self.fail("API Failed to turn on instance with status code : {}".format(resp.status_code))
+        if not self.wait_for_on():
+            self.fail("Failed to turn on the instance")
+
+    def test_manual_off_after_scaling_and_scale_after_resume(self):
+        self.scale_columnar_cluster(8)
+        resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning off instance")
+        else:
+            self.fail("API failed to turn off the instance with status code: {}".format(resp.status_code))
+        if not self.wait_for_off():
+            self.fail("Failed to turn off instance")
+
+        # resume instance
+        resp = self.columnarAPI.turn_on_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning on instance")
+        else:
+            self.fail("API Failed to turn on instance with status code : {}".format(resp.status_code))
+        if not self.wait_for_on():
+            self.fail("Failed to turn on the instance")
+        self.scale_columnar_cluster(2)
+
+    def off_during_scale(self):
+        # off during scale
+        resp = self.columnarAPI.update_columnar_instance(self.tenant.id, self.tenant.project_id,
+                                                         self.cluster.instance_id,
+                                                         self.cluster.name, '', 32)
+        if resp.status_code != 202:
+            self.fail("Failed to scale cluster")
+        else:
+            resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+            if resp.status_code == 500:
+                self.log.info("Failed due to bug")
+            else:
+                self.fail("Bug seems to be fixed, correct your testcase")
+
+        start_time = time.time()
+        state = None
+        while state != "healthy" and start_time + 900 > time.time():
+            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id, self.tenant.project_id,
+                                                                   self.cluster.instance_id).json()
+            state = resp["data"]["state"]
+        if state != "healthy":
+            self.fail("Fail to scale columnar instance")
+
+    def scale_during_resume(self):
+        resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 202:
+            self.fail("Failed to turn off instance")
+        if not self.wait_for_off():
+            self.fail("Failed to turn the instance off")
+
+        resp = self.columnarAPI.turn_on_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning on instance")
+
+        resp = self.columnarAPI.update_columnar_instance(self.tenant.id, self.tenant.project_id,
+                                                         self.cluster.instance_id,
+                                                         self.cluster.name, '', 32)
+        if resp.status_code != 500:
+            self.log.info("Failed due to bug")
+        else:
+            self.fail("Bug seems to be fixed, correct your testcase")
+
+        if not self.wait_for_on():
+            self.fail("Failed to turn on the instance")
+
+    def off_during_off(self):
+        resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 202:
+            self.fail("Failed to turn off instance")
+
+        resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 500:
+            self.log.info("Failed due to bug")
+        else:
+            self.fail("Bug seems to be fixed, correct your testcase")
+
+        if not self.wait_for_off():
+            self.fail("Failed to turn off cluster")
+
+        resp = self.columnarAPI.turn_on_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning on instance")
+        if not self.wait_for_on():
+            self.fail("Failed to turn on the instance")
+
+    def on_during_on(self):
+        resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 202:
+            self.fail("Failed to turn off instance")
+        resp = self.columnarAPI.turn_on_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning on instance")
+        resp = self.columnarAPI.turn_on_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 500:
+            self.log.info("Failed due to bug")
+        else:
+            self.fail("Bug seems to be fixed, correct your testcase")
+        if not self.wait_for_on():
+            self.fail("Failed to turn the instance on")
+
+    def on_during_off(self):
+        resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 202:
+            self.fail("Failed to turn off instance")
+        resp = self.columnarAPI.turn_on_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 500:
+            self.log.info("Failed due to bug")
+        else:
+            self.fail("Bug seems to be fixed, correct your testcase")
+        if not self.wait_for_off():
+            self.fail("Failed to turn off the instance")
+        resp = self.columnarAPI.turn_on_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 202:
+            self.fail("Failed to turn on the instance")
+        if not self.wait_for_on():
+            self.fail("Failed to turn on the instance")
+
+    def off_during_on(self):
+        resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 202:
+            self.fail("Failed to turn off instance")
+        if not self.wait_for_off():
+            self.fail("Failed to turn off the instance")
+        resp = self.columnarAPI.turn_on_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 202:
+            self.fail("Failed to turn on the instance")
+
+        resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        if resp.status_code != 500:
+            self.log.info("Failed due to bug")
+        else:
+            self.fail("Bug seems to be fixed, correct your testcase")
+
         if not self.wait_for_on():
             self.fail("Failed to turn on the instance")
 
@@ -309,21 +446,28 @@ class OnOff(ColumnarBaseTest):
         if not self.wait_for_on():
             self.fail("Failed to turn on the instance")
 
-    def scale_columnar_cluster(self, nodes):
+    def scale_columnar_cluster(self, nodes, timeout=900):
         start_time = time.time()
         status = None
         resp = self.columnarAPI.update_columnar_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
                                                   self.cluster.name, '', nodes)
         if resp.status_code != 202:
             self.fail("Failed to scale cluster")
-        time.sleep(5)
+            # check for nodes in the cluster
         while status != "healthy" and start_time + 900 > time.time():
-            resp = self.commonAPI.get_cluster_info_internal(self.cluster.cluster_id).json()
-            status = resp["meta"]["status"]["state"]
-            if status == "healthy":
-                return True
-        if time.time() > start_time + 900:
+            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id, self.tenant.project_id,
+                                                                   self.cluster.instance_id).json()
+            status = resp["data"]["state"]
+        if time.time() > start_time + timeout:
             self.log.error("Cluster state is {} after 15 minutes".format(status))
+
+        start_time = time.time()
+        while start_time + timeout > time.time():
+            nodes_in_cluster = self.capellaAPI.get_nodes(self.tenant.id, self.tenant.project_id,
+                                                         self.cluster.cluster_id)
+            if nodes_in_cluster.status_code == 200:
+                if len(nodes_in_cluster.json()["data"]) == nodes:
+                    return True
         return False
 
     def wait_for_data_ingestion_in_the_collections(self, remote_docs, standalone_docs, external_docs=7920000, timeout=900):
