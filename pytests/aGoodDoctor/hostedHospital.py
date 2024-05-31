@@ -451,6 +451,9 @@ class Murphy(BaseTestCase, hostedOPD):
         self.rebl_services = self.input.param("rebl_services",
                                               self.input.param("services", "data")
                                               ).split("-")
+        query_upscale = 10
+        if self.vector:
+            query_upscale = 1
         if h_scaling or vh_scaling:
             self.loop = 0
             self.rebl_nodes = self.input.param("horizontal_scale", 3)
@@ -474,8 +477,8 @@ class Murphy(BaseTestCase, hostedOPD):
                 # turn cluster off and back on
                 self.test_cluster_on_off()
                 for tenant in self.tenants:
-                    for cluster in tenant.clusters:  
-                        self.restart_query_load(cluster, num=10)
+                    for cluster in tenant.clusters:
+                        self.restart_query_load(cluster, num=query_upscale)
                 self.loop += 1
 
             self.loop = 0
@@ -483,7 +486,7 @@ class Murphy(BaseTestCase, hostedOPD):
             while self.loop < self.iterations:
                 for tenant in self.tenants:
                     for cluster in tenant.clusters:  
-                        self.restart_query_load(cluster, num=-10)
+                        self.restart_query_load(cluster, num=-query_upscale)
                 self.PrintStep("Step 5.{}: Scale DOWN with Loading of docs".
                                format(self.loop))
                 for service in self.rebl_services:
@@ -553,7 +556,7 @@ class Murphy(BaseTestCase, hostedOPD):
                     # Rebalance 2 - Compute Upgrade
                     for tenant in self.tenants:
                         for cluster in tenant.clusters:  
-                            self.restart_query_load(cluster, num=10*compute_change)
+                            self.restart_query_load(cluster, num=query_upscale*compute_change)
                     for service_group in self.rebl_services:
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]
@@ -588,7 +591,7 @@ class Murphy(BaseTestCase, hostedOPD):
                     # Rebalance 3 - Both Disk/Compute Upgrade
                     for tenant in self.tenants:
                         for cluster in tenant.clusters:  
-                            self.restart_query_load(cluster, num=10*compute_change)
+                            self.restart_query_load(cluster, num=query_upscale*compute_change)
                     for service_group in self.rebl_services:
                         service_group = sorted(service_group.split(":"))
                         service = service_group[0]

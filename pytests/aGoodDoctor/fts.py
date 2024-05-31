@@ -196,8 +196,10 @@ class FTSQueryLoad:
         self.mockVector = mockVector
         self.dim = dim
         self.base64 = base64
+        self.total_query_count = 0
 
     def start_query_load(self):
+        self.stop_run = False
         th = threading.Thread(target=self._run_concurrent_queries)
         th.start()
 
@@ -206,9 +208,7 @@ class FTSQueryLoad:
 
     def _run_concurrent_queries(self):
         threads = []
-        self.total_query_count = 0
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("ftsQPS")
-        self.currently_running = 0
         method = self._run_query
         if self.bucket.loadDefn.get("valType") == "Vector":
             method = self._run_vector_query
