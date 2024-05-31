@@ -13,7 +13,6 @@ from BucketLib.bucket import Bucket
 from sirius_client_framework.multiple_database_config import CouchbaseLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
 from Jython_tasks.sirius_task import WorkLoadTask
-from Jython_tasks.task_manager import TaskManager
 from sirius_client_framework.sirius_constants import SiriusCodes
 from CbasLib.cbas_entity_columnar import Remote_Dataset, Standalone_Dataset, External_Dataset
 from cbas_utils.cbas_utils_columnar import ColumnarStats
@@ -46,7 +45,7 @@ class OnOff(ColumnarBaseTest):
                 self.cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
 
-        # super(ColumnarBaseTest, self).tearDown()
+        super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def wait_for_off(self, timeout=900):
@@ -240,7 +239,7 @@ class OnOff(ColumnarBaseTest):
         self.aws_access_key = self.input.param("aws_access_key")
         self.aws_secret_key = self.input.param("aws_secret_key")
 
-        if self.input.param("no_of_remote_links", 1):
+        if self.input.param("no_of_remote_links", 0):
             remote_link_properties = list()
             remote_link_properties.append(
                 {"type": "couchbase", "hostname": str(self.remote_cluster.srv),
