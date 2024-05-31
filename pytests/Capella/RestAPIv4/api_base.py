@@ -27,7 +27,7 @@ class APIBase(CouchbaseBaseTest):
         self.passwd = self.input.capella.get("capella_pwd")
         self.organisation_id = self.input.capella.get("tenant_id")
         self.invalid_UUID = "00000000-0000-0000-0000-000000000000"
-        self.prefix = "Automated_API_test_"
+        self.prefix = "Automated_v4-API_test_"
         self.count = 0
 
         self.capellaAPI = CapellaAPI(
