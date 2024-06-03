@@ -350,7 +350,7 @@ class ColumnarUtils:
 
         if not support_package:
             support_package = {
-                "key":"developerPro",
+                "key":"Developer Pro",
                 "timezone":"PT"
             }
 
