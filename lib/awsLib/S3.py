@@ -382,7 +382,7 @@ class MSK(AWSBase):
         return cluster_info_list
 
     def get_bootstrap_brokers(self, cluster_arn):
-        response = self.msk_client.c.get_bootstrap_brokers(
+        response = self.msk_client.get_bootstrap_brokers(
             ClusterArn=cluster_arn)
         return response
 

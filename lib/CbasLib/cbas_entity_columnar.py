@@ -430,7 +430,7 @@ class KafkaClusterDetails(object):
 
     # Auth Types
     CONFLUENT_AUTH_TYPES = ["PLAIN", "OAUTH", "SCRAM_SHA_256",
-                            "SCRAM_SHA_512"],
+                            "SCRAM_SHA_512"]
     AWS_AUTH_TYPES = ["SCRAM_SHA_512", "IAM"]
 
     # Encryption Types
@@ -550,13 +550,13 @@ class KafkaClusterDetails(object):
             raise Exception(
                 "Invalid Encryption type. Supported Encryption types "
                 "are {0}.".format(self.ENCRYPTION_TYPES))
-        return KafkaClusterDetails
+        return kafka_cluster_details
 
     def generate_aws_msk_cluster_detail(
             self, brokers_url, auth_type, encryption_type, username=None,
             password=None):
         kafka_cluster_details = deepcopy(self.KAFKA_CLUSTER_DETAILS_TEMPLATE)
-        kafka_cluster_details["vendor"] = "AWS_MSK"
+        kafka_cluster_details["vendor"] = "AWS_KAFKA"
         kafka_cluster_details["brokersUrl"] = brokers_url
 
         auth_type = auth_type.upper()
@@ -582,7 +582,7 @@ class KafkaClusterDetails(object):
             raise Exception(
                 "Invalid Encryption type. Supported Encryption types "
                 "are {0}.".format("TLS"))
-        return KafkaClusterDetails
+        return kafka_cluster_details
 
     def generate_confluent_schema_registry_detail(
             self, schema_registry_url, api_key, api_secret):

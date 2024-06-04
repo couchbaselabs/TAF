@@ -1943,7 +1943,7 @@ class KafkaLink_Util(ExternalLink_Util):
         :param analytics_timeout int, analytics query timeout
         """
 
-        cmd = "CREATE LINK {0} TYPE KAFKA WITH ".format(
+        cmd = "CREATE LINK {0} TYPE `kafka-sink` WITH ".format(
             CBASHelper.format_name(link_name))
 
         source_details = {"kafkaClusterDetails": kafka_cluster_details}
@@ -1980,12 +1980,12 @@ class KafkaLink_Util(ExternalLink_Util):
 
         link_spec = self.get_kafka_link_spec(cbas_spec)
         results = list()
-        num_of_external_links = link_spec.get("no_of_kafka_links", 0)
+        num_of_kafka_links = link_spec.get("no_of_kafka_links", 0)
         vendors = link_spec.get("vendors", [])
         if not vendors:
             vendors = ["confluent", "aws_msk"]
 
-        for i in range(0, num_of_external_links):
+        for i in range(0, num_of_kafka_links):
             if link_spec.get("name_key", "random").lower() == "random":
                 name = self.generate_name(name_cardinality=1)
             else:
@@ -2140,7 +2140,7 @@ class Dataset_Util(KafkaLink_Util):
         else:
             cmd += " {0}".format(dataset_name)
 
-        if with_clause or compress_dataset or storage_format:
+        if with_clause or compress_dataset or storage_format or kafka_connector_details:
             with_params = dict()
 
             if compress_dataset:
@@ -2148,6 +2148,9 @@ class Dataset_Util(KafkaLink_Util):
 
             if storage_format:
                 with_params["storage-format"] = {"format": storage_format}
+
+            if kafka_connector_details:
+                with_params.update(kafka_connector_details)
 
             cmd += " with " + json.dumps(with_params) + " "
 
@@ -3726,7 +3729,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             self, collection_name, dataverse_name=None, database_name=None,
             if_not_exists=True, primary_key={}, subquery="", link_name=None,
             external_collection=None, ddl_format="random",
-            compress_dataset=False, storage_format=None):
+            compress_dataset=False, storage_format=None,
+            kafka_connector_details=None):
         """
         :param collection_name <str> Name of the collection to be created.
         :param dataverse_name <str> Name of the dataverse under which the
@@ -3781,7 +3785,14 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         if subquery:
             cmd += " AS {0}".format(subquery)
 
-        if compress_dataset or storage_format:
+        if link_name and external_collection:
+            if kafka_connector_details:
+                cmd += " ON `{0}` AT {1}".format(external_collection, link_name)
+            else:
+                cmd += " ON {0} AT {1}".format(
+                    CBASHelper.format_name(external_collection), link_name)
+
+        if compress_dataset or storage_format or kafka_connector_details:
             with_params = dict()
 
             if compress_dataset:
@@ -3790,11 +3801,10 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             if storage_format:
                 with_params["storage-format"] = {"format": storage_format}
 
-            cmd += " with " + json.dumps(with_params) + " "
+            if kafka_connector_details:
+                with_params.update(kafka_connector_details)
 
-        if link_name and external_collection:
-            cmd += " ON {0} AT {1}".format(
-                CBASHelper.format_name(external_collection), link_name)
+            cmd += " with " + json.dumps(with_params) + " "
 
         cmd += ";"
         return cmd
@@ -3803,7 +3813,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             self, cluster, collection_name, ddl_format="random",
             if_not_exists=True, dataverse_name=None, database_name=None,
             primary_key={}, subquery="", compress_dataset=False,
-            storage_format=None, validate_error_msg=False, expected_error=None,
+            storage_format=None, kafka_connector_details=None,
+            validate_error_msg=False, expected_error=None,
             expected_error_code=None, username=None, password=None,
             timeout=300, analytics_timeout=300):
         """
@@ -3840,7 +3851,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         cmd = self.generate_standalone_create_DDL(
             collection_name, dataverse_name, database_name, if_not_exists,
             primary_key, subquery, None, None, ddl_format, compress_dataset,
-            storage_format)
+            storage_format, kafka_connector_details)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -3860,8 +3871,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             if_not_exists=True, dataverse_name=None, database_name=None,
             primary_key={}, link_name=None, external_collection=None,
             compress_dataset=False, storage_format=None,
-            validate_error_msg=False, expected_error=None,
-            expected_error_code=None, username=None,
+            kafka_connector_details=None, validate_error_msg=False,
+            expected_error=None, expected_error_code=None, username=None,
             password=None, timeout=300, analytics_timeout=300):
         """
         Creates a standalone collection.
@@ -3899,7 +3910,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         cmd = self.generate_standalone_create_DDL(
             collection_name, dataverse_name, database_name, if_not_exists,
             primary_key, "", link_name, external_collection, ddl_format,
-            compress_dataset, storage_format)
+            compress_dataset, storage_format, kafka_connector_details)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,

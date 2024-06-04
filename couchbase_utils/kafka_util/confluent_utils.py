@@ -103,7 +103,7 @@ class ConfluentCloudAPIs(object):
 
     def generate_auth_header(self):
         base64_encoded_auth = base64.b64encode("{0}:{1}".format(
-            self.api_request.ACCESS, self.api_request.SECRET))
+            self.api_request.ACCESS, self.api_request.SECRET).encode()).decode()
         api_request_headers = {
             'Authorization': 'Basic ' + base64_encoded_auth,
             'Content-Type': 'application/json'
@@ -220,10 +220,11 @@ class ConfluentCloudAPIs(object):
         if response.status_code == 200:
             parsed_response = response.json()
             user_list.extend(parsed_response["data"])
-            while len(user_list) < parsed_response["metadata"][
-                "total_size"]:
-                page_token = parsed_response["metadata"]["next"].split("=")[1]
-                user_list.extend(self.list_all_api_keys(page_token))
+            if "total_size" in parsed_response["metadata"]:
+                while len(user_list) < parsed_response["metadata"][
+                    "total_size"]:
+                    page_token = parsed_response["metadata"]["next"].split("=")[1]
+                    user_list.extend(self.list_all_api_keys(page_token))
             return user_list
         else:
             raise Exception("Following errors occurred while listing all "
@@ -245,10 +246,11 @@ class ConfluentCloudAPIs(object):
         if response.status_code == 200:
             parsed_response = response.json()
             env_list.extend(parsed_response["data"])
-            while len(env_list) < parsed_response["metadata"][
-                "total_size"]:
-                page_token = parsed_response["metadata"]["next"].split("=")[1]
-                env_list.extend(self.list_all_api_keys(page_token))
+            if "total_size" in parsed_response["metadata"]:
+                while len(env_list) < parsed_response["metadata"][
+                    "total_size"]:
+                    page_token = parsed_response["metadata"]["next"].split("=")[1]
+                    env_list.extend(self.list_all_api_keys(page_token))
             return env_list
         else:
             raise Exception("Following errors occurred while listing all "
@@ -348,10 +350,11 @@ class ConfluentCloudAPIs(object):
         if response.status_code == 200:
             parsed_response = response.json()
             kafka_cluster_list.extend(parsed_response["data"])
-            while len(kafka_cluster_list) < parsed_response["metadata"][
-                "total_size"]:
-                page_token = parsed_response["metadata"]["next"].split("=")[1]
-                kafka_cluster_list.extend(self.list_all_api_keys(page_token))
+            if "total_size" in parsed_response["metadata"]:
+                while len(kafka_cluster_list) < parsed_response["metadata"][
+                    "total_size"]:
+                    page_token = parsed_response["metadata"]["next"].split("=")[1]
+                    kafka_cluster_list.extend(self.list_all_api_keys(page_token))
             return kafka_cluster_list
         else:
             raise Exception("Following errors occurred while listing all "

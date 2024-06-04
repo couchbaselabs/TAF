@@ -200,7 +200,7 @@ class KafkaClusterUtils(object):
         topics = self.list_all_topics()
         filtered_topics = list()
         for topic in topics:
-            if topic_prefix in topic:
+            if topic_prefix == topic.split(".")[0]:
                 filtered_topics.append(topic)
         return filtered_topics
 

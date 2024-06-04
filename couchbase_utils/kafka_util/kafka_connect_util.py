@@ -46,7 +46,7 @@ class ConnectorConfigTemplate(object):
 class KafkaConnectUtil(object):
 
     def __init__(self, connect_server_hostname):
-        self.api_request = APIRequests(connect_server_hostname)
+        self.api_request = APIRequests(connect_server_hostname, "dummy", "dummy")
 
         self.connector_endpoint = "/connectors"
         self.connector_plugins = "/connector-plugins"
@@ -78,7 +78,7 @@ class KafkaConnectUtil(object):
         Method verifies whether kafka connect cluster is running.
         """
         self.log.debug("Checking if Kafka Connect Cluster is running")
-        response = self.api_request.api_get()
+        response = self.api_request.api_get("")
         if response.status_code == 200:
             return True
         else:
