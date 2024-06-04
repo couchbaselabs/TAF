@@ -7,8 +7,9 @@ from subprocess import Popen
 
 from common_lib import sleep
 from sirius_client_framework.sirius_constants import DB_MGMT_PATH, SiriusCodes
+from sirius_client import SiriusClient
 
-
+totat_check_reties = 10
 class SiriusSetup(object):
     __running_process = None
     sirius_url = "http://0.0.0.0:4000"
@@ -110,6 +111,18 @@ class SiriusSetup(object):
             cmd = ["/bin/sh", "-c", "cd sirius ; make clean_deploy"]
             process = Popen(cmd, stdout=fp, stderr=fp)
             process.communicate()
+
+            retry_attempts = 0
+            while retry_attempts < totat_check_reties:
+                try:
+                    sirius_client = SiriusClient()
+                    print("sirius is online")
+                    return
+                except Exception as e:
+                    print(e)
+                retry_attempts += 1
+                sleep(60)
+            raise Exception("sirius not online")
         else:
             raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT),
                                     docker_file_path)
