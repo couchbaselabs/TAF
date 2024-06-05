@@ -74,7 +74,7 @@ class GetCluster(GetProject):
             self.expected_result['couchbaseServer'])
         if result.status_code != 202:
             self.log.error("Failed while deploying cluster")
-            self.tearDown()
+            super(GetCluster, self).tearDown()
             self.fail("!!!...CIDR selection failed...!!!")
 
         self.cluster_id = result.json()["id"]

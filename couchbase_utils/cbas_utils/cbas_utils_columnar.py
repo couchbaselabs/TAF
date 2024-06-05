@@ -644,7 +644,7 @@ class RBAC_Util(BaseUtil):
         columnar_roles = ','.join([self.format_name(str(role)) for role in roles])
         database_users = ','.join([self.format_name(str(user)) for user in users])
 
-        grant_cmd = "GRANT " + columnar_roles + " TO " + database_users + ";"
+        grant_cmd = "GRANT ROLE " + columnar_roles + " TO " + database_users + ";"
 
         self.log.info("Running GRANT statement: {}".format(grant_cmd))
         status, metrics, errors, results, _ = (
@@ -3198,14 +3198,16 @@ class StandaloneCollectionLoader(External_Dataset_Util):
 
     def load_doc_to_standalone_collection_sirius(self, collection_name, dataverse_name, database_name,
                                                  connection_string, start, end, sdk_batch_size=25, doc_size=1024,
-                                                 template="hotel", username=None, password=None):
+                                                 template="hotel", username=None, password=None,
+                                                 sirius_url="http://127.0.0.1:4000"):
         sdk_batch_size = 5000000//sdk_batch_size
         database_information = ColumnarLoader(username=username, password=password, connection_string=connection_string,
                                               bucket=database_name, scope=dataverse_name, collection=collection_name,
-                                              sdk_batch_size=sdk_batch_size)
-        operation_config = WorkloadOperationConfig(start=start, end=end, template=template,doc_size=doc_size)
+                                              sdk_batch_size=int(sdk_batch_size))
+        operation_config = WorkloadOperationConfig(start=int(start), end=int(end), template=template,doc_size=doc_size)
         task_insert = WorkLoadTask(task_manager=self.task, op_type=SiriusCodes.DocOps.BULK_CREATE,
-                                   database_information=database_information, operation_config=operation_config)
+                                   database_information=database_information, operation_config=operation_config,
+                                   default_sirius_base_url=sirius_url)
         task_manager = TaskManager(10)
         task_manager.add_new_task(task_insert)
         return task_manager.get_task_result(task_insert)
@@ -3214,7 +3216,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             self, cluster, collection_name, dataverse_name, database_name,
             no_of_docs, document_size=1024, batch_size=500,
             max_concurrent_batches=10, country_type="string",
-            include_country=True):
+            include_country=True, analytics_timeout=1800, timeout=1800):
         """
         Load documents to a standalone collection.
         """
@@ -3239,7 +3241,9 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 while retry_count < 3:
                     result = self.insert_into_standalone_collection(
                         cluster, collection_name,
-                        batch_docs, dataverse_name, database_name)
+                        batch_docs, dataverse_name, database_name,
+                        analytics_timeout=analytics_timeout,
+                        timeout=timeout)
                     if result:
                         break
                     elif retry_count == 2:
@@ -3526,6 +3530,63 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         super(StandAlone_Collection_Util, self).__init__(
             server_task, run_query_using_sdk)
 
+    def generate_copy_from_cmd(self, collection_name, aws_bucket_name,
+            external_link_name, dataverse_name=None, database_name=None,
+            files_to_include=[], file_format="json", type_parsing_info="",
+            path_on_aws_bucket="", header=None, null_string=None,
+            files_to_exclude=[], parse_json_string=0,
+            convert_decimal_to_double=0, timezone=""):
+        cmd = "COPY INTO "
+        if database_name:
+            cmd += "{}.".format(CBASHelper.format_name(database_name))
+        if dataverse_name:
+            cmd += "{0}.{1} ".format(
+                CBASHelper.format_name(dataverse_name),
+                CBASHelper.format_name(collection_name))
+        else:
+            cmd += "{0} ".format(CBASHelper.format_name(collection_name))
+
+        if type_parsing_info:
+            cmd += "AS ({0}) ".format(type_parsing_info)
+
+        cmd += "FROM `{0}` AT {1} PATH \"{2}\" ".format(
+            aws_bucket_name, CBASHelper.format_name(external_link_name),
+            path_on_aws_bucket)
+
+        with_parameters = dict()
+        if file_format:
+            with_parameters["format"] = file_format
+
+        if header is not None:
+            with_parameters["header"] = header
+
+        if null_string:
+            with_parameters["null"] = null_string
+
+        if files_to_include:
+            with_parameters["include"] = files_to_include
+
+        if files_to_exclude:
+            with_parameters["exclude"] = files_to_exclude
+
+        if "format" in with_parameters and with_parameters["format"] == "parquet":
+            if timezone:
+                with_parameters["timezone"] = timezone.upper()
+            if parse_json_string > 0:
+                if parse_json_string == 1:
+                    with_parameters["parse-json-string"] = True
+                else:
+                    with_parameters["parse-json-string"] = False
+            if convert_decimal_to_double > 0:
+                if convert_decimal_to_double == 1:
+                    with_parameters["decimal-to-double"] = True
+                else:
+                    with_parameters["decimal-to-double"] = False
+        if bool(with_parameters):
+            cmd += "WITH {0};".format(json.dumps(with_parameters))
+
+        return cmd
+
     def copy_from_external_resource_into_standalone_collection(
             self, cluster, collection_name, aws_bucket_name,
             external_link_name, dataverse_name=None, database_name=None,
@@ -3581,55 +3642,12 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         :param analytics_timeout int, analytics query timeout
         :return True/False
         """
-        cmd = "COPY INTO "
-        if database_name:
-            cmd += "{0} ".format(CBASHelper.format_name(
-                database_name, dataverse_name, collection_name))
-        else:
-            if dataverse_name:
-                cmd += "{0} ".format(CBASHelper.format_name(
-                    dataverse_name, collection_name))
-            else:
-                cmd += "{0} ".format(CBASHelper.format_name(collection_name))
-
-        if type_parsing_info:
-            cmd += "AS ({0}) ".format(type_parsing_info)
-
-        cmd += "FROM `{0}` AT {1} PATH \"{2}\" ".format(
-            aws_bucket_name, CBASHelper.format_name(external_link_name),
-            path_on_aws_bucket)
-
-        with_parameters = dict()
-        if file_format:
-            with_parameters["format"] = file_format
-
-        if header is not None:
-            with_parameters["header"] = header
-
-        if null_string:
-            with_parameters["null"] = null_string
-
-        if files_to_include:
-            with_parameters["include"] = files_to_include
-
-        if files_to_exclude:
-            with_parameters["exclude"] = files_to_exclude
-
-        if "format" in with_parameters and with_parameters["format"] == "parquet":
-            if timezone:
-                with_parameters["timezone"] = timezone.upper()
-            if parse_json_string > 0:
-                if parse_json_string == 1:
-                    with_parameters["parse-json-string"] = True
-                else:
-                    with_parameters["parse-json-string"] = False
-            if convert_decimal_to_double > 0:
-                if convert_decimal_to_double == 1:
-                    with_parameters["decimal-to-double"] = True
-                else:
-                    with_parameters["decimal-to-double"] = False
-        if bool(with_parameters):
-            cmd += "WITH {0};".format(json.dumps(with_parameters))
+        cmd = self.generate_copy_from_cmd(collection_name, aws_bucket_name,
+                                          external_link_name, dataverse_name,
+                                          database_name, files_to_include, file_format,
+                                          type_parsing_info, path_on_aws_bucket, header,
+                                          null_string, files_to_exclude, parse_json_string,
+                                          convert_decimal_to_double, timezone)
         self.log.info("Copying into {0} using external link {1} from "
                       "S3 bucket path {2}/{3}".format(
             collection_name, external_link_name, aws_bucket_name, path_on_aws_bucket))
@@ -6574,16 +6592,12 @@ class CbasUtil(CBOUtil):
         else:
             return True
 
-    def copy_to_s3(
-            self, cluster, collection_name=None, dataverse_name=None,
+    def generate_copy_to_s3_cmd(self, collection_name=None, dataverse_name=None,
             database_name=None, source_definition_query=None,
             alias_identifier=None, destination_bucket=None,
             destination_link_name=None, path=None, partition_by=None,
             partition_alias=None, compression=None, order_by=None,
-            max_object_per_file=None, file_format=None, username=None,
-            password=None, timeout=300, analytics_timeout=300,
-            validate_error_msg=None, expected_error=None,
-            expected_error_code=None):
+            max_object_per_file=None, file_format=None):
         cmd = "COPY "
         if source_definition_query:
             cmd = cmd + "( {0} ) ".format(source_definition_query)
@@ -6638,6 +6652,26 @@ class CbasUtil(CBOUtil):
             cmd += " ) "
         if len(with_dict) > 0:
             cmd += "WITH " + json.dumps(with_dict)
+
+        return cmd
+
+    def copy_to_s3(
+            self, cluster, collection_name=None, dataverse_name=None,
+            database_name=None, source_definition_query=None,
+            alias_identifier=None, destination_bucket=None,
+            destination_link_name=None, path=None, partition_by=None,
+            partition_alias=None, compression=None, order_by=None,
+            max_object_per_file=None, file_format=None, username=None,
+            password=None, timeout=300, analytics_timeout=300,
+            validate_error_msg=None, expected_error=None,
+            expected_error_code=None):
+
+        cmd = self.generate_copy_to_s3_cmd(collection_name, dataverse_name,
+                                           database_name, source_definition_query,
+                                           alias_identifier, destination_bucket,
+                                           destination_link_name, path, partition_by,
+                                           partition_alias, compression, order_by,
+                                           max_object_per_file, file_format)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
@@ -6725,12 +6759,12 @@ class BackupUtils(object):
     pass
 class ColumnarStats(object):
     def cpu_utalization_rate(self, cluster):
-        uri = cluster.srv + ":18091/pools/default"
+        uri = "https://"+ cluster.srv + ":18091/pools/default"
         username = cluster.servers[0].rest_username
         password = cluster.servers[0].rest_password
         utilization = 0
         resp = (requests.get(uri, auth=(username, password), verify=False)).json()
         for nodes in resp["nodes"]:
             utilization += nodes["systemStats"]["cpu_utilization_rate"]
-        cpu_node_average = utilization / resp["nodes"]
+        cpu_node_average = utilization / len(resp["nodes"])
         return cpu_node_average

@@ -111,10 +111,10 @@ class CapellaBaseTest(CouchbaseBaseTest):
         # initialise pod object
         url = self.input.capella.get("pod")
         self.pod = Pod("https://%s" % url,
-                       self.input.capella.get("override_token",
-                                              None),
-                       self.input.capella.get("signup_token",
-                                              None))
+                       self.input.capella.get("override_token", None),
+                       self.input.capella.get("signup_token", None),
+                       self.input.capella.get("override_key", None)
+                       )
         self.tenants = list()
         if self.input.capella.get("tenant_id"):
             tenant = Tenant(self.input.capella.get("tenant_id"),
@@ -206,6 +206,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         self.xdcr_cluster_name_format = "XDCR%s"
         cluster_index = 1
 
+        self.provisioned_image = self.input.capella.get("image")
         if self.input.capella.get("image"):
             self.generate_cluster_config_internal()
         else:
@@ -520,12 +521,10 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         }
 
         if self.input.capella.get("image"):
-            image = self.input.capella["image"]
-            token = self.input.capella["override_token"]
             server_version = self.input.capella["server_version"]
             release_id = self.input.capella.get("release_id", None)
-            self.capella_cluster_config["overRide"] = {"token": token,
-                                                       "image": image,
+            self.capella_cluster_config["overRide"] = {"token": self.pod.TOKEN,
+                                                       "image": self.provisioned_image,
                                                        "server": server_version}
             if release_id:
                 self.capella_cluster_config["overRide"]["releaseId"] = release_id

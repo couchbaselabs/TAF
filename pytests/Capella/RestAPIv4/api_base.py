@@ -7,13 +7,14 @@ Created on June 28, 2023
 import time
 import string
 import random
-import itertools
 import base64
-from datetime import datetime
-from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
-from couchbase_utils.capella_utils.dedicated import CapellaUtils
-from pytests.cb_basetest import CouchbaseBaseTest
+import itertools
 import threading
+from datetime import datetime
+from pytests.cb_basetest import CouchbaseBaseTest
+from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
+from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs
+from couchbase_utils.capella_utils.dedicated import CapellaUtils
 
 
 class APIBase(CouchbaseBaseTest):
@@ -26,11 +27,12 @@ class APIBase(CouchbaseBaseTest):
         self.passwd = self.input.capella.get("capella_pwd")
         self.organisation_id = self.input.capella.get("tenant_id")
         self.invalid_UUID = "00000000-0000-0000-0000-000000000000"
-        self.prefix = "Automated_API_test_"
+        self.prefix = "Automated_v4-API_test_"
         self.count = 0
 
         self.capellaAPI = CapellaAPI(
             "https://" + self.url, "", "", self.user, self.passwd, "")
+        self.columnarAPI = ColumnarAPIs("https://" + self.url, "", "", "")
         self.create_v2_control_plane_api_key()
 
         # create the first V4 API KEY WITH organizationOwner role, which will
@@ -257,6 +259,7 @@ class APIBase(CouchbaseBaseTest):
     def update_auth_with_api_token(self, token):
         self.capellaAPI.org_ops_apis.bearer_token = token
         self.capellaAPI.cluster_ops_apis.bearer_token = token
+        self.columnarAPI.bearer_token = token
 
     """
     Method makes parallel api calls.

@@ -18,10 +18,12 @@ class Fleet:
 
 class Pod:
     counter = 0
-    def __init__(self, url_public, TOKEN_FOR_INTERNAL_SUPPORT=None, signup_token=None):
+    def __init__(self, url_public, TOKEN_FOR_INTERNAL_SUPPORT=None, signup_token=None,
+                 override_token=None):
         self.url_public = url_public
         self.TOKEN = TOKEN_FOR_INTERNAL_SUPPORT
         self.signup_token = signup_token
+        self.override_key = override_token
         self.log = logger.get("test")
         
     def create_tenants(self, num_tenants, email="random.user@couchbase.com"):

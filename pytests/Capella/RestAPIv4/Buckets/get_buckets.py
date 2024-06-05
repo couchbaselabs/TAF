@@ -46,6 +46,7 @@ class GetBucket(GetCluster):
             self.expected_result['timeToLiveInSeconds'])
         if res.status_code != 201:
             self.tearDown()
+            self.log.error("Error : {}".format(res.content))
             self.fail("!!!..Bucket creation failed...!!!")
         self.bucket_id = res.json()['id']
         self.expected_result['id'] = self.bucket_id
@@ -56,10 +57,12 @@ class GetBucket(GetCluster):
 
         # Delete the bucket that was created.
         self.log.info("Deleting bucket: {}".format(self.bucket_id))
-        if self.capellaAPI.cluster_ops_apis.delete_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id).status_code != 204:
+        res = self.capellaAPI.cluster_ops_apis.delete_bucket(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.bucket_id)
+        if res.status_code != 204:
             failures.append("Error while deleting bucket.")
+            self.log.error("Error : {}".format(res.content))
         else:
             self.log.info("Successfully deleted bucket.")
 

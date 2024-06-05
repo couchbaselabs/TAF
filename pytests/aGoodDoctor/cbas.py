@@ -261,6 +261,7 @@ class CBASQueryLoad:
         self.cluster_conn = random.choice(self.bucket.clients).cluster
 
     def start_query_load(self):
+        self.stop_run = False
         th = threading.Thread(target=self._run_concurrent_queries)
         th.start()
 

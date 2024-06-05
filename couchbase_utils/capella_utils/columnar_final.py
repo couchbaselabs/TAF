@@ -11,6 +11,7 @@ import string
 import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
+import pprint
 
 
 class ColumnarInstance:
@@ -140,22 +141,19 @@ class ColumnarRBACUtil:
         return analytics_admin_user
 
     def create_privileges_payload(self, resources_privileges_map=[]):
-        def get_entity_obj(entity_obj_arr=[], entity_name=""):
-            matched_entities = [entity_obj for entity_obj in entity_obj_arr
-                                if entity_obj["name"] == entity_name]
-            if len(matched_entities) > 0:
-                return matched_entities[0]
+        def get_entity_obj(entity_obj_map={}, entity_name=""):
+            if entity_name in entity_obj_map:
+                return entity_obj_map[entity_name]
             else:
                 entity_obj = {
-                    "name": entity_name,
                     "privileges": []
                 }
-                entity_obj_arr.append(entity_obj)
+                entity_obj_map[entity_name] = entity_obj
                 return entity_obj
 
         privileges_payload = {
-            "databases": [],
-            "links": [],
+            "databases": {},
+            "links": {},
             "privileges": []
         }
         for res_priv_map in resources_privileges_map:
@@ -167,8 +165,11 @@ class ColumnarRBACUtil:
             if res_type == "instance":
                 privileges_payload["privileges"].extend(privs)
             elif res_type == "link":
-                link_obj = get_entity_obj(privileges_payload["links"], res_name)
-                link_obj["privileges"].extend(privs)
+                links_payload = privileges_payload["links"]
+                if res_name not in links_payload:
+                    links_payload[res_name] = []
+                link_obj_privs = links_payload[res_name]
+                link_obj_privs.extend(privs)
             else:
                 db_name = res_entities[0]
                 db_obj = get_entity_obj(privileges_payload["databases"], db_name)
@@ -176,7 +177,7 @@ class ColumnarRBACUtil:
                     db_obj["privileges"].extend(privs)
                 else:
                     if "scopes" not in db_obj:
-                        db_obj["scopes"] = []
+                        db_obj["scopes"] = {}
                     scope_name = res_entities[1]
                     scope_obj = get_entity_obj(db_obj["scopes"], scope_name)
                     if res_type == "scope":
@@ -185,7 +186,7 @@ class ColumnarRBACUtil:
                         res_field_name = res_type + "s"
                         entity_name = res_entities[2]
                         if res_field_name not in scope_obj:
-                            scope_obj[res_field_name] = []
+                            scope_obj[res_field_name] = {}
                         entity_obj = get_entity_obj(scope_obj[res_field_name], entity_name)
                         entity_obj["privileges"].extend(privs)
 
@@ -327,7 +328,7 @@ class ColumnarUtils:
     def generate_instance_configuration(
             self, name=None, description=None, provider=None, region=None,
             nodes=0, instance_types=None, support_package=None,
-            availability_zone="single"):
+            availability_zone="single", token=None, image=None):
         if not name:
             name = "Columnar_{0}".format(random.randint(1, 100000))
 
@@ -359,14 +360,14 @@ class ColumnarUtils:
 
         if not instance_types:
             instance_types = {
-                "vcpus":"4vCPUs",
-                "memory":"16GB"
+                "vcpus": "4vCPUs",
+                "memory": "16GB"
             }
 
         if not support_package:
             support_package = {
-                "key":"developerPro",
-                "timezone":"PT"
+                "key": "Developer Pro",
+                "timezone": "PT"
             }
 
         config = {
@@ -379,6 +380,14 @@ class ColumnarUtils:
             "support_package": support_package,
             "availability_zone": availability_zone
         }
+        if image:
+            config.update({
+                "overRide": {
+                    "token": token,
+                    "image": image
+                }
+            })
+        pprint.pprint(config)
         return config
 
     def create_instance(self, pod, tenant, instance_config=None, timeout=7200):

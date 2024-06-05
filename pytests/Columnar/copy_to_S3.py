@@ -109,7 +109,9 @@ class CopyToS3(ColumnarBaseTest):
 
     def capella_provisioned_cluster_setup(self):
 
-        self.remote_cluster = self.cb_clusters['C1']
+        for key in self.cb_clusters:
+            self.remote_cluster = self.cb_clusters[key]
+            break
         resp = (self.capellaAPI.create_control_plane_api_key(self.tenant.id, 'init api keys')).json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
         self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
@@ -957,12 +959,12 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             no_of_files_at_path = [x for x in objects_in_s3 if x.startswith(path)]
-            if len(no_of_files_at_path) < math.ceil(no_of_docs / max_object_per_file):
+            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster,
+                                                                                datasets[i].full_name)
+            if len(no_of_files_at_path) < math.ceil(doc_count_in_dataset / max_object_per_file):
                 self.fail("Number of files are not matching, there are less than expected")
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
-            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster,
-                                                                                datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and remote dataset {1}".format(
                     dataset_obj.full_name, datasets[i].full_name
@@ -1079,8 +1081,8 @@ class CopyToS3(ColumnarBaseTest):
                        "database_name": datasets[i].database_name,
                        "destination_bucket": self.cbas_util.generate_name(),
                        "destination_link_name": s3_link.full_name, "path": path, "validate_error_msg": True,
-                       "expected_error": "External source error. software.amazon.awssdk.services.s3.model.NoSuchBucketException: The specified bucket does not exist",
-                       "expected_error_code": 24086}))
+                       "expected_error": "External sink error. software.amazon.awssdk.services.s3.model.NoSuchBucketException: The specified bucket does not exist",
+                       "expected_error_code": 24230}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
 
