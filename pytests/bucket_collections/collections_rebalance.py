@@ -74,6 +74,7 @@ class CollectionsRebalance(CollectionBase):
                 rebalanceMovesPerNode=self.rebalance_moves_per_node)
         self.N1ql_txn = self.input.param("N1ql_txn", False)
         if self.N1ql_txn:
+            self.skip_validations = True
             self.num_stmt_txn = self.input.param("num_stmt_txn", 5)
             self.num_collection = self.input.param("num_collection", 1)
             self.num_savepoints = self.input.param("num_savepoints", 0)
