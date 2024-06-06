@@ -23,10 +23,10 @@ class WorkloadOperationConfig(OperationConfig):
         :param fields_to_change: list of fields to be updated (list, optional)
         """
         super(WorkloadOperationConfig, self).__init__()
-        self.start = start
-        self.end = end
+        self.start = int(start)
+        self.end = int(end)
         self.template = template
-        self.doc_size = doc_size
+        self.doc_size = int(doc_size)
         self.fields_to_change = fields_to_change
 
     def get_parameters(self):

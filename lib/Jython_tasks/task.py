@@ -4125,11 +4125,14 @@ class RunQueriesTask(Task):
           is_prepared - Prepares the queries in the list if false (string)
                 -- Unprepared query eg:
                 select count(*) from {0} where mutated > 0;
+        return_only_results: for cbas queries only, check
+        CBASQueryExecuteTask doc string for more info
     """
 
     def __init__(self, cluster, queries, task_manager, helper, query_type,
                  run_infinitely=False, parallelism=1, is_prepared=True,
-                 record_results=True, regenerate_queries=False):
+                 record_results=True, regenerate_queries=False,
+                 return_only_results=True):
         super(RunQueriesTask, self).__init__("RunQueriesTask_started_%s"
                                              % (time.time()))
         self.cluster = cluster
@@ -4148,6 +4151,7 @@ class RunQueriesTask(Task):
         self.debug_msg = self.query_type + "-DEBUG-"
         self.record_results = record_results
         self.regenerate_queries = regenerate_queries
+        self.return_only_results = return_only_results
 
     def call(self):
         start = 0
@@ -4170,12 +4174,13 @@ class RunQueriesTask(Task):
                         self.query_tasks.append(query_task)
                     if hasattr(self, "cbas_util"):
                         query_task = CBASQueryExecuteTask(
-                            self.cluster, self.cbas_util, None, query)
+                            self.cluster, self.cbas_util, None,
+                            query, self.return_only_results)
                         self.task_manager.add_new_task(query_task)
                         self.query_tasks.append(query_task)
                 for query_task in self.query_tasks:
                     self.task_manager.get_task_result(query_task)
-                    self.log.info(self.debug_msg + "ActualResult: " + str(
+                    self.log.debug(self.debug_msg + "ActualResult: " + str(
                         query_task.actual_result))
                     if self.record_results:
                         self.result.append(query_task.actual_result)
@@ -7480,12 +7485,25 @@ class MonitorBucketCompaction(Task):
 
 
 class CBASQueryExecuteTask(Task):
-    def __init__(self, cluster, cbas_util, cbas_endpoint, statement):
+    def __init__(self, cluster, cbas_util, cbas_endpoint, statement,
+                 return_only_result=True):
+        """
+        Task to execute analytics query
+        :param cluster:
+        :param cbas_util:
+        :param cbas_endpoint:
+        :param statement:
+        :param return_only_result: If set to True, actual_result will be set
+        to only query result, else it will be a dict as follows
+        {"results": results, "metrics": metrics, "errors":errors}
+        """
         super(CBASQueryExecuteTask, self).__init__("Cbas_query_task: {0}".format(statement))
         self.cluster = cluster
         self.cbas_util = cbas_util
         self.cbas_endpoint = cbas_endpoint
         self.statement = statement
+        self.actual_result = None
+        self.return_only_result = return_only_result
 
     def call(self):
         self.start_task()
@@ -7494,12 +7512,22 @@ class CBASQueryExecuteTask(Task):
                 self.cbas_util.execute_statement_on_cbas_util(
                     self.cluster, self.statement)
 
-            if response:
+            if response == "success":
                 self.set_result(True)
-                self.actual_result = results
+                if self.return_only_result:
+                    self.actual_result = results
+                else:
+                    self.actual_result = {
+                        "thread_name": self.thread_name,
+                        "results": results, "metrics": metrics,
+                        "errors": errors}
             else:
                 self.test_log.error("Error during CBAS query: %s" % errors)
                 self.set_result(False)
+                if not self.return_only_result:
+                    self.actual_result = {
+                        "results": results, "metrics": metrics,
+                        "errors": errors}
         except Exception as e:
             self.log.error("CBASQueryExecuteTask EXCEPTION: " + str(e))
             self.set_result(False)

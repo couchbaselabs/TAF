@@ -128,8 +128,8 @@ class WorkLoadTask(Task):
             (sirius_client_framework.operation_config.OperationConfig)
         :param default_sirius_base_url: Sirius Server URL with port (string)
         """
-        self.thread_name = "WorkLoadTask%s_%s" \
-            .format(database_information.db_type, op_type)
+        self.thread_name = (f"WorkLoadTask{database_information.db_type}_"
+                            f"{op_type}")
         super(WorkLoadTask, self).__init__(self.thread_name)
         self.op_type = op_type
         self.sirius_base_url = default_sirius_base_url

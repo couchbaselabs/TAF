@@ -354,7 +354,7 @@ class ColumnarUtils:
 
         if not support_package:
             support_package = {
-                "key": "developerPro",
+                "key": "Developer Pro",
                 "timezone": "PT"
             }
 
@@ -411,7 +411,7 @@ class ColumnarUtils:
             self.log.critical(str(resp.content))
             raise Exception(str(resp.content))
         elif resp.status_code == 422:
-            if resp.content.find(
+            if resp.content.decode("utf-8").find(
                     "not allowed based on your activation status") != -1:
                 self.log.critical("Tenant is not activated yet...retrying")
             else:
@@ -607,3 +607,72 @@ class ColumnarUtils:
                     self.log.error(f"Following error recieved {resp.text}")
                 return False
         return True
+
+    def turn_off_instance(self, pod, tenant, project_id, instance,
+                          wait_to_turn_off=True, timeout=900):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.turn_off_instance(tenant.id, project_id,
+                                              instance.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning off instance")
+            if wait_to_turn_off:
+                self.wait_for_instance_to_turn_off(pod, tenant, project_id,
+                                                   instance, timeout)
+        else:
+            self.log.error(
+                "Instance turn off API failed with status code: {}".format(
+                    resp.status_code))
+            return False
+
+    def wait_for_instance_to_turn_off(self, pod, tenant, project_id,
+                                      instance, timeout=900):
+        status = None
+        end_time = time.time() + timeout
+        while (status == 'turning_off' or not status) and (
+                time.time() < end_time):
+            resp = self.get_instance_info(
+                pod, tenant, project_id, instance.instance_id)
+            status = resp["data"]["state"]
+        if status == "turned_off":
+            self.log.info("Instance turned off successful")
+            return True
+        else:
+            self.log.error("Failed to turn off the instance")
+            return False
+
+    def turn_on_instance(self, pod, tenant, project_id, instance,
+                         wait_to_turn_on=True, timeout=900):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.turn_on_instance(tenant.id, project_id,
+                                             instance.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning on instance")
+            if wait_to_turn_on:
+                self.wait_for_instance_to_turn_on(pod, tenant, project_id,
+                                                   instance, timeout)
+        else:
+            self.log.error(
+                "Instance turn on API failed with status code: {}".format(
+                    resp.status_code))
+            return False
+
+    def wait_for_instance_to_turn_on(self, pod, tenant, project_id,
+                                     instance, timeout=900):
+        status = None
+        end_time = time.time() + timeout
+        while (status == 'turning_on' or not status) and (
+                time.time() < end_time):
+            resp = self.get_instance_info(
+                pod, tenant, project_id, instance.instance_id)
+            status = resp["data"]["state"]
+        if status == "healthy":
+            self.log.info("Instance turned on successful")
+            return True
+        else:
+            self.log.error("Failed to turn on the instance")
+            return False
+

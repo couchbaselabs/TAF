@@ -22,6 +22,7 @@ import random
 import string
 import threading
 import global_vars
+from sdk_client3 import SDKClientPool
 
 
 class CapellaBaseTest(CouchbaseBaseTest):
@@ -283,8 +284,10 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                 self.cluster_util.print_cluster_stats(cluster)
             for tenant in self.tenants:
                 for cluster in tenant.clusters:
-                    cluster.sdk_client_pool = \
-                    self.bucket_util.initialize_java_sdk_client_pool()
+                    # SDKClientPool object for creating generic clients across tasks
+                    if self.load_docs_using == "default_loader" \
+                            and self.sdk_client_pool is True:
+                        cluster.sdk_client_pool = SDKClientPool()
                     self.pod_table.add_row([tenant.id,
                                             tenant.user + " / " + tenant.pwd,
                                             cluster.id])

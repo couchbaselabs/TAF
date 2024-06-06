@@ -110,9 +110,7 @@ class E2EBuildVerification(ColumnarOnPremBase):
                                                     0)
 
         # This defines number of standalone collections created for
-        # inser/upsert/delete and for copy from S3. Eg - if it is set to 2
-        # then total 4 collections will be created, 2 for
-        # insert/upsert/delete and 2 for copy from S3
+        # inser/upsert/delete
         num_standalone_collections = self.input.param(
             "num_standalone_collections", 0)
         num_kafka_collections = self.input.param("num_kafka_collections", 0)

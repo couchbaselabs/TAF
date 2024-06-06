@@ -6,6 +6,8 @@ Created on 17-Oct-2023
 from basetestcase import BaseTestCase
 from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils import CbasUtil
+from BucketLib.bucket import Bucket
+from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 
 
 class ColumnarBaseTest(BaseTestCase):
@@ -59,12 +61,6 @@ class ColumnarBaseTest(BaseTestCase):
 
         self.cbas_util = CbasUtil(self.task, self.use_sdk_for_cbas)
 
-        self.doc_loading_server_ip = self.input.param(
-            "doc_loading_server_ip", None)
-        self.doc_loading_server_port = self.input.param(
-            "doc_loading_server_port", None)
-        self.doc_loading_APIs = None
-
         self.perform_gf_instance_cleanup = self.input.param(
             "perform_gf_instance_cleanup", True)
 
@@ -81,6 +77,42 @@ class ColumnarBaseTest(BaseTestCase):
         self.s3_source_bucket = self.input.param(
             "s3_source_bucket", "columnar-functional-sanity-test-data")
 
+        # Initialising capella V4 API object, which can used to make capella
+        # V4 API calls.
+        self.capellaAPI = CapellaAPI(
+            self.pod.url_public, '', '', self.tenant.user,
+            self.tenant.pwd, '')
+        response = self.capellaAPI.create_control_plane_api_key(
+            self.tenant.id, 'init api keys')
+        if response.status_code == 201:
+            response = response.json()
+        else:
+            self.log.error("Error while creating V2 control plane API key")
+            self.fail("{}".format(response.content))
+        self.capellaAPI.cluster_ops_apis.SECRET = response['secretKey']
+        self.capellaAPI.cluster_ops_apis.ACCESS = response['id']
+        self.capellaAPI.cluster_ops_apis.bearer_token = response['token']
+        self.capellaAPI.org_ops_apis.SECRET = response['secretKey']
+        self.capellaAPI.org_ops_apis.ACCESS = response['id']
+        self.capellaAPI.org_ops_apis.bearer_token = response['token']
+
+        # create the first V4 API KEY WITH organizationOwner role, which will
+        # be used to perform further V4 api operations
+        resp = self.capellaAPI.org_ops_apis.create_api_key(
+            organizationId=self.tenant.id,
+            name=self.cbas_util.generate_name(),
+            organizationRoles=["organizationOwner"],
+            description=self.cbas_util.generate_name())
+        if resp.status_code == 201:
+            org_owner_key = resp.json()
+        else:
+            self.log.error("Error while creating V4 API key for organization "
+                           "owner")
+
+        self.capellaAPI.org_ops_apis.bearer_token = \
+            self.capellaAPI.cluster_ops_apis.bearer_token = \
+            org_owner_key["token"]
+
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 
@@ -90,3 +122,113 @@ class ColumnarBaseTest(BaseTestCase):
                 self.cbas_util.cleanup_cbas(instance)
 
         super(ColumnarBaseTest, self).tearDown()
+
+    def create_bucket_scopes_collections_in_capella_cluster(
+            self, tenant, cluster, num_buckets=1, bucket_ram_quota=1024,
+            num_scopes_per_bucket=1, num_collections_per_scope=1):
+        for i in range(0, num_buckets):
+            bucket = Bucket(
+                {Bucket.name: self.cbas_util.generate_name(),
+                 Bucket.ramQuotaMB: bucket_ram_quota,
+                 Bucket.maxTTL: self.bucket_ttl,
+                 Bucket.replicaNumber: self.num_replicas,
+                 Bucket.storageBackend: self.bucket_storage,
+                 Bucket.evictionPolicy: self.bucket_eviction_policy,
+                 Bucket.durabilityMinLevel: self.bucket_durability_level,
+                 Bucket.flushEnabled: True})
+            response = self.capellaAPI.cluster_ops_apis.create_bucket(
+                tenant.id, tenant.project_id, cluster.id, bucket.name,
+                "couchbase", bucket.storageBackend, bucket.ramQuotaMB, "seqno",
+                bucket.durabilityMinLevel, bucket.replicaNumber,
+                bucket.flushEnabled, bucket.maxTTL)
+            if response.status_code == 201:
+                self.log.info("Created bucket {}".format(bucket.name))
+                bucket.uuid = response.json()["id"]
+                cluster.buckets.append(bucket)
+            else:
+                self.fail("Error creating bucket {0} on cluster {1}".format(
+                    bucket.name, cluster.name))
+
+            # since default scope is already present in the bucket.
+            for j in range(1, num_scopes_per_bucket):
+                scope_name = self.cbas_util.generate_name()
+                resp = self.capellaAPI.cluster_ops_apis.create_scope(
+                    tenant.id, tenant.project_id, cluster.id,
+                    bucket.uuid, scope_name)
+                if resp.status_code == 201:
+                    self.log.info("Created scope {} on bucket {}".format(
+                        scope_name, bucket.name))
+                    self.bucket_util.create_scope_object(
+                        bucket, scope_spec={"name": scope_name})
+                else:
+                    self.fail("Failed while creating scope {} on bucket {"
+                              "}".format(scope_name, bucket.name))
+
+            for scope_name, scope in bucket.scopes.items():
+                if scope_name != "_system":
+                    collections_to_create = num_collections_per_scope
+                    if "_default" in scope.collections:
+                        collections_to_create -= 1
+                    for k in range(0, collections_to_create):
+                        collection_name = self.cbas_util.generate_name()
+                        resp = self.capellaAPI.cluster_ops_apis.create_collection(
+                            tenant.id, tenant.project_id, clusterId=cluster.id,
+                            bucketId=bucket.uuid, scopeName=scope_name,
+                            name=collection_name)
+
+                        if resp.status_code == 201:
+                            self.log.info(
+                                "Create collection {} in scope {}".format(
+                                    collection_name, scope_name))
+                            self.bucket_util.create_collection_object(
+                                bucket, scope_name,
+                                collection_spec={"name": collection_name})
+                        else:
+                            self.fail(
+                                "Failed creating collection {} in scope {}".format(
+                                    collection_name, scope_name))
+
+    def delete_all_buckets_from_capella_cluster(self, tenant, cluster):
+        resp = self.capellaAPI.cluster_ops_apis.list_buckets(
+            tenant.id, tenant.project_id, cluster.id)
+        if resp.status_code == 200:
+            failed_to_delete_buckets = []
+            data = resp.json()["data"]
+            for bucket in data:
+                resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
+                    tenant.id, tenant.project_id, cluster.id, bucket["id"])
+                if resp.status_code == 204:
+                    self.log.info("Bucket {0} deleted successfully".format(
+                        bucket["name"]))
+                else:
+                    self.log.error(
+                        "Bucket {0} deletion failed".format(bucket["name"]))
+                    failed_to_delete_buckets.append(bucket["name"])
+            if failed_to_delete_buckets:
+                self.fail("Following buckets were not deleted {0}".format(
+                    failed_to_delete_buckets))
+        else:
+            self.fail("Error while fetching bucket list for cluster {"
+                      "0}".format(cluster.id))
+
+    def generate_bucket_object_for_existing_buckets(self, tenant, cluster):
+        for bucket in cluster.buckets:
+            resp = self.capellaAPI.cluster_ops_apis.list_scopes(
+                tenant.id, tenant.project_id, cluster.id, bucket.uuid)
+            if resp.status_code == 200:
+                scope_data = resp.json()["scopes"]
+                for scope_info in scope_data:
+                    if scope_info["name"] not in ["_default", "_system"]:
+                        self.bucket_util.create_scope_object(
+                            bucket, scope_spec={"name": scope_info["name"]})
+
+                    for collection_info in scope_info["collections"]:
+                        if collection_info["name"] != "_default":
+                            self.bucket_util.create_collection_object(
+                                bucket, scope_info["name"],
+                                collection_spec={
+                                    "name": collection_info["name"],
+                                    "maxTTL": collection_info["maxTTL"]})
+            else:
+                self.fail(
+                    f"Error while fetching scope list for bucket {bucket.name}")

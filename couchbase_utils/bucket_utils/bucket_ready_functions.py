@@ -953,7 +953,7 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def initialize_java_sdk_client_pool():
-        return SDKClientPool()
+        return None
 
     @staticmethod
     def perform_doc_loading(task_manager, loader_map, cluster, buckets=None,

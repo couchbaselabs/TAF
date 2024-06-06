@@ -59,12 +59,12 @@ class RestConnection(object):
             self.username = serverInfo["username"]
             self.password = serverInfo["password"]
             self.port = serverInfo["port"]
-            if "index_port" in serverInfo.keys():
+            if "index_port" in list(serverInfo.keys()):
                 index_port = serverInfo["index_port"]
-            if "fts_port" in serverInfo.keys():
+            if "fts_port" in list(serverInfo.keys()):
                 if serverInfo['fts_port']:
                     fts_port = serverInfo["fts_port"]
-            if "eventing_port" in serverInfo.keys():
+            if "eventing_port" in list(serverInfo.keys()):
                 if serverInfo['eventing_port']:
                     self.eventing_port = serverInfo["eventing_port"]
             self.hostname = ''
@@ -145,7 +145,7 @@ class RestConnection(object):
             for iteration in range(5):
                 http_res, success = \
                     self.init_http_request(nodes_self_url, timeout)
-                if not success and type(http_res) == unicode \
+                if not success and type(http_res) == str \
                         and (http_res.find(node_unknown_msg) > -1
                              or http_res.find(unexpected_server_err_msg) > -1):
                     self.log.error("Error {0}, 5 seconds sleep before retry"
@@ -194,7 +194,7 @@ class RestConnection(object):
         if key in headers:
             val = headers[key]
             if val.startswith("Basic "):
-                return "auth: " + base64.decodestring(val[6:])
+                return "auth: " + val[6:]
         return ""
 
     def urllib_request(self, api, method='GET', headers=None,
@@ -248,7 +248,7 @@ class RestConnection(object):
                     response = session.patch(api, data=params, headers=headers,
                                              timeout=timeout, verify=verify)
                 status = response.status_code
-                content = response.content
+                content = response.content.decode("utf-8")
                 if status in [200, 201, 202, 204]:
                     return True, content, response
                 else:
@@ -272,14 +272,14 @@ class RestConnection(object):
                             format(method, api,
                                    "Body is being redacted because it contains sensitive info",
                                    headers, response.status_code, reason,
-                                   content.rstrip('\n'),
+                                   str(content).rstrip('\n'),
                                    RestConnection.get_auth(headers))
                     else:
                         message = '{0} {1} body: {2} headers: {3} ' \
                                   'error: {4} reason: {5} {6} {7}'. \
                             format(method, api, params, headers,
                                    response.status_code, reason,
-                                   content.rstrip('\n'),
+                                   str(content).rstrip('\n'),
                                    RestConnection.get_auth(headers))
                     self.log.debug(message)
                     self.log.debug(''.join(traceback.format_stack()))
@@ -318,6 +318,7 @@ class RestConnection(object):
             try:
                 response, content = httplib2.Http(timeout=timeout).request(
                     api, method, params, headers)
+                content = content.decode("utf-8")
                 if response.status in [200, 201, 202, 204]:
                     return True, content, response
                 else:
@@ -336,14 +337,14 @@ class RestConnection(object):
                                   'error: {4} reason: {5} {6} {7}'. \
                             format(method, api, "Body is being redacted because it contains sensitive info", headers,
                                    response['status'], reason,
-                                   content.rstrip('\n'),
+                                   str(content).rstrip('\n'),
                                    RestConnection.get_auth(headers))
                     else:
                         message = '{0} {1} body: {2} headers: {3} ' \
                                   'error: {4} reason: {5} {6} {7}'. \
                             format(method, api, params, headers,
                                    response['status'], reason,
-                                   content.rstrip('\n'),
+                                   str(content).rstrip('\n'),
                                    RestConnection.get_auth(headers))
                     self.log.debug(message)
                     self.log.debug(''.join(traceback.format_stack()))

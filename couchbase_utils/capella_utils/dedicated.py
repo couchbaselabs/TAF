@@ -166,13 +166,15 @@ class CapellaUtils(object):
                 CapellaUtils.log.critical(str(resp.content))
                 raise Exception(str(resp.content))
             elif resp.status_code == 422:
-                if resp.content.find("not allowed based on your activation status") != -1:
+                content = resp.content.decode("utf-8")
+                if (content.find("not allowed based on your activation status") !=
+                        -1):
                     CapellaUtils.log.critical("Tenant is not activated yet...retrying")
                     time.sleep(5)
-                if resp.content.find("CIDR") != -1:
+                if content.find("CIDR") != -1:
                     subnet = CapellaUtils.get_next_cidr() + "/20"
                 else:
-                    CapellaUtils.log.critical(resp.content)
+                    CapellaUtils.log.critical(content)
                     raise Exception("Cluster deployment failed.")
             else:
                 CapellaUtils.log.critical("Create capella_utils cluster failed.")

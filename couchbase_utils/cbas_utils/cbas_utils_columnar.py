@@ -29,7 +29,7 @@ from common_lib import sleep
 from queue import Queue
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
-from py_constants.cb_constants.CBServer import CbServer
+from py_constants import CbServer
 from sirius_client_framework.multiple_database_config import ColumnarLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
 from sirius_client_framework.sirius_constants import SiriusCodes

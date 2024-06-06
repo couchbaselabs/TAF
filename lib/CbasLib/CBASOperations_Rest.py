@@ -9,7 +9,7 @@ import urllib
 import requests
 
 from connections.Rest_Connection import RestConnection
-from cb_constants.CBServer import CbServer
+from py_constants import CbServer
 
 
 class CBASHelper(RestConnection):
