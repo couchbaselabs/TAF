@@ -282,12 +282,15 @@ class FTSQueryLoad:
                     self.fts_helper = FtsHelper(self.fts_node)
                 query = str(query).replace("True", "true")
                 query = str(query).replace("False", "false")
-                status, result = self.fts_helper.run_fts_query_curl(index, query)
+                status, result, resp = self.fts_helper.run_fts_query_curl(index, query)
                 result = json.loads(str(result).encode().decode())
                 if status:
                     if result["status"].get("errors"):
-                        self.error_count.next()
-                        self.log.critical(result["status"]["errors"])
+                        if str(result["status"]["errors"].find("query request rejected")):
+                            self.rejected_count.next()
+                        else:
+                            self.error_count.next()
+                            self.log.critical(result["status"]["errors"])
                     elif k == result["total_hits"]:
                         self.success_count.next()
                         if self.esClient:
@@ -313,6 +316,8 @@ class FTSQueryLoad:
                     else:
                         self.failed_count.next()
                         self.log.critical("k=%s, total_hits=%s, hits=%s" % (k, result["total_hits"], len(result["hits"])))
+                elif resp.status_code == 429:
+                    self.rejected_count.next()
             except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
                 pass
             except RequestCanceledException as e:
