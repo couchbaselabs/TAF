@@ -638,7 +638,7 @@ class CMEKTest(SecurityBase):
 
         # 5
         aws_cluster_id = self.post_deploy_cluster_aws(aws_key_id)
-        new_resourceName = "arn:aws:kms:us-east-1:264138468394:key/0e055dc1-f585-4754-878b-a18df3fefef8"
+        new_resourceName = "arn:aws:kms:us-east-1:264138468394:key/a6c363c5-b4cd-4244-b1e1-ddd1ca7f827d"
         resp = self.put_update_key(aws_cluster_id, new_resourceName)
         if resp.status_code != 204:
             self.fail("Key rotation failed")
