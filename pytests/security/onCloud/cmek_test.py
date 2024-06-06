@@ -184,7 +184,7 @@ class CMEKTest(SecurityBase):
             self.log.info(response.status_code)
             self.log.info(response.content)
 
-    def post_deploy_cluster_aws(self, aws_key_id):
+    def post_deploy_cluster_aws(self, aws_key_id, region="us-east-1"):
         self.log.info("Deploying AWS cluster")
         headers = {
             'Content-Type': 'application/json',
@@ -197,7 +197,7 @@ class CMEKTest(SecurityBase):
             'description': 'Deploy CMEK cluster',
             'cloudProvider': {
                 'type': 'aws',
-                'region': 'us-east-1',
+                'region': region,
                 'cidr': '10.1.14.0/23',
             },
             'couchbaseServer': {
@@ -746,7 +746,7 @@ class CMEKTest(SecurityBase):
 
         # 5
         try:
-            self.post_deploy_cluster_gcp(gcp_key_id)
+            self.post_deploy_cluster_aws(aws_key_id, region="us-east-2")
         except Exception as e:
             self.log.info("Ran into an Exception: {0}".format(e))
             self.log.info("Failed as expected as different region")
