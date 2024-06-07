@@ -491,8 +491,8 @@ class ColumnarUtils:
             pod, tenant, project_id, instance.instance_id, columnar_api)
         resp = columnar_api.update_columnar_instance(
             tenant.id, project_id, instance.instance_id,
-            columnar_instance_info["name"],
-            columnar_instance_info["description"], nodes)
+            columnar_instance_info["data"]["name"],
+            columnar_instance_info["data"]["description"], nodes)
         self.log.info(resp)
         self.log.info(resp.status_code)
         if resp.status_code != 202:
@@ -543,13 +543,15 @@ class ColumnarUtils:
         end_time = time.time() + timeout
         state = None
         while time.time() < end_time:
-            state = self.get_instance_info(
-                pod, tenant, project_id, instance.instance_id, columnar_api)["state"]
-            if state == "scaling":
-                self.log.info("Instance is still scaling. Waiting for 10s.")
-                time.sleep(10)
-            else:
-                break
+            resp = self.get_instance_info(
+                pod, tenant, project_id, instance.instance_id, columnar_api)
+            if resp:
+                state = resp["data"]["state"]
+                if state == "scaling":
+                    self.log.info("Instance is still scaling. Waiting for 10s.")
+                    time.sleep(10)
+                else:
+                    break
         if state == "healthy":
             return True
         else:
@@ -618,8 +620,8 @@ class ColumnarUtils:
         if resp.status_code == 202:
             self.log.info("Started turning off instance")
             if wait_to_turn_off:
-                self.wait_for_instance_to_turn_off(pod, tenant, project_id,
-                                                   instance, timeout)
+                return self.wait_for_instance_to_turn_off(
+                    pod, tenant, project_id, instance, timeout)
         else:
             self.log.error(
                 "Instance turn off API failed with status code: {}".format(
@@ -652,8 +654,8 @@ class ColumnarUtils:
         if resp.status_code == 202:
             self.log.info("Started turning on instance")
             if wait_to_turn_on:
-                self.wait_for_instance_to_turn_on(pod, tenant, project_id,
-                                                   instance, timeout)
+                return self.wait_for_instance_to_turn_on(
+                    pod, tenant, project_id, instance, timeout)
         else:
             self.log.error(
                 "Instance turn on API failed with status code: {}".format(

@@ -284,6 +284,39 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             cluster=instance, servers=[instance.master],
             req_clients=num_clients, username=username, password=password)
 
+    def update_columnar_instance_obj(self, pod, tenant, instance):
+        info_resp = self.columnar_utils.get_instance_info(
+            pod=pod, tenant=tenant, project_id=tenant.project_id,
+            instance_id=instance.instance_id)
+
+        if not info_resp:
+            raise Exception("Failed fetching connection string for "
+                            "following instance - {0}".format(
+                instance.instance_id))
+
+        instance.srv = info_resp["data"]["config"]["endpoint"]
+        instance.cluster_id = info_resp["data"]["config"]["clusterId"]
+        servers = CapellaUtils.get_nodes(
+            pod, tenant, instance.cluster_id)
+        instance.servers = list()
+
+        for t_server in servers:
+            temp_server = TestInputServer()
+            temp_server.ip = t_server.get("hostname")
+            temp_server.hostname = t_server.get("hostname")
+            temp_server.services = t_server.get("services")
+            temp_server.port = "18091"
+            temp_server.type = "columnar"
+            temp_server.memcached_port = "11207"
+            temp_server.rest_username = self.rest_username
+            temp_server.rest_password = self.rest_password
+            instance.servers.append(temp_server)
+        instance.nodes_in_cluster = instance.servers
+        instance.master = instance.servers[0]
+        instance.cbas_cc_node = instance.servers[0]
+        instance.username = self.rest_username
+        instance.password = self.rest_password
+
 
 class ClusterSetup(ColumnarBaseTest):
     def setUp(self):
