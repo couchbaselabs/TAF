@@ -224,7 +224,7 @@ else
       sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
 
       if [ "$os" != "mariner2" ]; then
-      	guides/gradlew --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
+      	guides/gradlew --no-daemon --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
       fi
 
       # Doing installation from TESTRUNNER!!!
@@ -317,7 +317,7 @@ if [ $status -eq 0 ]; then
   # End of Sirius dep code
 
   echo "Timeout: $timeout minutes"
-  guides/gradlew --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i $WORKSPACE/testexec.$$.ini -c ${confFile} -p ${parameters} -m ${mode} ${rerun_param}"
+  guides/gradlew --no-daemon --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i $WORKSPACE/testexec.$$.ini -c ${confFile} -p ${parameters} -m ${mode} ${rerun_param}"
 
   status=$?
   echo workspace is $WORKSPACE
@@ -327,7 +327,7 @@ if [ $status -eq 0 ]; then
   echo $total_tests
   echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
   if [ ${rerun_job} == true ]; then
-  	guides/gradlew --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
+  	guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
   fi
   # Check if gradle had clean exit. If not, fail the job.
   if [ ! $status = 0 ]; then
@@ -339,7 +339,7 @@ else
   newState=failedInstall
   echo newState=failedInstall>propfile
   if [ ${rerun_job} == true ]; then
-  	guides/gradlew --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --install_failure"
+  	guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --install_failure"
   fi
 fi
 
