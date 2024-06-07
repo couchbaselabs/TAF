@@ -3,7 +3,7 @@ from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
-
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from cb_constants import constants, CbServer
 
@@ -14,6 +14,13 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.skip_validations = self.input.param("skip_validations", True)
         self.data_load_spec = self.input.param("data_load_spec",
                                                "volume_test_load")
+        self.failover_ephemeral_no_replicas = self.input.param("failover_ephemeral_no_replicas", False)
+        if self.failover_ephemeral_no_replicas:
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            shell.enable_diag_eval_on_non_local_hosts()
+            shell.disconnect()
+            self.rest.update_failover_ephemeral_no_replicas()
+
         if self.spec_name is None:
             if self.atomicity:
                 self.run_time_create_load_gen = doc_generator(
@@ -34,6 +41,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
     def tearDown(self):
         self.log.info("Printing bucket stats before teardown")
+        if self.failover_ephemeral_no_replicas:
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            shell.enable_diag_eval_on_non_local_hosts()
+            shell.disconnect()
+            self.rest.update_failover_ephemeral_no_replicas(value="false")
         self.bucket_util.print_bucket_stats(self.cluster)
         super(AutoFailoverTests, self).tearDown()
 

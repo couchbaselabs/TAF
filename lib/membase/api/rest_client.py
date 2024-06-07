@@ -1254,6 +1254,14 @@ class RestConnection(newRC):
         status, content = self.diag_eval(code)
         return status, content
 
+    def update_failover_ephemeral_no_replicas(self, value="true"):
+        """
+        This option when enabled will allow failover of ephemeral buckets even with 0 replicas
+        """
+        code = 'ns_config:set(failover_ephemeral_no_replicas,{0}).'.format(value)
+        status, content = self.diag_eval(code)
+        return status, content
+
     def newMonitorRebalance(self, stop_if_loop=True, sleep_step=3, progress_count=100):
         start = time.time()
         progress = 0
