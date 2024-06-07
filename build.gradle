@@ -21,7 +21,7 @@ repositories {
 }
 
 dependencies {
-    def java_client = "3.4.11"
+    def java_client = "3.6.2"
     if (project.hasProperty("client_version")) {
         java_client = project.property("client_version")
     }

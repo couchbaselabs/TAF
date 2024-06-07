@@ -357,7 +357,8 @@ class ServerTasks(object):
                                       scope=CbServer.default_scope,
                                       collection=CbServer.default_collection,
                                       start_task=True,
-                                      transaction_keyspace=None):
+                                      transaction_keyspace=None,
+                                      binary_transactions=False):
 
         bucket_list = list()
         client_list = list()
@@ -399,7 +400,8 @@ class ServerTasks(object):
             commit=commit,
             sync=sync,
             num_threads=num_threads,
-            record_fail=record_fail)
+            record_fail=record_fail,
+            binary_transactions=binary_transactions)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task

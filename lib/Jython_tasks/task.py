@@ -6695,7 +6695,7 @@ class Atomicity(Task):
                  timeout_secs=5, compression=None,
                  process_concurrency=8, print_ops_rate=True, retries=5,
                  update_count=1, commit=True, sync=True, num_threads=5,
-                 record_fail=False):
+                 record_fail=False, binary_transactions=False):
         super(Atomicity, self).__init__("AtomicityDocLoadTask_%s_%s_%s_%s"
                                         % (op_type, generator[0].start,
                                            generator[0].end, time.time()))
@@ -6724,6 +6724,7 @@ class Atomicity(Task):
         self.update_count = update_count
         self.transaction_app = Transaction()
         self.transaction_options = transaction_options
+        self.binary_transactions = binary_transactions
         sleep(10, "Wait before txn load")
 
     def call(self):
@@ -6787,7 +6788,8 @@ class Atomicity(Task):
                                instance_num=1,
                                transaction_app=self.transaction_app,
                                commit=self.commit,
-                               retries=self.retries)
+                               retries=self.retries,
+                               binary_transactions=self.binary_transactions)
             tasks.append(task)
         return tasks
 
@@ -6808,7 +6810,8 @@ class Atomicity(Task):
                      compression=None, retries=5, instance_num=0,
                      transaction_app=None, commit=True,
                      scope=CbServer.default_scope,
-                     collection=CbServer.default_collection):
+                     collection=CbServer.default_collection,
+                     binary_transactions=False):
             super(Atomicity.Loader, self).__init__(
                 cluster, bucket, clients[0][0],
                 batch_size=batch_size,
@@ -6843,6 +6846,7 @@ class Atomicity(Task):
             self.update_count = update_count
             self.sync = sync
             self.record_fail = record_fail
+            self.binary_transactions = binary_transactions
 
             if self.op_type[-1] == "delete":
                 self.suppress_error_table = True
@@ -6902,7 +6906,8 @@ class Atomicity(Task):
                         self.clients[0][0].cluster,
                         self.bucket, [], self.update_keys,
                         [], False, True, self.update_count,
-                        self.transaction_options)
+                        self.transaction_options,
+                        self.binary_transactions)
                 elif op_type == "delete" or op_type == "rebalance_delete":
                     for doc in self.list_docs:
                         self.transaction_load(doc, self.commit,
@@ -6937,7 +6942,8 @@ class Atomicity(Task):
                         self.clients[0][0].cluster,
                         self.bucket, docs, [], [],
                         True, True, self.update_count,
-                        self.transaction_options)
+                        self.transaction_options,
+                        self.binary_transactions)
                     if "AttemptExpired" in str(err):
                         self.test_log.info("Transaction Expired as Expected")
                         for line in err:
@@ -6994,19 +7000,22 @@ class Atomicity(Task):
                     self.clients[0][0].cluster,
                     self.bucket, doc, update_keys, [],
                     commit, self.sync, self.update_count,
-                    self.transaction_options)
+                    self.transaction_options,
+                    self.binary_transactions)
             elif op_type == "update":
                 err = self.transaction_app.RunTransaction(
                     self.clients[0][0].cluster,
                     self.bucket, [], doc, [],
                     commit, self.sync, self.update_count,
-                    self.transaction_options)
+                    self.transaction_options,
+                    self.binary_transactions)
             elif op_type == "delete":
                 err = self.transaction_app.RunTransaction(
                     self.clients[0][0].cluster,
                     self.bucket, [], [], doc,
                     commit, self.sync, self.update_count,
-                    self.transaction_options)
+                    self.transaction_options,
+                    self.binary_transactions)
             if err:
                 if self.record_fail:
                     self.all_keys = list()

@@ -134,6 +134,8 @@ class CouchbaseBaseTest(unittest.TestCase):
         # End of doc specific parameters
 
         # Transactions parameters
+        self.binary_transactions = \
+            self.input.param("binary_transactions", False)
         self.transaction_timeout = self.input.param("transaction_timeout", 100)
         self.transaction_commit = self.input.param("transaction_commit", True)
         self.transaction_durability_level = \

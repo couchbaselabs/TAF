@@ -90,7 +90,8 @@ class CrashTest(ClusterSetup):
                     update_count=self.update_count,
                     transaction_timeout=self.transaction_timeout,
                     commit=True,
-                    sync=self.sync)
+                    sync=self.sync,
+                    binary_transactions=self.binary_transactions)
                 self.task.jython_task_manager.get_task_result(task)
             else:
                 for bucket in self.cluster.buckets:
@@ -174,7 +175,8 @@ class CrashTest(ClusterSetup):
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
-                sync=self.sync)
+                sync=self.sync,
+                binary_transactions=self.binary_transactions)
         else:
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_load, "create",
@@ -285,7 +287,8 @@ class CrashTest(ClusterSetup):
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
-                sync=self.sync)
+                sync=self.sync,
+                binary_transactions=self.binary_transactions)
         else:
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_load, "create",
