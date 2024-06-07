@@ -17,6 +17,7 @@ from TestInput import TestInputSingleton, TestInputServer
 
 from capella_utils.dedicated import CapellaUtils
 from Jython_tasks.task import DeployColumnarInstanceNew
+import random
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
@@ -116,6 +117,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             else:
                 instance_config = (
                     self.columnar_utils.generate_instance_configuration(
+                        name = self.prefix + "Columnar_{0}".format(random.randint(1, 100000)),
                         nodes=self.num_nodes_in_columnar_instance,
                         image=self.columnar_image,
                         token=self.pod.override_key))

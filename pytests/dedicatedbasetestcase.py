@@ -217,6 +217,9 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         # Comma separated cluster_ids [Eg: 123-456-789,111-222-333,..]
         cluster_ids = TestInputSingleton.input.capella \
             .get("clusters", "")
+        self.prefix = self.input.param("cluster_name_prefix", "")
+        if self.prefix:
+            self.prefix = self.prefix + "_"
         try:
             if cluster_ids:
                 cluster_ids = cluster_ids.split(",")
@@ -228,8 +231,8 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
                         cluster_name = self.cluster_name_format % cluster_index
                         name = "clusterName" if self.capella_cluster_config.get("clusterName") else "name"
                         self.capella_cluster_config[name] = \
-                            "%s_%s_%s" % (
-                                tenant.user.split("@")[0].replace(".", "").replace("+", ""),
+                            "%s%s_%s_%s" % (
+                                self.prefix, tenant.user.split("@")[0].replace(".", "").replace("+", ""),
                                 self.input.param("provider", "aws"),
                                 cluster_name)
                         deploy_task = DeployCloud(self.pod, tenant, self.capella_cluster_config[name],
