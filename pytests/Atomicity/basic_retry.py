@@ -196,7 +196,8 @@ class basic_ops(ClusterSetup):
             persist_to=self.persist_to, timeout_secs=self.sdk_timeout,
             retries=self.sdk_retries, update_count=self.update_count,
             transaction_timeout=self.transaction_timeout,
-            commit=True, durability=self.durability_level, sync=self.sync)
+            commit=True, durability=self.durability_level, sync=self.sync,
+            binary_transactions=self.binary_transactions)
         self.task.jython_task_manager.get_task_result(task)
         self.log.info("Get all the keys in the cluster")
         self.doc_gen(self.num_items)
@@ -233,7 +234,8 @@ class basic_ops(ClusterSetup):
             retries=self.sdk_retries, update_count=self.update_count,
             transaction_timeout=self.transaction_timeout,
             commit=True, durability=self.durability_level,
-            sync=True, num_threads=1)
+            sync=True, num_threads=1,
+            binary_transactions=self.binary_transactions)
         self.task.jython_task_manager.get_task_result(task)
         self.log.info("get all the keys in the cluster")
         keys = ["test_docs-0"]*2

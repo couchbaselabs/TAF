@@ -102,7 +102,7 @@ class basic_ops(ClusterSetup):
             retries=self.sdk_retries, update_count=self.update_count,
             transaction_timeout=self.transaction_timeout,
             commit=self.transaction_commit, durability=self.durability_level,
-            sync=self.sync)
+            sync=self.sync, binary_transactions=self.binary_transactions)
         self.log.info("going to execute the task")
         self.task.jython_task_manager.get_task_result(task)
 
@@ -119,7 +119,8 @@ class basic_ops(ClusterSetup):
                 transaction_timeout=200,
                 commit=self.transaction_commit,
                 durability=self.durability_level,
-                sync=self.sync)
+                sync=self.sync,
+                binary_transactions=self.binary_transactions)
             self.task_manager.get_task_result(task)
 
     def test_large_doc_size_commit(self):
@@ -136,7 +137,8 @@ class basic_ops(ClusterSetup):
             retries=self.sdk_retries,
             transaction_timeout=self.transaction_timeout,
             commit=self.transaction_commit, durability=self.durability_level,
-            sync=self.sync)
+            sync=self.sync,
+            binary_transactions=self.binary_transactions)
 
         self.log.info("going to execute the task")
         self.task.jython_task_manager.get_task_result(task)
@@ -182,7 +184,8 @@ class basic_ops(ClusterSetup):
         # Start transaction to create the doc
         trans_task = self.task.async_load_gen_docs_atomicity(
             self.cluster, self.cluster.buckets,
-            doc_gen, DocLoading.Bucket.DocOps.CREATE)
+            doc_gen, DocLoading.Bucket.DocOps.CREATE,
+            binary_transactions=self.binary_transactions)
         self.task_manager.get_task_result(trans_task)
 
         # Perform sub_doc operation on same key
@@ -203,7 +206,8 @@ class basic_ops(ClusterSetup):
             # Re-insert same doc through transaction
             trans_task = self.task.async_load_gen_docs_atomicity(
                 self.cluster, self.cluster.buckets,
-                doc_gen, DocLoading.Bucket.DocOps.CREATE)
+                doc_gen, DocLoading.Bucket.DocOps.CREATE,
+                binary_transactions=self.binary_transactions)
             self.task_manager.get_task_result(trans_task)
 
         # Close SDK Client connection
