@@ -10,16 +10,10 @@ from queue import Queue
 
 from CbasLib.CBASOperations import CBASHelper
 from Columnar.columnar_base import ColumnarBaseTest
-from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
-from sirius_client_framework.multiple_database_config import CouchbaseLoader
-from sirius_client_framework.operation_config import WorkloadOperationConfig
-from Jython_tasks.sirius_task import WorkLoadTask
-from Jython_tasks.task_manager import TaskManager
-from sirius_client_framework.sirius_constants import SiriusCodes
-from cbas_utils.cbas_utils_columnar import ColumnarStats
+from mini_volume_code_template import MiniVolume
 
 
 class CopyToKv(ColumnarBaseTest):
@@ -29,9 +23,7 @@ class CopyToKv(ColumnarBaseTest):
         self.doc_loader_url = self.input.param("sirius_url", None)
         self.doc_loader_port = self.input.param("sirius_port", None)
         self.no_of_docs = self.input.param("no_of_docs", 1000)
-        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
-        self.columnarAPI = ColumnarAPI(self.pod.url_public, '', '' , self.tenant.user, self.tenant.pwd, '')
-
+        self.columnarAPI = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
 
         # if none provided use 1 Kb doc size
         self.doc_size = self.input.param("doc_size", 1000)
@@ -57,12 +49,14 @@ class CopyToKv(ColumnarBaseTest):
 
         if hasattr(self, 'provisioned_bucket_id'):
             self.delete_capella_bucket(self.provisioned_bucket_id)
+        if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
+            self.delete_all_buckets_from_capella_cluster(self.tenant, self.cluster)
         super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
     def pairs(self, unique_pairs, datasets):
         for i in range(len(datasets)):
-            for j in range(i+1, len(datasets)):
+            for j in range(i + 1, len(datasets)):
                 unique_pairs.append([datasets[i], datasets[j]])
 
     def base_infra_setup(self):
@@ -73,13 +67,6 @@ class CopyToKv(ColumnarBaseTest):
         for key in self.cb_clusters:
             self.remote_cluster = self.cb_clusters[key]
             break
-        resp = (self.capellaAPI.create_control_plane_api_key(self.tenant.id, 'init api keys')).json()
-        self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.cluster_ops_apis.bearer_token = resp['token']
-        self.capellaAPI.org_ops_apis.SECRET = resp['secretKey']
-        self.capellaAPI.org_ops_apis.ACCESS = resp['id']
-        self.capellaAPI.org_ops_apis.bearer_token = resp['token']
         resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.tenant.id,
                                                                                self.tenant.project_id,
                                                                                self.remote_cluster.id, "0.0.0.0/0")
@@ -94,6 +81,10 @@ class CopyToKv(ColumnarBaseTest):
             remote_cluster_certificate = (remote_cluster_certificate_request.json()["certificate"])
         else:
             self.fail("Failed to get cluster certificate")
+
+        # creating bucket scope and collections for remote collection
+        no_of_remote_buckets = self.input.param("no_of_remote_bucket", 1)
+        self.create_bucket_scopes_collections_in_capella_cluster(self.tenant, self.remote_cluster, no_of_remote_buckets)
         if self.input.param("no_of_remote_links", 1):
             remote_link_properties = list()
             remote_link_properties.append(
@@ -153,9 +144,10 @@ class CopyToKv(ColumnarBaseTest):
         # creating bucket for this test
         bucket_name = self.cbas_util.generate_name()
         storage_type = self.input.param("storage_type", "couchstore")
+        ram_quota = 1024 if storage_type == "magma" else 100
         response = self.capellaAPI.cluster_ops_apis.create_bucket(self.tenant.id, self.tenant.project_id,
                                                                   self.remote_cluster.id, bucket_name, "couchbase",
-                                                                  storage_type, 1024, "seqno",
+                                                                  storage_type, ram_quota, "seqno",
                                                                   "majorityAndPersistActive", 1, True, 1000000)
 
         if response.status_code == 201:
@@ -254,7 +246,6 @@ class CopyToKv(ColumnarBaseTest):
             # validate doc count at columnar and KV side
             columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if not self.cbas_util.wait_for_ingestion_complete(self.cluster, remote_dataset.full_name, columnar_count):
-
                 results.append(False)
             kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if columnar_count != kv_count:
@@ -283,7 +274,7 @@ class CopyToKv(ColumnarBaseTest):
                 doc["kv_key"] = ''.join(random.choice(characters) for _ in range(key_size))
                 docs.append(doc)
             if not self.cbas_util.insert_into_standalone_collection(self.cluster, dataset.name, docs,
-                                                             dataset.dataverse_name, dataset.database_name):
+                                                                    dataset.dataverse_name, dataset.database_name):
                 self.fail("Failed to insert document")
         self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
@@ -308,7 +299,7 @@ class CopyToKv(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy to kv statement failed")
 
-        for i in range (len(datasets)):
+        for i in range(len(datasets)):
             remote_dataset = self.cbas_util.create_remote_dataset_obj(self.cluster, self.provisioned_bucket_name,
                                                                       self.provisioned_scope_name,
                                                                       provisioned_collections[i], remote_link,
@@ -449,7 +440,6 @@ class CopyToKv(ColumnarBaseTest):
             # validate doc count at columnar and KV side
             columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if not self.cbas_util.wait_for_ingestion_complete(self.cluster, remote_dataset.full_name, columnar_count):
-
                 results.append(False)
             kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if columnar_count != kv_count:
@@ -536,9 +526,10 @@ class CopyToKv(ColumnarBaseTest):
         jobs.join()
 
         # validate data in KV re-create remote link
-        self.columnar_spec = {"remote_link": {"no_of_remote_links":1,
+        self.columnar_spec = {"remote_link": {"no_of_remote_links": 1,
                                               "properties": self.columnar_spec["remote_link"]["properties"]}}
-        self.cbas_util.create_cbas_infra_from_spec(self.cluster, cbas_spec=self.columnar_spec, bucket_util=self.bucket_util)
+        self.cbas_util.create_cbas_infra_from_spec(self.cluster, cbas_spec=self.columnar_spec,
+                                                   bucket_util=self.bucket_util)
         all_remote_links = self.cbas_util.get_all_link_objs("couchbase")
         new_remote_link = None
         for i in all_remote_links:
@@ -583,17 +574,17 @@ class CopyToKv(ColumnarBaseTest):
         self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
         collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+                                                         self.provisioned_scope_name)
         collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
-                                           collection_name)
+                                       collection_name)
 
         jobs.put((self.cbas_util.copy_to_kv,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
-                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                       "link_name": remote_link.full_name,
-                       "validate_error_msg": self.input.param("validate_error", False),
-                       "expected_error": self.input.param("expected_error", ""),
-                       "expected_error_code": self.input.param("expected_error_code", "")}))
+                  {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
+                   "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
+                   "link_name": remote_link.full_name,
+                   "validate_error_msg": self.input.param("validate_error", False),
+                   "expected_error": self.input.param("expected_error", ""),
+                   "expected_error_code": self.input.param("expected_error_code", "")}))
 
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         time.sleep(10)
@@ -700,7 +691,7 @@ class CopyToKv(ColumnarBaseTest):
                                            collection_name)
             source_definition = query.format(dataset.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
-                      {"cluster": self.cluster, "source_definition":source_definition, "dest_bucket": collection,
+                      {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
                        "link_name": remote_link.full_name}))
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -727,20 +718,21 @@ class CopyToKv(ColumnarBaseTest):
                                                                                                    statement)
                 country_name = ((result[0])[CBASHelper.unformat_name(datasets[i].name)]["country"]).replace("&amp;",
                                                                                                             "")
-                query_statement = "SELECT ARRAY_LENGTH(ARRAY_AGG(city)) as city FROM {0} where country = \"{1}\"".format(
-                        datasets[i].full_name, str(country_name))
+                query_statement = ("SELECT ARRAY_LENGTH(ARRAY_AGG(city)) as city "
+                                   "FROM {0} where country = \"{1}\"").format(
+                    datasets[i].full_name, str(country_name))
                 remote_statement = "select * from {0} where country = \"{1}\"".format(
                     remote_dataset.full_name, str(country_name))
 
                 status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                                       remote_statement)
+                                                                                                   remote_statement)
                 length_of_city_array_from_remote = len((result[0][remote_dataset.name])['city'])
 
                 status, metrics, errors, result2, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                                        query_statement)
+                                                                                                    query_statement)
                 length_of_city_array_from_dataset = result2[0]["city"]
                 if length_of_city_array_from_dataset != length_of_city_array_from_remote:
-                        self.log.error("Length of city aggregate failed")
+                    self.log.error("Length of city aggregate failed")
                 results.append(length_of_city_array_from_remote == length_of_city_array_from_dataset)
 
         if not all(results):
@@ -757,13 +749,13 @@ class CopyToKv(ColumnarBaseTest):
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
         provisioned_collections = []
         for dataset in datasets:
-            jobs.put((self.cbas_util.load_doc_to_standalone_collection_sirius,
-                                  {"collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
-                                   "database_name": dataset.database_name,
-                                   "connection_string": "couchbases://" + self.cluster.srv,
-                                   "start": 1, "end": self.no_of_docs, "doc_size": self.doc_size,
-                                   "username": self.cluster.servers[0].rest_username,
-                                   "password": self.cluster.servers[0].rest_password}))
+            jobs.put((self.cbas_util.doc_operations_standalone_collection_sirius,
+                      {"collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
+                       "database_name": dataset.database_name,
+                       "connection_string": "couchbases://" + self.cluster.srv,
+                       "start": 1, "end": self.no_of_docs, "doc_size": self.doc_size,
+                       "username": self.cluster.servers[0].rest_username,
+                       "password": self.cluster.servers[0].rest_password}))
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
         for dataset in datasets:
             if self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name) == 0:
@@ -785,7 +777,6 @@ class CopyToKv(ColumnarBaseTest):
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
             self.fail("Copy to KV statement failed")
-
 
     def test_create_copyToKV_from_multiple_collection_query_drop_standalone_collection(self):
         self.base_infra_setup()
@@ -838,7 +829,8 @@ class CopyToKv(ColumnarBaseTest):
                                                         database_name=remote_dataset.database_name):
                 self.log.fail("Failed to create remote dataset on KV")
 
-            dataset_statement = "select count(*) from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4".format(
+            dataset_statement = ("select count(*) from {0} as a, {1} as b"
+                                 " where a.avg_rating > 0.4 and b.avg_rating > 0.4").format(
                 (unique_pairs[i][0]).full_name, (unique_pairs[i][1]).full_name
             )
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
@@ -894,59 +886,12 @@ class CopyToKv(ColumnarBaseTest):
         if status is None or status != "healthy":
             self.fail("Fail to scale cluster while copy to kv")
 
-    def run_queries_on_datasets(self, query_jobs):
-        self.cbas_util.get_all_dataset_objs()
-        queries = ["SELECT name, AVG(review.rating.rating_value) AS avg_rating FROM {} AS d "
-                   "UNNEST d.reviews AS review GROUP BY d.name;",
-                   "SELECT name, COUNT(review) AS review_count FROM {} AS d "
-                   "UNNEST d.reviews AS review GROUP BY d.name;",
-                   "SELECT name, AVG(review.rating.checkin) AS avg_checkin_rating FROM mjObARKxQxO7tt5ZOn AS d "
-                   "UNNEST d.reviews AS review WHERE review.rating.checkin IS NOT MISSING GROUP BY d.name;"
-                   ]
-        datasets = self.cbas_util.get_all_dataset_objs()
-        while self.run_queries:
-            if query_jobs.qsize() < 5:
-                dataset = random.choice(datasets)
-                query = random.choice(queries).format(dataset.full_name)
-                query_jobs.put((self.cbas_util.execute_statement_on_cbas_util,
-                                {"cluster": self.cluster, "statement": query, "analytics_timeout": 100000}))
-
-    def load_doc_to_remote_collections(self, bucket, scope, collection, start, end):
-        database_information = CouchbaseLoader(username= self.remote_cluster.username, password=self.remote_cluster.password,
-                                               connection_string="couchbases://"  +self.remote_cluster.srv,
-                                               bucket=bucket, scope=scope, collection=collection, sdk_batch_size=10)
-        operation_config = WorkloadOperationConfig(start=start, end=end, template="hotel", doc_size=self.doc_size)
-        task_insert = WorkLoadTask(task_manager=self.task, op_type=SiriusCodes.DocOps.CREATE,
-                                   database_information=database_information, operation_config=operation_config)
-        task_manager = TaskManager(1)
-        task_manager.add_new_task(task_insert)
-        task_manager.get_task_result(task_insert)
-        return
-
-    def load_doc_in_remote_and_standalone_collection(self, data_loading_job, start, end, remote_collection=None):
-        standalone_dataset = self.cbas_util.get_all_dataset_objs("standalone")
-
-        # start data load on standalone collections
-        for dataset in standalone_dataset:
-            data_loading_job.put((self.cbas_util.load_doc_to_standalone_collection_sirius,
-                                  {"collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
-                                   "database_name": dataset.database_name,
-                                   "connection_string": "couchbases://" + self.cluster.srv,
-                                   "start": start, "end": end, "doc_size": self.doc_size,
-                                   "username": self.cluster.servers[0].rest_username,
-                                   "password": self.cluster.servers[0].rest_password}))
-
-        for collection in remote_collection:
-            bucket, scope, collection = collection.split('.')
-            data_loading_job.put((self.load_doc_to_remote_collections,
-                                  {"bucket": bucket, "scope": scope, "collection": collection,
-                                   "start": start, "end": end}))
-
     def validate_copy_to_kv_result(self, datasets, provisioned_collections, remote_link, validation_results):
         for i in range(len(datasets)):
             remote_dataset = self.cbas_util.create_remote_dataset_obj(self.cluster, self.provisioned_bucket_name,
                                                                       self.provisioned_scope_name,
-                                                                      (provisioned_collections[i].split('.'))[2], remote_link,
+                                                                      (provisioned_collections[i].split('.'))[2],
+                                                                      remote_link,
                                                                       capella_as_source=True)[0]
             if not self.cbas_util.create_remote_dataset(self.cluster, remote_dataset.name,
                                                         remote_dataset.full_kv_entity_name,
@@ -963,12 +908,16 @@ class CopyToKv(ColumnarBaseTest):
                                format(provisioned_collections[i], datasets[i].full_name,
                                       columnar_count, kv_count))
                 validation_results.append(columnar_count != kv_count)
+            self.cbas_util.drop_dataset(self.cluster, remote_dataset.full_name)
         if not all(validation_results):
-            self.run_queries = False
-            self.fail_job("Mismatch found in Copy To KV", query_job=self.query_job)
+            self.fail("Mismatch found in Copy To KV")
 
-    def create_copy_to_kv_all_datasets(self, datasets, copy_to_kv_job, copy_to_kv_collections, remote_link):
+    def create_copy_to_kv_all_datasets(self, datasets, copy_to_kv_job, copy_to_kv_collections, remote_links):
         for dataset in datasets:
+            if type(remote_links, list):
+                remote_link = random.choice(remote_links)
+            else:
+                remote_link = remote_links
             collection_name = self.create_capella_collection(self.provisioned_bucket_id,
                                                              self.provisioned_scope_name)
             collection = "{}.{}.{}".format(CBASHelper.format_name(self.provisioned_bucket_name),
@@ -976,264 +925,38 @@ class CopyToKv(ColumnarBaseTest):
                                            CBASHelper.format_name(collection_name))
             copy_to_kv_collections.append(collection)
             copy_to_kv_job.put((self.cbas_util.copy_to_kv,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
-                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                       "link_name": remote_link.full_name, "analytics_timeout": 1000000}))
-
-    def scale_columnar_cluster(self, nodes):
-        start_time = time.time()
-        status = None
-        resp = self.columnarAPI.update_columnar_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
-                                                  self.cluster.name, '', nodes)
-        if resp.status_code != 202:
-            self.fail("Failed to scale cluster")
-        while status != "healthy" and start_time + 900 > time.time():
-            resp = self.commonAPI.get_cluster_info_internal(self.cluster.cluster_id).json()
-            status = resp["meta"]["status"]["state"]
-            if status == "healthy":
-                return
-
-        self.run_queries = False
-        self.fail_job("Cluster state is {} after 15 minutes".format(status), query_job=self.query_job)
-
-    def fail_job(self, message, **kwargs):
-        for key, value in kwargs.items():
-            value.join()
-        self.fail(message)
-
-    def average_cpu_stats(self):
-        average_cpu_utilization_rate = 0
-        max_cpu_utilization_rate = 0
-        min_cpu_utilization_rate = 0
-        utilization = 0
-        count = 0
-        while self.get_cpu_stats:
-            cpu_node_average = ColumnarStats.cpu_utalization_rate(self.cluster)
-            average_cpu_utilization_rate = ((average_cpu_utilization_rate * count) + cpu_node_average) / (count + 1)
-            if utilization > max_cpu_utilization_rate:
-                max_cpu_utilization_rate = utilization
-            if utilization < min_cpu_utilization_rate:
-                min_cpu_utilization_rate = utilization
-            count = count + 1
-            utilization = 0
-            time.sleep(20)
-        self.log.info("Average CPU utilization rate: {}".format(average_cpu_utilization_rate))
-        self.log.info("Max CPU utilization rate: {}".format(max_cpu_utilization_rate))
-        self.log.info("Min CPU utilization rate: {}".format(min_cpu_utilization_rate))
-        return average_cpu_utilization_rate, max_cpu_utilization_rate, min_cpu_utilization_rate
+                                {"cluster": self.cluster, "collection_name": dataset.name,
+                                 "database_name": dataset.database_name,
+                                 "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
+                                 "link_name": remote_link.full_name, "analytics_timeout": 1000000}))
 
     def mini_volume_copy_to_kv(self):
-        self.sirius_base_url = "http://127.0.0.1:4000"
         self.base_infra_setup()
-        self.commonAPI = CommonCapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd,
-                                          self.input.param("internal_support_token"))
-
-        source_collections = []
-        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
-        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
-        for i in range(self.input.param("no_of_capella_collection")):
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
-            source_collections.append("{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
-                                           collection_name))
-
-        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
-        for dataset in source_collections:
-            bucket, scope, collection_name = dataset.split('.')
-            remote_dataset = self.cbas_util.create_remote_dataset_obj(self.cluster, bucket, scope, collection_name,
-                                                                      remote_link, capella_as_source=True)[0]
-            if not self.cbas_util.create_remote_dataset(self.cluster, remote_dataset.name,
-                                                        remote_dataset.full_kv_entity_name,
-                                                        remote_dataset.link_name,
-                                                        dataverse_name=remote_dataset.dataverse_name,
-                                                        database_name=remote_dataset.database_name):
-                self.log.error("Failed to create remote dataset")
-
-        self.query_job = Queue()
-        self.data_loading_job = Queue()
         self.copy_to_kv_job = Queue()
-        create_query_job = Queue()
-        cpu_stat_job = Queue()
-        results = []
-        self.load_doc_in_remote_and_standalone_collection(self.data_loading_job,  1, self.no_of_docs//3,
-                                                          source_collections)
-        self.cbas_util.run_jobs_in_parallel(self.data_loading_job, results, thread_count=5, async_run=True)
+        self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
+        self.mini_volume.calculate_volume_per_source()
 
-        # run query on datasets until doc loading is complete
-        self.run_queries = True
-        self.get_cpu_stats = True
-        query_work_results = []
-         # Create a new queue for the query job
-        create_query_job.put((self.run_queries_on_datasets, {"query_jobs": self.query_job}))
-        cpu_stat_job.put(self.average_cpu_stats)
-        self.cbas_util.run_jobs_in_parallel(cpu_stat_job, results, 1, async_run=True)
-        self.cbas_util.run_jobs_in_parallel(create_query_job, query_work_results, 1, async_run=True)
-        while self.query_job.qsize() < 5:
-            self.log.info("Waiting for query job to be created")
-            time.sleep(10)
-        self.cbas_util.run_jobs_in_parallel(self.query_job, query_work_results, 3, async_run=True)
+        # initiate copy to kv
+        for i in range(1, 5):
+            if i % 2 == 0:
+                self.mini_volume.run_processes(i, 2 ** (i - 1), False)
+            else:
+                self.mini_volume.run_processes(i, 2 ** (i + 1), False)
+            datasets = self.cbas_util.get_all_dataset_objs()
+            remote_link = self.cbas_util.get_all_link_objs("couchbase")
+            self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
+            self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
+            copy_to_kv_collections = []
+            copy_to_kv_results = []
+            self.create_copy_to_kv_all_datasets(datasets, self.copy_to_kv_job, copy_to_kv_collections, remote_link)
+            self.cbas_util.run_jobs_in_parallel(self.copy_to_kv_job, copy_to_kv_results, self.sdk_clients_per_user,
+                                                async_run=False)
+            if not all(copy_to_kv_results):
+                self.fail("Copy to KV statement failed")
 
-        # wait for data loading to complete
-        self.data_loading_job.join()
+            validation_results = []
+            self.validate_copy_to_kv_result(datasets, copy_to_kv_collections, remote_link, validation_results)
+            self.mini_volume.stop_process(query_pass=True)
+            self.delete_capella_bucket(self.provisioned_bucket_id)
 
-        # start copy to kv and validate the results
-        datasets = self.cbas_util.get_all_dataset_objs()
-        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
-        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
-        copy_to_kv_collections = copy_to_kv_results = []
-
-        self.create_copy_to_kv_all_datasets(datasets, self.copy_to_kv_job, copy_to_kv_collections, remote_link)
-        # run and wait for copy_to_kv_jobs_to_finish
-        self.cbas_util.run_jobs_in_parallel(self.copy_to_kv_job, copy_to_kv_results, self.sdk_clients_per_user,
-                                            async_run=False)
-        if not all(copy_to_kv_results):
-            self.fail_job("Copy to KV statement failed", query_job=self.query_job)
-
-        # validate the result here
-        validation_results = []
-        self.validate_copy_to_kv_result(datasets, copy_to_kv_collections, remote_link, validation_results)
-
-        # scale the cluster while queries are running starting with one node cluster
-        for i in [4, 2, 16, 8]:
-            self.scale_columnar_cluster(i)
-
-        # load more data
-        self.load_doc_in_remote_and_standalone_collection(self.data_loading_job, self.no_of_docs//3,
-                                                          (self.no_of_docs // 3) * 2, source_collections)
-        self.cbas_util.run_jobs_in_parallel(self.data_loading_job, results, thread_count=5)
-        self.data_loading_job.join()
-
-        # start copy to kv and validate the results
-        datasets = self.cbas_util.get_all_dataset_objs()
-        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
-        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
-        copy_to_kv_collections = copy_to_kv_results = []
-
-        self.create_copy_to_kv_all_datasets(datasets, self.copy_to_kv_job, copy_to_kv_collections, remote_link)
-        # run and wait for copy_to_kv_jobs_to_finish
-        self.cbas_util.run_jobs_in_parallel(self.copy_to_kv_job, copy_to_kv_results, self.sdk_clients_per_user,
-                                            async_run=False)
-
-        if not all(copy_to_kv_results):
-            self.run_queries = False
-            self.fail_job("Copy to KV statement failed", query_job=self.query_job)
-
-        # validate the result here
-        validation_results = []
-        self.validate_copy_to_kv_result(datasets, copy_to_kv_collections, remote_link, validation_results)
-
-        # scale the cluster while queries are running
-        for i in [4, 2, 16, 8]:
-            self.scale_columnar_cluster(i)
-
-        # load more data
-        self.load_doc_in_remote_and_standalone_collection(self.data_loading_job, (self.no_of_docs // 3) * 2,
-                                                          self.no_of_docs, source_collections)
-        self.cbas_util.run_jobs_in_parallel(self.data_loading_job, results, thread_count=5)
-        self.data_loading_job.join()
-
-        # start copy to kv and validate the results
-        datasets = self.cbas_util.get_all_dataset_objs()
-        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
-        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
-        copy_to_kv_collections = copy_to_kv_results = []
-
-        self.create_copy_to_kv_all_datasets(datasets, self.copy_to_kv_job, copy_to_kv_collections, remote_link)
-        # run and wait for copy_to_kv_jobs_to_finish
-        self.cbas_util.run_jobs_in_parallel(self.copy_to_kv_job, copy_to_kv_results, self.sdk_clients_per_user,
-                                            async_run=False)
-        if not all(copy_to_kv_results):
-            self.run_queries = False
-            self.fail_job("Copy to KV statement failed", query_job=self.query_job)
-
-        # scale the cluster while queries are running
-        for i in [4, 2, 16, 8]:
-            self.scale_columnar_cluster(i)
-
-        # validate the result here
-        validation_results = []
-        self.validate_copy_to_kv_result(datasets, copy_to_kv_collections, remote_link, validation_results)
-
-        # join two collection and copy the result to kv
-        datasets = self.cbas_util.get_all_dataset_objs("standalone")
-        statement = ("select h1.name, h2.name FROM {} as h1 JOIN {} as h2 on h1.country = h2.country;".
-                     format(datasets[0].full_name, datasets[1].full_name))
-        collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                         self.provisioned_scope_name)
-        collection = "{}.{}.{}".format(CBASHelper.format_name(self.provisioned_bucket_name),
-                                       CBASHelper.format_name(self.provisioned_scope_name),
-                                       CBASHelper.format_name(collection_name))
-        copy_to_kv_collections.append(collection)
-        self.copy_to_kv_job.put((self.cbas_util.copy_to_kv,
-                                 {"cluster": self.cluster, "source_definition": statement,
-                                  "dest_bucket": collection, "link_name": remote_link.full_name,
-                                  "analytics_timeout": 1000000}))
-
-        self.cbas_util.run_jobs_in_parallel(self.copy_to_kv_job, copy_to_kv_results, self.sdk_clients_per_user)
-
-        self.run_queries = False
-        self.query_job.join()
-        self.get_cpu_stats = False
-        if not all(query_work_results):
-            self.fail_job("Queries Failed", query_job=self.query_job)
-        # load more data
-        self.load_doc_in_remote_and_standalone_collection(self.data_loading_job, self.no_of_docs//3,
-                                                          (self.no_of_docs // 3) * 2, source_collections)
-        self.cbas_util.run_jobs_in_parallel(self.data_loading_job, results, thread_count=5)
-        self.data_loading_job.join()
-
-        # start copy to kv and validate the results
-        datasets = self.cbas_util.get_all_dataset_objs()
-        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
-        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
-        copy_to_kv_collections = copy_to_kv_results = []
-
-        self.create_copy_to_kv_all_datasets(datasets, self.copy_to_kv_job, copy_to_kv_collections, remote_link)
-        # run and wait for copy_to_kv_jobs_to_finish
-        self.cbas_util.run_jobs_in_parallel(self.copy_to_kv_job, copy_to_kv_results, self.sdk_clients_per_user,
-                                            async_run=False)
-
-        if not all(copy_to_kv_results):
-            self.run_queries = False
-            self.fail_job("Copy to KV statement failed", query_job=self.query_job)
-
-        # validate the result here
-        validation_results = []
-        self.validate_copy_to_kv_result(datasets, copy_to_kv_collections, remote_link, validation_results)
-
-        # scale the cluster while queries are running
-        for i in [4, 2, 16, 8]:
-            self.scale_columnar_cluster(i)
-
-        # load more data
-        self.load_doc_in_remote_and_standalone_collection(self.data_loading_job, (self.no_of_docs // 3) * 2,
-                                                          self.no_of_docs, source_collections)
-        self.cbas_util.run_jobs_in_parallel(self.data_loading_job, results, thread_count=5)
-        self.data_loading_job.join()
-
-        # start copy to kv and validate the results
-        datasets = self.cbas_util.get_all_dataset_objs()
-        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
-        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
-        copy_to_kv_collections = copy_to_kv_results = []
-
-        self.create_copy_to_kv_all_datasets(datasets, self.copy_to_kv_job, copy_to_kv_collections, remote_link)
-        # run and wait for copy_to_kv_jobs_to_finish
-        self.cbas_util.run_jobs_in_parallel(self.copy_to_kv_job, copy_to_kv_results, self.sdk_clients_per_user,
-                                            async_run=False)
-        if not all(copy_to_kv_results):
-            self.run_queries = False
-            self.fail_job("Copy to KV statement failed", query_job=self.query_job)
-
-        # scale the cluster while queries are running
-        for i in [4, 2, 16, 8]:
-            self.scale_columnar_cluster(i)
-
-        # validate the result here
-        validation_results = []
-        self.validate_copy_to_kv_result(datasets, copy_to_kv_collections, remote_link, validation_results)
-
-        self.run_queries = False
-        self.query_job.join()
-        if not all(query_work_results):
-            self.fail_job("Queries Failed", query_job=self.query_job)
+        self.log.info("Copy to KV mini volume finish")

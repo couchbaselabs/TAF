@@ -30,7 +30,7 @@ from queue import Queue
 from StatsLib.StatsOperations import StatsHelper
 from connections.Rest_Connection import RestConnection
 from py_constants import CbServer
-from sirius_client_framework.multiple_database_config import ColumnarLoader
+from sirius_client_framework.multiple_database_config import ColumnarLoader, CouchbaseLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
 from sirius_client_framework.sirius_constants import SiriusCodes
 from Jython_tasks.sirius_task import WorkLoadTask
@@ -562,7 +562,7 @@ class RBAC_Util(BaseUtil):
         elif privilege_resource_type == "link_ddl":
             grant_cmd = "GRANT {0} LINK "
         elif privilege_resource_type == "link_dml" or \
-            privilege_resource_type == "link_connection":
+                privilege_resource_type == "link_connection":
             grant_cmd = "GRANT {0} ON "
             if use_any:
                 grant_cmd += "ANY LINK "
@@ -1475,7 +1475,7 @@ class Link_Util(Dataverse_Util):
         cbas_helper = self.get_cbas_helper_object(cluster)
         if self.run_query_using_sdk:
             status, content, errors = cbas_helper.get_link_info(
-                None,self.unformat_name(link_name), link_type)
+                None, self.unformat_name(link_name), link_type)
         else:
             params = dict()
             uri = ""
@@ -1641,7 +1641,7 @@ class Link_Util(Dataverse_Util):
             self, cluster, link_properties, username=None, password=None,
             timeout=300):
         response = self.get_link_info(
-            cluster, link_properties["name"],link_properties["type"],
+            cluster, link_properties["name"], link_properties["type"],
             username=username, password=password, timeout=timeout)
         if "secretAccessKey" in link_properties:
             link_properties["secretAccessKey"] = "<redacted sensitive entry>"
@@ -1660,8 +1660,8 @@ class Link_Util(Dataverse_Util):
         if link_type:
             links_query += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, links_query, mode="immediate",
-                timeout=300, analytics_timeout=300)
+            cluster, links_query, mode="immediate",
+            timeout=300, analytics_timeout=300)
         if status == 'success':
             return results
         return []
@@ -1759,7 +1759,6 @@ class RemoteLink_Util(Link_Util):
         """
         count = 0
         while count < no_of_objs:
-
             link = Remote_Link(
                 name=self.generate_name(
                     max_length=name_length, fixed_length=fixed_length),
@@ -1771,6 +1770,26 @@ class RemoteLink_Util(Link_Util):
                     "clientKey": clientKey})
             self.remote_links[link.name] = link
             count += 1
+
+    def doc_operations_remote_collection_sirius(self, collection_name, bucket_name, scope_name,
+                                                connection_string, start, end, sdk_batch_size=25, doc_size=1024,
+                                                template="product", username=None, password=None,
+                                                sirius_url="http://127.0.0.1:4000", action="create"):
+        database_information = CouchbaseLoader(username=username, password=password,
+                                               connection_string=connection_string,
+                                               bucket=bucket_name, scope=scope_name, collection=collection_name,
+                                               sdk_batch_size=sdk_batch_size)
+        operation_config = WorkloadOperationConfig(start=int(start), end=int(end), template=template, doc_size=doc_size)
+        op_type = SiriusCodes.DocOps.BULK_CREATE
+        if action == "delete":
+            op_type = SiriusCodes.DocOps.BULK_DELETE
+        if action == "update":
+            op_type = SiriusCodes.DocOps.BULK_UPDATE
+        task = WorkLoadTask(task_manager=self.task, op_type=op_type,
+                            database_information=database_information, operation_config=operation_config,
+                            default_sirius_base_url=sirius_url)
+        self.task_manager.add_new_task(task)
+        return self.task_manager.get_task_result(task)
 
 
 class ExternalLink_Util(RemoteLink_Util):
@@ -2023,7 +2042,7 @@ class KafkaLink_Util(ExternalLink_Util):
                 name=self.generate_name(
                     name_cardinality=1, max_length=name_length,
                     fixed_length=fixed_length),
-                kafka_type= vendor, kafka_cluster_details=kafka_cluster_detail,
+                kafka_type=vendor, kafka_cluster_details=kafka_cluster_detail,
                 schema_registry_details=schema_registry_detail)
             links.append(link)
         return links
@@ -2056,7 +2075,7 @@ class Dataset_Util(KafkaLink_Util):
         validated.
         """
         self.log.debug("Validating dataset entry in Metadata")
-        cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE '\
+        cmd = 'SELECT value MD FROM Metadata.`Dataset` as MD WHERE ' \
               'DatasetName="{0}"'.format(
             CBASHelper.unformat_name(dataset_name))
         if dataverse_name:
@@ -2446,8 +2465,8 @@ class Dataset_Util(KafkaLink_Util):
                              'FROM Metadata.`Dataset` d ' \
                              'WHERE d.DataverseName <> "Metadata"'
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, datasets_query, mode="immediate", timeout=300,
-                analytics_timeout=300)
+            cluster, datasets_query, mode="immediate", timeout=300,
+            analytics_timeout=300)
         if status == 'success':
             if fields:
                 results = CBASHelper.get_json(json_data=results)
@@ -2732,7 +2751,7 @@ class Remote_Dataset_Util(Dataset_Util):
             # bucket.
             while True:
                 kv_entity = random.choice(all_kv_collection_remote_cluster_map[
-                                      remote_cluster.name])
+                                              remote_cluster.name])
                 if kv_entity not in kv_collection_used[remote_cluster.name]:
                     kv_collection_used[remote_cluster.name].append(kv_entity)
                     break
@@ -2745,7 +2764,6 @@ class Remote_Dataset_Util(Dataset_Util):
 
             bucket, scope, collection = kv_entity
             num_of_items = collection.num_items
-
 
             if dataset_spec["storage_format"] == "mixed":
                 storage_format = random.choice(["row", "column"])
@@ -3095,7 +3113,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             while True:
                 dataset_properties = dataset_spec[
                     "external_dataset_properties"][i % len(dataset_spec[
-                    "external_dataset_properties"])]
+                                                               "external_dataset_properties"])]
                 if link.properties["region"] == dataset_properties.get(
                         "region", None):
                     break
@@ -3196,21 +3214,24 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         def call(self):
             return self.instance.generate_docs(self.document_size, self.country_type, self.include_country)
 
-    def load_doc_to_standalone_collection_sirius(self, collection_name, dataverse_name, database_name,
-                                                 connection_string, start, end, sdk_batch_size=25, doc_size=1024,
-                                                 template="hotel", username=None, password=None,
-                                                 sirius_url="http://127.0.0.1:4000"):
-        sdk_batch_size = 5000000//sdk_batch_size
+    def doc_operations_standalone_collection_sirius(self, collection_name, dataverse_name, database_name,
+                                                    connection_string, start, end, sdk_batch_size=25, doc_size=1024,
+                                                    template="product", username=None, password=None,
+                                                    sirius_url="http://127.0.0.1:4000", action="create"):
         database_information = ColumnarLoader(username=username, password=password, connection_string=connection_string,
                                               bucket=database_name, scope=dataverse_name, collection=collection_name,
                                               sdk_batch_size=int(sdk_batch_size))
-        operation_config = WorkloadOperationConfig(start=int(start), end=int(end), template=template,doc_size=doc_size)
-        task_insert = WorkLoadTask(task_manager=self.task, op_type=SiriusCodes.DocOps.BULK_CREATE,
-                                   database_information=database_information, operation_config=operation_config,
-                                   default_sirius_base_url=sirius_url)
-        task_manager = TaskManager(10)
-        task_manager.add_new_task(task_insert)
-        return task_manager.get_task_result(task_insert)
+        operation_config = WorkloadOperationConfig(start=int(start), end=int(end), template=template, doc_size=doc_size)
+        op_type = SiriusCodes.DocOps.BULK_CREATE
+        if op_type == "delete":
+            op_type = SiriusCodes.DocOps.BULK_DELETE
+        if op_type == "upsert":
+            op_type = SiriusCodes.DocOps.BULK_UPDATE
+        task = WorkLoadTask(task_manager=self.task, op_type=op_type,
+                            database_information=database_information, operation_config=operation_config,
+                            default_sirius_base_url=sirius_url)
+        self.task_manager.add_new_task(task)
+        return self.task_manager.get_task_result(task)
 
     def load_doc_to_standalone_collection(
             self, cluster, collection_name, dataverse_name, database_name,
@@ -3531,11 +3552,11 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             server_task, run_query_using_sdk)
 
     def generate_copy_from_cmd(self, collection_name, aws_bucket_name,
-            external_link_name, dataverse_name=None, database_name=None,
-            files_to_include=[], file_format="json", type_parsing_info="",
-            path_on_aws_bucket="", header=None, null_string=None,
-            files_to_exclude=[], parse_json_string=0,
-            convert_decimal_to_double=0, timezone=""):
+                               external_link_name, dataverse_name=None, database_name=None,
+                               files_to_include=[], file_format="json", type_parsing_info="",
+                               path_on_aws_bucket="", header=None, null_string=None,
+                               files_to_exclude=[], parse_json_string=0,
+                               convert_decimal_to_double=0, timezone=""):
         cmd = "COPY INTO "
         if database_name:
             cmd += "{}.".format(CBASHelper.format_name(database_name))
@@ -4047,7 +4068,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             dataset_obj = Standalone_Dataset(
                 name, data_source, dataset_spec["primary_key"][i % len(dataset_spec["primary_key"])],
                 dataverse.name, database.name, link_name, None,
-                dataset_spec["standalone_collection_properties"][i % len(dataset_spec["standalone_collection_properties"])],
+                dataset_spec["standalone_collection_properties"][
+                    i % len(dataset_spec["standalone_collection_properties"])],
                 0, storage_format)
 
             results.append(
@@ -4553,8 +4575,8 @@ class Synonym_Util(StandAlone_Collection_Util):
                          "Metadata.`Synonym` as syn where syn.DataverseName " \
                          "<> \"Metadata\";"
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, synonyms_query, mode="immediate", timeout=300,
-                analytics_timeout=300)
+            cluster, synonyms_query, mode="immediate", timeout=300,
+            analytics_timeout=300)
         if status == 'success':
             return results
         return []
@@ -4955,8 +4977,8 @@ class Index_Util(View_Util):
                         "idx where idx.DataverseName <> \"Metadata\" and " \
                         "idx.IsPrimary <> true"
         status, _, _, results, _ = self.execute_statement_on_cbas_util(
-                cluster, indexes_query, mode="immediate", timeout=300,
-                analytics_timeout=300)
+            cluster, indexes_query, mode="immediate", timeout=300,
+            analytics_timeout=300)
         if status == 'success':
             return results
         return []
@@ -6194,7 +6216,7 @@ class CbasUtil(CBOUtil):
                 else:
                     retry_func(
                         link, self.disconnect_link,
-                        {"cluster": cluster, "link_name": link.name ,
+                        {"cluster": cluster, "link_name": link.name,
                          "timeout": cbas_spec.get("api_timeout", 300),
                          "analytics_timeout": cbas_spec.get("cbas_timeout", 300)})
             if any(results):
@@ -6593,11 +6615,11 @@ class CbasUtil(CBOUtil):
             return True
 
     def generate_copy_to_s3_cmd(self, collection_name=None, dataverse_name=None,
-            database_name=None, source_definition_query=None,
-            alias_identifier=None, destination_bucket=None,
-            destination_link_name=None, path=None, partition_by=None,
-            partition_alias=None, compression=None, order_by=None,
-            max_object_per_file=None, file_format=None):
+                                database_name=None, source_definition_query=None,
+                                alias_identifier=None, destination_bucket=None,
+                                destination_link_name=None, path=None, partition_by=None,
+                                partition_alias=None, compression=None, order_by=None,
+                                max_object_per_file=None, file_format=None):
         cmd = "COPY "
         if source_definition_query:
             cmd = cmd + "( {0} ) ".format(source_definition_query)
@@ -6757,9 +6779,11 @@ class CBASRebalanceUtil(object):
 
 class BackupUtils(object):
     pass
+
+
 class ColumnarStats(object):
     def cpu_utalization_rate(self, cluster):
-        uri = "https://"+ cluster.srv + ":18091/pools/default"
+        uri = "https://" + cluster.srv + ":18091/pools/default"
         username = cluster.servers[0].rest_username
         password = cluster.servers[0].rest_password
         utilization = 0

@@ -312,7 +312,7 @@ spec = {
         # treated as one index condition. In order to pass multiple
         # fields to create an index use the following format -
         # "field_name_1:field_type_1-field_name_2:field_type_2"
-        "indexed_fields": ["age:bigint"],
+        "indexed_fields": ["country:string"],
         # Accepted values are all, cbas_index or index
         "creation_method": "all"
     },

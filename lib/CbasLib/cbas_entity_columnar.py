@@ -365,6 +365,7 @@ class CBAS_Index(object):
         self.indexed_fields = []
         if indexed_fields:
             self.indexed_fields = indexed_fields.split("-")
+        self.full_name = self.full_dataset_name + "." + self.name
 
     def __str__(self):
         return self.name
@@ -571,7 +572,7 @@ class KafkaClusterDetails(object):
                 "Invalid Authentication type. Supported authentication types "
                 "are {0}.".format(self.AWS_AUTH_TYPES))
 
-        if encryption_type.upper() is "TLS":
+        if encryption_type.upper() == "TLS":
             kafka_cluster_details["authenticationDetails"][
                 "encryptionType"] = encryption_type.upper()
         else:
