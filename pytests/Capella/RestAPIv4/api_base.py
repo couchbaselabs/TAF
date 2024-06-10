@@ -665,7 +665,7 @@ class APIBase(CouchbaseBaseTest):
 
         # Condition is for Sample Buckets delete testcases.
         if ("code" in result.content and result.json()["code"] == 6008 and
-                success_codes == 6008):
+                6008 in success_codes):
             return True
 
         if result.status_code in success_codes:
@@ -821,16 +821,44 @@ class APIBase(CouchbaseBaseTest):
             if time.time() - start_time >= 1800:
                 self.log.error("Couldn't find CIDR within half an hour.")
 
-    def wait_for_deployment(self, proj_id, clus_id, app_svc_id=None):
+    def wait_for_deployment(self, proj_id, clus_id=None, app_svc_id=None,
+                            inst_id=None, pes_id=False):
         start_time = time.time()
         while start_time + 1800 > time.time():
             time.sleep(15)
+
             if app_svc_id:
                 state = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, proj_id, clus_id, app_svc_id)
+                if state.status_code == 429:
+                    self.handle_rate_limit(int(state.headers['Retry-After']))
+                    state = self.capellaAPI.cluster_ops_apis.get_appservice(
+                        self.organisation_id, proj_id, clus_id, app_svc_id)
+            elif inst_id:
+                state = self.columnarAPI.fetch_analytics_cluster_info(
+                    self.organisation_id, proj_id, inst_id)
+                if state.status_code == 429:
+                    self.handle_rate_limit(int(state.headers["Retry-After"]))
+                    state = self.columnarAPI.fetch_analytics_cluster_info(
+                        self.organisation_id, proj_id, inst_id)
+            elif pes_id:
+                state = self.capellaAPI.cluster_ops_apis \
+                    .fetch_private_endpoint_service_status_info(
+                        self.organisation_id, proj_id, clus_id)
+                if state.status_code == 429:
+                    self.handle_rate_limit(int(state.headers["Retry-After"]))
+                    state = self.capellaAPI.cluster_ops_apis \
+                        .fetch_private_endpoint_service_status_info(
+                            self.organisation_id, proj_id, clus_id)
             else:
                 state = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, proj_id, clus_id)
+                if state.status_code == 429:
+                    self.handle_rate_limit(int(state.headers['Retry-After']))
+                    state = self.capellaAPI.cluster_ops_apis.\
+                        fetch_cluster_info(
+                            self.organisation_id, proj_id, clus_id)
+
             if state.status_code >= 400:
                 self.log.error("Something went wrong while fetching details."
                                "\nResult: {}".format(state.content))
@@ -839,10 +867,17 @@ class APIBase(CouchbaseBaseTest):
             self.log.info("Current state: {}"
                           .format(state.json()["currentState"]))
 
+            if pes_id:
+                if state.json()["enabled"] == "true":
+                    return True
+                continue
             if state.json()["currentState"] == "deploymentFailed":
                 self.log.error("!!!Deployment Failed!!!")
                 self.log.error(state.content)
                 return False
+            if app_svc_id and state.json()["currentState"] == "turnedOff":
+                self.log.warning("App Service is turned off")
+                return True
             elif state.json()["currentState"] != "healthy":
                 self.log.info("...Waiting further...")
             else:
@@ -947,6 +982,7 @@ class APIBase(CouchbaseBaseTest):
 
     def delete_projects(self, org_id, project_ids, token):
         project_deletion_failed = False
+
         self.update_auth_with_api_token(token)
         for project_id in project_ids:
             resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -956,8 +992,8 @@ class APIBase(CouchbaseBaseTest):
                 resp = self.capellaAPI.org_ops_apis.delete_project(
                     organizationId=org_id, projectId=project_id)
             if resp.status_code != 204:
-                self.log.error("Error while deleting project {}".format(
-                    project_id))
+                self.log.error("Error while deleting project {}\nError:"
+                               .format(project_id, resp.content))
                 project_deletion_failed = project_deletion_failed or True
         return project_deletion_failed
 
@@ -1142,3 +1178,41 @@ class APIBase(CouchbaseBaseTest):
                 collections.remove(collection)
 
         return collections_deletion_failed
+
+    def create_columnar_instance_to_be_tested(self, proj_id):
+        self.update_auth_with_api_token(self.org_owner_key["token"])
+
+        name = self.prefix + "ColumnarDelete_New"
+        res = self.columnarAPI.create_analytics_cluster(
+            self.organisation_id, proj_id, name, "aws", "us-east-1", 2,
+            {"plan": "enterprise", "timezone": "ET"})
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers['Retry-After']))
+            res = self.columnarAPI.create_analytics_cluster(
+                self.organisation_id, proj_id, name, "aws", "us-east-1", 2,
+                {"plan": "enterprise", "timezone": "ET"})
+        if res.status_code == 201:
+            self.log.debug("New Instance ID: {}".format(res.json()["id"]))
+            return res.json()["id"]
+        self.log.error(res.content)
+        self.fail("!!!...Instance Creation unsuccessful...!!!")
+
+    def flush_columnar_instances(self, proj_id, instances=[]):
+        self.update_auth_with_api_token(self.org_owner_key['token'])
+
+        instance_deletion_failed = False
+        for instance in instances:
+            res = self.columnarAPI.delete_analytics_cluster(
+                self.organisation_id, proj_id, instance)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.columnarAPI.delete_analytics_cluster(
+                    self.organisation_id, proj_id, instance)
+            if res.status_code != 202:
+                self.log.error("Error while deleting instance: {}\nError: {}"
+                               .format(instance, res.content))
+                instance_deletion_failed = True
+            else:
+                instances.remove(instance)
+
+        return instance_deletion_failed
