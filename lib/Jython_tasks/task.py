@@ -3455,6 +3455,8 @@ class StatsWaitTask(Task):
         finally:
             pass
         if time.time() > timeout:
+            for cbstat_obj in self.cbstatObjList:
+                cbstat_obj.disconnect()
             self.set_exception("Could not verify stat {} within timeout {}"
                                .format(self.stat, self.timeout))
 
@@ -3478,6 +3480,8 @@ class StatsWaitTask(Task):
                     retry -= 1
                     sleep(5, "MC is down. Retrying.. %s" % str(error))
                     continue
+                for cbstat_obj in self.cbstatObjList:
+                    cbstat_obj.disconnect()
                 self.set_exception(error)
                 self.stop = True
 
@@ -3514,6 +3518,8 @@ class StatsWaitTask(Task):
                     retry -= 1
                     sleep(5, "MC is down. Retrying.. %s" % str(error))
                     continue
+                for cbstat_obj in self.cbstatObjList:
+                    cbstat_obj.disconnect()
                 self.set_exception(error)
                 self.stop = True
         if not self._compare(self.comparison, str(stat_result), self.value):
