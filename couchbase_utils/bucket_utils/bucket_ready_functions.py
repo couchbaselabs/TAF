@@ -3424,6 +3424,7 @@ class BucketUtils(ScopeUtils):
                     if val_as_per_test != val_as_per_stat:
                         result = False
                         self.log.critical(log_msg)
+        cb_stat.disconnect()
         return result
 
     def validate_oso_dcp_backfill_value(self, kv_nodes, buckets,
@@ -3447,6 +3448,7 @@ class BucketUtils(ScopeUtils):
                     self.log.critical("Bucket {}, oso_dcp_backfill mismatch."
                                       "Expected {}, Actual: {}"
                                       .format(bucket.name, expected_val, val))
+            cbstat.disconnect()
         return result
 
     def wait_for_collection_creation_to_complete(self, cluster, timeout=60):
@@ -5013,6 +5015,7 @@ class BucketUtils(ScopeUtils):
                                                                       "active"))
                             vb_replica_list.extend(cbstat.vbucket_list(bucket,
                                                                        "replica"))
+                            cbstat.disconnect()
                             break
                 if set(vb_active_list).isdisjoint(set(vb_replica_list)):
                     self.log.debug("Active and replica vbucket list"
@@ -5085,6 +5088,7 @@ class BucketUtils(ScopeUtils):
         curr_items = 0
         max_vbuckets = int(cbstat.all_stats(bucket.name)["ep_max_vbuckets"])
         master_stats = bucket_helper.get_bucket_stats(bucket)
+        cbstat.disconnect()
         if "vb_active_num" in master_stats:
             self.log.debug('vb_active_num from master: {0}'
                            .format(master_stats["vb_active_num"]))
@@ -5212,6 +5216,7 @@ class BucketUtils(ScopeUtils):
                     self.log.warning("Exception during cbstat vbucket-seqno cmd: {}".format(e))
                 sleep(2, "Bucket {} is not ready for persistence on {}".format(bucket.name,
                                                                                server.ip))
+            cbstat_obj.disconnect()
         return warmed_up and ready_for_persistence
 
     def add_rbac_user(self, cluster_node, testuser=None, rolelist=None):
@@ -5674,14 +5679,10 @@ class BucketUtils(ScopeUtils):
         :param bucket: Bucket object using which the validation should be done
         """
         collection_data = None
-        cb_stat_objects = list()
-
-        # Create required cb_stat objects
         for node in self.cluster_util.get_kv_nodes(cluster):
-            cb_stat_objects.append(Cbstats(node))
-
-        for cb_stat in cb_stat_objects:
+            cb_stat = Cbstats(node)
             tem_collection_data = cb_stat.get_collections(bucket)
+            cb_stat.disconnect()
             if collection_data is None:
                 collection_data = tem_collection_data
             else:
@@ -5690,7 +5691,6 @@ class BucketUtils(ScopeUtils):
                         for col_name, c_data in value.items():
                             collection_data[key][col_name]['items'] \
                                 += c_data['items']
-
         return collection_data
 
     def validate_doc_count_as_per_collections(self, cluster, bucket):
@@ -5714,7 +5714,8 @@ class BucketUtils(ScopeUtils):
         status = self.validate_bucket_collection_hierarchy(bucket,
                                                            cb_stat_objects,
                                                            collection_data)
-
+        for cb_stat in cb_stat_objects:
+            cb_stat.disconnect()
         # Raise exception if the status is 'False'
         if not status:
             raise Exception("Collections stat validation failed")
@@ -6513,6 +6514,7 @@ class BucketUtils(ScopeUtils):
                 for field in vb_details_fields:
                     replica_stat[field] = vb_details[str(vb)][field]
                 stat_dict[vb][replica].append(replica_stat)
+            cb_stat.disconnect()
         return stat_dict
 
     def validate_history_start_seqno_stat(
@@ -6609,6 +6611,7 @@ class BucketUtils(ScopeUtils):
                         "{0} - vb_{1}:hist_disk_size: {2} > {3} (configured)"
                         .format(node.ip, vb_num, stat["history_disk_size"],
                                 configured_size_per_vb))
+            cbstat.disconnect()
         return result
 
     def get_logical_data(self, bucket):
