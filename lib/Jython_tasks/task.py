@@ -3563,7 +3563,8 @@ class StatsWaitTask(Task):
                 else:
                     raise Exception("Not supported. Implement the stat call")
         finally:
-            pass
+            for cbstat_obj in self.cbstatObjList:
+                cbstat_obj.disconnect()
         if time.time() > timeout:
             self.set_exception("Could not verify stat {} within timeout {}"
                                .format(self.stat, self.timeout))

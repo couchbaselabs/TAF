@@ -38,6 +38,13 @@ class CbCmdBase:
             self.cbstatCmd = "%s%s" % (Linux.NONROOT_CB_BIN_PATH,
                                        self.binaryName)
 
+    def disconnect(self):
+        """
+        Function with the same name (but dummy) is defined
+        within the file cbstats_memcached.py
+        """
+        self.shellConn.disconnect()
+
     def _execute_cmd(self, cmd):
         """
         Executed the given command in the target shell

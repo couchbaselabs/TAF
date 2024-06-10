@@ -15,6 +15,12 @@ class Cbstats:
         self.username = username or server.rest_username
         self.password = password or server.rest_password
 
+    def disconnect(self):
+        """
+        Dummy function similar to the one in 'CbCmdBase' to avoid failures
+        """
+        pass
+
     def __calculate_vbucket_num(self, doc_key, total_vbuckets):
         """
         Calculates vbucket number based on the document's key
@@ -381,7 +387,6 @@ class Cbstats:
             stats[vb_num][stat_name] = value
 
         return stats
-
 
     def dcp_stats(self, bucket_name):
         return self.get_stats_memc(bucket_name, "dcp")
