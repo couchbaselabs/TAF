@@ -184,8 +184,11 @@ class ColumnarRBACUtil:
                         entity_name = res_entities[2]
                         if res_field_name not in scope_obj:
                             scope_obj[res_field_name] = {}
-                        entity_obj = get_entity_obj(scope_obj[res_field_name], entity_name)
-                        entity_obj["privileges"].extend(privs)
+                        scope_object_payload = scope_obj[res_field_name]
+                        if entity_name not in scope_object_payload:
+                            scope_object_payload[entity_name] = []
+                        entity_privileges = scope_object_payload[entity_name]
+                        entity_privileges.extend(privs)
 
         return privileges_payload
 
@@ -208,7 +211,7 @@ class ColumnarRBACUtil:
             "roles": role_ids
         }
 
-        resp = columnar_api.create_instance_api_keys(
+        resp = columnar_api.create_api_keys(
             tenant.id, project_id, instance.instance_id,
             api_key_payload
         )

@@ -10,7 +10,7 @@ from cluster_utils.cluster_ready_functions import ClusterUtils
 from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
 
 import global_vars
-from capella_utils.columnar_final import DBUser, ColumnarInstance, ColumnarUtils
+from capella_utils.columnar_final import DBUser, ColumnarInstance, ColumnarUtils, ColumnarRBACUtil
 from threading import Thread
 from sdk_client3 import SDKClientPool
 from TestInput import TestInputSingleton, TestInputServer
@@ -31,6 +31,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             "num_nodes_in_columnar_instance", 2)
 
         self.columnar_utils = ColumnarUtils(self.log)
+        self.columnar_rbac_util = ColumnarRBACUtil(self.log)
         self.columnar_image = self.input.capella.get("columnar_image")
 
         def populate_columnar_instance_obj(
@@ -69,7 +70,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 temp_server.rest_username = self.rest_username
                 temp_server.rest_password = self.rest_password
                 instance_obj.servers.append(temp_server)
-            instance_obj.nodes_in_cluster = instance_obj.servers 
+            instance_obj.nodes_in_cluster = instance_obj.servers
             instance_obj.master = instance_obj.servers[0]
             instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
@@ -79,7 +80,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             CapellaUtils.create_db_user(
                         self.pod, tenant, cluster_id,
                         self.rest_username, self.rest_password)
-            
+
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}".format(
             instance_id, cluster_id))
 
@@ -122,10 +123,10 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                         image=self.columnar_image,
                         token=self.pod.override_key,
                         region=self.region))
-    
+
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))
-    
+
                 deploy_task = DeployColumnarInstanceNew(self.pod, self.tenant, instance_config["name"],
                                                         instance_config,
                                                         timeout=self.wait_timeout)
@@ -157,17 +158,18 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
             self.cluster_util.print_cluster_stats(instance)
-            resp = None
             count = 0
-            while not resp and count < 5:
-                resp = self.columnar_utils.create_api_keys(
-                    self.pod, self.tenant, self.tenant.project_id,
-                    instance)
+            analytics_admin_user = None
+            while not analytics_admin_user and count < 5:
+                analytics_admin_user = self.columnar_rbac_util.create_custom_analytics_admin_user(
+                    self.pod, self.tenant, self.tenant.project_id, instance,
+                    self.rest_username, self.rest_password
+                )
                 count += 1
                 time.sleep(10)
             for server in instance.servers:
-                server.rest_username = str(resp["apikeyId"])
-                server.rest_password = str(resp["secret"])
+                server.rest_username = analytics_admin_user.username
+                server.rest_password = analytics_admin_user.password
 
         if self.skip_redeploy:
             self.capella["instance_id"] = ",".join([
