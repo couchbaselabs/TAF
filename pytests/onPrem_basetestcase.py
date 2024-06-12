@@ -245,6 +245,14 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.security_util = SecurityUtils(self.log)
             self.security_util.set_internal_creds_rotation_interval(self.cluster, self.int_pwd_rotn)
 
+            for _, cluster in self.cb_clusters.items():
+                if self.use_https:
+                    SDKClient.enable_tls_in_env(cluster)
+                # Building this object here once based on 'use_https',
+                # this will be possibly built once across the run.
+                # This will minimize the mem intensity of the run drastically
+                SDKClient.singleton_env_build(cluster)
+
             if self.skip_setup_cleanup:
                 for server in self.servers:
                     self.set_ports_for_server(server, "ssl")

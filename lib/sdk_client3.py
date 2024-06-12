@@ -266,6 +266,17 @@ class SDKClient(object):
     """
 
     @staticmethod
+    def enable_tls_in_env(cluster):
+        cluster.sdk_cluster_env = cluster.sdk_cluster_env.securityConfig(
+            SecurityConfig.enableTls(True)
+            .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+
+    @staticmethod
+    def singleton_env_build(cluster):
+        if cluster.sdk_env_built is None:
+            cluster.sdk_env_built = cluster.sdk_cluster_env.build()
+
+    @staticmethod
     def create_cluster_env(kv_timeout=60, num_kv_connections=25,
                            connection_timeout=20):
         return ClusterEnvironment.builder() \
@@ -370,7 +381,7 @@ class SDKClient(object):
         # compression settings and explicitly setting to 'False' as well
         build_env = False
         t_cluster_env = cluster.sdk_env_built
-        if CbServer.use_https or self.transaction_conf or self.compression:
+        if self.transaction_conf or self.compression:
             t_cluster_env = cluster.sdk_cluster_env
             build_env = True
 
@@ -384,11 +395,6 @@ class SDKClient(object):
                 compression_config = compression_config.minRatio(
                     self.compression["minRatio"])
             t_cluster_env = t_cluster_env.compressionConfig(compression_config)
-
-        if CbServer.use_https:
-            t_cluster_env = t_cluster_env.securityConfig(
-                SecurityConfig.enableTls(True)
-                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
 
         if self.transaction_conf:
             trans_conf = TransactionsConfig().cleanupConfig(

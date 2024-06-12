@@ -85,7 +85,7 @@ class CBCluster:
         self.sdk_client_pool = None
         # Note: Referenced only for sdk_client3.py SDKClient
         self.sdk_cluster_env = SDKClient.create_cluster_env()
-        self.sdk_env_built = self.sdk_cluster_env.build()
+        self.sdk_env_built = None
 
         # Capella specific params
         self.pod = None
