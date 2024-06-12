@@ -286,7 +286,7 @@ class FTSQueryLoad:
                 result = json.loads(str(result).encode().decode())
                 if status:
                     if result["status"].get("errors"):
-                        if str(result["status"]["errors"].find("query request rejected")):
+                        if str(result["status"]["errors"]).find("query request rejected") != -1:
                             self.rejected_count.next()
                         else:
                             self.error_count.next()
