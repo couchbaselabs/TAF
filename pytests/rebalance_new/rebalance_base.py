@@ -372,7 +372,8 @@ class RebalanceBaseTest(BaseTestCase):
             transaction_timeout=self.transaction_timeout,
             commit=self.transaction_commit,
             durability=self.durability_level,
-            sync=self.sync)
+            sync=self.sync,
+            binary_transactions=self.binary_transactions)
         self.task.jython_task_manager.get_task_result(task)
 
     def start_parallel_cruds_atomicity(self, sync=True,
