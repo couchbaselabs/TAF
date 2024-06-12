@@ -202,7 +202,7 @@ class SDKClient(object):
                        .connectTimeout(Duration.ofSeconds(20))
                        .kvDurableTimeout(Duration.ofSeconds(60))
                        .kvTimeout(Duration.ofSeconds(60)))
-    cluster_env = env.build()
+    cluster_env = None
     sdk_connections = 0
     sdk_disconnections = 0
     doc_op = doc_op()
@@ -288,6 +288,17 @@ class SDKClient(object):
                 bucket.name, time.time()-strt))
         SDKClient.sdk_connections += 1
 
+    @staticmethod
+    def enable_tls_in_env():
+        SDKClient.env = SDKClient.env.securityConfig(
+            SecurityConfig.enableTls(True)
+            .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
+
+    @staticmethod
+    def singleton_env_build(force=False):
+        if SDKClient.cluster_env is None:
+            SDKClient.cluster_env = SDKClient.env.build()
+
     def __create_conn(self):
         if self.bucket:
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
@@ -295,7 +306,7 @@ class SDKClient(object):
         # compression settings and explicitly setting to 'False' as well
         build_env = False
         t_cluster_env = SDKClient.cluster_env
-        if CbServer.use_https or self.transaction_conf or self.compression:
+        if self.transaction_conf or self.compression:
             t_cluster_env = SDKClient.env
             build_env = True
 
@@ -309,11 +320,6 @@ class SDKClient(object):
                 compression_config = compression_config.minRatio(
                     self.compression["minRatio"])
             t_cluster_env = t_cluster_env.compressionConfig(compression_config)
-
-        if CbServer.use_https:
-            t_cluster_env = t_cluster_env.securityConfig(
-                SecurityConfig.enableTls(True)
-                .trustManagerFactory(InsecureTrustManagerFactory.INSTANCE))
 
         if self.transaction_conf:
             trans_conf = TransactionsConfig().cleanupConfig(

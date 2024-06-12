@@ -23,6 +23,7 @@ from couchbase_utils.security_utils.security_utils import SecurityUtils
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
+from sdk_client3 import SDKClient
 from security_config import trust_all_certs
 from docker_utils.DockerSDK import DockerClient
 
@@ -233,6 +234,13 @@ class OnPremBaseTest(CouchbaseBaseTest):
             # Rotate the internal user's password at the specified interval
             self.security_util = SecurityUtils(self.log)
             self.security_util.set_internal_creds_rotation_interval(self.cluster, self.int_pwd_rotn)
+
+            if self.use_https:
+                SDKClient.enable_tls_in_env()
+            # Building this object here once, so that the based
+            # on 'use_https', this will be possibly built once across the run
+            # This will minimize the memory intensity of the run drastically
+            SDKClient.singleton_env_build()
 
             if self.skip_setup_cleanup:
                 # Update current server/service map and buckets for the cluster
