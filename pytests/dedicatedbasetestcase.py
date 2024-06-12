@@ -86,6 +86,7 @@ class CapellaBaseTest(CouchbaseBaseTest):
             "analytics": self.input.param("cbas_disk", 200),
             "eventing": self.input.param("eventing_disk", 200)
             }
+        self.region = self.input.param("region", AWS.Region.US_WEST_2)
         storage_type = AWS.StorageType.GP3 if provider == "aws" else "pd-ssd" if provider == "gcp" else "P6"
         self.storage_type = self.input.param("type", storage_type).lower()
         if provider == "aws":
@@ -445,7 +446,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
             description="Amazing Cloud",
             single_az=False,
             provider=self.provider,
-            region=self.input.param("region", AWS.Region.US_WEST_2),
+            region=self.region,
             timezone=Cluster.Timezone.PT,
             plan=self.package,
             version=self.input.capella.get("server_version", None),
@@ -500,8 +501,7 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
     def generate_cluster_config_internal(self):
         specs = self.create_specs()
         provider = self.input.param("provider", AWS.__str__).lower()
-        region = self.input.param("region", AWS.Region.US_WEST_2)
-        self.log.info("Specs are {} . Provider is {}. Region is {}".format(specs, provider, region))
+        self.log.info("Specs are {} . Provider is {}. Region is {}".format(specs, provider, self.region))
         if provider == "aws":
             provider = "hostedAWS"
             package = "developerPro"
@@ -514,11 +514,11 @@ class ProvisionedBaseTestCase(CapellaBaseTest):
         else:
             raise Exception("Provider has to be one of aws or gcp")
         self.capella_cluster_config = {
-            "region": self.input.param("region", region),
+            "region": self.region,
             "provider": provider,
             "name": str(uuid.uuid4()),
             "cidr": None,
-            "singleAZ": False,
+            "singleAZ": True,
             "specs": specs,
             "package": package,
             "projectId": None,

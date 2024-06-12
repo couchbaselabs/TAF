@@ -120,7 +120,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                         name = self.prefix + "Columnar_{0}".format(random.randint(1, 100000)),
                         nodes=self.num_nodes_in_columnar_instance,
                         image=self.columnar_image,
-                        token=self.pod.override_key))
+                        token=self.pod.override_key,
+                        region=self.region))
     
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))
