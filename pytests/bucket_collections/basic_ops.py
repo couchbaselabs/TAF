@@ -25,6 +25,7 @@ class BasicOps(CollectionBase):
         self.remote_shell = RemoteMachineShellConnection(self.cluster.master)
 
     def tearDown(self):
+        self.remote_shell.disconnect()
         super(BasicOps, self).tearDown()
 
     def __dockey_data_ops(self, dockey="dockey"):
