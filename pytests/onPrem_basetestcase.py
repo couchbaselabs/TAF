@@ -24,7 +24,7 @@ from couchbase_utils.security_utils.security_utils import SecurityUtils
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from sdk_client3 import SDKClientPool
+from sdk_client3 import SDKClientPool, SDKClient
 from security_config import trust_all_certs
 from docker_utils.DockerSDK import DockerClient
 from awsLib.s3_data_helper import perform_S3_operation
