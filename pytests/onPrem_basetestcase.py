@@ -1153,10 +1153,6 @@ class ClusterSetup(OnPremBaseTest):
     def tearDown(self):
         super(ClusterSetup, self).tearDown()
 
-        self.log.info("Closing all ssh connections")
-        for active_shell in RemoteMachineShellConnection.get_instances():
-            active_shell.disconnect()
-
     def __initial_rebalance(self):
         services = None
         if self.services_init:
