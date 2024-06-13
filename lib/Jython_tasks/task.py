@@ -36,7 +36,7 @@ from CbasLib.cbas_entity import Dataverse, CBAS_Collection, Dataset, Synonym, \
 from Jython_tasks.task_manager import TaskManager
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
-from collections_helper.collections_spec_constants import MetaConstants,MetaCrudParams
+from collections_helper.collections_spec_constants import MetaConstants
 from common_lib import sleep
 from couchbase_helper.document import DesignDocument
 from couchbase_helper.documentgenerator import BatchedDocumentGenerator, \
@@ -2002,6 +2002,9 @@ class Durability(Task):
                         self.log.warning("Breaking thread persistence!!")
                         break
                     self.persistence_offset = self.write_offset
+
+            for _, cbstat_obj in shells.items():
+                cbstat_obj.disconnect()
 
         def Reader(self):
             partition_gen = copy.deepcopy(self.generator._doc_gen)

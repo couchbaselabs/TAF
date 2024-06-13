@@ -566,7 +566,6 @@ class DataCollector(object):
             for server in servers:
                 map_data = dict()
                 cbstat = Cbstats(server)
-
                 if collect_vbucket:
                     result = dict()
                     for vb_type in ["active", "replica"]:
@@ -595,6 +594,7 @@ class DataCollector(object):
                     dataMap[server.ip] = map_data
                 else:
                     dataMap.update(map_data)
+                cbstat.disconnect()
             bucketMap[bucket.name] = dataMap
         return bucketMap
 
@@ -618,14 +618,13 @@ class DataCollector(object):
         for bucket in buckets:
             dataMap = {}
             for server in servers:
-                #client = MemcachedClientHelper.direct_client(server, bucket)
-                #stats = client.stats('failovers')
                 cbstat = Cbstats(server)
                 stats = cbstat.failover_stats(bucket.name)
+                cbstat.disconnect()
                 map_data = {}
-                num_map ={}
-                for okey,ovalue in stats.items():
-                    vb = 'vb_'+ okey
+                num_map = {}
+                for okey, ovalue in stats.items():
+                    vb = 'vb_' + okey
                     for ikey, ivalue in ovalue.items():
                         tokens = ikey.split(":")
                         key = tokens[0]
@@ -691,13 +690,12 @@ class DataCollector(object):
             active_map_data = {}
             replica_map_data = {}
             for server in servers:
-                #client = MemcachedClientHelper.direct_client(server, bucket)
-                #stats = client.stats('')
                 cbstat = Cbstats(server)
                 stats = cbstat.vbucket_list(bucket.name)
                 active_map_data[server.ip] = len(stats)
                 stats = cbstat.vbucket_list(bucket.name,
                                             vbucket_type="replica")
+                cbstat.disconnect()
                 replica_map_data[server.ip] = len(stats)
                 # for key in stats.keys():
                 #     if key == 'vb_active_num':
@@ -736,6 +734,7 @@ class DataCollector(object):
                 # stats = client.stats('dcp')
                 cbstat = Cbstats(server)
                 stats = cbstat.dcp_stats(bucket.name)
+                cbstat.disconnect()
                 for key in stats.keys():
                     do_filter = False
                     if stat_name in key:
