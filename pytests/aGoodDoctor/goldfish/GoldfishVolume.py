@@ -194,6 +194,9 @@ class Columnar(BaseTestCase, hostedOPD):
         if self.input.param("remoteCouchbase", False):
             self.setupRemoteCouchbase()
 
+        self.load_remote_couchbase_clusters()
+        self.load_mongo_cluster()
+
         for tenant in self.tenants:
             for columnar in tenant.columnar_instances:
                 self.setup_columnar_sdk_clients(columnar)
@@ -205,8 +208,6 @@ class Columnar(BaseTestCase, hostedOPD):
                 for data_source in self.data_sources["mongo"]:
                     self.drCBAS.wait_for_link_connect(cluster, data_source.link_name, 3600)
 
-        self.load_remote_couchbase_clusters()
-        self.load_mongo_cluster()
 
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
