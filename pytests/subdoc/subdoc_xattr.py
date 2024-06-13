@@ -1626,6 +1626,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             cbstat_obj = Cbstats(node)
             replica_vbs = cbstat_obj.vbucket_list(self.cluster.buckets[0],
                                                   "replica")
+            cbstat_obj.disconnect()
             if target_vb in replica_vbs:
                 target_node = node
                 break
@@ -1734,6 +1735,7 @@ class SubdocXattrDurabilityTest(SubdocBaseTest):
             cbstat_obj = Cbstats(node)
             replica_vbs = cbstat_obj.vbucket_list(self.cluster.buckets[0],
                                                   "replica")
+            cbstat_obj.disconnect()
             if target_vb in replica_vbs:
                 target_node = node
                 break
@@ -2434,8 +2436,9 @@ class XattrTests(SubdocBaseTest):
 
     def vbuckets_on_node(self, server, vbucket_type='active'):
         """ Returns vbuckets for a specific node """
-        vbuckets = set(Cbstats(server).vbucket_list(
-            self.bucket.name, vbucket_type))
+        cb_stat = Cbstats(server)
+        vbuckets = set(cb_stat.vbucket_list(self.bucket.name, vbucket_type))
+        cb_stat.disconnect()
         return vbuckets
 
     def verify_rollback(self, key_min, key_max, vbuckets=None):

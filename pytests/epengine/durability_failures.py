@@ -152,6 +152,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
                              .format(vb_info["failure_stat"],
                                      vb_info["create_stat"]))
 
+        for node in nodes_in_cluster:
+            cbstat_obj[node.ip].disconnect()
+
         self.validate_test_failure()
 
     def test_sync_write_in_progress(self):
@@ -167,7 +170,6 @@ class DurabilityFailureTests(DurabilityTestsBase):
         """
 
         shell_conn = dict()
-        cbstat_obj = dict()
         error_sim = dict()
         vb_info = dict()
 
@@ -184,16 +186,17 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(node)
+            cbstat_obj = Cbstats(node)
             vb_info["init"] = dict()
-            vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
+            vb_info["init"][node.ip] = cbstat_obj.vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log,
                                                 shell_conn[node.ip],
                                                 node=node)
             # Fetch affected nodes' vb_num which are of type=replica
-            replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
+            replica_vbs[node.ip] = cbstat_obj.vbucket_list(
                 self.bucket.name, vbucket_type="replica")
+            cbstat_obj.disconnect()
 
         target_vbuckets = replica_vbs[target_nodes[0].ip]
         if len(target_nodes) > 1:
@@ -321,6 +324,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
@@ -452,6 +456,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         # Revert the introduced error condition
         error_sim.revert(self.simulate_error, bucket_name=self.bucket.name)
+
+        shell_conn.disconnect()
+        cbstat_obj.disconnect()
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
@@ -596,6 +603,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Revert the induced error on the target_node
         error_sim.revert(self.simulate_error, self.bucket.name)
 
+        shell_conn.disconnect()
+        cbstat_obj.disconnect()
+
         # SDK client for performing retry operations
         client = SDKClient(self.cluster, self.bucket)
         # Retry failed docs
@@ -641,7 +651,6 @@ class DurabilityFailureTests(DurabilityTestsBase):
         """
 
         shell_conn = dict()
-        cbstat_obj = dict()
         error_sim = dict()
         vb_info = dict()
         replica_vbs = dict()
@@ -656,16 +665,17 @@ class DurabilityFailureTests(DurabilityTestsBase):
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            cbstat_obj[node.ip] = Cbstats(node)
+            cbstat_obj = Cbstats(node)
             vb_info["init"] = dict()
-            vb_info["init"][node.ip] = cbstat_obj[node.ip].vbucket_seqno(
+            vb_info["init"][node.ip] = cbstat_obj.vbucket_seqno(
                 self.bucket.name)
             error_sim[node.ip] = CouchbaseError(self.log,
                                                 shell_conn[node.ip],
                                                 node=node)
             # Fetch affected nodes' vb_num which are of type=replica
-            replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
+            replica_vbs[node.ip] = cbstat_obj.vbucket_list(
                 self.bucket.name, vbucket_type="replica")
+            cbstat_obj.disconnect()
 
         target_vbuckets = replica_vbs[target_nodes[0].ip]
         if len(target_nodes) > 1:
@@ -752,6 +762,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
@@ -890,6 +901,9 @@ class DurabilityFailureTests(DurabilityTestsBase):
         # Revert the introduced error condition
         error_sim.revert(self.simulate_error, bucket_name=self.bucket.name)
 
+        shell_conn.disconnect()
+        cbstat_obj.disconnect()
+
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)
 
@@ -938,6 +952,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
                 DocLoading.Bucket.DocOps.CREATE, "all_aborts")
             if not success:
                 self.log_failure("Failures seen during loading aborted docs")
+            cbstats.disconnect()
             ssh_shell.disconnect()
         self.validate_test_failure()
 
@@ -1111,6 +1126,7 @@ class TimeoutTests(DurabilityTestsBase):
 
         # Disconnect the shell connection
         for node in target_nodes:
+            cbstat_obj[node.ip].disconnect()
             shell_conn[node.ip].disconnect()
 
         # Close the SDK connection
@@ -1204,8 +1220,6 @@ class TimeoutTests(DurabilityTestsBase):
 
         # Revert the specified error scenario
         error_sim.revert(self.simulate_error, bucket_name=self.bucket.name)
-        # Disconnect the shell connection
-        shell_conn.disconnect()
 
         # Create SDK Client
         client = SDKClient(self.cluster, self.bucket)
@@ -1245,6 +1259,9 @@ class TimeoutTests(DurabilityTestsBase):
             self.log_failure("Mismatch in vbucket_seqno. {0} != {1}"
                              .format(vb_info["init"],
                                      vb_info["withinTimeout"]))
+        # Disconnect the shell connection
+        shell_conn.disconnect()
+        cbstat_obj.disconnect()
         self.validate_test_failure()
 
     def test_timeout_with_crud_failures(self):
@@ -1500,6 +1517,7 @@ class TimeoutTests(DurabilityTestsBase):
 
         # Disconnect the shell connection
         for node in target_nodes:
+            cbstat_obj[node.ip].disconnect()
             shell_conn[node.ip].disconnect()
 
         self.validate_test_failure()

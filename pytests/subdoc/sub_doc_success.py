@@ -669,8 +669,6 @@ class BasicOps(DurabilityTestsBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=def_bucket.name)
-
-            # Disconnect the shell connection
             shell_conn[node.ip].disconnect()
 
         # Fetch latest failover stats and validate the values are updated
@@ -680,6 +678,9 @@ class BasicOps(DurabilityTestsBase):
                 cbstat_obj[node.ip].vbucket_seqno(def_bucket.name)
             failover_info["afterCrud"][node.ip] = \
                 cbstat_obj[node.ip].failover_stats(def_bucket.name)
+
+            # Disconnect the shell connection
+            cbstat_obj[node.ip].disconnect()
 
             # Failover validation
             val = True
@@ -911,6 +912,7 @@ class BasicOps(DurabilityTestsBase):
 
         # Disconnect the shell connection
         for node in target_nodes:
+            cbstat_obj[node.ip].disconnect()
             shell_conn[node.ip].disconnect()
 
         # Verify doc count

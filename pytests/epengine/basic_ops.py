@@ -753,6 +753,9 @@ class basic_ops(ClusterSetup):
             self.sleep(120, "Total_gets: %s, itr: %s" % (total_gets,
                                                          read_task.itr_count))
 
+        for node in kv_nodes:
+            cbstat[node].disconnect()
+
         read_task.end_task()
         self.task_manager.get_task_result(read_task)
 
@@ -795,6 +798,9 @@ class basic_ops(ClusterSetup):
                         self.log_failure(cbstat_err)
                 if self.test_failure:
                     break
+
+            for t_node in kv_nodes:
+                cb_stat[t_node].disconnect()
 
         total_gets = 0
         max_gets = 50000000
@@ -848,6 +854,10 @@ class basic_ops(ClusterSetup):
 
         stop_thread = True
         read_task.end_task()
+
+        for node in kv_nodes:
+            cb_stat_obj[node].disconnect()
+
         mc_stat_reset_thread.join()
         get_timings_thread.join()
 
@@ -925,6 +935,9 @@ class basic_ops(ClusterSetup):
 
             if non_resident_keys_len >= max_keys_to_del:
                 break
+
+        for _, n_data in nodes_data.items():
+            n_data["cbstats"].disconnect()
 
         self.log.info("Non-resident key count: %d" % non_resident_keys_len)
 
@@ -1066,6 +1079,9 @@ class basic_ops(ClusterSetup):
                       % bloom_filter_size_after_compaction)
         if int(bloom_filter_size_after_compaction) <= int(bloom_filter_size):
             self.log_failure("Bloom filter init_size <= curr_size")
+
+        for _, n_data in nodes_data.items():
+            n_data["cbstats"].disconnect()
 
         # Close SDK and shell connections
         client.close()
@@ -1233,6 +1249,7 @@ class basic_ops(ClusterSetup):
         # Closing all shell connections
         for node in nodes_data.keys():
             nodes_data[node]["shell"].disconnect()
+            nodes_data[node]["cbstat"].disconnect()
 
         self.validate_test_failure()
 
@@ -1522,6 +1539,7 @@ class basic_ops(ClusterSetup):
                                     pre_kill_stat[t_stat],
                                     post_kill_stat[t_stat]))
 
+        cb_stat.disconnect()
         shell.disconnect()
         self.validate_test_failure()
 
@@ -1605,6 +1623,7 @@ class basic_ops(ClusterSetup):
         self.assertTrue(result, "Rebalance_in failed")
 
         replica_vbs = cbstat.vbucket_list(bucket.name, Bucket.vBucket.REPLICA)
+        cbstat.disconnect()
         if key_vb not in replica_vbs:
             # Swap the nodes in-order to maintain the vbucket consistency
             in_node = self.cluster.servers[0]
@@ -1613,6 +1632,7 @@ class basic_ops(ClusterSetup):
             cbstat = Cbstats(self.cluster.servers[1])
             replica_vbs = cbstat.vbucket_list(bucket.name,
                                               Bucket.vBucket.REPLICA)
+            cbstat.disconnect()
 
         self.assertTrue(key_vb in replica_vbs, "vBucket is still active vb")
 
@@ -1711,17 +1731,18 @@ class basic_ops(ClusterSetup):
         cb_err.revert(CouchbaseError.STOP_SERVER)
         self.cluster_util.wait_for_ns_servers_or_assert([self.cluster.master])
 
-        curr_stats =  cb_stats.all_stats(bucket.name)
+        curr_stats = cb_stats.all_stats(bucket.name)
         for field in ["ep_db_file_size", "ep_db_data_size"]:
             self.assertTrue(int(curr_stats[field]) != 0,
                             "%s stat is zero" % field)
 
         cb_err.create(CouchbaseError.KILL_MEMCACHED)
         self.sleep(10, "Wait for memcached to recover")
-        curr_stats =  cb_stats.all_stats(bucket.name)
+        curr_stats = cb_stats.all_stats(bucket.name)
         for field in ["ep_db_file_size", "ep_db_data_size"]:
             self.assertTrue(int(curr_stats[field]) != 0,
                             "%s stat is zero" % field)
+        cb_stats.disconnect()
         shell.disconnect()
 
     def test_warmup_scan_reset(self):
@@ -1859,6 +1880,7 @@ class basic_ops(ClusterSetup):
         self.assertEqual(curr_val, param_val,
                          "Unexpected value: '%s'" % curr_val)
 
+        cbstat.disconnect()
         shell.disconnect()
 
     def verify_stat(self, items, value="active"):
@@ -2052,7 +2074,7 @@ class basic_ops(ClusterSetup):
 
         for node in kv_nodes:
             shell = RemoteMachineShellConnection(node)
-            cb_stat= Cbstats(node)
+            cb_stat = Cbstats(node)
             all_stats = cb_stat.all_stats(bucket.name)
             num_moved = int(all_stats["ep_defragmenter_num_moved"])
             num_visited = int(all_stats["ep_defragmenter_num_visited"])
@@ -2063,6 +2085,7 @@ class basic_ops(ClusterSetup):
                 result = False
                 self.log.critical("{0} - ep_defragmenter_num_visited={1}"
                                   .format(node.ip, num_visited))
+            cb_stat.disconnect()
             shell.disconnect()
         self.assertTrue(result, "Stat validation failed")
 
@@ -2077,7 +2100,7 @@ class basic_ops(ClusterSetup):
                                                      self.cluster.buckets)
         for node in kv_nodes:
             shell = RemoteMachineShellConnection(node)
-            cb_stat= Cbstats(node)
+            cb_stat = Cbstats(node)
             all_stats = cb_stat.all_stats(bucket.name)
             num_moved = int(all_stats["ep_defragmenter_num_moved"])
             num_visited = int(all_stats["ep_defragmenter_num_visited"])
@@ -2092,6 +2115,7 @@ class basic_ops(ClusterSetup):
                 result = False
                 self.log.critical("{0} - ep_defragmenter_num_visited={1}"
                                   .format(node.ip, num_visited))
+            cb_stat.disconnect()
             shell.disconnect()
         self.assertTrue(result, "Stat validation failed")
 
@@ -2219,6 +2243,7 @@ class basic_ops(ClusterSetup):
         self.log.info("Validating stats after compaction")
         all_stats = cb_stats.all_stats(bucket.name)
         vb_stats = cb_stats.vbucket_details(bucket.name)
+        cb_stats.disconnect()
         shell.disconnect()
 
         self.assertTrue(int(all_stats["ep_bg_fetched_compaction"]) > 1000,
@@ -2252,6 +2277,7 @@ class basic_ops(ClusterSetup):
             self.assertEqual(
                 val, backfill_val,
                 "ep_dcp_oso_backfill {} != {}".format(val, backfill_val))
+            cbstats.disconnect()
             shell.disconnect()
 
         oso_backfill_enabled = self.input.param("oso_backfill_enabled", None)
@@ -2476,7 +2502,7 @@ class basic_ops(ClusterSetup):
                 cb_err = CouchbaseError(self.log, cbstat.shellConn)
                 cb_err.create(CouchbaseError.STOP_MEMCACHED)
                 break
-            cbstat.shellConn.disconnect()
+            cbstat.disconnect()
 
         target_vbs = list(set(range(0, 1024)) - set(active_vbs))
         doc_gen = doc_generator("test_docs", 0, 100000, key_size=220,
@@ -2575,6 +2601,7 @@ class basic_ops(ClusterSetup):
 
         self.log.info("Closing connections")
         for _, n_info in node_info.items():
+            n_info["cbstat"].disconnect()
             n_info["shell"].disconnect()
 
     def do_get_random_key(self):

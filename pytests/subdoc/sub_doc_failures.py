@@ -158,6 +158,7 @@ class SubDocTimeouts(DurabilityTestsBase):
 
         # Disconnect the shell connection
         for node in target_nodes:
+            cbstat_obj[node.ip].disconnect()
             shell_conn[node.ip].disconnect()
 
         # Read mutation field from all docs for validation
@@ -466,6 +467,7 @@ class SubDocTimeouts(DurabilityTestsBase):
 
         # Disconnect the shell connection
         for node in target_nodes:
+            cbstat_obj[node.ip].disconnect()
             shell_conn[node.ip].disconnect()
 
         self.validate_test_failure()
@@ -506,7 +508,6 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
         tasks = list()
         vb_info = dict()
-        shell_conn = dict()
         cbstat_obj = dict()
         vb_info["init"] = dict()
         vb_info["failure_stat"] = dict()
@@ -537,8 +538,6 @@ class DurabilityFailureTests(DurabilityTestsBase):
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
         for node in nodes_in_cluster:
-            shell_conn[node.ip] = \
-                RemoteMachineShellConnection(self.cluster.master)
             cbstat_obj[node.ip] = Cbstats(node)
 
             # Fetch vbucket seq_no stats from vb_seqno command for verification
@@ -647,6 +646,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for node in nodes_in_cluster:
             vb_info["failure_stat"].update(cbstat_obj[node.ip]
                                            .vbucket_seqno(self.bucket.name))
+            cbstat_obj[node.ip].disconnect()
 
         if vb_info["create_stat"] != vb_info["failure_stat"]:
             self.log_failure("Failover stats mismatch. {0} != {1}"
@@ -846,6 +846,8 @@ class DurabilityFailureTests(DurabilityTestsBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loader_task_1)

@@ -1083,6 +1083,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                     stat = Cbstats(server)
                     resident_mem = stat.get_stats_memc(bucket.name)[
                         "vb_active_perc_mem_resident"]
+                    stat.disconnect()
                     if int(resident_mem) <= int(target_dgm):
                         loading_for_buckets[bucket.name] = False
                         break
@@ -1512,6 +1513,7 @@ class TenantMgmtOnCloud(OnCloudBaseTest):
                 try:
                     stat = Cbstats(server)
                     status = stat.vbucket_details(t_bucket.name)
+                    stat.disconnect()
                 except Exception as e:
                     self.log.warning(e)
                     continue

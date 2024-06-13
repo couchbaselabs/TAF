@@ -250,6 +250,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 cbstats = Cbstats(server)
                 replica_vbs = cbstats.vbucket_list(
                     self.cluster.buckets[0].name, "replica")
+                cbstats.disconnect()
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
@@ -824,6 +825,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 replica_vbs = cbstats.vbucket_list(
                     self.cluster.buckets[0].name,
                     "replica")
+                cbstats.disconnect()
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(
@@ -1028,6 +1030,7 @@ class RebalanceInTests(RebalanceBaseTest):
                 cbstats = Cbstats(server)
                 replica_vbs = cbstats.vbucket_list(
                     self.cluster.buckets[0].name, "replica")
+                cbstats.disconnect()
                 load_gen = doc_generator(self.key, 0, 5000,
                                          target_vbucket=replica_vbs)
                 success = self.bucket_util.load_durable_aborts(

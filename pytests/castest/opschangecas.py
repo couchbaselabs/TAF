@@ -229,6 +229,9 @@ class OpsChangeCasTests(CasBaseTest):
             if "expire" in self.doc_ops:
                 self.verify_cas("expire", gen_expire)
 
+        for _, cbstat in self.cb_stat.items():
+            cbstat.disconnect()
+
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
         self.validate_test_failure()

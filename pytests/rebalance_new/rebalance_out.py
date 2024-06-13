@@ -209,6 +209,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                     DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
                     self.log_failure("Simulating aborts failed")
+                cbstats.disconnect()
                 ssh_shell.disconnect()
 
             self.validate_test_failure()
@@ -572,6 +573,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                     DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
                     self.log_failure("Simulating aborts failed")
+                cbstats.disconnect()
                 ssh_shell.disconnect()
 
             self.validate_test_failure()
@@ -746,6 +748,7 @@ class RebalanceOutTests(RebalanceBaseTest):
                     DocLoading.Bucket.DocOps.UPDATE, "all_aborts")
                 if not success:
                     self.log_failure("Simulating aborts failed")
+                cbstats.disconnect()
                 ssh_shell.disconnect()
 
             self.validate_test_failure()

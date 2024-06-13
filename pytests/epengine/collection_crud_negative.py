@@ -208,6 +208,7 @@ class CollectionDurabilityTests(CollectionBase):
         for node in nodes_in_cluster:
             vb_info["failure_stat"].update(cbstat_obj[node.ip]
                                            .vbucket_seqno(self.bucket.name))
+            cbstat_obj[node.ip].disconnect()
 
         if not sub_doc_test and \
                 vb_info["create_stat"] == vb_info["failure_stat"]:
@@ -286,6 +287,7 @@ class CollectionDurabilityTests(CollectionBase):
                     validate_task=False)
             cb_err.revert(self.simulate_error,
                           self.cluster.buckets[0].name)
+            cbstats.disconnect()
             ssh_shell.disconnect()
         self.validate_test_failure()
 
@@ -364,6 +366,8 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
+            shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         if self.durability_level \
                 == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
@@ -523,6 +527,8 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
+            shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         target_vbs = replica_vbs
         if self.durability_level \
@@ -702,6 +708,8 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
+            shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         target_vbs = replica_vbs
         if self.durability_level \
