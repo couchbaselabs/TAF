@@ -1,7 +1,6 @@
 import time
 import copy
 import re
-import json
 
 from cb_tools.mc_stat import McStat
 from remote.remote_util import RemoteMachineShellConnection
@@ -745,6 +744,7 @@ class LMT(ServerlessOnPremBaseTest):
         cbstat_obj = Cbstats(node, "Administrator", "password")
         active_vb_numbers = cbstat_obj.vbucket_list(bucket.name,
                                                     vbucket_type="active")
+        cbstat_obj.disconnect()
         return active_vb_numbers
 
     def throttling_limit_on_node(self, node, bucket, throttle_limit):

@@ -28,6 +28,7 @@ class OpsChangeCasTests(CasBaseTest):
             self.node_data[node.ip]["replica"] = cb_stat.vbucket_list(
                 self.bucket.name,
                 "replica")
+            cb_stat.disconnect()
         if self.sdk_client_pool:
             self.client = self.sdk_client_pool.get_client_for_bucket(
                 self.bucket)

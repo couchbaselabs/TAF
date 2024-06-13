@@ -12,6 +12,7 @@ from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
 
+
 class DurabilityTestsBase(ClusterSetup):
     def setUp(self):
         super(DurabilityTestsBase, self).setUp()
@@ -207,6 +208,7 @@ class BucketDurabilityBase(ClusterSetup):
                 cb_stat.vbucket_list(bucket_name, "active")
             self.vbs_in_node[node]["replica"] = \
                 cb_stat.vbucket_list(bucket_name, "replica")
+            cb_stat.disconnect()
 
     def get_bucket_dict(self, bucket_type, bucket_durability):
         bucket_dict = deepcopy(self.bucket_template)

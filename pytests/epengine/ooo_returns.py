@@ -9,7 +9,6 @@ from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from constants.sdk_constants.java_client import SDKConstants
 
 from com.couchbase.test.transactions import SimpleTransaction as Transaction
 from reactor.util.function import Tuples
@@ -57,6 +56,7 @@ class OutOfOrderReturns(ClusterSetup):
                 cb_stat.vbucket_list(self.bucket.name, vbucket_type="active")
             self.node_data[node]["replica_vbs"] = \
                 cb_stat.vbucket_list(self.bucket.name, vbucket_type="replica")
+            cb_stat.disconnect()
 
         # Print cluster & bucket stats
         self.cluster_util.print_cluster_stats(self.cluster)

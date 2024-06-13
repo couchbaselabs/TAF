@@ -1,4 +1,3 @@
-import copy
 import random
 import string
 import threading
@@ -473,6 +472,7 @@ class ServerlessMetering(LMT):
             _, self.ru, self.wu = self.get_stat(self.bucket)
             self.assertEqual(self.wu, expected_wu, msg)
 
+        cbstats.disconnect()
         shell.disconnect()
 
     def check_ru_wu_for_transaction(self):

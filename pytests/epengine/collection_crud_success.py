@@ -252,6 +252,7 @@ class CollectionsSuccessTests(CollectionBase):
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
             failover_info["afterCrud"][node.ip] = \
                 cbstat_obj[node.ip].failover_stats(self.bucket.name)
+            cbstat_obj[node.ip].disconnect()
 
             # Failover validation
             val = \
@@ -399,6 +400,7 @@ class CollectionsSuccessTests(CollectionBase):
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
             failover_info["afterCrud"][node.ip] = \
                 cbstat_obj[node.ip].failover_stats(self.bucket.name)
+            cbstat_obj[node.ip].disconnect()
 
             # Failover stat validation
             if self.simulate_error == CouchbaseError.KILL_MEMCACHED:
@@ -846,8 +848,6 @@ class CollectionsSuccessTests(CollectionBase):
 
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:
-            # Create shell_connections
-            shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(node)
             active_vbs = cbstat_obj[node.ip] .vbucket_list(def_bucket.name,
                                                            "active")
@@ -858,6 +858,8 @@ class CollectionsSuccessTests(CollectionBase):
                 cbstat_obj[node.ip].failover_stats(def_bucket.name)
 
         for node in target_nodes:
+            # Create shell_connections
+            shell_conn[node.ip] = RemoteMachineShellConnection(node)
             # Perform specified action
             error_sim[node.ip] = CouchbaseError(self.log,
                                                 shell_conn[node.ip],
@@ -912,6 +914,7 @@ class CollectionsSuccessTests(CollectionBase):
         # Disconnect the shell connection
         for node in target_nodes:
             shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         self.validate_test_failure()
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -958,8 +961,6 @@ class CollectionsSuccessTests(CollectionBase):
 
         self.log.info("Will simulate error condition on %s" % target_nodes)
         for node in target_nodes:
-            # Create shell_connections
-            shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstat_obj[node.ip] = Cbstats(node)
             active_vbs = cbstat_obj[node.ip] .vbucket_list(def_bucket.name,
                                                            "active")
@@ -999,6 +1000,8 @@ class CollectionsSuccessTests(CollectionBase):
         self.sleep(5, "Wait for doc loaders to start loading data")
 
         for node in target_nodes:
+            # Create shell_connections
+            shell_conn[node.ip] = RemoteMachineShellConnection(node)
             # Perform specified action
             error_sim[node.ip] = CouchbaseError(self.log,
                                                 shell_conn[node.ip],
@@ -1044,6 +1047,7 @@ class CollectionsSuccessTests(CollectionBase):
         # Disconnect the shell connection
         for node in target_nodes:
             shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         self.validate_test_failure()
         # Doc count validation

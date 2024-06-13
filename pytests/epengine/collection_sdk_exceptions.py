@@ -448,6 +448,7 @@ class SDKExceptionTests(CollectionBase):
 
         # Disconnect the shell connection
         for node in target_nodes:
+            cbstat_obj[node.ip].disconnect()
             shell_conn[node.ip].disconnect()
 
         # Verify initial doc load count
@@ -814,6 +815,7 @@ class SDKExceptionTests(CollectionBase):
 
         # Disconnect the shell connection
         for node in target_nodes:
+            cbstat_obj[node.ip].disconnect()
             shell_conn[node.ip].disconnect()
 
         self.validate_test_failure()

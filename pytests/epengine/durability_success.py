@@ -196,6 +196,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
             failover_info["afterCrud"][node.ip] = \
                 cbstat_obj[node.ip].failover_stats(self.bucket.name)
+            cbstat_obj[node.ip].disconnect()
 
             # Failover validation
             val = failover_info["init"][node.ip] \
@@ -405,6 +406,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
                 cbstat_obj[node.ip].vbucket_seqno(self.bucket.name)
             failover_info["afterCrud"][node.ip] = \
                 cbstat_obj[node.ip].failover_stats(self.bucket.name)
+            cbstat_obj[node.ip].disconnect()
 
             # Failover stat validation
             if self.simulate_error == CouchbaseError.KILL_MEMCACHED:
@@ -598,6 +600,7 @@ class DurabilitySuccessTests(DurabilityTestsBase):
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cb_stat = Cbstats(node)
             dcp_stats = cb_stat.dcp_stats(self.bucket.name)
+            cb_stat.disconnect()
             for stat_name, val in dcp_stats.items():
                 if stat_name.split(":")[-1] == "unacked_bytes":
                     self.log.debug("%s: %s" % (stat_name, val))
