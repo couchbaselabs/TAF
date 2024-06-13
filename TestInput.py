@@ -30,6 +30,7 @@ class TestInput(object):
         self.elastic = list()
         self.capella = dict()
         self.datasources = dict()
+        self.kafka = dict()
         # servers, each server can have u_name, passwd, port, directory
 
     def param(self, name, *args):
@@ -198,7 +199,9 @@ class TestInputParser:
         t_input.ui_conf = {}
         for section in sections:
             result = re.search('^cluster', section)
-            if section == "datasources":
+            if section == "kafka":
+                t_input.kafka = TestInputParser.get_datasources_config(config, section)
+            elif section == "datasources":
                 t_input.datasources = TestInputParser.get_datasources_config(config, section)
             elif section == "capella":
                 t_input.capella = TestInputParser.get_capella_config(config, section)

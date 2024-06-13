@@ -26,7 +26,8 @@ class hostedOPD(OPD):
 
     def threads_calculation(self):
         self.process_concurrency = self.input.param("pc", self.process_concurrency)
-        self.doc_loading_tm = TaskManager(self.process_concurrency*self.num_tenants*self.num_clusters*self.num_buckets)
+        num_clusters = self.num_clusters or 1 
+        self.doc_loading_tm = TaskManager(self.process_concurrency*self.num_tenants*num_clusters*self.num_buckets)
 
     def print_cluster_cpu_ram(self, cluster, step=300):
         while not self.stop_run:
@@ -97,7 +98,7 @@ class hostedOPD(OPD):
 
     def setup_buckets(self):
         for tenant in self.tenants:
-            for cluster in tenant.clusters + tenant.columnar_instances:
+            for cluster in tenant.clusters:
                 cpu_monitor = threading.Thread(target=self.print_cluster_cpu_ram,
                                                kwargs={"cluster": cluster})
                 cpu_monitor.start()

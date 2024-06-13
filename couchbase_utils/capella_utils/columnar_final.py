@@ -1,10 +1,10 @@
-'''
+"""
 Created on Oct 13, 2023
 
 @author: umang.agrawal
 This file is temporary and will be merged with columnar.py in the same
 folder.
-'''
+"""
 import json
 import random
 import string
@@ -12,6 +12,7 @@ import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
 import pprint
+import socket
 
 
 class ColumnarInstance:
@@ -22,9 +23,8 @@ class ColumnarInstance:
         self.tenant_id = tenant_id
         self.project_id = project_id
 
-        if instance_name:
-            self.name = instance_name
-        else:
+        self.name = instance_name
+        if not instance_name:
             self.name = "Columnar_instance{0}".format(random.randint(1, 100000))
 
         self.instance_id = instance_id
@@ -43,8 +43,8 @@ class ColumnarInstance:
         # SDK related objects
         self.sdk_client_pool = None
         # Note: Referenced only for sdk_client3.py SDKClient
-        self.sdk_cluster_env = SDKClient.create_cluster_env()
-        self.sdk_env_built = self.sdk_cluster_env.build()
+        # self.sdk_cluster_env = SDKClient.create_cluster_env()
+        # self.sdk_env_built = self.sdk_cluster_env.build()
 
     def refresh_object(self, servers):
         self.kv_nodes = list()
@@ -75,8 +75,8 @@ class ColumnarInstance:
             self.nodes_in_cluster.append(server)
         self.master = self.kv_nodes[0]
 
-class DBUser:
 
+class DBUser:
     def __init__(self, userId="", username="Administrator",
                  password="password"):
         self.username = username
@@ -88,6 +88,7 @@ class DBUser:
     def __str__(self):
         return self.username
 
+
 class ColumnarRole:
     def __init__(self, roleId="", role_name=""):
         self.id = roleId
@@ -97,21 +98,23 @@ class ColumnarRole:
     def __str__(self):
         return self.name
 
+
 class ColumnarRBACUtil:
     def __init__(self, log):
         self.log = log
-
 
     def create_custom_analytics_admin_user(
             self, pod, tenant, project_id, instance,
             username, password):
         privileges_list = [
-            "database_create", "database_drop", "scope_create", "scope_drop", "collection_create",
-            "collection_drop", "collection_select", "collection_insert", "collection_upsert",
-            "collection_delete", "collection_analyze", "view_create", "view_drop", "view_select",
-            "index_create", "index_drop", "function_create", "function_drop", "function_execute",
-            "link_create", "link_drop", "link_alter", "link_connect", "link_disconnect",
-            "link_copy_to", "link_copy_from", "link_create_collection", "link_describe",
+            "database_create", "database_drop", "scope_create", "scope_drop",
+            "collection_create", "collection_drop", "collection_select",
+            "collection_insert", "collection_upsert", "collection_delete",
+            "collection_analyze", "view_create", "view_drop", "view_select",
+            "index_create", "index_drop", "function_create", "function_drop",
+            "function_execute", "link_create", "link_drop", "link_alter",
+            "link_connect", "link_disconnect", "link_copy_to",
+            "link_copy_from", "link_create_collection", "link_describe",
             "synonym_create", "synonym_drop"
         ]
 
@@ -122,14 +125,13 @@ class ColumnarRBACUtil:
         }
 
         privileges_payload = self.create_privileges_payload([resources_privileges_map])
-        analytics_admin_role = self.create_columnar_role(pod, tenant, project_id,
-                                                         instance, "analytics_admin",
-                                                         privileges_payload)
+        analytics_admin_role = self.create_columnar_role(
+            pod, tenant, project_id, instance, "analytics_admin",
+            privileges_payload)
         if not analytics_admin_role:
             self.log.error("Failed to create analytics admin role")
             return None
         instance.columnar_roles.append(analytics_admin_role)
-
         analytics_admin_user = self.create_api_keys(pod, tenant, project_id, instance,
                                                     username, password,
                                                     role_ids=[analytics_admin_role.id])
@@ -137,9 +139,7 @@ class ColumnarRBACUtil:
         return analytics_admin_user
 
     def create_privileges_payload(self, resources_privileges_map=[]):
-
         def get_entity_obj(entity_obj_map={}, entity_name=""):
-
             if entity_name in entity_obj_map:
                 return entity_obj_map[entity_name]
             else:
@@ -194,9 +194,8 @@ class ColumnarRBACUtil:
         return privileges_payload
 
     def create_api_keys(
-            self, pod, tenant, project_id, instance,
-            username, password, privileges_payload = None,
-            role_ids = []):
+            self, pod, tenant, project_id, instance, username, password,
+            privileges_payload=None, role_ids=[]):
 
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
@@ -240,7 +239,8 @@ class ColumnarRBACUtil:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
 
-        resp = columnar_api.delete_api_keys(tenant.id, project_id, instance.instance_id,
+        resp = columnar_api.delete_api_keys(tenant.id, project_id,
+                                            instance.instance_id,
                                             api_key_id)
 
         if resp.status_code == 202:
@@ -300,11 +300,12 @@ class ColumnarRBACUtil:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
 
-        resp = columnar_api.delete_columnar_role(tenant.id, project_id, instance.instance_id,
+        resp = columnar_api.delete_columnar_role(tenant.id, project_id,
+                                                 instance.instance_id,
                                                  role_id)
 
         if resp.status_code == 204:
-            self.log.info("Successfully deleted columnar role {}".format(role_id))
+            self.log.info("Successfully deleted columnar role %s" % role_id)
             return True
         elif resp.status_code == 500:
             self.log.critical(str(resp.content))
@@ -318,7 +319,6 @@ class ColumnarRBACUtil:
 
 
 class ColumnarUtils:
-
     def __init__(self, log):
         self.log = log
 
@@ -433,7 +433,6 @@ class ColumnarUtils:
 
         return instance_id
 
-
     def delete_instance(self, pod, tenant, project_id, instance):
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
@@ -441,8 +440,9 @@ class ColumnarUtils:
         resp = columnar_api.delete_columnar_instance(
             tenant.id, project_id, instance.instance_id)
         if resp.status_code != 202:
-            self.log.error("Unable to delete columnar instance {0}/{1}: {2}".format(
-                instance.name, instance.instance_id, resp.content))
+            self.log.error("Unable to delete columnar instance {0}/{1}: {2}"
+                           .format(instance.name, instance.instance_id,
+                                   resp.content))
             return False
         return True
 
@@ -470,8 +470,8 @@ class ColumnarUtils:
             pod, tenant, project_id, instance.instance_id, columnar_api)
         resp = columnar_api.update_columnar_instance(
             tenant.id, project_id, instance.instance_id,
-            columnar_instance_info["name"],
-            columnar_instance_info["description"], nodes)
+            columnar_instance_info["data"]["name"],
+            columnar_instance_info["data"]["description"], nodes)
         self.log.info(resp)
         self.log.info(resp.status_code)
         if resp.status_code != 202:
@@ -486,13 +486,14 @@ class ColumnarUtils:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         end_time = time.time() + timeout
+        state = None
         while time.time() < end_time:
             resp = self.get_instance_info(
                 pod, tenant, project_id, instance.instance_id, columnar_api)
             if not resp:
                 state = None
                 break
-            state = resp["state"]
+            state = resp["data"]["state"]
             if state == "destroying":
                 self.log.info("instance is still deleting. Waiting for 10s.")
                 time.sleep(10)
@@ -519,14 +520,17 @@ class ColumnarUtils:
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         end_time = time.time() + timeout
+        state = None
         while time.time() < end_time:
-            state = self.get_instance_info(
-                pod, tenant, project_id, instance.instance_id, columnar_api)["state"]
-            if state == "scaling":
-                self.log.info("Instance is still scaling. Waiting for 10s.")
-                time.sleep(10)
-            else:
-                break
+            resp = self.get_instance_info(
+                pod, tenant, project_id, instance.instance_id, columnar_api)
+            if resp:
+                state = resp["data"]["state"]
+                if state == "scaling":
+                    self.log.info("Instance is still scaling. Waiting for 10s.")
+                    time.sleep(10)
+                else:
+                    break
         if state == "healthy":
             return True
         else:
@@ -534,36 +538,6 @@ class ColumnarUtils:
                            "seconds. Current instance state - {2}".format(
                 instance.name, timeout, state))
             return False
-
-    def create_api_keys(self, pod, tenant, project_id, instance):
-        columnar_api = ColumnarAPI(
-            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
-            tenant.user, tenant.pwd)
-        resp = columnar_api.create_api_keys(
-            tenant.id, project_id, instance.instance_id)
-        if resp.status_code != 201:
-            self.log.error(
-                "Unable to create API keys for Columnar instance {0} with ID "
-                "{1}".format(instance.name, instance.instance_id))
-            if resp.text:
-                self.log.error("Following error recieved {}".format(resp.text))
-            return None
-        return json.loads(resp.content)
-
-    def delete_api_keys(self, pod, tenant, project_id, instance, api_key):
-        columnar_api = ColumnarAPI(
-            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
-            tenant.user, tenant.pwd)
-        resp = columnar_api.delete_api_keys(
-            tenant.id, project_id, instance.instance_id, api_key)
-        if resp.status_code != 201:
-            self.log.error(
-                "Unable to delete API keys for Columnar instance {0} with ID "
-                "{1}".format(instance.name, instance.instance_id))
-            if resp.text:
-                self.log.error("Following error recieved {}".format(resp.text))
-            return None
-        return json.loads(resp.content)
 
     def allow_ip_on_instance(self, pod, tenant, project_id, instance,
                              ip="0.0.0.0/0", description=""):
@@ -580,7 +554,126 @@ class ColumnarUtils:
                 self.log.error(
                     "Unable to add IP {0} to Columnar instance {1} with ID "
                     "{2}".format(ip, instance.name, instance.instance_id))
-                if resp.text:
-                    self.log.error("Following error recieved {}".format(resp.text))
+                if resp.content:
+                    self.log.error("Following error recieved %s" % resp.content)
                 return False
         return True
+
+    def turn_off_instance(self, pod, tenant, project_id, instance,
+                          wait_to_turn_off=True, timeout=900):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.turn_off_instance(tenant.id, project_id,
+                                              instance.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning off instance")
+            if wait_to_turn_off:
+                return self.wait_for_instance_to_turn_off(
+                    pod, tenant, project_id, instance, timeout)
+        else:
+            self.log.error(
+                "Instance turn off API failed with status code: {}".format(
+                    resp.status_code))
+            return False
+
+    def wait_for_instance_to_turn_off(self, pod, tenant, project_id,
+                                      instance, timeout=900):
+        status = None
+        end_time = time.time() + timeout
+        while (status == 'turning_off' or not status) and (
+                time.time() < end_time):
+            resp = self.get_instance_info(
+                pod, tenant, project_id, instance.instance_id)
+            status = resp["data"]["state"]
+        if status == "turned_off":
+            self.log.info("Instance turned off successful")
+            return True
+        else:
+            self.log.error("Failed to turn off the instance")
+            return False
+
+    def turn_on_instance(self, pod, tenant, project_id, instance,
+                         wait_to_turn_on=True, timeout=900):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.turn_on_instance(tenant.id, project_id,
+                                             instance.instance_id)
+        if resp.status_code == 202:
+            self.log.info("Started turning on instance")
+            if wait_to_turn_on:
+                return self.wait_for_instance_to_turn_on(
+                    pod, tenant, project_id, instance, timeout)
+        else:
+            self.log.error(
+                "Instance turn on API failed with status code: {}".format(
+                    resp.status_code))
+            return False
+
+    def wait_for_instance_to_turn_on(self, pod, tenant, project_id,
+                                     instance, timeout=900):
+        status = None
+        end_time = time.time() + timeout
+        while (status == 'turning_on' or not status) and (
+                time.time() < end_time):
+            resp = self.get_instance_info(
+                pod, tenant, project_id, instance.instance_id)
+            status = resp["data"]["state"]
+        if status == "healthy":
+            self.log.info("Instance turned on successful")
+            return True
+        else:
+            self.log.error("Failed to turn on the instance")
+            return False
+
+    def get_nodes(self, connection_str):
+        servers = list()
+        ais = socket.getaddrinfo(connection_str, 0, 0, 0, 0)
+        for result in ais:
+            servers.append(result[-1][0])
+            servers = list(set(servers))
+        return servers
+
+    def create_couchbase_cloud_qe_user(self, pod, tenant, instance):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
+        resp = columnar_api.create_analytics_admin_user(instance.instance_id)
+        if resp.status_code == 200:
+            self.log.info("Created user: %s: %s" % (resp.json()["username"], resp.json()["password"]))
+            return resp.json()["username"], resp.json()["password"]
+        elif resp.status_code == 422 and resp.json()[
+            "errorType"] == "ErrDataplaneUserNameExists":
+            if self.delete_couchbase_cloud_qe_user(pod, tenant, instance):
+                return self.create_couchbase_cloud_qe_user(
+                    pod, tenant, instance)
+            else:
+                return None, None
+        else:
+            self.log.error("Unable to create user couchbase-cloud-qe")
+            return None, None
+
+    def delete_couchbase_cloud_qe_user(self, pod, tenant, instance):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
+        resp = columnar_api.delete_analytics_admin_user(instance.instance_id)
+        if resp.status_code == 204:
+            self.log.info("Deleted user couchbase-cloud-qe")
+            return True
+        else:
+            self.log.error("Unable to delete user couchbase-cloud-qe")
+            return False
+
+    def get_instance_nodes(self, pod, tenant, instance):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
+        resp = columnar_api.get_columnar_nodes(instance.instance_id)
+        if resp.status_code != 200:
+            self.log.error(
+                "Unable to fetch nodes for Columnar instance with ID "
+                "{0}".format(instance.instance_id))
+            return None
+        return json.loads(resp.content)

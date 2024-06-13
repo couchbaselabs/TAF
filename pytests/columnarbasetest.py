@@ -5,12 +5,10 @@ Created on Oct 14, 2023
 """
 import time
 
-from bucket_utils.bucket_ready_functions import BucketUtils
-from cluster_utils.cluster_ready_functions import ClusterUtils
 from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
 
-import global_vars
-from capella_utils.columnar_final import DBUser, ColumnarInstance, ColumnarUtils, ColumnarRBACUtil
+from capella_utils.columnar_final import ColumnarInstance, ColumnarUtils,\
+    ColumnarRBACUtil
 from threading import Thread
 from sdk_client3 import SDKClientPool
 from TestInput import TestInputSingleton, TestInputServer
@@ -18,6 +16,9 @@ from TestInput import TestInputSingleton, TestInputServer
 from capella_utils.dedicated import CapellaUtils
 from Jython_tasks.task import DeployColumnarInstanceNew
 import random
+import subprocess
+import shlex
+from table_view import TableView
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
@@ -31,11 +32,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             "num_nodes_in_columnar_instance", 2)
 
         self.columnar_utils = ColumnarUtils(self.log)
-        self.columnar_rbac_util = ColumnarRBACUtil(self.log)
         self.columnar_image = self.input.capella.get("columnar_image")
+        self.columnar_rbac_util = ColumnarRBACUtil(self.log)
 
         def populate_columnar_instance_obj(
                 tenant, instance_id, instance_name=None, instance_config=None):
+
 
             resp = self.columnar_utils.get_instance_info(
                 pod=self.pod, tenant=tenant, project_id=tenant.project_id,
@@ -48,7 +50,13 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             srv = resp["data"]["config"]["endpoint"]
             cluster_id = resp["data"]["config"]["clusterId"]
             name = instance_name or str(resp["data"]["name"])
-            servers = CapellaUtils.get_nodes(self.pod, tenant, cluster_id)
+            cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(srv)
+            proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+            out, _ = proc.communicate()
+            servers = list()
+            for line in out.split("\n"):
+                if "11207" in line:
+                    servers.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
 
             instance_obj = ColumnarInstance(
                             tenant_id=tenant.id,
@@ -58,28 +66,27 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                             cluster_id=cluster_id,
                             instance_endpoint=srv,
                             db_users=list())
+            
+            instance_obj.username, instance_obj.password = \
+                self.columnar_utils.create_couchbase_cloud_qe_user(
+                    self.pod, tenant, instance_obj)
 
             for server in servers:
                 temp_server = TestInputServer()
-                temp_server.ip = server.get("hostname")
-                temp_server.hostname = server.get("hostname")
-                temp_server.services = server.get("services")
+                temp_server.ip = server
+                temp_server.hostname = server
+                temp_server.services = None
                 temp_server.port = "18091"
                 temp_server.type = "columnar"
                 temp_server.memcached_port = "11207"
-                temp_server.rest_username = self.rest_username
-                temp_server.rest_password = self.rest_password
+                temp_server.rest_username = instance_obj.username
+                temp_server.rest_password = instance_obj.password
                 instance_obj.servers.append(temp_server)
             instance_obj.nodes_in_cluster = instance_obj.servers
             instance_obj.master = instance_obj.servers[0]
             instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
-            instance_obj.username = self.rest_username
-            instance_obj.password = self.rest_password
             tenant.columnar_instances.append(instance_obj)
-            CapellaUtils.create_db_user(
-                        self.pod, tenant, cluster_id,
-                        self.rest_username, self.rest_password)
 
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}".format(
             instance_id, cluster_id))
@@ -112,6 +119,11 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         if instance_ids:
             instance_ids = instance_ids.split(',')
 
+        self.instance_type = {
+                "vcpus":"%svCPUs" % self.input.param("cpu", 4),
+                "memory":"%sGB" % self.input.param("ram", 16)
+            }
+
         for i in range(0, self.input.param("num_columnar_instances", 1)):
             if instance_ids and i < len(instance_ids):
                 populate_columnar_instance_obj(self.tenant, instance_ids[i])
@@ -122,6 +134,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                         nodes=self.num_nodes_in_columnar_instance,
                         image=self.columnar_image,
                         token=self.pod.override_key,
+                        instance_types=self.instance_type,
                         region=self.region))
 
                 self.log.info("Deploying Columnar Instance {}".format(
@@ -157,7 +170,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
-            self.cluster_util.print_cluster_stats(instance)
             count = 0
             analytics_admin_user = None
             while not analytics_admin_user and count < 5:
@@ -166,10 +178,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                     self.rest_username, self.rest_password
                 )
                 count += 1
-                time.sleep(10)
-            for server in instance.servers:
-                server.rest_username = analytics_admin_user.username
-                server.rest_password = analytics_admin_user.password
+                time.sleep(0)
+
+            self.cluster_util.print_cluster_stats(instance)
 
         if self.skip_redeploy:
             self.capella["instance_id"] = ",".join([
