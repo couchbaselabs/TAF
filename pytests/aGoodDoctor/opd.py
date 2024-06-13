@@ -762,6 +762,7 @@ class OPD:
         magma_stats_for_all_servers = dict()
         cbstat_obj = Cbstats(server)
         result = cbstat_obj.magma_stats(bucket.name)
+        cbstat_obj.disconnect()
         magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 

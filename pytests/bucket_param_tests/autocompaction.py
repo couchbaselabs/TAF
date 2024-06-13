@@ -172,6 +172,7 @@ class AutoCompactionTests(CollectionBase):
                     mutation_num=0)
             cb_stat = Cbstats(self.cluster.master)
             collection_count = cb_stat.get_collections(self.bucket)["count"]
+            cb_stat.disconnect()
             items = items/collection_count
             self.log.info("Start to load %s keys with %s bytes/key"
                           % (items, item_size))

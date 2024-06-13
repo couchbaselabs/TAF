@@ -127,7 +127,6 @@ class KVUpgradeTests(UpgradeBase):
         start_index = 0
         batch_size = 1000
         shell = RemoteMachineShellConnection(self.cluster.master)
-        cbstat = Cbstats(self.cluster.master)
 
         hash_dump_cmd = \
             "%s -u %s -p %s localhost:%d raw \"_hash-dump %d\" | grep %s" \
@@ -157,7 +156,9 @@ class KVUpgradeTests(UpgradeBase):
         result = self.task.rebalance(self.cluster, [in_node], [])
         self.assertTrue(result, "Rebalance_in failed")
 
+        cbstat = Cbstats(self.cluster.master)
         replica_vbs = cbstat.vbucket_list(bucket.name, Bucket.vBucket.REPLICA)
+        cbstat.disconnect()
         if key_vb not in replica_vbs:
             # Swap the nodes in-order to maintain the vbucket consistency
             in_node = self.cluster.servers[0]
@@ -166,6 +167,7 @@ class KVUpgradeTests(UpgradeBase):
             cbstat = Cbstats(self.cluster.servers[1])
             replica_vbs = cbstat.vbucket_list(bucket.name,
                                               Bucket.vBucket.REPLICA)
+            cbstat.disconnect()
         self.assertTrue(key_vb in replica_vbs, "vBucket is still active vb")
 
         client.crud(DocLoading.Bucket.SubDocOps.REMOVE, key, sub_doc[0],

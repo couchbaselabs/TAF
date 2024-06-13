@@ -3,7 +3,7 @@ import time
 from random import choice
 from threading import Thread
 import testconstants
-from BucketLib.bucket import Bucket, Collection, Scope
+from BucketLib.bucket import Bucket
 from cb_constants import DocLoading, CbServer
 from bucket_utils.bucket_ready_functions import DocLoaderUtils
 from cb_tools.cbstats import Cbstats
@@ -20,6 +20,7 @@ from upgrade.upgrade_base import UpgradeBase
 from bucket_collections.collections_base import CollectionBase
 from BucketLib.BucketOperations import BucketHelper
 from gsiLib.gsiHelper import GsiHelper
+
 
 class UpgradeTests(UpgradeBase):
     def setUp(self):
@@ -1102,6 +1103,7 @@ class UpgradeTests(UpgradeBase):
             frag_res = cb_obj.magma_stats(self.cluster.buckets[0].name, field_to_grep,
                                             "kvstore")
             frag_dict[server.ip] = frag_res
+            cb_obj.disconnect()
             #server_frag[server.ip] = float(frag_dict[server.ip][field_to_grep]["Fragmentation"])
 
         self.log.info(
@@ -1138,6 +1140,7 @@ class UpgradeTests(UpgradeBase):
                 frag_res = cb_obj.magma_stats(self.cluster.buckets[0].name,
                                               field_to_grep, "kvstore")
                 frag_dict[server.ip] = frag_res
+                cb_obj.disconnect()
 
             self.log.info("Fragmentation after upsert {0}".format(server_frag))
 
@@ -1174,6 +1177,7 @@ class UpgradeTests(UpgradeBase):
             default_count_dict = cbstat_obj.magma_stats(self.cluster.buckets[0].name,
                                                         field_to_grep="items",
                                                         stat_name="collections _default._default")
+            cbstat_obj.disconnect()
             for key in default_count_dict:
                 total_count += default_count_dict[key]
         large_doc_count = total_count - prev_count
