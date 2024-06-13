@@ -4,7 +4,7 @@ import Jython_tasks.task as jython_tasks
 from collections_helper.collections_spec_constants import MetaConstants, MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from pytests.ns_server.enforce_tls import EnforceTls
-from BucketLib.bucket import Bucket, Collection, Scope
+from BucketLib.bucket import Collection, Scope
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
@@ -532,6 +532,7 @@ class UpgradeBase(BaseTestCase):
             for vb_type in vb_types:
                 vb_details[vb_type] = \
                     cbstats.vbucket_list(self.bucket.name, vb_type)
+            cbstats.disconnect()
         if install_on_spare_node:
             # Install target version on spare node
             self.upgrade_helper.install_version_on_nodes(
@@ -597,6 +598,7 @@ class UpgradeBase(BaseTestCase):
             for vb_type in vb_types:
                 vb_verification[vb_type] = \
                     cbstats.vbucket_list(self.bucket.name, vb_type)
+            cbstats.disconnect()
 
             # Check vbuckets are shuffled or not
             for vb_type in vb_types:

@@ -163,6 +163,7 @@ class E2EUpgrade(UpgradeBase, BaseSecondaryIndexingTests):
             cbstats = Cbstats(server)
             replica_vbs[server] = cbstats.vbucket_list(def_bucket.name,
                                                        "replica")
+            cbstats.disconnect()
             load_gen["ADD"][server] = list()
             load_gen["ADD"][server].append(doc_generator(
                 self.key, 0, crud_batch_size,

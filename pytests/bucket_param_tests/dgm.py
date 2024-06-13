@@ -4,8 +4,6 @@ from BucketLib.BucketOperations import BucketHelper
 from basetestcase import ClusterSetup
 from cb_tools.cbstats import Cbstats
 from couchbase_helper.documentgenerator import doc_generator
-from remote.remote_util import RemoteMachineShellConnection
-
 from table_view import TableView
 
 
@@ -200,6 +198,7 @@ class Bucket_DGM_Tests(ClusterSetup):
                                                             "active")
             node_data[node]["replica"] = cbstat.vbucket_list(bucket.name,
                                                              "replica")
+            cbstat.disconnect()
 
         target_dgm = 30
         run_eviction_check = True
