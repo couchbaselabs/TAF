@@ -360,9 +360,9 @@ class ColumnarUtils:
             "provider": provider,
             "region": region,
             "nodes": nodes,
-            "instance_types": instance_types,
-            "support_package": support_package,
-            "availability_zone": availability_zone
+            "instanceTypes": instance_types,
+            "package": support_package,
+            "availabilityZone": availability_zone
         }
         if image:
             config.update(
@@ -382,12 +382,7 @@ class ColumnarUtils:
         if not instance_config:
             instance_config = self.generate_instance_configuration()
         resp = columnar_api.create_columnar_instance(
-            tenant.id, tenant.project_id, instance_config["name"],
-            instance_config["description"], instance_config["provider"],
-            instance_config["region"], instance_config["nodes"],
-            instance_config["instance_types"], instance_config["support_package"],
-            instance_config["availability_zone"]
-        )
+            tenant.id, tenant.project_id, instance_config)
         instance_id = None
         if resp.status_code == 201:
             instance_id = json.loads(resp.content).get("id")
