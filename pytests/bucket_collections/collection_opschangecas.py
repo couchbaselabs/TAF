@@ -4,7 +4,6 @@ from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_constants import DocLoading, CbServer
 from couchbase_helper.documentgenerator import doc_generator
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from cb_tools.cbstats import Cbstats
 
@@ -198,20 +197,17 @@ class OpsChangeCasTests(CollectionBase):
                                    doc_size=self.doc_size)
 
         # Create cbstat objects
-        self.shell_conn = dict()
-        self.cb_stat = dict()
         self.vb_details = dict()
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            self.vb_details[node.ip] = dict()
-            self.vb_details[node.ip]["active"] = list()
-            self.vb_details[node.ip]["replica"] = list()
+            self.vb_details[node.ip] = {"active": list(),
+                                        "replica": list()}
 
-            self.shell_conn[node.ip] = RemoteMachineShellConnection(node)
-            self.cb_stat[node.ip] = Cbstats(node)
+            cb_stat = Cbstats(node)
             self.vb_details[node.ip]["active"] = \
-                self.cb_stat[node.ip].vbucket_list(self.bucket.name, "active")
+                cb_stat.vbucket_list(self.bucket.name, "active")
             self.vb_details[node.ip]["replica"] = \
-                self.cb_stat[node.ip].vbucket_list(self.bucket.name, "replica")
+                cb_stat.vbucket_list(self.bucket.name, "replica")
+            cb_stat.disconnect()
 
         collections = BucketUtils.get_random_collections(
                                     self.cluster.buckets, 2, 2, 1)

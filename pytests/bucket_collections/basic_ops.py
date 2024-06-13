@@ -179,6 +179,7 @@ class BasicOps(CollectionBase):
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cbstats = Cbstats(node)
             c_data = cbstats.get_collections(self.bucket)
+            cbstats.disconnect()
             if c_data["count"] != expected_collection_count:
                 self.log_failure("%s - Expected collection count is '%s'. "
                                  "Actual: %s"
@@ -292,6 +293,7 @@ class BasicOps(CollectionBase):
         for node in self.cluster_util.get_kv_nodes(self.cluster):
             cbstats = Cbstats(node)
             c_data = cbstats.get_collections(self.bucket)
+            cbstats.disconnect()
             if c_data["count"] != expected_collection_count:
                 self.log_failure("%s - Expected scope count is '1'."
                                  "Actual: %s" % (node.ip, c_data["count"]))
@@ -410,6 +412,7 @@ class BasicOps(CollectionBase):
 
         cbstats = Cbstats(self.cluster.master)
         cbstats.get_collections(self.cluster.buckets[0])
+        cbstats.disconnect()
 
         self.log.info("Validating the documents in default collection")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -815,6 +818,7 @@ class BasicOps(CollectionBase):
                                                     batch_size=self.batch_size)
             collection_count = cb_stat.get_collections(self.bucket)["count"]
 
+        cb_stat.disconnect()
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)

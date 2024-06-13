@@ -7,7 +7,6 @@ from cb_tools.cbepctl import Cbepctl
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
-from sdk_client3 import SDKClient
 from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
@@ -129,6 +128,9 @@ class CollectionBase(ClusterSetup):
                     and bucket.bucketType != Bucket.Type.MEMCACHED:
                 self.bucket_util.remove_scope_collections_for_bucket(
                     self.cluster, bucket)
+
+        cbstat_obj.disconnect()
+
         if self.validate_docs_count_during_teardown:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)
