@@ -66,13 +66,19 @@ class MagmaUtils:
 
     def get_magma_data_size(self, server, bucket_name):
         """ The size of the data the user stored in bytes. """
-        result = Cbstats(server).all_stats(bucket_name)["ep_magma_logical_data_size"]
-        return int(result)
+        cb_stat = Cbstats(server)
+        result = int(cb_stat.all_stats(bucket_name)[
+            "ep_magma_logical_data_size"])
+        cb_stat.disconnect()
+        return result
 
     def get_magma_disk_size(self, server, bucket_name):
         """ The space occupied by the data in bytes. """
-        result = Cbstats(server).all_stats(bucket_name)["ep_magma_logical_disk_size"]
-        return int(result)
+        cb_stat = Cbstats(server)
+        result = int(cb_stat.all_stats(bucket_name)[
+            "ep_magma_logical_disk_size"])
+        cb_stat.disconnect()
+        return result
 
     def check_disk_usage(self, servers, buckets, fragmentation):
         """ Returns true if the disk usage exceeds the expected disk usage

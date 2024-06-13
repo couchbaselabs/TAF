@@ -240,6 +240,7 @@ class DurabilityHelper:
         for server in kv_servers:
             cbstat_obj = Cbstats(server)
             vb_details_stats.update(cbstat_obj.vbucket_details(bucket.name))
+            cbstat_obj.disconnect()
 
         for vb_num in range(0, vbuckets):
             vb_num = str(vb_num)
