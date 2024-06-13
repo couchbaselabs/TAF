@@ -270,6 +270,9 @@ class FlushTests(CollectionBase):
                         != node_dict[node]["collection_stats"]["post_flush"]["manifest_uid"]:
                     self.log_failure("%s - Collection stats mismatch after flush")
 
+        for node in kv_nodes:
+            # Disconnect the connections
+            node_dict[node]["cbstat"].disconnect()
         # Fails test case in case of any detected failure
         self.validate_test_failure()
 

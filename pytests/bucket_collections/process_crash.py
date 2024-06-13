@@ -272,6 +272,7 @@ class CrashTest(CollectionBase):
         cbstat_obj = Cbstats(node_to_crash)
         active_vbs = cbstat_obj.vbucket_list(self.bucket.name,
                                              vbucket_type="active")
+        cbstat_obj.disconnect()
         target_vbuckets = list(
             set(range(0, 1024)).difference(set(active_vbs)))
         doc_gen = doc_generator(self.key, 0, 1000,
@@ -386,6 +387,7 @@ class CrashTest(CollectionBase):
         cbstat_obj = Cbstats(node_to_crash)
         active_vbs = cbstat_obj.vbucket_list(self.bucket.name,
                                              vbucket_type="active")
+        cbstat_obj.disconnect()
         target_vbuckets = list(
             set(range(0, 1024)).difference(set(active_vbs)))
         doc_gen = doc_generator(self.key, 0, 1000,
@@ -441,8 +443,9 @@ class CrashTest(CollectionBase):
         error_sim = CouchbaseError(self.log,
                                    remote,
                                    node=target_node)
-        target_vbuckets = Cbstats(target_node).vbucket_list(
-                self.bucket.name, target_node)
+        cb_stat = Cbstats(target_node)
+        target_vbuckets = cb_stat.vbucket_list(self.bucket.name, target_node)
+        cb_stat.disconnect()
 
         bucket_dict = BucketUtils.get_random_collections(
             self.cluster.buckets,
@@ -543,8 +546,10 @@ class CrashTest(CollectionBase):
         # If Memcached is killed, we should not perform KV ops on
         # particular node. If not we can target all nodes for KV operation.
         if self.process_name == "memcached":
-            target_vbuckets = Cbstats(target_node).vbucket_list(
+            cb_stat = Cbstats(target_node)
+            target_vbuckets = cb_stat.vbucket_list(
                 def_bucket.name, self.target_node)
+            cb_stat.disconnect()
             if self.target_node == "active":
                 retry_exceptions = [SDKException.TimeoutException]
         if len(target_vbuckets) == 0:

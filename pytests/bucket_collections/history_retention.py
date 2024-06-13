@@ -96,6 +96,7 @@ class DocHistoryRetention(ClusterSetup):
                 cbstats = Cbstats(t_node)
                 all_stats = cbstats.all_stats(b_obj.name)
                 dcp_stats = cbstats.dcp_stats(b_obj.name)
+                cbstats.disconnect()
                 all_fields = ["ep_total_enqueued", "ep_total_persisted",
                               "ep_total_deduplicated"]
                 items_sent = "ep_dcp_items_sent"
@@ -980,6 +981,7 @@ class DocHistoryRetention(ClusterSetup):
         self.assertTrue(result, "Validation failed")
         for node in self.cluster.nodes_in_cluster:
             stats = cb_stat[node.ip].all_stats(bucket.name)
+            cb_stat[node.ip].disconnect()
             ep_total_deduped = int(stats["ep_total_deduplicated"])
             self.assertEqual(ep_total_deduped, 0,
                              "{0} - Dedupe occurred: {1}"
@@ -1067,6 +1069,7 @@ class DocHistoryRetention(ClusterSetup):
 
         for node in self.cluster.nodes_in_cluster:
             stats = cb_stat[node.ip].all_stats(bucket.name)
+            cb_stat[node.ip].disconnect()
             ep_total_deduped = int(stats["ep_total_deduplicated"])
             self.assertEqual(ep_total_deduped, 0,
                              "{0} - Dedupe occurred: {1}"
@@ -1136,7 +1139,9 @@ class DocHistoryRetention(ClusterSetup):
         self.assertTrue(result, "Validation failed")
         # Check dedupe occurrence
         for node in self.cluster_util.get_kv_nodes(self.cluster):
-            stats = Cbstats(node).all_stats(bucket.name)
+            cb_stat = Cbstats(node)
+            stats = cb_stat.all_stats(bucket.name)
+            cb_stat.disconnect()
             ep_total_deduped = int(stats["ep_total_deduplicated"])
             self.assertEqual(ep_total_deduped, 0,
                              "{0} - Dedupe occurred: {1}"
@@ -1160,6 +1165,7 @@ class DocHistoryRetention(ClusterSetup):
                                 shell,
                                 node=t_node)
         replica_vbs = cb_stat.vbucket_list(bucket.name, Bucket.vBucket.REPLICA)
+        cb_stat.disconnect()
         doc_gen = doc_generator(self.key, 0, self.num_items,
                                 target_vbucket=replica_vbs)
         self.log.info("Starting dedupe doc_ops")
@@ -1282,6 +1288,7 @@ class DocHistoryRetention(ClusterSetup):
             for vb_type in [Bucket.vBucket.ACTIVE, Bucket.vBucket.REPLICA]:
                 target_vbs.extend(
                     cb_stats.vbucket_list(bucket.name, vb_type))
+            cb_stats.disconnect()
             target_vbs = list(set(target_vbs))
             loader_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbs
             self.log.info("Targeting vbs: %s" % target_vbs)
@@ -1532,6 +1539,7 @@ class DocHistoryRetention(ClusterSetup):
         rest = RestConnection(self.cluster.master)
         rest.update_autofailover_settings(False, 10)
         replica_vbs = cb_stat.vbucket_list(bucket, Bucket.vBucket.REPLICA)
+        cb_stat.disconnect()
         kill_both_nodes = self.input.param("kill_both_nodes", False)
         self.log.info("Setting meta_data_purge_interval")
         meta_purge_interval = 180 / 86400.0

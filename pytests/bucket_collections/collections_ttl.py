@@ -340,8 +340,10 @@ class CollectionsTTL(CollectionBase):
                         self.cluster.master, self.bucket,
                         scope.name, col.name, maxttl=CbServer.max_ttl_seconds)
 
-            cbstat = Cbstats(self.cluster.master).get_collections(self.bucket)
-            for scope, collections in cbstat.items():
+            cb_stat = Cbstats(self.cluster.master)
+            col_stats = cb_stat.get_collections(self.bucket)
+            cb_stat.disconnect()
+            for scope, collections in col_stats.items():
                 if scope == CbServer.system_scope \
                         or not isinstance(collections, dict):
                     continue

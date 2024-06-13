@@ -304,6 +304,7 @@ class EventingSanity(EventingBaseTest):
             cbstats = Cbstats(server)
             replica_vbs[server] = cbstats.vbucket_list(def_bucket.name,
                                                        "replica")
+            cbstats.disconnect()
             load_gen["ADD"][server] = list()
             load_gen["ADD"][server].append(doc_generator(
                 self.key, 0, crud_batch_size,
@@ -445,8 +446,6 @@ class EventingSanity(EventingBaseTest):
         kv_nodes = self.cluster_util.get_kv_nodes(self.cluster)
         replica_vbs = dict()
         verification_dict = dict()
-        index_item_count = dict()
-        expected_num_indexed = dict()
         load_gen = dict()
         load_gen["ADD"] = dict()
         load_gen["SET"] = dict()
@@ -491,6 +490,7 @@ class EventingSanity(EventingBaseTest):
             cbstats = Cbstats(server)
             replica_vbs[server] = cbstats.vbucket_list(def_bucket.name,
                                                        "replica")
+            cbstats.disconnect()
             load_gen["ADD"][server] = list()
             load_gen["ADD"][server].append(doc_generator(
                 self.key, 0, crud_batch_size,
@@ -546,7 +546,7 @@ class EventingSanity(EventingBaseTest):
             if self.create_index_during == "before_doc_ops":
                 self.validate_indexed_doc_count(
                     self.index_name, verification_dict["ops_create"])
-        failed = durability_helper.verify_vbucket_details_stats(
+        _ = durability_helper.verify_vbucket_details_stats(
             def_bucket, kv_nodes,
             vbuckets=self.cluster.vbuckets, expected_val=verification_dict)
         # if failed:
@@ -595,10 +595,10 @@ class EventingSanity(EventingBaseTest):
                 if len(task.fail.keys()) != 0:
                     self.log_failure("Some failures seen during doc_ops")
                 verification_dict["ops_update"] += crud_batch_size
-                self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+                self.validate_indexed_doc_count(self.index_name, verification_dict["ops_create"])
 
         self.log.info("Validate the mutated docs are taken into indexing")
-        self.validate_indexed_doc_count(self.index_name , verification_dict["ops_create"])
+        self.validate_indexed_doc_count(self.index_name, verification_dict["ops_create"])
         self.validate_test_failure()
 
     def _create_fts_index_params(self, bucket_name, bucket_uuid, index_name):
