@@ -734,6 +734,7 @@ class volume(BaseTestCase):
         cbstat_obj = Cbstats(server)
         result = cbstat_obj.magma_stats(bucket.name,
                                         field_to_grep=field_to_grep)
+        cbstat_obj.disconnect()
         magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 
@@ -892,11 +893,10 @@ class volume(BaseTestCase):
                 node, self.cluster.buckets[0])
             mem_client.stop_persistence()
 
-            shell = RemoteMachineShellConnection(node)
             cbstats = Cbstats(node)
             target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                   name)
-            shell.disconnect()
+            cbstats.disconnect()
 
             gen_docs = doc_generator(
                 self.key_prefix,

@@ -9,7 +9,6 @@ import json
 import time
 
 from storage.magma.magma_base import MagmaBaseTest
-from dcp_new.constants import SUCCESS
 from dcp_utils.dcp_ready_functions import DCPUtils
 from BucketLib.BucketOperations import BucketHelper
 from cb_constants import CbServer
@@ -367,4 +366,5 @@ class DCPSeqItr(MagmaBaseTest):
                 items = items + 50000
                 self.log.debug("Iteration == {}, Total num_items {}".format(i, items))
 
+        cbstats.disconnect()
         shell.disconnect()

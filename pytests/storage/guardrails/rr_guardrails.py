@@ -1,5 +1,5 @@
 from BucketLib.bucket import Bucket
-import math, time
+import time
 from cb_constants import CbServer, DocLoading
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
@@ -552,8 +552,8 @@ class RRGuardrails(GuardrailsBase):
         # Getting vbucket list for the nodes in the cluster
         for server in self.cluster.kv_nodes:
             cbstats = Cbstats(server)
-            target_vbucket = cbstats.vbucket_list(self.bucket.name)
-            vbucket_list[server.ip] = target_vbucket
+            vbucket_list[server.ip] = cbstats.vbucket_list(self.bucket.name)
+            cbstats.disconnect()
 
         self.log.info("Creating docs for inserting into vbuckets of server {}".format(
                                                                 self.cluster.master.ip))

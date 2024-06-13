@@ -197,6 +197,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         shell = RemoteMachineShellConnection(self.cluster.master)
         cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
+        cbstats.disconnect()
         self.log.info("Node=={} targt_vbuckets=={}".format(self.cluster.master.ip, self.target_vbucket))
 
         '''
@@ -243,6 +244,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                     continue
                 cbstats = Cbstats(node)
                 self.target_vbs.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
+                cbstats.disconnect()
 
             self.target_vbs = [vb for vb_lst in self.target_vbs for vb in vb_lst]
             self.log.info("Target vbs on non master nodes".format(self.target_vbs))
@@ -296,6 +298,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
+        cbstats.disconnect()
         start = self.num_items
         self.gen_read = copy.deepcopy(self.gen_create)
         for _ in xrange(1, self.num_rollbacks+1):
@@ -328,9 +331,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                     timeout=900)
 
             # Kill memcached on NodeA to trigger rollback on other Nodes
-            # replica vBuckets
-            for bucket in self.cluster.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
             shell.kill_memcached()
 
             self.assertTrue(self.bucket_util._wait_warmup_completed(
@@ -340,9 +340,7 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
 
             self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0], items,
-                                                      timeout=300)
-            for bucket in self.cluster.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
+                                                     timeout=300)
 
         data_validation = self.task.async_validate_docs(
                 self.cluster, self.cluster.buckets[0],
@@ -381,6 +379,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         shell = RemoteMachineShellConnection(self.cluster.master)
         cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
+        cbstats.disconnect()
 
         self.gen_read = copy.deepcopy(self.gen_create)
 
@@ -466,17 +465,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                 ep_queue_size_map.update({node: 0})
                 vb_replica_queue_size_map.update({node: 0})
 
-            #for bucket in self.cluster.buckets:
-            #    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map, timeout=300)
-            #    self.bucket_util._wait_for_stat(
-            #        bucket,
-            #        vb_replica_queue_size_map,
-            #        cbstat_cmd="all",
-            #        stat_name="vb_replica_queue_size", timeout=300)
-
-            # replica vBuckets
-            for bucket in self.cluster.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
             ###################################################################
             '''
             STEP - 4
@@ -495,9 +483,6 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.sleep(10, "Not Required, but waiting for 10s after warm up")
             self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0],
                                                      items, timeout=900)
-            for bucket in self.cluster.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
-
             ###################################################################
             '''
             STEP -5
@@ -554,6 +539,7 @@ class MagmaRollbackTests(MagmaBaseTest):
         shell = RemoteMachineShellConnection(self.cluster.master)
         cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
+        cbstats.disconnect()
 
         #######################################################################
         '''
@@ -633,17 +619,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                 ep_queue_size_map.update({node: 0})
                 vb_replica_queue_size_map.update({node: 0})
 
-            #for bucket in self.cluster.buckets:
-            #    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map, timeout=300)
-            #    self.bucket_util._wait_for_stat(
-            #        bucket,
-            #        vb_replica_queue_size_map,
-            #        cbstat_cmd="all",
-            #        stat_name="vb_replica_queue_size", timeout=300)
-
-            # replica vBuckets
-            for bucket in self.cluster.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
             ###################################################################
             '''
             STEP - 4
@@ -734,11 +709,13 @@ class MagmaRollbackTests(MagmaBaseTest):
         cbstats = Cbstats(self.cluster.nodes_in_cluster[0])
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
+        cbstats.disconnect()
 
         target_vbs_replicas = list()
         for node in self.cluster.nodes_in_cluster[1:]:
             cbstats = Cbstats(node)
             target_vbs_replicas.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
+            cbstats.disconnect()
 
         target_vbs_replicas = [val for vb_lst in target_vbs_replicas for val in vb_lst]
 
@@ -825,10 +802,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                     stat_name="vb_replica_queue_size",
                     timeout=300)
 
-            # replica vBuckets
-            for bucket in self.cluster.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
-
             ###################################################################
             '''
             STEP - 4
@@ -847,9 +820,6 @@ class MagmaRollbackTests(MagmaBaseTest):
 
             self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0],
                                                      items, timeout=300)
-            for bucket in self.cluster.buckets:
-                self.log.debug(cbstats.failover_stats(bucket.name))
-
             ###################################################################
             '''
             STEP -5
@@ -1010,6 +980,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 cbstats = Cbstats(node)
                 self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                            name)
+                cbstats.disconnect()
                 mem_item_count = 0
                 self.log.debug("Iteration == {}, State files before stopping persistence == {}".
                            format(i, self.get_state_files(self.buckets[0])))
@@ -1069,17 +1040,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                         ep_queue_size_map.update({nod: 0})
                         vb_replica_queue_size_map.update({nod: 0})
 
-                #for bucket in self.cluster.buckets:
-                #    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
-                #                                    timeout=1200)
-                #    self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
-                #                                    cbstat_cmd="all",
-                #                                    stat_name="vb_replica_queue_size",
-                #                                    timeout=1200)
-                # replica vBuckets
-                for bucket in self.cluster.buckets:
-                    self.log.debug(cbstats.failover_stats(bucket.name))
-
                 ###############################################################
                 '''
                 STEP - 4
@@ -1094,10 +1054,6 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
                           format(i, x+1, self.get_state_files(self.buckets[0])))
-
-                #self.bucket_util.verify_stats_all_buckets(items, timeout=300)
-                #for bucket in self.cluster.buckets:
-                #    self.log.debug(cbstats.failover_stats(bucket.name))
 
                 ###############################################################
                 '''
@@ -1201,11 +1157,11 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.log.info("Roll back Iteration == {}".format(i))
             start = items
             for x, node in enumerate(self.cluster.nodes_in_cluster):
-                #start = items
                 shell = RemoteMachineShellConnection(node)
                 cbstats = Cbstats(node)
                 self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
+                cbstats.disconnect()
                 mem_item_count = 0
                 self.log.debug("Iteration == {}, State files before stopping persistence == {}".
                                format(i, self.get_state_files(self.buckets[0])))
@@ -1264,17 +1220,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                         ep_queue_size_map.update({nod: 0})
                         vb_replica_queue_size_map.update({nod: 0})
 
-                #for bucket in self.cluster.buckets:
-                #    self.bucket_util._wait_for_stat(bucket, ep_queue_size_map,
-                #                                    timeout=1200)
-                #    self.bucket_util._wait_for_stat(bucket, vb_replica_queue_size_map,
-                #                                    cbstat_cmd="all",
-                #                                    stat_name="vb_replica_queue_size",
-                #                                    timeout=1200)
-                # replica vBuckets
-                for bucket in self.cluster.buckets:
-                    self.log.debug(cbstats.failover_stats(bucket.name))
-
                 ###############################################################
                 '''
                 STEP - 4
@@ -1289,10 +1234,6 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                 self.log.debug("Iteration == {}, Node-- {} State files after killing memcached ".
                           format(i, node, self.get_state_files(self.buckets[0])))
-
-                #self.bucket_util.verify_stats_all_buckets(items, timeout=300)
-                #for bucket in self.cluster.buckets:
-                #    self.log.debug(cbstats.failover_stats(bucket.name))
 
                 ###############################################################
                 '''
@@ -1455,6 +1396,7 @@ class MagmaRollbackTests(MagmaBaseTest):
                 cbstats = Cbstats(node)
                 self.target_vbucket = cbstats.vbucket_list(
                     self.cluster.buckets[0].name)
+                cbstats.disconnect()
                 mem_item_count = 0
                 self.log.debug("Iteration == {}, State files before stopping persistence == {}".
                            format(i, self.get_state_files(self.buckets[0])))
@@ -1531,10 +1473,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                                                     cbstat_cmd="all",
                                                     stat_name="vb_replica_queue_size",
                                                     timeout=300)
-                # replica vBuckets
-                for bucket in self.cluster.buckets:
-                    self.log.debug(cbstats.failover_stats(bucket.name))
-
                 ###############################################################
                 '''
                 STEP - 5
@@ -1553,9 +1491,6 @@ class MagmaRollbackTests(MagmaBaseTest):
 
                 self.bucket_util.verify_stats_for_bucket(self.cluster, self.buckets[0], items,
                                                           timeout=300)
-                for bucket in self.cluster.buckets:
-                    self.log.debug(cbstats.failover_stats(bucket.name))
-
                 ###############################################################
                 '''
                 STEP - 6
@@ -1688,12 +1623,14 @@ class MagmaRollbackTests(MagmaBaseTest):
                 cbstats = Cbstats(node)
                 target_vbs_active.append(
                     cbstats.vbucket_list(self.cluster.buckets[0].name))
+                cbstats.disconnect()
 
         target_vbs_active = [val for vb_lst in target_vbs_active for val in vb_lst]
         self.log.debug("target_vbs_active == {}".format(target_vbs_active))
         for node in self.cluster.nodes_in_cluster[target_active_nodes:]:
             cbstats = Cbstats(node)
             target_vbs_replica.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
+            cbstats.disconnect()
         target_vbs_replica = [val for vb_lst in target_vbs_replica for val in vb_lst]
         self.log.info("target_vbs_active={} and target_vbs_replica={}".format(target_vbs_active, target_vbs_replica))
 
@@ -1830,12 +1767,6 @@ class MagmaRollbackTests(MagmaBaseTest):
                 #self.bucket_util.log_doc_ops_task_failures(tasks_in)
             self.log.debug("Iteration == {},State files after killing memCached ".
                            format(i, self.get_state_files(self.buckets[0])))
-            '''
-            Commenting failover-stats until MB-44103 gets fixed
-            '''
-            #for bucket in self.cluster.buckets:
-            #    self.log.debug(cbstats.failover_stats(bucket.name))
-
             ###############################################################
             '''
             STEP -5
@@ -1991,10 +1922,12 @@ class MagmaRollbackTests(MagmaBaseTest):
             self.log.info("Roll back Iteration == {}".format(i))
             cbstats = Cbstats(self.cluster.nodes_in_cluster[0])
             self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
+            cbstats.disconnect()
             target_vbs_replicas = list()
             for node in self.cluster.nodes_in_cluster[1:]:
                 cbstats = Cbstats(node)
                 target_vbs_replicas.append(cbstats.vbucket_list(self.cluster.buckets[0].name))
+                cbstats.disconnect()
             target_vbs_replicas = [val for vb_lst in target_vbs_replicas for val in vb_lst]
 
             '''

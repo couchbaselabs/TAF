@@ -213,6 +213,7 @@ class MagmaDiskFull(MagmaBaseTest):
         cbstats = Cbstats(self.cluster.master)
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].
                                                    name)
+        cbstats.disconnect()
         mem_client = MemcachedClientHelper.direct_client(
             self.cluster.master, self.cluster.buckets[0])
         mem_client.stop_persistence()
@@ -220,7 +221,6 @@ class MagmaDiskFull(MagmaBaseTest):
                                                   self.target_vbucket)
 
         self.loadgen_docs(_sync=True, retry_exceptions=self.retry_exceptions)
-        start = self.gen_create.key_counter
 
         ep_queue_size_map = {self.cluster.nodes_in_cluster[0]:
                              mem_only_items}

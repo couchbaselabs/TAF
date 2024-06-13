@@ -991,6 +991,7 @@ class MagmaExpiryTests(MagmaBaseTest):
 
         cbstats = Cbstats(self.cluster.nodes_in_cluster[-1])
         self.target_vbucket = cbstats.vbucket_list(self.cluster.buckets[0].name)
+        cbstats.disconnect()
 
         self.generate_docs(target_vbucket=self.target_vbucket)
 

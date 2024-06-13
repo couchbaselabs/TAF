@@ -200,7 +200,7 @@ class MagmaCompactionTests(MagmaBaseTest):
                 -- Kill Memcached on master node and trigger rollback on other nodes
             '''
             if self.compact_before:
-                compaction_tasks=[]
+                compaction_tasks = []
                 for bucket in self.cluster.buckets:
                     compaction_tasks.append(self.task.async_compact_bucket(self.cluster.master,
                                                bucket))
@@ -238,6 +238,7 @@ class MagmaCompactionTests(MagmaBaseTest):
                                                 vb_replica_queue_size_map,
                                                 cbstat_cmd="all",
                                                 stat_name="vb_replica_queue_size", timeout=600)
+            cbstats.disconnect()
             shell.disconnect()
             ###################################################################
             '''
