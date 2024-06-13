@@ -210,29 +210,38 @@ class DoctorCBAS():
 
     def wait_for_ingestion(self, cluster, databases, timeout=86400):
         client = cluster.SDKClients[0].cluster
-        status = True
+        results = list()
+        def check_in_th(collection, items):
+            status = False
+            stop_time = time.time() + timeout
+            while time.time() < stop_time:
+                statement = "select count(*) cnt from {};".format(collection)
+                try:
+                    _status, _, _, results, _ = execute_statement_on_cbas(client, statement)
+                    self.log.debug("dataset: {}, status: {}, actual count: {}, expected count: {}"
+                                   .format(collection, _status,
+                                           json.loads(str(results))[0]["cnt"],
+                                           items))
+                    if json.loads(str(results))[0]["cnt"] >= items:
+                        self.log.info("CBAS dataset is ready: {}".format(collection))
+                        results.append(True)
+                        break
+                except:
+                    pass
+                time.sleep(5)
+            if status is False:
+                results.append(status)
+        ths = list()
         for database in databases:
             for collection in database.cbas_collections:
-                status = False
-                stop_time = time.time() + timeout
-                while time.time() < stop_time:
-                    statement = "select count(*) cnt from {};".format(collection)
-                    try:
-                        _status, _, _, results, _ = execute_statement_on_cbas(client, statement)
-                        self.log.debug("dataset: {}, status: {}, actual count: {}, expected count: {}"
-                                       .format(collection, _status,
-                                               json.loads(str(results))[0]["cnt"],
-                                               database.loadDefn.get("num_items")))
-                        if json.loads(str(results))[0]["cnt"] >= database.loadDefn.get("num_items"):
-                            self.log.info("CBAS dataset is ready: {}".format(collection))
-                            status = True
-                            break
-                    except:
-                        pass
-                    time.sleep(5)
-                if status is False:
-                    return status
-        return status
+                th = threading.Thread(target=check_in_th,
+                                      args=(collection,
+                                            database.loadDefn.get("num_items")))
+                th.start()
+                ths.append(th)
+        for th in ths:
+            th.join()
+        return False not in results
 
 
 class CBASQueryLoad:
