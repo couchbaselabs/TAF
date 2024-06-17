@@ -172,6 +172,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Do another rebalance in order to remove the failed-over nodes
         5. Disable AF/Auto-reprovision
         """
+        wait_before_failure_induction = \
+            self.input.param("wait_before_failure_induction", 5)
         task = cont_load_task = None
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
@@ -186,7 +188,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         rebalance_task = self.task.async_rebalance(self.cluster,
                                                    self.servers_to_add,
                                                    self.servers_to_remove)
-        self.sleep(5, "Wait for rebalance to make progress")
+        self.sleep(wait_before_failure_induction, "Wait for rebalance to make progress")
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
