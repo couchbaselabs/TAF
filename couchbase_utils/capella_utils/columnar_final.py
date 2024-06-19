@@ -12,6 +12,7 @@ import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
 import pprint
+import socket
 
 
 class ColumnarInstance:
@@ -106,17 +107,14 @@ class ColumnarRBACUtil:
             self, pod, tenant, project_id, instance,
             username, password):
         privileges_list = [
-            "database_create", "database_drop",
-            "scope_create", "scope_drop",
-            "collection_create", "collection_drop",
-            "collection_select", "collection_insert",
-            "collection_upsert", "collection_delete", "collection_analyze",
-            "view_create", "view_drop", "view_select",
-            "index_create", "index_drop",
-            "function_create", "function_drop", "function_execute",
-            "link_create", "link_drop", "link_alter",
-            "link_connect", "link_disconnect",
-            "link_copy_to", "link_copy_from",
+            "database_create", "database_drop", "scope_create", "scope_drop",
+            "collection_create", "collection_drop", "collection_select",
+            "collection_insert", "collection_upsert", "collection_delete",
+            "collection_analyze", "view_create", "view_drop", "view_select",
+            "index_create", "index_drop", "function_create", "function_drop",
+            "function_execute", "link_create", "link_drop", "link_alter",
+            "link_connect", "link_disconnect", "link_copy_to",
+            "link_copy_from", "link_create_collection", "link_describe",
             "synonym_create", "synonym_drop"
         ]
 
@@ -187,15 +185,17 @@ class ColumnarRBACUtil:
                         entity_name = res_entities[2]
                         if res_field_name not in scope_obj:
                             scope_obj[res_field_name] = {}
-                        entity_obj = get_entity_obj(scope_obj[res_field_name], entity_name)
-                        entity_obj["privileges"].extend(privs)
+                        scope_object_payload = scope_obj[res_field_name]
+                        if entity_name not in scope_object_payload:
+                            scope_object_payload[entity_name] = []
+                        entity_privileges = scope_object_payload[entity_name]
+                        entity_privileges.extend(privs)
 
         return privileges_payload
 
     def create_api_keys(
-            self, pod, tenant, project_id, instance,
-            username, password, privileges_payload = None,
-            role_ids=[]):
+            self, pod, tenant, project_id, instance, username, password,
+            privileges_payload=None, role_ids=[]):
 
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
@@ -211,7 +211,7 @@ class ColumnarRBACUtil:
             "roles": role_ids
         }
 
-        resp = columnar_api.create_instance_api_keys(
+        resp = columnar_api.create_api_keys(
             tenant.id, project_id, instance.instance_id,
             api_key_payload
         )
@@ -560,36 +560,6 @@ class ColumnarUtils:
                 instance.name, timeout, state))
             return False
 
-    def create_api_keys(self, pod, tenant, project_id, instance):
-        columnar_api = ColumnarAPI(
-            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
-            tenant.user, tenant.pwd)
-        resp = columnar_api.create_api_keys(
-            tenant.id, project_id, instance.instance_id)
-        if resp.status_code != 201:
-            self.log.error(
-                "Unable to create API keys for Columnar instance {0} with ID "
-                "{1}".format(instance.name, instance.instance_id))
-            if resp.text:
-                self.log.error("Following error recieved {}".format(resp.text))
-            return None
-        return json.loads(resp.content)
-
-    def delete_api_keys(self, pod, tenant, project_id, instance, api_key):
-        columnar_api = ColumnarAPI(
-            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
-            tenant.user, tenant.pwd)
-        resp = columnar_api.delete_api_keys(
-            tenant.id, project_id, instance.instance_id, api_key)
-        if resp.status_code != 201:
-            self.log.error(
-                "Unable to delete API keys for Columnar instance {0} with ID "
-                "{1}".format(instance.name, instance.instance_id))
-            if resp.text:
-                self.log.error("Following error recieved {}".format(resp.text))
-            return None
-        return json.loads(resp.content)
-
     def allow_ip_on_instance(self, pod, tenant, project_id, instance,
                              ip="0.0.0.0/0", description=""):
         columnar_api = ColumnarAPI(
@@ -678,3 +648,10 @@ class ColumnarUtils:
             self.log.error("Failed to turn on the instance")
             return False
 
+    def get_nodes(self, connection_str):
+        servers = list()
+        ais = socket.getaddrinfo(connection_str, 0, 0, 0, 0)
+        for result in ais:
+            servers.append(result[-1][0])
+            servers = list(set(servers))
+        return servers
