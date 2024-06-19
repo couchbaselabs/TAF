@@ -215,7 +215,6 @@ class APIBase(CouchbaseBaseTest):
         """
         failed_deletion = list()
         for role in api_key_dict:
-            self.log.debug("Deleting API key for role {}".format(role))
             api_key_dict[role]["retry"] = 0
             while api_key_dict[role]["retry"] < 5:
                 resp = self.capellaAPI.org_ops_apis.delete_api_key(
@@ -664,8 +663,8 @@ class APIBase(CouchbaseBaseTest):
                           resource_id=None):
 
         # Condition is for Sample Buckets delete testcases.
-        if ("code" in result.content and result.json()["code"] == 6008 and
-                6008 in success_codes):
+        if ("content" in result and "code" in result.content and
+                result.json()["code"] == 600 and 6008 in success_codes):
             return True
 
         if result.status_code in success_codes:
@@ -749,22 +748,6 @@ class APIBase(CouchbaseBaseTest):
                          .format(res.json()["currentState"], states))
         return False
 
-    def validate_cluster_schedule_api_response(self, actual_res, expected_res):
-        for key in actual_res:
-            if key not in expected_res:
-                return False
-            if isinstance(actual_res[key], list):
-                for i in range(len(actual_res[key])):
-                    self.validate_cluster_schedule_api_response(
-                        actual_res[key][i], expected_res[key][i])
-            elif isinstance(actual_res[key], dict):
-                self.validate_cluster_schedule_api_response(
-                    actual_res[key], expected_res[key])
-            elif expected_res[key]:
-                if expected_res[key] != actual_res[key]:
-                    return False
-        return True
-
     def validate_api_response(self, expected_res, actual_res, id):
         for key in actual_res:
             if key == "version" or not expected_res[key]:
@@ -822,9 +805,10 @@ class APIBase(CouchbaseBaseTest):
                 self.log.error("Couldn't find CIDR within half an hour.")
 
     def wait_for_deployment(self, proj_id, clus_id=None, app_svc_id=None,
-                            inst_id=None, pes_id=False):
+                            inst_id=None, pes=False):
         start_time = time.time()
         while start_time + 1800 > time.time():
+            self.log.info("...Waiting further...")
             time.sleep(15)
 
             if app_svc_id:
@@ -841,7 +825,7 @@ class APIBase(CouchbaseBaseTest):
                     self.handle_rate_limit(int(state.headers["Retry-After"]))
                     state = self.columnarAPI.fetch_analytics_cluster_info(
                         self.organisation_id, proj_id, inst_id)
-            elif pes_id:
+            elif pes:
                 state = self.capellaAPI.cluster_ops_apis \
                     .fetch_private_endpoint_service_status_info(
                         self.organisation_id, proj_id, clus_id)
@@ -863,14 +847,14 @@ class APIBase(CouchbaseBaseTest):
                 self.log.error("Something went wrong while fetching details."
                                "\nResult: {}".format(state.content))
                 return False
+            if pes:
+                if state.json()["enabled"]:
+                    return True
+                continue
 
             self.log.info("Current state: {}"
                           .format(state.json()["currentState"]))
 
-            if pes_id:
-                if state.json()["enabled"] == "true":
-                    return True
-                continue
             if state.json()["currentState"] == "deploymentFailed":
                 self.log.error("!!!Deployment Failed!!!")
                 self.log.error(state.content)
@@ -878,11 +862,9 @@ class APIBase(CouchbaseBaseTest):
             if app_svc_id and state.json()["currentState"] == "turnedOff":
                 self.log.warning("App Service is turned off")
                 return True
-            elif state.json()["currentState"] != "healthy":
-                self.log.info("...Waiting further...")
-            else:
+            elif state.json()["currentState"] == "healthy":
                 return True
-        self.log.error("Cluster/App didn't deploy within half an hour.")
+        self.log.error("Resource deploy within half an hour.")
         return False
 
     def wait_for_deletion(self, proj_id, clus_id, app_svc_id=None):
