@@ -111,7 +111,8 @@ class ColumnarRBACUtil:
             "collection_delete", "collection_analyze", "view_create", "view_drop", "view_select",
             "index_create", "index_drop", "function_create", "function_drop", "function_execute",
             "link_create", "link_drop", "link_alter", "link_connect", "link_disconnect",
-            "link_copy_to", "link_copy_from", "synonym_create", "synonym_drop"
+            "link_copy_to", "link_copy_from", "link_create_collection", "link_describe",
+            "synonym_create", "synonym_drop"
         ]
 
         resources_privileges_map = {
