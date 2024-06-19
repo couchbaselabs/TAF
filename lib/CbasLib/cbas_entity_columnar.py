@@ -118,6 +118,7 @@ class Remote_Link(Link):
         self.properties = properties
         self.properties["name"] = CBASHelper.unformat_name(self.name)
         self.link_type = "couchbase"
+        self.full_name = name
 
 
 class External_Link(Link):
@@ -136,6 +137,7 @@ class External_Link(Link):
         self.properties = properties
         self.properties["name"] = CBASHelper.unformat_name(self.name)
         self.link_type = self.properties["type"].lower()
+        self.full_name = name
 
 
 class Kafka_Link(Link):
@@ -156,6 +158,7 @@ class Kafka_Link(Link):
         self.kafka_type = kafka_type
         self.kafka_cluster_details = kafka_cluster_details
         self.schema_registry_details = schema_registry_details
+        self.full_name = name
 
 
 class Dataset(object):

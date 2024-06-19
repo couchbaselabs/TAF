@@ -507,10 +507,6 @@ class CopyToKv(ColumnarBaseTest):
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
             expected_error = self.input.param("expected_error")
-            if remote_link.database_name == "Default":
-                expected_error = expected_error.format(remote_link.dataverse_name + '.' + remote_link.name)
-            else:
-                expected_error = expected_error.format(remote_link.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
@@ -607,10 +603,6 @@ class CopyToKv(ColumnarBaseTest):
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
             expected_error = self.input.param("expected_error")
-            if remote_link.database_name == "Default":
-                expected_error = expected_error.format(remote_link.dataverse_name + '.' + remote_link.name)
-            else:
-                expected_error = expected_error.format(remote_link.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
@@ -643,10 +635,6 @@ class CopyToKv(ColumnarBaseTest):
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
             expected_error = self.input.param("expected_error")
-            if remote_link.database_name == "Default":
-                expected_error = expected_error.format(remote_link.dataverse_name + '.' + remote_link.name)
-            else:
-                expected_error = expected_error.format(remote_link.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,

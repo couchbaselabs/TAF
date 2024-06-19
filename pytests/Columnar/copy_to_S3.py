@@ -142,7 +142,7 @@ class CopyToS3(ColumnarBaseTest):
         resp = self.capellaAPI.cluster_ops_apis.create_bucket(self.tenant.id,
                                                               self.tenant.project_id,
                                                               self.remote_cluster.id,
-                                                              bucket_name, "couchbase", "couchstore", 1000, "seqno",
+                                                              bucket_name, "couchbase", "couchstore", 100, "seqno",
                                                               "majorityAndPersistActive", 1, True, 1000000)
         buckets = json.loads(CapellaUtils.get_all_buckets(self.pod, self.tenant, self.remote_cluster)
                              .content)["buckets"]["data"]
