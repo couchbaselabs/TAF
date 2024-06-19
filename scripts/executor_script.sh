@@ -144,20 +144,6 @@ else
 fi
 echo extra install is $extraInstall
 
-if [ "$component" = "transaction" ]; then
-    java_client_version=3.4.11
-    if [ "$branch" = "neo" ]; then
-    	java_client_version=default
-    fi
-    if [[ "$subcomponent" == *"_defer_"* ]]; then
-        transaction_version=1.2.3
-    fi
-    if [[ "$subcomponent" == *"_metering_"* ]]; then
-        transaction_version=1.2.3
-        java_client_version=3.4.2
-    fi
-fi
-
 # Updating upgrade_version for upgrade jobs
 if [ "$parameters" = "" ]; then
     parameters="upgrade_version=${version_number}"
