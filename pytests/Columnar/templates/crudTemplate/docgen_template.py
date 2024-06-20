@@ -39,6 +39,7 @@ class Hotel:
         self.characters_with_spaces = string.ascii_letters + string.digits + ' '
         self.characters_without_spaces = string.ascii_letters + string.digits
         self.document_size = None
+        self.id = ''.join(random.choice(self.characters_without_spaces) for _ in range(random.randint(10, 100)))
         self.address = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(30, 100)))
         self.free_parking = random.choice([True, False])
         self.city = ''.join(random.choice(self.characters_with_spaces) for _ in range(random.randint(5, 20)))

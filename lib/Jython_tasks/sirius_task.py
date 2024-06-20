@@ -155,7 +155,6 @@ class WorkLoadTask(Task):
                     self.operation_config)
             self.test_log.debug("success_count : " + str(self.success_count))
             self.test_log.debug("fail_count : " + str(self.fail_count))
-            self.test_log.debug("failed_items: " + "".join(self.fail.items()))
             self.set_result(True)
         except Exception as e:
             self.log.critical(e)

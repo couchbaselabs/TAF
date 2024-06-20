@@ -253,7 +253,7 @@ class BackupRestore(ColumnarBaseTest):
                     if scope != "_system" and scope != "_mobile":
                         continue
                     for collection in bucket.scopes[scope].collections:
-                        self.cbas_util.doc_operations_remote_collection_sirius(collection, bucket.name, scope,
+                        self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, collection, bucket.name, scope,
                                                                                "couchbases://" + self.remote_cluster.srv,
                                                                                remote_start, remote_end,
                                                                                doc_size=self.doc_size,
@@ -261,11 +261,8 @@ class BackupRestore(ColumnarBaseTest):
                                                                                password=self.remote_cluster.password)
         standalone_collections = self.cbas_util.get_all_dataset_objs("standalone")
         for collection in standalone_collections:
-            self.cbas_util.doc_operations_standalone_collection_sirius(collection.name, collection.dataverse_name,
-                                                                       collection.database_name,
-                                                                       "couchbases://"+self.cluster.srv, standalone_start, standalone_end,
-                                                                       doc_size=self.doc_size, username=self.cluster.servers[0].rest_username,
-                                                                       password=self.cluster.servers[0].rest_password)
+            self.cbas_util.load_doc_to_standalone_collection(self.cluster, collection.name, collection.dataverse_name,
+                                                             collection.database_name, self.no_of_docs, self.doc_size)
 
     def test_backup_restore(self):
         self.base_infra_setup()

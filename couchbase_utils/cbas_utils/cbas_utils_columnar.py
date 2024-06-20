@@ -1771,7 +1771,7 @@ class RemoteLink_Util(Link_Util):
             self.remote_links[link.name] = link
             count += 1
 
-    def doc_operations_remote_collection_sirius(self, collection_name, bucket_name, scope_name,
+    def doc_operations_remote_collection_sirius(self, task_manager, collection_name, bucket_name, scope_name,
                                                 connection_string, start, end, sdk_batch_size=25, doc_size=1024,
                                                 template="product", username=None, password=None,
                                                 sirius_url="http://127.0.0.1:4000", action="create"):
@@ -1780,16 +1780,17 @@ class RemoteLink_Util(Link_Util):
                                                bucket=bucket_name, scope=scope_name, collection=collection_name,
                                                sdk_batch_size=sdk_batch_size)
         operation_config = WorkloadOperationConfig(start=int(start), end=int(end), template=template, doc_size=doc_size)
-        op_type = SiriusCodes.DocOps.BULK_CREATE
+        op_type = SiriusCodes.DocOps.CREATE
         if action == "delete":
-            op_type = SiriusCodes.DocOps.BULK_DELETE
+            op_type = SiriusCodes.DocOps.DELETE
         if action == "update":
-            op_type = SiriusCodes.DocOps.BULK_UPDATE
+            op_type = SiriusCodes.DocOps.UPDATE
         task = WorkLoadTask(task_manager=self.task, op_type=op_type,
                             database_information=database_information, operation_config=operation_config,
                             default_sirius_base_url=sirius_url)
-        self.task_manager.add_new_task(task)
-        return self.task_manager.get_task_result(task)
+        task_manager.add_new_task(task)
+        task_manager.get_task_result(task)
+        return task
 
 
 class ExternalLink_Util(RemoteLink_Util):
@@ -3214,24 +3215,26 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         def call(self):
             return self.instance.generate_docs(self.document_size, self.country_type, self.include_country)
 
-    def doc_operations_standalone_collection_sirius(self, collection_name, dataverse_name, database_name,
+    def doc_operations_standalone_collection_sirius(self, task_manager, collection_name, dataverse_name, database_name,
                                                     connection_string, start, end, sdk_batch_size=25, doc_size=1024,
                                                     template="product", username=None, password=None,
                                                     sirius_url="http://127.0.0.1:4000", action="create"):
+        sdk_batch_size = min(sdk_batch_size, end-start)
         database_information = ColumnarLoader(username=username, password=password, connection_string=connection_string,
                                               bucket=database_name, scope=dataverse_name, collection=collection_name,
                                               sdk_batch_size=int(sdk_batch_size))
         operation_config = WorkloadOperationConfig(start=int(start), end=int(end), template=template, doc_size=doc_size)
-        op_type = SiriusCodes.DocOps.BULK_CREATE
-        if op_type == "delete":
-            op_type = SiriusCodes.DocOps.BULK_DELETE
-        if op_type == "upsert":
-            op_type = SiriusCodes.DocOps.BULK_UPDATE
+        op_type = SiriusCodes.DocOps.CREATE
+        if action == "delete":
+            op_type = SiriusCodes.DocOps.DELETE
+        if action == "upsert":
+            op_type = SiriusCodes.DocOps.UPDATE
         task = WorkLoadTask(task_manager=self.task, op_type=op_type,
                             database_information=database_information, operation_config=operation_config,
                             default_sirius_base_url=sirius_url)
-        self.task_manager.add_new_task(task)
-        return self.task_manager.get_task_result(task)
+        task_manager.add_new_task(task)
+        task_manager.get_task_result(task)
+        return task
 
     def load_doc_to_standalone_collection(
             self, cluster, collection_name, dataverse_name, database_name,
@@ -6787,7 +6790,10 @@ class ColumnarStats(object):
         username = cluster.servers[0].rest_username
         password = cluster.servers[0].rest_password
         utilization = 0
-        resp = (requests.get(uri, auth=(username, password), verify=False)).json()
+        resp = requests.get(uri, auth=(username, password), verify=False)
+        if resp.status_code != 200:
+            return -1
+        resp = resp.json()
         for nodes in resp["nodes"]:
             utilization += nodes["systemStats"]["cpu_utilization_rate"]
         cpu_node_average = utilization / len(resp["nodes"])

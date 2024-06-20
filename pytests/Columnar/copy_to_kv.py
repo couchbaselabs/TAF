@@ -737,13 +737,10 @@ class CopyToKv(ColumnarBaseTest):
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
         provisioned_collections = []
         for dataset in datasets:
-            jobs.put((self.cbas_util.doc_operations_standalone_collection_sirius,
-                      {"collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
-                       "database_name": dataset.database_name,
-                       "connection_string": "couchbases://" + self.cluster.srv,
-                       "start": 1, "end": self.no_of_docs, "doc_size": self.doc_size,
-                       "username": self.cluster.servers[0].rest_username,
-                       "password": self.cluster.servers[0].rest_password}))
+            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
+                       "database_name": dataset.database_name, "no_of_docs": self.no_of_docs,
+                       "document_size": self.doc_size}))
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
         for dataset in datasets:
             if self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name) == 0:

@@ -6,6 +6,8 @@ from _datetime import timedelta
 from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from Columnar.mini_volume_code_template import MiniVolume
+from TestInput import TestInputSingleton, TestInputServer
+from capella_utils.dedicated import CapellaUtils
 
 
 class OnOff(ColumnarBaseTest):
@@ -66,6 +68,7 @@ class OnOff(ColumnarBaseTest):
                                                                  bucket_ram_quota=200)
 
     def base_infra_setup(self):
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param("no_of_database", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param("no_of_scopes", 1)
         self.columnar_spec["synonym"]["no_of_synonyms"] = self.input.param(
             "synonym", 0)
@@ -84,7 +87,7 @@ class OnOff(ColumnarBaseTest):
                  "certificate": self.remote_cluster_certificate}
             )
             self.columnar_spec["remote_link"]["properties"] = remote_link_properties
-            self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
+            self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("no_of_remote_coll", 1)
 
         self.columnar_spec["external_link"]["no_of_external_links"] = self.input.param(
             "no_of_external_links", 0)
@@ -96,7 +99,7 @@ class OnOff(ColumnarBaseTest):
             "secretAccessKey": self.aws_secret_key,
             "serviceEndpoint": None
         }]
-        self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
+        self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("no_of_external_coll", 0)
         if self.columnar_spec["external_dataset"]["num_of_external_datasets"]:
             external_dataset_properties = [{
                 "external_container_name": self.s3_source_bucket,
@@ -118,7 +121,7 @@ class OnOff(ColumnarBaseTest):
 
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 0)
+            "no_of_standalone_coll", 0)
         self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string"}]
 
         if not hasattr(self, "remote_cluster"):
@@ -131,37 +134,34 @@ class OnOff(ColumnarBaseTest):
             self.fail(msg)
 
     def load_data_to_source(self, remote_start, remote_end, standalone_start, standalone_end):
-        if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "bucket"):
+        if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
             for bucket in self.remote_cluster.buckets:
-                if bucket.name == "_default":
-                    continue
-                for scope in bucket.scopes:
-                    if scope != "_system" and scope != "_mobile":
-                        continue
-                    for collection in bucket.scopes[scope].collections:
-                        self.cbas_util.doc_operations_remote_collection_sirius(collection, bucket.name, scope,
-                                                                               "couchbases://" + self.remote_cluster.srv,
-                                                                               remote_start, remote_end,
-                                                                               doc_size=self.doc_size,
-                                                                               username=self.remote_cluster.username,
-                                                                               password=self.remote_cluster.password)
+                if bucket.name != "_default":
+                    for scope in bucket.scopes:
+                        if scope != "_system" and scope != "_mobile":
+                            for collection in bucket.scopes[scope].collections:
+                                self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, collection,
+                                                                                       bucket.name, scope,
+                                                                                       "couchbases://" + self.remote_cluster.srv,
+                                                                                       remote_start, remote_end,
+                                                                                       doc_size=self.doc_size,
+                                                                                       username=self.remote_cluster.username,
+                                                                                       password=self.remote_cluster.password)
         standalone_collections = self.cbas_util.get_all_dataset_objs("standalone")
         for collection in standalone_collections:
-            self.cbas_util.doc_operations_standalone_collection_sirius(collection.name, collection.dataverse_name,
-                                                                       collection.database_name,
-                                                                       "couchbases://" + self.cluster.srv,
-                                                                       standalone_start, standalone_end,
-                                                                       doc_size=self.doc_size,
-                                                                       username=self.cluster.servers[0].rest_username,
-                                                                       password=self.cluster.servers[0].rest_password)
+            self.cbas_util.load_doc_to_standalone_collection(self.cluster, collection.name, collection.dataverse_name,
+                                                             collection.database_name, self.no_of_docs, self.doc_size)
 
-    def wait_for_off(self, timeout=900):
+    def wait_for_off(self, timeout=3600):
         status = None
         start_time = time.time()
-        while status != 'turning_off' and time.time() < start_time + 300:
-            resp = self.columnar_utils.get_instance_info(self.pod, self.tenant, self.tenant.project_id,
-                                                         self.cluster.instance_id)
-            status = resp["data"]["state"]
+        while status != 'turning_off':
+            try:
+                resp = self.columnar_utils.get_instance_info(self.pod, self.tenant, self.tenant.project_id,
+                                                             self.cluster.instance_id)
+                status = resp["data"]["state"]
+            except Exception as e:
+                self.log.error(str(e))
         while status == 'turning_off' and time.time() < start_time + timeout:
             try:
                 resp = self.columnar_utils.get_instance_info(self.pod, self.tenant, self.tenant.project_id,
@@ -172,6 +172,7 @@ class OnOff(ColumnarBaseTest):
             except Exception as e:
                 self.log.error(str(e))
         if status == "turned_off":
+            self.log.info("Time taken for instance off {} seconds".format(time.time() - start_time))
             self.log.info("Instance off successful")
             return True
         else:
@@ -181,11 +182,11 @@ class OnOff(ColumnarBaseTest):
     def wait_for_on(self, timeout=900):
         status = None
         start_time = time.time()
-        while status != 'turning_on' and time.time() < start_time + 300:
+        while status != 'turning_on':
             resp = self.columnar_utils.get_instance_info(self.pod, self.tenant, self.tenant.project_id,
                                                          self.cluster.instance_id)
             status = resp["data"]["state"]
-        while status == 'turning_on' and time.time() < start_time + timeout:
+        while status == 'turning_on':
             try:
                 resp = self.columnar_utils.get_instance_info(self.pod, self.tenant, self.tenant.project_id,
                                                              self.cluster.instance_id)
@@ -196,17 +197,20 @@ class OnOff(ColumnarBaseTest):
                 self.log.error(str(e))
         if status == "healthy":
             self.log.info("Instance on successful")
+            self.log.info("Time taken to on the instance is {} seconds".format(time.time() - start_time))
             return True
         else:
             self.log.error("Failed to turn on the instance")
             return False
 
-    def dataset_count(self):
+    def dataset_count(self, timeout=3600):
         items_in_datasets = {}
         datasets = self.cbas_util.get_all_dataset_objs()
         for dataset in datasets:
             items_in_datasets[dataset.full_name] = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster,
-                                                                                                dataset.full_name)
+                                                                                                dataset.full_name,
+                                                                                                timeout=timeout,
+                                                                                                analytics_timeout=timeout)
         return items_in_datasets
 
     def validate_entities_after_restore(self):
@@ -227,7 +231,6 @@ class OnOff(ColumnarBaseTest):
                                                                                                  "mismatch")
 
     def scale_columnar_cluster(self, nodes, timeout=900, validate_error=None):
-        start_time = time.time()
         status = None
         resp = self.columnarAPI.update_columnar_instance(self.tenant.id,
                                                          self.tenant.project_id,
@@ -235,29 +238,28 @@ class OnOff(ColumnarBaseTest):
                                                          self.cluster.name, '', nodes)
         if resp.status_code != 202:
             self.fail("Failed to scale cluster")
-            # check for nodes in the cluster
-        while status != "healthy" and start_time + 900 > time.time():
+        time.sleep(20)
+        # check for nodes in the cluster
+        while status != "healthy":
             resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
                                                                    self.tenant.project_id,
                                                                    self.cluster.instance_id)
             resp = resp.json()
             status = resp["data"]["state"]
-        if time.time() > start_time + timeout:
-            self.log.error("Cluster state is {} after 15 minutes".format(status))
 
-        start_time = time.time()
-        while start_time + timeout > time.time():
-            nodes_in_cluster = self.capellaAPI.get_nodes(self.tenant.id,
-                                                         self.tenant.project_id,
-                                                         self.cluster.cluster_id)
-            if nodes_in_cluster.status_code == 200:
-                if len(nodes_in_cluster.json()["data"]) == nodes:
-                    return True
+        nodes_in_cluster = 0
+        while nodes_in_cluster != nodes:
+            servers = CapellaUtils.get_cluster_info_internal(
+                self.pod, self.tenant, self.cluster.id)
+            nodes_in_cluster = len(servers["hosts"]["entry"])
+            if nodes_in_cluster == nodes:
+                return True
         return False
 
     def test_on_demand_on_off(self):
+
         self.base_infra_setup()
-        self.load_data_to_source(1, self.no_of_docs, 1, self.no_of_docs)
+        self.load_data_to_source(0, self.no_of_docs, 1, self.no_of_docs)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
@@ -279,6 +281,7 @@ class OnOff(ColumnarBaseTest):
         if not self.wait_for_on():
             self.fail("Failed to turn on the instance")
 
+        self.update_columnar_instance_obj(self.pod, self.tenant, self.cluster)
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count_after_restore = self.dataset_count()
@@ -312,6 +315,7 @@ class OnOff(ColumnarBaseTest):
             self.fail("Failed to turn on the instance")
         self.scale_columnar_cluster(2)
 
+        self.update_columnar_instance_obj(self.pod, self.tenant, self.cluster)
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count_after_restore = self.dataset_count()
@@ -564,7 +568,8 @@ class OnOff(ColumnarBaseTest):
 
     def test_mini_volume_on_off(self):
         self.base_infra_setup()
-        self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
+        self.sirius_url = self.input.param("sirius_url", "http://127.0.0.1:4000")
+        self.mini_volume = MiniVolume(self, self.sirius_url)
         self.mini_volume.calculate_volume_per_source()
         for i in range(1, 5):
             if i % 2 == 0:
@@ -576,6 +581,7 @@ class OnOff(ColumnarBaseTest):
             self.mini_volume.stop_crud_on_data_sources()
             docs_in_collections_before = self.dataset_count()
             self.initiate_on_off()
+            self.update_columnar_instance_obj(self.pod, self.tenant, self.cluster)
             docs_in_collection_after = self.dataset_count()
             if docs_in_collection_after != docs_in_collections_before:
                 self.fail("Doc count mismatch after on/off")
