@@ -1,7 +1,7 @@
 
 import json
 import os
-from BucketLib.bucket import Bucket, Collection, Scope
+from BucketLib.bucket import Bucket
 from EventingLib.EventingOperations_Rest import EventingHelper
 from FtsLib.FtsOperations_Rest import FtsHelper
 from cluster_utils.cluster_ready_functions import CBCluster
@@ -172,7 +172,7 @@ class NodeRemapTests(NodeRemapBase):
             deploy = True
             func_to_pause = None
             for bucket in self.cluster.buckets:
-                func_name = "eventingfunc_" + bucket.name.replace(".", "")
+                func_name = "eventingfunc_" + bucket.name
                 self.create_deploy_eventing_functions(self.cluster, bucket,
                                                       func_name, deploy=deploy)
                 self.eventing_func_dict[func_name] = deploy
@@ -262,9 +262,9 @@ class NodeRemapTests(NodeRemapBase):
             if scope.name == "_system":
                 continue
             for _, collection in scope.collections.items():
-                bucket_name = bucket.name.replace(".", "_")
-                idx_name = bucket_name + "-" + scope.name + "-" + collection.name \
-                                + "-" + field
+                bucket_name = bucket.name
+                idx_name = bucket_name + "#" + scope.name + "#" + collection.name \
+                                + "#" + field
                 index_create_query = 'CREATE INDEX `{0}` ON `{1}`.`{2}`.`{3}`' \
                     '(`{4}` include missing)' \
                     .format(idx_name, bucket.name, scope.name, collection.name, field)
@@ -324,17 +324,6 @@ class NodeRemapTests(NodeRemapBase):
                                       vbuckets=self.cluster.vbuckets)
         self.dest_cluster.master = self.dest_servers[0]
         self.dest_cluster.buckets = self.bucket_util.get_all_buckets(self.dest_cluster)
-
-        # Adding scopes and collections to the local bucket_obj
-        for bucket in self.dest_cluster.buckets:
-            for scope in list(self.scopes):
-                if scope not in bucket.scopes:
-                    scope_obj = Scope({"name": scope})
-                    bucket.scopes[scope] = scope_obj
-                for collection in list(self.collections):
-                    if collection not in bucket.scopes[scope].collections:
-                        coll_obj = Collection({"name": collection})
-                        bucket.scopes[scope].collections[collection] = coll_obj
 
         for server in self.dest_servers:
             s_node_ip = self.node_map_dict[server.ip]
@@ -613,7 +602,7 @@ class NodeRemapTests(NodeRemapBase):
                                 to_add=[spare_node], to_remove=[],
                                 check_vbucket_shuffling=False,
                                 services=["kv,index,n1ql,fts,eventing,cbas"],
-                                retry_get_process_num=100)
+                                retry_get_process_num=300)
         self.assertTrue(rebalance_passed, "Rebalance-in of node failed")
         self.cluster_util.print_cluster_stats(self.dest_cluster)
 
@@ -622,7 +611,7 @@ class NodeRemapTests(NodeRemapBase):
         rebalance_passed = self.task.rebalance(self.dest_cluster,
                                 to_add=[], to_remove=[node_to_remove],
                                 check_vbucket_shuffling=False,
-                                retry_get_process_num=100)
+                                retry_get_process_num=300)
         self.assertTrue(rebalance_passed, "Rebalance-out of node failed")
         self.cluster_util.print_cluster_stats(self.dest_cluster)
         spare_node = node_to_remove
@@ -637,7 +626,7 @@ class NodeRemapTests(NodeRemapBase):
                                 to_remove=[node_to_remove],
                                 check_vbucket_shuffling=False,
                                 services=[",".join(services_on_target_node)],
-                                retry_get_process_num=100)
+                                retry_get_process_num=300)
         self.assertTrue(rebalance_passed, "Swap rebalance of nodes failed")
         self.cluster_util.print_cluster_stats(self.dest_cluster)
 
@@ -682,9 +671,8 @@ class NodeRemapTests(NodeRemapBase):
         if len(self.dest_cluster.query_nodes) > 0:
             query_client = RestConnection(self.dest_cluster.query_nodes[0])
             for index in self.indexes:
-                idx_split = index.split("-")
+                idx_split = index.split("#")
                 bucket_name = idx_split[0]
-                bucket_name = bucket_name.replace("_", ".")
                 query = "SELECT {0} from `{1}`.`{2}`.`{3}` USE INDEX(`{4}`) " \
                     "limit 1000".format(idx_split[3], bucket_name, idx_split[1],
                                         idx_split[2], index)

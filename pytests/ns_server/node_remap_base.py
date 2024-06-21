@@ -1,6 +1,7 @@
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from basetestcase import BaseTestCase
+from bucket_collections.collections_base import CollectionBase
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
 from cb_constants.CBServer import CbServer
@@ -18,14 +19,7 @@ class NodeRemapBase(BaseTestCase):
         node_info = self.rest.get_nodes_self()
         self.index_path = node_info.storage[0].get_index_path()
 
-        self.bucket_ram_quota = self.input.param("bucket_ram_quota", None)
         self.bucket_util.add_rbac_user(self.cluster.master)
-        self.magma_buckets = self.input.param("magma_buckets", 0)
-        self.num_ephemeral_buckets = self.input.param("num_ephemeral_buckets", 0)
-        self.bucket_eviction_policy = self.input.param("bucket_eviction_policy",
-                                                Bucket.EvictionPolicy.FULL_EVICTION)
-        self.num_collections = self.input.param("num_collections", 1)
-        self.num_scopes = self.input.param("num_scopes", 1)
         self.collection_items = self.input.param("collection_items", 100000)
         self.output_dir = self.input.param("output_dir", "/output_dir")
         self.sdk_timeout = self.input.param("sdk_timeout", 60)
@@ -38,6 +32,7 @@ class NodeRemapBase(BaseTestCase):
         self.alternate_ip = self.input.param("alternate_ip", "10.142.181.104")
         self.use_config_remap = self.input.param("use_config_remap", False)
         self.regenerate_bucket_uuid = self.input.param("regenerate_bucket_uuid", True)
+        self.spec_name = self.input.param("spec_name", "cluster_clone.single_bucket")
 
         nodes_in = self.cluster.servers[1:self.nodes_init]
         self.dest_servers = self.cluster.servers[self.nodes_init:self.nodes_init*2]
@@ -48,7 +43,7 @@ class NodeRemapBase(BaseTestCase):
 
         self.kv_quota_mem = self.input.param("kv_quota_mem", 5000)
         self.index_quota_mem = self.input.param("index_quota_mem", 1024)
-        self.fts_quota_mem = self.input.param("fts_quota_mem", 1024)
+        self.fts_quota_mem = self.input.param("fts_quota_mem", 3072)
         self.cbas_quota_mem = self.input.param("cbas_quota_mem", 1024)
         self.eventing_quota_mem = self.input.param("eventing_quota_mem", 256)
 
@@ -80,25 +75,7 @@ class NodeRemapBase(BaseTestCase):
             num_reader_threads="disk_io_optimized",
             num_storage_threads="default")
 
-        self.log.info("Creating {} buckets".format(self.standard_buckets))
-        self.bucket_util.create_multiple_buckets(
-            self.cluster, self.num_replicas,
-            bucket_count=self.standard_buckets,
-            bucket_type=self.bucket_type,
-            eviction_policy=self.bucket_eviction_policy,
-            storage={"couchstore": self.standard_buckets - self.magma_buckets,
-                     "magma": self.magma_buckets},
-            ram_quota=self.bucket_ram_quota)
-
-        for i in range(self.num_ephemeral_buckets):
-            bucket_name = "ephemeral" + str(i)
-            self.log.info("Creating ephemeral bucket: {}".format(bucket_name))
-            self.bucket_util.create_default_bucket(self.cluster, "ephemeral",
-                ram_quota=self.bucket_ram_quota, replica=self.num_replicas,
-                eviction_policy=self.bucket_eviction_policy,
-                bucket_name=bucket_name)
-
-        self.create_bucket_scope_collections()
+        CollectionBase.deploy_buckets_from_spec_file(self)
 
         if self.set_history_at_start and \
             (self.bucket_dedup_retention_seconds is not None or \
@@ -112,38 +89,6 @@ class NodeRemapBase(BaseTestCase):
 
         self.bucket_util.print_bucket_stats(self.cluster)
         self.log.info("NodeRemapBase setup finished")
-
-    def create_bucket_scope_collections(self):
-        scope_prefix = "Scope"
-        for bucket in self.cluster.buckets:
-            for i in range(1, self.num_scopes):
-                scope_name = scope_prefix + str(i)
-                self.log.info("Creating bucket::scope {} {}\
-                    ".format(bucket.name, scope_name))
-                self.bucket_util.create_scope(self.cluster.master, bucket,
-                                              {"name": scope_name})
-                self.sleep(2)
-        self.scopes = self.cluster.buckets[0].scopes.keys()
-        self.log.info("Scopes list is {}".format(self.scopes))
-
-        collection_prefix = "FunctionCollection"
-        for bucket in self.cluster.buckets:
-            for scope_name in self.scopes:
-                if scope_name == CbServer.system_scope:
-                    continue
-                for i in range(len(bucket.scopes[scope_name].collections),
-                               self.num_collections):
-                    collection_name = collection_prefix + str(i)
-                    self.log.info("Creating scope::collection {} {}\
-                    ".format(scope_name, collection_name))
-                    self.bucket_util.create_collection(
-                        self.cluster.master, bucket,
-                        scope_name, {"name": collection_name})
-                    self.sleep(2)
-
-        self.collections = \
-            self.cluster.buckets[0].scopes[CbServer.default_scope].collections.keys()
-        self.log.info("Collections list == {}".format(self.collections))
 
 
     def copy_data_to_dest_node(self, source_node, dest_node, output_dir):
