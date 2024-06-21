@@ -39,6 +39,8 @@ class MSkCluster(KafkaCluster):
             "VpcConnectivitySaslScram": None,
             "VpcConnectivitySaslIam": None,
         }
+        self.sasl_username = None
+        self.sasl_password = None
 
 
 class MSKUtils(object):
@@ -100,6 +102,8 @@ class MSKUtils(object):
             cluster_obj.bootstrap_brokers["VpcConnectivitySaslIam"] = \
                 bootstrap_brokers_info.get(
                     "BootstrapBrokerStringVpcConnectivitySaslIam", None)
+            cluster_obj.sasl_username = sasl_username
+            cluster_obj.sasl_password = sasl_password
             connection_config = cluster_obj.generate_connection_config(
                 cluster_obj.bootstrap_brokers["PublicSaslScram"],
                 security_protocal="SASL_SSL", sasl_mechanism="SCRAM-SHA-512",

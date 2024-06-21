@@ -318,10 +318,7 @@ class SecurityTest(ColumnarBaseTest):
 
             instance_config = self.columnar_utils.generate_instance_configuration()
             resp = self.columnar_api.create_columnar_instance(
-                tenant_ids[tenant_id], self.project_id, instance_config["name"],
-                instance_config["description"], instance_config["provider"],
-                instance_config["region"], instance_config["nodes"]
-            )
+                tenant_ids[tenant_id], self.project_id, instance_config)
             if tenant_id == "invalid_tenant_id":
                 self.assertEqual(404, resp.status_code,
                                 msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 404))
@@ -350,10 +347,7 @@ class SecurityTest(ColumnarBaseTest):
         for project_id in project_ids:
             instance_config = self.columnar_utils.generate_instance_configuration()
             resp = self.columnar_api.create_columnar_instance(
-                self.tenant_id, project_ids[project_id], instance_config["name"],
-                instance_config["description"], instance_config["provider"],
-                instance_config["region"], instance_config["nodes"]
-            )
+                self.tenant_id, project_ids[project_id], instance_config)
             if project_id == "valid_project_id":
                 self.assertEqual(201, resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code, 201))
@@ -381,11 +375,8 @@ class SecurityTest(ColumnarBaseTest):
                                                self.test_users[user]["password"])
 
             instance_config = self.columnar_utils.generate_instance_configuration()
-            resp = self.colunmnarAPIrole.create_columnar_instance(
-                self.tenant_id, self.project_id, instance_config["name"],
-                instance_config["description"], instance_config["provider"],
-                instance_config["region"], instance_config["nodes"]
-            )
+            resp = self.columnar_api.create_columnar_instance(
+                self.tenant_id, project_ids[project_id], instance_config)
 
             if self.test_users[user]["role"] == "organizationOwner":
                 self.assertEqual(201, resp.status_code,
@@ -435,11 +426,8 @@ class SecurityTest(ColumnarBaseTest):
                                                 user["password"])
 
             instance_config = self.columnar_utils.generate_instance_configuration()
-            resp = self.colunmnarAPIrole.create_columnar_instance(
-                self.tenant_id, self.project_id, instance_config["name"],
-                instance_config["description"], instance_config["provider"],
-                instance_config["region"], instance_config["nodes"]
-            )
+            resp = self.columnar_api.create_columnar_instance(
+                self.tenant_id, project_ids[project_id], instance_config)
 
             if role == "projectOwner" or role == "projectClusterManager":
                 self.assertEqual(201, resp.status_code,
@@ -740,10 +728,7 @@ class SecurityTest(ColumnarBaseTest):
                 self.instance_list.remove(instance_id)
                 instance_config = self.columnar_utils.generate_instance_configuration()
                 resp = self.columnar_api.create_columnar_instance(
-                    self.tenant_id, self.project_id, instance_config["name"],
-                    instance_config["description"], instance_config["provider"],
-                    instance_config["region"], instance_config["nodes"]
-                )
+                    self.tenant_id, project_ids[project_id], instance_config)
                 if resp.status_code != 201:
                     self.fail("Failed to create columnar isntance")
                 resp = resp.json()
@@ -779,10 +764,7 @@ class SecurityTest(ColumnarBaseTest):
                 self.instance_list.remove(instance_id)
                 instance_config = self.columnar_utils.generate_instance_configuration()
                 resp = self.columnar_api.create_columnar_instance(
-                    self.tenant_id, self.project_id, instance_config["name"],
-                    instance_config["description"], instance_config["provider"],
-                    instance_config["region"], instance_config["nodes"]
-                )
+                    self.tenant_id, project_ids[project_id], instance_config)
                 if resp.status_code != 201:
                     self.fail("Failed to create columnar isntance")
                 resp = resp.json()
@@ -815,10 +797,7 @@ class SecurityTest(ColumnarBaseTest):
                 self.instance_list.remove(instance_id)
                 instance_config = self.columnar_utils.generate_instance_configuration()
                 resp = self.columnar_api.create_columnar_instance(
-                    self.tenant_id, self.project_id, instance_config["name"],
-                    instance_config["description"], instance_config["provider"],
-                    instance_config["region"], instance_config["nodes"]
-                )
+                    self.tenant_id, project_ids[project_id], instance_config)
                 if resp.status_code != 201:
                     self.fail("Failed to create columnar isntance")
                 resp = resp.json()
@@ -866,10 +845,7 @@ class SecurityTest(ColumnarBaseTest):
                 self.instance_list.remove(instance_id)
                 instance_config = self.columnar_utils.generate_instance_configuration()
                 resp = self.columnar_api.create_columnar_instance(
-                    self.tenant_id, self.project_id, instance_config["name"],
-                    instance_config["description"], instance_config["provider"],
-                    instance_config["region"], instance_config["nodes"]
-                )
+                    self.tenant_id, project_ids[project_id], instance_config)
                 if resp.status_code != 201:
                     self.fail("Failed to create columnar isntance")
                 resp = resp.json()

@@ -11,8 +11,6 @@ import string
 import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
-import pprint
-import socket
 
 
 class ColumnarInstance:
@@ -376,9 +374,9 @@ class ColumnarUtils:
             "provider": provider,
             "region": region,
             "nodes": nodes,
-            "instance_types": instance_types,
-            "support_package": support_package,
-            "availability_zone": availability_zone
+            "instanceTypes": instance_types,
+            "package": support_package,
+            "availabilityZone": availability_zone
         }
         if image:
             config.update({
@@ -387,7 +385,7 @@ class ColumnarUtils:
                     "image": image
                 }
             })
-        pprint.pprint(config)
+        self.log.debug(f"Columnar Instance deployment config - {str(config)}")
         return config
 
     def create_instance(self, pod, tenant, instance_config=None, timeout=7200):
@@ -397,12 +395,7 @@ class ColumnarUtils:
         if not instance_config:
             instance_config = self.generate_instance_configuration()
         resp = columnar_api.create_columnar_instance(
-            tenant.id, tenant.project_id, instance_config["name"],
-            instance_config["description"], instance_config["provider"],
-            instance_config["region"], instance_config["nodes"],
-            instance_config["instance_types"],
-            instance_config["support_package"],
-            instance_config["availability_zone"]
+            tenant.id, tenant.project_id, instance_config
         )
         instance_id = None
         if resp.status_code == 201:
@@ -647,11 +640,3 @@ class ColumnarUtils:
         else:
             self.log.error("Failed to turn on the instance")
             return False
-
-    def get_nodes(self, connection_str):
-        servers = list()
-        ais = socket.getaddrinfo(connection_str, 0, 0, 0, 0)
-        for result in ais:
-            servers.append(result[-1][0])
-            servers = list(set(servers))
-        return servers
