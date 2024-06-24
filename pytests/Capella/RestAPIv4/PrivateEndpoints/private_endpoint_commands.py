@@ -322,7 +322,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
     def test_payload(self):
         testcases = list()
 
-        for key in self.expected_result:
+        for key in self.expected_res:
             if key in ["command"]:
                 continue
 
@@ -332,10 +332,10 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 self.generate_random_string(5000, special_characters=False),
             ]
             for value in values:
-                testcase = copy.deepcopy(self.expected_result)
+                testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
-                for param in ["command"]:
-                    del testcase[param]
+                # for param in ["command"]:
+                #     del testcase[param]
 
                 testcase["description"] = "Testing `{}` with val: {} of {}" \
                     .format(key, value, type(value))
@@ -368,23 +368,21 @@ class PostEndpointCommand(GetPrivateEndpointService):
         for testcase in testcases:
             self.log.info(testcase['description'])
             result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], self.expected_res["vpcID"],
-                self.expected_res["subnetIDs"])
+                self.organisation_id, self.project_id, self.cluster_id,
+                testcase["vpcID"], testcase["subnetIDs"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["vpcID"],
-                    self.expected_res["subnetIDs"])
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    testcase["vpcID"], testcase["subnetIDs"])
 
             self.validate_testcase(result, [200], testcase, failures)
 
-            if failures:
-                    for fail in failures:
-                        self.log.warning(fail)
-                    self.fail("{} tests FAILED out of {} TOTAL tests"
-                              .format(len(failures), len(testcases)))
+        if failures:
+            for fail in failures:
+                self.log.warning(fail)
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
