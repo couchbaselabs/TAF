@@ -404,6 +404,10 @@ class SecurityBase(CouchbaseBaseTest):
         while status != 'healthy':
             self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
                        .format(status))
+            if status in ["deploymentFailed", "scaleFailed", "upgradeFailed", "rebalanceFailed",
+                          "peeringFailed", "destroyFailed", "offline", "turningOffFailed",
+                         "turningOnFailed"]:
+                self.fail("FAIL. Cluster status is -{}".format(status))
             cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                                                                                 self.tenant_id,
                                                                                 self.project_id,
