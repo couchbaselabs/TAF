@@ -295,25 +295,44 @@ class ClusterUtils:
         # MB-60705 - On adding the node, pools/default is returning unknown for a while
         # Adding a retry mechanism in case pools/default returns unknown
         # TODO - Remove the retry mechanism once MB-60705 gets resolved
-        retry = 0
-        max_retry = 5
-        while retry <  max_retry:
-            pools_default_res = RestConnection(cluster.master).get_pools_default()
+        retry, max_retry = 0, 5
+        pools_default_res = None
+        rest_conn = ClusterRestAPI(cluster.master)
+        while retry < max_retry:
+            _, pools_default_res = rest_conn.cluster_details()
             if pools_default_res == "unknown pool":
                 retry += 1
+                sleep(2)
                 continue
-            else:
-                break
-        for node in pools_default_res["nodes"]:
-            version, build, type = node["version"].split("-")
-            node_ipaddr = node["hostname"].split(":")[0]
-            if version > highest_version or \
-                (version == highest_version and build > highest_build):
-                highest_version_nodes = [node_ipaddr]
-                highest_version = version
-                highest_build = build
-            elif highest_version == version and highest_build == build:
-                highest_version_nodes.append(node_ipaddr)
+            break
+        else:
+            self.log.critical(f"Getting 'unknown pool': {pools_default_res}")
+            return highest_version, highest_build, highest_version_nodes
+        retry, max_retry = 0, 5
+        while retry < max_retry:
+            got_unknown_version = False
+            for node in pools_default_res["nodes"]:
+                if node["version"] == "unknown":
+                    got_unknown_version = True
+                    break
+                version, build, rel_type = node["version"].split("-")
+                node_ipaddr = node["hostname"].split(":")[0]
+                if version > highest_version or \
+                    (version == highest_version and build > highest_build):
+                    highest_version_nodes = [node_ipaddr]
+                    highest_version = version
+                    highest_build = build
+                elif highest_version == version and highest_build == build:
+                    highest_version_nodes.append(node_ipaddr)
+            if got_unknown_version:
+                sleep(2)
+                _, pools_default_res = rest_conn.cluster_details()
+                continue
+            # Exit the retry loop if things are okay
+            break
+        else:
+            self.log.critical(f"Getting version=unknown: {pools_default_res}")
+            return highest_version, highest_build, highest_version_nodes
         self.log.debug("Highest version : {} Highest build : {}".format(highest_version,highest_build))
         self.log.debug("Highest version node : {}".format(highest_version_nodes))
         highest_version_nodes = [node for node in cluster.nodes_in_cluster if node.ip in highest_version_nodes]

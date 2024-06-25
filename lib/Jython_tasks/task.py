@@ -50,8 +50,9 @@ from custom_exceptions.exception import \
     CompactViewFailed, SetViewInfoNotFound, FailoverFailedException, \
     BucketFlushFailed
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteUtilHelper, RemoteMachineShellConnection
+from remote.remote_util import RemoteUtilHelper
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView, plot_graph
 from gsiLib.GsiHelper_Rest import GsiHelper
 from TestInput import TestInputServer

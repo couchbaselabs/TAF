@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
+from time import time
+
 from bucket_collections.collections_base import CollectionBase
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
 from platform_utils.remote.remote_util import RemoteMachineShellConnection
+from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_exceptions import SDKException
-from cb_constants import constants, CbServer
+from cb_constants import CbServer
 
 
 class AutoFailoverTests(AutoFailoverBaseTest):
@@ -48,6 +52,17 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.rest.update_failover_ephemeral_no_replicas(value="false")
         self.bucket_util.print_bucket_stats(self.cluster)
         super(AutoFailoverTests, self).tearDown()
+
+    def __wait_for_auto_failover_event(self, timeout=300):
+        end_time = int(time()) + timeout
+        cluster_rest = ClusterRestAPI(self.cluster.master)
+        while int(time()) < end_time:
+            status, fo_settings = cluster_rest.get_auto_failover_settings()
+            if status and fo_settings["count"] == 1:
+                break
+            self.sleep(2, "Auto-failover not yet triggered. Re-poll")
+        else:
+            self.log.critical("Auto Fail-over event not occurred")
 
     def set_retry_exceptions(self, doc_loading_spec):
         retry_exceptions = list()
@@ -137,7 +152,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300, "Wait after inducing failure")
+        self.__wait_for_auto_failover_event(timeout=300)
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
                 for task in self.loadgen_tasks:
@@ -192,7 +207,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300, "Wait after inducing failure")
+        self.__wait_for_auto_failover_event(timeout=300)
         self.task.jython_task_manager.get_task_result(rebalance_task)
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
@@ -251,7 +266,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300, "Wait after inducing failure")
+        self.__wait_for_auto_failover_event(timeout=300)
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
                 for task in self.loadgen_tasks:
@@ -291,6 +306,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         task = cont_load_task = None
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
+        reb_util = RebalanceUtil(self.cluster.master)
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -301,7 +317,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300, "Wait after inducing failure")
+        self.__wait_for_auto_failover_event(timeout=300)
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
@@ -310,11 +326,10 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         for node in self.servers_to_add:
             self.log.info("Adding node {0}".format(node.ip))
-            self.rest.add_node(user=self.orchestrator.rest_username,
+            self.rest.add_node(username=self.orchestrator.rest_username,
                                password=self.orchestrator.rest_password,
-                               remoteIp=node.ip,
-                               port=CbServer.ssl_port)
-        nodes = self.rest.node_statuses()
+                               host_name=f"{node.ip}:{CbServer.ssl_port}")
+        nodes = self.cluster_util.get_nodes(self.cluster.master)
         self.log.info("Marking {0} for removal".format(self.servers_to_remove))
         nodes_to_remove = [node.id for node in nodes if
                            node.ip in [t.ip for t in self.servers_to_remove]]
@@ -322,7 +337,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         started, _ = self.rest.rebalance(nodes, nodes_to_remove)
         rebalance_success = False
         if started:
-            rebalance_success = self.rest.monitorRebalance()
+            rebalance_success = reb_util.monitor_rebalance()
         if (not rebalance_success or not started) and not \
                 self.failover_expected:
             self.fail("Rebalance failed. Check logs")
@@ -334,7 +349,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
                 .format(self.num_replicas, self.new_replica)
-            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+            self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
 
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
@@ -376,6 +391,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             return
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
+        reb_util = RebalanceUtil(self.cluster.master)
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -386,7 +402,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300, "Wait after inducing failure")
+        self.__wait_for_auto_failover_event(timeout=300)
 
         # Update replica before rebalance due to failover
         if self.replica_update_during == "before_rebalance":
@@ -395,7 +411,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
         self.bring_back_failed_nodes_up()
         self.sleep(30, "Wait after removing failures")
-        self.nodes = self.rest.node_statuses()
+        self.nodes = self.cluster_util.get_nodes(self.cluster.master)
         self.log.info("Adding back {0} using {1} recovery".format(self.server_to_fail[0].ip,
                                                                   self.recovery_strategy))
         self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
@@ -404,7 +420,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
         msg = "rebalance failed while recovering failover nodes {0}".format(
             self.server_to_fail[0])
-        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+        self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
 
         # Update replica after rebalance due to failover
         if self.replica_update_during == "after_rebalance":
@@ -413,7 +429,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
                 .format(self.num_replicas, self.new_replica)
-            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+            self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
                 for task in self.loadgen_tasks:
@@ -453,6 +469,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             return
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
+        reb_util = RebalanceUtil(self.cluster.master)
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -464,8 +481,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)
-        self.sleep(300, "Wait after inducing failure")
-        self.nodes = self.rest.node_statuses()
+        self.__wait_for_auto_failover_event(timeout=300)
+        self.nodes = self.cluster_util.get_nodes(self.cluster.master)
         self.remove_after_failover = True
 
         # Update replica before rebalance due to failover
@@ -476,7 +493,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
         msg = "rebalance failed while removing failover nodes {0}".format(
             self.server_to_fail[0])
-        self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+        self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
 
         # Update replica after rebalance due to failover
         if self.replica_update_during == "after_rebalance":
@@ -485,7 +502,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
                 .format(self.num_replicas, self.new_replica)
-            self.assertTrue(self.rest.monitorRebalance(stop_if_loop=True), msg)
+            self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
 
         if self.spec_name is None:
             if self.durability_level or self.atomicity:
