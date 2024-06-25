@@ -268,9 +268,9 @@ class MagmaBaseTest(StorageBase):
         if type(servers) is not list:
             servers = [servers]
         for server in servers:
-            result = dict()
             cbstat_obj = Cbstats(server)
             result = cbstat_obj.magma_stats(bucket.name, field_to_grep=field_to_grep)
+            cbstat_obj.disconnect()
             magma_stats_for_all_servers[server.ip] = result
         return magma_stats_for_all_servers
 

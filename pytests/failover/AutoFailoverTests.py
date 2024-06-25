@@ -3,7 +3,7 @@ from bucket_collections.collections_base import CollectionBase
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from failover.AutoFailoverBaseTest import AutoFailoverBaseTest
-
+from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from cb_constants import constants, CbServer
 
@@ -14,6 +14,13 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.skip_validations = self.input.param("skip_validations", True)
         self.data_load_spec = self.input.param("data_load_spec",
                                                "volume_test_load")
+        self.failover_ephemeral_no_replicas = self.input.param("failover_ephemeral_no_replicas", False)
+        if self.failover_ephemeral_no_replicas:
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            shell.enable_diag_eval_on_non_local_hosts()
+            shell.disconnect()
+            self.rest.update_failover_ephemeral_no_replicas()
+
         if self.spec_name is None:
             if self.atomicity:
                 self.run_time_create_load_gen = doc_generator(
@@ -34,6 +41,11 @@ class AutoFailoverTests(AutoFailoverBaseTest):
 
     def tearDown(self):
         self.log.info("Printing bucket stats before teardown")
+        if self.failover_ephemeral_no_replicas:
+            shell = RemoteMachineShellConnection(self.cluster.master)
+            shell.enable_diag_eval_on_non_local_hosts()
+            shell.disconnect()
+            self.rest.update_failover_ephemeral_no_replicas(value="false")
         self.bucket_util.print_bucket_stats(self.cluster)
         super(AutoFailoverTests, self).tearDown()
 
@@ -160,6 +172,8 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         4. Do another rebalance in order to remove the failed-over nodes
         5. Disable AF/Auto-reprovision
         """
+        wait_before_failure_induction = \
+            self.input.param("wait_before_failure_induction", 5)
         task = cont_load_task = None
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
@@ -174,7 +188,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         rebalance_task = self.task.async_rebalance(self.cluster,
                                                    self.servers_to_add,
                                                    self.servers_to_remove)
-        self.sleep(5, "Wait for rebalance to make progress")
+        self.sleep(wait_before_failure_induction, "Wait for rebalance to make progress")
         self.log.info("Inducing failure {0} on nodes {1}".format(self.failover_action,
                                                                  self.server_to_fail))
         self.failover_actions[self.failover_action](self)

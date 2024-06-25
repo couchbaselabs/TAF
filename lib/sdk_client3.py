@@ -217,18 +217,6 @@ class SDKClient(object):
     """
 
     @staticmethod
-    def create_cluster_env(kv_timeout=60, num_kv_connections=25,
-                           connection_timeout=20):
-        return None
-        ClusterEnvironment.builder() \
-        .ioConfig(IoConfig.numKvConnections(num_kv_connections)) \
-        .timeoutConfig(
-            TimeoutConfig.builder()
-            .connectTimeout(Duration.ofSeconds(connection_timeout))
-            .kvDurableTimeout(Duration.ofSeconds(kv_timeout))
-            .kvTimeout(Duration.ofSeconds(kv_timeout)))
-
-    @staticmethod
     def get_transaction_options(transaction_config_obj):
         return None
         transaction_options = TransactionOptions.transactionOptions()

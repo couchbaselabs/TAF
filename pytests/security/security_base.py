@@ -2,24 +2,19 @@ import json
 import time
 import string
 import random
-# import itertools
-# import base64
-# from datetime import datetime
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from constants.cloud_constants.capella_constants import AWS
 from TestInput import TestInputSingleton
-# from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.cb_basetest import CouchbaseBaseTest
+
 
 class SecurityBase(CouchbaseBaseTest):
     cidr = "10.0.0.0"
 
     def setUp(self):
         CouchbaseBaseTest.setUp(self)
-
         self.log.info("-------Setup started for SecurityBase-------")
-
         self.url = self.input.capella.get("pod")
         self.user = self.input.capella.get("capella_user")
         self.passwd = self.input.capella.get("capella_pwd")
@@ -397,17 +392,18 @@ class SecurityBase(CouchbaseBaseTest):
         return payload
 
     def get_cluster_status(self, cluster_id):
-        status = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(self.tenant_id,
-                                                                     self.project_id,
-                                                                     cluster_id)
+        status = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+            self.tenant_id, self.project_id, cluster_id)
         status = status.json()["currentState"]
         while status != 'healthy':
             self.sleep(15, "Waiting for cluster to be in healthy state. Current status - {}"
                        .format(status))
+            if status in ["deploymentFailed", "scaleFailed", "upgradeFailed",
+                          "rebalanceFailed", "peeringFailed", "destroyFailed",
+                          "offline", "turningOffFailed", "turningOnFailed"]:
+                self.fail("FAIL. Cluster status is -{}".format(status))
             cluster_ready_resp = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                                                                                self.tenant_id,
-                                                                                self.project_id,
-                                                                                cluster_id)
+                self.tenant_id, self.project_id, cluster_id)
             cluster_ready_resp = cluster_ready_resp.json()
             status = cluster_ready_resp["currentState"]
 

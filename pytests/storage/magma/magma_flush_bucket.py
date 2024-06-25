@@ -448,7 +448,6 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                 # replica vBuckets
                 for bucket in self.cluster.buckets:
                     self.log.debug(cbstats.failover_stats(bucket.name))
-
                 ###############################################################
                 '''
                 STEP - 4
@@ -473,6 +472,7 @@ class MagmaFlushBucketTests(MagmaBaseTest):
                 Cbepctl(shell).persistence(self.cluster.buckets[0].name, "start")
 
                 self.sleep(5, "Sleep after re-starting persistence, Iteration{}".format(i))
+                cbstats.disconnect()
                 shell.disconnect()
                 ###################################################################
                 '''

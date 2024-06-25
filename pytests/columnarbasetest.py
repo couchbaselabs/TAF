@@ -3,6 +3,7 @@ Created on Oct 14, 2023
 
 @author: umang.agrawal
 """
+import random
 import time
 
 from bucket_utils.bucket_ready_functions import BucketUtils
@@ -81,13 +82,16 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 temp_server.rest_username = str(resp.username)
                 temp_server.rest_password = str(resp.password)
                 instance_obj.servers.append(temp_server)
-            instance_obj.nodes_in_cluster = instance_obj.servers 
+            instance_obj.nodes_in_cluster = instance_obj.servers
             instance_obj.master = instance_obj.servers[0]
             instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
             instance_obj.username = str(resp.username)
             instance_obj.password = str(resp.password)
             tenant.columnar_instances.append(instance_obj)
+            CapellaUtils.create_db_user(
+                self.pod, tenant, cluster_id,
+                self.rest_username, self.rest_password)
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}"
                           .format(instance_id, cluster_id))
 
@@ -125,10 +129,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             else:
                 instance_config = (
                     self.columnar_utils.generate_instance_configuration(
+                        name=self.prefix + "Columnar_{0}".format(random.randint(1, 100000)),
                         nodes=self.num_nodes_in_columnar_instance,
                         image=self.columnar_image,
-                        token=self.pod.override_key))
-    
+                        token=self.pod.override_key,
+                        region=self.region))
+
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))
 
@@ -162,6 +168,18 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
             self.cluster_util.print_cluster_stats(instance)
+            count = 0
+            analytics_admin_user = None
+            while not analytics_admin_user and count < 5:
+                analytics_admin_user = self.columnar_rbac_util.create_custom_analytics_admin_user(
+                    self.pod, self.tenant, self.tenant.project_id, instance,
+                    self.rest_username, self.rest_password
+                )
+                count += 1
+                time.sleep(10)
+            for server in instance.servers:
+                server.rest_username = analytics_admin_user.username
+                server.rest_password = analytics_admin_user.password
 
         if self.skip_redeploy:
             self.capella["instance_id"] = ",".join([

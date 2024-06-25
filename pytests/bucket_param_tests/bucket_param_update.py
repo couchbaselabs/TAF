@@ -53,7 +53,8 @@ class BucketParamTest(ClusterSetup):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync)
+                    sync=self.sync,
+                    binary_transactions=self.binary_transactions)
                 self.task.jython_task_manager.get_task_result(task)
             else:
                 for bucket in self.cluster.buckets:
@@ -113,7 +114,8 @@ class BucketParamTest(ClusterSetup):
                     update_count=self.update_count,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync))
+                    sync=self.sync,
+                    binary_transactions=self.binary_transactions))
             self.sleep(10, "To avoid overlap of multiple tasks in parallel")
         if "create" in doc_ops:
             tasks.append(
@@ -127,7 +129,8 @@ class BucketParamTest(ClusterSetup):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync))
+                    sync=self.sync,
+                    binary_transactions=self.binary_transactions))
             doc_count += (doc_create.end - doc_create.start)
             start_doc_for_insert += self.num_items
         if "delete" in doc_ops:
@@ -142,7 +145,8 @@ class BucketParamTest(ClusterSetup):
                     transaction_timeout=self.transaction_timeout,
                     commit=self.transaction_commit,
                     durability=self.durability_level,
-                    sync=self.sync))
+                    sync=self.sync,
+                    binary_transactions=self.binary_transactions))
             doc_count -= (doc_delete.end - doc_delete.start)
 
         return tasks, doc_count, start_doc_for_insert
@@ -223,33 +227,6 @@ class BucketParamTest(ClusterSetup):
     def generic_replica_update(self, doc_count, doc_ops, bucket_helper_obj,
                                replicas_to_update, start_doc_for_insert):
         for replica_num in replicas_to_update:
-            # Creating doc creator to be used by test cases
-            doc_create = doc_generator(self.key, start_doc_for_insert,
-                                       start_doc_for_insert + self.num_items,
-                                       key_size=self.key_size,
-                                       doc_size=self.doc_size,
-                                       doc_type=self.doc_type,
-                                       vbuckets=self.cluster.vbuckets)
-
-            # Creating doc updater to be used by test cases
-            doc_update = doc_generator(
-                self.key,
-                start_doc_for_insert - (self.num_items/2),
-                start_doc_for_insert,
-                key_size=self.key_size,
-                doc_size=self.doc_size,
-                doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets)
-
-            # Creating doc updater to be used by test cases
-            doc_delete = doc_generator(
-                self.key,
-                start_doc_for_insert - self.num_items,
-                start_doc_for_insert - (self.num_items/2),
-                key_size=self.key_size,
-                doc_size=self.doc_size, doc_type=self.doc_type,
-                vbuckets=self.cluster.vbuckets)
-
             self.log.info("Updating replica count of bucket to {0}"
                           .format(replica_num))
 
@@ -264,13 +241,43 @@ class BucketParamTest(ClusterSetup):
                                 SDKException.AmbiguousTimeoutException]
 
             suppress_error_table = False
+            num_items = self.num_items
             if self.def_bucket.replicaNumber == 3 or replica_num == 3:
                 doc_ops = "update"
                 suppress_error_table = True
                 ignore_exceptions = [d_impossible_exception]+retry_exceptions
                 retry_exceptions = list()
+                # Cap this value to avoid unnecessary failures
+                num_items = 10000
             else:
                 retry_exceptions.append(d_impossible_exception)
+
+            # Creating doc creator to be used by test cases
+            doc_create = doc_generator(self.key, start_doc_for_insert,
+                                       start_doc_for_insert + num_items,
+                                       key_size=self.key_size,
+                                       doc_size=self.doc_size,
+                                       doc_type=self.doc_type,
+                                       vbuckets=self.cluster.vbuckets)
+
+            # Creating doc updater to be used by test cases
+            doc_update = doc_generator(
+                self.key,
+                start_doc_for_insert - (num_items/2),
+                start_doc_for_insert,
+                key_size=self.key_size,
+                doc_size=self.doc_size,
+                doc_type=self.doc_type,
+                vbuckets=self.cluster.vbuckets)
+
+            # Creating doc updater to be used by test cases
+            doc_delete = doc_generator(
+                self.key,
+                start_doc_for_insert - num_items,
+                start_doc_for_insert - (num_items/2),
+                key_size=self.key_size,
+                doc_size=self.doc_size, doc_type=self.doc_type,
+                vbuckets=self.cluster.vbuckets)
 
             tasks, doc_count, start_doc_for_insert = self.doc_ops_operations(
                 doc_ops,
@@ -347,7 +354,7 @@ class BucketParamTest(ClusterSetup):
                     if replica_num == 3:
                         if self.is_sync_write_enabled:
                             self.assertTrue(
-                                len(task.fail.keys()) == (self.num_items/2),
+                                len(task.fail.keys()) == (num_items/2),
                                 "Few doc_ops succeeded while they should have failed.")
                         else:
                             self.assertTrue(

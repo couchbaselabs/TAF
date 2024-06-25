@@ -125,12 +125,11 @@ class RemoteMachineHelper(object):
             return None
 
 
-class RemoteMachineShellConnection(KeepRefs):
+class RemoteMachineShellConnection:
     connections = 0
     disconnections = 0
 
     def __init__(self, serverInfo):
-        super(RemoteMachineShellConnection, self).__init__()
         RemoteMachineShellConnection.connections += 1
         self.jsch = None
         self.session = None

@@ -184,7 +184,7 @@ class CMEKTest(SecurityBase):
             self.log.info(response.status_code)
             self.log.info(response.content)
 
-    def post_deploy_cluster_aws(self, aws_key_id):
+    def post_deploy_cluster_aws(self, aws_key_id, region="us-east-1"):
         self.log.info("Deploying AWS cluster")
         headers = {
             'Content-Type': 'application/json',
@@ -197,7 +197,7 @@ class CMEKTest(SecurityBase):
             'description': 'Deploy CMEK cluster',
             'cloudProvider': {
                 'type': 'aws',
-                'region': 'us-east-1',
+                'region': region,
                 'cidr': '10.1.14.0/23',
             },
             'couchbaseServer': {
@@ -638,7 +638,7 @@ class CMEKTest(SecurityBase):
 
         # 5
         aws_cluster_id = self.post_deploy_cluster_aws(aws_key_id)
-        new_resourceName = "arn:aws:kms:us-east-1:264138468394:key/0e055dc1-f585-4754-878b-a18df3fefef8"
+        new_resourceName = "arn:aws:kms:us-east-1:264138468394:key/a6c363c5-b4cd-4244-b1e1-ddd1ca7f827d"
         resp = self.put_update_key(aws_cluster_id, new_resourceName)
         if resp.status_code != 204:
             self.fail("Key rotation failed")
@@ -746,7 +746,7 @@ class CMEKTest(SecurityBase):
 
         # 5
         try:
-            self.post_deploy_cluster_gcp(gcp_key_id)
+            self.post_deploy_cluster_aws(aws_key_id, region="us-east-2")
         except Exception as e:
             self.log.info("Ran into an Exception: {0}".format(e))
             self.log.info("Failed as expected as different region")

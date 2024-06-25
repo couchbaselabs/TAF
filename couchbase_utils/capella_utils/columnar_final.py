@@ -40,9 +40,6 @@ class ColumnarInstance:
 
         # SDK related objects
         self.sdk_client_pool = None
-        # Note: Referenced only for sdk_client3.py SDKClient
-        # self.sdk_cluster_env = SDKClient.create_cluster_env()
-        # self.sdk_env_built = self.sdk_cluster_env.build()
 
     def refresh_object(self, servers):
         self.kv_nodes = list()
@@ -389,8 +386,7 @@ class ColumnarUtils:
         if not instance_config:
             instance_config = self.generate_instance_configuration()
         resp = columnar_api.create_columnar_instance(
-            tenant.id, tenant.project_id, instance_config
-        )
+            tenant.id, tenant.project_id, instance_config)
         instance_id = None
         if resp.status_code == 201:
             instance_id = json.loads(resp.content).get("id")

@@ -21,6 +21,7 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.doc_loader_url = self.input.param("sirius_url", None)
         self.doc_loader_port = self.input.param("sirius_port", None)
         self.no_of_docs = self.input.param("no_of_docs", 1000)
+        self.sink_s3_bucket_name = None
         self.capellaAPIv4 = CapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
         self.capellaAPIv2 = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key,
                                          self.tenant.api_access_key, self.tenant.user,
@@ -31,8 +32,7 @@ class ColumnarRBAC(ColumnarBaseTest):
             self.task, self.use_sdk_for_cbas)
         self.project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
                               "projectDataWriter", "projectDataViewer"]
-
-        self.ACCESS_DENIED_ERR = "User must have permission (cluster.analytics.grant.{}[{}]!{})"
+        self.ACCESS_DENIED_ERR = "Insufficient permissions or the requested object does not exist"
         self.database_privileges = ["database_create", "database_drop"]
         self.scope_privileges = ["scope_create", "scope_drop"]
         self.collection_ddl_privileges = ["collection_create", "collection_drop"]
@@ -349,7 +349,6 @@ class ColumnarRBAC(ColumnarBaseTest):
             resource_priv_map.append(res_priv_obj)
         resource_priv_map.extend(extended_res_priv_map)
         privileges_payload = self.columnar_rbac_util.create_privileges_payload(resource_priv_map)
-
         user1 = self.columnar_rbac_util.create_api_keys(self.pod, self.tenant,
                                                         self.tenant.project_id, self.cluster,
                                                         username=username,
@@ -2384,3 +2383,5 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                              db_user.id)
             if not result:
                 self.log.error("Failed to delete user {}".format(db_user.id))
+
+        super(ColumnarBaseTest, self).tearDown()

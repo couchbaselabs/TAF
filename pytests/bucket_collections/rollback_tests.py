@@ -41,6 +41,7 @@ class RollbackTests(CollectionBase):
     def tearDown(self):
         # Close all shell_connections before cluster tearDown
         for node in self.node_shells.keys():
+            self.node_shells[node]["cbstat"].disconnect()
             self.node_shells[node]["shell"].disconnect()
 
         super(RollbackTests, self).tearDown()

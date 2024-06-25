@@ -1,7 +1,9 @@
 package com.couchbase.test.transactions;
 
+import java.io.UnsupportedEncodingException;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
+import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -44,7 +46,16 @@ import com.couchbase.client.java.transactions.ReactiveTransactions;
 import com.couchbase.client.java.transactions.TransactionResult;
 import com.couchbase.client.java.transactions.Transactions;
 import com.couchbase.client.java.transactions.TransactionGetResult;
+
+// For Specifying codec in Binary Transactions
+import com.couchbase.client.java.codec.RawBinaryTranscoder;
+// For Generic transaction options (Durability, timeouts, etc..)
 import com.couchbase.client.java.transactions.config.TransactionOptions;
+// Options for Binary Transactions support (Using Transcoders)
+import com.couchbase.client.java.transactions.config.TransactionGetOptions;
+import com.couchbase.client.java.transactions.config.TransactionReplaceOptions;
+import com.couchbase.client.java.transactions.config.TransactionInsertOptions;
+
 import com.couchbase.client.java.transactions.error.TransactionFailedException;
 
 import reactor.core.publisher.Flux;
@@ -455,7 +466,8 @@ public class SimpleTransaction {
     }
 
     public List<String> RunTransaction(Cluster cluster, List<Collection> collections, List<Tuple2<String, JsonObject>> Createkeys, List<String> Updatekeys,
-                                       List<String> Deletekeys, Boolean commit, Boolean sync, int updatecount, TransactionOptions trx_options) {
+                                       List<String> Deletekeys, Boolean commit, Boolean sync, int updatecount, TransactionOptions trx_options,
+                                       Boolean binary_transaction) {
         List<String> res = new ArrayList<String>();
           // synchronous API - transactions
         if (sync) {
@@ -468,28 +480,54 @@ public class SimpleTransaction {
                     // creation of docs
                     for (Collection bucket:collections) {
                         for (Tuple2<String, JsonObject> document : Createkeys) {
-                            TransactionGetResult doc=ctx.insert(bucket, document.getT1(), document.getT2());
-                            TransactionGetResult doc1=ctx.get(bucket, document.getT1());
-//                            JsonObject content = doc1.contentAs(JsonObject.class);
-//                            if (areEqual(content,document.getT2()));
-//                            if (content.equals(document.getT2()));
-//                            else {System.out.println("Document not matched");}
+                            if (binary_transaction) {
+                                try {
+                                    byte[] bin_doc_val = document.getT2().toString().getBytes("utf-8");
+                                    TransactionGetResult doc=ctx.insert(bucket, document.getT1(), bin_doc_val,
+                                        TransactionInsertOptions.transactionInsertOptions().transcoder(RawBinaryTranscoder.INSTANCE));
+                                    TransactionGetResult doc1=ctx.get(bucket, document.getT1(),
+                                        TransactionGetOptions.transactionGetOptions().transcoder(RawBinaryTranscoder.INSTANCE));
+                                    if(! Arrays.equals(bin_doc_val,  doc1.contentAs(byte[].class))) {
+                                        System.out.println("Bin doc not equal");
+                                        throw new CoreTransactionFailedException(new Exception("Bin Tran read failed"), null, "Test", "BinTrans");
+                                    }
+                                }
+                                catch(UnsupportedEncodingException err) {
+                                   System.out.println("CRITICAL!! UnsupportedEncodingException: " + err.toString());
+                                }
+                            } else {
+                                TransactionGetResult doc=ctx.insert(bucket, document.getT1(), document.getT2());
+                                TransactionGetResult doc1=ctx.get(bucket, document.getT1());
+                                // JsonObject content = doc1.contentAs(JsonObject.class);
+                                // if (areEqual(content,document.getT2()));
+                                // if (content.equals(document.getT2()));
+                                // else {System.out.println("Document not matched");}
+                            }
                         }
-
                     }
                     // update of docs
                     for (String key: Updatekeys) {
                         for (Collection bucket:collections) {
                             try {
                                 TransactionGetResult doc2=ctx.get(bucket, key);
-                                for (int i=1; i<=updatecount; i++) {
-                                    JsonObject content = doc2.contentAs(JsonObject.class);
-                                    content.put("mutated", i );
-                                    ctx.replace(doc2, content);
-//                                        TransactionGetResult doc1=ctx.get(bucket, key);
-//                                        JsonObject read_content = doc1.contentAs(JsonObject.class);
+                                JsonObject content = doc2.contentAs(JsonObject.class);
+                                if(binary_transaction) {
+                                    for (int i=1; i<=updatecount; i++) {
+                                        content.put("mutated", i);
+                                        ctx.replace(
+                                            doc2, content.toString().getBytes("utf-8"),
+                                            TransactionReplaceOptions.transactionReplaceOptions().transcoder(RawBinaryTranscoder.INSTANCE));
+                                    }
+                                } else {
+                                    for (int i=1; i<=updatecount; i++) {
+                                        content.put("mutated", i );
+                                        ctx.replace(doc2, content);
                                     }
                                 }
+                            }
+                            catch(UnsupportedEncodingException err) {
+                               System.out.println("CRITICAL!! UnsupportedEncodingException: " + err.toString());
+                            }
                             catch (TransactionFailedException err) {
                                 System.out.println("Document not present");
                             }

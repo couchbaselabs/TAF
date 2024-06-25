@@ -520,6 +520,7 @@ class ExpiryMaxTTL(ClusterSetup):
             shell_conn[node.ip] = RemoteMachineShellConnection(node)
             cbstats = Cbstats(node)
             target_vbuckets += cbstats.vbucket_list(def_bucket.name, "replica")
+            cbstats.disconnect()
             cb_error = CouchbaseError(self.log,
                                       shell_conn[node.ip],
                                       node=node)
@@ -622,11 +623,15 @@ class ExpiryMaxTTL(ClusterSetup):
         key = "test_ttl_doc"
         vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
         bucket = self.cluster.buckets[0]
+        cb_stat_obj = dict()
+
+        for target_node in self.cluster.nodes_in_cluster:
+            cb_stat_obj[target_node.ip] = Cbstats(target_node)
 
         # Find target node for replica VB
         for target_node in self.cluster.nodes_in_cluster:
-            cb_stats = Cbstats(target_node)
-            if vb_for_key in cb_stats.vbucket_list(bucket.name, "replica"):
+            if vb_for_key in cb_stat_obj[target_node.ip].vbucket_list(
+                    bucket.name, "replica"):
                 break
 
         self.log.info("Target node: %s, Key: %s" % (target_node.ip, key))
@@ -670,11 +675,16 @@ class ExpiryMaxTTL(ClusterSetup):
         shell.disconnect()
 
         if failure:
+            for target_node in self.cluster.nodes_in_cluster:
+                cb_stat_obj[target_node.ip].disconnect()
             self.fail(failure)
 
         for node in self.cluster.nodes_in_cluster:
-            cb_stats = Cbstats(node).all_stats(bucket.name)
+            stats = cb_stat_obj[target_node.ip].all_stats(bucket.name)
             self.log.info("Node: %s, ep_expired_access: %s"
-                          % (node.ip, cb_stats["ep_expired_access"]))
-            self.assertEqual(int(cb_stats["ep_expired_access"]), 0,
+                          % (node.ip, stats["ep_expired_access"]))
+            self.assertEqual(int(stats["ep_expired_access"]), 0,
                              "%s: ep_expired_access != 0" % node.ip)
+
+        for target_node in self.cluster.nodes_in_cluster:
+            cb_stat_obj[target_node.ip].disconnect()

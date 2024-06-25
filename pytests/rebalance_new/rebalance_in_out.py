@@ -706,8 +706,6 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
             self.log.info("The test is not valid for Durability=None")
             return
         master = self.cluster.master
-        creds = self.input.membase_settings
-        def_bucket = self.cluster.buckets[0]
         items = self.num_items
         create_from = items
         # TODO: Enable verification
@@ -721,6 +719,7 @@ class RebalanceInOutDurabilityTests(RebalanceBaseTest):
         # Fetch vb_seq_no after the CRUDs
         vb_info["afterCrud"] = \
             master_node_cb_stat.vbucket_seqno(def_bucket.name)
+        master_node_cb_stat.disconnect()
         """
 
         # Rest connection to add/rebalance/monitor nodes
