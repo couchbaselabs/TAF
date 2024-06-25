@@ -227,6 +227,7 @@ class AutoFailoverBaseTest(ClusterSetup):
                 bucket.name, "active")
             self.replica_vb_in_failover_nodes += cbstat.vbucket_list(
                 bucket.name, "replica")
+            cbstat.disconnect()
 
     def async_load_all_buckets_atomicity(self, kv_gen, op_type, exp=0,
                                          batch_size=20):

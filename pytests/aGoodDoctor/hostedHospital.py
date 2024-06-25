@@ -334,6 +334,7 @@ class Murphy(BaseTestCase, hostedOPD):
                                               dim=self.dim, base64=self.base64)
                             ql.start_query_load()
                             self.ftsQL.append(ql)
+            self.sleep(3600, "Check fts vector query status during 0 load")
 
         self.mutation_perc = self.input.param("mutation_perc", 100)
         self.tasks = list()
@@ -344,6 +345,12 @@ class Murphy(BaseTestCase, hostedOPD):
                     bucket.loadDefn["ops"] = self.input.param("rebl_ops_rate", 5000)
                     self.generate_docs(bucket=bucket)
                 self.tasks.append(self.perform_load(wait_for_load=False, cluster=cluster, buckets=cluster.buckets))
+
+        for tenant in self.tenants:
+            for cluster in tenant.clusters:
+                if cluster.fts_nodes:
+                    self.sleep(3600, "Check fts vector query status during %s KV load" % self.input.param("rebl_ops_rate", 5000))
+
         self.sleep(10)
 
         upgrade = self.input.capella.get("upgrade_image")

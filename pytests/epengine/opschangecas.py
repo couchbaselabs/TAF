@@ -31,6 +31,7 @@ class OpsChangeCasTests(CasBaseTest):
         if self.cluster.sdk_client_pool:
             self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
                 self.bucket)
+            cb_stat.disconnect()
         else:
             self.client = SDKClient(self.cluster, self.bucket)
 

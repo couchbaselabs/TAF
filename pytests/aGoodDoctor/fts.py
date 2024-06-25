@@ -19,21 +19,21 @@ from serverlessfts import ftsQueries, ftsIndex, HotelQueries, \
     HotelIndex, template
 from global_vars import logger
 from elasticsearch import EsClient
-from constants.cb_constants.CBServer import CbServer
+from py_constants.cb_constants.CBServer import CbServer
 import traceback
 
 
 NimbusPQueries = [
-            SearchQuery.queryString("000000000000000000000000000000406101"),
-            SearchQuery.match("Bhutan"),
-            SearchQuery.prefix("Zim"),
-    ]
+    SearchQuery.queryString("000000000000000000000000000000406101"),
+    SearchQuery.match("Bhutan"),
+    SearchQuery.prefix("Zim"),
+]
 
 NimbusMQueries = [
-            SearchQuery.queryString("uWKyrYzYhD"),
-            SearchQuery.match("000000000000000000000000000000833238"),
-            SearchQuery.prefix("0000"),
-    ]
+    SearchQuery.queryString("uWKyrYzYhD"),
+    SearchQuery.match("000000000000000000000000000000833238"),
+    SearchQuery.prefix("0000"),
+]
 
 vectorIndex = {
     "dynamic": False,
@@ -49,15 +49,14 @@ vectorIndex = {
                     "name": "embedding",
                     "similarity": "l2_norm",
                     "type": "vector_base64"
-                    }
-                ]
-            }
+                }
+            ]
         }
     }
+}
 
 
 class DoctorFTS:
-
     def __init__(self, bucket_util):
         self.bucket_util = bucket_util
         self.input = TestInputSingleton.input
@@ -234,25 +233,20 @@ class FTSQueryLoad:
                 traceback.print_stack()
                 del exc_info
         while not self.stop_run:
-            # import pydevd
-            # pydevd.settrace(trace_only_current_thread=False)
             index, _tuple = random.choice(self.bucket.ftsIndexes.items())
             collection, queries = _tuple
-            query = random.choice(queries)
             k = random.randint(2, 50)
-            query = {"query": {"match_none": {}}, "explain": False, "knn":
-                     [{"field": "embedding", "k": k}], "size": k}
-            text_options = random.choice(([vector.colors, vector.clothingType, vector.fashionBrands],
-                                 [vector.colors, vector.clothingType],
-                                 [vector.clothingType, vector.fashionBrands]))
-            text = ""
-            flt_buf = Vector.flt_buf
-            text = ""
             vector_float = []
             if self.mockVector:
+                flt_buf = Vector.flt_buf
                 _slice = random.randint(0, Vector.flt_buf_length-self.dim)
                 embedding = flt_buf[_slice: _slice+self.dim]
             else:
+                text_options = random.choice((
+                    [vector.colors, vector.clothingType, vector.fashionBrands],
+                    [vector.colors, vector.clothingType],
+                    [vector.clothingType, vector.fashionBrands]))
+                text = ""
                 for option in text_options:
                     text += random.choice(option) + " "
                 text_vector = FTSQueryLoad.predictor.predict(text)
@@ -262,56 +256,55 @@ class FTSQueryLoad:
                 vector_float.append(float(value))
             if self.base64:
                 vector_float = vector.convertToBase64Bytes(embedding)
-                query["knn"][0].update({"vector_base64": vector_float})
-            else:
-                query["knn"][0].update({"vector": vector_float})
-            query = json.dumps(query)
             start = time.time()
             e = ""
             try:
                 self.total_query_count += 1
-                if self.fts_node not in self.cluster.fts_nodes:
-                    self.fts_node = random.choice(self.cluster.fts_nodes)
-                    self.fts_helper = FtsHelper(self.fts_node)
-                query = str(query).replace("True", "true")
-                query = str(query).replace("False", "false")
-                status, result = self.fts_helper.run_fts_query_curl(index, query)
-                result = json.loads(str(result).encode().decode())
-                if status:
-                    if result["status"].get("errors"):
-                        self.error_count.next()
-                        self.log.critical(result["status"]["errors"])
-                    elif k == result["total_hits"]:
-                        self.success_count.next()
-                        if self.esClient:
-                            try:
-                                esResult = self.esClient.performKNNSearch(collection.lower().replace("_", ""), "embedding", text_vector, k);
-                            except SocketTimeoutException as e:
-                                self.esClient = EsClient(self.esClient.serverUrl, self.esClient.apiKey)
-                                self.esClient.initializeSDK()
-                                print e
-                            esResult = json.loads(str(esResult).encode().decode())
-                            accuracy = 0
-                            recall = 0
-                            all_ids_elastic = list()
-                            for hit in esResult["hits"]["hits"]:
-                                all_ids_elastic.append(hit["_id"])
-                            for index, item in enumerate(result["hits"]):
-                                if item['id'] == all_ids_elastic[index]:
-                                    accuracy += 1
-                                if item['id'] in all_ids_elastic:
-                                    recall += 1
-                            self.log.critical("Query: {}, k={}, Accuracy: {}, recall: {}".format(
-                                text, k, round(100.0 * accuracy/k, 2), round(100.0 * recall/k, 2)))
+                request = SearchRequest.create(VectorSearch.create(
+                VectorQuery.create("embedding", vector_float
+                ).numCandidates(k)))
+        
+                result = self.cluster_conn.search(index, request, 
+                                      SearchOptions.searchOptions().limit(k).fields("productDescription"))
+                if result.metaData().errors():
+                    if str(result.metaData().errors()).find("query request rejected") != -1:
+                        self.rejected_count.next()
                     else:
-                        self.failed_count.next()
-                        self.log.critical("k=%s, total_hits=%s, hits=%s" % (k, result["total_hits"], len(result["hits"])))
+                        self.error_count.next()
+                        self.log.critical(result.metaData().errors())
+                elif result.metaData().metrics().totalRows() == k:
+                    self.success_count.next()
+                    if self.esClient:
+                        try:
+                            esResult = self.esClient.performKNNSearch(collection.lower().replace("_", ""), "embedding", text_vector, k);
+                        except SocketTimeoutException as e:
+                            self.esClient = EsClient(self.esClient.serverUrl, self.esClient.apiKey)
+                            self.esClient.initializeSDK()
+                            print e
+                        esResult = json.loads(str(esResult).encode().decode())
+                        accuracy = 0
+                        recall = 0
+                        all_ids_elastic = list()
+                        for hit in esResult["hits"]["hits"]:
+                            all_ids_elastic.append(hit["_id"])
+                        for index, item in enumerate(result["hits"]):
+                            if item['id'] == all_ids_elastic[index]:
+                                accuracy += 1
+                            if item['id'] in all_ids_elastic:
+                                recall += 1
+                        self.log.critical("Query: {}, k={}, Accuracy: {}, recall: {}".format(
+                            text, k, round(100.0 * accuracy/k, 2), round(100.0 * recall/k, 2)))
+                else:
+                    self.failed_count.next()
+                    self.log.critical("k=%s, total_hits=%s, hits=%s" % (k, result.metaData().metrics().totalRows(), result.rows().size()))
             except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
                 pass
             except RequestCanceledException as e:
                 pass
             except CouchbaseException as e:
                 pass
+            except RateLimitedException as e:
+                print e
             except Exception as e:
                 print e
             if str(e).find("TimeoutException") != -1\
@@ -322,9 +315,11 @@ class FTSQueryLoad:
                 self.failures += self.cancel_count.next()
             elif str(e).find("CouchbaseException") != -1:
                 self.failures += self.error_count.next()
+            elif str(e).find("RateLimitedException") != -1:
+                self.log.critical(e)
+                self.failures += self.rejected_count.next()
 
             if str(e).find("no more information available") != -1:
-                self.log.critical(query)
                 self.log.critical(e)
             end = time.time()
             if end - start < 1:

@@ -417,6 +417,7 @@ class AppBase(BaseTestCase):
 
         for cb_stat in cb_stat_objects:
             tem_collection_data = cb_stat.get_collections(bucket)
+            cb_stat.disconnect()
             if collection_data is None:
                 collection_data = tem_collection_data
             else:

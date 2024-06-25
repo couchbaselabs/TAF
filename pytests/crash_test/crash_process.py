@@ -88,7 +88,8 @@ class CrashTest(ClusterSetup):
                     update_count=self.update_count,
                     transaction_timeout=self.transaction_timeout,
                     commit=True,
-                    sync=self.sync)
+                    sync=self.sync,
+                    binary_transactions=self.binary_transactions)
                 self.task.jython_task_manager.get_task_result(task)
             else:
                 for bucket in self.cluster.buckets:
@@ -143,8 +144,10 @@ class CrashTest(ClusterSetup):
         error_sim = CouchbaseError(self.log,
                                    remote,
                                    node=target_node)
-        target_vbuckets = Cbstats(target_node).vbucket_list(
+        cb_stat = Cbstats(target_node)
+        target_vbuckets = cb_stat.vbucket_list(
                 def_bucket.name, self.target_node)
+        cb_stat.disconnect()
         if len(target_vbuckets) == 0:
             self.log.error("No target vbucket list generated to load data")
             remote.disconnect()
@@ -173,7 +176,8 @@ class CrashTest(ClusterSetup):
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
-                sync=self.sync)
+                sync=self.sync,
+                binary_transactions=self.binary_transactions)
         else:
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_load, "create",
@@ -255,8 +259,10 @@ class CrashTest(ClusterSetup):
         # If Memcached is killed, we should not perform KV ops on
         # particular node. If not we can target all nodes for KV operation.
         if self.process_name == "memcached":
-            target_vbuckets = Cbstats(target_node).vbucket_list(
+            cb_stat = Cbstats(target_node)
+            target_vbuckets = cb_stat.vbucket_list(
                 def_bucket.name, self.target_node)
+            cb_stat.disconnect()
             if self.target_node == "active":
                 retry_exceptions = [SDKException.TimeoutException]
         if len(target_vbuckets) == 0:
@@ -285,7 +291,8 @@ class CrashTest(ClusterSetup):
                 update_count=self.update_count,
                 transaction_timeout=self.transaction_timeout,
                 commit=True,
-                sync=self.sync)
+                sync=self.sync,
+                binary_transactions=self.binary_transactions)
         else:
             task = self.task.async_load_gen_docs(
                 self.cluster, def_bucket, gen_load, "create",
@@ -507,6 +514,7 @@ class CrashTest(ClusterSetup):
                 cbstats_obj = Cbstats(node)
                 vbucket_stats = cbstats_obj.vbucket_details(bucket_name=bucket.name)
                 mem_stats = cbstats_obj.all_stats(bucket.name, "memory")
+                cbstats_obj.disconnect()
                 ht_mem_used_replica_stat = mem_stats["ht_mem_used_replica"]
                 vbucket_mem_used = 0
                 for vbucket in vbucket_stats:

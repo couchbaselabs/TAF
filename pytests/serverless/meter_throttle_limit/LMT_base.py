@@ -732,6 +732,7 @@ class LMT(ServerlessOnPremBaseTest):
         cbstat_obj = Cbstats(node, "Administrator", "password")
         active_vb_numbers = cbstat_obj.vbucket_list(bucket.name,
                                                     vbucket_type="active")
+        cbstat_obj.disconnect()
         return active_vb_numbers
 
     def throttling_limit_on_node(self, node, bucket, throttle_limit):

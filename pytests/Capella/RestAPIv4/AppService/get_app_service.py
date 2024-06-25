@@ -10,7 +10,6 @@ class GetAppService(GetCluster):
 
     def setUp(self, nomenclature="App_Service_Get"):
         GetCluster.setUp(self, nomenclature, ["index", "query"])
-
         self.expected_result = {
             "name": self.prefix + nomenclature,
             "description": "Description of the App Service.",
@@ -73,6 +72,7 @@ class GetAppService(GetCluster):
                       .format(res.content))
 
         self.log.info("Waiting for app service to be deleted...")
-        if not self.verify_app_services_empty(self.project_id):
+        if not self.wait_for_deletion(self.project_id, self.cluster_id,
+                                      self.app_service_id):
             self.fail("App Services could not be deleted")
         super(GetAppService, self).tearDown()

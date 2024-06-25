@@ -119,6 +119,8 @@ class CollectionBase(ClusterSetup):
                     and bucket.bucketType != Bucket.Type.MEMCACHED:
                 self.bucket_util.remove_scope_collections_for_bucket(
                     self.cluster, bucket)
+        cbstat_obj.disconnect()
+
         if self.validate_docs_count_during_teardown:
             self.bucket_util.validate_docs_per_collections_all_buckets(
                 self.cluster)

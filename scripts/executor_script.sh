@@ -181,6 +181,9 @@ fi
 git submodule init
 git submodule update --init --force --remote
 
+echo "Running pip install to fix Python packages"
+python -m pip install -r requirements.txt
+
 check_and_build_testrunner_install_docker
 touch $WORKSPACE/testexec.$$.ini
 set -x
@@ -287,7 +290,7 @@ else
       sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
 
       if [ "$os" != "mariner2" ]; then
-      	guides/gradlew --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
+      	guides/gradlew --no-daemon --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
       fi
 
       # Doing installation from TESTRUNNER!!!
@@ -360,9 +363,6 @@ if [ $status -eq 0 ]; then
   else
   	rerun_param=${rerun_params_manual}
   fi
-
-  echo "Running pip install to fix Python packages"
-  python -m pip install -r requirements.txt
 
   # Find free port on this machine to use for this run
   sirius_port=49152 ; INCR=1 ; while [ -n "$(ss -tan4H "sport = $sirius_port")" ]; do sirius_port=$((sirius_port+INCR)) ; done
