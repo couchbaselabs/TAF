@@ -361,7 +361,8 @@ if [ $status -eq 0 ]; then
   	rerun_param=${rerun_params_manual}
   fi
 
-  echo "Timeout: $timeout minutes"
+  echo "Running pip install to fix Python packages"
+  python -m pip install -r requirements.txt
 
   # Find free port on this machine to use for this run
   sirius_port=49152 ; INCR=1 ; while [ -n "$(ss -tan4H "sport = $sirius_port")" ]; do sirius_port=$((sirius_port+INCR)) ; done
