@@ -10,7 +10,7 @@ from cluster_utils.cluster_ready_functions import ClusterUtils
 from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
 
 import global_vars
-from capella_utils.columnar_final import ColumnarInstance, ColumnarUtils
+from capella_utils.columnar_final import ColumnarInstance, ColumnarUtils, ColumnarRBACUtil
 from threading import Thread
 from sdk_client3 import SDKClientPool
 from TestInput import TestInputSingleton, TestInputServer
@@ -26,11 +26,11 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         self.num_nodes_in_columnar_instance = self.input.param(
             "num_nodes_in_columnar_instance", 2)
         self.columnar_utils = ColumnarUtils(self.log)
+        self.columnar_rbac_util = ColumnarRBACUtil(self.log)
         self.columnar_image = self.input.capella.get("columnar_image")
 
-        def populate_columnar_instance_obj(tenant, instance_id,
-                                           instance_name=None,
-                                           instance_config=None):
+        def populate_columnar_instance_obj(
+                tenant, instance_id, instance_name=None, instance_config=None):
             info_resp = self.columnar_utils.get_instance_info(
                 pod=self.pod, tenant=tenant, project_id=tenant.project_id,
                 instance_id=instance_id)
@@ -42,7 +42,8 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             srv = info_resp["data"]["config"]["endpoint"]
             cluster_id = info_resp["data"]["config"]["clusterId"]
             name = instance_name or str(info_resp["data"]["name"])
-            servers = CapellaUtils.get_nodes(self.pod, tenant, cluster_id)
+            servers = CapellaUtils.get_cluster_info_internal(
+                self.pod, tenant, cluster_id)
 
             instance_obj = ColumnarInstance(
                 tenant_id=tenant.id,
@@ -53,27 +54,40 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 instance_endpoint=srv,
                 db_users=list())
 
-            for t_server in servers:
+            resp = None
+            count = 0
+            while not resp and count < 5:
+                resp = self.columnar_rbac_util.create_custom_analytics_admin_user(
+                    self.pod, self.tenant, self.tenant.project_id,
+                    instance_obj, self.rest_username, self.rest_password)
+                count += 1
+                time.sleep(10)
+
+            """
+            As a workaround, add analytics_admin and analytics_reader 
+            permission manually on backend cluster, without it the tests 
+            won't work.
+            This will be resolved by this ticket 
+            https://couchbasecloud.atlassian.net/browse/AV-80646
+            """
+            for t_server in servers["hosts"]["entry"]:
                 temp_server = TestInputServer()
                 temp_server.ip = t_server.get("hostname")
                 temp_server.hostname = t_server.get("hostname")
-                temp_server.services = t_server.get("services")
+                temp_server.services = ["Data", "Analytics"]
                 temp_server.port = "18091"
                 temp_server.type = "columnar"
                 temp_server.memcached_port = "11207"
-                temp_server.rest_username = self.rest_username
-                temp_server.rest_password = self.rest_password
+                temp_server.rest_username = str(resp.username)
+                temp_server.rest_password = str(resp.password)
                 instance_obj.servers.append(temp_server)
             instance_obj.nodes_in_cluster = instance_obj.servers 
             instance_obj.master = instance_obj.servers[0]
             instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
-            instance_obj.username = self.rest_username
-            instance_obj.password = self.rest_password
+            instance_obj.username = str(resp.username)
+            instance_obj.password = str(resp.password)
             tenant.columnar_instances.append(instance_obj)
-            CapellaUtils.create_db_user(
-                self.pod, tenant, cluster_id,
-                self.rest_username, self.rest_password)
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}"
                           .format(instance_id, cluster_id))
 
@@ -148,17 +162,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
             self.cluster_util.print_cluster_stats(instance)
-            resp = None
-            count = 0
-            while not resp and count < 5:
-                resp = self.columnar_utils.create_api_keys(
-                    self.pod, self.tenant, self.tenant.project_id,
-                    instance)
-                count += 1
-                time.sleep(10)
-            for server in instance.servers:
-                server.rest_username = str(resp["apikeyId"])
-                server.rest_password = str(resp["secret"])
 
         if self.skip_redeploy:
             self.capella["instance_id"] = ",".join([
@@ -174,10 +177,36 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
     def tearDown(self):
         self.shutdown_task_manager()
+
+        def delete_all_instance_users(instance):
+            for db_user in instance.db_users:
+                count = 0
+                resp = False
+                while not resp and count < 5:
+                    resp = self.columnar_rbac_util.delete_api_keys(
+                        self.pod, self.tenant, self.tenant.project_id,
+                        instance, db_user.id)
+                    count += 1
+                    time.sleep(10)
+
+        def delete_all_user_roles(instance):
+            for role in instance.columnar_roles:
+                count = 0
+                resp = False
+                while not resp and count < 5:
+                    resp = self.columnar_rbac_util.delete_columnar_role(
+                        self.pod, self.tenant, self.tenant.project_id,
+                        instance, role.id)
+                    count += 1
+                    time.sleep(10)
+
         for tenant in self.tenants:
             for instance in tenant.columnar_instances:
                 if instance.sdk_client_pool:
                     instance.sdk_client_pool.shutdown()
+                delete_all_instance_users(instance)
+                delete_all_user_roles(instance)
+
             for cluster in tenant.clusters:
                 if cluster.sdk_client_pool:
                     cluster.sdk_client_pool.shutdown()
@@ -296,26 +325,24 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         instance.srv = info_resp["data"]["config"]["endpoint"]
         instance.cluster_id = info_resp["data"]["config"]["clusterId"]
-        servers = CapellaUtils.get_nodes(
+        servers = CapellaUtils.get_cluster_info_internal(
             pod, tenant, instance.cluster_id)
         instance.servers = list()
 
-        for t_server in servers:
+        for t_server in servers["hosts"]["entry"]:
             temp_server = TestInputServer()
             temp_server.ip = t_server.get("hostname")
             temp_server.hostname = t_server.get("hostname")
-            temp_server.services = t_server.get("services")
+            temp_server.services = ["Data", "Analytics"]
             temp_server.port = "18091"
             temp_server.type = "columnar"
             temp_server.memcached_port = "11207"
-            temp_server.rest_username = self.rest_username
-            temp_server.rest_password = self.rest_password
+            temp_server.rest_username = instance.username
+            temp_server.rest_password = instance.password
             instance.servers.append(temp_server)
         instance.nodes_in_cluster = instance.servers
         instance.master = instance.servers[0]
         instance.cbas_cc_node = instance.servers[0]
-        instance.username = self.rest_username
-        instance.password = self.rest_password
 
 
 class ClusterSetup(ColumnarBaseTest):

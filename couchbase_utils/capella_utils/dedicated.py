@@ -189,7 +189,19 @@ class CapellaUtils(object):
                                      "Creating Cluster {}".format(cluster_id),
                                      timeout=timeout)
         cluster_srv = CapellaUtils.get_cluster_srv(pod, tenant, cluster_id)
-        CapellaUtils.allow_my_ip(pod, tenant, cluster_id, True)
+        retry = 0
+        while retry < 5:
+            try:
+                CapellaUtils.allow_my_ip(pod, tenant, cluster_id, True)
+                break
+            except Exception as err:
+                CapellaUtils.log.error(str(err))
+                retry += 1
+                if retry < 5:
+                    CapellaUtils.log.info("Retrying to add IP to allow list")
+                    time.sleep(30)
+                else:
+                    raise Exception(str(err))
         servers = CapellaUtils.get_nodes(pod, tenant, cluster_id)
         return cluster_id, cluster_srv, servers
 

@@ -344,12 +344,6 @@ class ColumnarUtils:
         if not nodes:
             nodes = random.choice([1, 2, 4, 8, 16, 32])
 
-        if not instance_types:
-            instance_types = {
-                "vcpus": "4vCPUs",
-                "memory": "16GB"
-            }
-
         if not support_package:
             support_package = {
                 "key": "Developer Pro",
@@ -486,8 +480,6 @@ class ColumnarUtils:
             tenant.id, project_id, instance.instance_id,
             columnar_instance_info["data"]["name"],
             columnar_instance_info["data"]["description"], nodes)
-        self.log.info(resp)
-        self.log.info(resp.status_code)
         if resp.status_code != 202:
             self.log.error("Unable to scale columnar instance {0}".format(
                 instance.name))
