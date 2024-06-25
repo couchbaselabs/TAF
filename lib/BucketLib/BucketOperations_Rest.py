@@ -13,6 +13,7 @@ import requests.utils
 import global_vars
 from BucketLib.bucket import Bucket
 from cb_server_rest_util.buckets.buckets_api import BucketRestApi
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from common_lib import sleep
 from custom_exceptions.exception import \
     GetBucketInfoFailed, \
@@ -565,58 +566,31 @@ class BucketHelper(BucketRestApi):
         _, content, _ = self._http_request(api)
         return json.loads(content)
 
-    def set_auto_compaction(self, parallelDBAndVC="false",
+    def set_auto_compaction(self, bucket_name, parallelDBAndVC="false",
                             dbFragmentThreshold=None,
-                            viewFragmntThreshold=None,
+                            viewFragmentThreshold=None,
                             dbFragmentThresholdPercentage=None,
-                            viewFragmntThresholdPercentage=None,
+                            viewFragmentThresholdPercentage=None,
                             allowedTimePeriodFromHour=None,
                             allowedTimePeriodFromMin=None,
                             allowedTimePeriodToHour=None,
                             allowedTimePeriodToMin=None,
-                            allowedTimePeriodAbort=None,
-                            bucket=None):
+                            allowedTimePeriodAbort=None):
         """Reset compaction values to default, try with old fields (dp4 build)
         and then try with newer fields"""
-        params = {}
-        api = self.base_url
-
-        if bucket is None:
-            # setting is cluster wide
-            api = api + "controller/setAutoCompaction"
-        else:
-            # overriding per/bucket compaction setting
-            api = api + "pools/default/buckets/" + bucket
-            params["autoCompactionDefined"] = "true"
-
-        params["parallelDBAndViewCompaction"] = parallelDBAndVC
-        # Need to verify None because the value could be = 0
-        if dbFragmentThreshold is not None:
-            params["databaseFragmentationThreshold[size]"] = \
-                dbFragmentThreshold
-        if viewFragmntThreshold is not None:
-            params["viewFragmentationThreshold[size]"] = viewFragmntThreshold
-        if dbFragmentThresholdPercentage is not None:
-            params["databaseFragmentationThreshold[percentage]"] = \
-                dbFragmentThresholdPercentage
-        if viewFragmntThresholdPercentage is not None:
-            params["viewFragmentationThreshold[percentage]"] = \
-                viewFragmntThresholdPercentage
-        if allowedTimePeriodFromHour is not None:
-            params["allowedTimePeriod[fromHour]"] = allowedTimePeriodFromHour
-        if allowedTimePeriodFromMin is not None:
-            params["allowedTimePeriod[fromMinute]"] = allowedTimePeriodFromMin
-        if allowedTimePeriodToHour is not None:
-            params["allowedTimePeriod[toHour]"] = allowedTimePeriodToHour
-        if allowedTimePeriodToMin is not None:
-            params["allowedTimePeriod[toMinute]"] = allowedTimePeriodToMin
-        if allowedTimePeriodAbort is not None:
-            params["allowedTimePeriod[abortOutside]"] = allowedTimePeriodAbort
-
-        params = urllib.urlencode(params)
-        self.log.debug("Bucket '%s' settings will be changed with params: %s"
-                       % (bucket, params))
-        return self._http_request(api, "POST", params)
+        status, content = super().set_auto_compaction(
+            bucket_name=bucket_name,
+            parallel_db_and_vc=parallelDBAndVC,
+            db_fragment_threshold=dbFragmentThreshold,
+            view_fragment_threshold=viewFragmentThreshold,
+            db_fragment_threshold_percentage=dbFragmentThresholdPercentage,
+            view_fragment_threshold_percentage=viewFragmentThresholdPercentage,
+            allowed_time_period_from_hour=allowedTimePeriodFromHour,
+            allowed_time_period_from_min=allowedTimePeriodFromMin,
+            allowed_time_period_to_hour=allowedTimePeriodToHour,
+            allowed_time_period_to_min=allowedTimePeriodToMin,
+            allowed_time_period_abort=allowedTimePeriodAbort)
+        return status, content
 
     def disable_auto_compaction(self):
         """

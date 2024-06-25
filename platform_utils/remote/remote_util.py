@@ -12,7 +12,6 @@ from subprocess import Popen, PIPE
 
 from builds.build_query import BuildQuery
 from py_constants import CbServer, constants, ClusterRun
-from cluster_run_manager import KeepRefs
 from common_lib import sleep
 from global_vars import logger
 from platform_constants.os_constants import Linux, Mac, Windows

@@ -196,6 +196,31 @@ class ClusterUtils:
         return status, content
 
     @staticmethod
+    def set_auto_compaction(cluster_node, parallelDBAndVC="false",
+                            dbFragmentThreshold=None,
+                            viewFragmentThreshold=None,
+                            dbFragmentThresholdPercentage=None,
+                            viewFragmentThresholdPercentage=None,
+                            allowedTimePeriodFromHour=None,
+                            allowedTimePeriodFromMin=None,
+                            allowedTimePeriodToHour=None,
+                            allowedTimePeriodToMin=None,
+                            allowedTimePeriodAbort=None):
+        status, content = \
+            ClusterRestAPI(cluster_node).set_auto_compaction_settings(
+                parallel_db_and_vc=parallelDBAndVC,
+                db_fragment_threshold=dbFragmentThreshold,
+                view_fragment_threshold=viewFragmentThreshold,
+                db_fragment_threshold_percentage=dbFragmentThresholdPercentage,
+                view_fragment_threshold_percentage=viewFragmentThresholdPercentage,
+                allowed_time_period_from_hour=allowedTimePeriodFromHour,
+                allowed_time_period_from_min=allowedTimePeriodFromMin,
+                allowed_time_period_to_hour=allowedTimePeriodToHour,
+                allowed_time_period_to_min=allowedTimePeriodToMin,
+                allowed_time_period_abort=allowedTimePeriodAbort)
+        return status, content
+
+    @staticmethod
     def set_metadata_purge_interval(cluster_node, interval=0.04):
         # set it to 0.04 i.e. 1 hour if not given
         rest = RestConnection(cluster_node)

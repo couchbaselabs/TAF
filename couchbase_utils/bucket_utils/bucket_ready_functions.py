@@ -1363,7 +1363,7 @@ class CollectionUtils(DocLoaderUtils):
         """
         CollectionUtils.log.debug("Dropping Collection %s:%s:%s"
                                   % (bucket.name, scope_name, collection_name))
-        status, content = BucketHelper(node).delete_collection(bucket,
+        status, content = BucketHelper(node).delete_collection(bucket.name,
                                                                scope_name,
                                                                collection_name,
                                                                session=session)
@@ -1595,7 +1595,7 @@ class ScopeUtils(CollectionUtils):
         """
         ScopeUtils.log.debug("Dropping Scope %s:%s"
                              % (bucket, scope_name))
-        status, content = BucketHelper(node).delete_scope(bucket,
+        status, content = BucketHelper(node).delete_scope(bucket.name,
                                                           scope_name,
                                                           session=session)
         if status is False:
@@ -2128,6 +2128,21 @@ class BucketUtils(ScopeUtils):
                 return True
             else:
                 sleep(2)
+        return False
+
+    def wait_till_compaction_end(self, rest, bucket, timeout_in_seconds=60):
+        end_time = time.time() + float(timeout_in_seconds)
+        while time.time() < end_time:
+            status, progress = rest.check_compaction_status(bucket)
+            if status:
+                sleep(1, "Compaction in progress - %s%%" % progress,
+                      log_type="infra")
+            else:
+                # the compaction task has completed
+                return True
+
+        self.log.error("Auto compaction has not ended in {0} sec."
+                       .format(str(timeout_in_seconds)))
         return False
 
     def bucket_exists(self, cluster, bucket):
@@ -4063,10 +4078,10 @@ class BucketUtils(ScopeUtils):
                                   .format(bucket, dcp_stat_map[bucket]))
 
     def disable_compaction(self, cluster, bucket="default"):
-        new_config = {"viewFragmntThresholdPercentage": None,
+        new_config = {"viewFragmentThresholdPercentage": None,
                       "dbFragmentThresholdPercentage": None,
                       "dbFragmentThreshold": None,
-                      "viewFragmntThreshold": None}
+                      "viewFragmentThreshold": None}
         self.modify_fragmentation_config(cluster, new_config, bucket)
 
     @staticmethod
@@ -4074,9 +4089,9 @@ class BucketUtils(ScopeUtils):
         bucket_op = BucketHelper(cluster.master)
         _config = {"parallelDBAndVC": "false",
                    "dbFragmentThreshold": None,
-                   "viewFragmntThreshold": None,
+                   "viewFragmentThreshold": None,
                    "dbFragmentThresholdPercentage": 100,
-                   "viewFragmntThresholdPercentage": 100,
+                   "viewFragmentThresholdPercentage": 100,
                    "allowedTimePeriodFromHour": None,
                    "allowedTimePeriodFromMin": None,
                    "allowedTimePeriodToHour": None,
@@ -4085,17 +4100,17 @@ class BucketUtils(ScopeUtils):
                    "autoCompactionDefined": "true"}
         _config.update(config)
         bucket_op.set_auto_compaction(
+            bucket_name=bucket,
             parallelDBAndVC=_config["parallelDBAndVC"],
             dbFragmentThreshold=_config["dbFragmentThreshold"],
-            viewFragmntThreshold=_config["viewFragmntThreshold"],
+            viewFragmentThreshold=_config["viewFragmentThreshold"],
             dbFragmentThresholdPercentage=_config["dbFragmentThresholdPercentage"],
-            viewFragmntThresholdPercentage=_config["viewFragmntThresholdPercentage"],
+            viewFragmentThresholdPercentage=_config["viewFragmentThresholdPercentage"],
             allowedTimePeriodFromHour=_config["allowedTimePeriodFromHour"],
             allowedTimePeriodFromMin=_config["allowedTimePeriodFromMin"],
             allowedTimePeriodToHour=_config["allowedTimePeriodToHour"],
             allowedTimePeriodToMin=_config["allowedTimePeriodToMin"],
-            allowedTimePeriodAbort=_config["allowedTimePeriodAbort"],
-            bucket=bucket)
+            allowedTimePeriodAbort=_config["allowedTimePeriodAbort"])
 
     def get_vbucket_seqnos(self, servers, buckets, skip_consistency=False,
                            per_node=True):
@@ -4595,41 +4610,41 @@ class BucketUtils(ScopeUtils):
                                                     val, bucket)
         sleep(val, "Wait for expiry pager to run on all these nodes")
 
-    def set_auto_compaction(self, bucket_helper,
+    def set_auto_compaction(self, bucket_name, bucket_helper,
                             parallelDBAndVC="false",
                             dbFragmentThreshold=None,
-                            viewFragmntThreshold=None,
+                            viewFragmentThreshold=None,
                             dbFragmentThresholdPercentage=None,
-                            viewFragmntThresholdPercentage=None,
+                            viewFragmentThresholdPercentage=None,
                             allowedTimePeriodFromHour=None,
                             allowedTimePeriodFromMin=None,
                             allowedTimePeriodToHour=None,
                             allowedTimePeriodToMin=None,
-                            allowedTimePeriodAbort=None,
-                            bucket=None):
-        output, rq_content, _ = bucket_helper.set_auto_compaction(
-            parallelDBAndVC, dbFragmentThreshold, viewFragmntThreshold,
-            dbFragmentThresholdPercentage, viewFragmntThresholdPercentage,
+                            allowedTimePeriodAbort=None):
+        output, rq_content = bucket_helper.set_auto_compaction(
+            bucket_name,
+            parallelDBAndVC, dbFragmentThreshold, viewFragmentThreshold,
+            dbFragmentThresholdPercentage, viewFragmentThresholdPercentage,
             allowedTimePeriodFromHour, allowedTimePeriodFromMin,
             allowedTimePeriodToHour, allowedTimePeriodToMin,
-            allowedTimePeriodAbort, bucket)
+            allowedTimePeriodAbort)
 
         if not output and (dbFragmentThresholdPercentage, dbFragmentThreshold,
-                           viewFragmntThresholdPercentage,
-                           viewFragmntThreshold <= MIN_COMPACTION_THRESHOLD
+                           viewFragmentThresholdPercentage,
+                           viewFragmentThreshold <= MIN_COMPACTION_THRESHOLD
                            or dbFragmentThresholdPercentage,
-                           viewFragmntThresholdPercentage >= MAX_COMPACTION_THRESHOLD):
+                           viewFragmentThresholdPercentage >= MAX_COMPACTION_THRESHOLD):
             self.assertFalse(output,
                              "Should be impossible to set compaction val {0}%"
-                             .format(viewFragmntThresholdPercentage))
-            self.assertTrue("errors" in json.loads(rq_content),
+                             .format(viewFragmentThresholdPercentage))
+            self.assertTrue("errors" in rq_content,
                             "Error is not present in response")
-            self.assertTrue(str(json.loads(rq_content)["errors"])
+            self.assertTrue(str(rq_content["errors"])
                             .find("Allowed range is 2 - 100") > -1,
                             "Error 'Allowed range is 2 - 100', but was '{0}'"
-                            .format(str(json.loads(rq_content)["errors"])))
+                            .format(str(rq_content["errors"])))
             self.log.debug("Response contains error = '%(errors)s' as expected"
-                           % json.loads(rq_content))
+                           % rq_content)
         return output, rq_content
 
     @staticmethod
