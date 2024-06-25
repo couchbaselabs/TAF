@@ -3,11 +3,11 @@ from random import sample
 
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_tools.cbepctl import Cbepctl
 from collections_helper.collections_spec_constants import \
     MetaConstants, MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
-from membase.api.rest_client import RestConnection
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
 from remote.remote_util import RemoteMachineShellConnection
@@ -67,11 +67,12 @@ class CollectionBase(ClusterSetup):
             self.log, len(self.cluster.kv_nodes), self.durability_level)
 
         # Disable auto-failover to avoid failover of nodes
-        status = RestConnection(self.cluster.master) \
-            .update_autofailover_settings(False, 120)
+        status, _ = ClusterRestAPI(self.cluster.master)\
+            .update_auto_failover_settings("false")
         self.assertTrue(status, msg="Failure during disabling auto-failover")
         self.bucket_helper_obj = BucketHelper(self.cluster.master)
-        self.disk_optimized_thread_settings = self.input.param("disk_optimized_thread_settings", False)
+        self.disk_optimized_thread_settings = \
+            self.input.param("disk_optimized_thread_settings", False)
         if self.disk_optimized_thread_settings:
             self.bucket_util.update_memcached_num_threads_settings(
                 self.cluster.master,
@@ -169,7 +170,8 @@ class CollectionBase(ClusterSetup):
         CollectionBase.create_clients_for_sdk_pool(self)
         CollectionBase.load_data_from_spec_file(self, self.data_spec_name,
                                                 validate_docs)
-        if self.range_scan_collections > 0:
+        if isinstance(self.range_scan_collections, int) \
+                and self.range_scan_collections > 0:
             CollectionBase.range_scan_load_setup(self)
 
     @staticmethod
@@ -335,7 +337,7 @@ class CollectionBase(ClusterSetup):
                     code = 'ns_bucket:update_bucket_props("%s", ' \
                            '[{extra_config_string, "dcp_oso_backfill=%s"}])' \
                            % (bucket.name, test_obj.oso_dcp_backfill)
-                    RestConnection(test_obj.cluster.master).diag_eval(code)
+                    ClusterRestAPI(test_obj.cluster.master).diag_eval(code)
                 for node in test_obj.cluster.kv_nodes:
                     shell = RemoteMachineShellConnection(node)
                     shell.restart_couchbase()
