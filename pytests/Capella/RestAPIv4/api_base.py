@@ -3,7 +3,7 @@ Created on June 28, 2023
 
 @author: umang.agrawal
 """
-
+import copy
 import time
 import string
 import random
@@ -660,7 +660,10 @@ class APIBase(CouchbaseBaseTest):
 
     def validate_testcase(self, result, success_codes, testcase, failures,
                           validate_response=False, expected_res=None,
-                          resource_id=None):
+                          resource_id=None, payloadTest=False):
+        testDescriptionKey = "description"
+        if payloadTest:
+            testDescriptionKey = "desc"
 
         # Condition is for Sample Buckets delete testcases.
         if ("content" in result and "code" in result.content and
@@ -673,50 +676,51 @@ class APIBase(CouchbaseBaseTest):
                 self.log.error("NO ERRORS in Response, But Test expected "
                                "error: {}".format(testcase["expected_error"]))
                 self.log.warning("Result : {}".format(result.json()))
-                failures.append(testcase["description"])
+                failures.append(testcase[testDescriptionKey])
             if validate_response:
                 if not self.validate_api_response(
                         expected_res, result.json(), resource_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
-                                           testcase["description"]))
+                                           testcase[testDescriptionKey]))
                     self.log.warning("Result : {}".format(result.content))
-                    failures.append(testcase["description"])
+                    failures.append(testcase[testDescriptionKey])
                 else:
                     return True
             else:
                 return True
         elif result.status_code >= 500:
-            self.log.critical(testcase["description"])
+            self.log.critical(testcase[testDescriptionKey])
             self.log.warning(result.content)
-            failures.append(testcase["description"])
+            failures.append(testcase[testDescriptionKey])
         elif "expected_status_code" not in testcase:
             self.log.error("Expected NO ERRORS but got {}".format(result))
             self.log.warning(result.content)
-            failures.append(testcase["description"])
+            failures.append(testcase[testDescriptionKey])
         elif result.status_code == testcase["expected_status_code"]:
             try:
                 result = result.json()
                 for key in result:
                     if result[key] != testcase["expected_error"][key]:
-                        self.log.error(
-                            "Status != {}, Error validation Failure : {}"
-                            .format(success_codes, testcase["description"]))
+                        self.log.error("Status != {}, Error validation Failure"
+                                       " : {}".format(
+                                        success_codes,
+                                        testcase[testDescriptionKey]))
                         self.log.warning("Failure : {}".format(result))
-                        failures.append(testcase["description"])
+                        failures.append(testcase[testDescriptionKey])
                         break
             except (Exception,):
                 if str(testcase["expected_error"]) not in result.content:
                     self.log.error("Response type not JSON, Failure : {}"
-                                   .format(testcase["description"]))
+                                   .format(testcase[testDescriptionKey]))
                     self.log.warning(result.content)
-                    failures.append(testcase["description"])
+                    failures.append(testcase[testDescriptionKey])
         else:
             self.log.error("Expected HTTP status code {}, Actual HTTP status "
                            "code {}".format(testcase["expected_status_code"],
                                             result.status_code))
             self.log.warning("Result : {}".format(result.content))
-            failures.append(testcase["description"])
+            failures.append(testcase[testDescriptionKey])
         return False
 
     def validate_onoff_state(self, states, proj, clus, app=None, sleep=2):
@@ -797,8 +801,8 @@ class APIBase(CouchbaseBaseTest):
             if result.status_code != 422:
                 self.log.error(result.content)
                 return result
-            if "Please ensure you are passing a unique CIDR block" in \
-                    result.json()["message"]:
+            if "Please ensure that the CIDR range is unique within this "\
+                    "organisation." in result.json()["hint"]:
                 cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
                 self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
             if time.time() - start_time >= 1800:
@@ -864,14 +868,31 @@ class APIBase(CouchbaseBaseTest):
                 return True
             elif state.json()["currentState"] == "healthy":
                 return True
-        self.log.error("Resource deploy within half an hour.")
+        self.log.error("Resource didn't deploy within half an hour.")
         return False
 
-    def wait_for_deletion(self, proj_id, clus_id, app_svc_id=None):
+    def wait_for_deletion(self, proj_id, clus_id=None, instances=None,
+                          app_svc_id=None):
         start_time = time.time()
         while start_time + 1800 > time.time():
             time.sleep(15)
 
+            if instances:
+                temp_instances = copy.deepcopy(instances)
+                for instance in instances:
+                    while self.columnarAPI.fetch_analytics_cluster_info(
+                            self.organisation_id, proj_id,
+                            instance).status_code != 404:
+                        self.log.info("...Waiting further...")
+                        time.sleep(2)
+                    self.log.info("Instance {} deleted".format(instance))
+                    temp_instances.remove(instance)
+                if len(temp_instances) == 0:
+                    self.log.info("All instances deleted successfully.")
+                    del instances[:]
+                    return
+                self.log.error("!!!...All instances did not delete...!!!")
+                return
             if app_svc_id:
                 res = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, proj_id, clus_id, app_svc_id)
@@ -1166,14 +1187,16 @@ class APIBase(CouchbaseBaseTest):
 
         name = self.prefix + "ColumnarDelete_New"
         res = self.columnarAPI.create_analytics_cluster(
-            self.organisation_id, proj_id, name, "aws", "us-east-1", 2,
-            {"plan": "enterprise", "timezone": "ET"})
+            self.organisation_id, proj_id, name, "aws",
+            {"cpu": 4, "ram": 16}, "us-east-1", 1,
+            {"plan": "enterprise", "timezone": "ET"}, {"type": "single"})
         if res.status_code == 429:
             self.handle_rate_limit(int(res.headers['Retry-After']))
             res = self.columnarAPI.create_analytics_cluster(
-                self.organisation_id, proj_id, name, "aws", "us-east-1", 2,
-                {"plan": "enterprise", "timezone": "ET"})
-        if res.status_code == 201:
+                self.organisation_id, proj_id, name, "aws",
+                {"cpu": 4, "ram": 16}, "us-east-1", 1,
+                {"plan": "enterprise", "timezone": "ET"}, {"type": "single"})
+        if res.status_code == 202:
             self.log.debug("New Instance ID: {}".format(res.json()["id"]))
             return res.json()["id"]
         self.log.error(res.content)
@@ -1184,17 +1207,18 @@ class APIBase(CouchbaseBaseTest):
 
         instance_deletion_failed = False
         for instance in instances:
+            self.log.info("Deleting instance {}".format(instance))
             res = self.columnarAPI.delete_analytics_cluster(
                 self.organisation_id, proj_id, instance)
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.columnarAPI.delete_analytics_cluster(
                     self.organisation_id, proj_id, instance)
-            if res.status_code != 202:
+            if res.status_code != 204:
                 self.log.error("Error while deleting instance: {}\nError: {}"
                                .format(instance, res.content))
                 instance_deletion_failed = True
             else:
-                instances.remove(instance)
+                self.log.info("Instance delete request successful.")
 
         return instance_deletion_failed

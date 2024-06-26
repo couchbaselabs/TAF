@@ -12,10 +12,8 @@ class GetCluster(GetProject):
 
     def setUp(self, nomenclature="Clusters_Get", services=[]):
         GetProject.setUp(self, nomenclature)
-
-        cluster_name = self.prefix + nomenclature
         self.expected_result = {
-            "name": cluster_name,
+            "name": self.prefix + nomenclature,
             "description": None,
             "cloudProvider": {
                 "type": "aws",
@@ -25,12 +23,13 @@ class GetCluster(GetProject):
             "couchbaseServer": {
                 "version": str(self.input.param("server_version", 7.6))
             },
+            "configurationType": None,
             "serviceGroups": [
                 {
                     "node": {
                         "compute": {
-                            "cpu": 4,
-                            "ram": 16
+                            "cpu": self.input.param("cpu", 4),
+                            "ram": self.input.param("ram", 16)
                         },
                         "disk": {
                             "storage": 50,
@@ -38,17 +37,17 @@ class GetCluster(GetProject):
                             "iops": 3000
                         }
                     },
-                    "numOfNodes": 3,
+                    "numOfNodes": self.input.param("numOfNodes", 3),
                     "services": [
                         "data"
                     ]
                 }
             ],
             "availability": {
-                "type": "single"
+                "type": self.input.param("availabilityType", "multi")
             },
             "support": {
-                "plan": "enterprise",
+                "plan": self.input.param("supportPlan", "enterprise"),
                 "timezone": "GMT"
             },
             "currentState": None,
@@ -59,8 +58,7 @@ class GetCluster(GetProject):
                 "modifiedAt": None,
                 "version": None
             },
-            "connectionString": None,
-            "configurationType": None
+            "connectionString": None
         }
         self.expected_result['serviceGroups'][0]["services"].extend(services)
 
@@ -72,19 +70,26 @@ class GetCluster(GetProject):
             self.expected_result['availability'],
             self.expected_result['support'],
             self.expected_result['couchbaseServer'])
-        if result.status_code != 202:
-            self.log.error("Failed while deploying cluster")
+        try:
+            if result.status_code != 202:
+                self.log.error("Failed while deploying cluster")
+                super(GetCluster, self).tearDown()
+                self.fail("!!!...Cluster deployment Failed...!!!")
+            else:
+                self.cluster_id = result.json()["id"]
+                self.expected_result["id"] = self.cluster_id
+                self.log.info("Waiting for cluster {} to be deployed."
+                              .format(self.cluster_id))
+                if not self.wait_for_deployment(
+                        self.project_id, self.cluster_id):
+                    self.tearDown()
+                    self.fail("!!!...Cluster deployment failed...!!!")
+                self.log.info("Successfully deployed Cluster.")
+        except (Exception,):
+            self.log.error(result)
+            self.log.error(result.content)
             super(GetCluster, self).tearDown()
-            self.fail("!!!...CIDR selection failed...!!!")
-
-        self.cluster_id = result.json()["id"]
-        self.expected_result["id"] = self.cluster_id
-        self.log.info("Waiting for cluster {} to be deployed."
-                      .format(self.cluster_id))
-        if not self.wait_for_deployment(self.project_id, self.cluster_id):
-            self.tearDown()
-            self.fail("!!!...Cluster deployment failed...!!!")
-        self.log.info("Successfully deployed Cluster.")
+            self.fail("!!!...Couldn't decipher result...!!!")
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
