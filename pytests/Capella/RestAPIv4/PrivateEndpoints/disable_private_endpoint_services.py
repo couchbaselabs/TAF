@@ -140,8 +140,7 @@ class DeletePrivateEndpointService(GetPrivateEndpointService):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "projectManager",
-                 "projectOwner"
+                 "organizationOwner", "projectOwner"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
