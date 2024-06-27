@@ -63,11 +63,17 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             instance_obj.rest.username = instance_obj.username
             instance_obj.rest.password = instance_obj.password
 
+            if not allow_access_from_everywhere_on_instance(
+                    tenant, tenant.project_id, instance_obj):
+                raise Exception(
+                    "Setting Allow IP as 0.0.0.0/0 for instance {0} "
+                    "failed".format(instance_obj.instance_id))
+
             servers = self.get_nodes(instance_obj)
 
             for t_server in servers:
                 temp_server = TestInputServer()
-                temp_server.ip = t_server.get("hostname")
+                temp_server.ip = t_server.get("hostname").replace(":8091", "")
                 temp_server.hostname = t_server.get("hostname")
                 temp_server.services = t_server.get("services")
                 temp_server.port = "18091"
@@ -86,12 +92,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                           .format(instance_id, cluster_id))
 
         def allow_access_from_everywhere_on_instance(
-                tenant, project_id, instance_obj, result):
+                tenant, project_id, instance_obj):
             response = self.columnar_utils.allow_ip_on_instance(
                 self.pod, tenant, project_id, instance_obj)
             if not response:
-                result.append("Setting Allow IP as 0.0.0.0/0  for instance {0}"
-                              "failed".format(instance_obj.instance_id))
+                return False
+            return True
 
         # Columnar clusters can be reused within a test suite, only when they
         # are deployed on single tenant under single project.
@@ -140,21 +146,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             self.assertTrue(task.result, "Cluster deployment failed!")
             populate_columnar_instance_obj(self.tenant, task.instance_id,
                                            task.name, instance_config)
-
-        allow_access_from_everywhere_threads = list()
-        allow_access_from_everywhere_thread_results = list()
-        for instance in self.tenant.columnar_instances:
-            allow_access_from_everywhere_threads.append(Thread(
-                target=allow_access_from_everywhere_on_instance,
-                name="allow_ip_thread",
-                args=(self.tenant, self.tenant.project_id, instance,
-                      allow_access_from_everywhere_thread_results,)
-            ))
-        self.start_threads(allow_access_from_everywhere_threads)
-        if allow_access_from_everywhere_thread_results:
-            raise Exception(
-                "Failed setting allow access from everywhere on instances - "
-                f"{allow_access_from_everywhere_thread_results}")
 
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
@@ -303,7 +294,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         for t_server in servers:
             temp_server = TestInputServer()
-            temp_server.ip = t_server.get("hostname")
+            temp_server.ip = t_server.get("hostname").replace(":8091", "")
             temp_server.hostname = t_server.get("hostname")
             temp_server.services = t_server.get("services")
             temp_server.port = "18091"
