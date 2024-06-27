@@ -1004,6 +1004,27 @@ class ClusterUtils:
                         nodes.append(node)
         return nodes
 
+    @staticmethod
+    def get_ui_logs(cluster_node, lines=10, contains_text=None):
+        result = list()
+        rest = ClusterRestAPI(cluster_node)
+        status, json_parsed = rest.ui_logs()
+        if status:
+            logs = json_parsed['list']
+            logs.reverse()
+            for i in range(min(lines, len(logs))):
+                result.append(logs[i])
+                if contains_text is not None \
+                        and contains_text in logs[i]["text"]:
+                    break
+        return result
+
+    def print_UI_logs(self, cluster_node, last_n=10, contains_text=None):
+        logs = ClusterUtils.get_ui_logs(cluster_node, last_n, contains_text)
+        self.log.critical(f"Latest logs from UI on {cluster_node.ip}:")
+        for log in logs:
+            self.log.critical(f"  {log}")
+
     def stop_server(self, cluster, node):
         """ Method to stop a server which is subject to failover """
         for server in cluster.servers:

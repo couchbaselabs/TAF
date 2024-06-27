@@ -1036,7 +1036,7 @@ class RebalanceTask(Task):
                             exception_msg += "\nFurther, the vbucket movement upto the hang was not according to bucket ranking"
 
                     self.result = False
-                    self.rest.print_UI_logs()
+                    global_vars.cluster_util.print_UI_logs(self.cluster.master)
                     raise RebalanceFailedException(exception_msg)
             else:
                 success_cleaned = []
@@ -5941,11 +5941,10 @@ class AutoFailoverNodesFailureTask(Task):
     def check(self):
         if not self.check_for_autofailover:
             return True
-        rest = RestConnection(self.master)
         max_timeout = self.timeout + self.timeout_buffer + self.disk_timeout
         if self.start_time == 0:
             message = "Did not inject failure in the system."
-            rest.print_UI_logs(10)
+            global_vars.cluster_util.print_UI_logs(self.master, 10)
             self.test_log.error(message)
             self.set_exception(AutoFailoverException(message))
             return False
@@ -5966,7 +5965,7 @@ class AutoFailoverNodesFailureTask(Task):
                     message = "Rebalance not failed even after 2 minutes " \
                               "after node failure."
                     self.test_log.error(message)
-                    rest.print_UI_logs(10)
+                    global_vars.cluster_util.print_UI_logs(self.master, 10)
                     self.set_exception(AutoFailoverException(message))
                     return False
             else:
@@ -5981,7 +5980,7 @@ class AutoFailoverNodesFailureTask(Task):
                                         " initiated in {1} sec"
                                         .format(self.current_failure_node.ip,
                                                 time_taken))
-                    rest.print_UI_logs(10)
+                    global_vars.cluster_util.print_UI_logs(self.master, 10)
                     return True
                 else:
                     message = "Autofailover of node {0} was initiated after " \
@@ -5989,14 +5988,14 @@ class AutoFailoverNodesFailureTask(Task):
                               "Actual time taken: {2}".format(
                         self.current_failure_node.ip, self.timeout, time_taken)
                     self.test_log.error(message)
-                    rest.print_UI_logs(10)
+                    global_vars.cluster_util.print_UI_logs(self.master, 10)
                     self.set_warn(AutoFailoverException(message))
                     return False
             else:
                 message = "Autofailover of node {0} was not initiated after " \
                           "the expected timeout period of {1}".format(
                     self.current_failure_node.ip, self.timeout)
-                rest.print_UI_logs(10)
+                global_vars.cluster_util.print_UI_logs(self.master, 10)
                 self.test_log.error(message)
                 self.set_warn(AutoFailoverException(message))
                 return False
@@ -6005,7 +6004,7 @@ class AutoFailoverNodesFailureTask(Task):
                 message = "Node {0} was autofailed over but no autofailover " \
                           "of the node was expected" \
                     .format(self.current_failure_node.ip)
-                rest.print_UI_logs(10)
+                global_vars.cluster_util.print_UI_logs(self.master, 10)
                 self.test_log.error(message)
                 if self.get_failover_count() == 1:
                     return True
@@ -6013,7 +6012,7 @@ class AutoFailoverNodesFailureTask(Task):
                 return False
             elif self.expect_auto_failover:
                 self.test_log.error("Node not autofailed over as expected")
-                rest.print_UI_logs(10)
+                global_vars.cluster_util.print_UI_logs(self.master, 10)
                 return False
 
     def has_next(self):
@@ -6232,8 +6231,7 @@ class AutoFailoverNodesFailureTask(Task):
         shell.disconnect()
 
     def _check_for_autofailover_initiation(self, failed_over_node):
-        rest = RestConnection(self.master)
-        ui_logs = rest.get_logs(20)
+        ui_logs = global_vars.cluster_util.get_ui_logs(self.master, lines=20)
         ui_logs_text = [t["text"] for t in ui_logs]
         ui_logs_time = [t["serverTime"] for t in ui_logs]
         if self.auto_reprovision:
@@ -6305,7 +6303,7 @@ class AutoFailoverNodesFailureTask(Task):
                 elif rebalance_status is None and progress == 100:
                     return False, -1
             except RebalanceFailedException:
-                ui_logs = rest.get_logs(10)
+                ui_logs = global_vars.cluster_util.get_ui_logs(self.master, 10)
                 ui_logs_text = [t["text"] for t in ui_logs]
                 ui_logs_time = [t["serverTime"] for t in ui_logs]
                 rebalace_failure_log = "Rebalance exited with reason"
@@ -7452,10 +7450,18 @@ class MonitorBucketCompaction(Task):
         self.status = "NOT_STARTED"
         self.progress = 0
         self.timeout = timeout
-        self.rest = RestConnection(self.cluster.master)
+
+    def __get_compaction_progress(self, cluster_tasks):
+        for task in cluster_tasks:
+            self.log.debug("Task is {0}".format(task))
+            if task["type"] == "bucket_compaction":
+                if task["bucket"] == self.bucket.name:
+                    return True, task["progress"]
+        return False, None
 
     def call(self):
         self.start_task()
+        rest = ClusterRestAPI(self.cluster.master)
         start_time = time.time()
         stop_time = start_time + self.timeout
 
@@ -7467,7 +7473,7 @@ class MonitorBucketCompaction(Task):
                 break
 
             status, self.progress = \
-                self.rest.check_compaction_status(self.bucket.name)
+                self.__get_compaction_progress(rest.cluster_tasks()[0])
             if status is True:
                 self.status = "RUNNING"
                 self.test_log.info("Compaction started for %s"
@@ -7481,12 +7487,12 @@ class MonitorBucketCompaction(Task):
         while self.status == "RUNNING" and self.status != "COMPLETED":
             now = time.time()
             if self.timeout > 0 and now > stop_time:
-                self.set_exception("Compaction timed out to complete with "
-                                   "%s seconds" % self.timeout)
+                self.set_exception(f"Compaction timed out to complete with "
+                                   f"{self.timeout} seconds")
                 break
 
             status, self.progress = \
-                self.rest.check_compaction_status(self.bucket.name)
+                self.__get_compaction_progress(rest.cluster_tasks()[0])
             if status is False:
                 self.progress = 100
                 self.status = "COMPLETED"
