@@ -1339,6 +1339,7 @@ class UpgradeTests(UpgradeBase):
             elif(reb_task == "failover_delta"):
                 rest = RestConnection(self.cluster.master)
                 nodes = rest.node_statuses()
+                self.log.info("nodeStatuses response = {}".format(nodes))
                 for node in nodes:
                     if node.ip != self.cluster.master.ip:
                         otp_node = node
@@ -1383,6 +1384,7 @@ class UpgradeTests(UpgradeBase):
             elif(reb_task == "failover_full"):
                 rest = RestConnection(self.cluster.master)
                 nodes = rest.node_statuses()
+                self.log.info("nodeStatuses response = {}".format(nodes))
                 for node in nodes:
                     if node.ip != self.cluster.master.ip:
                         otp_node = node
