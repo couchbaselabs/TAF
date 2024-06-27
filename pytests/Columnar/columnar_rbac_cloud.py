@@ -2185,7 +2185,6 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                                 self.cluster.instance_id,
                                                                 execute_cmd)
                     if role == "projectOwner" or role == "projectDataWriter":
-                        print("RESP CONTENT: {}".format(resp.content))
                         self.assertEqual(200, resp.status_code,
                                         msg='FAIL, Outcome:{}, Expected: {}.' \
                                             'For role: {}'.format(resp.status_code, 200, role))
