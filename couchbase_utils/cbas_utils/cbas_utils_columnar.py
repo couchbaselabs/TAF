@@ -2120,9 +2120,9 @@ class Dataset_Util(KafkaLink_Util):
             return False
 
     def generate_create_dataset_cmd(self, dataset_name, kv_entity, dataverse_name=None,
-            database_name=None, if_not_exists=False, compress_dataset=False,
-            with_clause=None, link_name=None, where_clause=None,
-            analytics_collection=False, storage_format=None):
+                                    database_name=None, if_not_exists=False, compress_dataset=False,
+                                    with_clause=None, link_name=None, where_clause=None,
+                                    analytics_collection=False, storage_format=None):
 
         if analytics_collection:
             cmd = "create analytics collection"
@@ -2195,9 +2195,9 @@ class Dataset_Util(KafkaLink_Util):
         """
 
         cmd = self.generate_create_dataset_cmd(dataset_name, kv_entity, dataverse_name,
-            database_name, if_not_exists, compress_dataset,
-            with_clause, link_name, where_clause,
-            analytics_collection, storage_format)
+                                               database_name, if_not_exists, compress_dataset,
+                                               with_clause, link_name, where_clause,
+                                               analytics_collection, storage_format)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -2833,12 +2833,12 @@ class External_Dataset_Util(Remote_Dataset_Util):
         return cbas_spec.get("external_dataset", {})
 
     def generate_create_external_dataset_cmd(self, dataset_name, external_container_name,
-            link_name, if_not_exists=False, dataverse_name=None,
-            database_name=None, object_construction_def=None,
-            path_on_external_container=None, file_format="json",
-            redact_warning=None, header=None, null_string=None, include=None,
-            exclude=None, parse_json_string=0, convert_decimal_to_double=0,
-            timezone="", embed_filter_values=None):
+                                             link_name, if_not_exists=False, dataverse_name=None,
+                                             database_name=None, object_construction_def=None,
+                                             path_on_external_container=None, file_format="json",
+                                             redact_warning=None, header=None, null_string=None, include=None,
+                                             exclude=None, parse_json_string=0, convert_decimal_to_double=0,
+                                             timezone="", embed_filter_values=None):
 
         cmd = "CREATE EXTERNAL DATASET"
 
@@ -2960,12 +2960,12 @@ class External_Dataset_Util(Remote_Dataset_Util):
         """
 
         cmd = self.generate_create_external_dataset_cmd(dataset_name, external_container_name,
-            link_name, if_not_exists, dataverse_name,
-            database_name, object_construction_def,
-            path_on_external_container, file_format,
-            redact_warning, header, null_string, include,
-            exclude, parse_json_string, convert_decimal_to_double,
-            timezone, embed_filter_values)
+                                                        link_name, if_not_exists, dataverse_name,
+                                                        database_name, object_construction_def,
+                                                        path_on_external_container, file_format,
+                                                        redact_warning, header, null_string, include,
+                                                        exclude, parse_json_string, convert_decimal_to_double,
+                                                        timezone, embed_filter_values)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -3251,7 +3251,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                                                     connection_string, start, end, sdk_batch_size=25, doc_size=1024,
                                                     template="product", username=None, password=None,
                                                     sirius_url="http://127.0.0.1:4000", action="create"):
-        sdk_batch_size = min(sdk_batch_size, end-start)
+        sdk_batch_size = min(sdk_batch_size, end - start)
         database_information = ColumnarLoader(username=username, password=password, connection_string=connection_string,
                                               bucket=database_name, scope=dataverse_name, collection=collection_name,
                                               sdk_batch_size=int(sdk_batch_size))
@@ -5549,6 +5549,17 @@ class CbasUtil(CBOUtil):
             ]
         }
 
+    def get_ingestion_status(self, cluster, username=None, password=None):
+        """
+        Retreives ingestion matrics for all collections
+        """
+        cbas_helper = CBASHelper(cluster.cbas_cc_node)
+        try:
+            resp = cbas_helper.get_ingestion_status(username, password)
+            return resp.json()
+        except Exception as e:
+            raise Exception(str(e))
+
     def delete_request(
             self, cluster, client_context_id, username=None, password=None):
         """
@@ -6744,8 +6755,8 @@ class CbasUtil(CBOUtil):
                 return True
 
     def generate_copy_to_kv_cmd(self, collection_name=None, database_name=None,
-                   dataverse_name=None, source_definition=None,
-                   dest_bucket=None, link_name=None, primary_key=None, function=None):
+                                dataverse_name=None, source_definition=None,
+                                dest_bucket=None, link_name=None, primary_key=None, function=None):
 
         cmd = "COPY "
         if source_definition:
@@ -6790,8 +6801,8 @@ class CbasUtil(CBOUtil):
         """
         # with clause yet to be decided.
         cmd = self.generate_copy_to_kv_cmd(collection_name, database_name,
-                   dataverse_name, source_definition,
-                   dest_bucket, link_name, primary_key, function)
+                                           dataverse_name, source_definition,
+                                           dest_bucket, link_name, primary_key, function)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,

@@ -121,6 +121,32 @@ class CBASHelper(RestConnection):
                            .format(status, content))
             raise Exception("Analytics Service API failed")
 
+    def get_ingestion_status(self, username=None, password=None):
+        if not username:
+            username = self.username
+        if not password:
+            password = self.password
+
+        api = self.cbas_base_url + "/analytics/status/ingestion"
+        headers = self._create_headers(username, password)
+        status, content, response = self._http_request(api, 'GET', headers=headers, timeout=600)
+        status_code = None
+        if hasattr(response, "status"):
+            status_code = response.status
+        elif hasattr(response, "status_code"):
+            status_code = response.status_code
+
+        if status:
+            return response
+        elif status_code == 404:
+            self.log.info("Request Not Found")
+            return status_code
+        else:
+            self.log.error("/analytics/status/ingestion "
+                           "status:{0}, content:{1}"
+                           .format(status, content))
+            raise Exception("Analytics status API failed")
+
     def delete_active_request_on_cbas(self, payload, username=None,
                                       password=None):
         if not username:
