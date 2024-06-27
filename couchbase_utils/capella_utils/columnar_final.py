@@ -216,6 +216,7 @@ class ColumnarRBACUtil:
             self.log.info("API keys created successfully")
             user_id = json.loads(resp.content).get("id")
             db_user = DBUser(user_id, username, password)
+            db_user.roles.extend(role_ids)
             return db_user
         elif resp.status_code == 500:
             self.log.critical(str(resp.content))

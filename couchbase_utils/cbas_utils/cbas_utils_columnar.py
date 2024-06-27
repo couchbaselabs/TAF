@@ -2119,37 +2119,11 @@ class Dataset_Util(KafkaLink_Util):
         else:
             return False
 
-    def create_dataset(
-            self, cluster, dataset_name, kv_entity, dataverse_name=None,
+    def generate_create_dataset_cmd(self, dataset_name, kv_entity, dataverse_name=None,
             database_name=None, if_not_exists=False, compress_dataset=False,
             with_clause=None, link_name=None, where_clause=None,
-            validate_error_msg=False, username=None, password=None,
-            expected_error=None, timeout=300, analytics_timeout=300,
             analytics_collection=False, storage_format=None):
-        """
-        Creates a dataset/analytics collection on a KV bucket.
-        :param dataset_name str, fully qualified dataset name.
-        :param kv_entity str, fully qualified KV entity name, can be only bucket name or
-        bucket.scope.collection.
-        :param dataverse_name str, Dataverse where dataset is to be created.
-        :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
-        in the same dataverse, then the create statement will pass without creating a new dataset.
-        :param compress_dataset bool, use to set compression policy for dataset.
-        :param with_clause str, use to set other conditions apart from compress dataset, can be of format
-        { "merge-policy": {"name": <>, "parameters": {"max-mergable-component-size": <>,"max-tolerance-component-count": <>}}}
-        :param link_name str, used only while creating dataset on remote cluster, specifies link to be used to ingest data.
-        :param where_clause str, used to filter content while ingesting docs from KV, format - `field_name`="field_value"
-        :param username: str
-        :param password: str
-        :param validate_error_msg: boolean, if set to true, then validate error raised
-        with expected error msg and code.
-        :param expected_error: str
-        :param timeout int, REST API timeout
-        :param analytics_timeout int, analytics query timeout
-        :param analytics_collection bool, If True, will use create analytics collection syntax
-        :param storage_format string, whether to use row or column storage for analytics datasets. Valid values are
-        row and column
-        """
+
         if analytics_collection:
             cmd = "create analytics collection"
         else:
@@ -2185,6 +2159,45 @@ class Dataset_Util(KafkaLink_Util):
             cmd += " where " + where_clause
 
         cmd += ";"
+
+        return cmd
+
+    def create_dataset(
+            self, cluster, dataset_name, kv_entity, dataverse_name=None,
+            database_name=None, if_not_exists=False, compress_dataset=False,
+            with_clause=None, link_name=None, where_clause=None,
+            validate_error_msg=False, username=None, password=None,
+            expected_error=None, timeout=300, analytics_timeout=300,
+            analytics_collection=False, storage_format=None):
+        """
+        Creates a dataset/analytics collection on a KV bucket.
+        :param dataset_name str, fully qualified dataset name.
+        :param kv_entity str, fully qualified KV entity name, can be only bucket name or
+        bucket.scope.collection.
+        :param dataverse_name str, Dataverse where dataset is to be created.
+        :param if_not_exists bool, if this flag is set then, if a dataset with same name is present
+        in the same dataverse, then the create statement will pass without creating a new dataset.
+        :param compress_dataset bool, use to set compression policy for dataset.
+        :param with_clause str, use to set other conditions apart from compress dataset, can be of format
+        { "merge-policy": {"name": <>, "parameters": {"max-mergable-component-size": <>,"max-tolerance-component-count": <>}}}
+        :param link_name str, used only while creating dataset on remote cluster, specifies link to be used to ingest data.
+        :param where_clause str, used to filter content while ingesting docs from KV, format - `field_name`="field_value"
+        :param username: str
+        :param password: str
+        :param validate_error_msg: boolean, if set to true, then validate error raised
+        with expected error msg and code.
+        :param expected_error: str
+        :param timeout int, REST API timeout
+        :param analytics_timeout int, analytics query timeout
+        :param analytics_collection bool, If True, will use create analytics collection syntax
+        :param storage_format string, whether to use row or column storage for analytics datasets. Valid values are
+        row and column
+        """
+
+        cmd = self.generate_create_dataset_cmd(dataset_name, kv_entity, dataverse_name,
+            database_name, if_not_exists, compress_dataset,
+            with_clause, link_name, where_clause,
+            analytics_collection, storage_format)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -2819,6 +2832,73 @@ class External_Dataset_Util(Remote_Dataset_Util):
         """
         return cbas_spec.get("external_dataset", {})
 
+    def generate_create_external_dataset_cmd(self, dataset_name, external_container_name,
+            link_name, if_not_exists=False, dataverse_name=None,
+            database_name=None, object_construction_def=None,
+            path_on_external_container=None, file_format="json",
+            redact_warning=None, header=None, null_string=None, include=None,
+            exclude=None, parse_json_string=0, convert_decimal_to_double=0,
+            timezone="", embed_filter_values=None):
+
+        cmd = "CREATE EXTERNAL DATASET"
+
+        if if_not_exists:
+            cmd += " if not exists"
+
+        if database_name and dataverse_name:
+            cmd += " {0}.{1}.{2}".format(
+                database_name, dataverse_name, dataset_name)
+        elif dataverse_name:
+            cmd += " {0}.{1}".format(dataverse_name, dataset_name)
+        else:
+            cmd += " {0}".format(dataset_name)
+
+        if object_construction_def:
+            cmd += "({0})".format(object_construction_def)
+
+        cmd += " ON `{0}` AT {1}".format(external_container_name, link_name)
+
+        if path_on_external_container is not None:
+            cmd += " USING \"{0}\"".format(path_on_external_container)
+
+        with_parameters = dict()
+        with_parameters["format"] = file_format
+
+        if redact_warning is not None:
+            with_parameters["redact-warnings"] = redact_warning
+
+        if header is not None:
+            with_parameters["header"] = header
+
+        if null_string:
+            with_parameters["null"] = null_string
+
+        if include is not None:
+            with_parameters["include"] = include
+
+        if exclude is not None:
+            with_parameters["exclude"] = exclude
+
+        if with_parameters["format"] == "parquet":
+            if timezone:
+                with_parameters["timezone"] = timezone.upper()
+            if parse_json_string > 0:
+                if parse_json_string == 1:
+                    with_parameters["parse-json-string"] = True
+                else:
+                    with_parameters["parse-json-string"] = False
+            if convert_decimal_to_double > 0:
+                if convert_decimal_to_double == 1:
+                    with_parameters["decimal-to-double"] = True
+                else:
+                    with_parameters["decimal-to-double"] = False
+        if embed_filter_values:
+            with_parameters["embed-filter-values"] = embed_filter_values
+
+        cmd += " WITH {0};".format(json.dumps(with_parameters))
+
+        return cmd
+
     def create_dataset_on_external_resource(
             self, cluster, dataset_name, external_container_name,
             link_name, if_not_exists=False, dataverse_name=None,
@@ -2878,62 +2958,14 @@ class External_Dataset_Util(Remote_Dataset_Util):
         upper case only)
         :return True/False
         """
-        cmd = "CREATE EXTERNAL DATASET"
 
-        if if_not_exists:
-            cmd += " if not exists"
-
-        if database_name and dataverse_name:
-            cmd += " {0}.{1}.{2}".format(
-                database_name, dataverse_name, dataset_name)
-        elif dataverse_name:
-            cmd += " {0}.{1}".format(dataverse_name, dataset_name)
-        else:
-            cmd += " {0}".format(dataset_name)
-
-        if object_construction_def:
-            cmd += "({0})".format(object_construction_def)
-
-        cmd += " ON `{0}` AT {1}".format(external_container_name, link_name)
-
-        if path_on_external_container is not None:
-            cmd += " USING \"{0}\"".format(path_on_external_container)
-
-        with_parameters = dict()
-        with_parameters["format"] = file_format
-
-        if redact_warning is not None:
-            with_parameters["redact-warnings"] = redact_warning
-
-        if header is not None:
-            with_parameters["header"] = header
-
-        if null_string:
-            with_parameters["null"] = null_string
-
-        if include is not None:
-            with_parameters["include"] = include
-
-        if exclude is not None:
-            with_parameters["exclude"] = exclude
-
-        if with_parameters["format"] == "parquet":
-            if timezone:
-                with_parameters["timezone"] = timezone.upper()
-            if parse_json_string > 0:
-                if parse_json_string == 1:
-                    with_parameters["parse-json-string"] = True
-                else:
-                    with_parameters["parse-json-string"] = False
-            if convert_decimal_to_double > 0:
-                if convert_decimal_to_double == 1:
-                    with_parameters["decimal-to-double"] = True
-                else:
-                    with_parameters["decimal-to-double"] = False
-        if embed_filter_values:
-            with_parameters["embed-filter-values"] = embed_filter_values
-
-        cmd += " WITH {0};".format(json.dumps(with_parameters))
+        cmd = self.generate_create_external_dataset_cmd(dataset_name, external_container_name,
+            link_name, if_not_exists, dataverse_name,
+            database_name, object_construction_def,
+            path_on_external_container, file_format,
+            redact_warning, header, null_string, include,
+            exclude, parse_json_string, convert_decimal_to_double,
+            timezone, embed_filter_values)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
@@ -2967,7 +2999,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
         external_datasets = []
         all_links = self.get_all_link_objs(link_type)
         for _ in range(no_of_objs):
-            external_container = random.choice(external_container_names.keys())
+            external_container = random.choice(list(external_container_names.keys()))
             link = random.choice(all_links)
             while link.properties["region"] != external_container_names[
                 external_container]:
@@ -2992,7 +3024,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
                             dataverse_name, database_obj.name))
 
             if use_only_existing_dv:
-                dataverse_obj = self.get_all_dataverse_obj(database_obj.name)
+                dataverse_obj = self.get_all_dataverse_obj(database_obj.name)[0]
             else:
                 dataverse_name = self.generate_name()
                 if not self.create_dataverse(
@@ -6711,16 +6743,10 @@ class CbasUtil(CBOUtil):
             else:
                 return True
 
-    def copy_to_kv(self, cluster, collection_name=None, database_name=None,
+    def generate_copy_to_kv_cmd(self, collection_name=None, database_name=None,
                    dataverse_name=None, source_definition=None,
-                   dest_bucket=None, link_name=None, primary_key=None, function=None,
-                   username=None, password=None, timeout=300,
-                   analytics_timeout=300, validate_error_msg=None,
-                   expected_error=None, expected_error_code=None):
-        """
-        Method to copy query results to a KV collection using a remote link.
-        """
-        # with clause yet to be decided.
+                   dest_bucket=None, link_name=None, primary_key=None, function=None):
+
         cmd = "COPY "
         if source_definition:
             cmd = cmd + "( {0} ) ".format(source_definition)
@@ -6750,6 +6776,23 @@ class CbasUtil(CBOUtil):
             primary_key = function.format(primary_key)
 
         cmd += primary_key
+
+        return cmd
+
+    def copy_to_kv(self, cluster, collection_name=None, database_name=None,
+                   dataverse_name=None, source_definition=None,
+                   dest_bucket=None, link_name=None, primary_key=None, function=None,
+                   username=None, password=None, timeout=300,
+                   analytics_timeout=300, validate_error_msg=None,
+                   expected_error=None, expected_error_code=None):
+        """
+        Method to copy query results to a KV collection using a remote link.
+        """
+        # with clause yet to be decided.
+        cmd = self.generate_copy_to_kv_cmd(collection_name, database_name,
+                   dataverse_name, source_definition,
+                   dest_bucket, link_name, primary_key, function)
+
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
