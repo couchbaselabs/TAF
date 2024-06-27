@@ -576,7 +576,7 @@ class FailoverTests(FailoverBaseTest):
                                 o, r = shell.execute_command("/sbin/iptables --list")
                                 shell.log_command_output(o, r)
                             shell.disconnect()
-                    self.rest.print_UI_logs()
+                    self.cluster_util.print_UI_logs(self.cluster.master)
                     api = self.rest.baseUrl + 'nodeStatuses'
                     status, content, header = self.rest._http_request(api)
                     json_parsed = json.loads(content)
@@ -617,7 +617,7 @@ class FailoverTests(FailoverBaseTest):
                                                       'firewall']):
                 if failed_over:
                     # MB-10479
-                    self.rest.print_UI_logs()
+                    self.cluster_util.print_UI_logs(self.cluster.master)
                 self.assertFalse(failed_over, "Graceful Failover was started for unhealthy node!!!")
                 return
             elif self.gracefulFailoverFail and not failed_over:
@@ -688,7 +688,7 @@ class FailoverTests(FailoverBaseTest):
                                 o, r = shell.execute_command("/sbin/iptables --list")
                                 shell.log_command_output(o, r)
                             shell.disconnect()
-                    self.rest.print_UI_logs()
+                    self.cluster_util.print_UI_logs(self.cluster.master)
                     api = self.rest.baseUrl + 'nodeStatuses'
                     status, content, header = self.rest._http_request(api)
                     json_parsed = json.loads(content)

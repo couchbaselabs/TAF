@@ -693,7 +693,8 @@ class AutoFailoverBaseTest(ClusterSetup):
 
     def _auto_failover_message_present_in_logs(self, ipaddress):
         return any("Rebalance interrupted due to auto-failover of nodes ['ns_1@{0}']."
-                   .format(ipaddress) in d.values() for d in self.rest.get_logs(10))
+                   .format(ipaddress) in d.values()
+                   for d in self.cluster_util.get_ui_logs(self.cluster.master, 10))
 
     def wait_for_failover_or_assert(self, expected_failover_count, timeout):
         time_start = time.time()

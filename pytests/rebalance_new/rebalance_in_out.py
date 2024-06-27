@@ -1,3 +1,4 @@
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from rebalance_new.rebalance_base import RebalanceBaseTest
@@ -228,14 +229,19 @@ class RebalanceInOutTests(RebalanceBaseTest):
         disk_replica_dataset, disk_active_dataset = self.bucket_util.get_and_compare_active_replica_data_set_all(
             self.cluster.servers[:self.nodes_init], self.cluster.buckets, path=None)
         self.bucket_util.compare_vbucketseq_failoverlogs(prev_vbucket_stats, prev_failover_stats)
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master, howmany=1)
         result_nodes = list(set(self.cluster.servers[:self.nodes_init] + servs_in) - set(servs_out))
         result_nodes = [node for node in result_nodes if node.ip != chosen[0].ip]
         for node in servs_in:
-            self.rest.add_node(self.cluster.master.rest_username, self.cluster.master.rest_password, node.ip, node.port)
+            self.rest.add_node(host_name=f"{node.ip}:{node.port}",
+                               username=self.cluster.master.rest_username,
+                               password=self.cluster.master.rest_password)
         # Mark Node for failover
-        self.rest.fail_over(chosen[0].id, graceful=fail_over)
+        if fail_over:
+            self.rest.perform_graceful_failover([chosen[0].id])
+        else:
+            self.rest.perform_hard_failover([chosen[0].id])
         self.shuffle_nodes_between_zones_and_rebalance(servs_out)
         self.cluster_util.print_cluster_stats(self.cluster)
         self.cluster.nodes_in_cluster = result_nodes

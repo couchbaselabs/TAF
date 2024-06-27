@@ -302,7 +302,7 @@ class SwapRebalanceBase(RebalanceBaseTest):
         if reached and self.cluster_util.is_cluster_rebalanced(self.rest):
             # handle situation when rebalance failed at the beginning
             self.log.error('seems rebalance failed!')
-            self.rest.print_UI_logs()
+            self.cluster_util.print_UI_logs(self.cluster.master)
             self.fail("Rebalance failed even before killing memcached")
         bucket = self.cluster.buckets[0]
         pid = None

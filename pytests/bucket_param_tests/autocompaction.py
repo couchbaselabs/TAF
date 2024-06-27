@@ -284,8 +284,8 @@ class AutoCompactionTests(CollectionBase):
         collections = self.bucket_util.get_random_collections(
             [bucket_obj], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]
-        scope_name = scope_dict.keys()[0]
-        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        scope_name = list(scope_dict.keys())[0]
+        collection_name = list(scope_dict[scope_name]["collections"].keys())[0]
         doc_update_task = self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_update,
             op_type=DocLoading.Bucket.DocOps.UPDATE,
@@ -420,8 +420,8 @@ class AutoCompactionTests(CollectionBase):
         collections = self.bucket_util.get_random_collections(
             [bucket_obj], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]
-        scope_name = scope_dict.keys()[0]
-        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        scope_name = list(scope_dict.keys())[0]
+        collection_name = list(scope_dict[scope_name]["collections"].keys())[0]
         doc_update_task = self.task.async_continuous_doc_ops(
             self.cluster, self.bucket, self.gen_update,
             op_type=DocLoading.Bucket.DocOps.UPDATE,
@@ -739,8 +739,8 @@ class AutoCompactionTests(CollectionBase):
         collections = self.bucket_util.get_random_collections(
                                 [bucket_obj], 1, 1, 1)
         scope_dict = collections[self.bucket.name]["scopes"]
-        scope_name = scope_dict.keys()[0]
-        collection_name = scope_dict[scope_name]["collections"].keys()[0]
+        scope_name = list(scope_dict.keys())[0]
+        collection_name = list(scope_dict[scope_name]["collections"].keys())[0]
 
         doc_update_task = self.task.async_continuous_doc_ops(
             self.cluster, bucket, self.gen_update,

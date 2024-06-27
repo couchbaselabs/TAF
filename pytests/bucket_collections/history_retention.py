@@ -1300,8 +1300,8 @@ class DocHistoryRetention(ClusterSetup):
             loader_spec[MetaCrudParams.TARGET_VBUCKETS] = target_vbs
             self.log.info("Targeting vbs: %s" % target_vbs)
         elif validate_high_retention_warn:
-            cluster_logs = RestConnection(self.cluster.master).get_logs(10)
-            self.log.critical(cluster_logs)
+            self.log.critical(
+                self.cluster_util.get_ui_logs(self.cluster.master, 10))
 
         doc_loading_task = \
             self.bucket_util.run_scenario_from_spec(

@@ -11,6 +11,7 @@ from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
+from rebalance_utils.rebalance_util import RebalanceUtil
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
 from sdk_client3 import SDKClientPool
 from sdk_exceptions import SDKException
@@ -257,13 +258,14 @@ class RebalanceBaseTest(BaseTestCase):
         """
         if not to_remove:
             to_remove = []
-        rest = RestConnection(self.servers[0])
-        nodes = rest.get_nodes(inactive_added=True)
+        nodes = self.cluster_util.get_nodes(self.servers[0],
+                                            inactive_added=True)
         zones = ["Group 1"]
         nodes_in_zone = {"Group 1": [node for node in nodes
                                      if node.ip == self.servers[0].ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
+        rest = RestConnection(self.servers[0])
         if int(self.zone) > 1:
             for i in range(1, int(self.zone)):
                 a = "Group "
@@ -296,7 +298,8 @@ class RebalanceBaseTest(BaseTestCase):
         started, _ = rest.rebalance(otpNodes=otpnodes,
                                     ejectedNodes=nodes_to_remove)
         if started:
-            result = rest.monitorRebalance()
+            reb_util = RebalanceUtil(self.servers[0])
+            result = reb_util.monitor_rebalance()
             self.assertTrue(result, msg="Rebalance failed{}".format(result))
             msg = "successfully rebalanced cluster {0}"
             self.log.info(msg.format(result))

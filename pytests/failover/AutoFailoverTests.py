@@ -490,7 +490,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                         self.new_replica)
 
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+        self.rest.rebalance([node.id for node in self.nodes])
         msg = "rebalance failed while removing failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)

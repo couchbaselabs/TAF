@@ -276,8 +276,7 @@ class MultiNodeAutoFailoverTests(AutoFailoverBaseTest):
 
     def _check_for_autofailover_initiation_for_server_group_failover(
             self, failed_over_nodes):
-        rest = RestConnection(self.master)
-        ui_logs = rest.get_logs(10)
+        ui_logs = self.cluster_util.get_ui_logs(self.cluster.master, 10)
         ui_logs_text = [t["text"] for t in ui_logs]
         ui_logs_time = [t["serverTime"] for t in ui_logs]
         expected_log = "Starting failing over ['ns_1@{}','ns_1@{}']".format(

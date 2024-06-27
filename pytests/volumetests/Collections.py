@@ -671,7 +671,7 @@ class volume(CollectionBase):
             time.sleep(20)
         time_end = time.time()
         if actual_failover_count != expected_failover_count:
-            self.log.info(self.rest.print_UI_logs())
+            self.log.info(self.cluster_util.print_UI_logs(self.cluster.master))
         self.assertTrue(actual_failover_count == expected_failover_count,
                         "{0} nodes failed over, expected : {1}"
                         .format(actual_failover_count,
