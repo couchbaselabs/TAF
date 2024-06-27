@@ -7,7 +7,6 @@ from cbas_utils.cbas_utils_columnar import ColumnarStats
 from sirius_client_framework.multiple_database_config import CouchbaseLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
 from sirius_client_framework.sirius_constants import SiriusCodes
-from CbasLib.cbas_entity_columnar import Remote_Dataset, Standalone_Dataset, External_Dataset
 from Jython_tasks.sirius_task import WorkLoadTask
 from capella_utils.dedicated import CapellaUtils
 
@@ -25,9 +24,9 @@ class MiniVolume:
 
     def calculate_volume_per_source(self, percentage_remote_volume=0.8, percentage_byok_volume=0.2):
         doc_size = self.base_object.input.param("doc_size", 1024)
-        self.base_object.standalone_volume = 1e+10 * self.base_object.input.param("num_of_standalone_coll", 0)
+        self.base_object.standalone_volume = 1e+10 * self.base_object.input.param("no_of_standalone_coll", 0)
         self.base_object.log.info("Volume in standalone collection {} Gb".format(self.base_object.input.param
-                                                                                 ("num_of_standalone_coll", 0) * 10))
+                                                                                 ("no_of_standalone_coll", 0) * 10))
         total_volume = self.base_object.input.param("total_volume", 1000000000)
         volume_left = total_volume - self.base_object.standalone_volume
         total_doc = math.ceil(volume_left / doc_size)
@@ -188,30 +187,6 @@ class MiniVolume:
         self.base_object.log.info("Min CPU utilization rate: {}".format(min_cpu_utilization_rate))
         return average_cpu_utilization_rate, max_cpu_utilization_rate, min_cpu_utilization_rate
 
-    def wait_for_data_ingestion_in_the_collections(self, remote_docs, timeout=900):
-        datasets = self.base_object.cbas_util.get_all_dataset_objs()
-        start_time = time.time()
-        while len(datasets) != 0 and time.time() < start_time + timeout:
-            for dataset in datasets:
-                doc_count = self.base_object.cbas_util.get_num_items_in_cbas_dataset(self.base_object.cluster,
-                                                                                     dataset.full_name, timeout=timeout,
-                                                                                     analytics_timeout=timeout)
-                if isinstance(dataset, Remote_Dataset):
-                    if doc_count == remote_docs:
-                        self.base_object.log.info("Loading docs complete in collection: {0}".format(dataset.full_name))
-                        datasets.remove(dataset)
-                if isinstance(dataset, Standalone_Dataset):
-                    datasets.remove(dataset)
-                    continue
-                if isinstance(dataset, External_Dataset):
-                    datasets.remove(dataset)
-        for dataset in datasets:
-            doc_count = self.base_object.cbas_util.get_num_items_in_cbas_dataset(self.base_object.cluster,
-                                                                                 dataset.full_name)
-            if isinstance(dataset, Remote_Dataset):
-                self.base_object.log.error("Timeout while loading doc to collection {}".format(dataset.full_name))
-                self.base_object.log.error("Expected: {}, Actual: {}".format(remote_docs, doc_count))
-
     def create_doc_per_cycle(self, data_partition_value, no_of_docs_total):
         if data_partition_value == 1:
             return 0, no_of_docs_total // 4
@@ -326,7 +301,7 @@ class MiniVolume:
 
         # wait for data loading to complete
         self.base_object.data_loading_job.join()
-        self.wait_for_data_ingestion_in_the_collections(self.base_object.remote_end, timeout=timeout)
+        self.base_object.cbas_util.wait_for_data_ingestion_in_the_collections(self.base_object.cluster)
 
         if not self.scale_columnar_cluster(scale_nodes):
             self.base_object.fail("Failed to scale up the instance")

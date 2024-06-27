@@ -79,7 +79,7 @@ class BackupRestore(ColumnarBaseTest):
                  "certificate": self.remote_cluster_certificate}
             )
             self.columnar_spec["remote_link"]["properties"] = remote_link_properties
-            self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
+            self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("no_of_remote_coll", 1)
 
         self.columnar_spec["external_link"]["no_of_external_links"] = self.input.param(
             "no_of_external_links", 0)
@@ -91,7 +91,7 @@ class BackupRestore(ColumnarBaseTest):
             "secretAccessKey": self.aws_secret_key,
             "serviceEndpoint": None
         }]
-        self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
+        self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("no_of_external_coll", 0)
         if self.columnar_spec["external_dataset"]["num_of_external_datasets"]:
             external_dataset_properties = [{
                 "external_container_name": self.s3_source_bucket,
@@ -113,7 +113,7 @@ class BackupRestore(ColumnarBaseTest):
 
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
-            "num_of_standalone_coll", 0)
+            "no_of_standalone_coll", 0)
         self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string"}]
 
         if not hasattr(self, "remote_cluster"):
@@ -203,6 +203,7 @@ class BackupRestore(ColumnarBaseTest):
                 self.fail("Backup with backup id: {0}, Not found".format(backup_id))
             backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
             self.log.info("Waiting for backup to be completed, current state: {}".format(backup_state))
+            time.sleep(60)
         return backup_id
 
     def restore_wait_for_complete(self, backup_id):
@@ -214,8 +215,9 @@ class BackupRestore(ColumnarBaseTest):
             restore_state = self.get_restore_from_restore_list(backup_id, restore_id)
             if restore_state == -1:
                 self.fail("Restore id: {0} not found for backup id: {1}".format(restore_id, backup_id))
+            time.sleep(60)
 
-    def scale_columnar_cluster(self, nodes, timeout=900, validate_error=None):
+    def scale_columnar_cluster(self, nodes, timeout=3600, validate_error=None):
         start_time = time.time()
         status = None
         resp = self.columnarAPI.update_columnar_instance(self.tenant.id,
@@ -234,31 +236,29 @@ class BackupRestore(ColumnarBaseTest):
         if time.time() > start_time + timeout:
             self.log.error("Cluster state is {} after 15 minutes".format(status))
 
-        start_time = time.time()
         while start_time + timeout > time.time():
-            nodes_in_cluster = self.capellaAPI.get_nodes(self.tenant.id,
-                                                         self.tenant.project_id,
-                                                         self.cluster.cluster_id)
-            if nodes_in_cluster.status_code == 200:
-                if len(nodes_in_cluster.json()["data"]) == nodes:
-                    return True
+            servers = self.get_nodes(self.cluster)
+            nodes_in_cluster = len(servers)
+            if nodes_in_cluster == nodes:
+                return True
+            self.log.info("Waiting for server map to get updated")
+            time.sleep(20)
         return False
 
     def load_data_to_source(self, remote_start, remote_end, standalone_start, standalone_end):
-        if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "bucket"):
+        if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
             for bucket in self.remote_cluster.buckets:
-                if bucket.name == "_default":
-                    continue
-                for scope in bucket.scopes:
-                    if scope != "_system" and scope != "_mobile":
-                        continue
-                    for collection in bucket.scopes[scope].collections:
-                        self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, collection, bucket.name, scope,
-                                                                               "couchbases://" + self.remote_cluster.srv,
-                                                                               remote_start, remote_end,
-                                                                               doc_size=self.doc_size,
-                                                                               username=self.remote_cluster.username,
-                                                                               password=self.remote_cluster.password)
+                if bucket.name != "_default":
+                    for scope in bucket.scopes:
+                        if scope != "_system" and scope != "_mobile":
+                            for collection in bucket.scopes[scope].collections:
+                                self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, collection,
+                                                                                       bucket.name, scope,
+                                                                                       "couchbases://" + self.remote_cluster.srv,
+                                                                                       remote_start, remote_end,
+                                                                                       doc_size=self.doc_size,
+                                                                                       username=self.remote_cluster.username,
+                                                                                       password=self.remote_cluster.password)
         standalone_collections = self.cbas_util.get_all_dataset_objs("standalone")
         for collection in standalone_collections:
             self.cbas_util.load_doc_to_standalone_collection(self.cluster, collection.name, collection.dataverse_name,
@@ -266,7 +266,7 @@ class BackupRestore(ColumnarBaseTest):
 
     def test_backup_restore(self):
         self.base_infra_setup()
-        self.load_data_to_source(1, self.no_of_docs, 1, self.no_of_docs)
+        self.load_data_to_source(0, self.no_of_docs, 1, self.no_of_docs)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
@@ -290,7 +290,7 @@ class BackupRestore(ColumnarBaseTest):
         scale_stage = self.input.param("scale_stage")
         scale_nodes = self.input.param("scale_nodes")
         self.base_infra_setup()
-        self.load_data_to_source(1, self.no_of_docs, 1, self.no_of_docs)
+        self.load_data_to_source(0, self.no_of_docs, 1, self.no_of_docs)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)

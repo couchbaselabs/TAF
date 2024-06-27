@@ -6,6 +6,7 @@ Created on 1-March-2024
 This utility is for performing actions on Capella Columnar only.
 """
 import json
+import math
 import urllib.parse
 import time
 import string
@@ -5559,6 +5560,30 @@ class CbasUtil(CBOUtil):
             return resp.json()
         except Exception as e:
             raise Exception(str(e))
+
+    def wait_for_data_ingestion_in_the_collections(self, cluster, timeout=100000):
+        completed = False
+        resp = self.get_ingestion_status(cluster)
+        if resp == {}:
+            return True
+        start_time = time.time()
+        while not completed and time.time() < start_time + timeout:
+            for link in resp["links"]:
+                if not type(link["state"], list):
+                    completed = True
+                else:
+                    for state in link["state"]:
+                        progress = state["progress"]
+                        if math.isclose(progress, 1.0):
+                            completed = True
+                        else:
+                            completed = False
+        if completed:
+            self.log.info("Ingestion Complete")
+            return True
+        else:
+            self.log.error("Ingestion not completed even after {} sec".format(timeout))
+            return False
 
     def delete_request(
             self, cluster, client_context_id, username=None, password=None):
