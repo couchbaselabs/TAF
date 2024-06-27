@@ -8,6 +8,8 @@ from TestInput import TestInputSingleton
 from cbas_utils.cbas_utils import CbasUtil
 from BucketLib.bucket import Bucket
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
+from BucketLib.BucketOperations import BucketHelper
+import json
 
 
 class ColumnarBaseTest(BaseTestCase):
@@ -232,3 +234,35 @@ class ColumnarBaseTest(BaseTestCase):
             else:
                 self.fail(
                     f"Error while fetching scope list for bucket {bucket.name}")
+
+        bucket_helper_obj = BucketHelper(cluster.master)
+        stats_api = bucket_helper_obj.base_url + "/pools/default/stats/range"
+        def get_stats_param(bucket_name, scope_name, collection_id):
+            stats_param = [
+                {"applyFunctions": ["sum"],
+                 "metric":[
+                     {"label": "name", "value": "kv_collection_item_count"},
+                     {"label": "bucket", "value": bucket_name},
+                     {"label": "scope", "value": scope_name},
+                     {"label": "collection_id",
+                      "value": hex(int(collection_id, 16))}
+                 ],
+                 "nodesAggregation": "sum",
+                 "start": -3,
+                 "step": 3,
+                 "timeWindow": 360}]
+            return json.dumps(stats_param)
+
+        for bucket in cluster.buckets:
+            for scope_name, scope in bucket.scopes.items():
+                if scope_name != "_system":
+                    for collection_name, collection in (
+                            scope.collections.items()):
+                        coll_id = bucket_helper_obj.get_collection_id(
+                            bucket, scope_name, collection_name)
+                        param = get_stats_param(bucket.name, scope_name, coll_id)
+                        status, content, _ = bucket_helper_obj.request(
+                            stats_api, "POST", params=param)
+                        if status:
+                            collection.num_items = content[0]["data"][0][
+                                "values"][-1][1]

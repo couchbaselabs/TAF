@@ -11,6 +11,7 @@ import string
 import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 
 
 class ColumnarInstance:
@@ -517,7 +518,8 @@ class ColumnarUtils:
             return True
 
     def wait_for_instance_scaling_operation(
-            self, pod, tenant, project_id, instance, timeout=3600):
+            self, pod, tenant, project_id, instance, timeout=3600,
+            verify_with_backend_cluster=False, expected_num_of_nodes=0):
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
@@ -534,6 +536,24 @@ class ColumnarUtils:
                 else:
                     break
         if state == "healthy":
+            if verify_with_backend_cluster:
+                self.log.info("Verifying on backend cluster")
+                rest = ClusterRestAPI(instance.master)
+                end_time = time.time() + timeout
+                while time.time() < end_time:
+                    status, content = rest.cluster_details()
+                    if status:
+                        if ("nodes" in content) and (len(content["nodes"]) ==
+                                                     expected_num_of_nodes):
+                            return True
+                self.log.error(
+                    "Instance was not rebalanced. Expected Nodes - {0}, "
+                    "Actual Nodes - {1}.".format(
+                        expected_num_of_nodes, len(content["nodes"])))
+                self.log.error("This can be due to rebalance job still "
+                               "pending on control plane or can be a issue. "
+                               "Please verify manually")
+                return False
             return True
         else:
             self.log.error("Instance {0} failed to scale even after {1} "
@@ -628,3 +648,35 @@ class ColumnarUtils:
         else:
             self.log.error("Failed to turn on the instance")
             return False
+
+    def create_couchbase_cloud_qe_user(self, pod, tenant, instance):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
+        resp = columnar_api.create_analytics_admin_user(instance.instance_id)
+        if resp.status_code == 200:
+            self.log.info("Created user couchbase-cloud-qe")
+            return resp.json()["username"], resp.json()["password"]
+        elif resp.status_code == 422 and resp.json()[
+            "errorType"] == "ErrDataplaneUserNameExists":
+            if self.delete_couchbase_cloud_qe_user(pod, tenant, instance):
+                return self.create_couchbase_cloud_qe_user(
+                    pod, tenant, instance)
+            else:
+                return None, None
+        else:
+            self.log.error("Unable to create user couchbase-cloud-qe")
+            return None, None
+
+    def delete_couchbase_cloud_qe_user(self, pod, tenant, instance):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
+        resp = columnar_api.delete_analytics_admin_user(instance.instance_id)
+        if resp.status_code == 204:
+            self.log.info("Deleted user couchbase-cloud-qe")
+            return True
+        else:
+            self.log.error("Unable to delete user couchbase-cloud-qe")
+            return False
+
