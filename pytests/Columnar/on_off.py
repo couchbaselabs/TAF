@@ -249,9 +249,8 @@ class OnOff(ColumnarBaseTest):
 
         nodes_in_cluster = 0
         while nodes_in_cluster != nodes:
-            servers = CapellaUtils.get_cluster_info_internal(
-                self.pod, self.tenant, self.cluster.id)
-            nodes_in_cluster = len(servers["hosts"]["entry"])
+            servers = self.get_nodes(self.cluster)
+            nodes_in_cluster = len(servers)
             if nodes_in_cluster == nodes:
                 return True
         return False

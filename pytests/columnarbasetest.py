@@ -3,21 +3,19 @@ Created on Oct 14, 2023
 
 @author: umang.agrawal
 """
+import global_vars
 import random
-import time
 
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils
-from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
-
-import global_vars
 from capella_utils.columnar_final import ColumnarInstance, ColumnarUtils
-from threading import Thread
-from sdk_client3 import SDKClientPool
-from TestInput import TestInputServer
-
 from capella_utils.dedicated import CapellaUtils
+from cb_server_rest_util.connection import CBRestConnection
 from Jython_tasks.task import DeployColumnarInstance
+from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
+from sdk_client3 import SDKClientPool
+from threading import Thread
+from TestInput import TestInputServer, TestInputSingleton
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
@@ -43,9 +41,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             cluster_id = info_resp["data"]["config"]["clusterId"]
             name = instance_name or str(info_resp["data"]["name"])
 
-            servers = CapellaUtils.get_cluster_info_internal(
-                self.pod, tenant, cluster_id)
-
             instance_obj = ColumnarInstance(
                 tenant_id=tenant.id,
                 project_id=tenant.project_id,
@@ -59,18 +54,22 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                 self.columnar_utils.create_couchbase_cloud_qe_user(
                     self.pod, tenant, instance_obj)
 
-            """
-            As a workaround, add analytics_admin and analytics_reader 
-            permission manually on backend cluster, without it the tests 
-            won't work.
-            This will be resolved by this ticket 
-            https://couchbasecloud.atlassian.net/browse/AV-80646
-            """
-            for t_server in servers["hosts"]["entry"]:
+            # Assign a rest connection object as rest property to instance
+            # object. This rest connection object utilizes the instance
+            # connection string and the couchbase-cloud-qe user to make rest
+            # calls to backend cluster associated with the instance
+            instance_obj.rest = CBRestConnection()
+            instance_obj.rest.ip = instance_obj.srv
+            instance_obj.rest.username = instance_obj.username
+            instance_obj.rest.password = instance_obj.password
+
+            servers = self.get_nodes(instance_obj)
+
+            for t_server in servers:
                 temp_server = TestInputServer()
                 temp_server.ip = t_server.get("hostname")
                 temp_server.hostname = t_server.get("hostname")
-                temp_server.services = ["Data", "Analytics"]
+                temp_server.services = t_server.get("services")
                 temp_server.port = "18091"
                 temp_server.type = "columnar"
                 temp_server.memcached_port = "11207"
@@ -82,6 +81,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
             tenant.columnar_instances.append(instance_obj)
+            instance_obj.rest.set_endpoint_urls(instance_obj.master)
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}"
                           .format(instance_id, cluster_id))
 
@@ -298,15 +298,14 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         instance.srv = info_resp["data"]["config"]["endpoint"]
         instance.cluster_id = info_resp["data"]["config"]["clusterId"]
-        servers = CapellaUtils.get_cluster_info_internal(
-            pod, tenant, instance.cluster_id)
+        servers = self.get_nodes(instance)
         instance.servers = list()
 
-        for t_server in servers["hosts"]["entry"]:
+        for t_server in servers:
             temp_server = TestInputServer()
             temp_server.ip = t_server.get("hostname")
             temp_server.hostname = t_server.get("hostname")
-            temp_server.services = ["Data", "Analytics"]
+            temp_server.services = t_server.get("services")
             temp_server.port = "18091"
             temp_server.type = "columnar"
             temp_server.memcached_port = "11207"
@@ -316,6 +315,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         instance.nodes_in_cluster = instance.servers
         instance.master = instance.servers[0]
         instance.cbas_cc_node = instance.servers[0]
+
+    def get_nodes(self, instance):
+        api = "https://{}:18091/pools/default".format(instance.srv)
+        status, content, response = instance.rest.request(api, method='GET')
+        if status:
+            return content["nodes"]
 
 
 class ClusterSetup(ColumnarBaseTest):
