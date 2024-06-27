@@ -28,7 +28,6 @@ class OpsChangeCasTests(CasBaseTest):
             self.node_data[node.ip]["replica"] = cb_stat.vbucket_list(
                 self.bucket.name,
                 "replica")
-            cb_stat.disconnect()
         if self.sdk_client_pool:
             self.client = self.sdk_client_pool.get_client_for_bucket(
                 self.bucket)
@@ -38,6 +37,9 @@ class OpsChangeCasTests(CasBaseTest):
     def tearDown(self):
         # Close SDK client connection
         self.client.close()
+        # Close the cbstat connections
+        for _, data in self.node_data.items():
+            data["cb_stat"].disconnect()
 
         super(OpsChangeCasTests, self).tearDown()
 
@@ -900,8 +902,7 @@ class OpsChangeCasTests(CasBaseTest):
                 vb_for_key = self.bucket_util.get_vbucket_num_for_key(key)
                 for _, data in self.node_data.items():
                     if vb_for_key in data["active"]:
-                        vb_stat = data["cb_stat"].vbucket_details(
-                            self.bucket.name)
+                        vb_stat = data["cb_stat"].vbucket_details(self.bucket.name)
                         max_cas = long(vb_stat[str(vb_for_key)]["max_cas"])
                         break
                 if cas != max_cas:
