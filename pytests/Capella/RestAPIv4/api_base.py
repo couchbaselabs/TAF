@@ -661,6 +661,7 @@ class APIBase(CouchbaseBaseTest):
     def validate_testcase(self, result, success_codes, testcase, failures,
                           validate_response=False, expected_res=None,
                           resource_id=None, payloadTest=False):
+        # Parser for payload tests.
         testDescriptionKey = "description"
         if payloadTest:
             testDescriptionKey = "desc"
@@ -668,6 +669,13 @@ class APIBase(CouchbaseBaseTest):
         # Condition is for Sample Buckets delete testcases.
         if ("content" in result and "code" in result.content and
                 result.json()["code"] == 600 and 6008 in success_codes):
+            return True
+
+        # Acceptor for expected error codes.
+        if ("expected_status_code" in testcase and
+                testcase["expected_status_code"] in success_codes):
+            self.log.warning("This test expected the error code : {}"
+                             .format(testcase["expected_status_code"]))
             return True
 
         if result.status_code in success_codes:
@@ -723,23 +731,31 @@ class APIBase(CouchbaseBaseTest):
             failures.append(testcase[testDescriptionKey])
         return False
 
-    def validate_onoff_state(self, states, proj, clus, app=None, sleep=2):
+    def validate_onoff_state(self, states, proj, clus=None, inst=None,
+                             app=None, sleep=2):
         if sleep:
             time.sleep(sleep)
-        if not app:
-            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, proj, clus)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, proj, clus)
-        else:
+        if app:
             res = self.capellaAPI.cluster_ops_apis.get_appservice(
                 self.organisation_id, proj, clus, app)
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, proj, clus, app)
+        elif inst:
+            res = self.columnarAPI.fetch_analytics_cluster_info(
+                self.organisation_id, proj, inst)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.columnarAPI.fetch_analytics_cluster_info(
+                    self.organisation_id, proj, inst)
+        else:
+            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, proj, clus)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, proj, clus)
 
         if res.status_code != 200:
             self.log.error("Could not fetch on/off state info : {}"
