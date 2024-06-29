@@ -11,8 +11,7 @@ class ListCluster(GetCluster):
 
     def setUp(self, nomenclature="Clusters_List"):
         GetCluster.setUp(self, nomenclature)
-
-        self.expected_result = {
+        self.expected_res = {
             "cursor": {
                 "hrefs": {
                     "first": None,
@@ -30,7 +29,7 @@ class ListCluster(GetCluster):
                 }
             },
             "data": [
-                self.expected_result
+                self.expected_res
             ]
         }
 
@@ -124,7 +123,7 @@ class ListCluster(GetCluster):
                 "/v4/organizations/{}/projects/{}/clusters"
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.cluster_id)
+                                   self.expected_res, self.cluster_id)
 
         if failures:
             for fail in failures:
@@ -180,7 +179,7 @@ class ListCluster(GetCluster):
                     self.organisation_id, self.project_id, headers=header)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.cluster_id)
+                                   self.expected_res, self.cluster_id)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -262,7 +261,7 @@ class ListCluster(GetCluster):
                     testcase["organizationID"], testcase["projectID"], **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.cluster_id)
+                                   self.expected_res, self.cluster_id)
 
         if failures:
             for fail in failures:

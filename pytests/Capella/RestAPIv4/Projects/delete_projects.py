@@ -12,38 +12,19 @@ class DeleteProject(APIBase):
     def setUp(self):
         APIBase.setUp(self)
 
-        # Create project.
-        # The project ID will be used to create API keys for roles that
-        # require project ID
-        self.project_name = self.prefix + 'Projects_Delete'
-        self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, self.project_name,
-            self.generate_random_string(0, self.prefix)).json()["id"]
-        self.expected_result = {
-            "id": self.project_id,
-            "description": None,
-            "name": self.project_name,
-            "audit": {
-                "createdBy": None,
-                "createdAt": None,
-                "modifiedBy": None,
-                "modifiedAt": None,
-                "version": None
-            }
-        }
+        # Create a test subject resource.
+        res = self.capellaAPI.org_ops_apis.create_project(
+            self.organisation_id, self.prefix + "WRAPPER")
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers["Retry-After"]))
+        while res.status_code != 201:
+            res = self.capellaAPI.org_ops_apis.create_project(
+                self.organisation_id, self.prefix + "WRAPPER")
+        self.test_subject_id = res.json()['id']
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
-
-        # Delete the project that was created.
-        self.log.info("Deleting Project: {}".format(self.project_id))
-        if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.org_owner_key["token"]):
-            self.log.error("Error while deleting project.")
-        else:
-            self.log.info("Project deleted successfully")
-
         super(DeleteProject, self).tearDown()
 
     def test_api_path(self):
@@ -104,7 +85,7 @@ class DeleteProject(APIBase):
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             org = self.organisation_id
-            proj = self.project_id
+            proj = self.test_subject_id
 
             if "url" in testcase:
                 self.capellaAPI.org_ops_apis.project_endpoint = testcase["url"]
@@ -123,14 +104,15 @@ class DeleteProject(APIBase):
 
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
+                # Create a test subject resource.
                 res = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, self.project_name)
+                    self.organisation_id, self.prefix + "WRAPPER")
                 if res.status_code == 429:
                     self.handle_rate_limit(int(res.headers["Retry-After"]))
                 while res.status_code != 201:
                     res = self.capellaAPI.org_ops_apis.create_project(
-                        self.organisation_id, self.project_name)
-                self.project_id = res.json()['id']
+                        self.organisation_id, self.prefix + "WRAPPER")
+                self.test_subject_id = res.json()['id']
 
         if failures:
             for fail in failures:
@@ -181,9 +163,9 @@ class DeleteProject(APIBase):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, other_project_id)
+                                 self.test_subject_id, other_project_id)
             result = self.capellaAPI.org_ops_apis.delete_project(
-                self.organisation_id, self.project_id, header)
+                self.organisation_id, self.test_subject_id, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.delete_project(
@@ -191,14 +173,15 @@ class DeleteProject(APIBase):
 
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
+                # Create a test subject resource.
                 res = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, self.project_name)
+                    self.organisation_id, self.prefix + "WRAPPER")
                 if res.status_code == 429:
                     self.handle_rate_limit(int(res.headers["Retry-After"]))
                 while res.status_code != 201:
                     res = self.capellaAPI.org_ops_apis.create_project(
-                        self.organisation_id, self.project_name)
-                self.project_id = res.json()['id']
+                        self.organisation_id, self.prefix + "WRAPPER")
+                self.test_subject_id = res.json()['id']
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -215,12 +198,12 @@ class DeleteProject(APIBase):
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}"
-                       .format(self.organisation_id, self.project_id))
-        og_project_id = self.project_id
+                       .format(self.organisation_id, self.test_subject_id))
+        og_project_id = self.test_subject_id
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
-                self.organisation_id, self.project_id):
+                self.organisation_id, self.test_subject_id):
             testcases += 1
             testcase = {
                 "description": "OrganizationID: {}, ProjectID: {}"
@@ -229,7 +212,7 @@ class DeleteProject(APIBase):
                 "projectID": combination[1],
             }
             if not (combination[0] == self.organisation_id and
-                    combination[1] == self.project_id):
+                    combination[1] == self.test_subject_id):
                 if combination[1] == "" or combination[0] == "":
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
@@ -271,7 +254,7 @@ class DeleteProject(APIBase):
             # new project ID in the first run of second orgID
             # combination
             if testcase["projectID"] == og_project_id:
-                testcase["projectID"] = self.project_id
+                testcase["projectID"] = self.test_subject_id
 
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
@@ -288,14 +271,15 @@ class DeleteProject(APIBase):
 
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
+                # Create a test subject resource.
                 res = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, self.project_name)
+                    self.organisation_id, self.prefix + "WRAPPER")
                 if res.status_code == 429:
                     self.handle_rate_limit(int(res.headers["Retry-After"]))
                 while res.status_code != 201:
                     res = self.capellaAPI.org_ops_apis.create_project(
-                        self.organisation_id, self.project_name)
-                self.project_id = res.json()['id']
+                        self.organisation_id, self.prefix + "WRAPPER")
+                self.test_subject_id = res.json()['id']
 
         if failures:
             for fail in failures:
@@ -307,11 +291,11 @@ class DeleteProject(APIBase):
             self):
         api_func_list = [[self.capellaAPI.org_ops_apis.delete_project,
                           (self.organisation_id,
-                           self.replace_last_character(self.project_id))]]
+                           self.replace_last_character(self.test_subject_id))]]
         self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[self.capellaAPI.org_ops_apis.delete_project,
                           (self.organisation_id,
-                           self.replace_last_character(self.project_id))]]
+                           self.replace_last_character(self.test_subject_id))]]
         self.throttle_test(api_func_list, True, self.project_id)

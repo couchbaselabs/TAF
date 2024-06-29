@@ -4,8 +4,6 @@ Created on August 29, 2023
 @author: Vipul Bhardwaj
 """
 
-import time
-import base64
 from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 

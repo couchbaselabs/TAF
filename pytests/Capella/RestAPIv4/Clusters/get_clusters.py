@@ -11,45 +11,11 @@ from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 class GetCluster(GetProject):
 
     def setUp(self, nomenclature="Clusters_Get", services=[]):
-        GetProject.setUp(self, nomenclature)
-        self.expected_result = {
-            "name": self.prefix + nomenclature,
-            "description": None,
-            "cloudProvider": {
-                "type": "aws",
-                "region": "us-east-1",
-                "cidr": CapellaUtils.get_next_cidr() + "/20"
-            },
-            "couchbaseServer": {
-                "version": str(self.input.param("server_version", 7.6))
-            },
-            "configurationType": None,
-            "serviceGroups": [
-                {
-                    "node": {
-                        "compute": {
-                            "cpu": self.input.param("cpu", 4),
-                            "ram": self.input.param("ram", 16)
-                        },
-                        "disk": {
-                            "storage": 50,
-                            "type": "gp3",
-                            "iops": 3000
-                        }
-                    },
-                    "numOfNodes": self.input.param("numOfNodes", 3),
-                    "services": [
-                        "data"
-                    ]
-                }
-            ],
-            "availability": {
-                "type": self.input.param("availabilityType", "multi")
-            },
-            "support": {
-                "plan": self.input.param("supportPlan", "enterprise"),
-                "timezone": "GMT"
-            },
+        GetProject.setUp(self, nomenclature, services)
+        self.expected_res = {
+            "id": self.cluster_id,
+            "name": self.prefix + "WRAPPER",
+            "description": "",
             "currentState": None,
             "audit": {
                 "createdBy": None,
@@ -58,55 +24,14 @@ class GetCluster(GetProject):
                 "modifiedAt": None,
                 "version": None
             },
-            "connectionString": None
+            "connectionString": None,
+            "configurationType": None
         }
-        self.expected_result['serviceGroups'][0]["services"].extend(services)
-
-        result = self.select_CIDR(
-            self.organisation_id, self.project_id,
-            self.expected_result["name"],
-            self.expected_result['cloudProvider'],
-            self.expected_result['serviceGroups'],
-            self.expected_result['availability'],
-            self.expected_result['support'],
-            self.expected_result['couchbaseServer'])
-        try:
-            if result.status_code != 202:
-                self.log.error("Failed while deploying cluster")
-                super(GetCluster, self).tearDown()
-                self.fail("!!!...Cluster deployment Failed...!!!")
-            else:
-                self.cluster_id = result.json()["id"]
-                self.expected_result["id"] = self.cluster_id
-                self.log.info("Waiting for cluster {} to be deployed."
-                              .format(self.cluster_id))
-                if not self.wait_for_deployment(
-                        self.project_id, self.cluster_id):
-                    self.tearDown()
-                    self.fail("!!!...Cluster deployment failed...!!!")
-                self.log.info("Successfully deployed Cluster.")
-        except (Exception,):
-            self.log.error(result)
-            self.log.error(result.content)
-            super(GetCluster, self).tearDown()
-            self.fail("!!!...Couldn't decipher result...!!!")
+        self.expected_res.update(self.cluster_templates[self.input.param(
+            "cluster_template", "AWS_template_m7_xlarge")])
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
-
-        # Delete the cluster that was created.
-        self.log.info("Destroying Cluster: {}".format(self.cluster_id))
-        if self.capellaAPI.cluster_ops_apis.delete_cluster(
-                self.organisation_id, self.project_id,
-                self.cluster_id).status_code != 202:
-            self.log.error("Error while deleting cluster.")
-
-        # Wait for the cluster to be destroyed.
-        self.log.info("Waiting for cluster to be destroyed.")
-        if not self.wait_for_deletion(self.project_id, self.cluster_id):
-            self.fail("Cluster could not be destroyed")
-        self.log.info("Cluster destroyed successfully.")
-
         super(GetCluster, self).tearDown()
 
     def test_api_path(self):
@@ -206,7 +131,7 @@ class GetCluster(GetProject):
                 "/v4/organizations/{}/projects/{}/clusters"
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.cluster_id)
+                                   self.expected_res, self.cluster_id)
 
         if failures:
             for fail in failures:
@@ -263,7 +188,7 @@ class GetCluster(GetProject):
                     header)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.cluster_id)
+                                   self.expected_res, self.cluster_id)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -366,7 +291,7 @@ class GetCluster(GetProject):
                     testcase["clusterID"], **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.cluster_id)
+                                   self.expected_res, self.cluster_id)
 
         if failures:
             for fail in failures:
