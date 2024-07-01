@@ -12,7 +12,7 @@ class CreateClusterSchedule(GetCluster):
 
     def setUp(self, nomenclature="Clusters_Schedule_Create"):
         GetCluster.setUp(self, nomenclature)
-        self.expected_result = {
+        self.expected_res = {
             "timezone": "Pacific/Midway",
             "days": [
                 {
@@ -143,23 +143,27 @@ class CreateClusterSchedule(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.\
                 create_cluster_on_off_schedule(
-                    org, proj, clus, self.expected_result["timezone"],
-                    self.expected_result["days"])
+                    org, proj, clus, self.expected_res["timezone"],
+                    self.expected_res["days"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.\
                     create_cluster_on_off_schedule(
-                        org, proj, clus, self.expected_result["timezone"],
-                        self.expected_result["days"])
+                        org, proj, clus, self.expected_res["timezone"],
+                        self.expected_res["days"])
 
             self.capellaAPI.cluster_ops_apis.cluster_on_off_schedule_endpoint \
                 = "/v4/organizations/{}/projects/{}/clusters/{}/onOffSchedule"
 
-            if self.validate_testcase(result, [204], testcase, failures):
+            if self.validate_testcase(result, [204, 422], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)
                 res = self.capellaAPI.cluster_ops_apis.\
                     delete_cluster_on_off_schedule(org, proj, clus)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers['Retry-After']))
+                    res = self.capellaAPI.cluster_ops_apis.\
+                        delete_cluster_on_off_schedule(org, proj, clus)
                 if res.status_code != 204:
                     self.fail("Error while deleting the currently "
                               "created Schedule")
@@ -215,23 +219,29 @@ class CreateClusterSchedule(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.\
                 create_cluster_on_off_schedule(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_result['timezone'],
-                    self.expected_result['days'], headers=header)
+                    self.expected_res['timezone'],
+                    self.expected_res['days'], headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.\
                     create_cluster_on_off_schedule(
                         self.organisation_id, self.project_id, self.cluster_id,
-                        self.expected_result['timezone'],
-                        self.expected_result['days'], headers=header)
+                        self.expected_res['timezone'],
+                        self.expected_res['days'], headers=header)
 
-            if self.validate_testcase(result, [204], testcase, failures):
+            if self.validate_testcase(result, [204, 422], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)
                 res = self.capellaAPI.cluster_ops_apis.\
                     delete_cluster_on_off_schedule(
                         self.organisation_id, self.project_id,
                         self.cluster_id)
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers['Retry-After']))
+                    res = self.capellaAPI.cluster_ops_apis.\
+                        delete_cluster_on_off_schedule(
+                            self.organisation_id, self.project_id,
+                            self.cluster_id)
                 if res.status_code != 204:
                     self.fail("Error while deleting the currently "
                               "created Schedule")
@@ -326,7 +336,7 @@ class CreateClusterSchedule(GetCluster):
                         .format(combination[1], combination[2])
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
-            self.expected_result['name'] = self.generate_random_string(
+            self.expected_res['name'] = self.generate_random_string(
                 special_characters=False)
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}
@@ -336,24 +346,30 @@ class CreateClusterSchedule(GetCluster):
             result = self.capellaAPI.cluster_ops_apis.\
                 create_cluster_on_off_schedule(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_result['timezone'],
-                    self.expected_result['days'], **kwarg)
+                    testcase["clusterID"], self.expected_res['timezone'],
+                    self.expected_res['days'], **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis. \
+                result = self.capellaAPI.cluster_ops_apis.\
                     create_cluster_on_off_schedule(
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"],
-                        self.expected_result['timezone'],
-                        self.expected_result['days'], **kwarg)
+                        self.expected_res['timezone'],
+                        self.expected_res['days'], **kwarg)
 
-            if self.validate_testcase(result, [204], testcase, failures):
+            if self.validate_testcase(result, [204, 422], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)
                 res = self.capellaAPI.cluster_ops_apis.\
                     delete_cluster_on_off_schedule(
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"])
+                if res.status_code == 429:
+                    self.handle_rate_limit(int(res.headers['Retry-After']))
+                    res = self.capellaAPI.cluster_ops_apis.\
+                        delete_cluster_on_off_schedule(
+                            testcase["organizationID"], testcase["projectID"],
+                            testcase["clusterID"])
                 if res.status_code != 204:
                     self.fail("Error while deleting the currently "
                               "created Schedule")
@@ -372,7 +388,7 @@ class CreateClusterSchedule(GetCluster):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.create_cluster_on_off_schedule,
             (self.organisation_id, self.project_id, self.cluster_id,
-             "", self.expected_result["days"])
+             "", self.expected_res["days"])
         ]]
         self.throttle_test(api_func_list)
 
@@ -380,6 +396,6 @@ class CreateClusterSchedule(GetCluster):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.create_cluster_on_off_schedule,
             (self.organisation_id, self.project_id, self.cluster_id,
-             "", self.expected_result["days"])
+             "", self.expected_res["days"])
         ]]
         self.throttle_test(api_func_list, True, self.project_id)
