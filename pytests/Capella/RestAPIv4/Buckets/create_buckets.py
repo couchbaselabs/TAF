@@ -15,7 +15,7 @@ class CreateBucket(GetCluster):
         GetCluster.setUp(self, nomenclature)
 
         # Initialise bucket params (for future bucket creation).
-        self.expected_result = {
+        self.expected_res = {
             "name": self.prefix + nomenclature,
             "type": "couchbase",
             "storageBackend": "couchstore",
@@ -120,7 +120,7 @@ class CreateBucket(GetCluster):
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-            self.expected_result['name'] = self.generate_random_string(
+            self.expected_res['name'] = self.generate_random_string(
                 special_characters=False)
             org = self.organisation_id
             proj = self.project_id
@@ -138,29 +138,29 @@ class CreateBucket(GetCluster):
 
             self.log.info("Creating bucket.")
             result = self.capellaAPI.cluster_ops_apis.create_bucket(
-                org, proj, clus, self.expected_result['name'],
-                self.expected_result['type'],
-                self.expected_result['storageBackend'],
-                self.expected_result['memoryAllocationInMb'],
-                self.expected_result['bucketConflictResolution'],
-                self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'],
-                self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds'],
-                self.expected_result['priority'])
+                org, proj, clus, self.expected_res['name'],
+                self.expected_res['type'],
+                self.expected_res['storageBackend'],
+                self.expected_res['memoryAllocationInMb'],
+                self.expected_res['bucketConflictResolution'],
+                self.expected_res['durabilityLevel'],
+                self.expected_res['replicas'],
+                self.expected_res['flush'],
+                self.expected_res['timeToLiveInSeconds'],
+                self.expected_res['priority'])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_bucket(
-                    org, proj, clus, self.expected_result['name'],
-                    self.expected_result['type'],
-                    self.expected_result['storageBackend'],
-                    self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['bucketConflictResolution'],
-                    self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'],
-                    self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds'],
-                    self.expected_result['priority'])
+                    org, proj, clus, self.expected_res['name'],
+                    self.expected_res['type'],
+                    self.expected_res['storageBackend'],
+                    self.expected_res['memoryAllocationInMb'],
+                    self.expected_res['bucketConflictResolution'],
+                    self.expected_res['durabilityLevel'],
+                    self.expected_res['replicas'],
+                    self.expected_res['flush'],
+                    self.expected_res['timeToLiveInSeconds'],
+                    self.expected_res['priority'])
 
             self.capellaAPI.cluster_ops_apis.bucket_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
@@ -209,7 +209,7 @@ class CreateBucket(GetCluster):
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
-            self.expected_result['name'] = self.generate_random_string(
+            self.expected_res['name'] = self.generate_random_string(
                 special_characters=False)
 
             # Wait for cluster to rebalance (if it is).
@@ -236,28 +236,28 @@ class CreateBucket(GetCluster):
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.create_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_result['name'], self.expected_result['type'],
-                self.expected_result['storageBackend'],
-                self.expected_result['memoryAllocationInMb'],
-                self.expected_result['bucketConflictResolution'],
-                self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'],
-                self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds'],
-                self.expected_result['priority'], headers=header)
+                self.expected_res['name'], self.expected_res['type'],
+                self.expected_res['storageBackend'],
+                self.expected_res['memoryAllocationInMb'],
+                self.expected_res['bucketConflictResolution'],
+                self.expected_res['durabilityLevel'],
+                self.expected_res['replicas'],
+                self.expected_res['flush'],
+                self.expected_res['timeToLiveInSeconds'],
+                self.expected_res['priority'], headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_bucket(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_result['name'], self.expected_result['type'],
-                    self.expected_result['storageBackend'],
-                    self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['bucketConflictResolution'],
-                    self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'],
-                    self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds'],
-                    self.expected_result['priority'], headers=header)
+                    self.expected_res['name'], self.expected_res['type'],
+                    self.expected_res['storageBackend'],
+                    self.expected_res['memoryAllocationInMb'],
+                    self.expected_res['bucketConflictResolution'],
+                    self.expected_res['durabilityLevel'],
+                    self.expected_res['replicas'],
+                    self.expected_res['flush'],
+                    self.expected_res['timeToLiveInSeconds'],
+                    self.expected_res['priority'], headers=header)
 
             if self.validate_testcase(result, [201], testcase, failures):
                 self.bucket_ids.append(result.json()['id'])
@@ -354,7 +354,7 @@ class CreateBucket(GetCluster):
                         .format(combination[1], combination[2])
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
-            self.expected_result['name'] = self.generate_random_string(
+            self.expected_res['name'] = self.generate_random_string(
                 special_characters=False)
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}
@@ -383,30 +383,30 @@ class CreateBucket(GetCluster):
 
             result = self.capellaAPI.cluster_ops_apis.create_bucket(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], self.expected_result['name'],
-                self.expected_result['type'],
-                self.expected_result['storageBackend'],
-                self.expected_result['memoryAllocationInMb'],
-                self.expected_result['bucketConflictResolution'],
-                self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'],
-                self.expected_result['flush'],
-                self.expected_result['timeToLiveInSeconds'],
-                self.expected_result['priority'], **kwarg)
+                testcase["clusterID"], self.expected_res['name'],
+                self.expected_res['type'],
+                self.expected_res['storageBackend'],
+                self.expected_res['memoryAllocationInMb'],
+                self.expected_res['bucketConflictResolution'],
+                self.expected_res['durabilityLevel'],
+                self.expected_res['replicas'],
+                self.expected_res['flush'],
+                self.expected_res['timeToLiveInSeconds'],
+                self.expected_res['priority'], **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_bucket(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_result['name'],
-                    self.expected_result['type'],
-                    self.expected_result['storageBackend'],
-                    self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['bucketConflictResolution'],
-                    self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'],
-                    self.expected_result['flush'],
-                    self.expected_result['timeToLiveInSeconds'],
-                    self.expected_result['priority'], **kwarg)
+                    testcase["clusterID"], self.expected_res['name'],
+                    self.expected_res['type'],
+                    self.expected_res['storageBackend'],
+                    self.expected_res['memoryAllocationInMb'],
+                    self.expected_res['bucketConflictResolution'],
+                    self.expected_res['durabilityLevel'],
+                    self.expected_res['replicas'],
+                    self.expected_res['flush'],
+                    self.expected_res['timeToLiveInSeconds'],
+                    self.expected_res['priority'], **kwarg)
 
             if self.validate_testcase(result, [201], testcase, failures):
                 self.bucket_ids.append(result.json()['id'])
@@ -425,7 +425,7 @@ class CreateBucket(GetCluster):
     def test_payload(self):
         testcases = list()
 
-        for key in self.expected_result:
+        for key in self.expected_res:
             if key in ["stats", "evictionPolicy"]:
                 continue
 
@@ -435,9 +435,9 @@ class CreateBucket(GetCluster):
                 self.generate_random_string(500, special_characters=False),
             ]
             for value in values:
-                self.expected_result['name'] = self.generate_random_string(
+                self.expected_res['name'] = self.generate_random_string(
                     special_characters=False)
-                testcase = copy.deepcopy(self.expected_result)
+                testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
                 for param in ["stats", "evictionPolicy"]:
                     del testcase[param]
@@ -489,7 +489,7 @@ class CreateBucket(GetCluster):
                                 "'majorityAndPersistActive'. Please choose a "
                                 "valid durability level for the bucket.",
                         "httpStatusCode": 422,
-                        "message": "The durability level {} provided is not "
+                        "message": "The durability level '{}' provided is not "
                                    "supported. The supported level are 'none',"
                                    " 'majority', 'persistToMajority', and "
                                    "'majorityAndPersistActive'.".format(value)
@@ -693,14 +693,14 @@ class CreateBucket(GetCluster):
             self.capellaAPI.cluster_ops_apis.create_bucket,
             (self.organisation_id, self.project_id, self.cluster_id,
              self.generate_random_string(special_characters=False),
-             self.expected_result['type'],
-             self.expected_result['storageBackend'],
-             self.expected_result['memoryAllocationInMb'],
-             self.expected_result['bucketConflictResolution'],
-             self.expected_result['durabilityLevel'],
-             self.expected_result['replicas'], self.expected_result['flush'],
-             self.expected_result['timeToLiveInSeconds'],
-             self.expected_result['priority'])
+             self.expected_res['type'],
+             self.expected_res['storageBackend'],
+             self.expected_res['memoryAllocationInMb'],
+             self.expected_res['bucketConflictResolution'],
+             self.expected_res['durabilityLevel'],
+             self.expected_res['replicas'], self.expected_res['flush'],
+             self.expected_res['timeToLiveInSeconds'],
+             self.expected_res['priority'])
         ]]
         self.throttle_test(api_func_list)
 
@@ -709,13 +709,13 @@ class CreateBucket(GetCluster):
             self.capellaAPI.cluster_ops_apis.create_bucket,
             (self.organisation_id, self.project_id, self.cluster_id,
              self.generate_random_string(special_characters=False),
-             self.expected_result['type'],
-             self.expected_result['storageBackend'],
-             self.expected_result['memoryAllocationInMb'],
-             self.expected_result['bucketConflictResolution'],
-             self.expected_result['durabilityLevel'],
-             self.expected_result['replicas'], self.expected_result['flush'],
-             self.expected_result['timeToLiveInSeconds'],
-             self.expected_result['priority'])
+             self.expected_res['type'],
+             self.expected_res['storageBackend'],
+             self.expected_res['memoryAllocationInMb'],
+             self.expected_res['bucketConflictResolution'],
+             self.expected_res['durabilityLevel'],
+             self.expected_res['replicas'], self.expected_res['flush'],
+             self.expected_res['timeToLiveInSeconds'],
+             self.expected_res['priority'])
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

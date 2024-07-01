@@ -15,7 +15,7 @@ class GetBucket(GetCluster):
         # Initialise bucket params and create a bucket.
         self.bucket_name = self.generate_random_string(
             5, False, self.prefix + nomenclature)
-        self.expected_result = {
+        self.expected_res = {
             "name": self.bucket_name,
             "type": "couchbase",
             "storageBackend": "couchstore",
@@ -36,20 +36,19 @@ class GetBucket(GetCluster):
         }
         res = self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_result['name'], self.expected_result['type'],
-            self.expected_result['storageBackend'],
-            self.expected_result['memoryAllocationInMb'],
-            self.expected_result['bucketConflictResolution'],
-            self.expected_result['durabilityLevel'],
-            self.expected_result['replicas'],
-            self.expected_result['flush'],
-            self.expected_result['timeToLiveInSeconds'])
+            self.expected_res['name'], self.expected_res['type'],
+            self.expected_res['storageBackend'],
+            self.expected_res['memoryAllocationInMb'],
+            self.expected_res['bucketConflictResolution'],
+            self.expected_res['durabilityLevel'],
+            self.expected_res['replicas'], self.expected_res['flush'],
+            self.expected_res['timeToLiveInSeconds'])
         if res.status_code != 201:
             self.tearDown()
             self.log.error("Error : {}".format(res.content))
             self.fail("!!!..Bucket creation failed...!!!")
         self.bucket_id = res.json()['id']
-        self.expected_result['id'] = self.bucket_id
+        self.expected_res['id'] = self.bucket_id
 
     def tearDown(self):
         failures = list()
@@ -184,7 +183,7 @@ class GetBucket(GetCluster):
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.bucket_id)
+                                   self.expected_res, self.bucket_id)
 
         if failures:
             for fail in failures:
@@ -242,7 +241,7 @@ class GetBucket(GetCluster):
                     self.bucket_id, headers=header)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.bucket_id)
+                                   self.expected_res, self.bucket_id)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -379,7 +378,7 @@ class GetBucket(GetCluster):
                     testcase["clusterID"], testcase["bucketID"], **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.bucket_id)
+                                   self.expected_res, self.bucket_id)
 
         if failures:
             for fail in failures:
