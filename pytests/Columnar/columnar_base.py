@@ -264,5 +264,5 @@ class ColumnarBaseTest(BaseTestCase):
                         status, content, _ = bucket_helper_obj.request(
                             stats_api, "POST", params=param)
                         if status:
-                            collection.num_items = content[0]["data"][0][
-                                "values"][-1][1]
+                            collection.num_items = int(content[0]["data"][0][
+                                "values"][-1][1])

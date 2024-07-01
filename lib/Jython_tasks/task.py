@@ -4137,7 +4137,7 @@ class RunQueriesTask(Task):
     def __init__(self, cluster, queries, task_manager, helper, query_type,
                  run_infinitely=False, parallelism=1, is_prepared=True,
                  record_results=True, regenerate_queries=False,
-                 return_only_results=True):
+                 return_only_results=True, timeout=300):
         super(RunQueriesTask, self).__init__("RunQueriesTask_started_%s"
                                              % (time.time()))
         self.cluster = cluster
@@ -4157,6 +4157,7 @@ class RunQueriesTask(Task):
         self.record_results = record_results
         self.regenerate_queries = regenerate_queries
         self.return_only_results = return_only_results
+        self.timeout = timeout
 
     def call(self):
         start = 0
@@ -4180,7 +4181,7 @@ class RunQueriesTask(Task):
                     if hasattr(self, "cbas_util"):
                         query_task = CBASQueryExecuteTask(
                             self.cluster, self.cbas_util, None,
-                            query, self.return_only_results)
+                            query, self.return_only_results, timeout=self.timeout)
                         self.task_manager.add_new_task(query_task)
                         self.query_tasks.append(query_task)
                 for query_task in self.query_tasks:
@@ -7506,7 +7507,7 @@ class MonitorBucketCompaction(Task):
 
 class CBASQueryExecuteTask(Task):
     def __init__(self, cluster, cbas_util, cbas_endpoint, statement,
-                 return_only_result=True):
+                 return_only_result=True, timeout=300):
         """
         Task to execute analytics query
         :param cluster:
@@ -7524,13 +7525,15 @@ class CBASQueryExecuteTask(Task):
         self.statement = statement
         self.actual_result = None
         self.return_only_result = return_only_result
+        self.timeout = timeout
 
     def call(self):
         self.start_task()
         try:
             response, metrics, errors, results, handle = \
                 self.cbas_util.execute_statement_on_cbas_util(
-                    self.cluster, self.statement)
+                    self.cluster, self.statement, timeout=self.timeout,
+                    analytics_timeout=self.timeout)
 
             if response == "success":
                 self.set_result(True)

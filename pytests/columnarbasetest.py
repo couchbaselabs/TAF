@@ -10,58 +10,45 @@ from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils
 from capella_utils.columnar_final import ColumnarInstance, ColumnarUtils
 from capella_utils.dedicated import CapellaUtils
-from cb_server_rest_util.connection import CBRestConnection
 from Jython_tasks.task import DeployColumnarInstance
 from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
 from sdk_client3 import SDKClientPool
 from threading import Thread
-from TestInput import TestInputServer, TestInputSingleton
+from TestInput import TestInputSingleton
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
     def setUp(self):
         super(ColumnarBaseTest, self).setUp()
         self.log_setup_status(self.__class__.__name__, "started")
+
+        # Columnar instance configuration
         self.num_nodes_in_columnar_instance = self.input.param(
             "num_nodes_in_columnar_instance", 2)
-        self.columnar_utils = ColumnarUtils(self.log)
+        """ 
+        Instance type for columnar instance. Valid values are 
+        4vCPUs:16GB, 4vCPUs:32GB, 8vCPUs:32GB, 8vCPUs:64GB, 16vCPUs:64GB, 
+        16vCPUs:128GB,
+        """
+        self.instance_type = self.input.param("instance_type",
+                                              "4vCPUs:16GB").split(":")
         self.columnar_image = self.input.capella.get("columnar_image")
+
+        # Utility objects
+        self.columnar_utils = ColumnarUtils(self.log)
 
         def populate_columnar_instance_obj(
                 tenant, instance_id, instance_name=None, instance_config=None):
-            info_resp = self.columnar_utils.get_instance_info(
-                pod=self.pod, tenant=tenant, project_id=tenant.project_id,
-                instance_id=instance_id)
-
-            if not info_resp:
-                raise Exception("Failed fetching connection string for "
-                                "following instance - {0}".format(instance_id))
-
-            srv = info_resp["data"]["config"]["endpoint"]
-            cluster_id = info_resp["data"]["config"]["clusterId"]
-            name = instance_name or str(info_resp["data"]["name"])
 
             instance_obj = ColumnarInstance(
                 tenant_id=tenant.id,
                 project_id=tenant.project_id,
-                instance_name=name,
-                instance_id=instance_id,
-                cluster_id=cluster_id,
-                instance_endpoint=srv,
-                db_users=list())
+                instance_name=instance_name,
+                instance_id=instance_id)
 
             instance_obj.username, instance_obj.password = \
                 self.columnar_utils.create_couchbase_cloud_qe_user(
                     self.pod, tenant, instance_obj)
-
-            # Assign a rest connection object as rest property to instance
-            # object. This rest connection object utilizes the instance
-            # connection string and the couchbase-cloud-qe user to make rest
-            # calls to backend cluster associated with the instance
-            instance_obj.rest = CBRestConnection()
-            instance_obj.rest.ip = instance_obj.srv
-            instance_obj.rest.username = instance_obj.username
-            instance_obj.rest.password = instance_obj.password
 
             if not allow_access_from_everywhere_on_instance(
                     tenant, tenant.project_id, instance_obj):
@@ -69,27 +56,13 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                     "Setting Allow IP as 0.0.0.0/0 for instance {0} "
                     "failed".format(instance_obj.instance_id))
 
-            servers = self.get_nodes(instance_obj)
-
-            for t_server in servers:
-                temp_server = TestInputServer()
-                temp_server.ip = t_server.get("hostname").replace(":8091", "")
-                temp_server.hostname = t_server.get("hostname")
-                temp_server.services = t_server.get("services")
-                temp_server.port = "18091"
-                temp_server.type = "columnar"
-                temp_server.memcached_port = "11207"
-                temp_server.rest_username = instance_obj.username
-                temp_server.rest_password = instance_obj.password
-                instance_obj.servers.append(temp_server)
-            instance_obj.nodes_in_cluster = instance_obj.servers
-            instance_obj.master = instance_obj.servers[0]
-            instance_obj.cbas_cc_node = instance_obj.servers[0]
+            self.columnar_utils.update_columnar_instance_obj(
+                self.pod, tenant, instance_obj)
             instance_obj.instance_config = instance_config
             tenant.columnar_instances.append(instance_obj)
-            instance_obj.rest.set_endpoint_urls(instance_obj.master)
+
             self.log.info("Instance Ready! InstanceID:{} , ClusterID:{}"
-                          .format(instance_id, cluster_id))
+                          .format(instance_id, instance_obj.cluster_id))
 
         def allow_access_from_everywhere_on_instance(
                 tenant, project_id, instance_obj):
@@ -127,10 +100,14 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                     self.columnar_utils.generate_instance_configuration(
                         name=self.prefix + "Columnar_{0}".format(
                             random.randint(1, 100000)),
+                        region=self.region,
                         nodes=self.num_nodes_in_columnar_instance,
-                        image=self.columnar_image,
+                        instance_types={
+                            "vcpus": self.instance_type[0],
+                            "memory": self.instance_type[1]
+                        },
                         token=self.pod.override_key,
-                        region=self.region))
+                        image=self.columnar_image))
 
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))
@@ -276,42 +253,6 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         instance.sdk_client_pool.create_cluster_clients(
             cluster=instance, servers=[instance.master],
             req_clients=num_clients, username=username, password=password)
-
-    def update_columnar_instance_obj(self, pod, tenant, instance):
-        info_resp = self.columnar_utils.get_instance_info(
-            pod=pod, tenant=tenant, project_id=tenant.project_id,
-            instance_id=instance.instance_id)
-
-        if not info_resp:
-            raise Exception("Failed fetching connection string for "
-                            "following instance - {0}".format(
-                instance.instance_id))
-
-        instance.srv = info_resp["data"]["config"]["endpoint"]
-        instance.cluster_id = info_resp["data"]["config"]["clusterId"]
-        servers = self.get_nodes(instance)
-        instance.servers = list()
-
-        for t_server in servers:
-            temp_server = TestInputServer()
-            temp_server.ip = t_server.get("hostname").replace(":8091", "")
-            temp_server.hostname = t_server.get("hostname")
-            temp_server.services = t_server.get("services")
-            temp_server.port = "18091"
-            temp_server.type = "columnar"
-            temp_server.memcached_port = "11207"
-            temp_server.rest_username = instance.username
-            temp_server.rest_password = instance.password
-            instance.servers.append(temp_server)
-        instance.nodes_in_cluster = instance.servers
-        instance.master = instance.servers[0]
-        instance.cbas_cc_node = instance.servers[0]
-
-    def get_nodes(self, instance):
-        api = "https://{}:18091/pools/default".format(instance.srv)
-        status, content, response = instance.rest.request(api, method='GET')
-        if status:
-            return content["nodes"]
 
 
 class ClusterSetup(ColumnarBaseTest):

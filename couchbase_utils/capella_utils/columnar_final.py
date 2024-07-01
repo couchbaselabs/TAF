@@ -12,6 +12,7 @@ import time
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from TestInput import TestInputServer
 
 
 class ColumnarInstance:
@@ -546,7 +547,10 @@ class ColumnarUtils:
                     if status:
                         if ("nodes" in content) and (len(content["nodes"]) ==
                                                      expected_num_of_nodes):
+                            self.update_columnar_instance_obj(
+                                pod, tenant,instance)
                             return True
+                    time.sleep(10)
                 self.log.error(
                     "Instance was not rebalanced. Expected Nodes - {0}, "
                     "Actual Nodes - {1}.".format(
@@ -555,6 +559,7 @@ class ColumnarUtils:
                                "pending on control plane or can be a issue. "
                                "Please verify manually")
                 return False
+            self.update_columnar_instance_obj(pod, tenant, instance)
             return True
         else:
             self.log.error("Instance {0} failed to scale even after {1} "
@@ -604,6 +609,19 @@ class ColumnarUtils:
                                       instance, timeout=900):
         status = None
         end_time = time.time() + timeout
+        # First wait for turn-off job to get picked up by control plane
+        while status != 'turning_off' and time.time() < end_time:
+            resp = self.get_instance_info(pod, tenant, project_id,
+                                          instance.instance_id)
+            status = resp["data"]["state"]
+            self.log.info("Waiting for instance to be in turning off state")
+            time.sleep(30)
+        if status != 'turning_off':
+            self.log.error("Instance turn-off was not initiated by control "
+                           "place even after {} seconds".format(timeout))
+            return False
+
+        end_time = time.time() + timeout
         while (status == 'turning_off' or not status) and (
                 time.time() < end_time):
             resp = self.get_instance_info(
@@ -638,13 +656,29 @@ class ColumnarUtils:
                                      instance, timeout=900):
         status = None
         end_time = time.time() + timeout
+        # First wait for turn-on job to get picked up by control plane
+        while status != 'turning_on' and time.time() < end_time:
+            resp = self.get_instance_info(pod, tenant, project_id,
+                                          instance.instance_id)
+            status = resp["data"]["state"]
+            self.log.info("Waiting for instance to be in turning on state")
+            time.sleep(30)
+        if status != 'turning_on':
+            self.log.error("Instance turn-on was not initiated by control "
+                           "place even after {} seconds".format(timeout))
+            return False
+
+        end_time = time.time() + timeout
         while (status == 'turning_on' or not status) and (
                 time.time() < end_time):
             resp = self.get_instance_info(
                 pod, tenant, project_id, instance.instance_id)
             status = resp["data"]["state"]
+            self.log.info("Instance is still turning on")
+            time.sleep(20)
         if status == "healthy":
             self.log.info("Instance turned on successful")
+            self.update_columnar_instance_obj(pod, tenant, instance)
             return True
         else:
             self.log.error("Failed to turn on the instance")
@@ -680,4 +714,59 @@ class ColumnarUtils:
         else:
             self.log.error("Unable to delete user couchbase-cloud-qe")
             return False
+
+    def update_columnar_instance_obj(self, pod, tenant, instance):
+        info_resp = self.get_instance_info(
+            pod=pod, tenant=tenant, project_id=tenant.project_id,
+            instance_id=instance.instance_id)
+
+        if not info_resp:
+            raise Exception(
+                "Failed fetching connection string for following instance - "
+                "{0}".format(instance.instance_id))
+
+        instance.name = str(info_resp["data"]["name"])
+        instance.srv = info_resp["data"]["config"]["endpoint"]
+        instance.cluster_id = info_resp["data"]["config"]["clusterId"]
+
+        if not instance.master:
+            # Fixing the instance master node, such that master node ip and
+            # hostname is instance's connection string, port is 18091 and
+            # username and password are couchbase-cloud-qe and it's
+            # password. This is done so that when the cluster scales or
+            # turns on/off or is restored the connection string does not
+            # change even if the nodes in the backend cluster changes.
+            instance.master = TestInputServer()
+            instance.master.ip = instance.srv
+            instance.master.hostname = instance.srv
+            instance.master.port = "18091"
+            instance.master.type = "columnar"
+            instance.master.memcached_port = "11207"
+            instance.master.rest_username = instance.username
+            instance.master.rest_password = instance.password
+        else:
+            instance.master.ip = instance.srv
+            instance.master.hostname = instance.srv
+
+        rest = ClusterRestAPI(instance.master)
+        status, content = rest.cluster_details()
+        if not status:
+            raise Exception("Error while fetching pools/default using "
+                            "connection string")
+
+        instance.servers = list()
+
+        for t_server in content["nodes"]:
+            temp_server = TestInputServer()
+            temp_server.ip = t_server.get("hostname").replace(":8091", "")
+            temp_server.hostname = t_server.get("hostname")
+            temp_server.services = t_server.get("services")
+            temp_server.port = "18091"
+            temp_server.type = "columnar"
+            temp_server.memcached_port = "11207"
+            temp_server.rest_username = instance.username
+            temp_server.rest_password = instance.password
+            instance.servers.append(temp_server)
+        instance.nodes_in_cluster = instance.servers
+        instance.cbas_cc_node = instance.servers[0]
 

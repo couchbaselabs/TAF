@@ -5563,21 +5563,33 @@ class CbasUtil(CBOUtil):
 
     def wait_for_data_ingestion_in_the_collections(self, cluster, timeout=100000):
         completed = False
-        resp = self.get_ingestion_status(cluster)
-        if resp == {}:
-            return True
         start_time = time.time()
         while not completed and time.time() < start_time + timeout:
+            resp = self.get_ingestion_status(cluster)
+            if resp == {}:
+                return True
             for link in resp["links"]:
-                if not type(link["state"], list):
+                if not isinstance(link["state"], list):
                     completed = True
                 else:
                     for state in link["state"]:
                         progress = state["progress"]
+                        collections = list()
+                        for scope in state["scopes"]:
+                            scope_name = scope["name"].replace("/", ".")
+                            for collection in scope["collections"]:
+                                collections.append(
+                                    f"{scope_name}.{collection['name']}")
+                        self.log.debug(
+                            "For collections {0} on link {1} ingestion "
+                            "progress : {2}%".format(
+                                str(collections), link["name"], progress*100
+                            ))
                         if math.isclose(progress, 1.0):
                             completed = True
                         else:
                             completed = False
+            time.sleep(5)
         if completed:
             self.log.info("Ingestion Complete")
             return True
