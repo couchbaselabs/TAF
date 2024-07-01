@@ -32,6 +32,9 @@ class OnOff(ColumnarBaseTest):
         """
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
+        if hasattr(self, "mini_volume"):
+            self.mini_volume.stop_crud_on_data_sources()
+            self.mini_volume.stop_process()
         if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
             self.delete_all_buckets_from_capella_cluster(self.tenant, self.remote_cluster)
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
@@ -569,6 +572,7 @@ class OnOff(ColumnarBaseTest):
             self.fail("Failed to turn on the instance")
 
     def test_mini_volume_on_off(self):
+        start_time = time.time()
         self.base_infra_setup()
         self.sirius_url = self.input.param("sirius_url", "http://127.0.0.1:4000")
         self.mini_volume = MiniVolume(self, self.sirius_url)
@@ -581,9 +585,11 @@ class OnOff(ColumnarBaseTest):
             self.mini_volume.start_crud_on_data_sources(self.remote_start, self.remote_end)
             self.mini_volume.stop_process()
             self.mini_volume.stop_crud_on_data_sources()
+            self.cbas_util.wait_for_ingestion_complete()
             docs_in_collections_before = self.dataset_count()
             self.initiate_on_off()
             self.update_columnar_instance_obj(self.pod, self.tenant, self.cluster)
             docs_in_collection_after = self.dataset_count()
             if docs_in_collection_after != docs_in_collections_before:
                 self.fail("Doc count mismatch after on/off")
+        self.log.info("Time taken to run mini-volume: {} minutes".format((time.time() - start_time)/60))

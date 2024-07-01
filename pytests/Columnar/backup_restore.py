@@ -27,6 +27,9 @@ class BackupRestore(ColumnarBaseTest):
                               stage=self.tearDown.__name__)
 
         # add code to delete buckets in provisioned instance
+        if hasattr(self, "mini_volume"):
+            self.mini_volume.stop_process()
+            self.mini_volume.stop_crud_on_data_sources()
         if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
             self.delete_all_buckets_from_capella_cluster(self.tenant, self.remote_cluster)
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
@@ -150,8 +153,7 @@ class BackupRestore(ColumnarBaseTest):
             backup_id: fetch the backup info for backup_id
             restore_id: Optional, only provide when to fetch specific restore
         """
-        resp = self.columnarAPI.list_restores(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
-                                              backup_id)
+        resp = self.columnarAPI.list_restores(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
         restore_list = resp.json()["data"]
         if not restore_id:
             return restore_list
@@ -186,7 +188,7 @@ class BackupRestore(ColumnarBaseTest):
         self.log.info("Synonyms entity matched") if synonyms == metadata_synonyms else self.fail("Synonyms entity "
                                                                                                  "mismatch")
 
-    def create_backup_wait_for_complete(self, retention=None):
+    def create_backup_wait_for_complete(self, retention=None, timeout=3600):
         if retention:
             resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
                                                   retention)
@@ -196,28 +198,38 @@ class BackupRestore(ColumnarBaseTest):
         self.log.info("Backup Id: {}".format(backup_id))
 
         # wait for backup to complete
+        start_time = time.time()
         backup_state = None
-        while backup_state != "complete":
+        while backup_state != "complete" and time.time() < start_time + timeout:
             backup_state = self.get_backup_from_backup_lists(backup_id)
             if backup_state == -1:
                 self.fail("Backup with backup id: {0}, Not found".format(backup_id))
             backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
             self.log.info("Waiting for backup to be completed, current state: {}".format(backup_state))
             time.sleep(60)
+        if backup_state != "complete":
+            self.fail("Failed to create backup with timeout of {}".format(timeout))
+        else:
+            self.log.info("Successfully created backup in {} seconds".format(time.time() - start_time))
         return backup_id
 
-    def restore_wait_for_complete(self, backup_id):
-        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.id, backup_id)
+    def restore_wait_for_complete(self, backup_id, timeout=3600):
+        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.instance_id, backup_id)
         restore_id = resp.json()["id"]
+        start_time = time.time()
         self.log.info("Restore Id: {}".format(restore_id))
         restore_state = None
-        while restore_state != "complete":
-            restore_state = self.get_restore_from_restore_list(backup_id, restore_id)
+        while restore_state != "complete" and time.time() < start_time + timeout:
+            restore_state = self.get_restore_from_restore_list(backup_id, restore_id)["status"]
             if restore_state == -1:
                 self.fail("Restore id: {0} not found for backup id: {1}".format(restore_id, backup_id))
             time.sleep(60)
+        if restore_state != "complete":
+            self.fail("Fail to restore backup with timeout of {}".format(timeout))
+        else:
+            self.log.info("Successfully restored backup in {} seconds".format(time.time() - start_time))
 
-    def scale_columnar_cluster(self, nodes, timeout=3600, validate_error=None):
+    def scale_columnar_cluster(self, nodes, timeout=3600):
         start_time = time.time()
         status = None
         resp = self.columnarAPI.update_columnar_instance(self.tenant.id,
@@ -227,7 +239,7 @@ class BackupRestore(ColumnarBaseTest):
         if resp.status_code != 202:
             self.fail("Failed to scale cluster")
             # check for nodes in the cluster
-        while status != "healthy" and start_time + 900 > time.time():
+        while status != "healthy" and start_time + timeout > time.time():
             resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
                                                                    self.tenant.project_id,
                                                                    self.cluster.instance_id)
@@ -264,6 +276,22 @@ class BackupRestore(ColumnarBaseTest):
             self.cbas_util.load_doc_to_standalone_collection(self.cluster, collection.name, collection.dataverse_name,
                                                              collection.database_name, self.no_of_docs, self.doc_size)
 
+    def wait_for_instance_to_be_healthy(self, timeout=600):
+        status = None
+        start_time = 600
+        while (not status or status != "healthy") and time.time() < start_time + timeout:
+            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
+                                                                               self.tenant.project_id,
+                                                                               self.cluster.instance_id)
+            resp = resp.json()
+            status = resp["data"]["state"]
+            self.log.info("Instance state: {}".format(status))
+            time.sleep(30)
+        if status != "healthy":
+            self.fail("Instance failed to be healthy")
+        else:
+            self.log.info("Instance is in healthy state")
+
     def test_backup_restore(self):
         self.base_infra_setup()
         self.load_data_to_source(0, self.no_of_docs, 1, self.no_of_docs)
@@ -278,6 +306,7 @@ class BackupRestore(ColumnarBaseTest):
 
         # restore from backup
         self.restore_wait_for_complete(backup_id)
+        self.wait_for_instance_to_be_healthy()
         # validate data after restore
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
@@ -299,6 +328,7 @@ class BackupRestore(ColumnarBaseTest):
             self.scale_columnar_cluster(scale_nodes)
             backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
+            self.wait_for_instance_to_be_healthy()
 
         if scale_stage == "during_backup":
             resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
@@ -317,15 +347,18 @@ class BackupRestore(ColumnarBaseTest):
                 backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
                 self.log.info("Waiting for backup to be completed, current state: {}".format(backup_state))
             self.restore_wait_for_complete(backup_id)
+            self.wait_for_instance_to_be_healthy()
 
         if scale_stage == "after_backup" or scale_stage == "before_resume":
             backup_id = self.create_backup_wait_for_complete()
             self.scale_columnar_cluster(scale_nodes)
             self.restore_wait_for_complete(backup_id)
+            self.wait_for_instance_to_be_healthy()
 
         if scale_stage == "after_resume":
             backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
+            self.wait_for_instance_to_be_healthy()
             self.scale_columnar_cluster(scale_nodes)
 
         for collection in remote_datasets:
@@ -355,15 +388,14 @@ class BackupRestore(ColumnarBaseTest):
                 self.mini_volume.run_processes(i, 2 ** (i - 1), False)
             else:
                 self.mini_volume.run_processes(i, 2 ** (i + 1), False)
-            count_before_backup = self.dataset_count()
             self.mini_volume.start_crud_on_data_sources(self.remote_start, self.remote_end)
-            backup_id = self.create_backup_wait_for_complete()
             self.mini_volume.stop_process()
             self.mini_volume.stop_crud_on_data_sources()
+            self.cbas_util.wait_for_data_ingestion_in_the_collections()
+            count_before_backup = self.dataset_count()
+            backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
-            remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
-            for collection in remote_datasets:
-                self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.remote_end)
+            self.wait_for_instance_to_be_healthy()
             dataset_count_after_restore = self.dataset_count()
             if count_before_backup != dataset_count_after_restore:
                 self.fail("Data mismatch after restore")

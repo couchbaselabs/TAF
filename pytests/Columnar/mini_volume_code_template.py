@@ -132,22 +132,16 @@ class MiniVolume:
                     "SELECT p.seller_name, p.seller_location, AVG(p.avg_rating) AS avg_rating FROM (SELECT seller_name,"
                     "seller_location, avg_rating FROM {} WHERE 'Passenger car medium' in product_category) p "
                     "GROUP BY p.seller_name, p.seller_location ORDER BY avg_rating DESC;".format(dataset.full_name),
-                    "SELECT s.seller_name, p.product_name, p.avg_rating, CASE WHEN p.avg_rating = s.max_rating THEN "
-                    "'Highest' WHEN p.avg_rating = s.min_rating THEN 'Lowest' END AS rating_type FROM {} p "
-                    "JOIN ( SELECT seller_name, MAX(avg_rating) OVER (PARTITION BY seller_name) AS max_rating, "
-                    "MIN(avg_rating) OVER (PARTITION BY seller_name) AS min_rating FROM {}) s ON "
-                    "p.seller_name = s.seller_name WHERE p.avg_rating IN (s.max_rating, s.min_rating) "
-                    "ORDER BY s.seller_name, rating_type;".format(dataset.full_name, dataset.full_name),
-                    "SELECT c.category, p.product_name, p.num_sold FROM {} p JOIN ( SELECT product_category,"
-                    "MAX(num_sold) AS max_sold FROM {} GROUP BY product_category) c ON "
-                    "p.product_category = c.product_category AND p.num_sold = c.max_sold GROUP BY c.category, "
-                    "p.product_name, p.num_sold ORDER BY c.category, p.num_sold DESC;".format(dataset.full_name,
-                                                                                              dataset.full_name)
+                    "SELECT AVG(r.avg_rating) AS avg_rating, SUM(r.num_sold) AS num_sold, AVG(r.price) AS avg_price, "
+                    "ARRAY_FLATTEN(ARRAY_AGG(r.product_category), 1) AS product_category, "
+                    "AVG(r.product_rating.build_quality) AS avg_build_quality, SUM(r.quantity) AS total_quantity, "
+                    "r.seller_verified, AVG(r.weight) AS avg_weight FROM {} AS r GROUP BY r.product_name, "
+                    "r.seller_verified".format(dataset.full_name)
                 ]
                 query = random.choice(queries).format(dataset.full_name)
                 query_jobs.put((self.base_object.cbas_util.execute_statement_on_cbas_util,
-                                {"cluster": self.base_object.cluster, "statement": query, "analytics_timeout": 100000,
-                                 "timeout": 10000}))
+                                {"cluster": self.base_object.cluster, "statement": query, "analytics_timeout": 600000,
+                                 "timeout": 600000}))
 
     def load_doc_to_standalone_collection(self, data_loading_job):
         standalone_datasets = self.base_object.cbas_util.get_all_dataset_objs("standalone")
@@ -170,7 +164,7 @@ class MiniVolume:
     def average_cpu_stats(self):
         average_cpu_utilization_rate = 0
         max_cpu_utilization_rate = 0
-        min_cpu_utilization_rate = 0
+        min_cpu_utilization_rate = 1e9
         count = 0
         while self.base_object.get_cpu_stats:
             columnar_stats = ColumnarStats()
@@ -201,7 +195,7 @@ class MiniVolume:
                 "Currently only supports 25% percent per iteration, to achieve 100%, "
                 "call 4 cycles with data_partition_value as 1,2,3 and 4")
 
-    def scale_columnar_cluster(self, nodes):
+    def scale_columnar_cluster(self, nodes, timeout=10000):
         start_time = time.time()
         status = None
         resp = self.base_object.columnarAPI.update_columnar_instance(self.base_object.tenant.id,
@@ -212,7 +206,7 @@ class MiniVolume:
             self.base_object.fail("Failed to scale cluster")
             # check for nodes in the cluster, add a sleep here until node api is present
         time.sleep(10)
-        while status == "scaling" or status is None:
+        while (status == "scaling" or status is None) and time.time() < start_time + timeout:
             self.base_object.log.info("Instance is still scaling after: {} seconds".format(time.time()-start_time))
             try:
                 resp = self.base_object.columnarAPI.get_specific_columnar_instance(self.base_object.tenant.id,
@@ -224,10 +218,9 @@ class MiniVolume:
             except Exception as e:
                 self.base_object.log.error(str(e))
         current_nodes = 0
-        while current_nodes != nodes:
-            servers = CapellaUtils.get_cluster_info_internal(
-                self.base_object.pod, self.base_object.tenant, self.base_object.cluster.id)
-            current_nodes = len(servers["hosts"]["entry"])
+        while current_nodes != nodes and time.time() < start_time + timeout:
+            servers = self.base_object.get_nodes(self.base_object.cluster)
+            current_nodes = len(servers)
             time.sleep(60)
         if status != "healthy":
             return False
@@ -260,7 +253,8 @@ class MiniVolume:
         self.cpu_stat_job = Queue()
         results = []
 
-        self.base_object.log.info("Running stage 1")
+        if not self.scale_columnar_cluster(16):
+            self.base_object.fail("Failed to scale up the instance")
 
         # calculate doc to load for each cycle
         self.base_object.remote_start, self.base_object.remote_end = (
@@ -290,7 +284,7 @@ class MiniVolume:
         self.cpu_stat_job.put((self.average_cpu_stats, {}))
 
         self.base_object.cbas_util.run_jobs_in_parallel(self.cpu_stat_job, results, 1, async_run=True)
-        self.base_object.cbas_util.run_jobs_in_parallel(create_query_job, self.query_work_results, 1, async_run=True)
+        self.base_object.cbas_util.run_jobs_in_parallel(create_query_job, self.query_work_results, 2, async_run=True)
         while self.base_object.query_job.qsize() < 5:
             self.base_object.log.info("Waiting for query job to be created")
             time.sleep(10)
