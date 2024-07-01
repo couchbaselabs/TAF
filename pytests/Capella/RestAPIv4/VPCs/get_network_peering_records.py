@@ -37,24 +37,28 @@ class GetNetworkPeers(GetCluster):
             }
         }
 
-        self.log.info("Creating NetworkPeer")
-        res = self.capellaAPI.cluster_ops_apis.create_network_peer(
-            self.organisation_id, self.project_id, self.cluster_id, 
-            self.expected_res["name"],
-            self.expected_res["providerConfig"]["AWSConfig"],
-            self.expected_res["providerType"]
-        )
-        if res.status_code != 201:
-            self.log.error("Result: {}".format(res.content))
-            self.tearDown()
-            self.fail("!!!...Error while creating NetworkPeer...!!!")
-        self.log.info("NetworkPeer created successfully.")
+        if self.capella["clusters"]["vpc_id"]:
+            self.peer_id = self.capella["clusters"]["vpc_id"]
+        else:
+            self.log.info("Creating NetworkPeer")
+            res = self.capellaAPI.cluster_ops_apis.create_network_peer(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.expected_res["name"],
+                self.expected_res["providerConfig"]["AWSConfig"],
+                self.expected_res["providerType"]
+            )
+            if res.status_code != 201:
+                self.log.error("Result: {}".format(res.content))
+                self.tearDown()
+                self.fail("!!!...Error while creating NetworkPeer...!!!")
+            self.log.info("NetworkPeer created successfully.")
 
-        self.peer_id = res.json()["id"]
+            self.peer_id = res.json()["id"]
+            self.capella["clusters"]["vpc_id"] = self.peer_id
+
+            # Wait for cluster to be healthy.
+            self.wait_for_deployment(self.project_id, self.cluster_id)
         self.expected_res["id"] = self.peer_id
-
-        # Wait for cluster to be healthy.
-        self.wait_for_deployment(self.project_id, self.cluster_id)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])

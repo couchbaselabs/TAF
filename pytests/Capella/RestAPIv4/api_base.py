@@ -128,7 +128,8 @@ class APIBase(CouchbaseBaseTest):
         }
 
         if TestInputSingleton.input.capella.get("clusters", None):
-            self.cluster_id = TestInputSingleton.input.capella.get("clusters")
+            self.cluster_id = TestInputSingleton.input.capella.get(
+                "clusters")["cluster_id"]
         else:
             cluster_template = self.input.param("cluster_template",
                                                 "AWS_template_m7_xlarge")
@@ -157,7 +158,11 @@ class APIBase(CouchbaseBaseTest):
                         self.tearDown()
                         self.fail("!!!...Cluster deployment failed...!!!")
                     self.log.info("Successfully deployed Cluster.")
-                    self.capella["clusters"] = self.cluster_id
+                    self.capella["clusters"] = {
+                        "cluster_id": self.cluster_id,
+                        "vpc_id": None,
+                        "pes_id": None
+                    }
                     # self.cidr = self.cluster_templates[cluster_template][
                     #     'cloudProvider']['cidr']
             except (Exception,):

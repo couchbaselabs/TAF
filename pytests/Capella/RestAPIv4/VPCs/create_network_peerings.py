@@ -4,7 +4,8 @@ Created on June 10, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.VPCs.get_network_peering_records import GetNetworkPeers
+from pytests.Capella.RestAPIv4.VPCs.\
+    get_network_peering_records import GetNetworkPeers
 
 
 class PostNetworkPeers(GetNetworkPeers):
