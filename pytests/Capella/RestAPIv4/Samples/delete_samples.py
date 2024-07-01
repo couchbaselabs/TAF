@@ -4,6 +4,7 @@ Created on December 22, 2023
 @author: Vipul Bhardwaj
 """
 
+import time
 from pytests.Capella.RestAPIv4.Samples.get_samples import GetSample
 
 
@@ -14,7 +15,7 @@ class DeleteSample(GetSample):
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
-        super(DeleteSample, self).tearDown()
+        super(GetSample, self).tearDown()
 
     def test_api_path(self):
         testcases = [

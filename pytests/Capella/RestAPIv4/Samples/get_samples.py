@@ -51,7 +51,7 @@ class GetSample(GetCluster):
         if self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.sample_bucket_id).status_code != 204:
-            self.log.error("Error while deleting bucket.")
+            self.log.error("!!!...Error while deleting bucket...!!!")
         else:
             self.log.info("Successfully deleted bucket.")
 
