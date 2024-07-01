@@ -1607,6 +1607,7 @@ class RestConnection(newRC):
         api = self.baseUrl + 'nodeStatuses'
         status, content, header = self._http_request(api, timeout=timeout)
         json_parsed = json.loads(content)
+        self.log.debug("nodeStatuses json response content ----> \n\n {} \n\n".format(json_parsed))
         if status:
             for key in json_parsed:
                 # each key contain node info
