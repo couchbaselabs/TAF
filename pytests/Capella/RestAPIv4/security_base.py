@@ -113,6 +113,9 @@ class SecurityBase(CouchbaseBaseTest):
             self.log.info("Creating Cluster for Security Test")
             payload = self.get_cluster_payload(provider)
             payload["name"] = cluster_name
+            if len(server_version) > 3 and not self.input.capella.get("image", None):
+                server_version = server_version[:3]
+
             payload["couchbaseServer"]["version"] = server_version
 
             end_time = time.time() + 1800
@@ -150,7 +153,7 @@ class SecurityBase(CouchbaseBaseTest):
                     self.cluster_id = resp.json()['id']
                     break
 
-                elif "Please ensure you are passing a unique CIDR block and try again" \
+                elif "Please ensure that the CIDR range is unique within this organisation" \
                         in resp.json()["message"]:
                     continue
 
