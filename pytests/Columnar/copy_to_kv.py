@@ -13,7 +13,7 @@ from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from capellaAPI.capella.common.CapellaAPI import CommonCapellaAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
-from mini_volume_code_template import MiniVolume
+from Columnar.mini_volume_code_template import MiniVolume
 
 
 class CopyToKv(ColumnarBaseTest):
@@ -222,6 +222,7 @@ class CopyToKv(ColumnarBaseTest):
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
                        "link_name": remote_link.full_name}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
         if not all(results):
             self.fail("Copy to KV statement failed")
@@ -295,6 +296,7 @@ class CopyToKv(ColumnarBaseTest):
                        "expected_error": self.input.param("expected_error", None),
                        "expected_error_code": self.input.param("expected_error_code", None)}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
         if not all(results):
             self.fail("Copy to kv statement failed")
@@ -357,6 +359,7 @@ class CopyToKv(ColumnarBaseTest):
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
                        "link_name": remote_link.full_name, "primary_key": primary_key}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
         if not all(results):
             self.fail("Copy to KV statement failed")
@@ -420,6 +423,7 @@ class CopyToKv(ColumnarBaseTest):
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
                        "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
         if not all(results):
             self.fail("Copy to KV statement failed")
@@ -487,6 +491,7 @@ class CopyToKv(ColumnarBaseTest):
                        "expected_error": expected_error_code,
                        "expected_error_code": self.input.param("expected_error_code", None)}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
         if not all(results):
             self.fail("Negative test for invalid names failed")
@@ -515,6 +520,7 @@ class CopyToKv(ColumnarBaseTest):
                        "expected_error": expected_error,
                        "expected_error_code": self.input.param("expected_error_code")}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         time.sleep(4)
         if not self.cbas_util.drop_link(self.cluster, remote_link.full_name):
@@ -582,6 +588,7 @@ class CopyToKv(ColumnarBaseTest):
                    "expected_error": self.input.param("expected_error", ""),
                    "expected_error_code": self.input.param("expected_error_code", "")}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         time.sleep(10)
         capella_api_v2.delete_db_user(self.tenant.id, self.tenant.project_id, self.remote_cluster.id, new_db_user_id)
@@ -611,6 +618,7 @@ class CopyToKv(ColumnarBaseTest):
                        "expected_error": expected_error,
                        "expected_error_code": self.input.param("expected_error_code")}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         time.sleep(4)
         if not self.delete_capella_bucket(bucket_id=self.provisioned_bucket_id):
@@ -642,7 +650,7 @@ class CopyToKv(ColumnarBaseTest):
                        "validate_error_msg": self.input.param("validate_error", False),
                        "expected_error": expected_error,
                        "expected_error_code": self.input.param("expected_error_code")}))
-
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         time.sleep(10)
         for dataset in datasets:
@@ -681,6 +689,8 @@ class CopyToKv(ColumnarBaseTest):
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
                        "link_name": remote_link.full_name}))
+
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
             self.fail("Copy to KV statement failed")
@@ -796,7 +806,8 @@ class CopyToKv(ColumnarBaseTest):
                       {"cluster": self.cluster, "source_definition": statement, "dest_bucket": collection,
                        "link_name": remote_link.full_name, "function": "concat(c.a.name,c.b.name)",
                        "timeout": 100000}))
-        time.sleep(10)
+
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -858,6 +869,7 @@ class CopyToKv(ColumnarBaseTest):
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
                        "link_name": remote_link.full_name}))
 
+        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         status = None
         time.sleep(10)
