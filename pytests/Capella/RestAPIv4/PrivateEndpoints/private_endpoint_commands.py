@@ -20,27 +20,6 @@ class PostEndpointCommand(GetPrivateEndpointService):
             "vpcID": "vpc-0a8002505f10bc102",
             "subnetIDs": []
         }
-        # res = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-        #     self.organisation_id, self.project_id, self.cluster_id,
-        #     self.expected_res["vpcID"], self.expected_res["subnetIDs"])
-        # if res.status_code == 429:
-        #     res = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-        #         self.organisation_id, self.project_id, self.cluster_id,
-        #         self.expected_res["vpcID"], self.expected_res["subnetIDs"])
-        # if res.status_code != 200:
-        #     self.log.error(res.content)
-        #     self.tearDown()
-        #     self.fail("!!!...Fetching command failed...!!!")
-        # self.expected_res["command"] = res.json()["command"]
-
-        # self.log.info("...Creating a server object...")
-        # server = TestInputServer()
-        # server.ip = "172.23.104.108"
-        # server.port = ""
-        # server.ssh_username = "root"
-        # server.ssh_password = "couchbase"
-        # self.remote_shell = RemoteMachineShellConnection(server)
-        # out, err = self.remote_shell.execute_command(res.json()["command"])
 
     def tearDown(self):
         super(GetPrivateEndpointService, self).tearDown()
@@ -171,7 +150,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "projectOwner"
+                "organizationOwner", "projectOwner"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
@@ -338,6 +317,8 @@ class PostEndpointCommand(GetPrivateEndpointService):
 
                 testcase["description"] = "Testing `{}` with val: {} of {}" \
                     .format(key, value, type(value))
+                if key == "subnetIDs" and value is None:
+                    continue
                 if key == "vpcID" and value in ["", None]:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {

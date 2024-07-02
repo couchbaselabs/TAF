@@ -4,7 +4,8 @@ Created on June 04, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.PrivateEndpoints.get_private_endpoint_service_status import GetPrivateEndpointService
+from pytests.Capella.RestAPIv4.PrivateEndpoints.\
+    get_private_endpoint_service_status import GetPrivateEndpointService
 
 
 class DeletePrivateEndpointService(GetPrivateEndpointService):
@@ -140,7 +141,7 @@ class DeletePrivateEndpointService(GetPrivateEndpointService):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "projectOwner"
+                 "organizationOwner", "projectOwner", "projectManager"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
