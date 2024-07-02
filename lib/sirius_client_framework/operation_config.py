@@ -48,3 +48,29 @@ class WorkloadOperationConfig(OperationConfig):
         if self.fields_to_change is not None:
             parameter_dict['fieldsToChange'] = self.fields_to_change
         return parameter_dict
+
+
+class RetryExceptionConfig(OperationConfig):
+    def __int__(self,
+                result_token=None,
+                ignore_exceptions=[],
+                retry_exceptions=[]):
+        super(RetryExceptionConfig, self).__init__()
+        self.result_token = result_token
+        self.ignore_exceptions = ignore_exceptions
+        self.retry_exceptions = retry_exceptions
+
+    def get_parameters(self):
+        parameter_dict = {}
+        if self.result_token is not None:
+            parameter_dict["resultSeed"] = self.result_token
+        else:
+            raise Exception("result seed is none")
+
+        if len(self.ignore_exceptions) != 0:
+            parameter_dict["ignoreExceptions"] = self.ignore_exceptions
+
+        if len(self.ignore_exceptions) != 0:
+            parameter_dict["retryExceptions"] = self.ignore_exceptions
+
+        return parameter_dict
