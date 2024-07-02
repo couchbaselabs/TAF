@@ -19,21 +19,29 @@ class ListScope(GetBucket):
                 {
                     "collections": [],
                     "name": self.scope_name,
-                    "uid": None
                 },
                 {
                     "collections": [
                         {
                             "maxTTL": 0,
                             "name": "_default",
-                            "uid": None
                         }
                     ],
                     "name": "_default",
-                    "uid": None
+                },
+                {
+                    "collections": [
+                        {
+                            "maxTTL": -1,
+                            "name": "_query"
+                        }, {
+                            "maxTTL": -1,
+                            "name": "_mobile"
+                        }
+                    ],
+                    "name": "_system"
                 }
-            ],
-            "uid": None
+            ]
         }
         res = self.capellaAPI.cluster_ops_apis.create_scope(
             self.organisation_id, self.project_id, self.cluster_id,
