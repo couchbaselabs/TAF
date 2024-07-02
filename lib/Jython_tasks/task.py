@@ -625,7 +625,7 @@ class RebalanceTask(Task):
             self.log.critical(
                 "%s: %s" % (msg, ["%s:%s" % (t_node.ip, t_node.port)
                                   for t_node in node_list]))
-
+        self.sleep(10, "Waiting before starting rebalance")
         self.start_task()
         try:
             if len(self.to_add) and len(self.to_add) == len(self.to_remove) \
