@@ -21,14 +21,14 @@ class PostUnassociate(PostAssociate):
             {
                 "description": "Send call with valid path params",
                 "expected_error": {
-                    "code": 400,
+                    "code": 500,
                     "hint": "Please review your request and ensure that all "
                             "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
+                    "httpStatusCode": 500,
+                    "message": "The VpcEndpointService Id '{}' does not exist"
+                               .format(self.endpoint_id)
                 },
-                "expected_status_code": 400
+                "expected_status_code": 500
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpoints/{}/unassociate",
@@ -164,14 +164,14 @@ class PostUnassociate(PostAssociate):
             testcase = {
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"],
-                "expected_status_code": 400,
+                "expected_status_code": 500,
                 "expected_error": {
-                    "code": 400,
+                    "code": 500,
                     "hint": "Please review your request and ensure that all "
                             "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
+                    "httpStatusCode": 500,
+                    "message": "The VpcEndpointService Id '{}' does not exist"
+                               .format(self.endpoint_id)
                 }
             }
             if not any(element in [
@@ -187,14 +187,14 @@ class PostUnassociate(PostAssociate):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id, 400, {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
-                })
+        self.auth_test_extension(testcases, other_project_id, 500, {
+            "code": 500,
+            "hint": "Please review your request and ensure that all required "
+                    "parameters are correctly provided.",
+            "httpStatusCode": 500,
+            "message": "The VpcEndpointService Id '{}' does not exist"
+                       .format(self.endpoint_id)
+        })
 
         failures = list()
         for testcase in testcases:
@@ -250,14 +250,14 @@ class PostUnassociate(PostAssociate):
                 "projectID": combination[1],
                 "clusterID": combination[2],
                 "endpointID": combination[3],
-                "expected_status_code": 400,
+                "expected_status_code": 500,
                 "expected_error": {
-                    "code": 400,
+                    "code": 500,
                     "hint": "Please review your request and ensure that all "
                             "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
+                    "httpStatusCode": 500,
+                    "message": "The VpcEndpointService Id '{}' does not exist"
+                               .format(self.endpoint_id)
                 }
             }
             if not (combination[0] == self.organisation_id and

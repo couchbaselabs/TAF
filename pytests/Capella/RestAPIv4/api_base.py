@@ -185,7 +185,7 @@ class APIBase(CouchbaseBaseTest):
 
             # Wait for the cluster to be destroyed.
             self.log.info("Waiting for cluster to be destroyed.")
-            if not self.wait_for_deletion(self.project_id, self.cluster_id):
+            if not self.wait_for_deletion(self.cluster_id):
                 self.fail("Cluster could not be destroyed")
             self.log.info("Cluster destroyed successfully.")
             self.cluster_id = None
@@ -807,9 +807,10 @@ class APIBase(CouchbaseBaseTest):
 
         # Acceptor for expected error codes.
         if ("expected_status_code" in testcase and
-                testcase["expected_status_code"] in success_codes):
-            self.log.warning("This test expected the error code : {}"
-                             .format(testcase["expected_status_code"]))
+                testcase["expected_status_code"] == result.status_code):
+            self.log.warning("This test expected the error: {}, and  code: {}"
+                             .format(testcase["expected_error"],
+                                     testcase["expected_status_code"]))
             return True
 
         if result.status_code in success_codes:
@@ -817,7 +818,10 @@ class APIBase(CouchbaseBaseTest):
                     testcase["expected_status_code"] != 404):
                 self.log.error("NO ERRORS in Response, But Test expected "
                                "error: {}".format(testcase["expected_error"]))
-                self.log.warning("Result : {}".format(result.json()))
+                try:
+                    self.log.warning("Result : {}".format(result.json()))
+                except (Exception,):
+                    self.log.warning("Result : {}".format(result.content))
                 failures.append(testcase[testDescriptionKey])
             if validate_response:
                 if not self.validate_api_response(
@@ -955,8 +959,8 @@ class APIBase(CouchbaseBaseTest):
             if result.status_code != 422:
                 self.log.error(result.content)
                 return result
-            if "Please ensure that the CIDR range is unique within this "\
-                    "organisation." in result.json()["hint"]:
+            if "Please ensure you are passing a unique CIDR block and try " \
+                    "again." in result.json()["message"]:
                 cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
                 self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
             if time.time() - start_time >= 1800:
@@ -1025,8 +1029,7 @@ class APIBase(CouchbaseBaseTest):
         self.log.error("Resource didn't deploy within half an hour.")
         return False
 
-    def wait_for_deletion(self, proj_id, clus_id=None, instances=None,
-                          app_svc_id=None):
+    def wait_for_deletion(self, clus_id=None, app_svc_id=None, instances=None):
         start_time = time.time()
         while start_time + 1800 > time.time():
             time.sleep(15)
@@ -1035,7 +1038,7 @@ class APIBase(CouchbaseBaseTest):
                 temp_instances = copy.deepcopy(instances)
                 for instance in instances:
                     while self.columnarAPI.fetch_analytics_cluster_info(
-                            self.organisation_id, proj_id,
+                            self.organisation_id, self.project_id,
                             instance).status_code != 404:
                         self.log.info("...Waiting further...")
                         time.sleep(2)
@@ -1049,18 +1052,19 @@ class APIBase(CouchbaseBaseTest):
                 return
             if app_svc_id:
                 res = self.capellaAPI.cluster_ops_apis.get_appservice(
-                    self.organisation_id, proj_id, clus_id, app_svc_id)
+                    self.organisation_id, self.project_id, clus_id, app_svc_id)
                 if res.status_code == 429:
                     self.handle_rate_limit(int(res.headers["Retry-After"]))
                     res = self.capellaAPI.cluster_ops_apis.get_appservice(
-                        self.organisation_id, proj_id, clus_id, app_svc_id)
+                        self.organisation_id, self.project_id, clus_id,
+                        app_svc_id)
             else:
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, proj_id, clus_id)
+                    self.organisation_id, self.project_id, clus_id)
                 if res.status_code == 429:
                     self.handle_rate_limit(int(res.headers["Retry-After"]))
                     res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, proj_id, clus_id)
+                        self.organisation_id, self.project_id, clus_id)
 
             if res.status_code == 404:
                 try:

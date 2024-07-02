@@ -150,9 +150,8 @@ class GetPrivateEndpointService(GetCluster):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "organizationMember",
-                 "projectOwner", "projectManager",
-                 "projectCreator", "projectViewer"
+                 "organizationOwner", "projectViewer",
+                 "projectOwner", "projectManager"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,

@@ -148,9 +148,8 @@ class ListEndpoints(GetPrivateEndpointService):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "projectCreator",
-                 "projectOwner", "projectManager",
-                 "organizationMember", "projectViewer"
+                "organizationOwner", "projectOwner",
+                "projectManager", "projectViewer"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
