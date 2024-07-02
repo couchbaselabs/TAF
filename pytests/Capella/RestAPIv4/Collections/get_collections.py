@@ -117,13 +117,13 @@ class GetCollection(GetScope):
                 "description": "Fetch collection but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "BucketID is invalid."
+                    "code": 6008,
+                    "hint": "The requested bucket does not exist. Please "
+                            "ensure that the correct bucket ID is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Unable to find the specified bucket."
                 }
             }, {
                 "description": "Fetch collection but with invalid scopeName",

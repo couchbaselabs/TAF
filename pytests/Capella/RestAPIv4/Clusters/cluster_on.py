@@ -86,9 +86,7 @@ class ClusterOn(GetCluster):
                 "/v4/organizations/{}/projects/{}/clusters/{}/on"
 
             if self.validate_testcase(result, [409, 202], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"],
-                        self.project_id, self.cluster_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -150,9 +148,7 @@ class ClusterOn(GetCluster):
                     False, headers=header)
 
             if self.validate_testcase(result, [409, 202], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"],
-                        self.project_id, self.cluster_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -260,9 +256,7 @@ class ClusterOn(GetCluster):
                     testcase["clusterID"], False, **kwarg)
 
             if self.validate_testcase(result, [409, 202], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"],
-                        self.project_id, self.cluster_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -304,9 +298,7 @@ class ClusterOn(GetCluster):
 
             if self.validate_testcase(result, [409, 202], testcase,
                                       failures, payloadTest=True):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"],
-                        self.project_id, self.cluster_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))

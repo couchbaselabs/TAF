@@ -103,7 +103,13 @@ class CreateCollection(GetScope):
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
                 "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_error": {
+                    "code": 6008,
+                    "hint": "The requested bucket does not exist. Please "
+                            "ensure that the correct bucket ID is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Unable to find the specified bucket."
+                }
             }, {
                 "description": "Create collection but with invalid scopeName",
                 "invalid_scopeName": self.replace_last_character(

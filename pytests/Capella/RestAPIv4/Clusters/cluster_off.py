@@ -89,9 +89,7 @@ class ClusterOff(GetCluster):
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 if result.status_code == 202:
                     time.sleep(5)
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"],
-                        self.project_id, self.cluster_id):
+                if not self.validate_onoff_state(["turningOff", "turnedOff"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -155,9 +153,7 @@ class ClusterOff(GetCluster):
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 if result.status_code == 202:
                     time.sleep(5)
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"],
-                        self.project_id, self.cluster_id):
+                if not self.validate_onoff_state(["turningOff", "turnedOff"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -267,9 +263,7 @@ class ClusterOff(GetCluster):
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 if result.status_code == 202:
                     time.sleep(5)
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"],
-                        self.project_id, self.cluster_id):
+                if not self.validate_onoff_state(["turningOff", "turnedOff"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
