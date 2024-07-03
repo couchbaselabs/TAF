@@ -51,12 +51,12 @@ class AzureAutoExpansion(GetProject):
         }
 
     def tearDown(self):
-        if not self.wait_for_deletion(self.project_id, self.cluster_id):
+        if not self.wait_for_deletion(self.azure_cluster_id):
             self.fail("Cluster could not be destroyed")
         super(AzureAutoExpansion, self).tearDown()
 
     def validate_auto_expansion(self, cluster_id):
-        self.cluster_id = cluster_id
+        self.azure_cluster_id = cluster_id
         self.update_auth_with_api_token(self.org_owner_key["token"])
         res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
             self.organisation_id, self.project_id, cluster_id)
@@ -159,7 +159,8 @@ class AzureAutoExpansion(GetProject):
                                       self.expected_result['cloudProvider'],
                                       self.expected_result['serviceGroups'],
                                       self.expected_result['availability'],
-                                      self.expected_result['support'])
+                                      self.expected_result['support'],
+                                      self.expected_result['couchbaseServer'])
             self.iteration += 1
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
@@ -220,9 +221,10 @@ class AzureAutoExpansion(GetProject):
                                       self.expected_result['cloudProvider'],
                                       self.expected_result['serviceGroups'],
                                       self.expected_result['availability'],
-                                      self.expected_result['support'], header)
+                                      self.expected_result['support'],
+                                      self.expected_result['couchbaseServer'],
+                                      header)
             self.iteration += 1
-
             if self.validate_testcase(result, [202], testcase, failures):
                 if not self.validate_auto_expansion(result.json()["id"]):
                     self.log.warning("Result : {}".format(result.json()))
@@ -310,9 +312,10 @@ class AzureAutoExpansion(GetProject):
                                       self.expected_result['couchbaseServer'],
                                       self.expected_result['serviceGroups'],
                                       self.expected_result['availability'],
-                                      self.expected_result['support'], **kwarg)
+                                      self.expected_result['support'],
+                                      self.expected_result['couchbaseServer'],
+                                      **kwarg)
             self.iteration += 1
-
             if self.validate_testcase(result, [202], testcase, failures):
                 if not self.validate_auto_expansion(result.json()["id"]):
                     self.log.warning("Result : {}".format(result.json()))

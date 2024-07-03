@@ -4,6 +4,7 @@ Created on January 31, 2024
 @author: Vipul Bhardwaj
 """
 
+import time
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
@@ -53,6 +54,23 @@ class GetClusterSchedule(GetCluster):
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
+
+        # Delete the currently created on/off schedule
+        res = self.capellaAPI.cluster_ops_apis.delete_cluster_on_off_schedule(
+            self.organisation_id, self.project_id,
+            self.cluster_id)
+        if res.status_code == 429:
+            self.handle_rate_limit(int(res.headers['Retry-After']))
+            res = self.capellaAPI.cluster_ops_apis.\
+                delete_cluster_on_off_schedule(
+                    self.organisation_id, self.project_id,
+                    self.cluster_id)
+        if res.status_code != 204:
+            self.fail("Error while deleting the currently created Schedule")
+        else:
+            self.log.info("Schedule deleted successfully.")
+            time.sleep(2)
+
         super(GetClusterSchedule, self).tearDown()
 
     def test_api_path(self):

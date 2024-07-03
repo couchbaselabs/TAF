@@ -5,13 +5,13 @@ Created on February 1, 2024
 """
 
 import time
-from pytests.Capella.RestAPIv4.OnOffSchedule.get_cluster_schedule import GetClusterSchedule
+from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 
-class DeleteClusterSchedule(GetClusterSchedule):
+class DeleteClusterSchedule(GetCluster):
 
     def setUp(self, nomenclature="Clusters_Schedule_Delete"):
-        GetClusterSchedule.setUp(self, nomenclature)
+        GetCluster.setUp(self, nomenclature)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])

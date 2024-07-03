@@ -76,27 +76,28 @@ class ToggleAzureAutoExpansion(GetProject):
             self.tearDown()
             self.fail("!!!...Azure cluster creation failed...!!!")
 
-        self.cluster_id = result.json()["id"]
-        if not self.wait_for_deployment(self.project_id, self.cluster_id):
+        self.azure_cluster_id = result.json()["id"]
+        if not self.wait_for_deployment(self.project_id,
+                                        self.azure_cluster_id):
             self.tearDown()
             self.fail("!!!...Azure Cluster deployment failed...!!!")
 
     def tearDown(self):
         self.capellaAPI.cluster_ops_apis.delete_cluster(
-            self.organisation_id, self.project_id, self.cluster_id)
-        if not self.wait_for_deletion(self.project_id, self.cluster_id):
+            self.organisation_id, self.project_id, self.azure_cluster_id)
+        if not self.wait_for_deletion(self.azure_cluster_id):
             self.fail("Cluster could not be destroyed")
         super(ToggleAzureAutoExpansion, self).tearDown()
 
     def validate_auto_expansion(self, cluster_id):
-        self.cluster_id = cluster_id
+        self.azure_cluster_id = cluster_id
         self.update_auth_with_api_token(self.org_owner_key["token"])
         autoExpansion = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
             self.organisation_id, self.project_id, cluster_id
         ).json()["serviceGroups"][0]["node"]["disk"]["autoExpansion"]
 
         # Wait for cluster scaling to finish.
-        if not self.wait_for_deployment(self.project_id, self.cluster_id):
+        if not self.wait_for_deployment(self.project_id, self.azure_cluster_id):
             self.fail("!!!...Cluster Scaling failed...!!!")
 
         # Set the Auto Expansion back to OFF.
@@ -106,7 +107,7 @@ class ToggleAzureAutoExpansion(GetProject):
             self.expected_result["serviceGroups"], False)
 
         # Wait for cluster scaling to finish.
-        if not self.wait_for_deployment(self.project_id, self.cluster_id):
+        if not self.wait_for_deployment(self.project_id, self.azure_cluster_id):
             self.fail("!!!...Cluster Scaling failed...!!!")
 
         if not autoExpansion:
@@ -175,7 +176,7 @@ class ToggleAzureAutoExpansion(GetProject):
                 "description": "Update Azure cluster but with non-hex "
                                "clusterID",
                 "invalid_projectID": self.replace_last_character(
-                    self.cluster_id, non_hex=True),
+                    self.azure_cluster_id, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
@@ -194,7 +195,7 @@ class ToggleAzureAutoExpansion(GetProject):
             self.log.info("Executing test: {}".format(testcase["description"]))
             org = self.organisation_id
             proj = self.project_id
-            clus = self.cluster_id
+            clus = self.azure_cluster_id
 
             if "url" in testcase:
                 self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
@@ -221,7 +222,7 @@ class ToggleAzureAutoExpansion(GetProject):
                 "/v4/organizations/{}/projects/{}/clusters"
 
             if self.validate_testcase(result, [204], testcase, failures):
-                if not self.validate_auto_expansion(self.cluster_id):
+                if not self.validate_auto_expansion(self.azure_cluster_id):
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
@@ -271,20 +272,20 @@ class ToggleAzureAutoExpansion(GetProject):
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.update_cluster(
-                self.organisation_id, self.project_id, self.cluster_id,
+                self.organisation_id, self.project_id, self.azure_cluster_id,
                 self.expected_result["name"], "",
                 self.expected_result['support'], self.update_service_group,
                 False, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_cluster(
-                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.organisation_id, self.project_id, self.azure_cluster_id,
                     self.expected_result["name"], "",
                     self.expected_result['support'],
                     self.update_service_group, False, header)
 
             if self.validate_testcase(result, [204], testcase, failures):
-                if not self.validate_auto_expansion(self.cluster_id):
+                if not self.validate_auto_expansion(self.azure_cluster_id):
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
@@ -305,11 +306,11 @@ class ToggleAzureAutoExpansion(GetProject):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}, "
                        "dummy ClusID: {}"
                        .format(self.organisation_id, self.project_id,
-                               self.cluster_id))
+                               self.azure_cluster_id))
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
-                self.organisation_id, self.project_id, self.cluster_id):
+                self.organisation_id, self.project_id, self.azure_cluster_id):
             testcases += 1
             testcase = {
                 "description": "OrganizationID: {}, ProjectID: {}, ClusterID: "
@@ -321,7 +322,7 @@ class ToggleAzureAutoExpansion(GetProject):
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
-                    combination[2] == self.cluster_id):
+                    combination[2] == self.azure_cluster_id):
                 if combination[1] == "" or combination[0] == "" or \
                         combination[2] == "":
                     testcase["expected_status_code"] = 404
@@ -352,7 +353,7 @@ class ToggleAzureAutoExpansion(GetProject):
                         "httpStatusCode": 403,
                         "message": "Access Denied."
                     }
-                elif combination[2] != self.cluster_id:
+                elif combination[2] != self.azure_cluster_id:
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
                         "code": 4025,
@@ -393,7 +394,7 @@ class ToggleAzureAutoExpansion(GetProject):
                     False, **kwarg)
 
             if self.validate_testcase(result, [204], testcase, failures):
-                if not self.validate_auto_expansion(self.cluster_id):
+                if not self.validate_auto_expansion(self.azure_cluster_id):
                     self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 

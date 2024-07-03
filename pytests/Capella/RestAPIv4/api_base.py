@@ -113,7 +113,9 @@ class APIBase(CouchbaseBaseTest):
                         },
                         "numOfNodes": self.input.param("numOfNodes", 3),
                         "services": [
-                            "data"
+                            "data",
+                            "index",
+                            "query"
                         ]
                     }
                 ],
@@ -150,7 +152,6 @@ class APIBase(CouchbaseBaseTest):
                     self.fail("!!!...Cluster deployment Failed...!!!")
                 else:
                     self.cluster_id = res.json()["id"]
-                    # self.cluster_templates["id"] = self.cluster_id
                     self.log.info("Waiting for cluster {} to be deployed."
                                   .format(self.cluster_id))
                     if not self.wait_for_deployment(
@@ -161,10 +162,8 @@ class APIBase(CouchbaseBaseTest):
                     self.capella["clusters"] = {
                         "cluster_id": self.cluster_id,
                         "vpc_id": None,
-                        "pes_id": None
+                        "app_id": None
                     }
-                    # self.cidr = self.cluster_templates[cluster_template][
-                    #     'cloudProvider']['cidr']
             except (Exception,):
                 self.log.error(res.status_code)
                 self.log.error(res.content)
@@ -518,18 +517,10 @@ class APIBase(CouchbaseBaseTest):
 
     def throttle_test(self, api_func_list, multi_key=False, proj_id=None):
         """
-        param api_func_list: (list(list)) List of lists, where inner
-        list is of format :
+        api_func_list: (list(list)) List of lists, where inner list is of format :
             [api_function_call, function_args]
-
-        param multi_key: a boolean value which is used to get to know
-        whether the test is being run with a single key (which has
-        proper access to the resource),  or multiple keys (which might
-        or might not have access to the resource) being tested via
-        throttling.
-
-        param proj_id: The UUID of the project that will be used in case
-        of multiple keys throttle testing with different roles.
+        multi_key: a boolean value which is used to get to know whether the  test is being run with a single key (which has proper access to the resource),  or multiple keys (which might or might not have access to the resource) being tested via throttling.
+        proj_id: The UUID of the project that will be used in case of multiple keys throttle testing with different roles.
         """
         exclude_codes = self.input.param("exclude_codes", "")
         if exclude_codes:
@@ -874,31 +865,30 @@ class APIBase(CouchbaseBaseTest):
             failures.append(testcase[testDescriptionKey])
         return False
 
-    def validate_onoff_state(self, states, proj, clus=None, inst=None,
-                             app=None, sleep=2):
+    def validate_onoff_state(self, states, inst=None, app=None, sleep=2):
         if sleep:
             time.sleep(sleep)
         if app:
             res = self.capellaAPI.cluster_ops_apis.get_appservice(
-                self.organisation_id, proj, clus, app)
+                self.organisation_id, self.project_id, self.cluster_id, app)
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.capellaAPI.cluster_ops_apis.get_appservice(
-                    self.organisation_id, proj, clus, app)
+                    self.organisation_id, self.project_id, self.cluster_id, app)
         elif inst:
             res = self.columnarAPI.fetch_analytics_cluster_info(
-                self.organisation_id, proj, inst)
+                self.organisation_id, self.project_id, inst)
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.columnarAPI.fetch_analytics_cluster_info(
-                    self.organisation_id, proj, inst)
+                    self.organisation_id, self.project_id, inst)
         else:
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, proj, clus)
+                self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, proj, clus)
+                    self.organisation_id, self.project_id, self.cluster_id)
 
         if res.status_code != 200:
             self.log.error("Could not fetch on/off state info : {}"
@@ -929,8 +919,13 @@ class APIBase(CouchbaseBaseTest):
                             return False
                     continue
                 for i in range(len(actual_res[key])):
-                    if key == "data" and actual_res[key][i]["id"] != id:
-                        continue
+                    if key == "data":
+                        if "id" in actual_res[key][i] and \
+                                actual_res[key][i]["id"] != id:
+                            continue
+                        elif "name" in actual_res[key][i] and \
+                                actual_res[key][i]["name"] != id:
+                            continue
                     if len(expected_res[key]) > 1:
                         j = i
                     if not self.validate_api_response(
