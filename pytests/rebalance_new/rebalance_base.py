@@ -495,12 +495,21 @@ class RebalanceBaseTest(BaseTestCase):
 
     def loadgen_docs(self, retry_exceptions=[], ignore_exceptions=[],
                      task_verification=False):
-        retry_exceptions = \
-            list(set(retry_exceptions +
-                     [SDKException.AmbiguousTimeoutException,
-                      SDKException.RequestCanceledException,
-                      SDKException.DurabilityImpossibleException,
-                      SDKException.DurabilityAmbiguousException]))
+        def flatten_list(input_list):
+            output_list = list()
+            for t_list in input_list:
+                if isinstance(t_list, list):
+                    output_list += flatten_list(t_list)
+                else:
+                    output_list.append(t_list)
+            return output_list
+
+        retry_exceptions += [
+                SDKException.AmbiguousTimeoutException,
+                SDKException.RequestCanceledException,
+                SDKException.DurabilityImpossibleException,
+                SDKException.DurabilityAmbiguousException]
+        retry_exceptions = list(set(flatten_list(retry_exceptions)))
         if self.check_temporary_failure_exception:
             retry_exceptions.append(SDKException.TemporaryFailureException)
         if self.atomicity:
