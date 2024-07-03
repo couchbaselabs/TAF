@@ -8,7 +8,5 @@
 **/logs
 **/settings
 build
-.gradle
 /bin/
-**/.jython_cache
 **/.vscode
