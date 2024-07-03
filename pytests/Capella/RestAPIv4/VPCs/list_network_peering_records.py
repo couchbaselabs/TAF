@@ -4,14 +4,13 @@ Created on June 10, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.VPCs.get_network_peering_records import GetNetworkPeers
-
+from pytests.Capella.RestAPIv4.VPCs.\
+    get_network_peering_records import GetNetworkPeers
 
 class ListNetworkPeers(GetNetworkPeers):
 
     def setUp(self, nomenclature="VPCs_LIST"):
         GetNetworkPeers.setUp(self, nomenclature)
-
         self.expected_res = {
             "cursor": {
                 "hrefs": {
@@ -161,6 +160,7 @@ class ListNetworkPeers(GetNetworkPeers):
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
+            self.log.error(resp.content)
             self.fail("Error while creating project")
 
         testcases = []
@@ -170,8 +170,7 @@ class ListNetworkPeers(GetNetworkPeers):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "projectOwner",
-                 "projectManager"
+                 "organizationOwner", "projectOwner"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
@@ -237,7 +236,7 @@ class ListNetworkPeers(GetNetworkPeers):
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id):
-                if (combination[0] == "" or combination[1] == ""):
+                if combination[0] == "" or combination[1] == "":
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
                 elif combination[2] == "" or any(variable in [

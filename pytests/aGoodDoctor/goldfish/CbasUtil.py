@@ -175,30 +175,36 @@ class DoctorCBAS():
     def wait_for_link_disconnect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
         rest = CBASHelper(cluster.master)
+        client = random.choice(cluster.SDKClients).cluster
         while time.time() < st_time + timeout:
             time.sleep(10)
-            result, code, content, errors = rest.analytics_link_operations(uri="/Default/{}".format(link_name))
-            self.log.info("Link state - %s: %s" %(link_name, content[0]["linkState"]))
-            if content[0]["linkState"] == "DISCONNECTING":
-                continue
-            elif content[0]["linkState"] == "DISCONNECTED":
-                break
+            status, _, _, results, _= execute_statement_on_cbas(client, "SELECT * FROM Metadata.`Link`")
+            if status:
+                for result in results:
+                    if result["Link"]['Name'] == link_name and \
+                        not result["Link"]["IsActive"]:
+                        break
+                    else:
+                        self.log.info("Link state - %s: %s" %(link_name, result["Link"]["IsActive"]))
             else:
-                raise Exception("Link is in bad state: %s" % content[0]["linkState"])
+                raise Exception("SELECT metadata query failed.")
 
     def wait_for_link_connect(self, cluster, link_name, timeout=3600):
         st_time = time.time()
         rest = CBASHelper(cluster.master)
+        client = random.choice(cluster.SDKClients).cluster
         while time.time() < st_time + timeout:
             time.sleep(10)
-            result, code, content, errors = rest.analytics_link_operations(uri="/Default/{}".format(link_name))
-            self.log.info("Link state - %s: %s" %(link_name, content[0]["linkState"]))
-            if content[0]["linkState"] == "CONNECTING":
-                continue
-            elif content[0]["linkState"] == "CONNECTED":
-                break
+            status, _, _, results, _= execute_statement_on_cbas(client, "SELECT * FROM Metadata.`Link`")
+            if status:
+                for result in results:
+                    if result["Link"]['Name'] == link_name and \
+                        result["Link"]["IsActive"]:
+                        break
+                    else:
+                        self.log.info("Link state - %s: %s" %(link_name, result["Link"]["IsActive"]))
             else:
-                raise Exception("Link is in bad state: %s" % content[0]["linkState"])
+                raise Exception("SELECT metadata query failed.")
 
     def discharge_CBAS(self):
         self.stop_run = True

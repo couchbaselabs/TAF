@@ -4,48 +4,20 @@ Created on September 1, 2023
 @author: Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.api_base import APIBase
+from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 import copy
 
 
-class UpdateProject(APIBase):
+class UpdateProject(GetProject):
 
-    def setUp(self):
-        APIBase.setUp(self)
-
-        # Create project.
-        # The project ID will be used to create API keys for roles that
-        # require project ID
-        self.project_name = self.prefix + 'Projects_Update'
+    def setUp(self, nomenclature='Projects_Update'):
+        GetProject.setUp(self)
+        self.project_name = self.prefix + nomenclature
         self.name_iteration = 0
-        self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, self.project_name).json()["id"]
-
-        self.expected_result = {
-            "id": self.project_id,
-            "description": None,
-            "name": self.project_name + str(self.name_iteration),
-            "audit": {
-                "createdBy": None,
-                "createdAt": None,
-                "modifiedBy": None,
-                "modifiedAt": None,
-                "version": None
-            }
-        }
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
-
-        # Delete the project that was created.
-        self.log.info("Deleting Project: {}".format(self.project_id))
-        if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.org_owner_key["token"]):
-            self.log.error("Error while deleting project.")
-        else:
-            self.log.info("Project deleted successfully")
-
         super(UpdateProject, self).tearDown()
 
     def test_api_path(self):
@@ -283,7 +255,7 @@ class UpdateProject(APIBase):
     def test_payload(self):
         testcases = list()
 
-        for key in self.expected_result:
+        for key in self.expected_res:
             if key in ["audit", "id"]:
                 continue
 
@@ -292,7 +264,7 @@ class UpdateProject(APIBase):
                 self.generate_random_string(500, special_characters=False),
             ]
             for value in values:
-                testcase = copy.deepcopy(self.expected_result)
+                testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
                 testcase["desc"] = "Testing '{}' with value: {}".format(
                     key, str(value))
@@ -353,7 +325,8 @@ class UpdateProject(APIBase):
                     self.organisation_id, self.project_id, testcase["name"],
                     testcase["description"], False)
 
-            self.validate_testcase(result, [204], testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures,
+                                   payloadTest=True)
 
         if failures:
             for fail in failures:

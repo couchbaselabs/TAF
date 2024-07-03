@@ -31,13 +31,15 @@ class OpsChangeCasTests(CasBaseTest):
         if self.cluster.sdk_client_pool:
             self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
                 self.bucket)
-            cb_stat.disconnect()
         else:
             self.client = SDKClient(self.cluster, self.bucket)
 
     def tearDown(self):
         # Close SDK client connection
         self.client.close()
+        # Close the cbstat connections
+        for _, data in self.node_data.items():
+            data["cb_stat"].disconnect()
 
         super(OpsChangeCasTests, self).tearDown()
 

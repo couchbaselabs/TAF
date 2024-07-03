@@ -14,7 +14,7 @@ class ListBucket(GetCluster):
 
         self.bucket_name = self.generate_random_string(
             5, False, self.prefix + nomenclature)
-        self.expected_result = {
+        self.expected_res = {
             "data": [
                 {
                     "name": self.bucket_name,
@@ -38,20 +38,20 @@ class ListBucket(GetCluster):
         }
         res = self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_result['data'][0]['name'],
-            self.expected_result['data'][0]['type'],
-            self.expected_result['data'][0]['storageBackend'],
-            self.expected_result['data'][0]['memoryAllocationInMb'],
-            self.expected_result['data'][0]['bucketConflictResolution'],
-            self.expected_result['data'][0]['durabilityLevel'],
-            self.expected_result['data'][0]['replicas'],
-            self.expected_result['data'][0]['flush'],
-            self.expected_result['data'][0]['timeToLiveInSeconds'])
+            self.expected_res['data'][0]['name'],
+            self.expected_res['data'][0]['type'],
+            self.expected_res['data'][0]['storageBackend'],
+            self.expected_res['data'][0]['memoryAllocationInMb'],
+            self.expected_res['data'][0]['bucketConflictResolution'],
+            self.expected_res['data'][0]['durabilityLevel'],
+            self.expected_res['data'][0]['replicas'],
+            self.expected_res['data'][0]['flush'],
+            self.expected_res['data'][0]['timeToLiveInSeconds'])
         if res.status_code != 201:
             self.tearDown()
             self.fail("!!!..Bucket creation failed...!!!")
         self.bucket_id = res.json()['id']
-        self.expected_result['data'][0]['id'] = self.bucket_id
+        self.expected_res['data'][0]['id'] = self.bucket_id
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
@@ -171,7 +171,7 @@ class ListBucket(GetCluster):
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.bucket_id)
+                                   self.expected_res, self.bucket_id)
 
         if failures:
             for fail in failures:
@@ -228,7 +228,7 @@ class ListBucket(GetCluster):
                     header)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.bucket_id)
+                                   self.expected_res, self.bucket_id)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -330,7 +330,7 @@ class ListBucket(GetCluster):
                     testcase["clusterID"], **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.bucket_id)
+                                   self.expected_res, self.bucket_id)
 
         if failures:
             for fail in failures:

@@ -4,36 +4,16 @@ Created on September 1, 2023
 @author: Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.api_base import APIBase
+from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 
-class ListProject(APIBase):
+class ListProject(GetProject):
 
-    def setUp(self):
-        APIBase.setUp(self)
-
-        # Create project.
-        # The project ID will be used to create API keys for roles that
-        # require project ID
-        self.project_name = self.prefix + 'Projects_List'
-        self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, self.project_name,
-            self.generate_random_string(0, self.prefix)).json()["id"]
-
-        self.expected_result = {
+    def setUp(self, nomenclature="Projects_List"):
+        GetProject.setUp(self)
+        self.expected_res = {
             "data": [
-                {
-                    "id": self.project_id,
-                    "description": None,
-                    "name": self.project_name,
-                    "audit": {
-                        "createdBy": None,
-                        "createdAt": None,
-                        "modifiedBy": None,
-                        "modifiedAt": None,
-                        "version": None
-                    }
-                }
+                self.expected_res
             ],
             "cursor": {
                 "pages": {
@@ -56,15 +36,6 @@ class ListProject(APIBase):
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
-
-        # Delete the project that was created.
-        self.log.info("Deleting Project: {}".format(self.project_id))
-        if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.org_owner_key["token"]):
-            self.log.error("Error while deleting project.")
-        else:
-            self.log.info("Project deleted successfully")
-
         super(ListProject, self).tearDown()
 
     def test_api_path(self):
@@ -134,7 +105,7 @@ class ListProject(APIBase):
                 "/v4/organizations/{}/projects"
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.project_id)
+                                   self.expected_res, self.project_id)
 
         if failures:
             for fail in failures:
@@ -182,7 +153,7 @@ class ListProject(APIBase):
                     self.organisation_id, headers=header)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.project_id)
+                                   self.expected_res, self.project_id)
 
         if failures:
             for fail in failures:
@@ -254,7 +225,7 @@ class ListProject(APIBase):
                     testcase["organizationID"], **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.project_id)
+                                   self.expected_res, self.project_id)
 
         if failures:
             for fail in failures:

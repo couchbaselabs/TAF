@@ -55,7 +55,7 @@ class KafkaConnectUtil(object):
 
     def generate_mongo_connector_config(
             self, mongo_connection_str, mongo_collections, topic_prefix,
-            src_connector="debezium"):
+            src_connector="debezium", partitions=None):
         """
         Method to generate mongo connector configurations
         :param mongo_connection_str <str> Connection string to connect to mongo
@@ -71,6 +71,9 @@ class KafkaConnectUtil(object):
         config["topic.prefix"] = topic_prefix
         config["mongodb.connection.string"] = mongo_connection_str
         config["collection.include.list"] = ",".join(mongo_collections)
+        config["tasks.max"] = len(mongo_collections)
+        if partitions:
+            config["topic.creation.default.partitions"] = partitions
         return config
 
     def is_kafka_connect_running(self):
@@ -288,6 +291,7 @@ class KafkaConnectUtil(object):
             self.is_kafka_connect_running()
             response = self.create_connector(
                 connector_name, connector_config)
+            time.sleep(10)
             if not response:
                 self.log.error("Unable to deploy connectors")
                 return False

@@ -8,27 +8,12 @@ from pytests.Capella.RestAPIv4.api_base import APIBase
 
 class GetProject(APIBase):
 
-    def setUp(self, nomenclature="Projects_Get"):
-        APIBase.setUp(self)
-
-        # Create project.
-        # The project ID will be used to create API keys for roles that
-        # require project ID
-        res = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, self.prefix + nomenclature,
-            self.generate_random_string(0, self.prefix))
-        if res.status_code != 201:
-            self.log.error(res.content)
-            self.tearDown()
-            self.fail("!!!..Project creation failed...!!!")
-        else:
-            self.log.info("Project Creation Successful")
-            self.project_id = res.json()["id"]
-
-        self.expected_result = {
+    def setUp(self, nomenclature="Projects_Get", services=[]):
+        APIBase.setUp(self, nomenclature, services)
+        self.expected_res = {
             "id": self.project_id,
             "description": None,
-            "name": self.prefix + nomenclature,
+            "name": self.prefix + "WRAPPER",
             "audit": {
                 "createdBy": None,
                 "createdAt": None,
@@ -41,15 +26,6 @@ class GetProject(APIBase):
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
-
-        # Delete the project that was created.
-        self.log.info("Deleting Project: {}".format(self.project_id))
-        if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.org_owner_key["token"]):
-            self.log.error("Error while deleting project.")
-        else:
-            self.log.info("Project deleted successfully")
-
         super(GetProject, self).tearDown()
 
     def test_api_path(self):
@@ -130,7 +106,7 @@ class GetProject(APIBase):
                 "/v4/organizations/{}/projects"
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.project_id)
+                                   self.expected_res, self.project_id)
 
         if failures:
             for fail in failures:
@@ -188,7 +164,7 @@ class GetProject(APIBase):
                     self.organisation_id, self.project_id, header)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.project_id)
+                                   self.expected_res, self.project_id)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -271,7 +247,7 @@ class GetProject(APIBase):
                     testcase["organizationID"], testcase["projectID"], **kwarg)
 
             self.validate_testcase(result, [200], testcase, failures, True,
-                                   self.expected_result, self.project_id)
+                                   self.expected_res, self.project_id)
 
         if failures:
             for fail in failures:

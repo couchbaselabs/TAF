@@ -3,6 +3,7 @@ Created on Nov 3, 2023
 
 @author: ritesh.agarwal
 """
+import json
 import pprint
 import random
 import string
@@ -12,17 +13,21 @@ from CbasLib.CBASOperations import CBASHelper
 from CbasUtil import execute_statement_on_cbas
 from py_constants.cb_constants.CBServer import CbServer
 from global_vars import logger
+from kafka_util.kafka_connect_util import KafkaConnectUtil
+from TestInput import TestInputSingleton
 
+_input = TestInputSingleton
 
 class MongoDB(object):
-    def __init__(self, hostname, username, password, atlas=False):
+    def __init__(self, hostname, username, password, mongo_db=None, atlas=False):
+        self.log = logger.get("infra")
         self.hostname = hostname
         self.username = username
         self.password = password
         self.port = 27017
         self.atlas = atlas
         self.connString = "mongodb"
-        self.source_name = "Mongo_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+        self.source_name = mongo_db or "Mongo_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
         self.name = self.source_name
         self.type = "onPrem"
         self.collections = list()
@@ -40,21 +45,63 @@ class MongoDB(object):
             + self.username + ":" + self.password \
             + "@" + self.hostname + ":27017/"
 
-    def set_mongo_database(self, name):
-        self.database = name
-
     def set_collections(self):
+        master = Server(self.hostname, self.port,
+                            self.username, self.password,
+                            "")
         for i in range(self.loadDefn.get("collections")):
             self.collections.append("volCollection" + str(i))
+            client = MongoSDKClient(master, self.name, "volCollection" + str(i), self.atlas)
+            client.connectCluster()
+            client.disconnectCluster()
+            time.sleep(2)
+
+    def drop(self):
+        master = Server(self.hostname, self.port,
+                            self.username, self.password,
+                            "")
+        client = MongoSDKClient(master, self.name, self.collections[0], self.atlas)
+        client.connectCluster()
+        client.dropDatabase()
+        client.disconnectCluster()
+
+    def setup_kafka_connectors(self, prefix):
+        self.prefix = prefix
+        connector_util = KafkaConnectUtil("http://{}:8083".format(_input.kafka.get("connector")))
+        config = connector_util.generate_mongo_connector_config(
+            "mongodb://{0}:{1}@{2}:{3}/?retryWrites=true&w=majority&replicaSet=rs0".format(
+                self.username, self.password, self.hostname, self.port),
+            mongo_collections=[self.source_name + "." + coll_name for coll_name in self.collections],
+            topic_prefix=prefix,
+            partitions=32)
+        self.kafka_topics = [prefix + "." + self.source_name + "." + coll_name for coll_name in self.collections]
+        status = connector_util.deploy_connector(self.source_name, config)
+        if status:
+            self.log.info("connectors are deployed properly!! Check for the topics")
 
     def create_link(self, cluster):
-        client = cluster.SDKClients[0].cluster
-        link_cmd = 'CREATE LINK Default.' + self.link_name + " TYPE KAFKA WITH { 'sourceDetails': {'source': 'MONGODB', 'connectionFields':{ 'connectionUri': '" + self.connString + '\' }}};'
-        execute_statement_on_cbas(client, link_cmd)
-        try:
-            execute_statement_on_cbas(client, link_cmd)
-        except LinkExistsException:
-            pass
+        rest = CBASHelper(cluster.master)
+        kafka_details = {
+            "dataverse": "Default",
+            "name": self.link_name,
+            "type": "kafka",
+            "kafkaClusterDetails": json.dumps({
+                "vendor":"CONFLUENT",
+                "brokersUrl": "{}:9092".format(_input.kafka.get("cluster_url")),
+                "authenticationDetails":{
+                    "authenticationType":"PLAIN",
+                    "encryptionType":"TLS",
+                    "credentials":{
+                        "apiKey":_input.kafka.get("cluster_username"),
+                        "apiSecret":_input.kafka.get("cluster_password")
+                        }
+                    }
+                })
+            }
+
+        result, status, content, errors = rest.analytics_link_operations(method="POST", params=kafka_details)
+        if not result:
+            raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
 
     def create_cbas_collections(self, cluster, num_collections=None):
         client = cluster.SDKClients[0].cluster
@@ -63,10 +110,22 @@ class MongoDB(object):
         while i < num_collections:
             mongo_collection = self.collections[i%len(self.collections)]
             cbas_coll_name = self.link_name + "_volCollection_" + str(i)
+            cbas_coll_name = cbas_coll_name + "_" + "".join([random.choice(string.ascii_lowercase) for _ in range(5)])
             self.cbas_collections.append(cbas_coll_name)
             i += 1
             statement = "CREATE COLLECTION `{}` PRIMARY KEY (`_id`: string) ON {}.{} AT {};".format(
                                     cbas_coll_name, self.source_name, mongo_collection, self.link_name)
+            extra = {
+                "kafka-sink": "true",
+                "keySerializationType": "JSON",
+                "valueSerializationType": "JSON",
+                "cdcEnabled": "true",
+                "cdcDetails": {"cdcSource": "MONGODB", "cdcSourceConnector": "DEBEZIUM"}
+                }
+            self.log.info("creating kafka collections on couchbase: %s" % cbas_coll_name)
+            statement = 'CREATE COLLECTION `Default`.`Default`.`{0}` PRIMARY KEY (_id: string) \
+                        ON `{1}.{2}.{3}` AT `{4}` WITH {5}'.format(
+                                    cbas_coll_name, self.prefix, self.source_name, mongo_collection, self.link_name, json.dumps(extra))
             execute_statement_on_cbas(client, statement)
 
     @staticmethod
@@ -133,23 +192,24 @@ class CouchbaseRemoteCluster(object):
         i = 0
         client = columnar.SDKClients[0].cluster
         self.cbas_collections = list()
-        for b in self.remoteCluster.buckets:
-            for s in self.bucket_util.get_active_scopes(b, only_names=True):
-                if s == CbServer.system_scope:
-                    continue
-                for _, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
-                    if c == CbServer.default_collection:
+        while i < remote_collections:
+            for b in self.remoteCluster.buckets:
+                for s in self.bucket_util.get_active_scopes(b, only_names=True):
+                    if s == CbServer.system_scope:
                         continue
-                    cbas_coll_name = self.link_name + "_volCollection_" + str(i)
-                    cbas_coll_name = cbas_coll_name + "_" + "".join([random.choice(string.ascii_lowercase) for _ in range(5)])
-                    self.log.info("creating remote collections on couchbase: %s" % cbas_coll_name)
-                    statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'\
-                        .format(cbas_coll_name, b.name, s, c, self.link_name)
-                    self.cbas_collections.append(cbas_coll_name)
-                    execute_statement_on_cbas(client, statement)
-                    i += 1
-                    if remote_collections and i == remote_collections:
-                        return
+                    for _, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
+                        if c == CbServer.default_collection:
+                            continue
+                        cbas_coll_name = self.link_name + "_volCollection_" + str(i)
+                        cbas_coll_name = cbas_coll_name + "_" + "".join([random.choice(string.ascii_lowercase) for _ in range(5)])
+                        self.log.info("creating remote collections on couchbase: %s" % cbas_coll_name)
+                        statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'.format(
+                                                cbas_coll_name, b.name, s, c, self.link_name)
+                        self.cbas_collections.append(cbas_coll_name)
+                        execute_statement_on_cbas(client, statement)
+                        i += 1
+                        if remote_collections and i == remote_collections:
+                            return
 
 
 class s3(object):
@@ -268,3 +328,39 @@ class Loader():
                 dg = DocumentGenerator(ws, database.key_type, valType)
                 loader_map.update({database.name+collection: dg})
         return loader_map
+
+
+class KafkaClusterUtils():
+    
+    def __init__(self):
+        username = _input.kafka.get("cluster_username");
+        password = _input.kafka.get("cluster_password");
+        
+        jaasTemplate = "org.apache.kafka.common.security.plain.PlainLoginModule required username=\"%s\" password=\"%s\";";
+        jaasCfg = String.format(jaasTemplate, username, password);
+
+        props = Properties()
+        props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, "{}:9092".format(_input.kafka.get("cluster_url")));
+        props.put("session.timeout.ms", "30000");
+        props.put("security.protocol", "SASL_SSL");
+        props.put("sasl.mechanism", "PLAIN");
+        props.put("sasl.jaas.config", jaasCfg);
+
+        self.kafkaAdminClient = AdminClient.create(props);
+
+    def deleteKafkaTopics(self, topics):
+        deleteTopicsResult = self.kafkaAdminClient.deleteTopics(topics)
+        while not deleteTopicsResult.all().isDone():
+            for topic in topics:
+                print "still deleting: %s" % self.listKafkaTopics(topic) 
+            time.sleep(5)
+
+    def listKafkaTopics(self, prefix=None):
+        topicsList = self.kafkaAdminClient.listTopics();
+        topics = list()
+        for topic in topicsList.listings().get(): 
+            topics.append(topic.name())
+        # self.log.info("Current kafta topics present: %s" % topics)
+        if prefix:
+            return [topic for topic in topics if topic.find(prefix) != -1]
+        return topics

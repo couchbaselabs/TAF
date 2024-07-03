@@ -281,7 +281,7 @@ class ClusterOn(GetCluster):
         for val in [True, 100, None, "abc", 1.2, [True], -1]:
             testcases += 1
             testcase = {
-                "description": "Testing payload with value `{}` of {}"
+                "desc": "Testing payload with value `{}` of {}"
                 .format(val, type(val))
             }
             if type(val) is not bool:
@@ -302,7 +302,8 @@ class ClusterOn(GetCluster):
                 result = self.capellaAPI.cluster_ops_apis.switch_cluster_on(
                     self.organisation_id, self.project_id, self.cluster_id, val)
 
-            if self.validate_testcase(result, [409, 202], testcase, failures):
+            if self.validate_testcase(result, [409, 202], testcase,
+                                      failures, payloadTest=True):
                 if not self.validate_onoff_state(
                         ["turningOn", "healthy"],
                         self.project_id, self.cluster_id):

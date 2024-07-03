@@ -67,6 +67,9 @@ dependencies {
     // https://mvnrepository.com/artifact/ai.djl.pytorch/pytorch-model-zoo
     compile group: 'ai.djl.pytorch', name: 'pytorch-model-zoo', version: '0.25.0'
     
+    // https://mvnrepository.com/artifact/org.apache.kafka/kafka-clients
+	compile group: 'org.apache.kafka', name: 'kafka-clients', version: '3.7.0'
+
 }
 
 task copyDeps(type: Copy) {
