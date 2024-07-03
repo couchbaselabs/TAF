@@ -6,6 +6,7 @@ import random
 # from datetime import datetime
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
+from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs
 from TestInput import TestInputSingleton
 # from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from pytests.cb_basetest import CouchbaseBaseTest
@@ -29,6 +30,7 @@ class SecurityBase(CouchbaseBaseTest):
         self.count = 0
         self.server_version = self.input.capella.get("server_version", "7.2")
         self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
+        self.columnarAPI = ColumnarAPIs("https://" + self.url, "", "", "")
         self.create_initial_v4_api_keys()
         self.create_different_organization_roles()
         self.create_api_keys_for_different_roles()
@@ -40,6 +42,11 @@ class SecurityBase(CouchbaseBaseTest):
         if self.cluster_id is None:
             self.create_cluster(self.prefix + "Cluster", self.server_version)
 
+
+        self.instance_id = self.input.capella.get("instance_id", None)
+        if self.instance_id is None:
+            self.create_columnar_cluster(self.prefix + "Columnar-Cluster")
+
         self.log.info("-------Setup finished for CouchbaseBaseTest-------")
 
     def tearDown(self):
@@ -47,6 +54,9 @@ class SecurityBase(CouchbaseBaseTest):
 
         if self.input.capella.get("cluster_id") is None:
             self.delete_cluster()
+
+        if self.input.capella.get("instance_id") is None:
+            self.delete_columnar_cluster()
 
         if self.input.capella.get("project_id") is None:
             self.delete_project()
@@ -106,6 +116,32 @@ class SecurityBase(CouchbaseBaseTest):
                 resp.content))
         else:
             self.log.info("Project Deleted Successfully")
+
+    def create_columnar_cluster(self, cluster_name, timeout=1800):
+        num_columnar_clusters = TestInputSingleton.input.param("num_columnar_clusters", 0)
+        for _ in range(0, num_columnar_clusters):
+            resp = self.columnarAPI.create_analytics_cluster(
+                    self.tenant_id, self.project_id, cluster_name, "aws",
+                    {"cpu": 4, "ram": 16}, "us-east-1", 1,
+                    {"plan": "enterprise", "timezone": "ET"}, {"type": "single"})
+            if resp.status_code == 202:
+                self.instance_id = resp.json()["id"]
+
+            start_time = time.time()
+            while time.time() < start_time + timeout:
+                resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
+                                                                     self.project_id,
+                                                                     self.instance_id)
+                state = resp.json()['currentState']
+                if state == "deploying":
+                    self.sleep(10, "Columnar cluster deploying")
+                else:
+                    break
+            if state == "healthy":
+                self.log.info("Columnar cluster {} deployed".format(cluster_name))
+            else:
+                self.fail("Failed to deploy columnar instance {} even after {} seconds." \
+                          " Cluster State: {}".format(cluster_name, timeout, state))
 
     def create_cluster(self, cluster_name, server_version, provider="AWS"):
         num_clusters = TestInputSingleton.input.param("num_clusters", 1)
@@ -194,6 +230,37 @@ class SecurityBase(CouchbaseBaseTest):
                 self.fail("Cluster Deletion failed in SecurityBase TearDown")
 
             self.log.info("Cluster Deletion Successful")
+
+    def delete_columnar_cluster(self, timeout=1800):
+        if self.instance_id is None:
+            self.log.info("No columnar clusters to delete")
+            return
+
+        self.log.info("Deleting columnar cluster with id: {}".format(self.instance_id))
+        resp = self.columnarAPI.delete_analytics_cluster(self.tenant_id,
+                                                         self.project_id,
+                                                         self.instance_id)
+        if resp.status_code != 202:
+            self.fail("Failed to delete columnar cluster, " \
+                      "Status: {}, Error: {}".format(resp.status_code, resp.content))
+        else:
+            self.log.info("Wait for columnar cluster to be deleted")
+            start_time = time.time()
+            while time.time() < start_time + timeout:
+                resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
+                                                                     self.project_id,
+                                                                     self.instance_id)
+                if resp.status_code == 404:
+                    break
+                else:
+                    self.sleep(10, "Wait for columnar cluster to be deleted")
+
+            resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
+                                                                     self.project_id,
+                                                                     self.instance_id)
+            if resp.status_code != 404:
+                self.fail("Failed to delete columnar cluster even after timeout: {}".
+                          format(timeout))
 
     @staticmethod
     def get_next_cidr():
@@ -422,12 +489,20 @@ class SecurityBase(CouchbaseBaseTest):
         self.capellaAPI.org_ops_apis.ACCESS = resp['id']
         self.capellaAPI.org_ops_apis.bearer_token = resp['token']
 
+        self.columnarAPI.SECRET = resp['secretKey']
+        self.columnarAPI.ACCESS = resp['id']
+        self.columnarAPI.bearer_token = resp['token']
+
         self.capellaAPI.cluster_ops_apis.SECRETINI = resp['secretKey']
         self.capellaAPI.cluster_ops_apis.ACCESSINI = resp['id']
         self.capellaAPI.cluster_ops_apis.TOKENINI = resp['token']
         self.capellaAPI.org_ops_apis.SECRETINI = resp['secretKey']
         self.capellaAPI.org_ops_apis.ACCESSINI = resp['id']
         self.capellaAPI.org_ops_apis.TOKENINI = resp['token']
+
+        self.columnarAPI.SECRETINI = resp['secretKey']
+        self.columnarAPI.ACCESSINI = resp['id']
+        self.columnarAPI.TOKENINI = resp['token']
 
     def create_api_keys_for_different_roles(self):
         self.api_keys = []
@@ -470,6 +545,10 @@ class SecurityBase(CouchbaseBaseTest):
         self.capellaAPI.org_ops_apis.SECRET = self.capellaAPI.org_ops_apis.SECRETINI
         self.capellaAPI.org_ops_apis.ACCESS = self.capellaAPI.org_ops_apis.ACCESSINI
         self.capellaAPI.org_ops_apis.bearer_token = self.capellaAPI.org_ops_apis.TOKENINI
+
+        self.columnarAPI.SECRET = self.columnarAPI.SECRETINI
+        self.columnarAPI.ACCESS = self.columnarAPI.ACCESSINI
+        self.columnarAPI.bearer_token = self.columnarAPI.TOKENINI
 
     def create_different_organization_roles(self):
         self.log.info("Creating Different Organization Roles")
