@@ -90,7 +90,7 @@ class UpdateBucket(GetBucket):
                 "description": "Update bucket but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 404,
+                "expected_status_code": 400,
                 "expected_error": {
                     "code": 400,
                     "hint": "Please review your request and ensure that all "
@@ -123,17 +123,17 @@ class UpdateBucket(GetBucket):
             self.log.info("Updating bucket.")
             result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                 org, proj, clus, buck,
-                self.expected_result['memoryAllocationInMb'],
-                self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'], True, 10,
+                self.expected_res['memoryAllocationInMb'],
+                self.expected_res['durabilityLevel'],
+                self.expected_res['replicas'], True, 10,
                 False, self.priority % 1001)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                     org, proj, clus, buck,
-                    self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'], True, 10,
+                    self.expected_res['memoryAllocationInMb'],
+                    self.expected_res['durabilityLevel'],
+                    self.expected_res['replicas'], True, 10,
                     False, self.priority % 1001)
 
             self.priority += 1
@@ -209,18 +209,18 @@ class UpdateBucket(GetBucket):
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id, self.expected_result['memoryAllocationInMb'],
-                self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'], True, 10,
+                self.bucket_id, self.expected_res['memoryAllocationInMb'],
+                self.expected_res['durabilityLevel'],
+                self.expected_res['replicas'], True, 10,
                 False, self.priority % 1001, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.bucket_id,
-                    self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'], True, 10,
+                    self.expected_res['memoryAllocationInMb'],
+                    self.expected_res['durabilityLevel'],
+                    self.expected_res['replicas'], True, 10,
                     False, self.priority % 1001, header)
 
             self.priority += 1
@@ -374,18 +374,18 @@ class UpdateBucket(GetBucket):
             result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"], testcase['bucketID'],
-                self.expected_result['memoryAllocationInMb'],
-                self.expected_result['durabilityLevel'],
-                self.expected_result['replicas'], True, 10,
+                self.expected_res['memoryAllocationInMb'],
+                self.expected_res['durabilityLevel'],
+                self.expected_res['replicas'], True, 10,
                 False, self.priority % 1001, **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.update_bucket_config(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"], testcase['bucketID'],
-                    self.expected_result['memoryAllocationInMb'],
-                    self.expected_result['durabilityLevel'],
-                    self.expected_result['replicas'], True, 10,
+                    self.expected_res['memoryAllocationInMb'],
+                    self.expected_res['durabilityLevel'],
+                    self.expected_res['replicas'], True, 10,
                     False, self.priority % 1001, **kwarg)
 
             self.priority += 1
@@ -400,7 +400,7 @@ class UpdateBucket(GetBucket):
     def test_payload(self):
         testcases = list()
 
-        for key in self.expected_result:
+        for key in self.expected_res:
             if key in ["name", "stats", "evictionPolicy", "type",
                        "storageBackend", "bucketConflictResolution"]:
                 continue
@@ -410,7 +410,7 @@ class UpdateBucket(GetBucket):
                 self.generate_random_string(500, special_characters=False),
             ]
             for value in values:
-                testcase = copy.deepcopy(self.expected_result)
+                testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
                 for param in ["name", "stats", "evictionPolicy", "type",
                               "storageBackend", "bucketConflictResolution"]:
@@ -457,7 +457,7 @@ class UpdateBucket(GetBucket):
                                 "'majorityAndPersistActive'. Please choose a "
                                 "valid durability level for the bucket.",
                         "httpStatusCode": 422,
-                        "message": "The durability level {} provided is not "
+                        "message": "The durability level '{}' provided is not "
                                    "supported. The supported level are 'none',"
                                    " 'majority', 'persistToMajority', and "
                                    "'majorityAndPersistActive'.".format(value)
@@ -550,8 +550,7 @@ class UpdateBucket(GetBucket):
                     self.organisation_id, self.project_id,
                     self.cluster_id)
                 if res.status_code == 429:
-                    self.handle_rate_limit(
-                        int(res.headers["Retry-After"]))
+                    self.handle_rate_limit(int(res.headers["Retry-After"]))
                     res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                         self.organisation_id, self.project_id,
                         self.cluster_id)
@@ -585,9 +584,9 @@ class UpdateBucket(GetBucket):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.update_bucket_config,
             (self.organisation_id, self.project_id, self.cluster_id,
-             self.bucket_id, self.expected_result['memoryAllocationInMb'],
-             self.expected_result['durabilityLevel'],
-             self.expected_result['replicas'], True, 10, False, self.priority)
+             self.bucket_id, self.expected_res['memoryAllocationInMb'],
+             self.expected_res['durabilityLevel'],
+             self.expected_res['replicas'], True, 10, False, self.priority)
         ]]
         self.throttle_test(api_func_list)
 
@@ -595,8 +594,8 @@ class UpdateBucket(GetBucket):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.update_bucket_config,
             (self.organisation_id, self.project_id, self.cluster_id,
-             self.bucket_id, self.expected_result['memoryAllocationInMb'],
-             self.expected_result['durabilityLevel'],
-             self.expected_result['replicas'], True, 10, False, self.priority)
+             self.bucket_id, self.expected_res['memoryAllocationInMb'],
+             self.expected_res['durabilityLevel'],
+             self.expected_res['replicas'], True, 10, False, self.priority)
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

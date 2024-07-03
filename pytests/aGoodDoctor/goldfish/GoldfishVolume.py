@@ -7,18 +7,11 @@ import threading
 import time
 
 from CbasUtil import DoctorCBAS, CBASQueryLoad
-from basetestcase import BaseTestCase
-from table_view import TableView
-from datasources import MongoDB
-from _collections import defaultdict
-from datasources import s3, CouchbaseRemoteCluster
-from capella_utils.dedicated import CapellaUtils
 from Jython_tasks.task import ScaleColumnarInstance
 from aGoodDoctor.hostedOPD import hostedOPD
-from membase.api.rest_client import RestConnection
-import random
-import string
-from BucketLib.bucket import Bucket
+from basetestcase import BaseTestCase
+from capella_utils.dedicated import CapellaUtils
+from datasources import s3, CouchbaseRemoteCluster, KafkaClusterUtils, MongoDB
 
 
 class Columnar(BaseTestCase, hostedOPD):
@@ -76,7 +69,7 @@ class Columnar(BaseTestCase, hostedOPD):
             "pattern": [0, 0, 100, 0, 0], # CRUDE
             "load_type": ["update"],
             "cbasQPS": self.input.param("cbasQPS", 1),
-            "cbas": [10, 10]
+            "cbas": [self.input.param("cbas_collections", 10), 10]
             }
         self.load_defn.append(self.default_workload)
 
@@ -86,6 +79,7 @@ class Columnar(BaseTestCase, hostedOPD):
         self.ftsQL = list()
         self.cbasQL = list()
         self.drCBAS = DoctorCBAS()
+        self.mongo_workload_tasks = list()
 
     def setupRemoteCouchbase(self):
         for tenant in self.tenants:
@@ -117,13 +111,16 @@ class Columnar(BaseTestCase, hostedOPD):
             mongo_password = self.input.datasources.get("atlas_mongo_pwd")
             mongo_atlas = True
 
+        self.mongo_db = self.input.param("mongo_db", None)
         mongo = MongoDB(mongo_hostname, mongo_username,
-                        mongo_password, mongo_atlas)
+                        mongo_password, self.mongo_db, mongo_atlas)
         mongo.loadDefn = self.default_workload
         mongo.set_collections()
         mongo.key = "test_docs-"
         mongo.key_size = 18
         mongo.key_type = "Circular"
+        
+        mongo.setup_kafka_connectors("taf_volume")
         self.data_sources["mongo"].append(mongo)
 
     def load_mongo_cluster(self):
@@ -137,12 +134,29 @@ class Columnar(BaseTestCase, hostedOPD):
                                overRidePattern=[100, 0, 0, 0, 0],
                                tm=self.doc_loading_tm)
 
+    def check_kafka_topics(self, mongo):
+        start_time = time.time()
+        self.kafka_util = KafkaClusterUtils()
+        while time.time() < start_time + 3600:
+            topics = self.kafka_util.listKafkaTopics(prefix=mongo.prefix + "." + mongo.source_name)
+            if topics and len(topics) == len(mongo.collections):
+                self.log.info("Kafka topics created: %s" % topics)
+                self.log.info("Kafka topics are created. Good to go!!")
+                break
+            else:
+                self.log.info("Kafka topics aren't created. waiting...")
+                self.log.debug("Current Topics: %s" % self.kafka_util.listKafkaTopics(
+                    prefix=mongo.prefix + "." + mongo.source_name))
+                time.sleep(10)
+
     def teardownMongo(self):
-        for database in self.data_sources["mongo"]:
-            for task in database.tasks:
-                task.sdk.dropDatabase()
-                task.sdk.disconnectCluster()
-                return
+        for dataSource in self.data_sources["mongo"]:
+            dataSource.drop()
+
+    def tearDownKafka(self):
+        self.kafka_util = KafkaClusterUtils()
+        for dataSource in self.data_sources["mongo"]:
+            self.kafka_util.deleteKafkaTopics(dataSource.kafka_topics)
 
     def setup_columnar_sdk_clients(self, columnar):
         columnar.SDKClients = list()
@@ -157,20 +171,23 @@ class Columnar(BaseTestCase, hostedOPD):
         self.initial_load()
 
     def tearDown(self):
+        self.doc_loading_tm.abortAllTasks()
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
-                for data_source in self.data_sources["mongo"]:
+                for data_source in self.data_sources["mongo"] + self.data_sources["remoteCouchbase"]:
                     self.drCBAS.disconnect_link(cluster, data_source.link_name)
-        for tenant in self.tenants:
-            for cluster in tenant.columnar_instances:
-                for data_source in self.data_sources["mongo"]:
-                    self.drCBAS.wait_for_link_disconnect(cluster, data_source.link_name, 3600)
+        # for tenant in self.tenants:
+        #     for cluster in tenant.columnar_instances:
+        #         for data_source in self.data_sources["mongo"]:
+        #             self.drCBAS.wait_for_link_disconnect(cluster, data_source.link_name, 3600)
 
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
-                self.drCBAS.drop_collections(cluster, self.data_sources["mongo"])
-                self.drCBAS.drop_links(cluster, self.data_sources["mongo"])
+                self.drCBAS.drop_collections(cluster, self.data_sources["mongo"] + self.data_sources["remoteCouchbase"])
+                self.drCBAS.drop_links(cluster, self.data_sources["mongo"] + self.data_sources["remoteCouchbase"])
 
+        self.tearDownKafka()
+        self.teardownMongo()
         self.check_dump_thread = False
         self.stop_crash = True
         self.stop_run = True
@@ -192,8 +209,11 @@ class Columnar(BaseTestCase, hostedOPD):
         if self.input.param("remoteCouchbase", False):
             self.setupRemoteCouchbase()
 
-        self.load_remote_couchbase_clusters()
-        self.load_mongo_cluster()
+
+        if not self.skip_init:
+            self.load_mongo_cluster()
+        for dataSource in self.data_sources["mongo"]:
+            self.check_kafka_topics(dataSource)
 
         for tenant in self.tenants:
             for columnar in tenant.columnar_instances:
@@ -201,11 +221,7 @@ class Columnar(BaseTestCase, hostedOPD):
                 for datasources in self.data_sources.values():
                     self.drCBAS.create_links(columnar, datasources)
 
-        for tenant in self.tenants:
-            for cluster in tenant.columnar_instances:
-                for data_source in self.data_sources["mongo"]:
-                    self.drCBAS.wait_for_link_connect(cluster, data_source.link_name, 3600)
-
+        self.load_remote_couchbase_clusters()
 
         for tenant in self.tenants:
             for cluster in tenant.columnar_instances:
@@ -226,6 +242,11 @@ class Columnar(BaseTestCase, hostedOPD):
                             self.cbasQL.append(ql)
 
     def test_rebalance(self):
+        for tenant in self.tenants:
+            for cluster in tenant.columnar_instances:
+                cpu_monitor = threading.Thread(target=self.print_cluster_cpu_ram,
+                                               kwargs={"cluster": cluster})
+                cpu_monitor.start()
         self.infra_setup()
         self.sleep(0)
         self.mutate = 0
@@ -237,16 +258,15 @@ class Columnar(BaseTestCase, hostedOPD):
         # start KV workload on Mongo clusters
         for dataSource in self.data_sources["mongo"]:
             self.generate_docs(bucket=dataSource)
-            self.workload_tasks.append(dataSource.perform_load(
+            self.mongo_workload_tasks.extend(dataSource.perform_load(
                 [dataSource], wait_for_load=False, tm=self.doc_loading_tm))
 
         while loop > 0:
-            self.workload_tasks = list()
-            self.ingestion_ths = list()
             loop -= 1
+            self.ingestion_ths = list()
 
-            # Create new remote collections
-            for dataSource in self.data_sources["remoteCouchbase"]:
+            # Create new collections
+            for dataSource in self.data_sources["remoteCouchbase"] + self.data_sources["mongo"]:
                 for tenant in self.tenants:
                     for columnar in tenant.columnar_instances:
                         dataSource.create_cbas_collections(columnar, dataSource.loadDefn.get("cbas")[0])
@@ -255,7 +275,7 @@ class Columnar(BaseTestCase, hostedOPD):
                             args=(columnar, [dataSource], self.index_timeout))
                         th.start()
                         self.ingestion_ths.append(th)
-    
+
             iterations = self.input.param("iterations", 1)
             nodes = self.num_nodes_in_columnar_instance
             for i in range(0, iterations):
@@ -264,12 +284,7 @@ class Columnar(BaseTestCase, hostedOPD):
                 nodes = nodes*2
                 for tenant in self.tenants:
                     for cluster in tenant.columnar_instances:
-                        servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
-                        tbl = TableView(self.log.info)
-                        tbl.set_headers(["Hostname", "Services"])
-                        for server in servers:
-                            tbl.add_row([server.get("hostname"), server.get("services")])
-                        tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.instance_id, cluster.cluster_id))
+                        self.cluster_util.print_cluster_stats(cluster)
                         _task = ScaleColumnarInstance(self.pod, tenant, cluster,
                                                       nodes,
                                                       timeout=self.wait_timeout)
@@ -286,12 +301,7 @@ class Columnar(BaseTestCase, hostedOPD):
                 nodes = nodes/2
                 for tenant in self.tenants:
                     for cluster in tenant.columnar_instances:
-                        servers = CapellaUtils.get_nodes(self.pod, tenant, cluster.cluster_id)
-                        tbl = TableView(self.log.info)
-                        tbl.set_headers(["Hostname", "Services"])
-                        for server in servers:
-                            tbl.add_row([server.get("hostname"), server.get("services")])
-                        tbl.display("Nodes in instance/cluster: {}/{}".format(cluster.instance_id, cluster.cluster_id))
+                        self.cluster_util.print_cluster_stats(cluster)
                         _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
                         self.task_manager.add_new_task(_task)
                         tasks.append(_task)
@@ -303,11 +313,8 @@ class Columnar(BaseTestCase, hostedOPD):
             for th in self.ingestion_ths:
                 th.join()
 
-        for tenant in self.tenants:
-            for cluster in tenant.columnar_instances:
-                for ql in self.cbasQL:
-                    ql.stop_query_load()
+        for ql in self.cbasQL:
+            ql.stop_query_load()
 
-        self.teardownMongo()
         self.sleep(10, "Wait for 10s until all the query workload stops.")
         self.assertTrue(self.query_result, "Please check the logs for query failures")

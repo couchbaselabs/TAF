@@ -5,33 +5,17 @@ Created on September 4, 2023
 """
 
 import copy
-from pytests.Capella.RestAPIv4.api_base import APIBase
+from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 
-class CreateProject(APIBase):
+class CreateProject(GetProject):
 
-    def setUp(self):
-        APIBase.setUp(self)
-
-        # Create project.
-        # The project ID will be used to create API keys for roles that
-        # require project ID
-        self.project_name = self.prefix + 'Projects_Create'
-        self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, self.project_name,
-            self.generate_random_string(0, self.prefix)).json()["id"]
+    def setUp(self, nomenclature="Project_Create"):
+        GetProject.setUp(self)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.delete_api_keys(self.api_keys)
-
-        # Delete the project that was created in setUp.
-        if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.org_owner_key["token"]):
-            self.log.error("Error while deleting project.")
-        else:
-            self.log.info("Project deleted successfully")
-
         super(CreateProject, self).tearDown()
 
     def test_api_path(self):
@@ -85,11 +69,11 @@ class CreateProject(APIBase):
                 org = testcase["invalid_organizationID"]
 
             result = self.capellaAPI.org_ops_apis.create_project(
-                org, self.project_name)
+                org, self.prefix + "CREATE")
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_project(
-                    org, self.project_name)
+                    org, self.prefix + "CREATE")
 
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
@@ -144,11 +128,13 @@ class CreateProject(APIBase):
             header = dict()
             self.auth_test_setup(testcase, failures, header, self.project_id)
             result = self.capellaAPI.org_ops_apis.create_project(
-                self.organisation_id, self.project_name, headers=header)
+                self.organisation_id, self.prefix + "CREATE",
+                headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_project(
-                    self.organisation_id, self.project_name, headers=header)
+                    self.organisation_id, self.prefix + "CREATE",
+                    headers=header)
 
             if self.validate_testcase(result, [201], testcase, failures):
                 project_id = result.json()["id"]
@@ -229,11 +215,13 @@ class CreateProject(APIBase):
                 kwarg = dict()
 
             result = self.capellaAPI.org_ops_apis.create_project(
-                testcase["organizationID"], self.project_name, **kwarg)
+                testcase["organizationID"], self.prefix + "CREATE",
+                **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_project(
-                    testcase["organizationID"], self.project_name, **kwarg)
+                    testcase["organizationID"], self.prefix + "CREATE",
+                    **kwarg)
 
             if self.validate_testcase(result, [201], testcase, failures):
                 project_id = result.json()["id"]
@@ -255,21 +243,9 @@ class CreateProject(APIBase):
                       .format(len(failures), len(testcases)))
 
     def test_payload(self):
-        expected_result = {
-            "id": self.project_id,
-            "desc": "",
-            "name": self.project_name,
-            "audit": {
-                "createdBy": None,
-                "createdAt": None,
-                "modifiedBy": None,
-                "modifiedAt": None,
-                "version": None
-            }
-        }
         testcases = list()
 
-        for key in expected_result:
+        for key in self.expected_res:
             if key in ["audit", "id"]:
                 continue
 
@@ -278,15 +254,12 @@ class CreateProject(APIBase):
                 self.generate_random_string(500, special_characters=False),
             ]
             for value in values:
-                actual_key = key
-                if key == "desc":
-                    actual_key = "description"
-                testcase = copy.deepcopy(expected_result)
+                testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
-                testcase["description"] = "Testing '{}' with value: {}".format(
+                testcase["desc"] = "Testing '{}' with value: {}".format(
                     key, str(value))
                 testcase["expected_status_code"] = 201
-                if actual_key == "description" and value == 0:
+                if key == "description" and value == 0:
                     testcases.append(testcase)
                     continue
                 if not isinstance(value, str):
@@ -297,9 +270,9 @@ class CreateProject(APIBase):
                         "httpStatusCode": 400,
                         "message": 'Bad Request. Error: body contains '
                                    'incorrect JSON type for field "{}".'
-                        .format(actual_key)
+                        .format(key)
                     }
-                elif actual_key == "description" and len(value) > 256:
+                elif key == "description" and len(value) > 256:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 2003,
@@ -338,14 +311,15 @@ class CreateProject(APIBase):
 
             result = self.capellaAPI.org_ops_apis.create_project(
                 self.organisation_id, testcase["name"],
-                testcase["desc"])
+                testcase["description"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_project(
                     self.organisation_id, testcase["name"],
-                    testcase["desc"])
+                    testcase["description"])
 
-            if self.validate_testcase(result, [201], testcase, failures):
+            if self.validate_testcase(result, [201], testcase, failures,
+                                      payloadTest=True):
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
                 res = self.capellaAPI.org_ops_apis.delete_project(

@@ -3,7 +3,7 @@ Created on June 28, 2023
 
 @author: umang.agrawal
 """
-
+import copy
 import time
 import string
 import random
@@ -15,19 +15,21 @@ from pytests.cb_basetest import CouchbaseBaseTest
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
-
+from TestInput import TestInputSingleton
 
 class APIBase(CouchbaseBaseTest):
 
-    def setUp(self):
+    def setUp(self, nomenclature="WRAPPER", services=[]):
         CouchbaseBaseTest.setUp(self)
 
+        self.capella = self.input.capella
         self.url = self.input.capella.get("pod")
         self.user = self.input.capella.get("capella_user")
         self.passwd = self.input.capella.get("capella_pwd")
         self.organisation_id = self.input.capella.get("tenant_id")
         self.invalid_UUID = "00000000-0000-0000-0000-000000000000"
         self.prefix = "Automated_v4-API_test_"
+        self.project_id = None
         self.count = 0
 
         self.capellaAPI = CapellaAPI(
@@ -54,13 +56,155 @@ class APIBase(CouchbaseBaseTest):
         self.update_auth_with_api_token(self.org_owner_key["token"])
         self.api_keys = dict()
 
+        # Create a wrapper project to be used for all the projects :
+        # IF not already present.
+        if TestInputSingleton.input.capella.get("project", None):
+            self.project_id = TestInputSingleton.input.capella.get("project")
+        else:
+            res = self.capellaAPI.org_ops_apis.create_project(
+                self.organisation_id, self.prefix + "WRAPPER")
+            if res.status_code != 201:
+                self.log.error(res.content)
+                self.tearDown()
+                self.fail("!!!..Project creation failed...!!!")
+            else:
+                self.log.info("Project Creation Successful")
+                self.project_id = res.json()["id"]
+                self.capella["project"] = self.project_id
+
+        # Templates for cluster configurations across computes and CSPs.
+        self.cluster_templates = {
+            # Fixed parameter initialization
+            "name": self.prefix + "WRAPPER",
+            "description": "",
+            "currentState": None,
+            "audit": {
+                "createdBy": None,
+                "createdAt": None,
+                "modifiedBy": None,
+                "modifiedAt": None,
+                "version": None
+            },
+            "connectionString": None,
+            "configurationType": None,
+
+            # TEMPLATES :
+            "AWS_template_m7_xlarge": {
+                "cloudProvider": {
+                    "type": "aws",
+                    "region": "us-east-1",
+                    "cidr": "10.0.0.0/20"
+                },
+                "couchbaseServer": {
+                    "version": str(self.input.param("server_version", 7.6))
+                },
+                "serviceGroups": [
+                    {
+                        "node": {
+                            "compute": {
+                                "cpu": self.input.param("cpu", 4),
+                                "ram": self.input.param("ram", 16)
+                            },
+                            "disk": {
+                                "storage": 50,
+                                "type": "gp3",
+                                "iops": 3000
+                            }
+                        },
+                        "numOfNodes": self.input.param("numOfNodes", 3),
+                        "services": [
+                            "data"
+                        ]
+                    }
+                ],
+                "availability": {
+                    "type": self.input.param("availabilityType", "multi")
+                },
+                "support": {
+                    "plan": self.input.param("supportPlan", "enterprise"),
+                    "timezone": "GMT"
+                }
+            },
+        }
+
+        if TestInputSingleton.input.capella.get("clusters", None):
+            self.cluster_id = TestInputSingleton.input.capella.get(
+                "clusters")["cluster_id"]
+        else:
+            cluster_template = self.input.param("cluster_template",
+                                                "AWS_template_m7_xlarge")
+            self.cluster_templates[cluster_template]['serviceGroups'][0][
+                "services"].extend(services)
+            res = self.select_CIDR(
+                self.organisation_id, self.project_id,
+                self.cluster_templates["name"],
+                self.cluster_templates[cluster_template]['cloudProvider'],
+                self.cluster_templates[cluster_template]['serviceGroups'],
+                self.cluster_templates[cluster_template]['availability'],
+                self.cluster_templates[cluster_template]['support'],
+                self.cluster_templates[cluster_template]['couchbaseServer'])
+            try:
+                if res.status_code != 202:
+                    self.log.error("Failed while deploying cluster")
+                    self.tearDown()
+                    self.fail("!!!...Cluster deployment Failed...!!!")
+                else:
+                    self.cluster_id = res.json()["id"]
+                    # self.cluster_templates["id"] = self.cluster_id
+                    self.log.info("Waiting for cluster {} to be deployed."
+                                  .format(self.cluster_id))
+                    if not self.wait_for_deployment(
+                            self.project_id, self.cluster_id):
+                        self.tearDown()
+                        self.fail("!!!...Cluster deployment failed...!!!")
+                    self.log.info("Successfully deployed Cluster.")
+                    self.capella["clusters"] = {
+                        "cluster_id": self.cluster_id,
+                        "vpc_id": None,
+                        "pes_id": None
+                    }
+                    # self.cidr = self.cluster_templates[cluster_template][
+                    #     'cloudProvider']['cidr']
+            except (Exception,):
+                self.log.error(res.status_code)
+                self.log.error(res.content)
+                self.tearDown()
+                self.fail("!!!...Couldn't decipher result...!!!")
+
     def tearDown(self):
+        # Delete the WRAPPER resources, IF, the current test is the last
+        # testcase being run.
+        if (TestInputSingleton.input.test_params["case_number"] ==
+                TestInputSingleton.input.test_params["no_of_test_identified"]):
+
+            # Delete the cluster that was created.
+            self.log.info("Destroying Cluster: {}".format(self.cluster_id))
+            if self.capellaAPI.cluster_ops_apis.delete_cluster(
+                    self.organisation_id, self.project_id,
+                    self.cluster_id).status_code != 202:
+                self.log.error("Error while deleting cluster.")
+
+            # Wait for the cluster to be destroyed.
+            self.log.info("Waiting for cluster to be destroyed.")
+            if not self.wait_for_deletion(self.project_id, self.cluster_id):
+                self.fail("Cluster could not be destroyed")
+            self.log.info("Cluster destroyed successfully.")
+            self.cluster_id = None
+
+            # Delete the project that was created.
+            self.log.info("Deleting Project: {}".format(self.project_id))
+            if self.delete_projects(self.organisation_id, [self.project_id],
+                                    self.org_owner_key["token"]):
+                self.log.error("Error while deleting project.")
+            else:
+                self.log.info("Project deleted successfully")
+                self.project_id = None
+
         # Delete organizationOwner API key
         self.log.info("Deleting API key for role organization Owner")
         resp = self.capellaAPI.org_ops_apis.delete_api_key(
             organizationId=self.organisation_id,
-            accessKey=self.org_owner_key["id"]
-        )
+            accessKey=self.org_owner_key["id"])
         if resp.status_code != 204:
             self.log.error("Error while deleting api key for role "
                            "organization Owner")
@@ -77,8 +221,7 @@ class APIBase(CouchbaseBaseTest):
         # Generate the first set of API access and secret access keys
         # Currently v2 API is being used for this.
         response = self.capellaAPI.create_control_plane_api_key(
-            self.organisation_id, "initial_api"
-        )
+            self.organisation_id, "initial_api")
         if response.status_code == 201:
             response = response.json()
             self.v2_control_plane_api_access_key = response["id"]
@@ -660,11 +803,22 @@ class APIBase(CouchbaseBaseTest):
 
     def validate_testcase(self, result, success_codes, testcase, failures,
                           validate_response=False, expected_res=None,
-                          resource_id=None):
+                          resource_id=None, payloadTest=False):
+        # Parser for payload tests.
+        testDescriptionKey = "description"
+        if payloadTest:
+            testDescriptionKey = "desc"
 
         # Condition is for Sample Buckets delete testcases.
         if ("content" in result and "code" in result.content and
                 result.json()["code"] == 600 and 6008 in success_codes):
+            return True
+
+        # Acceptor for expected error codes.
+        if ("expected_status_code" in testcase and
+                testcase["expected_status_code"] in success_codes):
+            self.log.warning("This test expected the error code : {}"
+                             .format(testcase["expected_status_code"]))
             return True
 
         if result.status_code in success_codes:
@@ -673,69 +827,78 @@ class APIBase(CouchbaseBaseTest):
                 self.log.error("NO ERRORS in Response, But Test expected "
                                "error: {}".format(testcase["expected_error"]))
                 self.log.warning("Result : {}".format(result.json()))
-                failures.append(testcase["description"])
+                failures.append(testcase[testDescriptionKey])
             if validate_response:
                 if not self.validate_api_response(
                         expected_res, result.json(), resource_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
-                                           testcase["description"]))
+                                           testcase[testDescriptionKey]))
                     self.log.warning("Result : {}".format(result.content))
-                    failures.append(testcase["description"])
+                    failures.append(testcase[testDescriptionKey])
                 else:
                     return True
             else:
                 return True
         elif result.status_code >= 500:
-            self.log.critical(testcase["description"])
+            self.log.critical(testcase[testDescriptionKey])
             self.log.warning(result.content)
-            failures.append(testcase["description"])
+            failures.append(testcase[testDescriptionKey])
         elif "expected_status_code" not in testcase:
             self.log.error("Expected NO ERRORS but got {}".format(result))
             self.log.warning(result.content)
-            failures.append(testcase["description"])
+            failures.append(testcase[testDescriptionKey])
         elif result.status_code == testcase["expected_status_code"]:
             try:
                 result = result.json()
                 for key in result:
                     if result[key] != testcase["expected_error"][key]:
-                        self.log.error(
-                            "Status != {}, Error validation Failure : {}"
-                            .format(success_codes, testcase["description"]))
+                        self.log.error("Status != {}, Error validation Failure"
+                                       " : {}".format(
+                                        success_codes,
+                                        testcase[testDescriptionKey]))
                         self.log.warning("Failure : {}".format(result))
-                        failures.append(testcase["description"])
+                        failures.append(testcase[testDescriptionKey])
                         break
             except (Exception,):
                 if str(testcase["expected_error"]) not in result.content:
                     self.log.error("Response type not JSON, Failure : {}"
-                                   .format(testcase["description"]))
+                                   .format(testcase[testDescriptionKey]))
                     self.log.warning(result.content)
-                    failures.append(testcase["description"])
+                    failures.append(testcase[testDescriptionKey])
         else:
             self.log.error("Expected HTTP status code {}, Actual HTTP status "
                            "code {}".format(testcase["expected_status_code"],
                                             result.status_code))
             self.log.warning("Result : {}".format(result.content))
-            failures.append(testcase["description"])
+            failures.append(testcase[testDescriptionKey])
         return False
 
-    def validate_onoff_state(self, states, proj, clus, app=None, sleep=2):
+    def validate_onoff_state(self, states, proj, clus=None, inst=None,
+                             app=None, sleep=2):
         if sleep:
             time.sleep(sleep)
-        if not app:
-            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, proj, clus)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers['Retry-After']))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, proj, clus)
-        else:
+        if app:
             res = self.capellaAPI.cluster_ops_apis.get_appservice(
                 self.organisation_id, proj, clus, app)
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, proj, clus, app)
+        elif inst:
+            res = self.columnarAPI.fetch_analytics_cluster_info(
+                self.organisation_id, proj, inst)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.columnarAPI.fetch_analytics_cluster_info(
+                    self.organisation_id, proj, inst)
+        else:
+            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                self.organisation_id, proj, clus)
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
+                    self.organisation_id, proj, clus)
 
         if res.status_code != 200:
             self.log.error("Could not fetch on/off state info : {}"
@@ -797,8 +960,8 @@ class APIBase(CouchbaseBaseTest):
             if result.status_code != 422:
                 self.log.error(result.content)
                 return result
-            if "Please ensure you are passing a unique CIDR block" in \
-                    result.json()["message"]:
+            if "Please ensure that the CIDR range is unique within this "\
+                    "organisation." in result.json()["hint"]:
                 cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
                 self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
             if time.time() - start_time >= 1800:
@@ -864,14 +1027,31 @@ class APIBase(CouchbaseBaseTest):
                 return True
             elif state.json()["currentState"] == "healthy":
                 return True
-        self.log.error("Resource deploy within half an hour.")
+        self.log.error("Resource didn't deploy within half an hour.")
         return False
 
-    def wait_for_deletion(self, proj_id, clus_id, app_svc_id=None):
+    def wait_for_deletion(self, proj_id, clus_id=None, instances=None,
+                          app_svc_id=None):
         start_time = time.time()
         while start_time + 1800 > time.time():
             time.sleep(15)
 
+            if instances:
+                temp_instances = copy.deepcopy(instances)
+                for instance in instances:
+                    while self.columnarAPI.fetch_analytics_cluster_info(
+                            self.organisation_id, proj_id,
+                            instance).status_code != 404:
+                        self.log.info("...Waiting further...")
+                        time.sleep(2)
+                    self.log.info("Instance {} deleted".format(instance))
+                    temp_instances.remove(instance)
+                if len(temp_instances) == 0:
+                    self.log.info("All instances deleted successfully.")
+                    del instances[:]
+                    return
+                self.log.error("!!!...All instances did not delete...!!!")
+                return
             if app_svc_id:
                 res = self.capellaAPI.cluster_ops_apis.get_appservice(
                     self.organisation_id, proj_id, clus_id, app_svc_id)
@@ -1166,14 +1346,16 @@ class APIBase(CouchbaseBaseTest):
 
         name = self.prefix + "ColumnarDelete_New"
         res = self.columnarAPI.create_analytics_cluster(
-            self.organisation_id, proj_id, name, "aws", "us-east-1", 2,
-            {"plan": "enterprise", "timezone": "ET"})
+            self.organisation_id, proj_id, name, "aws",
+            {"cpu": 4, "ram": 16}, "us-east-1", 1,
+            {"plan": "enterprise", "timezone": "ET"}, {"type": "single"})
         if res.status_code == 429:
             self.handle_rate_limit(int(res.headers['Retry-After']))
             res = self.columnarAPI.create_analytics_cluster(
-                self.organisation_id, proj_id, name, "aws", "us-east-1", 2,
-                {"plan": "enterprise", "timezone": "ET"})
-        if res.status_code == 201:
+                self.organisation_id, proj_id, name, "aws",
+                {"cpu": 4, "ram": 16}, "us-east-1", 1,
+                {"plan": "enterprise", "timezone": "ET"}, {"type": "single"})
+        if res.status_code == 202:
             self.log.debug("New Instance ID: {}".format(res.json()["id"]))
             return res.json()["id"]
         self.log.error(res.content)
@@ -1184,17 +1366,18 @@ class APIBase(CouchbaseBaseTest):
 
         instance_deletion_failed = False
         for instance in instances:
+            self.log.info("Deleting instance {}".format(instance))
             res = self.columnarAPI.delete_analytics_cluster(
                 self.organisation_id, proj_id, instance)
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.columnarAPI.delete_analytics_cluster(
                     self.organisation_id, proj_id, instance)
-            if res.status_code != 202:
+            if res.status_code != 204:
                 self.log.error("Error while deleting instance: {}\nError: {}"
                                .format(instance, res.content))
                 instance_deletion_failed = True
             else:
-                instances.remove(instance)
+                self.log.info("Instance delete request successful.")
 
         return instance_deletion_failed

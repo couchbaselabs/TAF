@@ -1,49 +1,78 @@
 """
-Created on June 04, 2024
+Created on May 31, 2024
 
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-import copy
-
-from TestInput import TestInputServer
-from remote.remote_util import RemoteMachineShellConnection
-from pytests.Capella.RestAPIv4.PrivateEndpoints.\
-    get_private_endpoint_service_status import GetPrivateEndpointService
+import time
+from pytests.Capella.RestAPIv4.ClustersColumnar.get_analytics_clusters import \
+    GetAnalyticsClusters
 
 
-class PostEndpointCommand(GetPrivateEndpointService):
+class PostOnOffSchedule(GetAnalyticsClusters):
 
-    def setUp(self, nomenclature="PrivateEndpointCommands_POST"):
-        GetPrivateEndpointService.setUp(self, nomenclature)
+    def setUp(self, nomenclature="ColumnarScheduleOnOff_POST"):
+        GetAnalyticsClusters.setUp(self, nomenclature)
         self.expected_res = {
-            "vpcID": "vpc-0a8002505f10bc102",
-            "subnetIDs": []
+            "timezone": "US/Pacific",
+            "days": [
+                {
+                    "day": "monday",
+                    "state": "custom",
+                    "from": {
+                        "hour": 12,
+                        "minute": 30
+                    },
+                    "to": {
+                        "hour": 14,
+                        "minute": 30
+                    }
+                },
+                {
+                    "day": "tuesday",
+                    "state": "custom",
+                    "from": {
+                        "hour": 12,
+                        "minute": 30
+                    },
+                    "to": {
+                        "hour": 14,
+                        "minute": 30
+                    }
+                },
+                {
+                    "day": "wednesday",
+                    "state": "on"
+                },
+                {
+                    "day": "thursday",
+                    "state": "on"
+                },
+                {
+                    "day": "friday",
+                    "state": "custom",
+                    "from": {
+                        "hour": 12,
+                        "minute": 30
+                    },
+                    "to": {
+                        "hour": 14,
+                        "minute": 30
+                    }
+                },
+                {
+                    "day": "saturday",
+                    "state": "off"
+                },
+                {
+                    "day": "sunday",
+                    "state": "off"
+                }
+            ]
         }
-        # res = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-        #     self.organisation_id, self.project_id, self.cluster_id,
-        #     self.expected_res["vpcID"], self.expected_res["subnetIDs"])
-        # if res.status_code == 429:
-        #     res = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-        #         self.organisation_id, self.project_id, self.cluster_id,
-        #         self.expected_res["vpcID"], self.expected_res["subnetIDs"])
-        # if res.status_code != 200:
-        #     self.log.error(res.content)
-        #     self.tearDown()
-        #     self.fail("!!!...Fetching command failed...!!!")
-        # self.expected_res["command"] = res.json()["command"]
-
-        # self.log.info("...Creating a server object...")
-        # server = TestInputServer()
-        # server.ip = "172.23.104.108"
-        # server.port = ""
-        # server.ssh_username = "root"
-        # server.ssh_password = "couchbase"
-        # self.remote_shell = RemoteMachineShellConnection(server)
-        # out, err = self.remote_shell.execute_command(res.json()["command"])
 
     def tearDown(self):
-        super(GetPrivateEndpointService, self).tearDown()
+        super(PostOnOffSchedule, self).tearDown()
 
     def test_api_path(self):
         testcases = [
@@ -51,7 +80,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointCommand",
+                "url": "/v3/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -59,12 +88,12 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 }
             }, {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointComman",
+                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedul",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointCommand/endpointComman",
+                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule/onOffSchedul",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -98,9 +127,9 @@ class PostEndpointCommand(GetPrivateEndpointService):
                                "be a client error."
                 }
             }, {
-                "description": "Call API with non-hex clusterId",
-                "invalid_clusterId": self.replace_last_character(
-                    self.cluster_id, non_hex=True),
+                "description": "Call API with non-hex analyticsClusterId",
+                "invalid_analyticsClusterId": self.replace_last_character(
+                    self.analyticsCluster_id, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
@@ -120,31 +149,41 @@ class PostEndpointCommand(GetPrivateEndpointService):
             self.log.info("Executing test: {}".format(testcase["description"]))
             organization = self.organisation_id
             project = self.project_id
-            cluster = self.cluster_id
+            analyticsCluster = self.analyticsCluster_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.private_network_command_endpoint = \
+                self.columnarAPI.schedule_on_off_endpoint = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
             elif "invalid_projectId" in testcase:
                 project = testcase["invalid_projectId"]
-            elif "invalid_clusterId" in testcase:
-                cluster = testcase["invalid_clusterId"]
+            elif "invalid_analyticsClusterId" in testcase:
+                analyticsCluster = testcase["invalid_analyticsClusterId"]
 
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                organization, project, cluster, self.expected_res["vpcID"],
-                self.expected_res["subnetIDs"])
+            result = self.columnarAPI.create_on_off_schedule(
+                organization, project, analyticsCluster,
+                self.expected_res["timezone"], self.expected_res["days"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    organization, project, cluster, self.expected_res["vpcID"],
-                    self.expected_res["subnetIDs"])
+                result = self.columnarAPI.create_on_off_schedule(
+                    organization, project, analyticsCluster,
+                    self.expected_res["timezone"], self.expected_res["days"])
 
-            self.capellaAPI.cluster_ops_apis.private_network_command_endpoint = \
-                "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointCommand"
+            self.columnarAPI.schedule_on_off_endpoint = \
+                "/v4/organizations/{}/projects/{}/analyticsClusters/{}/onOffSchedule"
 
-            self.validate_testcase(result, [200], testcase, failures)
+            if self.validate_testcase(result, [204], testcase, failures):
+                self.log.info("Schedule created successfully.")
+                time.sleep(2)
+                res = self.columnarAPI.delete_on_off_schedule(
+                    organization, project, analyticsCluster)
+                if res.status_code != 204:
+                    self.fail("!!!...Error while deleting the currently "
+                              "created Schedule...!!!")
+                else:
+                    self.log.info("Schedule deleted successfully.")
+                    time.sleep(2)
 
         if failures:
             for fail in failures:
@@ -171,7 +210,8 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "projectOwner"
+                 "organizationOwner", "projectOwner",
+                 "projectManager"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
@@ -191,18 +231,29 @@ class PostEndpointCommand(GetPrivateEndpointService):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_res["vpcID"], self.expected_res["subnetIDs"],
-                header)
+            result = self.columnarAPI.create_on_off_schedule(
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id, self.expected_res["timezone"],
+                self.expected_res["days"], header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["vpcID"], self.expected_res["subnetIDs"],
-                    header)
+                result = self.columnarAPI.create_on_off_schedule(
+                    self.organisation_id, self.project_id,
+                    self.analyticsCluster_id, self.expected_res["timezone"],
+                    self.expected_res["days"], header)
 
-            self.validate_testcase(result, [200], testcase, failures)
+            if self.validate_testcase(result, [204], testcase, failures):
+                self.log.info("Schedule created successfully.")
+                time.sleep(2)
+                res = self.columnarAPI.delete_on_off_schedule(
+                    self.organisation_id, self.project_id,
+                    self.analyticsCluster_id)
+                if res.status_code != 204:
+                    self.fail("Error while deleting the currently "
+                              "created Schedule")
+                else:
+                    self.log.info("Schedule deleted successfully.")
+                    time.sleep(2)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -220,29 +271,33 @@ class PostEndpointCommand(GetPrivateEndpointService):
     def test_query_parameters(self):
         self.log.debug(
                 "Correct Params - organization ID: {}, project ID: {}, "
-                "cluster ID: {}".format(
-                    self.organisation_id, self.project_id, self.cluster_id))
+                "analyticsCluster ID: {}".format(
+                    self.organisation_id, self.project_id,
+                    self.analyticsCluster_id))
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
-                self.organisation_id, self.project_id, self.cluster_id):
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id):
             testcases += 1
             testcase = {
                 "description": "organization ID: {}, project ID: {}, "
-                "cluster ID: {}"
+                "analyticsCluster ID: {}"
                 .format(str(combination[0]), str(combination[1]),
                         str(combination[2])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
-                "clusterID": combination[2]
+                "analyticsClusterID": combination[2]
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
-                    combination[2] == self.cluster_id):
-                if (combination[0] == "" or combination[1] == "" or
-                        combination[2] == ""):
+                    combination[2] == self.analyticsCluster_id):
+                if combination[0] == "" or combination[1] == "":
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
+                elif combination[2] == "":
+                    testcase["expected_status_code"] = 405
+                    testcase["expected_error"] = ""
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
@@ -270,25 +325,27 @@ class PostEndpointCommand(GetPrivateEndpointService):
                         "httpStatusCode": 403,
                         "message": "Access Denied."
                     }
-                elif combination[2] != self.cluster_id:
+                elif combination[2] != self.analyticsCluster_id:
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
-                        "code": 4025,
-                        "hint": "The requested cluster details could not be "
-                                "found or fetched. Please ensure that the "
-                                "correct cluster ID is provided.",
-                        "message": "Unable to fetch the cluster details.",
-                        "httpStatusCode": 404
+                        'code': 404,
+                        'message': 'Unable to fetch the instance details.',
+                        'hint': 'Please review your request and ensure that '
+                                'all required parameters are correctly '
+                                'provided.',
+                        'httpStatusCode': 404
                     }
                 else:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
-                        "code": 4031,
-                        "hint": "Please provide a valid projectId.",
+                        "code": 422,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
                         "httpStatusCode": 422,
                         "message": "Unable to process the request. The "
                                    "provided projectId {} is not valid for "
-                                   "the cluster {}."
+                                   "the analytics cluster {}."
                         .format(combination[1], combination[2])
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
@@ -297,20 +354,30 @@ class PostEndpointCommand(GetPrivateEndpointService):
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
+            result = self.columnarAPI.create_on_off_schedule(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], self.expected_res["vpcID"],
-                self.expected_res["subnetIDs"],
-                **kwarg)
+                testcase["analyticsClusterID"], self.expected_res["timezone"],
+                self.expected_res["days"], **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
+                result = self.columnarAPI.create_on_off_schedule(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["vpcID"],
-                    self.expected_res["subnetIDs"],
+                    testcase["analyticsClusterID"],
+                    self.expected_res["timezone"], self.expected_res["days"],
                     **kwarg)
 
-            self.validate_testcase(result, [200], testcase, failures)
+            if self.validate_testcase(result, [204], testcase, failures):
+                self.log.info("Schedule created successfully.")
+                time.sleep(2)
+                res = self.columnarAPI.delete_on_off_schedule(
+                    testcase["organizationID"], testcase["projectID"],
+                    testcase["analyticsClusterID"])
+                if res.status_code != 204:
+                    self.fail("Error while deleting the currently "
+                              "created Schedule")
+                else:
+                    self.log.info("Schedule deleted successfully.")
+                    time.sleep(2)
 
         if failures:
             for fail in failures:
@@ -318,84 +385,23 @@ class PostEndpointCommand(GetPrivateEndpointService):
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
 
-    def test_payload(self):
-        testcases = list()
-
-        for key in self.expected_res:
-            if key in ["command"]:
-                continue
-
-            values = [
-                "", 1, 0, 100000, -1, 123.123, None,
-                self.generate_random_string(special_characters=False),
-                self.generate_random_string(5000, special_characters=False),
-            ]
-            for value in values:
-                testcase = copy.deepcopy(self.expected_res)
-                testcase[key] = value
-                # for param in ["command"]:
-                #     del testcase[param]
-
-                testcase["description"] = "Testing `{}` with val: {} of {}" \
-                    .format(key, value, type(value))
-                if key == "vpcID" and value in ["", None]:
-                    testcase["expected_status_code"] = 422
-                    testcase["expected_error"] = {
-                        "code": 422,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "httpStatusCode": 422,
-                        "message": "Cannot provide VPC endpoint command "
-                                   "because VPC ID is required."
-                    }
-                elif (
-                        key == "vpcID" and not isinstance(value, str) or
-                        key == "subnetIDs" and not isinstance(value, list)
-                ):
-                    testcase["expected_status_code"] = 400
-                    testcase["expected_error"] = {
-                        "code": 1000,
-                        "hint": "The request was malformed or invalid.",
-                        "httpStatusCode": 400,
-                        "message": "Bad Request. Error: body contains "
-                                   "incorrect JSON type for field "
-                                   "\"{}\".".format(key)
-                    }
-                testcases.append(testcase)
-        failures = list()
-        for testcase in testcases:
-            self.log.info(testcase['description'])
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                self.organisation_id, self.project_id, self.cluster_id,
-                testcase["vpcID"], testcase["subnetIDs"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    testcase["vpcID"], testcase["subnetIDs"])
-
-            self.validate_testcase(result, [200], testcase, failures)
-
-        if failures:
-            for fail in failures:
-                self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
-
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.post_private_endpoint_command, (
-                self.organisation_id, self.project_id, self.cluster_id
+            self.columnarAPI.create_on_off_schedule, (
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id, self.expected_res["timezone"],
+                self.expected_res["days"]
             )
         ]]
         self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.post_private_endpoint_command, (
-                self.organisation_id, self.project_id, self.cluster_id
+            self.columnarAPI.create_on_off_schedule, (
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id, self.expected_res["timezone"],
+                self.expected_res["days"]
             )
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

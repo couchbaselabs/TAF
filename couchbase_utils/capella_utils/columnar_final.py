@@ -7,8 +7,10 @@ folder.
 """
 import json
 import random
+import socket
 import string
 import time
+
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from sdk_client3 import SDKClient
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
@@ -42,6 +44,9 @@ class ColumnarInstance:
 
         # SDK related objects
         self.sdk_client_pool = None
+        # Note: Referenced only for sdk_client3.py SDKClient
+        # self.sdk_cluster_env = SDKClient.create_cluster_env()
+        # self.sdk_env_built = self.sdk_cluster_env.build()
 
     def refresh_object(self, servers):
         self.kv_nodes = list()
@@ -498,7 +503,7 @@ class ColumnarUtils:
             if not resp:
                 state = None
                 break
-            state = resp["state"]
+            state = resp["data"]["state"]
             if state == "destroying":
                 self.log.info("instance is still deleting. Waiting for 10s.")
                 time.sleep(10)
@@ -609,21 +614,8 @@ class ColumnarUtils:
                                       instance, timeout=900):
         status = None
         end_time = time.time() + timeout
-        # First wait for turn-off job to get picked up by control plane
-        while status != 'turning_off' and time.time() < end_time:
-            resp = self.get_instance_info(pod, tenant, project_id,
-                                          instance.instance_id)
-            status = resp["data"]["state"]
-            self.log.info("Waiting for instance to be in turning off state")
-            time.sleep(30)
-        if status != 'turning_off':
-            self.log.error("Instance turn-off was not initiated by control "
-                           "place even after {} seconds".format(timeout))
-            return False
-
-        end_time = time.time() + timeout
-        while (status == 'turning_off' or not status) and (
-                time.time() < end_time):
+        while (status == 'turning_off' or not status) \
+               and (time.time() < end_time):
             resp = self.get_instance_info(
                 pod, tenant, project_id, instance.instance_id)
             status = resp["data"]["state"]
@@ -656,33 +648,25 @@ class ColumnarUtils:
                                      instance, timeout=900):
         status = None
         end_time = time.time() + timeout
-        # First wait for turn-on job to get picked up by control plane
-        while status != 'turning_on' and time.time() < end_time:
-            resp = self.get_instance_info(pod, tenant, project_id,
-                                          instance.instance_id)
-            status = resp["data"]["state"]
-            self.log.info("Waiting for instance to be in turning on state")
-            time.sleep(30)
-        if status != 'turning_on':
-            self.log.error("Instance turn-on was not initiated by control "
-                           "place even after {} seconds".format(timeout))
-            return False
-
-        end_time = time.time() + timeout
         while (status == 'turning_on' or not status) and (
                 time.time() < end_time):
             resp = self.get_instance_info(
                 pod, tenant, project_id, instance.instance_id)
             status = resp["data"]["state"]
-            self.log.info("Instance is still turning on")
-            time.sleep(20)
         if status == "healthy":
             self.log.info("Instance turned on successful")
-            self.update_columnar_instance_obj(pod, tenant, instance)
             return True
         else:
             self.log.error("Failed to turn on the instance")
             return False
+
+    def get_nodes(self, connection_str):
+        servers = list()
+        ais = socket.getaddrinfo(connection_str, 0, 0, 0, 0)
+        for result in ais:
+            servers.append(result[-1][0])
+            servers = list(set(servers))
+        return servers
 
     def create_couchbase_cloud_qe_user(self, pod, tenant, instance):
         columnar_api = ColumnarAPI(
@@ -690,10 +674,12 @@ class ColumnarUtils:
             tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
         resp = columnar_api.create_analytics_admin_user(instance.instance_id)
         if resp.status_code == 200:
-            self.log.info("Created user couchbase-cloud-qe")
-            return resp.json()["username"], resp.json()["password"]
-        elif resp.status_code == 422 and resp.json()[
-            "errorType"] == "ErrDataplaneUserNameExists":
+            r_json = resp.json()
+            username, password = r_json["username"], r_json["password"]
+            self.log.info(f"Created user: {username}: {password}")
+            return username, password
+        elif (resp.status_code == 422
+              and resp.json()["errorType"] == "ErrDataplaneUserNameExists"):
             if self.delete_couchbase_cloud_qe_user(pod, tenant, instance):
                 return self.create_couchbase_cloud_qe_user(
                     pod, tenant, instance)
@@ -715,58 +701,14 @@ class ColumnarUtils:
             self.log.error("Unable to delete user couchbase-cloud-qe")
             return False
 
-    def update_columnar_instance_obj(self, pod, tenant, instance):
-        info_resp = self.get_instance_info(
-            pod=pod, tenant=tenant, project_id=tenant.project_id,
-            instance_id=instance.instance_id)
-
-        if not info_resp:
-            raise Exception(
-                "Failed fetching connection string for following instance - "
+    def get_instance_nodes(self, pod, tenant, instance):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
+        resp = columnar_api.get_columnar_nodes(instance.instance_id)
+        if resp.status_code != 200:
+            self.log.error(
+                "Unable to fetch nodes for Columnar instance with ID "
                 "{0}".format(instance.instance_id))
-
-        instance.name = str(info_resp["data"]["name"])
-        instance.srv = info_resp["data"]["config"]["endpoint"]
-        instance.cluster_id = info_resp["data"]["config"]["clusterId"]
-
-        if not instance.master:
-            # Fixing the instance master node, such that master node ip and
-            # hostname is instance's connection string, port is 18091 and
-            # username and password are couchbase-cloud-qe and it's
-            # password. This is done so that when the cluster scales or
-            # turns on/off or is restored the connection string does not
-            # change even if the nodes in the backend cluster changes.
-            instance.master = TestInputServer()
-            instance.master.ip = instance.srv
-            instance.master.hostname = instance.srv
-            instance.master.port = "18091"
-            instance.master.type = "columnar"
-            instance.master.memcached_port = "11207"
-            instance.master.rest_username = instance.username
-            instance.master.rest_password = instance.password
-        else:
-            instance.master.ip = instance.srv
-            instance.master.hostname = instance.srv
-
-        rest = ClusterRestAPI(instance.master)
-        status, content = rest.cluster_details()
-        if not status:
-            raise Exception("Error while fetching pools/default using "
-                            "connection string")
-
-        instance.servers = list()
-
-        for t_server in content["nodes"]:
-            temp_server = TestInputServer()
-            temp_server.ip = t_server.get("hostname").replace(":8091", "")
-            temp_server.hostname = t_server.get("hostname")
-            temp_server.services = t_server.get("services")
-            temp_server.port = "18091"
-            temp_server.type = "columnar"
-            temp_server.memcached_port = "11207"
-            temp_server.rest_username = instance.username
-            temp_server.rest_password = instance.password
-            instance.servers.append(temp_server)
-        instance.nodes_in_cluster = instance.servers
-        instance.cbas_cc_node = instance.servers[0]
-
+            return None
+        return json.loads(resp.content)

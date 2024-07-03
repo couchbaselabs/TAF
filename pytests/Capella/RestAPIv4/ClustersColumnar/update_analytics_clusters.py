@@ -1,49 +1,21 @@
 """
-Created on June 04, 2024
+Created on May 29, 2024
 
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
 import copy
-
-from TestInput import TestInputServer
-from remote.remote_util import RemoteMachineShellConnection
-from pytests.Capella.RestAPIv4.PrivateEndpoints.\
-    get_private_endpoint_service_status import GetPrivateEndpointService
+from pytests.Capella.RestAPIv4.ClustersColumnar.get_analytics_clusters import \
+    GetAnalyticsClusters
 
 
-class PostEndpointCommand(GetPrivateEndpointService):
+class PutAnalyticsClusters(GetAnalyticsClusters):
 
-    def setUp(self, nomenclature="PrivateEndpointCommands_POST"):
-        GetPrivateEndpointService.setUp(self, nomenclature)
-        self.expected_res = {
-            "vpcID": "vpc-0a8002505f10bc102",
-            "subnetIDs": []
-        }
-        # res = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-        #     self.organisation_id, self.project_id, self.cluster_id,
-        #     self.expected_res["vpcID"], self.expected_res["subnetIDs"])
-        # if res.status_code == 429:
-        #     res = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-        #         self.organisation_id, self.project_id, self.cluster_id,
-        #         self.expected_res["vpcID"], self.expected_res["subnetIDs"])
-        # if res.status_code != 200:
-        #     self.log.error(res.content)
-        #     self.tearDown()
-        #     self.fail("!!!...Fetching command failed...!!!")
-        # self.expected_res["command"] = res.json()["command"]
-
-        # self.log.info("...Creating a server object...")
-        # server = TestInputServer()
-        # server.ip = "172.23.104.108"
-        # server.port = ""
-        # server.ssh_username = "root"
-        # server.ssh_password = "couchbase"
-        # self.remote_shell = RemoteMachineShellConnection(server)
-        # out, err = self.remote_shell.execute_command(res.json()["command"])
+    def setUp(self, nomenclature="ClustersColumnar_PUT"):
+        GetAnalyticsClusters.setUp(self, nomenclature)
 
     def tearDown(self):
-        super(GetPrivateEndpointService, self).tearDown()
+        super(PutAnalyticsClusters, self).tearDown()
 
     def test_api_path(self):
         testcases = [
@@ -51,7 +23,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointCommand",
+                "url": "/v3/organizations/{}/projects/{}/analyticsClusters",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -59,12 +31,12 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 }
             }, {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointComman",
+                "url": "/v4/organizations/{}/projects/{}/analyticsCluster",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointCommand/endpointComman",
+                "url": "/v4/organizations/{}/projects/{}/analyticsClusters/analyticsCluster",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -98,9 +70,9 @@ class PostEndpointCommand(GetPrivateEndpointService):
                                "be a client error."
                 }
             }, {
-                "description": "Call API with non-hex clusterId",
-                "invalid_clusterId": self.replace_last_character(
-                    self.cluster_id, non_hex=True),
+                "description": "Call API with non-hex analyticsClusterId",
+                "invalid_analyticsClusterId": self.replace_last_character(
+                    self.analyticsCluster_id, non_hex=True),
                 "expected_status_code": 400,
                 "expected_error": {
                     "code": 1000,
@@ -120,31 +92,33 @@ class PostEndpointCommand(GetPrivateEndpointService):
             self.log.info("Executing test: {}".format(testcase["description"]))
             organization = self.organisation_id
             project = self.project_id
-            cluster = self.cluster_id
+            analyticsCluster = self.analyticsCluster_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.private_network_command_endpoint = \
+                self.columnarAPI.analytics_clusters_endpoint = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
             elif "invalid_projectId" in testcase:
                 project = testcase["invalid_projectId"]
-            elif "invalid_clusterId" in testcase:
-                cluster = testcase["invalid_clusterId"]
+            elif "invalid_analyticsClusterId" in testcase:
+                analyticsCluster = testcase["invalid_analyticsClusterId"]
 
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                organization, project, cluster, self.expected_res["vpcID"],
-                self.expected_res["subnetIDs"])
+            result = self.columnarAPI.update_analytics_cluster(
+                organization, project, analyticsCluster,
+                self.expected_res["name"],
+                self.expected_res["nodes"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    organization, project, cluster, self.expected_res["vpcID"],
-                    self.expected_res["subnetIDs"])
+                result = self.columnarAPI.update_analytics_cluster(
+                    organization, project, analyticsCluster,
+                    self.expected_res["name"],
+                    self.expected_res["nodes"])
 
-            self.capellaAPI.cluster_ops_apis.private_network_command_endpoint = \
-                "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointCommand"
+            self.columnarAPI.analytics_clusters_endpoint = \
+                "/v4/organizations/{}/projects/{}/analyticsClusters"
 
-            self.validate_testcase(result, [200], testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -171,7 +145,8 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "projectOwner"
+                 "organizationOwner", "projectOwner",
+                 "projectManager"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
@@ -191,18 +166,18 @@ class PostEndpointCommand(GetPrivateEndpointService):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_res["vpcID"], self.expected_res["subnetIDs"],
-                header)
+            result = self.columnarAPI.update_analytics_cluster(
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id, self.expected_res["name"],
+                self.expected_res["nodes"], headers=header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["vpcID"], self.expected_res["subnetIDs"],
-                    header)
+                result = self.columnarAPI.update_analytics_cluster(
+                    self.organisation_id, self.project_id,
+                    self.analyticsCluster_id, self.expected_res["name"],
+                    self.expected_res["nodes"], headers=header)
 
-            self.validate_testcase(result, [200], testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures)
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -220,25 +195,27 @@ class PostEndpointCommand(GetPrivateEndpointService):
     def test_query_parameters(self):
         self.log.debug(
                 "Correct Params - organization ID: {}, project ID: {}, "
-                "cluster ID: {}".format(
-                    self.organisation_id, self.project_id, self.cluster_id))
+                "analyticsCluster ID: {}".format(self.organisation_id,
+                                                 self.project_id,
+                                                 self.analyticsCluster_id))
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
-                self.organisation_id, self.project_id, self.cluster_id):
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id):
             testcases += 1
             testcase = {
                 "description": "organization ID: {}, project ID: {}, "
-                "cluster ID: {}"
+                "analyticsCluster ID: {}"
                 .format(str(combination[0]), str(combination[1]),
                         str(combination[2])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
-                "clusterID": combination[2]
+                "analyticsClusterID": combination[2]
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
-                    combination[2] == self.cluster_id):
+                    combination[2] == self.analyticsCluster_id):
                 if (combination[0] == "" or combination[1] == "" or
                         combination[2] == ""):
                     testcase["expected_status_code"] = 404
@@ -270,25 +247,27 @@ class PostEndpointCommand(GetPrivateEndpointService):
                         "httpStatusCode": 403,
                         "message": "Access Denied."
                     }
-                elif combination[2] != self.cluster_id:
+                elif combination[2] != self.analyticsCluster_id:
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
-                        "code": 4025,
-                        "hint": "The requested cluster details could not be "
-                                "found or fetched. Please ensure that the "
-                                "correct cluster ID is provided.",
-                        "message": "Unable to fetch the cluster details.",
-                        "httpStatusCode": 404
+                        'code': 404,
+                        'message': 'Unable to fetch the instance details.',
+                        'hint': 'Please review your request and ensure that '
+                                'all required parameters are correctly '
+                                'provided.',
+                        'httpStatusCode': 404
                     }
                 else:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
-                        "code": 4031,
-                        "hint": "Please provide a valid projectId.",
+                        "code": 422,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
                         "httpStatusCode": 422,
                         "message": "Unable to process the request. The "
                                    "provided projectId {} is not valid for "
-                                   "the cluster {}."
+                                   "the analytics cluster {}."
                         .format(combination[1], combination[2])
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
@@ -297,20 +276,18 @@ class PostEndpointCommand(GetPrivateEndpointService):
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
+            result = self.columnarAPI.update_analytics_cluster(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], self.expected_res["vpcID"],
-                self.expected_res["subnetIDs"],
-                **kwarg)
+                testcase["analyticsClusterID"], self.expected_res["name"],
+                self.expected_res["nodes"], **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
+                result = self.columnarAPI.update_analytics_cluster(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["vpcID"],
-                    self.expected_res["subnetIDs"],
-                    **kwarg)
+                    testcase["analyticsClusterID"], self.expected_res["name"],
+                    self.expected_res["nodes"], **kwarg)
 
-            self.validate_testcase(result, [200], testcase, failures)
+            self.validate_testcase(result, [204], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -322,61 +299,117 @@ class PostEndpointCommand(GetPrivateEndpointService):
         testcases = list()
 
         for key in self.expected_res:
-            if key in ["command"]:
+            if key in ["region", "cloudProvider", "support",
+                       "availability", "compute"]:
                 continue
 
             values = [
-                "", 1, 0, 100000, -1, 123.123, None,
-                self.generate_random_string(special_characters=False),
-                self.generate_random_string(5000, special_characters=False),
+                "", 1, 0, 100000, -1, 123.123, self.generate_random_string(),
+                self.generate_random_string(2500, special_characters=False),
             ]
             for value in values:
                 testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
-                # for param in ["command"]:
-                #     del testcase[param]
+                for param in ["region", "cloudProvider", "support"]:
+                    del testcase[param]
 
-                testcase["description"] = "Testing `{}` with val: {} of {}" \
-                    .format(key, value, type(value))
-                if key == "vpcID" and value in ["", None]:
-                    testcase["expected_status_code"] = 422
-                    testcase["expected_error"] = {
-                        "code": 422,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "httpStatusCode": 422,
-                        "message": "Cannot provide VPC endpoint command "
-                                   "because VPC ID is required."
-                    }
-                elif (
-                        key == "vpcID" and not isinstance(value, str) or
-                        key == "subnetIDs" and not isinstance(value, list)
+                testcase["desc"] = "Testing '{}' with val: `{}` of type: `{}`"\
+                                   .format(key, value, type(value))
+                if (
+                        (key in ["name", "description"] and not isinstance(
+                            value, str)) or
+                        (key == "nodes" and not isinstance(value, int))
                 ):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
                         "hint": "The request was malformed or invalid.",
                         "httpStatusCode": 400,
-                        "message": "Bad Request. Error: body contains "
-                                   "incorrect JSON type for field "
-                                   "\"{}\".".format(key)
+                        "message": 'Bad Request. Error: body contains '
+                                   'incorrect JSON type for '
+                                   'field "{}".'.format(key)
+                    }
+                elif key == "nodes" and value not in [1, 2, 4, 8, 16, 32]:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 422,
+                        "hint": "Please review your request and ensure "
+                                "that all required parameters are "
+                                "correctly provided.",
+                        "httpStatusCode": 422,
+                        "message": "Unable to process request for columnar"
+                                   " instance. The node count provided of "
+                                   "{} is not valid. Must be one of 1, 2, "
+                                   "4, 8, 16, or 32.".format(value)
+                    }
+                elif key == "name":
+                    if len(value) > 128:
+                        testcase["expected_status_code"] = 422
+                        testcase["expected_error"] = {
+                            "code": 4012,
+                            "hint": "Please ensure that the provided cluster "
+                                    "name does not exceed the maximum length "
+                                    "limit.",
+                            "httpStatusCode": 422,
+                            "message": "The name provided is not valid. The "
+                                       "name must be 128 characters or less."
+                        }
+                    elif len(value) < 2:
+                        testcase["expected_status_code"] = 422
+                        testcase["expected_error"] = {
+                            "code": 4011,
+                            "hint": "Please ensure that the provided name "
+                                    "has at least the minimum length.",
+                            "httpStatusCode": 422,
+                            "message": "The name provided is not valid. The "
+                                       "name is too short. It must be at "
+                                       "least 2 characters long."
+                        }
+                    elif any(specialChar in value for specialChar in [
+                            "#", "+"]):
+                        testcase["expected_status_code"] = 422
+                        testcase["expected_error"] = {
+                            "code": 4013,
+                            "hint": "Please ensure that the cluster name "
+                                    "only contains valid characters when "
+                                    "creating or modifying the cluster name.",
+                            "httpStatusCode": 422,
+                            "message": "Unable to process request. The name "
+                                       "provided for the cluster is not "
+                                       "valid. It contains an invalid "
+                                       "character '#'."
+                        }
+                elif key == "description" and len(value) > 280:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 4014,
+                        "hint": "Please ensure that the provided cluster "
+                                "description does not exceed the maximum "
+                                "length limit when creating or modifying the "
+                                "cluster.",
+                        "httpStatusCode": 422,
+                        "message": "Unable to process request. The description"
+                                   " provided is not valid. The description "
+                                   "can be a maximum of 280 characters."
                     }
                 testcases.append(testcase)
+
         failures = list()
         for testcase in testcases:
-            self.log.info(testcase['description'])
-            result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                self.organisation_id, self.project_id, self.cluster_id,
-                testcase["vpcID"], testcase["subnetIDs"])
-            if result.status_code == 429:
-                self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    testcase["vpcID"], testcase["subnetIDs"])
+            self.log.info(testcase['desc'])
+            res = self.columnarAPI.update_analytics_cluster(
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id, testcase["name"],
+                testcase["nodes"], testcase["description"])
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.header['Retry-After']))
+                res = self.columnarAPI.update_analytics_cluster(
+                    self.organisation_id, self.project_id,
+                    self.analyticsCluster_id, testcase["name"],
+                    testcase["nodes"], testcase["description"])
 
-            self.validate_testcase(result, [200], testcase, failures)
-
+            self.validate_testcase(res, [204], testcase, failures,
+                                   payloadTest=True)
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -386,16 +419,20 @@ class PostEndpointCommand(GetPrivateEndpointService):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.post_private_endpoint_command, (
-                self.organisation_id, self.project_id, self.cluster_id
+            self.columnarAPI.update_analytics_cluster, (
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id,
+                self.expected_res["name"], self.expected_res["nodes"]
             )
         ]]
         self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.post_private_endpoint_command, (
-                self.organisation_id, self.project_id, self.cluster_id
+            self.columnarAPI.update_analytics_cluster, (
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id,
+                self.expected_res["name"], self.expected_res["nodes"]
             )
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

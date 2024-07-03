@@ -5,16 +5,19 @@ Created on Oct 14, 2023
 """
 import global_vars
 import random
+import subprocess
+import shlex
+from threading import Thread
 
-from bucket_utils.bucket_ready_functions import BucketUtils
-from cluster_utils.cluster_ready_functions import ClusterUtils
-from capella_utils.columnar_final import ColumnarInstance, ColumnarUtils
-from capella_utils.dedicated import CapellaUtils
 from Jython_tasks.task import DeployColumnarInstance
+from TestInput import TestInputSingleton, TestInputServer
+from bucket_utils.bucket_ready_functions import BucketUtils
+from capella_utils.columnar_final import (ColumnarInstance, ColumnarUtils,
+                                          ColumnarRBACUtil)
+from capella_utils.dedicated import CapellaUtils
+from cluster_utils.cluster_ready_functions import ClusterUtils
 from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
 from sdk_client3 import SDKClientPool
-from threading import Thread
-from TestInput import TestInputSingleton
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
@@ -25,14 +28,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         # Columnar instance configuration
         self.num_nodes_in_columnar_instance = self.input.param(
             "num_nodes_in_columnar_instance", 2)
-        """ 
-        Instance type for columnar instance. Valid values are 
-        4vCPUs:16GB, 4vCPUs:32GB, 8vCPUs:32GB, 8vCPUs:64GB, 16vCPUs:64GB, 
-        16vCPUs:128GB,
-        """
-        self.instance_type = self.input.param("instance_type",
-                                              "4vCPUs:16GB").split(":")
+        self.columnar_utils = ColumnarUtils(self.log)
         self.columnar_image = self.input.capella.get("columnar_image")
+        self.columnar_rbac_util = ColumnarRBACUtil(self.log)
 
         # Utility objects
         self.columnar_utils = ColumnarUtils(self.log)
@@ -40,24 +38,48 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         def populate_columnar_instance_obj(
                 tenant, instance_id, instance_name=None, instance_config=None):
 
-            instance_obj = ColumnarInstance(
-                tenant_id=tenant.id,
-                project_id=tenant.project_id,
-                instance_name=instance_name,
+            resp = self.columnar_utils.get_instance_info(
+                pod=self.pod, tenant=tenant, project_id=tenant.project_id,
                 instance_id=instance_id)
+
+            srv = resp["data"]["config"]["endpoint"]
+            cluster_id = resp["data"]["config"]["clusterId"]
+            name = instance_name or str(resp["data"]["name"])
+            cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(srv)
+            proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+            out, _ = proc.communicate()
+            servers = list()
+            for line in out.split("\n"):
+                if "11207" in line:
+                    servers.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
+
+            instance_obj = ColumnarInstance(
+                            tenant_id=tenant.id,
+                            project_id=tenant.project_id,
+                            instance_name=name,
+                            instance_id=instance_id,
+                            cluster_id=cluster_id,
+                            instance_endpoint=srv,
+                            db_users=list())
 
             instance_obj.username, instance_obj.password = \
                 self.columnar_utils.create_couchbase_cloud_qe_user(
                     self.pod, tenant, instance_obj)
 
-            if not allow_access_from_everywhere_on_instance(
-                    tenant, tenant.project_id, instance_obj):
-                raise Exception(
-                    "Setting Allow IP as 0.0.0.0/0 for instance {0} "
-                    "failed".format(instance_obj.instance_id))
-
-            self.columnar_utils.update_columnar_instance_obj(
-                self.pod, tenant, instance_obj)
+            for server in servers:
+                temp_server = TestInputServer()
+                temp_server.ip = server
+                temp_server.hostname = server
+                temp_server.services = None
+                temp_server.port = "18091"
+                temp_server.type = "columnar"
+                temp_server.memcached_port = "11207"
+                temp_server.rest_username = instance_obj.username
+                temp_server.rest_password = instance_obj.password
+                instance_obj.servers.append(temp_server)
+            instance_obj.nodes_in_cluster = instance_obj.servers
+            instance_obj.master = instance_obj.servers[0]
+            instance_obj.cbas_cc_node = instance_obj.servers[0]
             instance_obj.instance_config = instance_config
             tenant.columnar_instances.append(instance_obj)
 
@@ -92,6 +114,11 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         if instance_ids:
             instance_ids = instance_ids.split(',')
 
+        self.instance_type = {
+                "vcpus":"%svCPUs" % self.input.param("cpu", 4),
+                "memory":"%sGB" % self.input.param("ram", 16)
+            }
+
         for i in range(0, self.input.param("num_columnar_instances", 1)):
             if instance_ids and i < len(instance_ids):
                 populate_columnar_instance_obj(self.tenant, instance_ids[i])
@@ -106,8 +133,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
                             "vcpus": self.instance_type[0],
                             "memory": self.instance_type[1]
                         },
-                        token=self.pod.override_key,
-                        image=self.columnar_image))
+                        token=self.pod.override_key))
 
                 self.log.info("Deploying Columnar Instance {}".format(
                     instance_config["name"]))
@@ -126,6 +152,15 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
 
         # Adding db user to each instance.
         for instance in self.tenant.columnar_instances:
+            count = 0
+            analytics_admin_user = None
+            while not analytics_admin_user and count < 5:
+                analytics_admin_user = self.columnar_rbac_util.create_custom_analytics_admin_user(
+                    self.pod, self.tenant, self.tenant.project_id, instance,
+                    self.rest_username, self.rest_password
+                )
+                count += 1
+
             self.cluster_util.print_cluster_stats(instance)
 
         if self.skip_redeploy:
