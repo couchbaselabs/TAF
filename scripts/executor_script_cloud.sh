@@ -48,7 +48,7 @@ fi
 
 # Below "if" block added by UMANG to run goldfish tests
 if [ "$server_type" = "SERVERLESS_COLUMNAR" ]; then
-  cluster_info="{\"pod\": \"$capella_api_url\", \"tenant_id\": \"$tenant_id\", \"capella_user\": \"$capella_user\", \"capella_pwd\": \"$capella_password\", \"region\": \"$capella_region\"}"
+  cluster_info="{\"pod\": \"$capella_api_url\", \"tenant_id\": \"$tenant_id\", \"capella_user\": \"$capella_user\", \"capella_pwd\": \"$capella_password\", \"region\": \"$capella_region\", \"project\": \"$project_id\", \"override_token\": \"$override_token\"}"
   #echo python signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region
   #cluster_info=`python signup_user.py -e ${capella_email_prefix} -a $capella_api_url -x $capella_signup_token -r $capella_region`
   echo $cluster_info
