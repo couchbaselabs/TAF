@@ -29,6 +29,7 @@ import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from Jython_tasks import sirius_task
 from py_constants import CbServer
 from py_constants.cb_constants import DocLoading
 from Jython_tasks.task import \
@@ -3597,17 +3598,18 @@ class BucketUtils(ScopeUtils):
                                "after retry: {0}"
                                .format(task_info["unwanted"]["fail"]))
 
-    @staticmethod
-    def verify_doc_op_task_exceptions_with_sirius(tasks_info, cluster):
+    def verify_doc_op_task_exceptions_with_sirius(self, tasks_info, cluster):
+        WorkLoadTask = sirius_task.WorkLoadTask
         for task, task_info in list(tasks_info.items()):
             bucket = task_info["bucket"]
             scope = task_info["scope"]
             collection = task_info["collection"]
-            client = RESTClient([cluster.master],
-                                bucket,
-                                scope=scope,
-                                collection=collection)
-
+            task =  sirius_task.WorkLoadTask(self.task_manager,
+                                             task_info["op_type"],
+                                             )
+            sirius_task.LoadCouchbaseDocs(
+                self.task_manager, cluster, CbServer.use_https,
+                bucket, scope, collection,)
             exception_payload = client.create_payload_exception_handling(
                 resultSeed=task.resultSeed,
                 identifierToken=IDENTIFIER_TOKEN,
@@ -3639,8 +3641,7 @@ class BucketUtils(ScopeUtils):
                     tasks_info[task][dict_key]["fail"].update(key_value)
         return tasks_info
 
-    @staticmethod
-    def verify_doc_op_task_exceptions(tasks_info, cluster,
+    def verify_doc_op_task_exceptions(self, tasks_info, cluster,
                                       load_using="default_loader"):
         """
         :param tasks_info:  dict() of dict() of form,
@@ -3652,7 +3653,7 @@ class BucketUtils(ScopeUtils):
 
         if load_using != "default_loader":
             # Sirius case
-            return BucketUtils.verify_doc_op_task_exceptions_with_sirius(
+            return self.verify_doc_op_task_exceptions_with_sirius(
                 tasks_info, cluster)
 
         # Default SDK case

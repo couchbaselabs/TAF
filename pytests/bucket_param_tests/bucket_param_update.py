@@ -263,7 +263,7 @@ class BucketParamTest(ClusterSetup):
             # Creating doc updater to be used by test cases
             doc_update = doc_generator(
                 self.key,
-                start_doc_for_insert - (num_items/2),
+                start_doc_for_insert - int(num_items/2),
                 start_doc_for_insert,
                 key_size=self.key_size,
                 doc_size=self.doc_size,
@@ -274,7 +274,7 @@ class BucketParamTest(ClusterSetup):
             doc_delete = doc_generator(
                 self.key,
                 start_doc_for_insert - num_items,
-                start_doc_for_insert - (num_items/2),
+                start_doc_for_insert - int(num_items/2),
                 key_size=self.key_size,
                 doc_size=self.doc_size, doc_type=self.doc_type,
                 vbuckets=self.cluster.vbuckets)
@@ -354,7 +354,7 @@ class BucketParamTest(ClusterSetup):
                     if replica_num == 3:
                         if self.is_sync_write_enabled:
                             self.assertTrue(
-                                len(task.fail.keys()) == (num_items/2),
+                                len(task.fail.keys()) == int(num_items/2),
                                 "Few doc_ops succeeded while they should have failed.")
                         else:
                             self.assertTrue(

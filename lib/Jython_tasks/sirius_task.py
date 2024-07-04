@@ -19,7 +19,8 @@ class LoadCouchbaseDocs(object):
                  create_paths=False, xattr=False,
                  store_semantics=None, access_deleted=False,
                  create_as_deleted=False,
-                 ignore_exceptions=[], retry_exception=[], iterations=1):
+                 ignore_exceptions=[], retry_exception=[], iterations=1,
+                 retry_exceptions_task=False):
         self.task_manager = task_manager
         # Cluster specific params
         self.cluster = cluster
@@ -59,6 +60,8 @@ class LoadCouchbaseDocs(object):
         self.ignore_exceptions = ignore_exceptions
         self.retry_exception = retry_exception
 
+        self.retry_exceptions_task = retry_exceptions_task
+
     def create_sirius_task(self):
         if self.use_https:
             conn_str = f"couchbases://{self.cluster.master.ip}"
@@ -86,11 +89,18 @@ class LoadCouchbaseDocs(object):
                                   # access_deleted=self.access_deleted,
                                   # create_as_deleted=self.create_as_deleted,
                                   )
-        operation_config = WorkloadOperationConfig(
-            start=self.generator.start,
-            end=self.generator.end,
-            template=SiriusCodes.Templates.PERSON,
-            doc_size=self.generator.doc_size)
+        if self.retry_exceptions_task:
+            operation_config = WorkloadOperationConfig(
+                start=self.generator.start,
+                end=self.generator.end,
+                template=SiriusCodes.Templates.PERSON,
+                doc_size=self.generator.doc_size)
+        else:
+            operation_config = WorkloadOperationConfig(
+                start=self.generator.start,
+                end=self.generator.end,
+                template=SiriusCodes.Templates.PERSON,
+                doc_size=self.generator.doc_size)
         op_type = None
         if self.op_type == DocLoading.Bucket.DocOps.CREATE:
             op_type = SiriusCodes.DocOps.CREATE
@@ -106,6 +116,8 @@ class LoadCouchbaseDocs(object):
             op_type = SiriusCodes.DocOps.DELETE
         elif self.op_type == SiriusCodes.DocOps.VALIDATE:
             op_type = SiriusCodes.DocOps.VALIDATE
+        elif self.op_type == SiriusCodes.DocOps.RETRY_EXCEPTIONS:
+            op_type = SiriusCodes.DocOps.RETRY_EXCEPTIONS
         return WorkLoadTask(
             bucket=self.bucket,
             task_manager=self.task_manager, op_type=op_type,

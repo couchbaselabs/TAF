@@ -466,8 +466,6 @@ class BucketHelper(BucketRestApi):
                             magma_key_tree_data_block_size=None,
                             magma_seq_tree_data_block_size=None):
 
-        api = '{0}{1}{2}'.format(self.base_url, 'pools/default/buckets/',
-                                 urllib.quote_plus("%s" % bucket))
         params_dict = {}
         if ramQuotaMB:
             params_dict["ramQuotaMB"] = ramQuotaMB
@@ -510,19 +508,17 @@ class BucketHelper(BucketRestApi):
                 = magma_seq_tree_data_block_size
         if storageBackend is not None:
             params_dict[Bucket.storageBackend] = storageBackend
-        params = urllib.urlencode(params_dict)
 
-        self.log.info("Updating bucket properties for %s" % bucket)
-        self.log.debug("%s with param: %s" % (api, params))
-        status, content, _ = self._http_request(api, 'POST', params)
+        status, response = self.edit_bucket(bucket.name, params_dict)
+
         if timeSynchronization:
             if status:
-                raise Exception("Erroneously able to set bucket settings %s for bucket %s on time-sync" % (params, bucket))
-            return status, content
+                raise Exception(f"Erroneously able to set bucket settings "
+                                f"{params_dict} for {bucket.name} on time-sync")
+            return status, response
         if not status:
             raise Exception("Failure while setting bucket %s param %s: %s"
-                            % (bucket, params, content))
-        self.log.debug("Bucket %s updated" % bucket)
+                            % (bucket, params_dict, response))
         bucket.__dict__.update(params_dict)
         return status
 
