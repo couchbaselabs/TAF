@@ -256,8 +256,6 @@ class DocumentGenerator(KVGenerator):
     def next(self):
         if self.itr >= self.end:
             raise StopIteration
-        else:
-            template = self.template
         # Assigning  self.template to template without
         # using deep copy  will result in documents in same batch
         # (BatchedDocumentGenerator)
@@ -265,12 +263,12 @@ class DocumentGenerator(KVGenerator):
         # keys in batch will have value generated for last key
         # in batch(because of python reference concept)
         # TO avoid above , we can use deep_copy
-        if self.deep_copy:
-            template = copy.deepcopy(self.template)
+        template = copy.deepcopy(self.template) if self.deep_copy \
+            else self.template
         seed_hash = self.name + '-' + str(abs(self.itr))
         self.random.seed(seed_hash)
         if self.randomize:
-            for k in template.getNames():
+            for k in template.keys():
                 if k not in self.kwargs:
                     continue
                 if callable(self.kwargs[k]):
@@ -586,9 +584,8 @@ class BatchedDocumentGenerator(object):
     def next_batch(self, skip_value=False):
         self.count = 0
         key_val = dict()
-        # Value is not required for
-        # delete/touch ops, so below empty string
-        # string is used
+        # Value is not required for delete/touch ops,
+        # so below empty string is used
         val = ""
         while self.count < self._batch_size and self.has_next():
             if not skip_value or self._doc_gen.deep_copy:
