@@ -21,7 +21,7 @@ class GetPrivateEndpointService(GetCluster):
             self.fail("!!!...Enabling PES failed...!!!")
 
         self.log.info("Waiting for Private Endpoint Service to enable")
-        self.wait_for_deployment(self.project_id, self.cluster_id, pes=True)
+        self.wait_for_deployment(pes=True)
 
     def tearDown(self):
         super(GetPrivateEndpointService, self).tearDown()
