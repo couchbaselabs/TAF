@@ -176,6 +176,7 @@ class PostOnOffSchedule(GetAnalyticsClusters):
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)
+            if result.status_code == 204:
                 res = self.columnarAPI.delete_on_off_schedule(
                     organization, project, analyticsCluster)
                 if res.status_code != 204:
@@ -245,6 +246,7 @@ class PostOnOffSchedule(GetAnalyticsClusters):
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)
+            if result.status_code == 204:
                 res = self.columnarAPI.delete_on_off_schedule(
                     self.organisation_id, self.project_id,
                     self.analyticsCluster_id)
@@ -369,6 +371,7 @@ class PostOnOffSchedule(GetAnalyticsClusters):
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Schedule created successfully.")
                 time.sleep(2)
+            if result.status_code == 204:
                 res = self.columnarAPI.delete_on_off_schedule(
                     testcase["organizationID"], testcase["projectID"],
                     testcase["analyticsClusterID"])

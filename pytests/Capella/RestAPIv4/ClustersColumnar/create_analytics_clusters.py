@@ -105,6 +105,7 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
+            if result.status_code == 202:
                 self.instances.append(result.json()["id"])
 
         if failures:
@@ -173,6 +174,7 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
+            if result.status_code == 202:
                 self.instances.append(result.json()["id"])
 
         self.update_auth_with_api_token(self.org_owner_key["token"])
@@ -272,6 +274,7 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
+            if result.status_code == 202:
                 self.instances.append(result.json()["id"])
 
         if failures:

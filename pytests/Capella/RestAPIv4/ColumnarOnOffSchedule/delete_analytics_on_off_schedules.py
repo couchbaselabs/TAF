@@ -117,6 +117,7 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Deletion successful")
                 time.sleep(2)
+            if result.status_code == 204:
                 res = self.columnarAPI.create_on_off_schedule(
                     self.organisation_id, self.project_id,
                     self.analyticsCluster_id, self.expected_res["timezone"],
@@ -185,6 +186,7 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Deletion successful")
                 time.sleep(2)
+            if result.status_code == 204:
                 res = self.columnarAPI.create_on_off_schedule(
                     self.organisation_id, self.project_id,
                     self.analyticsCluster_id, self.expected_res["timezone"],
@@ -303,6 +305,7 @@ class DeleteOnOffSchedule(GetOnOffSchedule):
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.info("Deletion successful")
                 time.sleep(2)
+            if result.status_code == 204:
                 res = self.columnarAPI.create_on_off_schedule(
                     self.organisation_id, self.project_id,
                     self.analyticsCluster_id, self.expected_res["timezone"],

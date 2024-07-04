@@ -83,7 +83,7 @@ class ListAnalyticsClusters(GetAnalyticsClusters):
             organization = self.organisation_id
 
             if "url" in testcase:
-                self.columnarAPI.analytics_clusters_endpoint = \
+                self.columnarAPI.org_level_analytics_clusters_endpoint = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
@@ -95,8 +95,8 @@ class ListAnalyticsClusters(GetAnalyticsClusters):
                 result = self.columnarAPI.list_organization_level_analytics_clusters(
                     organization)
 
-            self.columnarAPI.analytics_clusters_endpoint = \
-                "/v4/organizations/{}/projects/{}/analyticsClusters"
+            self.columnarAPI.org_level_analytics_clusters_endpoint = \
+                "/v4/organizations/{}/analyticsClusters"
 
             self.validate_testcase(result, [200], testcase, failures)
 

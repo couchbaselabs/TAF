@@ -4,6 +4,7 @@ Created on May 31, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
+import time
 from pytests.Capella.RestAPIv4.ClustersColumnar.get_analytics_clusters import \
     GetAnalyticsClusters
 
@@ -78,9 +79,24 @@ class GetOnOffSchedule(GetAnalyticsClusters):
             self.fail("!!!...On Off Schedule creation failed...!!!")
         else:
             self.log.info("Schedule created successfully.")
+            time.sleep(2)
 
     def tearDown(self):
-        super(GetOnOffSchedule, self).tearDown()
+        # Delete Analytics On/Off Schedule
+        result = self.columnarAPI.delete_on_off_schedule(
+            self.organisation_id, self.project_id,
+            self.analyticsCluster_id)
+        if result.status_code == 429:
+            result = self.columnarAPI.delete_on_off_schedule(
+                self.organisation_id, self.project_id,
+                self.analyticsCluster_id)
+        if result.status_code != 204:
+            self.log.error("Error: {}".format(result.content))
+            super(GetOnOffSchedule, self).tearDown()
+            self.fail("!!!...Error while Deleting on/off Schedule")
+        else:
+            time.sleep(2)
+            super(GetOnOffSchedule, self).tearDown()
 
     def test_api_path(self):
         testcases = [

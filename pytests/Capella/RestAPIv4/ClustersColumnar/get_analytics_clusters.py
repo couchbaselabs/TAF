@@ -14,51 +14,40 @@ class GetAnalyticsClusters(GetProject):
 
         # Initialize the params and create an analytics instance.
         self.expected_res = {
-            "name": self.prefix + nomenclature,
+            "id": self.analyticsCluster_id,
+            "name": self.prefix + "WRAPPER",
             "description": "",
-            "nodes": 1,
-            "region": "us-east-1",
-            "cloudProvider": "aws",
             "support": {
                 "plan": "enterprise",
                 "timezone": "ET"
-            },
-            "compute": {
-                "cpu": 4,
-                "ram": 16
-            },
-            "availability": {
-                "type": self.input.param("availabilityType", "single")
             }
         }
-        res = self.columnarAPI.create_analytics_cluster(
-            self.organisation_id, self.project_id,
-            self.expected_res["name"], self.expected_res["cloudProvider"],
-            self.expected_res["compute"], self.expected_res["region"],
-            self.expected_res["nodes"], self.expected_res["support"],
-            self.expected_res["availability"])
-        if res.status_code != 202:
-            self.log.error(res.content)
-            self.tearDown()
-            self.fail("!!!...Analytics Instance creation failed...!!!")
-        self.analyticsCluster_id = res.json()["id"]
-        self.expected_result['id'] = self.analyticsCluster_id
-        self.instances = list()
+        # res = self.columnarAPI.create_analytics_cluster(
+        #     self.organisation_id, self.project_id,
+        #     self.expected_res["name"], self.expected_res["cloudProvider"],
+        #     self.expected_res["compute"], self.expected_res["region"],
+        #     self.expected_res["nodes"], self.expected_res["support"],
+        #     self.expected_res["availability"])
+        # if res.status_code != 202:
+        #     self.log.error(res.content)
+        #     self.tearDown()
+        #     self.fail("!!!...Analytics Instance creation failed...!!!")
+        # self.analyticsCluster_id = res.json()["id"]
+        # self.expected_res['id'] = self.analyticsCluster_id
+        self.expected_res.update(self.instance_templates[self.input.param(
+            "instance_template", "4v16_AWS_singleNode_ue1")])
 
-        # Wait for instance deployment
-        self.wait_for_deployment(
-            self.project_id, inst_id=self.analyticsCluster_id)
+        # Wait for the instance in APIBase to be deployed.
+        self.log.info("Waiting for INSTANCE {} to be deployed."
+                      .format(self.analyticsCluster_id))
+        if not self.wait_for_deployment(inst_id=self.analyticsCluster_id):
+            self.tearDown()
+            self.fail("!!!...Instance deployment failed...!!!")
+        self.log.info("Successfully deployed Instance.")
         self.instances.append(self.analyticsCluster_id)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
-
-        # Delete the created instance.
-        if self.flush_columnar_instances(self.project_id, self.instances):
-            self.tearDown()
-            self.fail("!!!...Instance(s) deletion failed...!!!")
-        self.wait_for_deletion(self.project_id, instances=self.instances)
-
         super(GetAnalyticsClusters, self).tearDown()
 
     def test_api_path(self):
