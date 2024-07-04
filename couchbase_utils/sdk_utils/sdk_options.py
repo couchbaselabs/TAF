@@ -1,8 +1,8 @@
 from datetime import timedelta
 
 from couchbase import options
-from couchbase.durability import ServerDurability, DurabilityLevel, \
-    ClientDurability, ReplicateTo, PersistTo
+from couchbase.durability import (ServerDurability, DurabilityLevel,
+                                  ClientDurability, ReplicateTo, PersistTo)
 from couchbase.subdocument import StoreSemantics
 
 from constants.sdk_constants.java_client import SDKConstants
@@ -48,9 +48,11 @@ class SDKOptions(object):
 
         if durability_level == \
                 SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
-            return ServerDurability(level=DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE)
+            return ServerDurability(
+                level=DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE)
 
-        if durability_level == SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY:
+        if (durability_level ==
+                SDKConstants.DurabilityLevel.PERSIST_TO_MAJORITY):
             return ServerDurability(level=DurabilityLevel.PERSIST_TO_MAJORITY)
 
         return ServerDurability(level=DurabilityLevel.NONE)
@@ -68,8 +70,9 @@ class SDKOptions(object):
                            durability=""):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         return options.InsertOptions(
             timeout=SDKOptions.get_duration(timeout, time_unit),
             expiry=SDKOptions.get_duration(exp, exp_unit),
@@ -89,8 +92,9 @@ class SDKOptions(object):
                            durability="", preserve_expiry=False):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         return options.UpsertOptions(
             timeout=SDKOptions.get_duration(timeout, time_unit),
             expiry=SDKOptions.get_duration(exp, exp_unit),
@@ -102,8 +106,9 @@ class SDKOptions(object):
                            durability="", cas=0):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         params = {"timeout": SDKOptions.get_duration(timeout, time_unit),
                   "durability": d_options}
         if cas:
@@ -117,8 +122,9 @@ class SDKOptions(object):
                             durability="", cas=0, preserve_expiry=None):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         params = {"timeout": SDKOptions.get_duration(timeout, time_unit),
                   "durability": d_options}
         if cas:
@@ -143,8 +149,9 @@ class SDKOptions(object):
                               create_as_deleted=False):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         params = {"timeout": SDKOptions.get_duration(timeout, time_unit),
                   "durability": d_options}
         if cas:
@@ -166,8 +173,9 @@ class SDKOptions(object):
             durability=""):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         return options.InsertMultiOptions(
             timeout=SDKOptions.get_duration(timeout, time_unit),
             expiry=SDKOptions.get_duration(exp, exp_unit),
@@ -181,8 +189,9 @@ class SDKOptions(object):
             durability="", preserve_expiry=False):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         return options.UpsertMultiOptions(
             timeout=SDKOptions.get_duration(timeout, time_unit),
             expiry=SDKOptions.get_duration(exp, exp_unit),
@@ -196,8 +205,9 @@ class SDKOptions(object):
             durability="", preserve_expiry=False):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         o = options.ReplaceMultiOptions(
             timeout=SDKOptions.get_duration(timeout, time_unit),
             expiry=SDKOptions.get_duration(exp, exp_unit),
@@ -210,8 +220,9 @@ class SDKOptions(object):
             persist_to=0, replicate_to=0, durability=""):
         d_options = SDKOptions.get_durability_level(durability)
         if persist_to or replicate_to:
-            d_options = ClientDurability(replicate_to=replicate_to,
-                                         persist_to=persist_to)
+            d_options = ClientDurability(
+                replicate_to=ReplicateTo(replicate_to),
+                persist_to=PersistTo(persist_to))
         return options.RemoveMultiOptions(
             timeout=SDKOptions.get_duration(timeout, time_unit),
             durability=d_options)

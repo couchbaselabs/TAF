@@ -12,6 +12,8 @@ from global_vars import logger
 from sdk_client3 import SDKClient, TransactionConfig
 from BucketLib.BucketOperations import BucketHelper
 from constants.sdk_constants.java_client import SDKConstants
+from sdk_utils.sdk_options import SDKOptions
+from sdk_utils.transaction_util import TransactionLoader
 from sirius_client_framework.sirius_constants import SiriusCodes
 
 """An API for scheduling tasks that run against Couchbase Server
@@ -413,17 +415,20 @@ class ServerTasks(object):
 
         if op_type == "time_out":
             transaction_timeout = 2
-        trans_conf = TransactionConfig(
-            durability=durability, timeout=transaction_timeout,
-            transaction_keyspace=transaction_keyspace)
-        transaction_options = SDKClient.get_transaction_options(trans_conf)
+        transaction_options = TransactionLoader.get_transaction_options(
+            durability=durability,
+            kv_timeout=timeout_secs,
+            expiration_time=transaction_timeout,
+            scan_consistency=None,
+            metadata_scope=None,
+            metadata_collection=None)
         for _ in range(gen_start, gen_end, gen_range):
             temp_bucket_list = list()
             temp_client_list = list()
             for bucket in buckets:
                 client = SDKClient(cluster, bucket,
-                                   scope=scope, collection=collection,
-                                   transaction_config=trans_conf)
+                                   scope=scope, collection=collection)
+                                   # transaction_config=transaction_options)
                 temp_client_list.append(client)
                 temp_bucket_list.append(client.collection)
             bucket_list.append(temp_bucket_list)

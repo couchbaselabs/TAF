@@ -17,6 +17,7 @@ from couchbase.exceptions import UnAmbiguousTimeoutException, \
     RequestCanceledException, TimeoutException, \
     DurabilitySyncWriteAmbiguousException, CouchbaseException, \
     CasMismatchException, DocumentNotFoundException
+from couchbase.logic.options import Compression
 
 from cb_constants import CbServer, DocLoading
 from cb_constants.ClusterRun import ClusterRun
@@ -309,18 +310,15 @@ class SDKClient(object):
             self.log.debug("Creating SDK connection for '%s'" % self.bucket)
         # Having 'None' will enable us to test without sending any
         # compression settings and explicitly setting to 'False' as well
-        build_env = False
         auth = PasswordAuthenticator(self.username, self.password)
         cluster_opts = {
             "authenticator": auth,
             "enable_tls": False
         }
-        if CbServer.use_https or self.transaction_conf or self.compression:
-            # t_cluster_env = cluster.sdk_cluster_options
-            build_env = True
 
         if self.compression is not None:
-            cluster_opts["enable_compression"] = self.compression.get("enabled", False)
+            cluster_opts["compression"] = (
+                Compression(self.compression.get("enabled", "NONE")))
             cluster_opts["compression_min_size"] = self.compression["minSize"]
             cluster_opts["compression_min_ratio"] = self.compression["minRatio"]
 
@@ -328,37 +326,9 @@ class SDKClient(object):
             cluster_opts["enable_tls"] = True
 
         if self.transaction_conf:
-            trans_conf = TransactionsConfig().cleanupConfig(
-                TransactionsCleanupConfig.cleanupClientAttempts(True)
-                .cleanupLostAttempts(True)
-                .cleanupWindow(Duration.ofSeconds(
-                    self.transaction_conf.cleanup_window or 60)))
+            cluster_opts["transaction_config"] = self.transaction_conf
 
-            # Set transaction timeout
-            if self.transaction_conf.timeout is not None:
-                t_timeout = Duration.ofSeconds(self.transaction_conf.timeout)
-                trans_conf = trans_conf.timeout(t_timeout)
-
-            # Set transaction's durability level
-            # If 'None' assume default transaction's durability
-            if self.transaction_conf.durability is not None:
-                t_durability = KVDurabilityLevel.decodeFromManagementApi(
-                        self.transaction_conf.durability)
-                trans_conf = trans_conf.durabilityLevel(t_durability)
-
-            # Set metadata-collection for storing transactional docs / subdocs
-            # Default it uses _default collection
-            if self.transaction_conf.transaction_keyspace:
-                b_name, scope, col = self.transaction_conf.transaction_keyspace
-                tnx_keyspace = TransactionKeyspace.create(b_name, scope, col)
-                trans_conf = trans_conf.metadataCollection(tnx_keyspace)
-
-            t_cluster_env = t_cluster_env.transactionsConfig(trans_conf)
-
-        if build_env:
-            cluster_opts = ClusterOptions(**cluster_opts)
-        else:
-            cluster_opts = ClusterOptions(**cluster_opts)
+        cluster_opts = ClusterOptions(**cluster_opts)
         i = 1
         while i <= 5:
             try:
