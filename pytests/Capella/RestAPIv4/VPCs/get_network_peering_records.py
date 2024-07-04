@@ -57,7 +57,7 @@ class GetNetworkPeers(GetCluster):
             self.capella["clusters"]["vpc_id"] = self.peer_id
 
             # Wait for cluster to be healthy.
-            self.wait_for_deployment(self.project_id, self.cluster_id)
+            self.wait_for_deployment()
         self.expected_res["id"] = self.peer_id
 
     def tearDown(self):

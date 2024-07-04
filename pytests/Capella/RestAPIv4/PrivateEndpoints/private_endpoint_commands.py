@@ -150,7 +150,8 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                "organizationOwner", "projectOwner"
+                "organizationOwner", "projectOwner",
+                "projectManager", "projectViewer"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
@@ -312,9 +313,6 @@ class PostEndpointCommand(GetPrivateEndpointService):
             for value in values:
                 testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
-                # for param in ["command"]:
-                #     del testcase[param]
-
                 testcase["description"] = "Testing `{}` with val: {} of {}" \
                     .format(key, value, type(value))
                 if key == "subnetIDs" and value is None:
