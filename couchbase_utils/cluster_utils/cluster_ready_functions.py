@@ -96,6 +96,7 @@ class ClusterUtils:
             orchestrator_node = json_content["orchestrator"]
             if orchestrator_node == "undefined":
                 sleep(1, message="orchestrator='undefined'", log_type="test")
+                retry_index += 1
             else:
                 break
         orchestrator_node = \
