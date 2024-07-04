@@ -67,7 +67,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["external_dataset"][
             "external_dataset_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["file_format"] = file_format
         dataset_properties["include"] = "*.{0}".format(file_format)
         dataset_properties["region"] = self.aws_region

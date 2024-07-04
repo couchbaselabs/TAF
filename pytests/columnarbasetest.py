@@ -121,6 +121,12 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         for task in tasks:
             self.task_manager.get_task_result(task)
             self.assertTrue(task.result, "Cluster deployment failed!")
+            # So that columnar cluster isn't deployed for current test in case
+            # previous test failed in setup and a cluster was already deployed.
+            if self.capella["instance_id"]:
+                self.capella["instance_id"] += f",{task.instance_id}"
+            else:
+                self.capella["instance_id"] = task.instance_id
             populate_columnar_instance_obj(self.tenant, task.instance_id,
                                            task.name, instance_config)
 
