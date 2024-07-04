@@ -1,3 +1,5 @@
+from datetime import datetime, timezone, timedelta
+
 from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 import time
@@ -32,6 +34,13 @@ class BackupRestore(ColumnarBaseTest):
             self.mini_volume.stop_crud_on_data_sources()
         if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
             self.delete_all_buckets_from_capella_cluster(self.tenant, self.remote_cluster)
+
+        # delete all created backups
+        backups = self.get_backup_from_backup_lists()
+        for backup in backups:
+            self.columnarAPI.delete_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
+                                           backup["data"]["id"])
+
         if not self.cbas_util.delete_cbas_infra_created_from_spec(
                 self.cluster, self.columnar_spec):
             self.fail("Error while deleting cbas entities")
@@ -188,16 +197,7 @@ class BackupRestore(ColumnarBaseTest):
         self.log.info("Synonyms entity matched") if synonyms == metadata_synonyms else self.fail("Synonyms entity "
                                                                                                  "mismatch")
 
-    def create_backup_wait_for_complete(self, retention=None, timeout=3600):
-        if retention:
-            resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
-                                                  retention)
-        else:
-            resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
-        backup_id = resp.json()["id"]
-        self.log.info("Backup Id: {}".format(backup_id))
-
-        # wait for backup to complete
+    def wait_for_backup_complete(self, backup_id, timeout=3600):
         start_time = time.time()
         backup_state = None
         while backup_state != "complete" and time.time() < start_time + timeout:
@@ -211,10 +211,24 @@ class BackupRestore(ColumnarBaseTest):
             self.fail("Failed to create backup with timeout of {}".format(timeout))
         else:
             self.log.info("Successfully created backup in {} seconds".format(time.time() - start_time))
+            return True
+
+    def create_backup_wait_for_complete(self, retention=None, timeout=3600):
+        if retention:
+            resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
+                                                  retention)
+        else:
+            resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
+        backup_id = resp.json()["id"]
+        self.log.info("Backup Id: {}".format(backup_id))
+
+        # wait for backup to complete
+        self.wait_for_backup_complete(backup_id, timeout)
         return backup_id
 
     def restore_wait_for_complete(self, backup_id, timeout=3600):
-        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.instance_id, backup_id)
+        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
+                                               backup_id)
         restore_id = resp.json()["id"]
         start_time = time.time()
         self.log.info("Restore Id: {}".format(restore_id))
@@ -281,8 +295,8 @@ class BackupRestore(ColumnarBaseTest):
         start_time = 600
         while (not status or status != "healthy") and time.time() < start_time + timeout:
             resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
-                                                                               self.tenant.project_id,
-                                                                               self.cluster.instance_id)
+                                                                   self.tenant.project_id,
+                                                                   self.cluster.instance_id)
             resp = resp.json()
             status = resp["data"]["state"]
             self.log.info("Instance state: {}".format(status))
@@ -378,6 +392,44 @@ class BackupRestore(ColumnarBaseTest):
         if backup_info["retention"] != backup_time:
             self.fail("Backup retention time mismatch, expected {}, actual {}".
                       format(backup_time, backup_info["retention"]))
+
+    def test_schedule_backup(self):
+        self.base_infra_setup()
+        backup_interval = self.input.param("backup_interval", 4)
+        retention = self.input.param("backup_retention", 24)
+        self.load_data_to_source(0, self.no_of_docs, 0, self.no_of_docs)
+        self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
+        current_utc_time = datetime.now(timezone.utc)
+        current_utc_time = current_utc_time.replace(minute=30, second=0, microsecond=0)
+        new_utc_time = current_utc_time + timedelta(hours=backup_interval)
+        # Format the UTC time as a string in the desired format
+        formatted_utc_time = current_utc_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        formatted_new_utc_time = new_utc_time.strftime("%Y-%m-%dT%H:%M:%SZ")
+        resp = self.columnarAPI.schedule_backup_create_update(self.tenant.id, self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              backup_interval, retention, formatted_utc_time)
+        if resp.status_code != 204:
+            self.fail("Failed to create scheduled backup")
+        time.sleep(60)
+        override_token = self.capella["override_token"]
+        dataset_count = self.dataset_count()
+        columnar_internal = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user,
+                                        self.tenant.pwd, override_token)
+        resp = columnar_internal.set_trigger_time_for_scheduled_backup(formatted_new_utc_time,
+                                                                       [self.cluster.instance_id])
+        if resp.status_code == 202:
+            self.log.info("Applied sudo time to trigger backup")
+        else:
+            self.fail("Failed to apply time to trigger backup")
+        time.sleep(60)
+        backup = self.get_backup_from_backup_lists()[0]
+        self.create_backup_wait_for_complete(backup["data"]["id"])
+        self.restore_wait_for_complete(backup["data"]["id"])
+        self.wait_for_instance_to_be_healthy()
+        dataset_count_after_restore = self.dataset_count()
+        if dataset_count != dataset_count_after_restore:
+            self.fail("Data mismatch after restore")
+        self.validate_entities_after_restore()
 
     def test_mini_volume_backup_restore(self):
         self.base_infra_setup()

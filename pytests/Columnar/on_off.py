@@ -134,7 +134,7 @@ class OnOff(ColumnarBaseTest):
         if not result:
             self.fail(msg)
 
-    def load_data_to_source(self, remote_start, remote_end, standalone_start, standalone_end):
+    def load_data_to_source(self, remote_start, remote_end):
         if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
             for bucket in self.remote_cluster.buckets:
                 if bucket.name != "_default":
@@ -265,7 +265,7 @@ class OnOff(ColumnarBaseTest):
     def test_on_demand_on_off(self):
 
         self.base_infra_setup()
-        self.load_data_to_source(0, self.no_of_docs, 1, self.no_of_docs)
+        self.load_data_to_source(0, self.no_of_docs)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
@@ -297,7 +297,7 @@ class OnOff(ColumnarBaseTest):
 
     def test_on_demand_off_after_scaling_and_scale_after_resume(self):
         self.base_infra_setup()
-        self.load_data_to_source(0, self.no_of_docs, 1, self.no_of_docs)
+        self.load_data_to_source(0, self.no_of_docs)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
@@ -460,7 +460,7 @@ class OnOff(ColumnarBaseTest):
 
     def test_schedule_on_off(self):
         self.base_infra_setup()
-        self.load_data_to_source(1, self.no_of_docs, 1, self.no_of_docs)
+        self.load_data_to_source(0, self.no_of_docs)
         remote_datasets = self.cbas_util.get_all_dataset_objs("remote")
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
