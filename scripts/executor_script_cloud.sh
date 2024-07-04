@@ -107,9 +107,7 @@ else
 fi
 
 touch $WORKSPACE/testexec.$$.ini
-docker run --rm \
-  -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini  \
-  testrunner:install python3 scripts/populateIni.py $skip_mem_info \
+python scripts/populateIni.py $skip_mem_info \
   -s ${servers} $internal_servers_param \
   -d ${addPoolServerId} \
   -a ${addPoolServers} \
