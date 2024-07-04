@@ -464,7 +464,7 @@ class ColumnarRBAC(ColumnarBaseTest):
         """Generate a random password."""
         password_characters = string.ascii_letters + string.digits
         password = ''.join(random.choice(password_characters) for i in range(length))
-        password += "!123"
+        password += "!123Aa"
         return password
 
     def generate_random_entity_name(self, length=5, type="database"):
