@@ -443,6 +443,9 @@ class MetadataReplication(CBASBaseTest):
                     self.cluster_util, server)
                 shell.disconnect()
 
+        if not self.cbas_util.wait_for_cbas_to_recover(self.cluster, 300):
+            self.fail("Analytics failed to recover post service restart")
+
         end_time = time.time() + 600
         while time.time() < end_time:
             replicas_after_reboot = len(
