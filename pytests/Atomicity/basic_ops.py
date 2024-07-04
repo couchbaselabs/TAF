@@ -1,11 +1,9 @@
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading
-from couchbase_helper.documentgenerator import \
-    DocumentGenerator, \
-    doc_generator
+from couchbase_helper.documentgenerator import DocumentGenerator, doc_generator
 from couchbase_helper.tuq_generators import JsonGenerator
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 """
 Basic test cases with commit,rollback scenarios
@@ -41,10 +39,9 @@ class basic_ops(ClusterSetup):
         age = range(5)
         first = ['james', 'sharon']
         body = [''.rjust(self.doc_size - 10, 'a')]
-        template = JsonObject.create()
-        template.put("age", None)
-        template.put("first_name", None)
-        template.put("body", None)
+        template = {"age": None,
+                    "first_name": None,
+                    "body": None}
         generator = DocumentGenerator(self.key, template, randomize=True,
                                       age=age,
                                       first_name=first, body=body,
@@ -79,6 +76,7 @@ class basic_ops(ClusterSetup):
                             'Failed to advance the clock')
 
             output, _ = shell.execute_command('date')
+            shell.disconnect()
             self.log.info('Date after is set forward {0}'.format(output))
 
         if self.drift_behind:
@@ -87,6 +85,7 @@ class basic_ops(ClusterSetup):
                             'Failed to advance the clock')
 
             output, _ = shell.execute_command('date')
+            shell.disconnect()
             self.log.info('Date after is set behind {0}'.format(output))
 
         self.log.info("Loading docs using AtomicityTask")
@@ -103,6 +102,7 @@ class basic_ops(ClusterSetup):
             sync=self.sync, binary_transactions=self.binary_transactions)
         self.log.info("going to execute the task")
         self.task.jython_task_manager.get_task_result(task)
+        self.assertTrue(task.result, f"Transaction failed: {task.exception}")
 
         if self.op_type == "time_out":
             self.sleep(90, "Wait for staged docs to get cleared")
@@ -120,6 +120,7 @@ class basic_ops(ClusterSetup):
                 sync=self.sync,
                 binary_transactions=self.binary_transactions)
             self.task_manager.get_task_result(task)
+            self.assertTrue(task.result, f"Transaction failed: {task.exception}")
 
     def test_large_doc_size_commit(self):
         gen_create = self.generate_docs_bigdata(docs_per_day=self.num_items,
