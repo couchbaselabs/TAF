@@ -117,6 +117,23 @@ class SecurityBase(CouchbaseBaseTest):
         else:
             self.log.info("Project Deleted Successfully")
 
+    def wait_for_columnar_cluster_to_be_healthy(self, instance_id, timeout):
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
+                                                                 self.project_id,
+                                                                 instance_id)
+            state = resp.json()['currentState']
+            if state == "deploying":
+                self.sleep(10, "Columnar cluster deploying")
+            else:
+                break
+        if state == "healthy":
+            self.log.info("Columnar cluster {} deployed".format(instance_id))
+        else:
+            self.fail("Failed to deploy columnar instance {} even after {} seconds." \
+                        " Cluster State: {}".format(instance_id, timeout, state))
+
     def create_columnar_cluster(self, cluster_name, timeout=1800):
         num_columnar_clusters = TestInputSingleton.input.param("num_columnar_clusters", 0)
         for _ in range(0, num_columnar_clusters):
@@ -126,22 +143,7 @@ class SecurityBase(CouchbaseBaseTest):
                     {"plan": "enterprise", "timezone": "ET"}, {"type": "single"})
             if resp.status_code == 202:
                 self.instance_id = resp.json()["id"]
-
-            start_time = time.time()
-            while time.time() < start_time + timeout:
-                resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
-                                                                     self.project_id,
-                                                                     self.instance_id)
-                state = resp.json()['currentState']
-                if state == "deploying":
-                    self.sleep(10, "Columnar cluster deploying")
-                else:
-                    break
-            if state == "healthy":
-                self.log.info("Columnar cluster {} deployed".format(cluster_name))
-            else:
-                self.fail("Failed to deploy columnar instance {} even after {} seconds." \
-                          " Cluster State: {}".format(cluster_name, timeout, state))
+                self.wait_for_columnar_cluster_to_be_healthy(self.instance_id)
 
     def create_cluster(self, cluster_name, server_version, provider="AWS"):
         num_clusters = TestInputSingleton.input.param("num_clusters", 1)
@@ -231,6 +233,24 @@ class SecurityBase(CouchbaseBaseTest):
 
             self.log.info("Cluster Deletion Successful")
 
+    def wait_for_columnar_cluster_to_be_deleted(self, instance_id, timeout):
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
+                                                                    self.project_id,
+                                                                    instance_id)
+            if resp.status_code == 404:
+                break
+            else:
+                self.sleep(10, "Wait for columnar cluster to be deleted")
+
+        resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
+                                                                    self.project_id,
+                                                                    instance_id)
+        if resp.status_code != 404:
+            self.fail("Failed to delete columnar cluster even after timeout: {}".
+                        format(timeout))
+
     def delete_columnar_cluster(self, timeout=1800):
         if self.instance_id is None:
             self.log.info("No columnar clusters to delete")
@@ -245,22 +265,8 @@ class SecurityBase(CouchbaseBaseTest):
                       "Status: {}, Error: {}".format(resp.status_code, resp.content))
         else:
             self.log.info("Wait for columnar cluster to be deleted")
-            start_time = time.time()
-            while time.time() < start_time + timeout:
-                resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
-                                                                     self.project_id,
-                                                                     self.instance_id)
-                if resp.status_code == 404:
-                    break
-                else:
-                    self.sleep(10, "Wait for columnar cluster to be deleted")
-
-            resp = self.columnarAPI.fetch_analytics_cluster_info(self.tenant_id,
-                                                                     self.project_id,
-                                                                     self.instance_id)
-            if resp.status_code != 404:
-                self.fail("Failed to delete columnar cluster even after timeout: {}".
-                          format(timeout))
+            self.wait_for_columnar_cluster_to_be_deleted(self.instance_id,
+                                                         timeout)
 
     @staticmethod
     def get_next_cidr():
