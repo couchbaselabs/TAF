@@ -123,7 +123,7 @@ class OnOff(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "no_of_standalone_coll", 0)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string"}]
+        self.columnar_spec["standalone_dataset"]["primary_key"] = []
 
         if not hasattr(self, "remote_cluster"):
             remote_cluster = None

@@ -3996,18 +3996,25 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     database_name = self.generate_name()
                 if not dataverse_name:
                     dataverse_name = self.generate_name()
-                if not self.create_database(cluster, database_name):
-                    self.log.error("Error while creating database {0}".format(
-                        dataverse_name, database_name))
-                if not self.create_dataverse(
-                        cluster, dataverse_name, database_name):
-                    self.log.error("Error while creating dataverse {0} in "
-                                   "database {1}".format(
-                        dataverse_name, database_name))
                 database_obj = self.get_database_obj(
                     self.format_name(database_name))
+                if database_obj is None:
+                    if not self.create_database(cluster, database_name):
+                        self.log.error("Error while creating database {0}".format(
+                            dataverse_name, database_name))
+                    database_obj = self.get_database_obj(
+                        self.format_name(database_name))
                 dataverse_obj = self.get_dataverse_obj(
                     self.format_name(dataverse_name), database_obj.name)
+                if dataverse_obj is None:
+                    if not self.create_dataverse(
+                            cluster, dataverse_name, database_name, if_not_exists=True):
+                        self.log.error("Error while creating dataverse {0} in "
+                                       "database {1}".format(
+                            dataverse_name, database_name))
+                    dataverse_obj = self.get_dataverse_obj(
+                        self.format_name(dataverse_name), database_obj.name)
+
 
             dataset_name = self.generate_name(
                 name_cardinality=1, max_length=name_length,

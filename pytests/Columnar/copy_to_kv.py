@@ -59,7 +59,7 @@ class CopyToKv(ColumnarBaseTest):
             for j in range(i + 1, len(datasets)):
                 unique_pairs.append([datasets[i], datasets[j]])
 
-    def base_infra_setup(self):
+    def base_infra_setup(self, primary_key=None):
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
         self.columnar_spec["remote_link"]["no_of_remote_links"] = self.input.param(
@@ -110,7 +110,10 @@ class CopyToKv(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 0)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        if primary_key:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = primary_key
+        else:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
         self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
         if self.input.param("num_of_external_coll", 0):
@@ -928,7 +931,8 @@ class CopyToKv(ColumnarBaseTest):
                                  "link_name": remote_link.full_name, "analytics_timeout": 1000000}))
 
     def mini_volume_copy_to_kv(self):
-        self.base_infra_setup()
+        primary_key=None
+        self.base_infra_setup(primary_key)
         self.copy_to_kv_job = Queue()
         self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
         self.mini_volume.calculate_volume_per_source()
