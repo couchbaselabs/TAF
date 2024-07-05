@@ -447,7 +447,7 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
-        dataset_properties["external_container_name"] = self.aws_bucket_name
+        dataset_properties["external_container_name"] = self.s3_source_bucket
         dataset_properties["file_format"] = file_format
         dataset_properties["include"] = "*.{0}".format(file_format)
         dataset_properties["region"] = self.aws_region
