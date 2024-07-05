@@ -14,14 +14,32 @@ import xml.dom.minidom
 #</testsuite>
 
 #
-# XUnitTestCase has name , time and error
-# error is a XUnitTestCase
+# XUnitTestCase has name , time and error is a XUnitTestCase
 class XUnitTestCase(object):
     def __init__(self):
         self.name = ""
         self.time = 0
         self.error = None
         self.params = ''
+        self.run_status = "not_run"
+
+    def update_results(self, suite, result=None, time_taken=None,
+                       error_type=None, error_message=None):
+        suite.skips -= 1
+        if result is not None:
+            self.run_status = result
+            if result == "fail":
+                self.error = XUnitTestCaseError()
+                self.error.type = error_type
+                self.error.message = error_message
+                suite.errors += 1
+                suite.failures += 1
+            elif result == "pass":
+                suite.passed += 1
+        if time_taken is not None:
+            self.time = time_taken
+
+
 #
 # XUnitTestCaseError has type and message
 #
@@ -44,24 +62,21 @@ class XUnitTestResult(object):
     def __init__(self):
         self.suites = []
 
-    def add_test(self, name, time=0, errorType=None, errorMessage=None, status='pass', params=''):
-        #Get the classname
+    def get_unit_test_suite(self, name):
         class_name = name[:name.rfind(".")]
         # If params are passed to the test
         if "," in name:
             class_name = name
 
-        matched = False
         for suite in self.suites:
             if suite.name == class_name:
-                suite.add_test(name, time, errorType, errorMessage, status, params=params)
-                matched = True
-                break
-        if not matched:
-            suite = XUnitTestSuite()
-            suite.name = class_name
-            suite.add_test(name, time, errorType, errorMessage, status, params=params)
-            self.suites.append(suite)
+                return suite
+
+        # No existing suite name matched, so creating one
+        suite = XUnitTestSuite()
+        suite.name = class_name
+        self.suites.append(suite)
+        return suite
 
     def to_xml(self, suite):
         doc = xml.dom.minidom.Document()
@@ -73,12 +88,14 @@ class XUnitTestResult(object):
         testsuite.setAttribute('errors', str(suite.errors))
         testsuite.setAttribute('tests', str(len(suite.tests)))
         testsuite.setAttribute('time', str(suite.time))
+        # 'skip' means the test is supposed to run but 'not_run' due to job abort
         testsuite.setAttribute('skip', str(suite.skips))
         for testobject in suite.tests:
             testcase = doc.createElement('testcase')
             full_name = testobject.name+testobject.params
             testcase.setAttribute('name', full_name)
             testcase.setAttribute('time', str(testobject.time))
+            testcase.setAttribute("result", testobject.run_status)
             if testobject.error:
                 error = doc.createElement('error')
                 error.setAttribute('type', testobject.error.type)
@@ -103,15 +120,18 @@ class XUnitTestResult(object):
 
     def print_summary(self):
         for suite in self.suites:
-            oks = []
+            num_passed = 0
             errors = []
+            num_not_run = 0
             for test in suite.tests:
                 if test.error:
                     errors.append(test.name)
+                elif test.run_status == "not_run":
+                    num_not_run += 1
                 else:
-                    oks.append(test.name)
-            msg = "summary so far suite {0} , pass {1} , fail {2}"
-            print(msg.format(suite.name, len(oks), len(errors)))
+                    num_passed += 1
+            print(f"Summary:: suite {suite.name}, pass {num_passed}, "
+                  f"fail {len(errors)}, scheduled {num_not_run}")
             if errors:
                 print("failures so far...")
                 for error in errors:
@@ -126,29 +146,27 @@ class XUnitTestSuite(object):
         self.errors = 0
         self.failures = 0
         self.skips = 0
+        self.passed = 0
 
     # create a new XUnitTestCase and update the errors/failures/skips count
     def add_test(self, name, time=0, errorType=None, errorMessage=None, status='pass', params=''):
-        #create a test_case and add it to this suite
+        # create a test_case and add it to this suite
         # todo: handle 'skip' or 'setup_failure' or other
         # status codes that testrunner might pass to this function
         test = XUnitTestCase()
         test.name = name
         test.time = time
         test.params = params
+        self.tests.append(test)
         if status == 'fail':
             error = XUnitTestCaseError()
             error.type = errorType
             error.message = errorMessage
             test.error = error
-        self.tests.append(test)
-        if status == 'fail':
+            # Incr. counters
             self.failures += 1
             self.errors += 1
-        elif status == 'skip':
+        elif status == 'skip' or status == 'not_run':
             self.skips += 1
         self.time += time
-
-
-    # generate the junit xml representation from the XUnitTestSuite object
-    # todo : create an element for errorMessage and append it to to error node
+        return test

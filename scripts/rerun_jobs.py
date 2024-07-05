@@ -1,12 +1,13 @@
+import argparse
 import json
 import os as OS
-import argparse
+import requests
+import shutil
+import zipfile
+
 import find_rerun_job
 import get_jenkins_params
 import merge_reports
-import shutil
-import urllib
-import zipfile
 
 host = 'greenboard.sc.couchbase.com'
 bucket_name = 'rerun_jobs'
@@ -216,18 +217,13 @@ def should_rerun_tests(testsuites=None, install_failure=False,
         return True
     if retries < 1:
         return False
-    should_rerun = False
     for tskey in testsuites.keys():
         tests = testsuites[tskey]['tests']
         for testname in tests.keys():
             testcase = tests[testname]
-            errors = testcase['error']
-            if errors:
-                should_rerun = True
-                break
-        if should_rerun:
-            break
-    return should_rerun
+            if testcase['error'] or testcase["result"] == "not_run":
+                return True
+    return False
 
 
 def get_rerun_parameters(rerun_document=None, is_rerun=False):
@@ -274,11 +270,10 @@ def run_jenkins_job(url, params):
     :return: Content of the call
     :rtype: str
     """
-    url = "{0}&{1}".format(url, urllib.urlencode(params))
+    url = "{0}&{1}".format(url, requests.quote(params))
     print(url)
     try:
-        f = urllib.urlopen(url)
-        return f.read()
+        return requests.get(url).text
     except Exception as e:
         print(e)
         return None
@@ -304,9 +299,7 @@ def rerun_job(args):
                                               jenkins_job=jenkins_job,
                                               store_data=True,
                                               install_failure=install_failure)
-    is_rerun, rerun_document = find_rerun_job.find_rerun_job(
-        is_rerun_args)
-    test_suites = {}
+    is_rerun, rerun_document = find_rerun_job.find_rerun_job(is_rerun_args)
     if is_rerun and not install_failure and (fresh_run != 'true' or
                                              fresh_run is False):
         test_suites = merge_xmls(rerun_document, run_params)
@@ -341,7 +334,7 @@ def rerun_job(args):
         job_token = args['token']
         job_url = "{0}buildWithParameters?token={1}".format(job_url,
                                                             job_token)
-        content = run_jenkins_job(job_url, current_job_params)
+        _ = run_jenkins_job(job_url, current_job_params)
         return
     dispatcher_params = OS.getenv('dispatcher_params').lstrip(
         "parameters=")
@@ -354,7 +347,7 @@ def rerun_job(args):
     job_url = dispatcher_params.pop('dispatcher_url')
     job_url = "{0}buildWithParameters?token=extended_sanity".format(
         job_url)
-    content = run_jenkins_job(job_url, dispatcher_params)
+    _ = run_jenkins_job(job_url, dispatcher_params)
 
 
 def manual_rerun(args):

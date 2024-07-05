@@ -1,28 +1,32 @@
 #!/usr/bin/env python
 
+import argparse
+import glob
+import logging
 import os
 import sys
+import time
+import xml.dom.minidom
 
 sys.path = ["lib", "pytests", "pysystests"] + sys.path
-import time
-from xunit import XUnitTestResult
-import glob
-import xml.dom.minidom
-import logging
+from framework_lib.xunit import XUnitTestResult
 
 log = logging.getLogger(__name__)
 logging.info(__name__)
 logging.getLogger().setLevel(logging.INFO)
-import argparse
 
 
 def filter_fields(testname, run_params=""):
+    filter_test_param_fields = [
+        'logs_folder', 'conf_file', 'cluster_name',
+        'ini', 'case_number', 'num_nodes', 'spec',
+        'last_case_fail', 'teardown_run', 'is_container',
+        'total_testcases']
     if "logs_folder:" in testname:
         testwords = testname.split(",")
         line = ""
-        filter_test_params = ['logs_folder', 'conf_file',
-                            'cluster_name:', 'ini:', 'case_number:',
-                            'num_nodes:', 'spec:', 'is_container:']
+        filter_test_params = ["".join([filter_field, ':']) for
+                              filter_field in filter_test_param_fields]
         filter_test_params.extend([param.split("=")[0] for param in
                             run_params.split(',')])
         for fw in testwords:
@@ -38,9 +42,8 @@ def filter_fields(testname, run_params=""):
     else:
         testwords = testname.split(",")
         line = []
-        filter_test_params = ['logs_folder=', 'conf_file=',
-                            'cluster_name=', 'ini=', 'case_number=',
-                            'num_nodes=', 'spec=', 'is_container=']
+        filter_test_params = ["".join([filter_field, '=']) for
+                              filter_field in filter_test_param_fields]
         filter_test_params.extend([param.split("=")[0] for param in
                             run_params.split(',')])
         for fw in testwords:
@@ -89,7 +92,6 @@ def merge_reports(filespath, run_params=""):
                 tsskips = ts.getAttribute("skips")
                 tstime = ts.getAttribute("time")
                 tstests = ts.getAttribute("tests")
-                issuite_existed = False
                 tests = {}
                 testsuite = {}
                 # fill testsuite details
@@ -103,13 +105,13 @@ def merge_reports(filespath, run_params=""):
                 testsuite['skips'] = tsskips
                 testsuite['time'] = tstime
                 testsuite['testcount'] = tstests
-                issuite_existed = False
                 testcaseelem = ts.getElementsByTagName("testcase")
                 # fill test case details
                 for tc in testcaseelem:
                     testcase = {}
                     tcname = tc.getAttribute("name")
                     tctime = tc.getAttribute("time")
+                    tcresult = tc.getAttribute("result")
                     tcerror = tc.getElementsByTagName("error")
 
                     tcname_filtered = filter_fields(tcname, run_params)
@@ -121,6 +123,7 @@ def merge_reports(filespath, run_params=""):
                     else:
                         testcase['name'] = tcname
                     testcase['time'] = tctime
+                    testcase['result'] = tcresult
                     testcase['error'] = ""
                     if tcerror:
                         testcase['error'] = str(
@@ -150,6 +153,7 @@ def merge_reports(filespath, run_params=""):
             len(testsuites[tskey]['tests'])))
         pass_count = 0
         fail_count = 0
+        not_run_count = 0
         tests = testsuites[tskey]['tests']
         xunit = XUnitTestResult()
         for testname in tests.keys():
@@ -158,23 +162,29 @@ def merge_reports(filespath, run_params=""):
             ttime = testcase['time']
             inttime = float(ttime)
             terrors = testcase['error']
+            t_result = testcase["result"]
             tparams = ""
             if "," in tname:
                 tparams = tname[tname.find(","):]
                 tname = tname[:tname.find(",")]
 
-            if terrors:
-                failed = True
-                fail_count = fail_count + 1
-                xunit.add_test(name=tname, status='fail', time=inttime,
-                               errorType='membase.error',
-                               errorMessage=str(terrors), params=tparams
-                               )
-            else:
-                passed = True
-                pass_count = pass_count + 1
-                xunit.add_test(name=tname, time=inttime, params=tparams
-                               )
+            xunit_suite = xunit.get_unit_test_suite(tname)
+
+            # xunit_suite = xunit.get_unit_test_suite(tname)
+            if t_result == "fail":
+                fail_count += 1
+                xunit_suite.add_test(
+                    name=tname, status=t_result, time=inttime,
+                    errorType='membase.error',
+                    errorMessage=str(terrors), params=tparams)
+            elif t_result == "pass":
+                pass_count += 1
+                xunit_suite.add_test(name=tname, time=inttime, params=tparams,
+                                     status=t_result)
+            elif t_result == "not_run":
+                not_run_count += 1
+                xunit_suite.add_test(name=tname, time=inttime, params=tparams,
+                                     status=t_result)
 
         str_time = time.strftime("%y-%b-%d_%H-%M-%S", time.localtime())
         root_log_dir = os.path.join(logs_directory,

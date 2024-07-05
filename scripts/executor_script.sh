@@ -375,14 +375,16 @@ if [ $status -eq 0 ]; then
   set +x
 
   awk -F' ' 'BEGIN {failures = 0; total_tests = 0} /<testsuite/ {match($0, /failures="([0-9]+)"/, failures_match); match($0, /tests="([0-9]+)"/, tests_match); if (failures_match[1] > 0) {failures += failures_match[1];} total_tests += tests_match[1]} END {print "Aggregate Failures: " failures ", Aggregate Total Tests: " total_tests;}' $WORKSPACE/logs/*/*.xml
-  echo "python tr_for_install/testrunner/scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}"
-  python tr_for_install/testrunner/scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
+  set -x
+  python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
+  set +x
 else
   echo Desc: $desc
   newState=failedInstall
   echo newState=failedInstall>propfile
-  echo "python tr_for_install/testrunner/scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --install_failure"
-  python tr_for_install/testrunner/scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --install_failure
+  set -x
+  python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --install_failure
+  set +x
 fi
 
 # To reduce the disk consumption post run

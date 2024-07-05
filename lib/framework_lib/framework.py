@@ -13,6 +13,10 @@ from platform_constants import taf
 from sirius_client_framework.sirius_setup import SiriusSetup
 
 
+class Parameters:
+    ABORTED = False
+
+
 class HelperLib(object):
     def __init__(self):
         pass
@@ -26,6 +30,7 @@ class HelperLib(object):
     @staticmethod
     def handle_kill_signal(signum, frame):
         print(f"Critical:: Abrupt termination due to signal {signum}")
+        Parameters.ABORTED = True
         HelperLib.cleanup()
         sys.exit(signum)
 

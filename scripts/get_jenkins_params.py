@@ -1,7 +1,5 @@
 import json
-import subprocess
-import sys
-import urllib2
+import requests
 
 
 def get_params(url):
@@ -36,20 +34,16 @@ def get_js(url, params=None):
     :return: Response from the rest api
     :rtype: dict
     """
-    res = None
     try:
         url = url.rstrip("/")
         if params:
             full_url = '{0}/api/json?{1}'.format(url, params)
         else:
             full_url = '{0}/api/json'.format(url)
-        res = urllib2.urlopen(full_url)
-        raw_data = res.read()
-        data = json.loads(raw_data)
-        return data
+        return requests.get(full_url).json()
     except:
         print("Error: url unreachable: %s" % url)
-        return None
+    return None
 
 
 def download_url_data(url, json_api=False, params=None):
@@ -63,7 +57,6 @@ def download_url_data(url, json_api=False, params=None):
     :return: Content of the request to the jenkins api
     :rtype: requests.content
     """
-    res = None
     try:
         url = url.rstrip("/")
         if json_api:
@@ -73,11 +66,8 @@ def download_url_data(url, json_api=False, params=None):
                 full_url = '{0}/api/json'.format(url)
         else:
             full_url = url
-        res = urllib2.urlopen(full_url)
-        raw_data = res.read()
-        return raw_data
+        return requests.get(full_url).text
     except Exception as e:
         print("[Error] url unreachable: %s" % url)
         print(e)
-        res = None
-    return res
+    return None

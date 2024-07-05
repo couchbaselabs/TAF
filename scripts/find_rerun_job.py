@@ -1,9 +1,4 @@
 import os as OS
-from com.couchbase.client.core.error import DocumentNotFoundException
-from com.couchbase.client.java import Cluster
-from com.couchbase.client.java.json import JsonObject, JsonArray
-from com.couchbase.client.java.kv import UpsertOptions
-from java.time import Duration
 import argparse
 import json
 import time

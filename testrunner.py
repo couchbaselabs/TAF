@@ -15,10 +15,10 @@ sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "platform_utils/ssh_util",
             "connections", "constants", "py_constants"] + sys.path
 from TestInput import TestInputParser, TestInputSingleton
-from framework_lib.framework import HelperLib
+from framework_lib.framework import HelperLib, Parameters
+from framework_lib.xunit import XUnitTestResult
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
-from xunit import XUnitTestResult
 
 
 def parse_args():
@@ -100,8 +100,7 @@ def main():
         HelperLib.launch_sirius_client(taf_path, options.sirius_url,
                                        process_type="docker_process")
 
-    results = []
-    case_number = 1
+    case_number = 0
     if "GROUP" in runtime_test_params:
         print("Only cases in GROUPs '%s' will be executed"
               % runtime_test_params["GROUP"])
@@ -109,7 +108,7 @@ def main():
         print("Cases from GROUPs '%s' will be excluded"
               % runtime_test_params["EXCLUDE_GROUP"])
 
-    test_to_be_exec = list()
+    tests_to_be_exec = list()
     for name in names:
         argument_split = [a.strip()
                           for a in re.split("[,]?([^,=]+)=", name)[1:]]
@@ -142,10 +141,46 @@ def main():
                         & set(params["GROUP"].split(";"))) > 0:
                 print("Test '%s' skipped, is in an excluded group" % name)
                 continue
-        test_to_be_exec.append(name)
-    TestInputSingleton.input.test_params["no_of_test_identified"] = len(test_to_be_exec)
 
-    for name in test_to_be_exec:
+        # Concat params to test name to make tests more readable in xml
+        s_params = ''
+        if TestInputSingleton.input.test_params:
+            for key, value in TestInputSingleton.input.test_params.items():
+                if key and value:
+                    s_params += "," + str(key) + "=" + str(value)
+
+        # If we reach here, the test has passed all criteria to be executed
+        # in this run
+        case_number += 1
+        logs_folder = os.path.join(root_log_dir, "test_%s" % case_number)
+        name = name.split(",")[0]
+        xunit_test_suite_ref = xunit.get_unit_test_suite(name)
+        xunit_test_ref = xunit_test_suite_ref.add_test(
+            name, params=s_params, status="not_run")
+        xunit.write("%s%sreport-%s"
+                    % (os.path.dirname(logs_folder), os.sep, str_time))
+        tests_to_be_exec.append({
+            "case_number": case_number,
+            "params": params,
+            "name": name,
+            "logs_folder": logs_folder,
+            "status": "not_run",
+            "xunit_suite_ref": xunit_test_suite_ref,
+            "xunit_test_ref": xunit_test_ref,
+        })
+
+    TestInputSingleton.input.test_params["no_of_test_identified"] = len(tests_to_be_exec)
+
+    print(f"Total test to be executed: {case_number}")
+    for test_to_exec in tests_to_be_exec:
+        if Parameters.ABORTED:
+            break
+        name = test_to_exec["name"]
+        params = test_to_exec["params"]
+        case_number = test_to_exec["case_number"]
+        xunit_suite_ref = test_to_exec["xunit_suite_ref"]
+        xunit_test_ref = test_to_exec["xunit_test_ref"]
+
         start_time = time.time()
 
         # Reset SDK/Shell connection counters
@@ -154,9 +189,6 @@ def main():
         SDKClient.sdk_connections = 0
         SDKClient.sdk_disconnections = 0
 
-        argument_split = [a.strip()
-                          for a in re.split("[,]?([^,=]+)=", name)[1:]]
-        params = dict(zip(argument_split[::2], argument_split[1::2]))
         params["sirius_url"] = options.sirius_url
 
         # Note that if ALL is specified at runtime then tests
@@ -229,13 +261,6 @@ def main():
             connection_status_msg += \
                 "\n!!!!!! CRITICAL :: SDK disconnection mismatch !!!!!"
         print(connection_status_msg)
-        # Concat params to test name
-        # To make tests more readable
-        params = ''
-        if TestInputSingleton.input.test_params:
-            for key, value in TestInputSingleton.input.test_params.items():
-                if key and value:
-                    params += "," + str(key) + "=" + str(value)
 
         if result.failures or result.errors:
             errors = []
@@ -247,18 +272,16 @@ def main():
                 test_case, error_string = error
                 errors.append(error_string)
                 break
-            xunit.add_test(name=name, status='fail', time=time_taken,
-                           errorType='membase.error', errorMessage=str(errors),
-                           params=params)
-            results.append({"result": "fail", "name": name})
+            xunit_test_ref.update_results(xunit_suite_ref,
+                                          "fail", time_taken,
+                                          error_type="membase.error",
+                                          error_message=str(errors))
+            test_to_exec["status"] = "fail"
         else:
-            xunit.add_test(name=name, time=time_taken, params=params)
-            results.append({"result": "pass",
-                            "name": name,
-                            "time": time_taken})
+            test_to_exec["status"] = "pass"
+            xunit_test_ref.update_results(xunit_suite_ref, "pass", time_taken)
         xunit.write("%s%sreport-%s"
                     % (os.path.dirname(logs_folder), os.sep, str_time))
-        xunit.print_summary()
         print("testrunner logs, diags and results are available under %s"
               % logs_folder)
         case_number += 1
@@ -267,21 +290,18 @@ def main():
             print("Test fails, all of the following tests will be skipped!!!")
             break
 
+    xunit.print_summary()
     HelperLib.cleanup()
 
+    exit_status = 0
     if "makefile" in TestInputSingleton.input.test_params:
         # Print fail for those tests which failed and do sys.exit() error code
-        fail_count = 0
-        for result in results:
-            if result["result"] == "fail":
-                test_run_result = result["name"] + " fail"
-                fail_count += 1
-            else:
-                test_run_result = result["name"] + " pass"
-            print(test_run_result)
-        if fail_count > 0:
-            sys.exit(1)
-    sys.exit(0)
+        for test_to_exec in tests_to_be_exec:
+            run_result = "f{test_to_exec['name']} {test_to_exec['result']}"
+            if test_to_exec["result"] != "pass":
+                exit_status = 1
+            print(run_result)
+    sys.exit(exit_status)
 
 
 if __name__ == "__main__":
