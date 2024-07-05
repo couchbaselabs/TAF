@@ -1,40 +1,52 @@
 # TAF
 
-## Initial Setup
+## Python Setup
 
 ### On Linux
 
-1. Install Java. sdkman is a very useful tool for this.  JDK 11 is preferred as Jython doesn't seem to like JDK8 on Ubuntu 18+.
-
-2. Install Jython and add submodule dependency. Download Jython Installer from [here](https://repo1.maven.org/maven2/org/python/jython-installer/2.7.2/jython-installer-2.7.2.jar)
-
 ```bash
-jython_path=/opt/jython
-mkdir $jython_path
-java -jar jython-installer-2.7.2.jar -d $jython_path -s
-
-# Installing dependency packages
-cat requirements.txt | xargs | xargs $jython_path/bin/easy_install
-
 # Adding a submodule to the Git repository
 git submodule init
 git submodule update --init --force --remote
+
+# Setup Python 3.10 using Pyenv
+py_version="3.10.14"
+git clone https://github.com/pyenv/pyenv.git $HOME/.pyenv
+export PYENV_ROOT="$HOME/.pyenv"
+export PATH="$PYENV_ROOT/bin:$PATH"
+eval "$(pyenv init -)"
+pyenv install $py_version
+
+# Installing dependency packages
+python -m pip install -r requirements.txt
 ```
 
 ### On Mac
 
 ```bash
-# Installs Jython 2.7.3
-brew install jython
+# Installs python 3.10
+brew install python@3.10
 
 # Installing dependency packages
-cat requirements.txt | xargs | xargs jython -m pip install
+python -m pip install -r requirements.txt
 
 # Adding a submodule to the Git repository
 git submodule init
 git submodule update --init --force --remote
 ```
 
+## Golang setup (For Sirius loader)
+
+```bash
+# Setup Golang in the local dir itself
+go_version=1.22.4
+wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz --quiet
+tar -xzf go${go_version}.linux-amd64.tar.gz
+rm -f go${go_version}.linux-amd64.tar.gz
+export GOPATH=`pwd`/go
+export PATH="${GOPATH}/bin:${PATH}"
+export GO111MODULE=on
+```
 
 ## Test Environment Requirement
 
@@ -81,29 +93,29 @@ Restart sshd:
 
 ## Running
 
-When running Jython, you have to supply the CLASSPATH.  For a typical Java program this is long, and typically project management tools 
-like Gradle and Maven are used to automatically pull in all dependencies, produce the CLASSPATH, and run the Java app.
-
-So a gradle project is included with a task, "testrunner", that runs Jython on the testrunner.py script, sorting out the CLASSPATH
-automatically (including downloading all dependencies). A Gradle Wrapper of the correct version is also provided.
-
-Execute:
-
 ```bash
+# Activate required Python version
+pyenv local 3.10.14
+# Setup required Golang Paths 
+# (This might change as per your Golang install path)
+# Below is considered that the path is same as the repo
+export GOPATH=`pwd`/go
+export PATH="${GOPATH}/bin:${PATH}"
+export GO111MODULE=on
 
-./gradlew --refresh-dependencies testrunner -P jython="/path/to/jython" -P args="-i <ini file path> -t <absolute path of test case>"```
+# To run fill suite from .conf file
+python testrunner.py -i <ini_file> -c <file_with_tests.conf> -p <params_to_all_test=val1,...>
+
+# To run individual test 
+python testrunner.py -i <ini_file> -t <modA.modB.test_function,param1=v1,params2=v2,...> -p <params_to_all_test=val1,...>
 
 Examples:
-  ./gradlew --refresh-dependencies testrunner -P jython="/path/to/jython" -P args="-i tmp/local.ini -t rebalance_new.rebalance_in.RebalanceInTests.test_rebalance_in_with_ops,nodes_in=3,GROUP=IN;P0;default -m rest"
+   # To run tests from .conf file
+   python testrunner.py -i nodes.ini -c test_suite.conf -p <params_to_all_test=val1,...>
+   
+   # To run individual test
+   python testrunner.py -i nodes.ini -t epengine.basic_ops.basic_ops.test_doc_size,nodes_init=1 -p durability=MAJORITY,get-cbcollect-info=True
 ```
-
-(Replace `gradlew` with `gradlew.bat` on Windows).
-
-The above command will run the test mentioned using -t option on the cluster defined in local.ini file. 
-
-NOTE: (The `--refresh-dependencies` isn't strictly required every run.  It makes sure that the latest versions of any SNAPSHOT dependencies
-have been loaded - e.g. for transactions.)
-
 
 ### Sample ini file for 4 node cluster
 
@@ -179,14 +191,4 @@ memcached_port:12002
 ip:127.0.0.1
 port:9002
 memcached_port:12004
-
 ```
-
-## Jython Issues
-If Jython reports `Exception in thread "main" java.lang.NoSuchMethodError: java.nio.ByteBuffer.limit(I)Ljava/nio/ByteBuffer;`
-
-Jython appears to be broken on Ubuntu 18+: https://bugs.launchpad.net/ubuntu/+source/jython/+bug/1771476
-
-Resolved by changing to OpenJDK 11.  With sdkman installed:
-
-`sdk use java 11.0.3-zulu`
