@@ -6,6 +6,7 @@ import random
 # import base64
 # from datetime import datetime
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2
+from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from constants.cloud_constants.capella_constants import AWS
 from TestInput import TestInputSingleton
@@ -73,6 +74,7 @@ class SecurityBase(CouchbaseBaseTest):
             "azure": 240
         }
         self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
+        self.columnarAPI = ColumnarAPI("https://" + self.url, '',  '', self.user, self.passwd, '')
         self.create_initial_v4_api_keys()
         self.create_different_organization_roles()
         self.create_api_keys_for_different_roles()
@@ -83,6 +85,9 @@ class SecurityBase(CouchbaseBaseTest):
         self.cluster_id = self.input.capella.get("cluster_id", None)
         if self.cluster_id is None:
             self.create_cluster(self.prefix + "Cluster", self.server_version)
+        self.instance_id = self.input.capella.get("instance_id", None)
+        if self.instance_id is None:
+            self.create_columnar_cluster(self.prefix + "Columnar-Cluster")
         if self.cluster_id is not None:
             self.sleep(10, "Waiting for cluster to be responsive")
             self.allow_ip(self.cluster_id, self.project_id)
@@ -94,6 +99,9 @@ class SecurityBase(CouchbaseBaseTest):
 
         if self.input.capella.get("cluster_id") is None:
             self.delete_cluster()
+
+        if self.input.capella.get("instance_id") is None:
+            self.delete_columnar_cluster()
 
         if self.input.capella.get("project_id") is None:
             self.delete_project()
@@ -166,6 +174,44 @@ class SecurityBase(CouchbaseBaseTest):
         else:
             self.log.info("Project Deleted Successfully")
 
+    def wait_for_columnar_instance_to_deploy(self, instance_id, timeout=1800):
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant_id,
+                                                                   self.project_id,
+                                                                   instance_id)
+            if resp.status_code != 200:
+                self.log.error("Unable to fetch details for columnar cluster {}." \
+                               " Returned status code : {}".
+                               format(instance_id, resp.status_code))
+                self.sleep(10)
+            else:
+                state = json.loads(resp.content)["data"]["state"]
+                self.log.info("Cluster %s state: %s" % (instance_id, state))
+                if state == "deploying":
+                    self.sleep(10)
+                else:
+                    break
+        if state == "healthy":
+            self.log.info("Columnar cluster deployed successfully")
+        else:
+            self.fail("Failed to deploy columnar cluster even after {} seconds." \
+                      " Cluster state: {}".format(timeout, state))
+
+    def create_columnar_cluster(self, cluster_name):
+        num_clusters = TestInputSingleton.input.param("num_columnar_clusters", 0)
+        for i in range(0, num_clusters):
+            self.log.info("Creating columnar cluster")
+            payload = self.get_columnar_cluster_payload(cluster_name + i)
+            resp = self.columnarAPI.create_columnar_instance(self.tenant_id,
+                                                             self.project_id,
+                                                             payload)
+            if resp.status_code != 201:
+                self.fail("Failed to create columnar instance: {}".format(resp.content))
+            else:
+                self.instance_id = resp.json()["id"]
+                self.wait_for_columnar_instance_to_deploy(self.instance_id)
+
     def create_cluster(self, cluster_name, server_version, provider="AWS"):
         num_clusters = TestInputSingleton.input.param("num_clusters", 1)
         for _ in range(0, num_clusters):
@@ -225,6 +271,20 @@ class SecurityBase(CouchbaseBaseTest):
                              msg="FAIL, Outcome: {}, Expected: {}".format(status, "healthy"))
 
             self.log.info("Cluster creation is successful. Cluster ID: {}".format(self.cluster_id))
+
+    def delete_columnar_cluster(self):
+        if self.instance_id is None:
+            self.log.inof("No columnar clusters to delete")
+            return
+
+        self.log.info("Deleting cluster with id: {}".format(self.instance_id))
+        resp = self.columnarAPI.delete_columnar_instance(self.instance_id, self.project_id,
+                                                         self.instance_id)
+        if resp.status_code != 202:
+            self.fail("Columnar cluster deletion failed in SecurityBase TearDown." \
+                      "Reason: {}".format(resp.content))
+
+        self.log.info("Columnar cluster deletion successful")
 
     def delete_cluster(self):
         if self.cluster_id is None:
@@ -289,6 +349,26 @@ class SecurityBase(CouchbaseBaseTest):
             service_groups_payload.append(service_group_payload)
 
         return service_groups_payload
+
+    def get_columnar_cluster_payload(self, name):
+        config = {
+            "name": name,
+            "description": "",
+            "provider": "aws",
+            "region": "us-east-1",
+            "nodes": 1,
+            "instanceTypes": {
+                "vcpus":"4vCPUs",
+                "memory":"16GB"
+            },
+            "package": {
+                "key":"Developer Pro",
+                "timezone":"PT"
+            },
+            "availabilityZone": "single"
+        }
+
+        return config
 
     def get_cluster_payload(self, cloud_provider):
         cluster_payloads = {
@@ -561,3 +641,212 @@ class SecurityBase(CouchbaseBaseTest):
             name = prefix + name
 
         return name
+
+    def test_authentication(self, url, method='GET', payload=None):
+
+        headers = {
+            'invalid_header': 'abcded',
+            'empty_header': ''
+        }
+
+        for header in headers:
+            cbc_api_request_headers = {
+                'Authorization': 'Bearer {}'.format(headers[header]),
+                'Content-Type': 'application/json'
+            }
+
+            resp = self.capellaAPI._urllib_request(url, method=method, headers=cbc_api_request_headers,
+                                                   params=json.dumps(payload))
+            if resp.status_code != 401:
+                error = "Test failed for invalid auth value: {}. " \
+                        "Expected status code: {}, Returned status code: {}". \
+                        format(cbc_api_request_headers[header],
+                               401, resp.status_code)
+                self.log.error(error)
+                return False, error
+
+        return True, None
+
+    def test_tenant_ids(self, test_method=None, test_method_args=None, tenant_id_arg=None,
+                        expected_success_code=None, on_success_callback=None):
+        tenant_ids = {
+            "valid_tenant_id": self.tenant_id,
+            "invalid_tenant_id": self.invalid_id
+        }
+
+        for tenant_id in tenant_ids:
+            test_method_args[tenant_id_arg] = tenant_ids[tenant_id]
+            resp = test_method(**test_method_args)
+
+            if tenant_id == "invalid_tenant_id":
+                if resp.status_code != 404:
+                    error = "Test failed for invalid tenant id: {}. " \
+                            "Expected status code: {}, Returned status code: {}". \
+                            format(tenant_ids[tenant_id], 404, resp.status_code)
+                    self.log.error(error)
+                    return False, error
+            else:
+                if resp.status_code != expected_success_code:
+                    error = "Test failed for valid tenant id: {}. " \
+                            "Expected status code: {}, Returned status code: {}". \
+                            format(tenant_ids[tenant_id], expected_success_code,
+                                   resp.status_code)
+                    self.log.error(error)
+                    return False, error
+
+                if on_success_callback:
+                    on_success_callback(resp)
+
+        return True, None
+
+    def test_project_ids(self, test_method=None, test_method_args=None, project_id_arg=None,
+                        expected_success_code=None, on_success_callback=None,
+                        include_different_project=True):
+
+        project_ids = {
+            'valid_project_id': self.project_id,
+            'invalid_project_id': self.invalid_id
+        }
+
+        if include_different_project:
+            resp = self.capellaAPI.org_ops_apis.create_project(self.tenant_id,
+                                                "security-test-project{}"
+                                                .format(random.randint(1, 100000)))
+            if resp.status_code != 201:
+                self.fail("Failed to create new project. Error: {}".format(resp.content))
+            project_id = resp.json()["id"]
+            project_ids['different_project_id'] = project_id
+
+        for project_id in project_ids:
+            test_method_args[project_id_arg] = project_ids[project_id]
+            resp = test_method(**test_method_args)
+
+            if project_id == "invalid_project_id" or \
+                project_id == "different_project_id":
+
+                if resp.status_code != 404:
+                    error = "Test failed for invalid project id: {}. " \
+                                "Expected status code: {}, Returned status code: {}". \
+                                format(project_ids[project_id], 404, resp.status_code)
+                    self.log.error(error)
+                    return False, error
+            else:
+                if resp.status_code != expected_success_code:
+                    error = "Test failed for valid project id: {}. " \
+                            "Expected status code: {}, Returned status code: {}". \
+                            format(project_ids[project_id], expected_success_code,
+                                   resp.status_code)
+                    self.log.error(error)
+                    return False, error
+
+                if on_success_callback:
+                    on_success_callback(resp)
+
+        if include_different_project:
+            self.log.info("Deleting project")
+            resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
+                                                               project_ids["different_project_id"])
+            if resp.status_code != 202:
+                self.fail("Failed to delete project. Error: {}".format(resp.content))
+
+        return True, None
+
+    def test_with_org_roles(self, test_method_name=None, test_method_args=None,
+                            expected_success_code=None, on_success_callback=None):
+
+        for user in self.test_users:
+            self.log.info("Verifying status code for Role: {0}"
+                          .format(self.test_users[user]["role"]))
+            capellaAPIrole = ColumnarAPI("https://" + self.url, self.secret_key, self.access_key,
+                                         self.test_users[user]["mailid"],
+                                         self.test_users[user]["password"])
+
+            if hasattr(capellaAPIrole, test_method_name):
+                test_method = getattr(capellaAPIrole, test_method_name)
+                resp = test_method(**test_method_args)
+
+                if self.test_users[user]["role"] == "organizationOwner":
+                    if resp.status_code != expected_success_code:
+                        error = "Test failed for role: {}. " \
+                            "Expected status code: {}, Returned status code: {}". \
+                            format(self.test_users[user]["role"], expected_success_code,
+                                   resp.status_code)
+                        self.log.error(error)
+                        return False, error
+
+                    if on_success_callback:
+                        on_success_callback(resp)
+
+                else:
+                    if resp.status_code != 403:
+                        error = "Test failed for role: {}. " \
+                            "Expected status code: {}, Returned status code: {}". \
+                            format(self.test_users[user]["role"], 403,
+                                   resp.status_code)
+                        self.log.error(error)
+                        return False, error
+            else:
+                return False, "No method named: {}".format(test_method_name)
+
+        return True, None
+
+    def test_with_project_roles(self, test_method_name=None, test_method_args=None,
+                                valid_project_roles=[], expected_success_code=None,
+                                on_success_callback=None):
+        self.log.info("Verifying endpoint for different roles under project - RBAC")
+        self.capellaAPIv2 = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
+                                         self.user, self.passwd)
+        project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
+                         "projectDataReaderWriter", "projectDataReader"]
+        user = self.test_users["User3"]
+
+        for role in project_roles:
+            self.log.info(
+                "Adding user to project {} with role as {}".format(self.project_id, role))
+            payload = {
+                "resourceId": self.project_id,
+                "resourceType": "project",
+                "roles": [role], "users": [user["userid"]]
+            }
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant_id, json.dumps(payload))
+            if resp.status_code != 200:
+                return False, "Failed to add user {} to project {}. Error: {}". \
+                          format(user["name"], self.project_id, resp.content)
+
+            capellaAPIrole = ColumnarAPI("https://" + self.url, self.secret_key, self.access_key,
+                                         user["mailid"],
+                                         user["password"])
+            if hasattr(capellaAPIrole, test_method_name):
+                test_method = getattr(capellaAPIrole, test_method_name)
+                resp = test_method(**test_method_args)
+
+                if role in valid_project_roles:
+                    if resp.status_code != expected_success_code:
+                        error = "Test failed for role: {}. " \
+                            "Expected status code: {}, Returned status code: {}". \
+                            format(role, expected_success_code,
+                                   resp.status_code)
+                        self.log.error(error)
+                        return False, error
+
+                    if on_success_callback:
+                        on_success_callback(resp)
+
+                else:
+                    if resp.status_code != 403:
+                        error = "Test failed for role: {}. " \
+                            "Expected status code: {}, Returned status code: {}". \
+                            format(role, 403,
+                                   resp.status_code)
+                        self.log.error(error)
+                        return False, error
+            else:
+                return False, "No method named: {}".format(test_method_name)
+
+            resp = self.capellaAPIv2.remove_user_from_project(self.tenant_id, user["userid"],
+                                                              self.project_id)
+            if resp.status_code != 204:
+                return False, "Failed to remove user {} from project {}. Error: {}". \
+                          format(user["name"], self.project_id, resp.content)
+
+        return True, None
