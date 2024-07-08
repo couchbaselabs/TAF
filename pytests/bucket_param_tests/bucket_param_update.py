@@ -623,7 +623,6 @@ class BucketParamTest(ClusterSetup):
         bucket_durability = self.input.param("bucket_durability", None)
         delete_collections_while_scan_going_on = \
             self.input.param("delete_collections_while_scan_going_on", False)
-        task_list = []
         if doc_load:
             doc_loading_spec = \
                 self.bucket_util.get_crud_template_from_package(

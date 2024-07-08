@@ -6980,7 +6980,6 @@ class Atomicity(Task):
             self.complete_task()
 
         def transaction_load(self, cluster, trans_util, transaction_options):
-            self.log.critical("Running Transaction load")
             try:
                 cluster.transactions.run(trans_util.run_transaction,
                                          transaction_options)
