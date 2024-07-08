@@ -10,17 +10,16 @@ class AppServiceOn(GetAppService):
 
     def setUp(self, nomenclature="Switch_App_Service_On"):
         GetAppService.setUp(self, nomenclature)
-        res = self.capellaAPI.cluster_ops_apis.switch_app_service_off(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.app_service_id)
-        if res.status_code != 202:
-            self.log.error(res.content)
-            self.tearDown()
-            self.fail("!!!...Failed to turn off App Service...!!!")
-        if not self.wait_for_deployment(self.project_id, self.cluster_id,
-                                        self.app_service_id):
-            self.tearDown()
-            self.fail("!!!...Couldn't verify App Svc detail...!!!")
+        # res = self.capellaAPI.cluster_ops_apis.switch_app_service_off(
+        #     self.organisation_id, self.project_id, self.cluster_id,
+        #     self.app_service_id)
+        # if res.status_code != 202:
+        #     self.log.error(res.content)
+        #     self.tearDown()
+        #     self.fail("!!!...Failed to turn off App Service...!!!")
+        # if not self.wait_for_deployment(self.cluster_id, self.app_service_id):
+        #     self.tearDown()
+        #     self.fail("!!!...Couldn't verify App Svc detail...!!!")
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
@@ -150,9 +149,9 @@ class AppServiceOn(GetAppService):
                 "/activationState"
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"], self.project_id,
-                        self.cluster_id, self.app_service_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"],
+                                                 app=self.app_service_id,
+                                                 sleep=0):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -214,9 +213,9 @@ class AppServiceOn(GetAppService):
                     self.app_service_id, headers=header)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"], self.project_id,
-                        self.cluster_id, self.app_service_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"],
+                                                 app=self.app_service_id,
+                                                 sleep=0):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -261,11 +260,14 @@ class AppServiceOn(GetAppService):
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id and
                     combination[3] == self.app_service_id):
+                # if combination[3] == "":
+                #     testcase["expected_status_code"] = 405
+                #     testcase["expected_error"] = ""
                 if combination[1] == "" or combination[0] == "" or \
-                        combination[2] == "" or combination[3] == "":
+                        combination[2] == "":
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
-                elif any(variable in [
+                elif combination[3] == "" or any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
                              type(combination[0]), type(combination[1]),
@@ -291,14 +293,6 @@ class AppServiceOn(GetAppService):
                         "httpStatusCode": 403,
                         "message": "Access Denied."
                     }
-                elif combination[3] != self.app_service_id:
-                    testcase["expected_status_code"] = 000
-                    testcase["expected_error"] = {
-                        "code": 0000,
-                        "hint": "",
-                        "message": "",
-                        "httpStatusCode": 000
-                    }
                 elif combination[2] != self.cluster_id:
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
@@ -309,7 +303,7 @@ class AppServiceOn(GetAppService):
                         "message": "Unable to fetch the cluster details.",
                         "httpStatusCode": 404
                     }
-                else:
+                elif combination[1] != self.project_id:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 4031,
@@ -319,6 +313,16 @@ class AppServiceOn(GetAppService):
                                    "provided projectId {} is not valid for "
                                    "the cluster {}."
                         .format(combination[1], combination[2])
+                    }
+                else:
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = {
+                        "code": 404,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 404,
+                        "message": "Requested App Service was not found"
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
@@ -336,9 +340,9 @@ class AppServiceOn(GetAppService):
                     testcase["clusterID"], testcase['appServiceID'], **kwarg)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"], self.project_id,
-                        self.cluster_id, self.app_service_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"],
+                                                 app=self.app_service_id,
+                                                 sleep=0):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))

@@ -139,9 +139,9 @@ class AppServiceOff(GetAppService):
                 "/activationState"
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"], self.project_id,
-                        self.cluster_id, self.app_service_id):
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
+                                                 app=self.app_service_id,
+                                                 sleep=0):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -203,9 +203,9 @@ class AppServiceOff(GetAppService):
                     self.app_service_id, headers=header)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"], self.project_id,
-                        self.cluster_id, self.app_service_id):
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
+                                                 app=self.app_service_id,
+                                                 sleep=0):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -251,14 +251,15 @@ class AppServiceOff(GetAppService):
                     combination[2] == self.cluster_id and
                     combination[3] == self.app_service_id):
                 if combination[1] == "" or combination[0] == "" or \
-                        combination[2] == "" or combination[3] == "":
+                        (combination[2] == "" and combination[3] != ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
-                elif any(variable in [
+                elif (combination[3] == "" or any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
                              type(combination[0]), type(combination[1]),
-                             type(combination[2]), type(combination[3])]):
+                             type(combination[2]), type(combination[3])]) or
+                      (combination[2] == "" and combination[3] == "")):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -280,14 +281,6 @@ class AppServiceOff(GetAppService):
                         "httpStatusCode": 403,
                         "message": "Access Denied."
                     }
-                elif combination[3] != self.app_service_id:
-                    testcase["expected_status_code"] = 000
-                    testcase["expected_error"] = {
-                        "code": 0000,
-                        "hint": "",
-                        "message": "",
-                        "httpStatusCode": 000
-                    }
                 elif combination[2] != self.cluster_id:
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
@@ -298,7 +291,7 @@ class AppServiceOff(GetAppService):
                         "message": "Unable to fetch the cluster details.",
                         "httpStatusCode": 404
                     }
-                else:
+                elif combination[1] != self.project_id:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 4031,
@@ -308,6 +301,16 @@ class AppServiceOff(GetAppService):
                                    "provided projectId {} is not valid for "
                                    "the cluster {}."
                         .format(combination[1], combination[2])
+                    }
+                else:
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = {
+                        "code": 404,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 404,
+                        "message": "Requested App Service was not found"
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
@@ -325,9 +328,9 @@ class AppServiceOff(GetAppService):
                     testcase["clusterID"], testcase['appServiceID'], **kwarg)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"], self.project_id,
-                        self.cluster_id, self.app_service_id):
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
+                                                 app=self.app_service_id,
+                                                 sleep=0):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))

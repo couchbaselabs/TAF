@@ -28,7 +28,7 @@ class APIBase(CouchbaseBaseTest):
         self.passwd = self.input.capella.get("capella_pwd")
         self.organisation_id = self.input.capella.get("tenant_id")
         self.invalid_UUID = "00000000-0000-0000-0000-000000000000"
-        self.prefix = "Automated_v4-API_test_"
+        self.prefix = "Automated_v4API_test_"
         self.project_id = None
         self.count = 0
 
@@ -72,21 +72,8 @@ class APIBase(CouchbaseBaseTest):
                 self.project_id = res.json()["id"]
                 self.capella["project"] = self.project_id
 
-        # Templates for cluster configurations across computes and CSPs.
+        # Templates for cluster configurations across Computes and CSPs.
         self.cluster_templates = {
-            # Fixed parameter initialization
-            "name": self.prefix + "WRAPPER",
-            "currentState": None,
-            "audit": {
-                "createdBy": None,
-                "createdAt": None,
-                "modifiedBy": None,
-                "modifiedAt": None,
-                "version": None
-            },
-            "connectionString": None,
-            "configurationType": None,
-
             # TEMPLATES :
             "AWS_template_m7_xlarge": {
                 "cloudProvider": {
@@ -126,6 +113,44 @@ class APIBase(CouchbaseBaseTest):
                     "timezone": "GMT"
                 }
             },
+            "AWS_singleNode": {
+                "cloudProvider": {
+                    "type": "aws",
+                    "region": self.input.param("region", "us-east-1"),
+                    "cidr": "10.0.0.0/20"
+                },
+                "couchbaseServer": {
+                    "version": str(self.input.param("server_version", 7.6))
+                },
+                "serviceGroups": [
+                    {
+                        "node": {
+                            "compute": {
+                                "cpu": self.input.param("cpu", 2),
+                                "ram": self.input.param("ram", 8)
+                            },
+                            "disk": {
+                                "storage": 50,
+                                "type": "gp3",
+                                "iops": 3000
+                            }
+                        },
+                        "numOfNodes": self.input.param("numOfNodes", 1),
+                        "services": [
+                            "data",
+                            "index",
+                            "query"
+                        ]
+                    }
+                ],
+                "availability": {
+                    "type": self.input.param("availabilityType", "single")
+                },
+                "support": {
+                    "plan": self.input.param("supportPlan", "basic"),
+                    "timezone": "GMT"
+                }
+            }
         }
         if TestInputSingleton.input.capella.get("clusters", None):
             self.cluster_id = TestInputSingleton.input.capella.get(
@@ -136,8 +161,7 @@ class APIBase(CouchbaseBaseTest):
             self.cluster_templates[cluster_template]['serviceGroups'][0][
                 "services"].extend(services)
             res = self.select_CIDR(
-                self.organisation_id, self.project_id,
-                self.cluster_templates["name"],
+                self.organisation_id, self.project_id, self.prefix + "WRAPPER",
                 self.cluster_templates[cluster_template]['cloudProvider'],
                 self.cluster_templates[cluster_template]['serviceGroups'],
                 self.cluster_templates[cluster_template]['availability'],
@@ -161,14 +185,8 @@ class APIBase(CouchbaseBaseTest):
                 self.tearDown()
                 self.fail("!!!...Couldn't decipher result...!!!")
 
-        # Templates for instance creation per CSPs and computes
+        # Templates for instance configurations across CSPs and Computes
         self.instance_templates = {
-            "name": self.prefix + "WRAPPER",
-            "support": {
-                "plan": "enterprise",
-                "timezone": "ET"
-            },
-
             # TEMPLATES :
             "4v16_AWS_singleNode_ue1": {
                 "nodes": self.input.param("nodes", 1),
@@ -191,14 +209,14 @@ class APIBase(CouchbaseBaseTest):
             instance_template = self.input.param("instance_template",
                                                  "4v16_AWS_singleNode_ue1")
             res = self.columnarAPI.create_analytics_cluster(
-                self.organisation_id, self.project_id,
-                self.instance_templates["name"],
+                self.organisation_id, self.project_id, self.prefix + "WRAPPER",
                 self.instance_templates[instance_template]["cloudProvider"],
                 self.instance_templates[instance_template]["compute"],
                 self.instance_templates[instance_template]["region"],
-                self.instance_templates[instance_template]["nodes"],
-                self.instance_templates["support"],
-                self.instance_templates[instance_template]["availability"])
+                self.instance_templates[instance_template]["nodes"], {
+                    "plan": "enterprise",
+                    "timezone": "ET"
+                }, self.instance_templates[instance_template]["availability"])
             if res.status_code != 202:
                 self.log.error(res.content)
                 self.tearDown()
@@ -207,11 +225,48 @@ class APIBase(CouchbaseBaseTest):
             self.capella["instance_id"] = self.analyticsCluster_id
         self.instances = list()
 
+        # Templates for app service configurations across CSPs and Computes.
+        self.app_svc_templates = {
+            # TEMPLATES :
+            "AWS_2v4_2node": {
+                "cloudProvider": "aws",
+                "nodes": 2,
+                "compute": {
+                    "cpu": 2,
+                    "ram": 4
+                },
+            }
+        }
+
     def tearDown(self):
         # Delete the WRAPPER resources, IF, the current test is the last
         # testcase being run.
         if (TestInputSingleton.input.test_params["case_number"] ==
                 TestInputSingleton.input.test_params["no_of_test_identified"]):
+            # Delete the app service if it was a part of the tests.
+            if self.capella["clusters"]["app_id"]:
+                # Wait for app_service to be in a stable state.
+                self.log.info("Waiting for AppService to be stable.")
+                while not self.validate_onoff_state(
+                        ["healthy", "turnedOff"],
+                        app=self.capella["clusters"]["app_id"], sleep=15):
+                    self.log.info("...Waiting further...")
+
+                # Delete App Service
+                self.log.info("Deleting App Service...")
+                res = self.capellaAPI.cluster_ops_apis.delete_appservice(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.capella["clusters"]["app_id"])
+                if res.status_code != 202:
+                    self.fail("Error while deleting the app service: {}"
+                              .format(res.content))
+
+                self.log.info("...Waiting for app service to be deleted...")
+                if not self.wait_for_deletion(
+                        self.cluster_id, self.capella["clusters"]["app_id"]):
+                    self.fail("!!!...App Service could not be deleted...!!!")
+                self.log.info("App Service Deleted Successfully")
+
             # Delete the created instance.
             if self.flush_columnar_instances(self.instances):
                 super(APIBase, self).tearDown()
@@ -912,6 +967,7 @@ class APIBase(CouchbaseBaseTest):
         return False
 
     def validate_onoff_state(self, states, inst=None, app=None, sleep=2):
+        self.update_auth_with_api_token(self.org_owner_key["token"])
         if sleep:
             time.sleep(sleep)
         if app:

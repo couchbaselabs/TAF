@@ -9,16 +9,10 @@ from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 class GetAppService(GetCluster):
 
     def setUp(self, nomenclature="App_Service_Get"):
-        GetCluster.setUp(self, nomenclature, ["index", "query"])
-        self.expected_result = {
-            "name": self.prefix + nomenclature,
-            "description": "Description of the App Service.",
-            "cloudProvider": "aws",
-            "nodes": 2,
-            "compute": {
-                "cpu": 2,
-                "ram": 4
-            },
+        GetCluster.setUp(self, nomenclature)
+        self.expected_res = {
+            "name": self.prefix + "WRAPPER",
+            "description": "App service made by the v4 APIs Automation script",
             "clusterId": self.cluster_id,
             "currentState": None,
             "version": None,
@@ -30,49 +24,17 @@ class GetAppService(GetCluster):
                 "version": None
             }
         }
+        self.expected_res.update(self.app_svc_templates[self.input.param(
+            "app_svc_template", "AWS_2v4_2node")])
 
-        # Create app service
-        self.log.info("Creating App Service...")
-        res = self.capellaAPI.cluster_ops_apis.create_appservice(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_result["name"], self.expected_result["compute"])
-        if res.status_code != 201:
-            self.log.error("Error while deploying the app service: {}"
-                           .format(res.content))
-            self.tearDown()
-            self.fail("!!!..AppService creation failed...!!!")
-
-        self.app_service_id = res.json()["id"]
-        self.expected_result["id"] = self.app_service_id
-        self.log.info("Waiting for appservice {} to be deployed."
+        # Wait for the deployment request in GetCluster to complete.
+        self.log.info("Waiting for AppService {} to be deployed."
                       .format(self.app_service_id))
-        if not self.wait_for_deployment(self.project_id, self.cluster_id,
-                                        self.app_service_id):
+        if not self.wait_for_deployment(self.cluster_id, self.app_service_id):
             self.tearDown()
-            self.fail("!!!..AppService deployment failed...!!!")
-        self.log.info("Successfully deployed app service.")
+            self.fail("!!!...App Svc deployment failed...!!!")
+        self.log.info("Successfully deployed App Svc.")
 
     def tearDown(self):
         self.update_auth_with_api_token(self.org_owner_key["token"])
-
-        # Wait for app_service to be turned off.
-        self.log.info("Waiting for AppService to be in a stable state.")
-        while not self.validate_onoff_state(["healthy", "turnedOff"],
-                                            self.project_id, self.cluster_id,
-                                            self.app_service_id, 15):
-            self.log.info("...Waiting further...")
-
-        # Delete App Service
-        self.log.info("Deleting App Service...")
-        res = self.capellaAPI.cluster_ops_apis.delete_appservice(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.app_service_id)
-        if res.status_code != 202:
-            self.fail("Error while deleting the app service: {}"
-                      .format(res.content))
-
-        self.log.info("Waiting for app service to be deleted...")
-        if not self.wait_for_deletion(self.project_id, self.cluster_id,
-                                      self.app_service_id):
-            self.fail("App Services could not be deleted")
         super(GetAppService, self).tearDown()
