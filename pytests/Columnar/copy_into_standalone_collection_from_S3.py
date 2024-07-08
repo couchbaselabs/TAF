@@ -69,7 +69,12 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
+        file_format = self.input.param("file_format", "json")
+        if file_format == "parquet":
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"`name=id`": "string",
+                                                                        "`name=product_name`": "string"}]
+        else:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
 
         file_format = self.input.param("file_format", "json")
         dataset_properties = self.columnar_spec["standalone_dataset"][
@@ -193,9 +198,12 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 1)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
-
         file_format = self.input.param("file_format", "json")
+        if file_format == "parquet":
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"`name=id`": "string",
+                                                                        "`name=product_name`": "string"}]
+        else:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"id": "string", "product_name": "string"}]
         dataset_properties = self.columnar_spec["standalone_dataset"][
             "standalone_collection_properties"][0]
         dataset_properties["external_container_name"] = self.s3_source_bucket

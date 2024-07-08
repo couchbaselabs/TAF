@@ -8,7 +8,7 @@ from sirius_client_framework.multiple_database_config import CouchbaseLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
 from sirius_client_framework.sirius_constants import SiriusCodes
 from Jython_tasks.sirius_task import WorkLoadTask
-from capella_utils.dedicated import CapellaUtils
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 
 
 class MiniVolume:
@@ -35,7 +35,7 @@ class MiniVolume:
         self.base_object.byok_source_doc = int(math.ceil(total_doc * percentage_byok_volume))
         self.base_object.remote_source_doc_per_collection = (self.base_object.remote_source_doc //
                                                              self.base_object.input.param("no_of_remote_coll", 1))
-        self.base_object.log.info("Doc per remote collection: {}". format(
+        self.base_object.log.info("Doc per remote collection: {}".format(
             self.base_object.remote_source_doc_per_collection))
 
     def crud_on_remote_collections(self, start, end):
@@ -72,7 +72,7 @@ class MiniVolume:
                             if scope != "_system" and scope != "_mobile":
                                 for collection in bucket.scopes[scope].collections:
                                     self.remote_collections_operations(bucket.name, scope, collection, operation_start,
-                                                                       operation_end,  action)
+                                                                       operation_end, action)
             time.sleep(30)
 
         for item in deleted_items:
@@ -136,12 +136,15 @@ class MiniVolume:
                     "ARRAY_FLATTEN(ARRAY_AGG(r.product_category), 1) AS product_category, "
                     "AVG(r.product_rating.build_quality) AS avg_build_quality, SUM(r.quantity) AS total_quantity, "
                     "r.seller_verified, AVG(r.weight) AS avg_weight FROM {} AS r GROUP BY r.product_name, "
-                    "r.seller_verified".format(dataset.full_name)
+                    "r.seller_verified".format(dataset.full_name),
+                    "SET `compiler.external.field.pushdown` 'false'; "
+                    "SELECT COUNT(*) from {}".format(dataset.full_name)
                 ]
                 query = random.choice(queries).format(dataset.full_name)
-                query_jobs.put((self.base_object.cbas_util.execute_statement_on_cbas_util,
-                                {"cluster": self.base_object.cluster, "statement": query, "analytics_timeout": 600000,
-                                 "timeout": 600000}))
+                with threading.Lock():
+                    query_jobs.put((self.base_object.cbas_util.execute_statement_on_cbas_util,
+                                    {"cluster": self.base_object.cluster, "statement": query, "analytics_timeout": 1800,
+                                     "timeout": 1800}))
 
     def load_doc_to_standalone_collection(self, data_loading_job):
         standalone_datasets = self.base_object.cbas_util.get_all_dataset_objs("standalone")
@@ -207,7 +210,7 @@ class MiniVolume:
             # check for nodes in the cluster, add a sleep here until node api is present
         time.sleep(10)
         while (status == "scaling" or status is None) and time.time() < start_time + timeout:
-            self.base_object.log.info("Instance is still scaling after: {} seconds".format(time.time()-start_time))
+            self.base_object.log.info("Instance is still scaling after: {} seconds".format(time.time() - start_time))
             try:
                 resp = self.base_object.columnarAPI.get_specific_columnar_instance(self.base_object.tenant.id,
                                                                                    self.base_object.tenant.project_id,
@@ -219,9 +222,19 @@ class MiniVolume:
                 self.base_object.log.error(str(e))
         current_nodes = 0
         while current_nodes != nodes and time.time() < start_time + timeout:
-            servers = self.base_object.get_nodes(self.base_object.cluster)
-            current_nodes = len(servers)
-            time.sleep(60)
+            rest = ClusterRestAPI(self.base_object.cluster.master)
+            status, content = rest.cluster_details()
+            if not status:
+                self.base_object.log.error("Error while fetching pools/default using "
+                                           "connection string")
+
+            current_nodes = len(content["nodes"])
+            time.sleep(20)
+        resp = self.base_object.columnarAPI.get_specific_columnar_instance(self.base_object.tenant.id,
+                                                                           self.base_object.tenant.project_id,
+                                                                           self.base_object.cluster.instance_id)
+        resp = resp.json()
+        status = resp["data"]["state"]
         if status != "healthy":
             return False
         return True
@@ -253,7 +266,7 @@ class MiniVolume:
         self.cpu_stat_job = Queue()
         results = []
 
-        if not self.scale_columnar_cluster(16):
+        if not self.scale_columnar_cluster(8):
             self.base_object.fail("Failed to scale up the instance")
 
         # calculate doc to load for each cycle
@@ -285,7 +298,7 @@ class MiniVolume:
 
         self.base_object.cbas_util.run_jobs_in_parallel(self.cpu_stat_job, results, 1, async_run=True)
         self.base_object.cbas_util.run_jobs_in_parallel(create_query_job, self.query_work_results, 2, async_run=True)
-        while self.base_object.query_job.qsize() < 5:
+        while self.base_object.query_job.qsize() < 10:
             self.base_object.log.info("Waiting for query job to be created")
             time.sleep(10)
         self.base_object.cbas_util.run_jobs_in_parallel(self.base_object.query_job, self.query_work_results, 2,

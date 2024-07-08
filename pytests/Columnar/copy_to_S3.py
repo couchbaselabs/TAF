@@ -20,6 +20,7 @@ from itertools import combinations, product
 from BucketLib.bucket import Bucket
 
 from awsLib.s3_data_helper import perform_S3_operation
+from Columnar.mini_volume_code_template import MiniVolume
 
 
 class CopyToS3(ColumnarBaseTest):
@@ -350,7 +351,8 @@ class CopyToS3(ColumnarBaseTest):
 
         for collection in dynamo_collections:
             status = (self.doc_loader.start_dynamo_loader(self.dynamo_access_key_id, self.dynamo_security_access_key,
-                                                          self.columnar_spec["kafka_dataset"]["primary_key"], collection,
+                                                          self.columnar_spec["kafka_dataset"]["primary_key"],
+                                                          collection,
                                                           self.dynamo_regions, no_of_docs, doc_size).json())["status"]
             if status != 'running':
                 self.log.error("Failed to start loader for DynamoDB collection")
@@ -370,7 +372,7 @@ class CopyToS3(ColumnarBaseTest):
             if status != 'running':
                 self.log.error("Failed to start loader for RDS collection")
 
-    def base_infra_setup(self):
+    def base_infra_setup(self, primary_key=None):
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param(
             "no_of_scopes", 1)
 
@@ -406,7 +408,10 @@ class CopyToS3(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 0)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
+        if primary_key is not None:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = primary_key
+        else:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
         self.columnar_spec["external_dataset"]["num_of_external_datasets"] = self.input.param("num_of_external_coll", 0)
         if self.input.param("num_of_external_coll", 0):
@@ -1196,7 +1201,7 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             statement_dataset = "select count(*) from {0} where country = \"{1}\"".format(datasets[i].full_name,
-                                                                                      "Dominican Republic")
+                                                                                          "Dominican Republic")
             dynamic_copy_result = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name,
                                                                                                  path)
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
@@ -1284,7 +1289,7 @@ class CopyToS3(ColumnarBaseTest):
 
             json_data = []
             with open(dest_path, 'r') as json_file:
-            # Load the JSON data from the file
+                # Load the JSON data from the file
                 for line in json_file:
                     data = json.loads(line)
                     json_data.append(data)
@@ -1793,3 +1798,37 @@ class CopyToS3(ColumnarBaseTest):
 
         if not all(results):
             self.fail("Copy to statement copied the wrong results")
+
+    def test_mini_volume_copy_to_s3(self):
+        primary_key = []
+        self.base_infra_setup(primary_key)
+        self.copy_to_s3_job = Queue()
+        self.copy_to_s3_results = []
+        self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
+        self.mini_volume.calculate_volume_per_source()
+        # initiate copy to kv
+        for i in range(1, 5):
+            if i % 2 == 0:
+                self.mini_volume.run_processes(i, 2 ** (i - 1), False)
+            else:
+                self.mini_volume.run_processes(i, 2 ** (i + 1), False)
+            self.mini_volume.start_crud_on_data_sources(self.remote_start, self.remote_end)
+            self.mini_volume.stop_process()
+            self.mini_volume.stop_crud_on_data_sources()
+            self.cbas_util.wait_for_ingestion_complete()
+            datasets = self.cbas_util.get_all_dataset_objs()
+            s3_link = self.cbas_util.get_all_link_objs("s3")[0]
+            for j in range(len(datasets)):
+                path = "copy_dataset_" + str(i) + datasets[j].full_name
+                self.copy_to_s3_job.put((self.cbas_util.copy_to_s3,
+                                         {"cluster": self.cluster, "collection_name": datasets[j].name,
+                                          "dataverse_name": datasets[j].dataverse_name,
+                                          "database_name": datasets[j].database_name,
+                                          "destination_bucket": self.sink_s3_bucket_name,
+                                          "destination_link_name": s3_link.full_name,
+                                          "path": path}))
+            self.cbas_util.run_jobs_in_parallel(
+                self.copy_to_s3_job, self.copy_to_s3_results, self.sdk_clients_per_user, async_run=False)
+
+            if not all(self.copy_to_s3_results):
+                self.log.error("Some documents were not inserted")

@@ -110,7 +110,7 @@ class CopyToKv(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "num_of_standalone_coll", 0)
-        if primary_key:
+        if primary_key is not None:
             self.columnar_spec["standalone_dataset"]["primary_key"] = primary_key
         else:
             self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
@@ -751,7 +751,8 @@ class CopyToKv(ColumnarBaseTest):
         provisioned_collections = []
         for dataset in datasets:
             jobs.put((self.cbas_util.load_doc_to_standalone_collection,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name,
                        "database_name": dataset.database_name, "no_of_docs": self.no_of_docs,
                        "document_size": self.doc_size}))
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -931,18 +932,21 @@ class CopyToKv(ColumnarBaseTest):
                                  "link_name": remote_link.full_name, "analytics_timeout": 1000000}))
 
     def mini_volume_copy_to_kv(self):
-        primary_key=None
+        primary_key = []
         self.base_infra_setup(primary_key)
         self.copy_to_kv_job = Queue()
         self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
         self.mini_volume.calculate_volume_per_source()
-
         # initiate copy to kv
         for i in range(1, 5):
             if i % 2 == 0:
                 self.mini_volume.run_processes(i, 2 ** (i - 1), False)
             else:
                 self.mini_volume.run_processes(i, 2 ** (i + 1), False)
+            self.mini_volume.start_crud_on_data_sources(self.remote_start, self.remote_end)
+            self.mini_volume.stop_process()
+            self.mini_volume.stop_crud_on_data_sources()
+            self.cbas_util.wait_for_ingestion_complete()
             datasets = self.cbas_util.get_all_dataset_objs()
             remote_link = self.cbas_util.get_all_link_objs("couchbase")
             self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
