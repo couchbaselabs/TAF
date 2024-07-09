@@ -2,6 +2,10 @@ import os as OS
 import argparse
 import json
 import time
+
+from couchbase.auth import PasswordAuthenticator
+from couchbase.cluster import ClusterOptions, Cluster
+
 import get_jenkins_params as jenkins_api
 
 host = '172.23.120.87'
@@ -202,7 +206,9 @@ def find_rerun_job(args):
         version_build = args['build_version']
     if not name or not version_build:
         return False, {}
-    cluster = Cluster.connect(host, 'Administrator', 'esabhcuoc')
+    cluster_opts = ClusterOptions(
+        authenticator=PasswordAuthenticator('Administrator','esabhcuoc'))
+    cluster = Cluster.connect(f"couchbase://{host}", cluster_opts)
     rerun_jobs = cluster.bucket(bucket_name)
     collection = rerun_jobs.defaultCollection()
     time.sleep(10)
