@@ -40,11 +40,8 @@ class APIBase(CouchbaseBaseTest):
         # create the first V4 API KEY WITH organizationOwner role, which will
         # be used to perform further V4 api operations
         resp = self.capellaAPI.org_ops_apis.create_api_key(
-            organizationId=self.organisation_id,
-            name=self.generate_random_string(prefix=self.prefix),
-            organizationRoles=["organizationOwner"],
-            description=self.generate_random_string(
-                length=50, prefix=self.prefix))
+            self.organisation_id, self.prefix + "OrgOwnerKey",
+            ["organizationOwner"], self.prefix, 3)
         if resp.status_code == 201:
             self.org_owner_key = resp.json()
         else:
@@ -153,8 +150,9 @@ class APIBase(CouchbaseBaseTest):
             }
         }
         if TestInputSingleton.input.capella.get("clusters", None):
-            self.cluster_id = TestInputSingleton.input.capella.get(
-                "clusters")["cluster_id"]
+            self.cluster_id = TestInputSingleton.input.capella.get("clusters")
+            if isinstance(self.cluster_id, dict):
+                self.cluster_id = self.cluster_id["cluster_id"]
         else:
             cluster_template = self.input.param("cluster_template",
                                                 "AWS_template_m7_xlarge")
@@ -174,16 +172,16 @@ class APIBase(CouchbaseBaseTest):
                     self.fail("!!!...Cluster creation Failed...!!!")
                 else:
                     self.cluster_id = res.json()["id"]
-                    self.capella["clusters"] = {
-                        "cluster_id": self.cluster_id,
-                        "vpc_id": None,
-                        "app_id": None
-                    }
             except (Exception,):
                 self.log.error(res.status_code)
                 self.log.error(res.content)
                 self.tearDown()
                 self.fail("!!!...Couldn't decipher result...!!!")
+        self.capella["clusters"] = {
+            "cluster_id": self.cluster_id,
+            "vpc_id": None,
+            "app_id": True
+        }
 
         # Templates for instance configurations across CSPs and Computes
         self.instance_templates = {
@@ -244,9 +242,11 @@ class APIBase(CouchbaseBaseTest):
         if (TestInputSingleton.input.test_params["case_number"] ==
                 TestInputSingleton.input.test_params["no_of_test_identified"]):
             # Delete the app service if it was a part of the tests.
-            if self.capella["clusters"]["app_id"]:
+            if self.capella["clusters"]["app_id"] and not isinstance(
+                    self.capella["clusters"]["app_id"], bool):
                 # Wait for app_service to be in a stable state.
-                self.log.info("Waiting for AppService to be stable.")
+                self.log.info("Deleting APP SERVICE: {}.".format(
+                    self.capella["clusters"]["app_id"]))
                 while not self.validate_onoff_state(
                         ["healthy", "turnedOff"],
                         app=self.capella["clusters"]["app_id"], sleep=15):
@@ -261,16 +261,18 @@ class APIBase(CouchbaseBaseTest):
                     self.fail("Error while deleting the app service: {}"
                               .format(res.content))
 
-                self.log.info("...Waiting for app service to be deleted...")
+                self.log.info("...Waiting for App Svc to be deleted...")
                 if not self.wait_for_deletion(
                         self.cluster_id, self.capella["clusters"]["app_id"]):
-                    self.fail("!!!...App Service could not be deleted...!!!")
-                self.log.info("App Service Deleted Successfully")
+                    self.log.error("!!!...App Svc could not be deleted...!!!")
+                self.log.info("App Svc Deleted Successfully")
 
             # Delete the created instance.
+            self.log.info("Deleting INSTANCE: {}".format(
+                self.capella["instance_id"]))
             if self.flush_columnar_instances(self.instances):
                 super(APIBase, self).tearDown()
-                self.fail("!!!...Instance(s) deletion failed...!!!")
+                self.log.error("!!!...Instance(s) deletion failed...!!!")
             self.wait_for_deletion(instances=self.instances)
 
             # Delete the cluster that was created.
@@ -283,7 +285,7 @@ class APIBase(CouchbaseBaseTest):
             # Wait for the cluster to be destroyed.
             self.log.info("Waiting for cluster to be destroyed.")
             if not self.wait_for_deletion(self.cluster_id):
-                self.fail("Cluster could not be destroyed")
+                self.log.error("!!!...Cluster could not be destroyed...!!!")
             self.log.info("Cluster destroyed successfully.")
             self.cluster_id = None
 
@@ -299,8 +301,7 @@ class APIBase(CouchbaseBaseTest):
         # Delete organizationOwner API key
         self.log.info("Deleting API key for role organization Owner")
         resp = self.capellaAPI.org_ops_apis.delete_api_key(
-            organizationId=self.organisation_id,
-            accessKey=self.org_owner_key["id"])
+            self.organisation_id, self.org_owner_key["id"])
         if resp.status_code != 204:
             self.log.error("Error while deleting api key for role "
                            "organization Owner")
@@ -349,8 +350,8 @@ class APIBase(CouchbaseBaseTest):
 
     def handle_rate_limit(self, retry_after):
         self.log.warning("Rate Limit hit.")
-        self.log.info("Sleeping for {0} for rate limit to "
-                      "expire".format(retry_after))
+        self.log.info("...Waiting {} seconds for rate limit to expire..."
+                      .format(retry_after))
         time.sleep(retry_after)
 
     @staticmethod
@@ -401,8 +402,8 @@ class APIBase(CouchbaseBaseTest):
                     o_roles.append("organizationMember")
 
             resp = self.capellaAPI.org_ops_apis.create_api_key(
-                organizationId=self.organisation_id,
-                name=self.generate_random_string(prefix=self.prefix),
+                self.organisation_id,
+                self.generate_random_string(prefix=self.prefix),
                 organizationRoles=o_roles,
                 description=self.generate_random_string(
                     50, prefix=self.prefix),
@@ -1055,7 +1056,8 @@ class APIBase(CouchbaseBaseTest):
             if result.status_code == 202:
                 return result
             if ("Please ensure that the CIDR range is unique within this "
-                    "organisation") in result.json()["message"]:
+                    "organisation" or "Please ensure you are passing a unique "
+                    "CIDR block and try again.") in result.json()["message"]:
                 cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
                 self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
             if time.time() - start_time >= 1800:

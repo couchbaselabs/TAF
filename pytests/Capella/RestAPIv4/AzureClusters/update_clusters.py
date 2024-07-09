@@ -77,8 +77,7 @@ class ToggleAzureAutoExpansion(GetProject):
             self.fail("!!!...Azure cluster creation failed...!!!")
 
         self.azure_cluster_id = result.json()["id"]
-        if not self.wait_for_deployment(self.project_id,
-                                        self.azure_cluster_id):
+        if not self.wait_for_deployment(self.azure_cluster_id):
             self.tearDown()
             self.fail("!!!...Azure Cluster deployment failed...!!!")
 
@@ -97,7 +96,7 @@ class ToggleAzureAutoExpansion(GetProject):
         ).json()["serviceGroups"][0]["node"]["disk"]["autoExpansion"]
 
         # Wait for cluster scaling to finish.
-        if not self.wait_for_deployment(self.project_id, self.azure_cluster_id):
+        if not self.wait_for_deployment(self.azure_cluster_id):
             self.fail("!!!...Cluster Scaling failed...!!!")
 
         # Set the Auto Expansion back to OFF.
@@ -107,7 +106,7 @@ class ToggleAzureAutoExpansion(GetProject):
             self.expected_result["serviceGroups"], False)
 
         # Wait for cluster scaling to finish.
-        if not self.wait_for_deployment(self.project_id, self.azure_cluster_id):
+        if not self.wait_for_deployment(self.azure_cluster_id):
             self.fail("!!!...Cluster Scaling failed...!!!")
 
         if not autoExpansion:

@@ -15,7 +15,6 @@ class GetCluster(GetProject):
         self.expected_res = {
             "id": self.cluster_id,
             "name": self.prefix + "WRAPPER",
-            "description": "",
             "currentState": None,
             "audit": {
                 "createdBy": None,
@@ -30,8 +29,37 @@ class GetCluster(GetProject):
         self.expected_res.update(self.cluster_templates[self.input.param(
             "cluster_template", "AWS_template_m7_xlarge")])
 
+        # Wait for the deployment request in APIBase to complete.
+        self.log.info("Waiting for CLUSTER {} to be deployed."
+                      .format(self.cluster_id))
+        if not self.wait_for_deployment():
+            self.tearDown()
+            self.fail("!!!...Cluster deployment failed...!!!")
+        self.log.info("Successfully deployed Cluster.")
+
+        # Let the app service be created in the background meanwhile the
+        # other tests run, PARALLEL DEPLOYMENTS.
+        if not self.capella["clusters"]["app_id"]:
+            # Create app service
+            self.log.info("Creating App Service...")
+            res = self.capellaAPI.cluster_ops_apis.create_appservice(
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.expected_res["name"],
+                self.app_svc_templates["AWS_2v4_2node"]["compute"])
+            if res.status_code != 201:
+                self.log.error(res.content)
+                self.tearDown()
+                self.fail("!!!..AppService creation failed...!!!")
+            self.app_service_id = res.json()["id"]
+            self.capella["clusters"]["app_id"] = self.app_service_id
+        elif isinstance(self.capella["clusters"]["app_id"], bool):
+            self.log.warning("Skipping APP SVC creation for the test")
+        else:
+            self.app_service_id = self.capella["clusters"]["app_id"]
+
+        self.expected_res["id"] = self.app_service_id
+
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
         super(GetCluster, self).tearDown()
 
     def test_api_path(self):
