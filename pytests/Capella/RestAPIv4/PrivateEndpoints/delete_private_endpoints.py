@@ -175,7 +175,8 @@ class PostUnassociate(PostAssociate):
                 }
             }
             if not any(element in [
-                 "organizationOwner", "projectOwner"
+                "organizationOwner", "projectOwner",
+                "projectManager"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
