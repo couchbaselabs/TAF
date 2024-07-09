@@ -196,7 +196,6 @@ class AutoCompactionTests(CollectionBase):
                     self.cluster_util.change_password(self.cluster,
                                                       new_password=new_passwd)
                     self.cluster.master.rest_password = new_passwd
-                rest = RestConnection(self.cluster.master)
 
             insert_thread = Thread(target=self.load,
                                    name="insert",
@@ -207,7 +206,7 @@ class AutoCompactionTests(CollectionBase):
                 self.log.info('Starting the load thread')
                 insert_thread.start()
                 okay = self.bucket_util.wait_till_compaction_end(
-                    rest, self.bucket.name,
+                    self.cluster.master, self.bucket.name,
                     timeout_in_seconds=(self.wait_timeout * 10))
 
                 if not okay:
@@ -352,9 +351,8 @@ class AutoCompactionTests(CollectionBase):
                      for i in range(self.nodes_out)]
         rebalance = self.task.async_rebalance(self.cluster,
                                               [], servs_out)
-        rest = RestConnection(self.cluster.master)
         compact_run = self.bucket_util.wait_till_compaction_end(
-            rest,
+            self.cluster.master,
             self.bucket.name,
             timeout_in_seconds=(self.wait_timeout*5))
         self.task.jython_task_manager.get_task_result(rebalance)
@@ -449,7 +447,6 @@ class AutoCompactionTests(CollectionBase):
         self.validate_test_failure()
 
     def test_database_time_compaction(self):
-        rest = RestConnection(self.cluster.master)
         curr_time = datetime.datetime.now()
         from_time = curr_time + datetime.timedelta(hours=1)
         to_time = curr_time + datetime.timedelta(hours=10)
@@ -485,8 +482,7 @@ class AutoCompactionTests(CollectionBase):
             allowedTimePeriodToMin=new_time.minute,
             allowedTimePeriodAbort="false")
         compact_run = self.bucket_util.wait_till_compaction_end(
-            rest,
-            self.bucket.name,
+            self.cluster.master, self.bucket.name,
             timeout_in_seconds=(self.wait_timeout * 5))
         if compact_run:
             self.log.info("auto compaction run successfully")
@@ -494,7 +490,6 @@ class AutoCompactionTests(CollectionBase):
             self.fail("auto compaction does not run")
 
     def rebalance_in_with_DB_time_compaction(self):
-        rest = RestConnection(self.cluster.master)
         curr_time = datetime.datetime.now()
         from_time = curr_time + datetime.timedelta(hours=1)
         to_time = curr_time + datetime.timedelta(hours=24)
@@ -533,8 +528,7 @@ class AutoCompactionTests(CollectionBase):
         rebalance = self.task.async_rebalance(self.cluster,
                                               servs_in, [])
         compact_run = self.bucket_util.wait_till_compaction_end(
-            rest,
-            self.bucket.name,
+            self.cluster.master, self.bucket.name,
             timeout_in_seconds=self.wait_timeout*5)
         self.task.jython_task_manager.get_task_result(rebalance)
         if compact_run:
@@ -575,7 +569,6 @@ class AutoCompactionTests(CollectionBase):
         monitor_fragm.result()
 
     def test_start_stop_DB_compaction(self):
-        rest = RestConnection(self.cluster.master)
         self.log.info('Disabling auto-compaction')
         self.bucket_util.disable_compaction(self.cluster,
                                             bucket=self.bucket.name)
@@ -590,7 +583,7 @@ class AutoCompactionTests(CollectionBase):
             pass
 
         self.log.info('Cancel bucket compaction')
-        self._cancel_bucket_compaction(rest, self.bucket)
+        self._cancel_bucket_compaction(self.cluster.master, self.bucket)
         self.task_manager.stop_task(compaction_task)
         self.task_manager.stop_task(compaction_monitor_task)
 
@@ -600,8 +593,7 @@ class AutoCompactionTests(CollectionBase):
         self.log.info('Waiting for compaction to end')
         self.task_manager.get_task_result(compaction_task)
         compact_run = self.bucket_util.wait_till_compaction_end(
-            rest,
-            self.bucket.name,
+            self.cluster.master, self.bucket.name,
             timeout_in_seconds=self.wait_timeout)
         if compact_run:
             self.log.info("Compaction run successfully")
@@ -612,7 +604,6 @@ class AutoCompactionTests(CollectionBase):
         # Created for MB-14976 - We need more than 65536 file revisions
         # to trigger this problem.
         compact_run = False
-        rest = RestConnection(self.cluster.master)
         remote_client = RemoteMachineShellConnection(self.cluster.master)
         remote_client.extract_remote_info()
 
@@ -637,8 +628,7 @@ class AutoCompactionTests(CollectionBase):
                 self.cluster.master, self.bucket.name)
 
             compact_run = self.bucket_util.wait_till_compaction_end(
-                rest,
-                self.bucket.name,
+                self.cluster.master, self.bucket.name,
                 timeout_in_seconds=self.wait_timeout)
             _ = compaction_task.result(self.wait_timeout)
 
@@ -648,7 +638,6 @@ class AutoCompactionTests(CollectionBase):
             self.fail("Auto compaction does not run")
 
     def test_start_stop_auto_DB_compaction(self):
-        rest = RestConnection(self.cluster.master)
         self.cluster_util.set_auto_compaction(
             self.cluster.master,
             dbFragmentThresholdPercentage=self.autocompaction_value)
@@ -672,7 +661,7 @@ class AutoCompactionTests(CollectionBase):
         doc_update_task.end_task()
 
         self.log.info("Stop bucket compaction")
-        self._cancel_bucket_compaction(rest, self.bucket)
+        self._cancel_bucket_compaction(self.cluster.master, self.bucket)
 
         self.task_manager.get_task_result(doc_update_task)
         self.task_manager.get_task_result(compaction_monitor_task)
@@ -681,12 +670,12 @@ class AutoCompactionTests(CollectionBase):
         if self.is_crashed.is_set():
             self.fail("Error occurred during test run")
 
-    def _cancel_bucket_compaction(self, rest, bucket):
+    def _cancel_bucket_compaction(self, cluster_node, bucket):
         bucket_helper = BucketHelper(self.cluster.master)
         try:
             result = bucket_helper.cancel_bucket_compaction(bucket.name)
             self.assertTrue(result)
-            self.bucket_util.wait_till_compaction_end(rest,
+            self.bucket_util.wait_till_compaction_end(cluster_node,
                                                       self.bucket.name,
                                                       self.wait_timeout)
         except Exception as ex:
@@ -694,7 +683,6 @@ class AutoCompactionTests(CollectionBase):
             self.log.error("Failed to cancel compaction: %s" % str(ex))
 
     def test_auto_compaction_with_multiple_buckets(self):
-        rest = RestConnection(self.cluster.master)
         for bucket in self.cluster.buckets:
             if bucket.name == "default":
                 self.bucket_util.disable_compaction(self.cluster,
@@ -723,7 +711,8 @@ class AutoCompactionTests(CollectionBase):
                     self.fail(ex)
             self.task.jython_task_manager.get_task_result(monitor_fragm)
             compact_run = self.bucket_util.wait_till_compaction_end(
-                rest, bucket.name, timeout_in_seconds=(self.wait_timeout * 5))
+                self.cluster.master, bucket.name,
+                timeout_in_seconds=(self.wait_timeout * 5))
             if compact_run:
                 self.log.info("auto compaction run successfully")
 
