@@ -179,10 +179,6 @@ if [ "$cherrypick" != "None" ] && [ "$cherrypick" != "" ] ; then
    echo "###############################################"
 fi
 
-# Fetch all submodules
-git submodule init
-git submodule update --init --force --remote
-
 echo "Running pip install to fix Python packages"
 python -m pip install -r requirements.txt
 
@@ -239,87 +235,64 @@ if [ "$component" = "analytics" ]; then
 fi
 
 status=0
-if [ "${slave}" == "deb12_executor" ]; then
-  pyenv local 3.10.14
-  py_executable=python
+# Adding this to install libraries
+$jython_pip install requests futures
 
-  # Switch to py3 branch that has all dependent modules for execution
-  git checkout master_py3_dev
-  git submodule init
-  git submodule update --init --force --remote
-  run_populate_ini_script $py_executable
-
-  if [ "$server_type" != "CAPELLA_LOCAL" ]; then
-    cd platform_utils/ssh_util
-    export PYTHONPATH="../../couchbase_utils:../../py_constants"
-    $py_executable -m install_util.install -i $WORKSPACE/testexec.$$.ini -v ${version_number} --skip_local_download
+# run_populate_ini_script $py_executable
+check_and_build_testrunner_install_docker
+touch $WORKSPACE/testexec.$$.ini
+docker run --rm \
+  -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini \
+  -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini  \
+  testrunner:install python3 scripts/populateIni.py $skip_mem_info \
+  -s ${servers} $internal_servers_param \
+  -d ${addPoolServerId} \
+  -a ${addPoolServers} \
+  -i testexec_reformat.$$.ini \
+  -p ${os} \
+  -o testexec.$$.ini \
+  -k '{'${UPDATE_INI_VALUES}'}'
+if [ "$server_type" != "CAPELLA_LOCAL" ]; then
+  if [ "$os" = "windows" ] ; then
+    docker run --rm \
+      -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
+      testrunner:install python3 scripts/new_install.py \
+      -i testexec.$$.ini \
+      -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
     status=$?
-    # Come back to TAF root dir
-    cd ../..
-  fi
+  else
+    # To handle nonroot user
+    echo sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
+    sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
 
-  # Come back to the requested branch for test execution
-  git checkout ${branch}
-else
-  # Adding this to install libraries
-  $jython_pip install requests futures
-
-  # run_populate_ini_script $py_executable
-  check_and_build_testrunner_install_docker
-  touch $WORKSPACE/testexec.$$.ini
-  docker run --rm \
-    -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini \
-    -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini  \
-    testrunner:install python3 scripts/populateIni.py $skip_mem_info \
-    -s ${servers} $internal_servers_param \
-    -d ${addPoolServerId} \
-    -a ${addPoolServers} \
-    -i testexec_reformat.$$.ini \
-    -p ${os} \
-    -o testexec.$$.ini \
-    -k '{'${UPDATE_INI_VALUES}'}'
-  if [ "$server_type" != "CAPELLA_LOCAL" ]; then
-    if [ "$os" = "windows" ] ; then
-      docker run --rm \
-        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
-        testrunner:install python3 scripts/new_install.py \
-        -i testexec.$$.ini \
-        -p timeout=2000,skip_local_download=False,version=${version_number},product=cb,parallel=${parallel},init_nodes=${initNodes},debug_logs=True,url=${url}${extraInstall}
-      status=$?
-    else
-      # To handle nonroot user
-      echo sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
-      sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
-
-      if [ "$os" != "mariner2" ]; then
-      	guides/gradlew --no-daemon --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
-      fi
-
-      # Doing installation from TESTRUNNER!!!
-      skip_local_download_val=False
-      if [[ "$os" = windows* ]]; then
-        skip_local_download_val=True
-      fi
-      if [ "$os" = "debian11nonroot" ]; then
-      	skip_local_download_val=True
-      fi
-
-      if [ "$component" = "os_certify" ]; then
-        new_install_params="timeout=7200,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
-      else
-        new_install_params="force_reinstall=False,timeout=2000,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
-      fi
-
-      # Perform Installation of builds on target servers
-      set -x
-      docker run --rm \
-        -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
-        testrunner:install python3 scripts/new_install.py \
-        -i testexec.$$.ini \
-        -p $new_install_params
-      status=$?
-      set +x
+    if [ "$os" != "mariner2" ]; then
+      guides/gradlew --no-daemon --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
     fi
+
+    # Doing installation from TESTRUNNER!!!
+    skip_local_download_val=False
+    if [[ "$os" = windows* ]]; then
+      skip_local_download_val=True
+    fi
+    if [ "$os" = "debian11nonroot" ]; then
+      skip_local_download_val=True
+    fi
+
+    if [ "$component" = "os_certify" ]; then
+      new_install_params="timeout=7200,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
+    else
+      new_install_params="force_reinstall=False,timeout=2000,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
+    fi
+
+    # Perform Installation of builds on target servers
+    set -x
+    docker run --rm \
+      -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
+      testrunner:install python3 scripts/new_install.py \
+      -i testexec.$$.ini \
+      -p $new_install_params
+    status=$?
+    set +x
   fi
 fi
 
