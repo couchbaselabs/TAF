@@ -110,6 +110,15 @@ echo "####################################"
 jython_path=/opt/jython/bin/jython
 jython_pip=/opt/jython/bin/pip
 
+# Clean up the gradle logs folder which bloat up the disk space
+for file in `find ~/.gradle/ -name "*.out.log"`
+do
+    lsof_line_count=`lsof $file | grep -v COMMAND | wc -l`
+    if [ $lsof_line_count -eq 0 ]; then
+        rm -f $file
+    fi
+done
+
 # Setup GoLang in local dir
 go_version=1.22.4
 wget https://golang.org/dl/go${go_version}.linux-amd64.tar.gz --quiet
@@ -124,6 +133,11 @@ export PYENV_ROOT="$HOME/.pyenv"
 export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
 pyenv local 3.10.14
+
+# Find cases for rerun
+set -x
+python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --manual_run
+set +x
 
 echo "Set ALLOW_HTP to False so test could run."
 sed -i 's/ALLOW_HTP.*/ALLOW_HTP = False/' lib/testconstants.py
