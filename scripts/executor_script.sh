@@ -107,9 +107,6 @@ echo "########## ulimit values ###########"
 ulimit -a
 echo "####################################"
 
-jython_path=/opt/jython/bin/jython
-jython_pip=/opt/jython/bin/pip
-
 # Clean up the gradle logs folder which bloat up the disk space
 for file in `find ~/.gradle/ -name "*.out.log"`
 do
@@ -276,11 +273,14 @@ if [ "$server_type" != "CAPELLA_LOCAL" ]; then
     status=$?
   else
     # To handle nonroot user
-    echo sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
+    set -x
     sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
+    set +x
 
     if [ "$os" != "mariner2" ]; then
-      guides/gradlew --no-daemon --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
+      set -x
+      python scripts/ssh.py -i $WORKSPACE/testexec.$$.ini --command "iptables -F"
+      set +x
     fi
 
     # Doing installation from TESTRUNNER!!!
@@ -359,5 +359,5 @@ else
 fi
 
 # To reduce the disk consumption post run
-rm -rf .git tr_for_install b build conf guides pytests
+rm -rf .git tr_for_install b build conf go pytests
 docker system  prune -f

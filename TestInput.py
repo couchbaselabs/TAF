@@ -1,6 +1,4 @@
-import getopt
 import re
-import logging
 import os
 from configparser import ConfigParser
 

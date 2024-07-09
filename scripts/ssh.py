@@ -1,14 +1,16 @@
 #!/usr/bin/python
 
-import getopt
 import sys
+from argparse import ArgumentParser
 from threading import Thread
 from datetime import datetime
 import uuid
 
-sys.path = [".", "lib", "couchbase_utils", "platform_utils",
-            "connections", "constants"] + sys.path
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
+
+sys.path = [".", "lib", "couchbase_utils",
+            "platform_utils", "platform_utils/ssh_util",
+            "connections", "constants", "py_constants"] + sys.path
+from ssh_util.shell_util.remote_connection import RemoteMachineShellConnection
 import TestInput
 import logging.config
 
@@ -43,9 +45,7 @@ class CommandRunner(object):
     def run(self):
         remote_client = RemoteMachineShellConnection(self.server)
         output, error = remote_client.execute_command(self.command)
-        print(self.server.ip)
-        print("\n".join(output))
-        print("\n".join(error))
+        print(f"{self.server.ip} - '{self.command}' :: Output: {output}, Error: {error}")
         remote_client.disconnect()
 
 
@@ -104,51 +104,27 @@ class RemoteJob(object):
 
 
 def main():
-    try:
-        (opts, args) = getopt.getopt(sys.argv[1:], 'hi:p:', [])
-        for o, a in opts:
-            if o == "-h":
-                usage()
-
-        input = TestInput.TestInputParser.get_test_input(sys.argv)
-        if not input.servers:
-            usage(
-                "ERROR: no servers specified. Please use the -i "
-                "parameter.")
-    except IndexError:
-        usage()
-    except getopt.GetoptError, error:
-        usage("ERROR: " + str(error))
-
-    command_offset = 3
-    if "-p" in sys.argv[:4]:
-        command_offset += 2
-
-    command = " ".join(sys.argv[command_offset:])
-
-    if command:
-        input.test_params["command"] = command
-
-    if input.param("parallel", True):
-        # workaround for a python2.6 bug of using strptime with threads
-        datetime.strptime("30 Nov 00", "%d %b %y")
-        RemoteJob().parallel_remote(input)
+    parser = ArgumentParser(description="ssh script")
+    parser.add_argument("-i", "--ini", dest="ini", required=True,
+                        help="Path to .ini file containing server "
+                             "information,e.g -i tmp/local.ini")
+    parser.add_argument("--command", dest="cmd", default=None,
+                        help="Command to run on remote server")
+    parser.add_argument("--script", dest="script", default=None,
+                        help="Script to run remotely")
+    parser.add_argument("--run_sequentially",
+                        dest="run_sequentially", action="store_false",
+                        default=False, help="Script to run remotely")
+    parser.add_argument("--params", dest="params")
+    options = parser.parse_args()
+    t_input = TestInput.TestInputParser.get_test_input(options)
+    if options.cmd:
+        t_input.test_params["command"] = options.cmd
+    if options.run_sequentially:
+        RemoteJob().sequential_remote(t_input)
     else:
-        RemoteJob().sequential_remote(input)
+        RemoteJob().parallel_remote(t_input)
 
 
 if __name__ == "__main__":
     main()
-
-
-def create_log_file(log_config_file_name, log_file_name, level):
-    tmpl_log_file = open("jython.logging.conf")
-    log_file = open(log_config_file_name, "w")
-    log_file.truncate()
-    for line in tmpl_log_file:
-        newline = line.replace("@@LEVEL@@", level)
-        newline = newline.replace("@@FILENAME@@",
-                                  log_file_name.replace('\\', '/'))
-        log_file.write(newline)
-    log_file.close()
-    tmpl_log_file.close()
