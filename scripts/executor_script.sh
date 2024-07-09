@@ -310,7 +310,7 @@ else
         new_install_params="force_reinstall=False,timeout=2000,skip_local_download=$skip_local_download_val,get-cbcollect-info=True,version=${version_number},product=cb,ntp=True,debug_logs=True,url=${url},cb_non_package_installer_url=${cb_non_package_installer_url}${extraInstall}"
       fi
 
-      # Install requirements for this venv
+      # Perform Installation of builds on target servers
       set -x
       docker run --rm \
         -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
@@ -322,22 +322,6 @@ else
     fi
   fi
 fi
-
-# Perform Installation of builds on target servers
-set -x
-docker run --rm \
-  -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini \
-  testrunner:install python3 scripts/new_install.py \
-  -i testexec.$$.ini \
-  -p $new_install_params
-status=$?
-set +x
-
-# cd platform_utils/ssh_util
-# export PYTHONPATH="../../couchbase_utils:../../py_constants"
-# python -m install_util.install -i $WORKSPACE/testexec.$$.ini -v ${version_number} --skip_local_download
-# status=$?
-# cd ../..
 
 if [ $status -eq 0 ]; then
   desc2=`echo $descriptor | awk '{split($0,r,"-");print r[1],r[2]}'`
