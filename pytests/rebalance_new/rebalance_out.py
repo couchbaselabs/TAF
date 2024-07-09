@@ -3,7 +3,7 @@ from BucketLib.bucket import Bucket
 from cb_constants import DocLoading
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
-from rebalance_base import RebalanceBaseTest
+from rebalance_new.rebalance_base import RebalanceBaseTest
 from couchbase_helper.documentgenerator import doc_generator
 from remote.remote_util import RemoteMachineShellConnection
 
