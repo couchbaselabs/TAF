@@ -210,7 +210,7 @@ def find_rerun_job(args):
         authenticator=PasswordAuthenticator('Administrator','esabhcuoc'))
     cluster = Cluster.connect(f"couchbase://{host}", cluster_opts)
     rerun_jobs = cluster.bucket(bucket_name)
-    collection = rerun_jobs.defaultCollection()
+    collection = rerun_jobs.default_collection()
     time.sleep(10)
     rerun = False
     doc_id = "{}_{}".format(name, version_build)
