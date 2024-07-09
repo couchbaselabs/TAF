@@ -1,4 +1,4 @@
-import Queue
+import queue
 import copy
 import json
 import random
@@ -7,7 +7,7 @@ from threading import Thread
 
 from cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
-from bucket_utils.bucket_ready_functions import BucketUtils, DocLoaderUtils
+from bucket_utils.bucket_ready_functions import BucketUtils
 from couchbase_helper.random_query_template import WhereClause
 from couchbase_helper.tuq_helper import N1QLHelper
 from global_vars import logger
@@ -660,7 +660,7 @@ class N1qlBase(CollectionBase):
     def get_stmt_for_threads(self, collections, doc_type_list, num_commit,
                              num_rollback_to_savepoint=0, num_conflict=0):
         server=None
-        que = Queue.Queue()
+        que = queue.Queue()
         fail = False
         self.threads = []
         self.results = []

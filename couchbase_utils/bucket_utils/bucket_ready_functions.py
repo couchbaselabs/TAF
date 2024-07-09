@@ -17,7 +17,6 @@ from time import time
 import requests
 import concurrent.futures
 
-import json
 import random
 import string
 import time
@@ -29,6 +28,7 @@ import global_vars
 import mc_bin_client
 import memcacheConstants
 from BucketLib.BucketOperations import BucketHelper
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from py_constants import CbServer
 from py_constants.cb_constants import DocLoading
 from Jython_tasks.task import \
@@ -2130,10 +2130,24 @@ class BucketUtils(ScopeUtils):
                 sleep(2)
         return False
 
-    def wait_till_compaction_end(self, rest, bucket, timeout_in_seconds=60):
+    def check_compaction_status(self, server_node, bucket_name):
+        rest = ClusterRestAPI(server_node)
+        status, tasks = rest.cluster_tasks()
+        if "error" in tasks:
+            raise Exception(tasks)
+        for task in tasks:
+            self.log.debug("Task is {0}".format(task))
+            if task["type"] == "bucket_compaction":
+                if task["bucket"] == bucket_name:
+                    return True, task["progress"]
+        return False, None
+
+    def wait_till_compaction_end(self, server_node, bucket_name,
+                                 timeout_in_seconds=60):
         end_time = time.time() + float(timeout_in_seconds)
         while time.time() < end_time:
-            status, progress = rest.check_compaction_status(bucket)
+            status, progress = self.check_compaction_status(
+                server_node, bucket_name)
             if status:
                 sleep(1, "Compaction in progress - %s%%" % progress,
                       log_type="infra")

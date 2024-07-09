@@ -282,6 +282,7 @@ def main():
             xunit_test_ref.update_results(xunit_suite_ref, "pass", time_taken)
         xunit.write("%s%sreport-%s"
                     % (os.path.dirname(logs_folder), os.sep, str_time))
+        xunit.print_summary()
         print("testrunner logs, diags and results are available under %s"
               % logs_folder)
         case_number += 1
@@ -290,7 +291,6 @@ def main():
             print("Test fails, all of the following tests will be skipped!!!")
             break
 
-    xunit.print_summary()
     HelperLib.cleanup()
 
     exit_status = 0

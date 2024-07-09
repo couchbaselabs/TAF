@@ -1,17 +1,18 @@
 # -*- coding: utf-8 -*-
+from couchbase.exceptions import CouchbaseException
 
+from BucketLib.BucketOperations import BucketHelper
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_constants import CbServer, DocLoading
-from couchbase_helper.documentgenerator import doc_generator
-from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from constants.sdk_constants.java_client import SDKConstants
+from couchbase_helper.documentgenerator import doc_generator
 from sdk_utils.sdk_options import SDKOptions
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
-from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class BasicOps(CollectionBase):
@@ -763,10 +764,11 @@ class BasicOps(CollectionBase):
     def test_drop_collection_compaction(self):
         collections = BucketUtils.get_random_collections(
             self.cluster.buckets, 10, 10, 1)
-        # Delete collection
-        for self.bucket_name, scope_dict in collections.iteritems():
+        bucket_name = None
+        # Delete collections
+        for bucket_name, scope_dict in collections.iteritems():
             bucket = BucketUtils.get_bucket_obj(self.cluster.buckets,
-                                                self.bucket_name)
+                                                bucket_name)
             scope_dict = scope_dict["scopes"]
             for scope_name, collection_dict in scope_dict.items():
                 collection_dict = collection_dict["collections"]
@@ -774,12 +776,9 @@ class BasicOps(CollectionBase):
                     BucketUtils.drop_collection(self.cluster.master, bucket,
                                                 scope_name, c_name)
         # Trigger compaction
-        remote_client = RemoteMachineShellConnection(self.cluster.master)
-        _ = remote_client.wait_till_compaction_end(
-            RestConnection(self.cluster.master),
-            self.bucket_name,
-            timeout_in_seconds=(self.wait_timeout * 10))
-        remote_client.disconnect()
+        self.bucket_util.wait_till_compaction_end(
+            self.cluster.master, bucket_name,
+            timeout=(self.wait_timeout*10))
         # Validate doc count as per bucket collections
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster)
@@ -1100,13 +1099,14 @@ class BasicOps(CollectionBase):
             self.fail("Default collection CRUD failed")
 
         self.cluster.sdk_client_pool.release_client(client)
-        rest = RestConnection(self.cluster.master)
-        status = rest.update_autofailover_settings(enabled=True, timeout=5,
-                                                   maxCount=1)
+        rest = ClusterRestAPI(self.cluster.master)
+        status, _ = rest.update_auto_failover_settings(
+            enabled="true", timeout=5, max_count=1)
         self.assertTrue(status)
         self.sleep(30, "waiting for AFO to get triggered")
-        settings = rest.get_autofailover_settings()
-        self.assertTrue(settings.count == 0, "Unexpected AFO triggered!")
+        status, settings = rest.get_auto_failover_settings()
+        self.assertTrue(int(settings["count"]) == 0,
+                        "Unexpected AFO triggered!")
         for bucket in self.cluster.buckets:
             status = self.bucket_util.delete_bucket(
                 self.cluster, bucket, wait_for_bucket_deletion=True)
