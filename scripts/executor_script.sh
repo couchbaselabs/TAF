@@ -91,8 +91,21 @@ echo "####################################"
 jython_path=/opt/jython/bin/jython
 jython_pip=/opt/jython/bin/pip
 
-# True since the version_num is > "6.5"
-rerun_job=true
+# Clean up the gradle logs folder which bloat up the disk space
+for file in `find ~/.gradle/ -name "*.out.log"`
+do
+    lsof_line_count=`lsof $file | grep -v COMMAND | wc -l`
+    if [ $lsof_line_count -eq 0 ]; then
+        rm -f $file
+    fi
+done
+
+# Clone the guides repo for Gradle command
+git clone https://github.com/couchbaselabs/guides.git
+
+if [ ${fresh_run} == false ]; then
+  guides/gradlew --refresh-dependencies --stacktrace rerun_job -P jython="$jython_path" -P args="${version_number} --executor_jenkins_job --manual_run"
+fi
 
 set +e
 echo newState=available>propfile
@@ -316,9 +329,7 @@ if [ $status -eq 0 ]; then
   total_tests=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($6,s1,"=");print s1[2]}' | sed s/\"//g |awk '{s+=$1} END {print s}'`
   echo $total_tests
   echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
-  if [ ${rerun_job} == true ]; then
-  	guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
-  fi
+  guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
   # Check if gradle had clean exit. If not, fail the job.
   if [ ! $status = 0 ]; then
   	echo "Gradle had non zero exit. Failing the job"
@@ -328,9 +339,7 @@ else
   echo Desc: $desc
   newState=failedInstall
   echo newState=failedInstall>propfile
-  if [ ${rerun_job} == true ]; then
-  	guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --install_failure"
-  fi
+  guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --install_failure"
 fi
 
 # To reduce the disk consumption post run
