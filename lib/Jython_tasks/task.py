@@ -5177,8 +5177,7 @@ class MutateDocsFromSpecTask(Task):
             self.log.debug("======================================")
             for task in execute_tasks:
                 self.task_manager.stop_task(task)
-                self.log.debug("Task '%s' complete. Loaded %s items"
-                               % (task.thread_name, task.docs_loaded))
+                self.log.debug(f"Task '{task.thread_name}' complete.")
 
     def create_tasks_for_bucket(self, bucket, scope_dict):
         load_gen_for_scopes_create_threads = list()

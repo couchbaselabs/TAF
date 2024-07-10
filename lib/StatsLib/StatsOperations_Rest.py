@@ -7,9 +7,9 @@ from py_constants import CbServer
 from connections.Rest_Connection import RestConnection
 from membase.api.rest_client import RestConnection as RestClientConnection
 from platform_constants.os_constants import Windows
-from platform_utils.remote.remote_util import RemoteMachineShellConnection
 from global_vars import logger
 from pytests.scalable_stats import constants
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class StatsHelper(RestConnection):
@@ -44,12 +44,10 @@ class StatsHelper(RestConnection):
         self.rest = RestClientConnection(server)
 
         self.curl_path = "curl"
-        shell = RemoteMachineShellConnection(self.server)
-        type = shell.extract_remote_info().distribution_type
-        if type.lower() == 'windows':
+        info = RemoteMachineShellConnection.get_info_for_server(self.server)
+        if info.distribution_type.lower() == 'windows':
             self.path = Windows.COUCHBASE_BIN_PATH
             self.curl_path = "%scurl" % self.path
-        shell.disconnect()
 
     def get_prometheus_metrics(self, component="ns_server", parse=False):
         """

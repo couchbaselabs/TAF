@@ -67,8 +67,8 @@ from membase.helper.cluster_helper import ClusterOperationHelper
 from membase.helper.rebalance_helper import RebalanceHelper
 from memcached.helper.data_helper import MemcachedClientHelper, \
     VBucketAwareMemcached
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 from testconstants import MAX_COMPACTION_THRESHOLD, \
     MIN_COMPACTION_THRESHOLD

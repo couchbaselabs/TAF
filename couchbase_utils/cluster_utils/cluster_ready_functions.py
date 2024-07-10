@@ -524,13 +524,9 @@ class ClusterUtils:
 
     def set_rebalance_moves_per_nodes(self, cluster_node,
                                       rebalanceMovesPerNode=4):
-        body = dict()
-        body["rebalanceMovesPerNode"] = rebalanceMovesPerNode
-        rest = RestConnection(cluster_node)
-        rest.set_rebalance_settings(body)
-        result = rest.get_rebalance_settings()
-        self.log.info("Changed Rebalance settings: {0}"
-                      .format(json.loads(result)))
+        status, content = ClusterRestAPI(cluster_node).rebalance_settings(
+            rebalance_moves_per_node=rebalanceMovesPerNode)
+        self.log.info(f"Update rebalance settings: {status}::{content}")
 
     def set_node_capacity(self, cluster_node,
                           data_node_capacity=25000,
@@ -2230,6 +2226,29 @@ class ClusterUtils:
             for i in range(0, len(zone_info["groups"])):
                 zone_names[zone_info["groups"][i]["name"]] = zone_info["groups"][i]["uri"][28:]
         return zone_names
+
+    def get_nodes_in_zone(self, server, zone_name):
+        server_group = ServerGroupsAPI(server)
+        status, zone_info = server_group.get_server_groups_info()
+        zone_names = [z_info["name"] for z_info in zone_info["groups"]]
+        if zone_name not in zone_names:
+            raise Exception(f"{server.ip}: Zone '{zone_name}' does not exists")
+
+        nodes = dict()
+        if len(zone_info["groups"]) >= 1:
+            for i in range(0, len(zone_info["groups"])):
+                if zone_info["groups"][i]["name"] == zone_name:
+                    tmp = zone_info["groups"][i]["nodes"]
+                    if not tmp:
+                        self.log.info(
+                            f"No nodes present in zone {zone_name}")
+                    # remove port
+                    for node in tmp:
+                        node["hostname"] = node["hostname"].split(":")
+                        node["hostname"] = node["hostname"][0]
+                        nodes[node["hostname"]] = node
+                    break
+        return nodes
 
     def print_UI_logs(self, rest, last_n=10, contains_text=None):
         _, logs = rest.ui_logs()

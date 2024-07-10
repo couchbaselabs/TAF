@@ -2,6 +2,7 @@ import time
 
 from BucketLib.BucketOperations import BucketHelper
 from cb_constants import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.documentgenerator import doc_generator
 from bucket_collections.collections_base import CollectionBase
@@ -9,12 +10,11 @@ from bucket_collections.collections_base import CollectionBase
 from couchbase_helper.tuq_helper import N1QLHelper
 from pytests.N1qlTransaction.N1qlBase import N1qlBase
 
-from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from StatsLib.StatsOperations import StatsHelper
 
 from sdk_exceptions import SDKException
 from FtsLib.FtsOperations import FtsHelper
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CollectionsRebalance(CollectionBase):
@@ -22,7 +22,7 @@ class CollectionsRebalance(CollectionBase):
         super(CollectionsRebalance, self).setUp()
         self.bucket_util._expiry_pager(self.cluster)
         self.bucket = self.cluster.buckets[0]
-        self.rest = RestConnection(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
         self.data_load_spec = self.input.param("data_load_spec", "volume_test_load")
         self.data_load_stage = self.input.param("data_load_stage", "before")
         self.data_load_type = self.input.param("data_load_type", "async")
@@ -49,7 +49,7 @@ class CollectionsRebalance(CollectionBase):
         self.skip_validations = self.input.param("skip_validations", False)
         self.compaction_tasks = list()
         self.dgm_ttl_test = self.input.param("dgm_ttl_test", False)  # if dgm with ttl
-        self.dgm = self.input.param("dgm", "100")  # Initial dgm threshold, for dgm test; 100 means no dgm
+        self.dgm = self.input.param("dgm", 100)  # Initial dgm threshold, for dgm test; 100 means no dgm
         self.scrape_interval = self.input.param("scrape_interval", None)
         self.sleep_before_validation_of_ttl = self.input.param("sleep_before_validation_of_ttl", 400)
         self.num_zone = self.input.param("num_zone", 1)
@@ -266,12 +266,14 @@ class CollectionsRebalance(CollectionBase):
         shell = RemoteMachineShellConnection(self.cluster.master)
         shell.enable_diag_eval_on_non_local_hosts()
         shell.disconnect()
-        ephemeral_buckets = [bucket for bucket in self.cluster.buckets if bucket.bucketType == "ephemeral"]
+        ephemeral_buckets = [bucket for bucket in self.cluster.buckets
+                             if bucket.bucketType == "ephemeral"]
+        config_str = \
+            f"ephemeral_metadata_purge_age={ephemeral_metadata_purge_age};" \
+            f"ephemeral_metadata_purge_interval={ephemeral_metadata_purge_interval};"
         for ephemeral_bucket in ephemeral_buckets:
-            status, content = self.rest.set_ephemeral_purge_age_and_interval \
-                (bucket=ephemeral_bucket.name,
-                 ephemeral_metadata_purge_age=ephemeral_metadata_purge_age,
-                 ephemeral_metadata_purge_interval=ephemeral_metadata_purge_interval)
+            status, content = self.rest.ns_bucket_update_bucket_props(
+                ephemeral_bucket.name, config_str)
             if not status:
                 raise Exception(content)
 
@@ -814,7 +816,7 @@ class CollectionsRebalance(CollectionBase):
         doc_loading_spec = self.bucket_util.get_crud_template_from_package(data_load_spec)
         CollectionBase.over_ride_doc_loading_template_params(self, doc_loading_spec)
         self.set_retry_exceptions(doc_loading_spec)
-        if self.dgm < 100:
+        if int(self.dgm) < 100:
             # No new items are created during dgm + rebalance/failover tests
             doc_loading_spec["doc_crud"][MetaCrudParams.DocCrud.CREATE_PERCENTAGE_PER_COLLECTION] = 0
             doc_loading_spec["doc_crud"][MetaCrudParams.DocCrud.NUM_ITEMS_FOR_NEW_COLLECTIONS] = 0
@@ -823,15 +825,12 @@ class CollectionsRebalance(CollectionBase):
             doc_loading_spec[MetaCrudParams.COLLECTIONS_TO_ADD_PER_BUCKET] = 20
         if self.skip_collections_during_data_load is not None:
             doc_loading_spec['skip_dict'] = self.skip_collections_during_data_load
-        tasks = self.bucket_util.run_scenario_from_spec(self.task,
-                                                        self.cluster,
-                                                        self.cluster.buckets,
-                                                        doc_loading_spec,
-                                                        mutation_num=0,
-                                                        async_load=async_load,
-                                                        batch_size=self.batch_size,
-                                                        process_concurrency=self.process_concurrency,
-                                                        validate_task=(not self.skip_validations))
+        tasks = self.bucket_util.run_scenario_from_spec(
+            self.task, self.cluster, self.cluster.buckets, doc_loading_spec,
+            mutation_num=0, async_load=async_load, batch_size=self.batch_size,
+            process_concurrency=self.process_concurrency,
+            validate_task=(not self.skip_validations),
+            load_using=self.load_docs_using)
         if cont_doc_load and not async_load:
             CollectionBase.remove_docs_created_for_dedupe_load(
                 self, cont_doc_load)
@@ -1041,14 +1040,14 @@ class CollectionsRebalance(CollectionBase):
 
     def get_zone_info(self):
         nodes_in_zone = dict()
-        serverinfo = self.servers[0]
-        rest = RestConnection(serverinfo)
         for i in range(0, int(self.num_zone)):
             zone_name = "Group " + str(i + 1)
-            if rest.get_nodes_in_zone(zone_name).keys():
+            nodes_in_zone_dict = self.cluster_util.get_nodes_in_zone(
+                self.servers[0], zone_name)
+            if nodes_in_zone_dict.keys():
                 nodes_in_zone[zone_name] = [x.encode('UTF8') for x in
-                                            rest.get_nodes_in_zone(zone_name).keys()]
-        self.log.info("nodes in zone inside get_zone_info():{0}".format(nodes_in_zone))
+                                            nodes_in_zone_dict.keys()]
+            self.log.info(f"Nodes in zone {zone_name}: {nodes_in_zone}")
         return nodes_in_zone
 
     def get_failover_nodes(self):
@@ -1089,7 +1088,7 @@ class CollectionsRebalance(CollectionBase):
                 tasks = self.async_data_load()
             else:
                 self.sync_data_load()
-        if self.dgm < 100:
+        if int(self.dgm) < 100:
             self.load_to_dgm()
         if self.N1ql_txn:
             self.setup_N1ql_txn()
