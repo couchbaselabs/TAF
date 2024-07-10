@@ -2140,7 +2140,7 @@ class Dataset_Util(KafkaLink_Util):
         else:
             cmd += " {0}".format(dataset_name)
 
-        if with_clause or compress_dataset or storage_format or kafka_connector_details:
+        if with_clause or compress_dataset or storage_format:
             with_params = dict()
 
             if compress_dataset:
@@ -2148,9 +2148,6 @@ class Dataset_Util(KafkaLink_Util):
 
             if storage_format:
                 with_params["storage-format"] = {"format": storage_format}
-
-            if kafka_connector_details:
-                with_params.update(kafka_connector_details)
 
             cmd += " with " + json.dumps(with_params) + " "
 
