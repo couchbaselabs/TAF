@@ -1,10 +1,12 @@
 import os as OS
 import argparse
-import json
 import time
+from datetime import timedelta
 
 from couchbase.auth import PasswordAuthenticator
 from couchbase.cluster import ClusterOptions, Cluster
+from couchbase.exceptions import DocumentNotFoundException
+from couchbase.options import UpsertOptions
 
 import get_jenkins_params as jenkins_api
 
@@ -76,16 +78,15 @@ def get_json_object(document):
     :return: Couchbase Jsonobject of the dictionary
     :rtype: JsonObject
     """
-    json_object = JsonObject.create()
+    json_object = dict()
     for field, val in document.items():
-        value = None
         if isinstance(val, dict):
             value = get_json_object(val)
         elif isinstance(val, list):
             value = get_json_array(val)
         else:
             value = val
-        json_object.put(field, value)
+        json_object[field] = value
     return json_object
 
 
@@ -99,16 +100,15 @@ def get_json_array(array):
     :return: JsonArray of the list
     :rtype: JsonArray
     """
-    json_array = JsonArray.create()
+    json_array = list()
     for item in array:
-        value = None
         if isinstance(item, dict):
             value = get_json_object(item)
         elif isinstance(item, list):
             value = get_json_array(item)
         else:
             value = item
-        json_array.add(value)
+        json_array.append(value)
     return json_array
 
 
@@ -124,16 +124,11 @@ def get_document(collection, doc_id):
     document in dict
     :rtype: (bool, dict)
     """
+    print(f"Reading from {doc_id}")
     try:
-        print("reading from %s" % doc_id)
-        document = collection.get(doc_id)
-        content = document.contentAsObject()
-        doc = json.loads(str(content))
-        return True, doc
-    except DocumentNotFoundException as e:
-        print(e)
-        return False, None
-    except Exception as e:
+        res_doc = collection.get(doc_id)
+        return True, res_doc.content_as[dict]
+    except (DocumentNotFoundException, Exception) as e:
         print(e)
         return False, None
 
@@ -151,12 +146,10 @@ def upsert_document(collection, doc_id, document):
     :return: Nothing
     :rtype: None
     """
-    doc_to_insert = get_json_object(document)
-    duration = Duration.ofDays(7)
-    upsert_option = UpsertOptions.upsertOptions().expiry(duration)
+    upsert_option = UpsertOptions(expiry=timedelta(days=7))
     try:
-        collection.upsert(doc_id, doc_to_insert, upsert_option)
-        print('upserted %s' % doc_id)
+        collection.upsert(doc_id, get_json_object(document), upsert_option)
+        print(f'Upserted {doc_id}')
     except Exception as e:
         print(e)
 
@@ -243,6 +236,7 @@ def find_rerun_job(args):
     except Exception as e:
         print(e)
         return False, {}
+
 
 def get_bucket_gsi_types(parameters):
     """
