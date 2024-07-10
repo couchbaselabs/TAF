@@ -53,7 +53,7 @@ class BaseUtil(object):
             from CbasLib.CBASOperations_PythonSDK import CBASHelper as SDK_CBASHelper
             return SDK_CBASHelper(cluster)
         else:
-            return CBASHelper(cluster.cbas_cc_node)
+            return CBASHelper(cluster.master)
 
     def get_all_active_requests(self, cluster, username=None, password=None,
                                 timeout=300, analytics_timeout=300):
@@ -322,7 +322,7 @@ class BaseUtil(object):
                 BaseUtil.update_cbas_spec(cbas_spec[i], updated_specs[i])
 
     def run_jobs_in_parallel(self, jobs, results, thread_count,
-                             async_run=False):
+                             async_run=False, wait_for_job=[]):
 
         def consume_from_queue(jobs, results):
             while not jobs.empty():
@@ -334,6 +334,8 @@ class BaseUtil(object):
                     results.append(False)
                 finally:
                     jobs.task_done()
+                if len(wait_for_job) > 0 and wait_for_job[0] is True and jobs.empty():
+                    time.sleep(5)
 
         # start worker threads
         if jobs.qsize() < thread_count:
@@ -3399,7 +3401,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                                  where_clause=None, use_alias=False):
         cmd = "DELETE FROM "
         if database_name:
-            cmd += "{}.".format(database_name)
+            cmd += "{0}.".format(database_name)
         if dataverse_name:
             cmd += "{0}.{1} ".format(
                 CBASHelper.format_name(dataverse_name),

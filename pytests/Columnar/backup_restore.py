@@ -72,7 +72,7 @@ class BackupRestore(ColumnarBaseTest):
         self.create_bucket_scopes_collections_in_capella_cluster(self.tenant, self.remote_cluster, no_of_remote_buckets,
                                                                  bucket_ram_quota=200)
 
-    def base_infra_setup(self):
+    def base_infra_setup(self, primary_key=None):
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param("no_of_scopes", 1)
         self.columnar_spec["synonym"]["no_of_synonyms"] = self.input.param(
             "synonym", 0)
@@ -126,7 +126,10 @@ class BackupRestore(ColumnarBaseTest):
         self.columnar_spec["standalone_dataset"][
             "num_of_standalone_coll"] = self.input.param(
             "no_of_standalone_coll", 0)
-        self.columnar_spec["standalone_dataset"]["primary_key"] = []
+        if primary_key is not None:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = primary_key
+        else:
+            self.columnar_spec["standalone_dataset"]["primary_key"] = [{"name": "string", "email": "string"}]
 
         if not hasattr(self, "remote_cluster"):
             remote_cluster = None
@@ -432,7 +435,8 @@ class BackupRestore(ColumnarBaseTest):
         self.validate_entities_after_restore()
 
     def test_mini_volume_backup_restore(self):
-        self.base_infra_setup()
+        primary_key = [{"id": "string"}]
+        self.base_infra_setup(primary_key)
         self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
         self.mini_volume.calculate_volume_per_source()
         for i in range(1, 5):

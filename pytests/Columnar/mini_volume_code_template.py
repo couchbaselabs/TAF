@@ -1,6 +1,7 @@
 import math
 import random
 import time
+import threading
 from queue import Queue
 
 from cbas_utils.cbas_utils_columnar import ColumnarStats
@@ -17,6 +18,7 @@ class MiniVolume:
         self.perform_crud = None
         self.query_work_results = None
         self.cpu_stat_job = Queue()
+        self.wait_for_job = None
         self.base_object = base_object
         self.base_object.sirius_base_url = sirius_url
         self.base_object.query_job = Queue()
@@ -254,6 +256,7 @@ class MiniVolume:
     def stop_process(self, query_pass=False):
         self.base_object.run_queries = False
         self.base_object.get_cpu_stats = False
+        self.wait_for_job = [False]
         self.cpu_stat_job.join()
         self.base_object.query_job.join()
         if query_pass and not all(self.query_work_results):
@@ -301,8 +304,9 @@ class MiniVolume:
         while self.base_object.query_job.qsize() < 10:
             self.base_object.log.info("Waiting for query job to be created")
             time.sleep(10)
+        self.wait_for_job = [True]
         self.base_object.cbas_util.run_jobs_in_parallel(self.base_object.query_job, self.query_work_results, 2,
-                                                        async_run=True)
+                                                        async_run=True, wait_for_job=self.wait_for_job)
         self.base_object.cbas_util.run_jobs_in_parallel(self.cpu_stat_job, results, 1,
                                                         async_run=True)
 
@@ -310,6 +314,8 @@ class MiniVolume:
         self.base_object.data_loading_job.join()
         self.base_object.cbas_util.wait_for_data_ingestion_in_the_collections(self.base_object.cluster)
 
+        if scale_nodes == 8:
+            scale_nodes = random.choice([2, 4, 16])
         if not self.scale_columnar_cluster(scale_nodes):
             self.base_object.fail("Failed to scale up the instance")
 

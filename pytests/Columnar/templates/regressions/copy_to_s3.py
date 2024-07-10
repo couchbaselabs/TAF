@@ -164,7 +164,7 @@ spec = {
         # row - Dataset storage will be row format
         # column - Dataset storage will be column format
         # mixed - Dataset storage will be row + column format
-        "storage_format": "mixed",
+        "storage_format": "column",
     },
 
     "external_dataset": {
@@ -217,7 +217,7 @@ spec = {
         # row - Dataset storage will be row format
         # column - Dataset storage will be column format
         # mixed - Dataset storage will be row + column format
-        "storage_format": "mixed",
+        "storage_format": "column",
         # This is to define the data_source as shadow_dataset, s3, azure, gcp
         "data_source": [],
         "standalone_collection_properties": [{}]
