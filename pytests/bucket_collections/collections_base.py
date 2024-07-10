@@ -639,7 +639,8 @@ class CollectionBase(ClusterSetup):
                 doc_loading_spec,
                 mutation_num=0,
                 batch_size=test_obj.batch_size,
-                process_concurrency=test_obj.process_concurrency)
+                process_concurrency=test_obj.process_concurrency,
+                load_using=test_obj.load_docs_using)
         if doc_loading_task.result is False:
             test_obj.fail("Initial doc_loading failed")
 

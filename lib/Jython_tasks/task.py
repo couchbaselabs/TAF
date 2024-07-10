@@ -4,7 +4,6 @@ Created on Sep 14, 2017
 @author: riteshagarwal
 """
 import copy
-import itertools
 import json
 import os
 import random
@@ -12,13 +11,13 @@ import socket
 import time
 import zlib
 
-from concurrent.futures import Future
 from copy import deepcopy
 from threading import Lock, Thread
 from collections import OrderedDict
 
 from couchbase.exceptions import CouchbaseException
 
+from Jython_tasks import sirius_task
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.index.index_api import IndexRestAPI
@@ -33,7 +32,7 @@ from cb_constants import constants, CbServer, DocLoading
 from CbasLib.CBASOperations import CBASHelper
 from CbasLib.cbas_entity_on_prem import Dataverse, Dataset, Synonym, \
     CBAS_Index, CBAS_UDF
-from Jython_tasks.task_manager import TaskManager
+from Jython_tasks.task_manager import TaskManager, Task
 from cb_tools.cbstats import Cbstats
 from constants.sdk_constants.java_client import SDKConstants
 from collections_helper.collections_spec_constants import MetaConstants
@@ -64,101 +63,6 @@ from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 from constants.cloud_constants.capella_constants import AWS
 from capella_utils.columnar_final import ColumnarUtils
-
-
-class Task(Future):
-    serial_number = itertools.count()
-
-    def __init__(self, thread_name):
-        self.thread_name = "{}_{}".format(thread_name, next(Task.serial_number))
-        self.exception = None
-        self.completed = False
-        self.started = False
-        self.start_time = None
-        self.end_time = None
-        self.log = logger.get("infra")
-        self.test_log = logger.get("test")
-        self.result = False
-        self.sleep = sleep
-        self.state = None
-
-    def __str__(self):
-        if self.exception:
-            raise self.exception
-        elif self.completed:
-            self.log.info("Task %s completed on: %s"
-                          % (self.thread_name,
-                             str(time.strftime("%H:%M:%S",
-                                               time.gmtime(self.end_time)))))
-            return "%s task completed in %.2fs" % \
-                   (self.thread_name, self.completed - self.started,)
-        elif self.started:
-            return "Thread %s at %s" % \
-                   (self.thread_name,
-                    str(time.strftime("%H:%M:%S",
-                                      time.gmtime(self.start_time))))
-        else:
-            return "[%s] not yet scheduled" % self.thread_name
-
-    def start_task(self):
-        self.started = True
-        self.start_time = time.time()
-        self.log.info("Thread '%s' started" % self.thread_name)
-
-    def set_exception(self, exception):
-        self.exception = exception
-        self.complete_task()
-        raise Exception(self.exception)
-
-    def set_warn(self, exception):
-        self.exception = exception
-        self.complete_task()
-        self.log.warn("Warning from '%s': %s" % (self.thread_name, exception))
-
-    def complete_task(self):
-        self.completed = True
-        self.end_time = time.time()
-        self.log.info("Thread '%s' completed" % self.thread_name)
-
-    def set_result(self, result):
-        self.result = result
-
-    def call(self):
-        raise NotImplementedError
-
-    @staticmethod
-    def wait_until(value_getter, condition, timeout_secs=300):
-        """
-        Repeatedly calls value_getter returning the value when it
-        satisfies condition. Calls to value getter back off exponentially.
-        Useful if you simply want to synchronously wait for a condition to be
-        satisfied.
-
-        :param value_getter: no-arg function that gets a value
-        :param condition: single-arg function that tests the value
-        :param timeout_secs: number of seconds after which to timeout
-                             default=300 seconds (5 mins.)
-        :return: the value returned by value_getter
-        :raises: Exception if the operation times out before
-                 getting a value that satisfies condition
-        """
-        start_time = time.time()
-        stop_time = start_time + timeout_secs
-        interval = 0.01
-        attempt = 0
-        value = value_getter()
-        logger.get("infra").debug(
-            "Wait for expected condition to get satisfied")
-        while not condition(value):
-            now = time.time()
-            if timeout_secs < 0 or now < stop_time:
-                sleep(2 ** attempt * interval)
-                attempt += 1
-                value = value_getter()
-            else:
-                raise Exception('Timeout after {0} seconds and {1} attempts'
-                                .format(now - start_time, attempt))
-        return value
 
 
 class FunctionCallTask(Task):
@@ -5149,7 +5053,8 @@ class MutateDocsFromSpecTask(Task):
                  batch_size=500,
                  process_concurrency=1,
                  print_ops_rate=True,
-                 track_failures=True):
+                 track_failures=True,
+                 load_using="default_loader"):
         super(MutateDocsFromSpecTask, self).__init__(
             "MutateDocsFromSpecTask_%s" % time.time())
         self.cluster = cluster
@@ -5158,6 +5063,7 @@ class MutateDocsFromSpecTask(Task):
         self.process_concurrency = process_concurrency
         self.batch_size = batch_size
         self.print_ops_rate = print_ops_rate
+        self.load_using = load_using
 
         self.result = True
         self.load_gen_tasks = list()
@@ -5215,29 +5121,42 @@ class MutateDocsFromSpecTask(Task):
                     if cont_load else task.op_type
                 try:
                     self.task_manager.get_task_result(task)
-                    self.log.debug("Items loaded in task %s are %s"
-                                   % (task.thread_name, task.docs_loaded))
-                    i = 0
-                    while task.docs_loaded < (task.generator._doc_gen.end -
-                                              task.generator._doc_gen.start) \
-                            and i < 60:
-                        sleep(1, "Bug in java futures task. "
-                                 "Items loaded in task %s: %s"
-                              % (task.thread_name, task.docs_loaded),
-                              log_type="infra")
-                        i += 1
+                    if self.load_using == "default_loader":
+                        self.log.debug("Items loaded in task %s are %s"
+                                       % (task.thread_name, task.docs_loaded))
+                        i = 0
+                        while task.docs_loaded < (task.generator._doc_gen.end -
+                                                  task.generator._doc_gen.start) \
+                                and i < 60:
+                            sleep(1, "Bug in java futures task. "
+                                     "Items loaded in task %s: %s"
+                                  % (task.thread_name, task.docs_loaded),
+                                  log_type="infra")
+                            i += 1
                 except Exception as e:
                     self.test_log.error(e)
                 finally:
+                    if self.load_using != "default_loader":
+                        bucket = task.bucket
+                        scope = task.database_information.scope
+                        collection = task.database_information.collection
+                        doc_gen_start = task.operation_config.start
+                        doc_gen_end = task.operation_config.end
+                    else:
+                        bucket = task.bucket
+                        scope = task.scope
+                        collection = task.collection
+                        self.loader_spec[
+                            bucket]["scopes"][
+                            scope]["collections"][
+                            collection][
+                            op_type]["success"].update(task.success)
+                        doc_gen_start = task.generator._doc_gen.start
+                        doc_gen_end = task.generator._doc_gen.end
                     self.loader_spec[
-                        task.bucket]["scopes"][
-                        task.scope]["collections"][
-                        task.collection][
-                        op_type]["success"].update(task.success)
-                    self.loader_spec[
-                        task.bucket]["scopes"][
-                        task.scope]["collections"][
-                        task.collection][
+                        bucket]["scopes"][
+                        scope]["collections"][
+                        collection][
                         op_type]["fail"].update(task.fail)
                     if task.fail.__len__() != 0:
                         target_log = self.test_log.error
@@ -5246,8 +5165,8 @@ class MutateDocsFromSpecTask(Task):
                         target_log = self.test_log.debug
                     target_log("Failed to load %d docs from %d to %d of thread_name %s"
                                % (task.fail.__len__(),
-                                  task.generator._doc_gen.start,
-                                  task.generator._doc_gen.end,
+                                  doc_gen_start,
+                                  doc_gen_end,
                                   task.thread_name))
         except Exception as e:
             self.test_log.error(e)
@@ -5284,87 +5203,153 @@ class MutateDocsFromSpecTask(Task):
         for collection_thread in load_gen_for_collection_create_threads:
             collection_thread.join(60)
 
+    def __get_default_loader_generators(self, generator):
+        # Create success, fail dict per load_gen task
+        generators = list()
+        gen_start = int(generator.start)
+        gen_end = int(generator.end)
+        gen_range = max(int((generator.end - generator.start)
+                            / self.process_concurrency),
+                        1)
+        for pos in range(gen_start, gen_end, gen_range):
+            partition_gen = copy.deepcopy(generator)
+            partition_gen.start = pos
+            partition_gen.itr = pos
+            partition_gen.end = pos + gen_range
+            if partition_gen.end > generator.end:
+                partition_gen.end = generator.end
+            batch_gen = BatchedDocumentGenerator(
+                partition_gen,
+                self.batch_size)
+            generators.append(batch_gen)
+        return generators
+
+    def __init_doc_load_task(self, bucket, scope_name, col_name, op_data,
+                             op_type, task_id):
+        iterations = op_data.get("iterations", 1)
+        track_failures = op_data.get("track_failures",
+                                     self.track_failures)
+        if self.load_using == "default_loader":
+            doc_gens = self.__get_default_loader_generators(op_data["doc_gen"])
+            for doc_gen in doc_gens:
+                load_task = LoadDocumentsTask(
+                    self.cluster, bucket, None, doc_gen,
+                    op_type, op_data["doc_ttl"],
+                    scope=scope_name, collection=col_name,
+                    task_identifier=task_id,
+                    batch_size=self.batch_size,
+                    durability=op_data["durability_level"],
+                    timeout_secs=op_data["sdk_timeout"],
+                    time_unit=op_data["sdk_timeout_unit"],
+                    skip_read_on_error=op_data["skip_read_on_error"],
+                    suppress_error_table=op_data["suppress_error_table"],
+                    track_failures=track_failures,
+                    skip_read_success_results=op_data[
+                        "skip_read_success_results"],
+                    iterations=iterations)
+                self.load_gen_tasks.append(load_task)
+        elif self.load_using == "sirius_go_sdk":
+            load_task = sirius_task.LoadCouchbaseDocs(
+                self.task_manager, self.cluster, CbServer.use_https,
+                bucket, scope_name, col_name, op_data["doc_gen"], op_type,
+                exp=op_data["doc_ttl"],
+                durability=op_data["durability_level"],
+                timeout_secs=op_data["sdk_timeout"],
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                task_identifier=task_id,
+                track_failures=track_failures,
+                iterations=iterations).create_sirius_task()
+            self.load_gen_tasks.append(load_task)
+        else:
+            raise Exception(f"Invalid loader option {self.load_using}")
+
+    def __init_sub_doc_load_task(self, bucket, scope_name, col_name, op_data,
+                                 op_type, task_id):
+        iterations = op_data.get("iterations", 1)
+        track_failures = op_data.get("track_failures",
+                                     self.track_failures)
+        if self.load_using == "default_loader":
+            doc_gens = self.__get_default_loader_generators(op_data["doc_gen"])
+            for doc_gen in doc_gens:
+                load_task = LoadSubDocumentsTask(
+                    self.cluster, bucket, None, doc_gen,
+                    op_type, op_data["doc_ttl"],
+                    create_paths=True,
+                    xattr=op_data["xattr_test"],
+                    scope=scope_name, collection=col_name,
+                    task_identifier=task_id,
+                    batch_size=self.batch_size,
+                    durability=op_data["durability_level"],
+                    timeout_secs=op_data["sdk_timeout"],
+                    time_unit=op_data["sdk_timeout_unit"],
+                    track_failures=track_failures,
+                    skip_read_success_results=op_data[
+                        "skip_read_success_results"])
+                self.load_gen_tasks.append(load_task)
+        elif self.load_using == "sirius_go_sdk":
+            load_task = sirius_task.LoadCouchbaseDocs(
+                self.task_manager, self.cluster, CbServer.use_https,
+                bucket, scope_name, col_name, op_data["doc_gen"], op_type,
+                exp=op_data["doc_ttl"],
+                durability=op_data["durability_level"],
+                timeout_secs=op_data["sdk_timeout"],
+                batch_size=self.batch_size,
+                process_concurrency=self.process_concurrency,
+                task_identifier=task_id,
+                track_failures=track_failures,
+                iterations=iterations).create_sirius_task()
+            self.load_gen_tasks.append(load_task)
+        else:
+            raise Exception(f"Invalid loader option {self.load_using}")
+
+    def __init_cont_load_task(self, bucket, scope_name, col_name, op_data,
+                              op_type, task_id):
+        iterations = op_data.get("iterations", 1)
+        track_failures = op_data.get("track_failures",
+                                     self.track_failures)
+        if self.load_using == "default_loader":
+            doc_gens = self.__get_default_loader_generators(op_data["doc_gen"])
+            for doc_gen in doc_gens:
+                load_task = LoadDocumentsTask(
+                    self.cluster, bucket, None, doc_gen,
+                    op_type.replace("cont_", ""), op_data["doc_ttl"],
+                    scope=scope_name, collection=col_name,
+                    task_identifier=task_id,
+                    batch_size=self.batch_size,
+                    durability=op_data["durability_level"],
+                    timeout_secs=op_data["sdk_timeout"],
+                    time_unit=op_data["sdk_timeout_unit"],
+                    skip_read_on_error=op_data["skip_read_on_error"],
+                    suppress_error_table=op_data["suppress_error_table"],
+                    track_failures=track_failures,
+                    skip_read_success_results=op_data[
+                        "skip_read_success_results"],
+                    iterations=iterations)
+                self.load_gen_tasks.append(load_task)
+        else:
+            raise Exception(f"Invalid loader option {self.load_using}")
+
     def create_tasks_for_collections(self, bucket, scope_name,
                                      col_name, col_meta):
         for op_type, op_data in col_meta.items():
-            # Create success, fail dict per load_gen task
             op_data["success"] = dict()
             op_data["fail"] = dict()
-            track_failures = op_data.get("track_failures",
-                                         self.track_failures)
-
-            generators = list()
-            generator = op_data["doc_gen"]
-            gen_start = int(generator.start)
-            gen_end = int(generator.end)
-            gen_range = max(int((generator.end - generator.start)
-                                / self.process_concurrency),
-                            1)
-            for pos in range(gen_start, gen_end, gen_range):
-                partition_gen = copy.deepcopy(generator)
-                partition_gen.start = pos
-                partition_gen.itr = pos
-                partition_gen.end = pos + gen_range
-                if partition_gen.end > generator.end:
-                    partition_gen.end = generator.end
-                batch_gen = BatchedDocumentGenerator(
-                    partition_gen,
-                    self.batch_size)
-                generators.append(batch_gen)
-            for doc_gen in generators:
-                task_id = "%s_%s_%s_%s_%s_ttl=%s" % (
-                    self.thread_name, bucket.name, scope_name,
-                    col_name, op_type, op_data["doc_ttl"])
-                if op_type in DocLoading.Bucket.DOC_OPS:
-                    doc_load_task = LoadDocumentsTask(
-                        self.cluster, bucket, None, doc_gen,
-                        op_type, op_data["doc_ttl"],
-                        scope=scope_name, collection=col_name,
-                        task_identifier=task_id,
-                        batch_size=self.batch_size,
-                        durability=op_data["durability_level"],
-                        timeout_secs=op_data["sdk_timeout"],
-                        time_unit=op_data["sdk_timeout_unit"],
-                        skip_read_on_error=op_data["skip_read_on_error"],
-                        suppress_error_table=op_data["suppress_error_table"],
-                        track_failures=track_failures,
-                        skip_read_success_results=op_data[
-                            "skip_read_success_results"],
-                        iterations=op_data.get("iterations", 1))
-                    self.load_gen_tasks.append(doc_load_task)
-                elif op_type in DocLoading.Bucket.SUB_DOC_OPS:
-                    subdoc_load_task = LoadSubDocumentsTask(
-                        self.cluster, bucket, None, doc_gen,
-                        op_type, op_data["doc_ttl"],
-                        create_paths=True,
-                        xattr=op_data["xattr_test"],
-                        scope=scope_name, collection=col_name,
-                        task_identifier=task_id,
-                        batch_size=self.batch_size,
-                        durability=op_data["durability_level"],
-                        timeout_secs=op_data["sdk_timeout"],
-                        time_unit=op_data["sdk_timeout_unit"],
-                        track_failures=track_failures,
-                        skip_read_success_results=op_data[
-                            "skip_read_success_results"])
-                    self.load_subdoc_gen_tasks.append(subdoc_load_task)
-                elif op_type in ["cont_update", "cont_replace"]:
-                    doc_load_task = LoadDocumentsTask(
-                        self.cluster, bucket, None, doc_gen,
-                        op_type.replace("cont_", ""), op_data["doc_ttl"],
-                        scope=scope_name, collection=col_name,
-                        task_identifier=task_id,
-                        batch_size=self.batch_size,
-                        durability=op_data["durability_level"],
-                        timeout_secs=op_data["sdk_timeout"],
-                        time_unit=op_data["sdk_timeout_unit"],
-                        skip_read_on_error=op_data["skip_read_on_error"],
-                        suppress_error_table=op_data["suppress_error_table"],
-                        track_failures=track_failures,
-                        skip_read_success_results=op_data[
-                            "skip_read_success_results"],
-                        iterations=op_data.get("iterations", 1))
-                    self.cont_load_gen_tasks.append(doc_load_task)
+            task_id = "%s_%s_%s_%s_%s_ttl=%s" % (
+                self.thread_name, bucket.name, scope_name,
+                col_name, op_type, op_data["doc_ttl"])
+            if op_type in DocLoading.Bucket.DOC_OPS:
+                self.__init_doc_load_task(
+                    bucket, scope_name, col_name,
+                    op_data, op_type, task_id)
+            elif op_type in DocLoading.Bucket.SUB_DOC_OPS:
+                self.__init_sub_doc_load_task(
+                    bucket, scope_name, col_name,
+                    op_data, op_type, task_id)
+            elif op_type in ["cont_update", "cont_replace"]:
+                self.__init_cont_load_task(
+                    bucket, scope_name, col_name,
+                    op_data, op_type, task_id)
 
     def get_tasks(self):
         load_gen_for_bucket_create_threads = list()

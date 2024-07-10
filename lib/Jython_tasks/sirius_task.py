@@ -1,3 +1,4 @@
+from Jython_tasks.task_manager import Task
 from cb_constants import DocLoading
 from common_lib import IDENTIFIER_TOKEN
 from sirius_client_framework.multiple_database_config import CouchbaseLoader
@@ -5,7 +6,6 @@ from sirius_client_framework.operation_config import WorkloadOperationConfig
 from sirius_client_framework.sirius_client import SiriusClient
 from sirius_client_framework.sirius_constants import SiriusCodes
 from sirius_client_framework.sirius_setup import SiriusSetup
-from Jython_tasks.task import Task
 
 
 class LoadCouchbaseDocs(object):
@@ -107,6 +107,7 @@ class LoadCouchbaseDocs(object):
         elif self.op_type == SiriusCodes.DocOps.VALIDATE:
             op_type = SiriusCodes.DocOps.VALIDATE
         return WorkLoadTask(
+            bucket=self.bucket,
             task_manager=self.task_manager, op_type=op_type,
             database_information=db_info,
             operation_config=operation_config,
@@ -114,7 +115,7 @@ class LoadCouchbaseDocs(object):
 
 
 class WorkLoadTask(Task):
-    def __init__(self, task_manager, op_type, database_information,
+    def __init__(self, bucket, task_manager, op_type, database_information,
                  operation_config,
                  default_sirius_base_url="http://0.0.0.0:4000"):
         """
@@ -131,6 +132,7 @@ class WorkLoadTask(Task):
         self.thread_name = (f"WorkLoadTask{database_information.db_type}_"
                             f"{op_type}")
         super(WorkLoadTask, self).__init__(self.thread_name)
+        self.bucket = bucket
         self.op_type = op_type
         self.sirius_base_url = default_sirius_base_url
         self.database_information = database_information

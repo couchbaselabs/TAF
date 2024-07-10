@@ -291,7 +291,8 @@ class DocLoaderUtils(object):
                                      batch_size=200,
                                      async_load=False,
                                      process_concurrency=1,
-                                     print_ops_rate=True):
+                                     print_ops_rate=True,
+                                     load_using="default_loader"):
         """
         Will load(only Creates) all given collections under all bucket objects.
         :param task_manager: TaskManager object used for task management
@@ -305,6 +306,7 @@ class DocLoaderUtils(object):
         :param async_load: (Boolean) To wait for doc_loading to finish or not
         :param process_concurrency: process_concurrency to use during doc_loading
         :param print_ops_rate: Bool value to enable/disable ops_rate printing
+        :param load_using: Specify which loader to use (str)
         :return: List of doc_loading tasks
         """
         loader_spec = dict()
@@ -316,6 +318,7 @@ class DocLoaderUtils(object):
             batch_size=batch_size,
             process_concurrency=process_concurrency,
             print_ops_rate=print_ops_rate,
+            load_using=load_using,
             start_task=True)
         if not async_load:
             task_manager.jython_task_manager.get_task_result(task)
@@ -563,7 +566,8 @@ class DocLoaderUtils(object):
 
     @staticmethod
     def validate_crud_task_per_collection(cluster, bucket, scope_name,
-                                          collection_name, c_data):
+                                          collection_name, c_data,
+                                          load_using="default_loader"):
         # Table objects to print data
         table_headers = ["Initial exception", "Key"]
         failure_table_header = table_headers + ["Retry exception"]
@@ -580,6 +584,9 @@ class DocLoaderUtils(object):
         unwanted_retry_failed_table.set_headers(failure_table_header)
 
         exception_pattern = ".*(com\.[a-zA-Z0-9\.]+)"
+
+        if load_using != "default_loader":
+            return
 
         # Fetch client for retry operations
         client = cluster.sdk_client_pool.get_client_for_bucket(
@@ -752,7 +759,8 @@ class DocLoaderUtils(object):
                 for c_name, c_dict in collection_dict["collections"].items():
                     c_thread = threading.Thread(
                         target=crud_validation_function,
-                        args=[cluster, bucket_obj, s_name, c_name, c_dict])
+                        args=[cluster, bucket_obj, s_name, c_name, c_dict,
+                              doc_loading_task.load_using])
                     c_thread.start()
                     c_validation_threads.append(c_thread)
 
@@ -851,7 +859,8 @@ class DocLoaderUtils(object):
                                async_load=False,
                                validate_task=True,
                                process_concurrency=1,
-                               print_ops_rate=True):
+                               print_ops_rate=True,
+                               load_using="default_loader"):
         """
         :param task_manager: TaskManager object used for task management
         :param cluster: Cluster object to fetch master node
@@ -864,6 +873,7 @@ class DocLoaderUtils(object):
         :param validate_task: (Bool) To validate doc_loading results or not
         :param process_concurrency: process_concurrency to use during doc_loading
         :param print_ops_rate: Bool value to enable/disable ops_rate printing
+        :param load_using: Specify which loader to use (str)
         :return doc_loading_task: Task object returned from
                                   DocLoaderUtils.perform_doc_loading_for_spec
         """
@@ -882,7 +892,8 @@ class DocLoaderUtils(object):
             batch_size=batch_size,
             async_load=async_load,
             process_concurrency=process_concurrency,
-            print_ops_rate=print_ops_rate)
+            print_ops_rate=print_ops_rate,
+            load_using=load_using)
         if not async_load and validate_task:
             DocLoaderUtils.validate_doc_loading_results(cluster,
                                                         doc_loading_task)

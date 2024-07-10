@@ -1,5 +1,6 @@
+import itertools
 import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 
 from common_lib import sleep
 from global_vars import logger
@@ -79,3 +80,98 @@ class TaskManager(object):
             else:
                 self.log.debug("Task {0} could not be cancelled or already finished."
                                .format(task_name))
+
+
+class Task(Future):
+    serial_number = itertools.count()
+
+    def __init__(self, thread_name):
+        self.thread_name = "{}_{}".format(thread_name, next(Task.serial_number))
+        self.exception = None
+        self.completed = False
+        self.started = False
+        self.start_time = None
+        self.end_time = None
+        self.log = logger.get("infra")
+        self.test_log = logger.get("test")
+        self.result = False
+        self.sleep = sleep
+        self.state = None
+
+    def __str__(self):
+        if self.exception:
+            raise self.exception
+        elif self.completed:
+            self.log.info("Task %s completed on: %s"
+                          % (self.thread_name,
+                             str(time.strftime("%H:%M:%S",
+                                               time.gmtime(self.end_time)))))
+            return "%s task completed in %.2fs" % \
+                (self.thread_name, self.completed - self.started,)
+        elif self.started:
+            return "Thread %s at %s" % \
+                (self.thread_name,
+                 str(time.strftime("%H:%M:%S",
+                                   time.gmtime(self.start_time))))
+        else:
+            return "[%s] not yet scheduled" % self.thread_name
+
+    def start_task(self):
+        self.started = True
+        self.start_time = time.time()
+        self.log.info("Thread '%s' started" % self.thread_name)
+
+    def set_exception(self, exception):
+        self.exception = exception
+        self.complete_task()
+        raise Exception(self.exception)
+
+    def set_warn(self, exception):
+        self.exception = exception
+        self.complete_task()
+        self.log.warn("Warning from '%s': %s" % (self.thread_name, exception))
+
+    def complete_task(self):
+        self.completed = True
+        self.end_time = time.time()
+        self.log.info("Thread '%s' completed" % self.thread_name)
+
+    def set_result(self, result):
+        self.result = result
+
+    def call(self):
+        raise NotImplementedError
+
+    @staticmethod
+    def wait_until(value_getter, condition, timeout_secs=300):
+        """
+        Repeatedly calls value_getter returning the value when it
+        satisfies condition. Calls to value getter back off exponentially.
+        Useful if you simply want to synchronously wait for a condition to be
+        satisfied.
+
+        :param value_getter: no-arg function that gets a value
+        :param condition: single-arg function that tests the value
+        :param timeout_secs: number of seconds after which to timeout
+                             default=300 seconds (5 mins.)
+        :return: the value returned by value_getter
+        :raises: Exception if the operation times out before
+                 getting a value that satisfies condition
+        """
+        start_time = time.time()
+        stop_time = start_time + timeout_secs
+        interval = 0.01
+        attempt = 0
+        value = value_getter()
+        logger.get("infra").debug(
+            "Wait for expected condition to get satisfied")
+        while not condition(value):
+            now = time.time()
+            if timeout_secs < 0 or now < stop_time:
+                sleep(2 ** attempt * interval)
+                attempt += 1
+                value = value_getter()
+            else:
+                raise Exception('Timeout after {0} seconds and {1} attempts'
+                                .format(now - start_time, attempt))
+        return value
