@@ -65,24 +65,6 @@ class SecurityTest(SecurityBase):
             print(capella_api_resp.json()["message"])
         return capella_api_resp
 
-    def connect_node_port(self, node, ports, expect_to_connect=True):
-        session = requests.Session()
-        for port in ports:
-            connect = "https://" + node + ":" + port
-            self.log.info("Trying to connect to {0}".format(connect))
-            try:
-                session.get(connect, params='', headers=None, timeout=60, verify=False)
-            except requests.exceptions.ConnectionError as e:
-                if expect_to_connect:
-                    self.fail(
-                        msg="Connection to the node should have passed. Failed with error: {0} on "
-                            "port: {1}".format(e, port))
-            else:
-                if not expect_to_connect:
-                    self.fail(
-                        msg="Connection to the node should have failed on port: {0}".format(
-                            port))
-
     def run_query(self, user, password, role, query_statement):
         pod = "https://" + self.url.replace("cloud", "", 1)
         url = "{0}/v2/databases/{1}/proxy/_p/query/query/service".format(pod, self.cluster_id)

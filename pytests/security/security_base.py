@@ -1,7 +1,11 @@
 import json
+import shlex
+import subprocess
 import time
 import string
 import random
+
+import requests
 # import itertools
 # import base64
 # from datetime import datetime
@@ -111,6 +115,24 @@ class SecurityBase(CouchbaseBaseTest):
 
         self.log.info("-------Teardown finished for SecurityBase-------")
 
+    def connect_node_port(self, node, ports, expect_to_connect=True):
+        session = requests.Session()
+        for port in ports:
+            connect = "https://" + node + ":" + port
+            self.log.info("Trying to connect to {0}".format(connect))
+            try:
+                session.get(connect, params='', headers=None, timeout=60, verify=False)
+            except requests.exceptions.ConnectionError as e:
+                if expect_to_connect:
+                    self.fail(
+                        msg="Connection to the node should have passed. Failed with error: {0} on "
+                            "port: {1}".format(e, port))
+            else:
+                if not expect_to_connect:
+                    self.fail(
+                        msg="Connection to the node should have failed on port: {0}".format(
+                            port))
+
     def allow_ip(self, cluster_id, project_id):
         resp = self.capellaAPI.allow_my_ip(self.tenant_id, project_id,
                                            cluster_id)
@@ -174,6 +196,54 @@ class SecurityBase(CouchbaseBaseTest):
         else:
             self.log.info("Project Deleted Successfully")
 
+    def wait_for_columnar_instance_to_turn_off(self, instance_id, timeout=1800):
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant_id,
+                                                                   self.project_id,
+                                                                   instance_id)
+            if resp.status_code != 200:
+                self.log.error("Unable to fetch details for columnar cluster {}." \
+                               " Returned status code : {}".
+                               format(instance_id, resp.status_code))
+                self.sleep(10)
+            else:
+                state = json.loads(resp.content)["data"]["state"]
+                self.log.info("Cluster %s state: %s" % (instance_id, state))
+                if state == "turning_off":
+                    self.sleep(10)
+                else:
+                    break
+        if state == "turned_off":
+            self.log.info("Columnar cluster turned off successfully")
+        else:
+            self.fail("Failed to deploy columnar cluster even after {} seconds." \
+                      " Cluster state: {}".format(timeout, state))
+
+    def wait_for_columnar_instance_to_turn_on(self, instance_id, timeout=1800):
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant_id,
+                                                                   self.project_id,
+                                                                   instance_id)
+            if resp.status_code != 200:
+                self.log.error("Unable to fetch details for columnar cluster {}." \
+                               " Returned status code : {}".
+                               format(instance_id, resp.status_code))
+                self.sleep(10)
+            else:
+                state = json.loads(resp.content)["data"]["state"]
+                self.log.info("Cluster %s state: %s" % (instance_id, state))
+                if state == "turning_on":
+                    self.sleep(10)
+                else:
+                    break
+        if state == "healthy":
+            self.log.info("Columnar cluster turned on successfully")
+        else:
+            self.fail("Failed to deploy columnar cluster even after {} seconds." \
+                      " Cluster state: {}".format(timeout, state))
+
     def wait_for_columnar_instance_to_deploy(self, instance_id, timeout=1800):
         start_time = time.time()
         while time.time() < start_time + timeout:
@@ -189,6 +259,51 @@ class SecurityBase(CouchbaseBaseTest):
                 state = json.loads(resp.content)["data"]["state"]
                 self.log.info("Cluster %s state: %s" % (instance_id, state))
                 if state == "deploying":
+                    self.sleep(10)
+                else:
+                    break
+        if state == "healthy":
+            self.log.info("Columnar cluster deployed successfully")
+        else:
+            self.fail("Failed to deploy columnar cluster even after {} seconds." \
+                      " Cluster state: {}".format(timeout, state))
+
+    def get_columnar_cluster_nodes(self, instance_id):
+        resp = self.columnarAPI.get_specific_columnar_instance(self.tenant_id,
+                                                                   self.project_id,
+                                                                   instance_id)
+        if resp.status_code != 200:
+            self.log.error("Unable to fetch details for columnar cluster {}." \
+                            " Returned status code : {}. Error: {}".
+                            format(instance_id, resp.status_code,
+                                    resp.content))
+        srv = json.loads(resp.content)["data"]["config"]["endpoint"]
+        cmd = "dig @8.8.8.8  _couchbases._tcp.{} srv".format(srv)
+        proc = subprocess.Popen(shlex.split(cmd), stdout=subprocess.PIPE)
+        out, _ = proc.communicate()
+        servers = list()
+        for line in out.split("\n"):
+            if "11207" in line:
+                servers.append(line.split("11207")[-1].rstrip(".").lstrip(" "))
+
+        return servers
+
+    def wait_for_columnar_instance_to_scale(self, instance_id, timeout=1800):
+        start_time = time.time()
+        while time.time() < start_time + timeout:
+            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant_id,
+                                                                   self.project_id,
+                                                                   instance_id)
+            if resp.status_code != 200:
+                self.log.error("Unable to fetch details for columnar cluster {}." \
+                               " Returned status code : {}. Error: {}".
+                               format(instance_id, resp.status_code,
+                                      resp.content))
+                self.sleep(10)
+            else:
+                state = json.loads(resp.content)["data"]["state"]
+                self.log.info("Cluster %s state: %s" % (instance_id, state))
+                if state == "scaling":
                     self.sleep(10)
                 else:
                     break
@@ -713,7 +828,8 @@ class SecurityBase(CouchbaseBaseTest):
                                                 "security-test-project{}"
                                                 .format(random.randint(1, 100000)))
             if resp.status_code != 201:
-                self.fail("Failed to create new project. Error: {}".format(resp.content))
+                self.fail("Failed to create new project. Error: {}. Status code: {}".
+                          format(resp.content, resp.status_code))
             project_id = resp.json()["id"]
             project_ids['different_project_id'] = project_id
 
@@ -740,14 +856,15 @@ class SecurityBase(CouchbaseBaseTest):
                     return False, error
 
                 if on_success_callback:
-                    on_success_callback(resp)
+                    on_success_callback(resp, test_method_args)
 
         if include_different_project:
             self.log.info("Deleting project")
             resp = self.capellaAPI.org_ops_apis.delete_project(self.tenant_id,
                                                                project_ids["different_project_id"])
-            if resp.status_code != 202:
-                self.fail("Failed to delete project. Error: {}".format(resp.content))
+            if resp.status_code != 204:
+                self.fail("Failed to delete project. Error: {}. Status code: {}".
+                          format(resp.content, resp.status_code))
 
         return True, None
 
@@ -775,7 +892,7 @@ class SecurityBase(CouchbaseBaseTest):
                         return False, error
 
                     if on_success_callback:
-                        on_success_callback(resp)
+                        on_success_callback(resp, test_method_args)
 
                 else:
                     if resp.status_code != 403:
@@ -797,7 +914,7 @@ class SecurityBase(CouchbaseBaseTest):
         self.capellaAPIv2 = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
                                          self.user, self.passwd)
         project_roles = ["projectOwner", "projectClusterViewer", "projectClusterManager",
-                         "projectDataReaderWriter", "projectDataReader"]
+                         "projectDataWriter", "projectDataViewer"]
         user = self.test_users["User3"]
 
         for role in project_roles:
@@ -830,7 +947,7 @@ class SecurityBase(CouchbaseBaseTest):
                         return False, error
 
                     if on_success_callback:
-                        on_success_callback(resp)
+                        on_success_callback(resp, test_method_args)
 
                 else:
                     if resp.status_code != 403:
