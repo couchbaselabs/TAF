@@ -266,6 +266,8 @@ class CMEKTest(SecurityBase):
                 aws_cluster_id = json.loads(response.content).get("id")
                 self.log.info("Creating capella cluster with id: {0}".format(aws_cluster_id))
                 break
+            if response.status_code == 422 and ("region" in response.content):
+                raise Exception
         self.log.info(response.content)
         data = json.loads(response.content.decode())
 
@@ -639,10 +641,10 @@ class CMEKTest(SecurityBase):
         # 5
         aws_cluster_id = self.post_deploy_cluster_aws(aws_key_id)
         new_resourceName = "arn:aws:kms:us-east-1:264138468394:key/a6c363c5-b4cd-4244-b1e1-ddd1ca7f827d"
-        resp = self.put_update_key(aws_cluster_id, new_resourceName)
+        resp = self.put_update_key(aws_key_id, new_resourceName)
         if resp.status_code != 204:
             self.fail("Key rotation failed")
-        resp = self.put_update_key(aws_cluster_id, new_resourceName)
+        resp = self.put_update_key(aws_key_id, new_resourceName)
         if resp.status_code != 422:
             self.fail("Key rotation should have failed as its less than 30 days")
 
