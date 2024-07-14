@@ -32,7 +32,7 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         """
         self.instance_type = self.input.param("instance_type",
                                               "4vCPUs:16GB").split(":")
-        self.columnar_image = self.input.capella.get("columnar_image")
+        self.columnar_image = self.capella.get("columnar_image", None)
 
         # Utility objects
         self.columnar_utils = ColumnarUtils(self.log)
@@ -184,6 +184,9 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
             if not result:
                 results.append(f"Columnar Instance {instance.instance_id} "
                                "failed to be deleted")
+            else:
+                self.log.info(f"Columnar Instance {instance.name} "
+                              f"successfully deleted")
 
         def delete_cloud_infra():
             for tenant in self.tenants:
