@@ -50,7 +50,7 @@ class CopyToKv(ColumnarBaseTest):
         if hasattr(self, 'provisioned_bucket_id'):
             self.delete_capella_bucket(self.provisioned_bucket_id)
         if hasattr(self, "remote_cluster") and hasattr(self.remote_cluster, "buckets"):
-            self.delete_all_buckets_from_capella_cluster(self.tenant, self.cluster)
+            self.delete_all_buckets_from_capella_cluster(self.tenant, self.remote_cluster)
         super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
