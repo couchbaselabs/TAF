@@ -6,7 +6,6 @@ from queue import Queue
 from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from BucketLib.bucket import Bucket
-from pytests.aGoodDoctor.opd import OPD
 from pytests.aGoodDoctor.hostedOnOff import DoctorHostedOnOff
 from sirius_client_framework.multiple_database_config import CouchbaseLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
