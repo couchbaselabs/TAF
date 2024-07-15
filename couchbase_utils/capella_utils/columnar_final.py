@@ -344,12 +344,6 @@ class ColumnarUtils:
         if not nodes:
             nodes = random.choice([1, 2, 4, 8, 16, 32])
 
-        if not support_package:
-            support_package = {
-                "key": "Developer Pro",
-                "timezone": "PT"
-            }
-
         if not instance_types:
             instance_types = {
                 "vcpus": "4vCPUs",
@@ -372,7 +366,7 @@ class ColumnarUtils:
             "package": support_package,
             "availabilityZone": availability_zone
         }
-        if image:
+        if image and token:
             config.update({
                 "overRide": {
                     "token": token,
