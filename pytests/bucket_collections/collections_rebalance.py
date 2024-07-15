@@ -937,7 +937,7 @@ class CollectionsRebalance(CollectionBase):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets, timeout=1200)
                 for bucket in self.cluster.buckets:
-                    items = items + self.bucket_helper_obj.get_active_key_count(bucket)
+                    items = items + self.bucket_helper_obj.get_active_key_count(bucket.name)
                 if items != self.remaining_docs:
                     self.fail("Items did not go to {0}." \
                               "Number of items left in the bucket : {1}".format(self.remaining_docs,
