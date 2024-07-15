@@ -28,7 +28,7 @@ class GetCollection(GetScope):
         self.log.info("Collection creation successful")
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         # Delete Collection
         self.log.info("Deleting collection: {}".format(self.collection_name))
@@ -117,13 +117,13 @@ class GetCollection(GetScope):
                 "description": "Fetch collection but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 404,
+                "expected_status_code": 400,
                 "expected_error": {
-                    "code": 6008,
-                    "hint": "The requested bucket does not exist. Please "
-                            "ensure that the correct bucket ID is provided.",
-                    "httpStatusCode": 404,
-                    "message": "Unable to find the specified bucket."
+                    "code": 400,
+                    "hint": "Please review your request and ensure that all "
+                            "required parameters are correctly provided.",
+                    "httpStatusCode": 400,
+                    "message": "BucketID is invalid."
                 }
             }, {
                 "description": "Fetch collection but with invalid scopeName",
@@ -253,7 +253,7 @@ class GetCollection(GetScope):
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.collection_name)
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:

@@ -17,7 +17,7 @@ class CreateScope(GetScope):
 
     def tearDown(self):
         failures = list()
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         # Delete all the scopes created.
         if self.flush_scopes(self.organisation_id, self.project_id,
@@ -105,13 +105,13 @@ class CreateScope(GetScope):
                 "description": "Create scope but with invalid bucketID",
                 "invalid_bucketID": self.replace_last_character(
                     self.bucket_id),
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "BucketID is invalid."
+                    "code": 6008,
+                    "hint": "The requested bucket does not exist. Please "
+                            "ensure that the correct bucket ID is provided.",
+                    "httpStatusCode": 404,
+                    "message": "Unable to find the specified bucket."
                 }
             }
         ]
@@ -209,14 +209,14 @@ class CreateScope(GetScope):
 
             if len(self.scopes) == 1000:
                 self.log.warning("Reached 1000 Scopes, flushing all.")
-                self.update_auth_with_api_token(self.org_owner_key["token"])
+                self.update_auth_with_api_token(self.curr_owner_key)
                 if self.flush_scopes(self.organisation_id, self.project_id,
                                      self.cluster_id, self.bucket_id,
                                      self.scopes):
                     self.fail("Scopes flushing operation could not be "
                               "completed successfully.")
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:
@@ -348,7 +348,7 @@ class CreateScope(GetScope):
 
             if len(self.scopes) == 1000:
                 self.log.warning("Reached 1000 Scopes, flushing all of them.")
-                self.update_auth_with_api_token(self.org_owner_key["token"])
+                self.update_auth_with_api_token(self.curr_owner_key)
                 if self.flush_scopes(self.organisation_id, self.project_id,
                                      self.cluster_id, self.bucket_id,
                                      self.scopes):
