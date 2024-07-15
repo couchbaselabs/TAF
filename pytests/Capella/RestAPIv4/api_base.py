@@ -40,17 +40,29 @@ class APIBase(CouchbaseBaseTest):
         # create the first V4 API KEY WITH organizationOwner role, which will
         # be used to perform further V4 api operations
         resp = self.capellaAPI.org_ops_apis.create_api_key(
-            self.organisation_id, self.prefix + "OrgOwnerKey",
+            self.organisation_id, self.prefix + "OrgOwnerKey-1",
             ["organizationOwner"], self.prefix, 3)
         if resp.status_code == 201:
-            self.org_owner_key = resp.json()
+            self.org_owner_key1 = resp.json()
         else:
-            self.log.error("Error while creating API key for organization "
-                           "owner")
+            self.log.fail("!!!...Error while creating first OrgOwner v4 API "
+                          "key...!!!")
+
+        # Create another API key with Org Owner Privileges to tap out for
+        # one another at time of Rate Limiting.
+        resp = self.capellaAPI.org_ops_apis.create_api_key(
+            self.organisation_id, self.prefix + "OrgOwnerKey-2",
+            ["organizationOwner"], self.prefix, 3)
+        if resp.status_code == 201:
+            self.org_owner_key2 = resp.json()
+        else:
+            self.log.fail("!!!...Error while creating second OrgOwner v4 API "
+                          "key...!!!")
 
         # update the token for capellaAPI object, so that is it being used
         # for api auth.
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.curr_owner_key = self.org_owner_key1
+        self.update_auth_with_api_token(self.curr_owner_key)
         self.api_keys = dict()
 
         # Create a wrapper project to be used for all the projects :
@@ -152,6 +164,7 @@ class APIBase(CouchbaseBaseTest):
         if TestInputSingleton.input.capella.get("clusters", None):
             self.cluster_id = TestInputSingleton.input.capella.get("clusters")
             if isinstance(self.cluster_id, dict):
+                self.capella["clusters"] = self.cluster_id
                 self.cluster_id = self.cluster_id["cluster_id"]
         else:
             cluster_template = self.input.param("cluster_template",
@@ -177,11 +190,11 @@ class APIBase(CouchbaseBaseTest):
                 self.log.error(res.content)
                 self.tearDown()
                 self.fail("!!!...Couldn't decipher result...!!!")
-        self.capella["clusters"] = {
-            "cluster_id": self.cluster_id,
-            "vpc_id": None,
-            "app_id": True
-        }
+            self.capella["clusters"] = {
+                "cluster_id": self.cluster_id,
+                "vpc_id": None,
+                "app_id": None
+            }
 
         # Templates for instance configurations across CSPs and Computes
         self.instance_templates = {
@@ -292,19 +305,27 @@ class APIBase(CouchbaseBaseTest):
             # Delete the project that was created.
             self.log.info("Deleting Project: {}".format(self.project_id))
             if self.delete_projects(self.organisation_id, [self.project_id],
-                                    self.org_owner_key["token"]):
+                                    self.curr_owner_key):
                 self.log.error("Error while deleting project.")
             else:
                 self.log.info("Project deleted successfully")
                 self.project_id = None
 
-        # Delete organizationOwner API key
-        self.log.info("Deleting API key for role organization Owner")
+        # Delete organizationOwner API keys
+        self.log.info("Deleting the first OrgOwner API key")
         resp = self.capellaAPI.org_ops_apis.delete_api_key(
-            self.organisation_id, self.org_owner_key["id"])
+            self.organisation_id, self.org_owner_key1["id"])
         if resp.status_code != 204:
-            self.log.error("Error while deleting api key for role "
-                           "organization Owner")
+            self.log.error("Error while deleting the first OrgOwner API key")
+            self.log.error(resp)
+
+        self.update_auth_with_api_token(self.org_owner_key2)
+        self.log.info("Deleting the second OrgOwner API key")
+        resp = self.capellaAPI.org_ops_apis.delete_api_key(
+            self.organisation_id, self.org_owner_key2["id"])
+        if resp.status_code != 204:
+            self.log.error("Error while deleting the second OrgOwner API key")
+            self.log.error(resp)
 
         if hasattr(self, "v2_control_plane_api_access_key"):
             response = self.capellaAPI.delete_control_plane_api_key(
@@ -322,7 +343,7 @@ class APIBase(CouchbaseBaseTest):
         if response.status_code == 201:
             response = response.json()
             self.v2_control_plane_api_access_key = response["id"]
-            self.update_auth_with_api_token(response["token"])
+            self.update_auth_with_api_token(response)
         else:
             self.log.error("Error while creating V2 control plane API key")
             self.fail("{}".format(response.content))
@@ -349,10 +370,19 @@ class APIBase(CouchbaseBaseTest):
         return name
 
     def handle_rate_limit(self, retry_after):
-        self.log.warning("Rate Limit hit.")
-        self.log.info("...Waiting {} seconds for rate limit to expire..."
-                      .format(retry_after))
-        time.sleep(retry_after)
+        self.log.warning("Rate Limit hit by the key: {}."
+                         .format(self.curr_owner_key))
+        if self.curr_owner_key == self.org_owner_key1:
+            self.curr_owner_key = self.org_owner_key2
+        else:
+            self.curr_owner_key = self.org_owner_key1
+
+        self.log.debug("Tapping out, switching to the key: {}"
+                       .format(self.curr_owner_key))
+        self.update_auth_with_api_token(self.curr_owner_key)
+        # self.log.info("...Waiting {} seconds for rate limit to expire..."
+        #               .format(retry_after))
+        # time.sleep(retry_after)
 
     @staticmethod
     def get_utc_datetime(minutes_delta=0):
@@ -402,25 +432,15 @@ class APIBase(CouchbaseBaseTest):
                     o_roles.append("organizationMember")
 
             resp = self.capellaAPI.org_ops_apis.create_api_key(
-                self.organisation_id,
-                self.generate_random_string(prefix=self.prefix),
-                organizationRoles=o_roles,
-                description=self.generate_random_string(
-                    50, prefix=self.prefix),
-                expiry=180,
-                allowedCIDRs=["0.0.0.0/0"],
-                resources=resource)
+                self.organisation_id, self.prefix, o_roles,
+                self.generate_random_string(50, prefix=self.prefix),
+                0.5, ["0.0.0.0/0"], resource)
             if resp.status_code == 429:
                 self.handle_rate_limit(int(resp.headers["Retry-After"]))
                 resp = self.capellaAPI.org_ops_apis.create_api_key(
-                    organizationId=self.organisation_id,
-                    name=self.generate_random_string(prefix=self.prefix),
-                    organizationRoles=o_roles,
-                    description=self.generate_random_string(
-                        50, prefix=self.prefix),
-                    expiry=180,
-                    allowedCIDRs=["0.0.0.0/0"],
-                    resources=resource)
+                    self.organisation_id, self.prefix, o_roles,
+                    self.generate_random_string(50, prefix=self.prefix),
+                    0.5, ["0.0.0.0/0"], resource)
 
             if resp.status_code == 201:
                 api_key_dict["-".join(role_combination)] = {
@@ -495,10 +515,10 @@ class APIBase(CouchbaseBaseTest):
         self.log.info("All API keys were deleted")
         return failed_deletion
 
-    def update_auth_with_api_token(self, token):
-        self.capellaAPI.org_ops_apis.bearer_token = token
-        self.capellaAPI.cluster_ops_apis.bearer_token = token
-        self.columnarAPI.bearer_token = token
+    def update_auth_with_api_token(self, keyObj):
+        self.capellaAPI.org_ops_apis.bearer_token = keyObj["token"]
+        self.capellaAPI.cluster_ops_apis.bearer_token = keyObj["token"]
+        self.columnarAPI.bearer_token = keyObj["token"]
 
     """
     Method makes parallel api calls.
@@ -827,7 +847,7 @@ class APIBase(CouchbaseBaseTest):
     def auth_test_setup(self, testcase, failures, header,
                         project_id, other_project_id=None):
         if "expire_key" in testcase:
-            self.update_auth_with_api_token(self.org_owner_key["token"])
+            self.update_auth_with_api_token(self.curr_owner_key)
             # create a new API key with expiry of approx 2 mins
             resp = self.capellaAPI.org_ops_apis.create_api_key(
                 self.organisation_id, "Expiry_Key", ["organizationOwner"],
@@ -840,18 +860,16 @@ class APIBase(CouchbaseBaseTest):
             # wait for key to expire
             self.log.debug("Sleeping 10 seconds for key to expire")
             time.sleep(10)
-            self.update_auth_with_api_token(
-                self.api_keys["organizationOwner_new"]["token"])
+            self.update_auth_with_api_token(self.api_keys["organizationOwner_new"])
             del self.api_keys["organizationOwner_new"]
         elif "revoke_key" in testcase:
-            self.update_auth_with_api_token(self.org_owner_key["token"])
+            self.update_auth_with_api_token(self.curr_owner_key)
             resp = self.capellaAPI.org_ops_apis.delete_api_key(
                 organizationId=self.organisation_id,
                 accessKey=self.api_keys["organizationOwner"]["id"])
             if resp.status_code != 204:
                 failures.append(testcase["description"])
-            self.update_auth_with_api_token(
-                self.api_keys["organizationOwner"]["token"])
+            self.update_auth_with_api_token(self.api_keys["organizationOwner"])
             del self.api_keys["organizationOwner"]
         elif "userpwd" in testcase:
             basic = base64.b64encode("{}:{}".format(
@@ -875,20 +893,20 @@ class APIBase(CouchbaseBaseTest):
                 key = "multi_project_2"
                 org_roles.append("projectCreator")
 
-            self.update_auth_with_api_token(self.org_owner_key["token"])
+            self.update_auth_with_api_token(self.curr_owner_key)
 
             # create a new API key with expiry of approx 2 mins
             resp = self.capellaAPI.org_ops_apis.create_api_key(
                 self.organisation_id, "MultiProj_Key", org_roles,
-                expiry=180, allowedCIDRs=["0.0.0.0/0"], resources=resource)
+                expiry=0.5, allowedCIDRs=["0.0.0.0/0"], resources=resource)
             if resp.status_code == 201:
                 self.api_keys[key] = resp.json()
             else:
                 self.fail("Error while creating API key for role having "
                           "access to multiple projects")
-            self.update_auth_with_api_token(self.api_keys[key]["token"])
+            self.update_auth_with_api_token(self.api_keys[key])
         else:
-            self.update_auth_with_api_token(testcase["token"])
+            self.update_auth_with_api_token(testcase)
 
     def validate_testcase(self, result, success_codes, testcase, failures,
                           validate_response=False, expected_res=None,
@@ -905,11 +923,12 @@ class APIBase(CouchbaseBaseTest):
 
         # Acceptor for expected error codes.
         if ("expected_status_code" in testcase and
+                "expected_error" in testcase and
                 testcase["expected_status_code"] == result.status_code):
             self.log.debug("This test expected the code: {}, with error: {}"
                            .format(testcase["expected_status_code"],
                                    testcase["expected_error"]))
-            return True
+            return False
 
         if result.status_code in success_codes:
             if ("expected_error" in testcase and
@@ -968,7 +987,7 @@ class APIBase(CouchbaseBaseTest):
         return False
 
     def validate_onoff_state(self, states, inst=None, app=None, sleep=2):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         if sleep:
             time.sleep(sleep)
         if app:
@@ -1006,6 +1025,10 @@ class APIBase(CouchbaseBaseTest):
 
     def validate_api_response(self, expected_res, actual_res, id):
         for key in actual_res:
+            if key not in expected_res:
+                self.log.error("Key: {} not found in expRes: {}"
+                               .format(key, expected_res))
+                return False
             if key == "version" or not expected_res[key]:
                 continue
             if key not in expected_res:
@@ -1055,6 +1078,23 @@ class APIBase(CouchbaseBaseTest):
                     serviceGroups, availability, support, header, **kwargs)
             if result.status_code == 202:
                 return result
+            # try:
+            #     cidrMessage = result.json()["message"]
+            #     if (
+            #             "Please ensure that the CIDR range is unique within this "
+            #             "organisation" or "Please ensure you are passing a "
+            #                               "unique CIDR block and try again.") in cidrMessage:
+            #         cloudProvider[
+            #             "cidr"] = CapellaUtils.get_next_cidr() + "/20"
+            #         self.log.info(
+            #             "Trying CIDR: {}".format(cloudProvider["cidr"]))
+            #     else:
+            #         self.log.debug(result.content)
+            #         return result
+            # except (Exception,):
+            #     self.log.warning(result.content)
+            #     return result
+            # self.log.error("Couldn't find CIDR within half an hour.")
             if ("Please ensure that the CIDR range is unique within this "
                     "organisation" or "Please ensure you are passing a unique "
                     "CIDR block and try again.") in result.json()["message"]:
@@ -1213,6 +1253,37 @@ class APIBase(CouchbaseBaseTest):
         for combination in list(itertools.product(*combination_list)):
             yield combination
 
+    # def create_path_combinations(self, params=None, *args):
+    #     if not params:
+    #         params = ["sortBy", "sortDirection", "page", "perPage"]
+    #
+    #     combination_list = []
+    #     for val in args:
+    #         values = [val, self.replace_last_character(val), True, None,
+    #                   123456788, 123456789.123456789, "", [val], (val,), {val}]
+    #         combination_list.append(values)
+    #
+    #     for combination in list(itertools.product(*combination_list)):
+    #         yield combination
+    #
+    #     # Generating path params related tests.
+    #     query_tests = list()
+    #     for p in params:
+    #         vals = [
+    #             "", 1, 0, 100000, -1, 123.123,
+    #             self.generate_random_string(),
+    #             self.generate_random_string(500, special_characters=False),
+    #         ]
+    #         for v in vals:
+    #             testcase = {
+    #                 "description": "Executing test with: {} = {}".format(p,
+    #                                                                      v),
+    #                 "param": p,
+    #                 "paramValue": v
+    #             }
+    #             query_tests.append(testcase)
+    #     return query_tests
+
     def create_projects(self, org_id, num_projects, access_key, token,
                         prefix=""):
         projects = dict()
@@ -1270,7 +1341,7 @@ class APIBase(CouchbaseBaseTest):
         return project_deletion_failed
 
     def create_alert_to_be_tested(self, proj_id, kind, name, config):
-        self.update_auth_with_api_token(self.org_owner_key['token'])
+        self.update_auth_with_api_token(self.curr_owner_key)
         res = self.capellaAPI.cluster_ops_apis.create_alert(
             self.organisation_id, proj_id, kind, name, config)
         if res.status_code == 429:
@@ -1286,7 +1357,7 @@ class APIBase(CouchbaseBaseTest):
 
     def create_bucket_to_be_tested(self, org_id, proj_id, clus_id, buck_name):
         # Wait for cluster to rebalance (if it is).
-        self.update_auth_with_api_token(self.org_owner_key['token'])
+        self.update_auth_with_api_token(self.curr_owner_key)
         res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
             self.organisation_id, proj_id, clus_id)
         if res.status_code == 429:
@@ -1321,7 +1392,7 @@ class APIBase(CouchbaseBaseTest):
 
     def delete_buckets(self, org_id, proj_id, clus_id, bucket_ids):
         bucket_deletion_failed = False
-        self.update_auth_with_api_token(self.org_owner_key['token'])
+        self.update_auth_with_api_token(self.curr_owner_key)
         for bucket_id in bucket_ids:
             resp = self.capellaAPI.cluster_ops_apis.delete_bucket(
                 org_id, proj_id, clus_id, bucket_id)
@@ -1357,7 +1428,7 @@ class APIBase(CouchbaseBaseTest):
         return bucket_deletion_failed
 
     def create_scope_to_be_tested(self, org_id, proj_id, clus_id, buck_id):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         name = self.prefix + "Scope_Delete"
         res = self.capellaAPI.cluster_ops_apis.create_scope(
@@ -1374,7 +1445,7 @@ class APIBase(CouchbaseBaseTest):
 
     def create_collection_to_be_tested(self, org_id, proj_id, clus_id,
                                        buck_id, scope_name):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         name = self.prefix + "Collections_Delete"
         res = self.capellaAPI.cluster_ops_apis.create_collection(
@@ -1390,7 +1461,7 @@ class APIBase(CouchbaseBaseTest):
         self.fail("!!!...Collection creation unsuccessful...!!!")
 
     def flush_alerts(self, project_id, alerts):
-        self.update_auth_with_api_token(self.org_owner_key['token'])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         alert_deletion_failed = False
         for alert in alerts:
@@ -1410,7 +1481,7 @@ class APIBase(CouchbaseBaseTest):
         return alert_deletion_failed
 
     def flush_scopes(self, org_id, proj_id, clus_id, buck_id, scopes):
-        self.update_auth_with_api_token(self.org_owner_key['token'])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         scopes_deletion_failed = False
         for scope in scopes:
@@ -1431,7 +1502,7 @@ class APIBase(CouchbaseBaseTest):
 
     def flush_collections(self, org_id, proj_id, clus_id, buck_id, scope,
                           collections):
-        self.update_auth_with_api_token(self.org_owner_key['token'])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         collections_deletion_failed = False
         for collection in collections:
@@ -1452,7 +1523,7 @@ class APIBase(CouchbaseBaseTest):
         return collections_deletion_failed
 
     def create_columnar_instance_to_be_tested(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         name = self.prefix + "ColumnarDelete_New"
         res = self.columnarAPI.create_analytics_cluster(
@@ -1474,7 +1545,7 @@ class APIBase(CouchbaseBaseTest):
         self.fail("!!!...Instance Creation unsuccessful...!!!")
 
     def flush_columnar_instances(self, instances):
-        self.update_auth_with_api_token(self.org_owner_key['token'])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         instance_deletion_failed = False
         for instance in instances:
