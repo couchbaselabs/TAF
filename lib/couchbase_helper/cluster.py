@@ -615,7 +615,8 @@ class ServerTasks(object):
                         retry_get_process_num=25,
                         add_nodes_server_groups=None,
                         defrag_options=None,
-                        validate_bucket_ranking=True):
+                        validate_bucket_ranking=True,
+                        service_topology=None):
         """
         Asynchronously rebalances a cluster
 
@@ -624,7 +625,9 @@ class ServerTasks(object):
           to_add - Servers being added to the cluster ([TestServers])
           to_remove - Servers being removed from the cluster ([TestServers])
           use_hostnames - True if nodes should be added using hostnames (Bool)
-
+          service_topology - Dict of
+                service_1: 'otp_node1,otp_node2,..',
+                service_2: 'otp_node2,otp_node3,..'
         Returns:
           RebalanceTask - A task future that is a handle to the scheduled task
         """
@@ -673,7 +676,8 @@ class ServerTasks(object):
                 retry_get_process_num=retry_get_process_num,
                 add_nodes_server_groups=add_nodes_server_groups,
                 defrag_options=defrag_options,
-                validate_bucket_ranking=validate_bucket_ranking)
+                validate_bucket_ranking=validate_bucket_ranking,
+                service_topology=service_topology)
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -797,7 +801,8 @@ class ServerTasks(object):
                   use_hostnames=False, services=None,
                   check_vbucket_shuffling=True, retry_get_process_num=25,
                   add_nodes_server_groups=None,
-                  validate_bucket_ranking=True):
+                  validate_bucket_ranking=True,
+                  service_topology=None):
         """
         Synchronously rebalances a cluster
 
@@ -818,7 +823,8 @@ class ServerTasks(object):
             check_vbucket_shuffling=check_vbucket_shuffling,
             retry_get_process_num=retry_get_process_num,
             add_nodes_server_groups=add_nodes_server_groups,
-            validate_bucket_ranking=validate_bucket_ranking)
+            validate_bucket_ranking=validate_bucket_ranking,
+            service_topology=service_topology)
         self.jython_task_manager.get_task_result(_task)
         return _task.result
 

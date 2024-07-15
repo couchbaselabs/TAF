@@ -452,7 +452,8 @@ class RebalanceTask(Task):
                  use_hostnames=False, services=None,
                  check_vbucket_shuffling=True,
                  retry_get_process_num=25, add_nodes_server_groups=None,
-                 defrag_options=None, validate_bucket_ranking=True):
+                 defrag_options=None, validate_bucket_ranking=True,
+                 service_topology=None):
         super(RebalanceTask, self).__init__(
             "Rebalance_task_IN=[{}]_OUT=[{}]_{}"
             .format(",".join([node.ip for node in to_add]),
@@ -472,6 +473,7 @@ class RebalanceTask(Task):
         self.server_groups_to_add = dict()
         self.defrag_options = None
         self.validate_bucket_ranking = validate_bucket_ranking
+        self.service_topology = service_topology
 
         if isinstance(add_nodes_server_groups, dict):
             """
@@ -865,6 +867,7 @@ class RebalanceTask(Task):
         rebalance_result, content = self.rest.rebalance(
             known_nodes=[node.id for node in nodes],
             eject_nodes=ejected_nodes,
+            topology=self.service_topology,
             defrag_options=self.defrag_options)
         self.rebalance_api_response = content
         if not rebalance_result:
