@@ -1788,7 +1788,7 @@ class RemoteLink_Util(Link_Util):
             op_type = SiriusCodes.DocOps.DELETE
         if action == "update":
             op_type = SiriusCodes.DocOps.UPDATE
-        task = WorkLoadTask(task_manager=self.task, op_type=op_type,
+        task = WorkLoadTask(bucket=bucket_name, task_manager=self.task, op_type=op_type,
                             database_information=database_information, operation_config=operation_config,
                             default_sirius_base_url=sirius_url)
         task_manager.add_new_task(task)
