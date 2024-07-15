@@ -204,20 +204,20 @@ class PostUnassociate(PostAssociate):
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.delete_private_endpoint(
-                self.organisation_id, self.project_id, self.cluster_id, 
+                self.organisation_id, self.project_id, self.cluster_id,
                 self.endpoint_id,
                 header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.delete_private_endpoint(
-                    self.organisation_id, self.project_id, self.cluster_id, 
+                    self.organisation_id, self.project_id, self.cluster_id,
                     self.endpoint_id,
                     header)
 
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Disassociation Successful")
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:

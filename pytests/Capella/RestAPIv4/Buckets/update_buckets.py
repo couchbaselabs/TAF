@@ -186,7 +186,7 @@ class UpdateBucket(GetBucket):
             self.log.info("Executing test: {}".format(testcase["description"]))
 
             # Wait for cluster to rebalance (if it is).
-            self.update_auth_with_api_token(self.org_owner_key['token'])
+            self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:
@@ -226,7 +226,7 @@ class UpdateBucket(GetBucket):
             self.priority += 1
             self.validate_testcase(result, [204], testcase, failures)
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:
@@ -352,7 +352,7 @@ class UpdateBucket(GetBucket):
                 kwarg = dict()
 
             # Wait for cluster to rebalance (if it is).
-            self.update_auth_with_api_token(self.org_owner_key['token'])
+            self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:
@@ -534,8 +534,7 @@ class UpdateBucket(GetBucket):
             self.log.info(testcase['description'])
 
             # Wait for cluster to rebalance (if it is).
-            self.update_auth_with_api_token(
-                self.org_owner_key['token'])
+            self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:

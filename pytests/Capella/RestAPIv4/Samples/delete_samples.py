@@ -14,7 +14,6 @@ class DeleteSample(GetSample):
         GetSample.setUp(self, nomenclature)
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
         super(GetSample, self).tearDown()
 
     def test_api_path(self):

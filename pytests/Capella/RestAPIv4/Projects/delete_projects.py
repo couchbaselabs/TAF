@@ -23,7 +23,7 @@ class DeleteProject(APIBase):
         self.test_subject_id = res.json()['id']
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         self.delete_api_keys(self.api_keys)
         super(DeleteProject, self).tearDown()
 
@@ -183,7 +183,7 @@ class DeleteProject(APIBase):
                         self.organisation_id, self.prefix + "WRAPPER")
                 self.test_subject_id = res.json()['id']
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:

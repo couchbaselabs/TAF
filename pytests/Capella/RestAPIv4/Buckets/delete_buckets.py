@@ -48,8 +48,16 @@ class DeleteBucket(GetCluster):
         self.bucket_id = res.json()['id']
         self.expected_res['id'] = self.bucket_id
 
+        # Wait for the deployment request in GetCluster to complete.
+        self.log.info("Waiting for AppService {} to be deployed."
+                      .format(self.app_service_id))
+        if not self.wait_for_deployment(self.cluster_id, self.app_service_id):
+            self.tearDown()
+            self.fail("!!!...App Svc deployment failed...!!!")
+        self.log.info("Successfully deployed App Svc.")
+
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         super(DeleteBucket, self).tearDown()
 
     def test_api_path(self):
@@ -230,7 +238,7 @@ class DeleteBucket(GetCluster):
                     self.organisation_id, self.project_id,
                     self.cluster_id, self.bucket_name)
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:

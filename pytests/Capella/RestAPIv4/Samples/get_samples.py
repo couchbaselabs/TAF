@@ -44,7 +44,7 @@ class GetSample(GetCluster):
         time.sleep(10)
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         # Delete the sample bucket that was created.
         self.log.info("Deleting bucket: {}".format(self.sample_bucket_id))

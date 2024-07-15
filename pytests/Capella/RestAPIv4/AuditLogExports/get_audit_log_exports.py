@@ -34,7 +34,7 @@ class GetAuditLogExport(GetCluster):
         self.expected_res["auditLogExportId"] = self.auditlogexport_id
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         super(GetAuditLogExport, self).tearDown()
 
     def test_api_path(self):
@@ -212,7 +212,7 @@ class GetAuditLogExport(GetCluster):
                                    True, self.expected_res,
                                    self.auditlogexport_id)
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:

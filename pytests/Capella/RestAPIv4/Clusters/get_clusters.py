@@ -15,6 +15,7 @@ class GetCluster(GetProject):
         self.expected_res = {
             "id": self.cluster_id,
             "name": self.prefix + "WRAPPER",
+            "description": None,
             "currentState": None,
             "audit": {
                 "createdBy": None,
@@ -57,7 +58,7 @@ class GetCluster(GetProject):
         else:
             self.app_service_id = self.capella["clusters"]["app_id"]
 
-        self.expected_res["id"] = self.app_service_id
+        self.expected_res["appServiceId"] = self.app_service_id
 
     def tearDown(self):
         super(GetCluster, self).tearDown()
@@ -218,7 +219,7 @@ class GetCluster(GetProject):
             self.validate_testcase(result, [200], testcase, failures, True,
                                    self.expected_res, self.cluster_id)
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:

@@ -34,7 +34,7 @@ class ListProject(GetProject):
         }
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         self.delete_api_keys(self.api_keys)
         super(ListProject, self).tearDown()
 

@@ -44,13 +44,13 @@ class ListOrganization(APIBase):
         }
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         self.delete_api_keys(self.api_keys)
 
         # Delete the project that was created.
         self.log.info("Deleting Project: {}".format(self.project_id))
         if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.org_owner_key["token"]):
+                                self.curr_owner_key):
             self.log.error("Error while deleting project.")
         else:
             self.log.info("Project deleted successfully")

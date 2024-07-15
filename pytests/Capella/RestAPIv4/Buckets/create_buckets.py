@@ -37,7 +37,7 @@ class CreateBucket(GetCluster):
         self.bucket_ids = list()
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         # Delete the buckets that were created.
         if self.delete_buckets(self.organisation_id, self.project_id,
@@ -213,7 +213,7 @@ class CreateBucket(GetCluster):
                 special_characters=False)
 
             # Wait for cluster to rebalance (if it is).
-            self.update_auth_with_api_token(self.org_owner_key['token'])
+            self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                     self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:
@@ -267,7 +267,7 @@ class CreateBucket(GetCluster):
                 self.delete_buckets(self.organisation_id, self.project_id,
                                     self.cluster_id, self.bucket_ids)
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:
@@ -362,7 +362,7 @@ class CreateBucket(GetCluster):
                 kwarg = dict()
 
             # Wait for cluster to rebalance (if it is).
-            self.update_auth_with_api_token(self.org_owner_key['token'])
+            self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:
@@ -630,8 +630,7 @@ class CreateBucket(GetCluster):
             self.log.info(testcase['description'])
 
             # Wait for cluster to rebalance (if it is).
-            self.update_auth_with_api_token(
-                self.org_owner_key['token'])
+            self.update_auth_with_api_token(self.curr_owner_key)
             res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
                 self.organisation_id, self.project_id, self.cluster_id)
             if res.status_code == 429:

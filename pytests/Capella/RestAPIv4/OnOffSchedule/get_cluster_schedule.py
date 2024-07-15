@@ -53,7 +53,7 @@ class GetClusterSchedule(GetCluster):
             self.log.info("Schedule created successfully.")
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
 
         # Delete the currently created on/off schedule
         res = self.capellaAPI.cluster_ops_apis.delete_cluster_on_off_schedule(
@@ -235,7 +235,7 @@ class GetClusterSchedule(GetCluster):
             self.validate_testcase(res, [200], testcase, failures, True,
                                    self.expected_result)
 
-        self.update_auth_with_api_token(self.org_owner_key["token"])
+        self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
             self.organisation_id, other_project_id)
         if resp.status_code != 204:
