@@ -1,14 +1,13 @@
 import time
 from copy import deepcopy
-from ruamel.yaml import YAML
 
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
 from cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
-from backup_lib.backup import BackupHelper
 from basetestcase import BaseTestCase
 from bucket_collections.app.constants import global_vars
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
+from cb_server_rest_util.backup.backup_api import BackupRestApi
 from cb_tools.cbstats import Cbstats
 from cbas_utils.cbas_utils import CbasUtil
 from membase.api.rest_client import RestConnection
@@ -374,7 +373,7 @@ class AppBase(BaseTestCase):
             return
 
         backup_node = self.cluster.backup_nodes[0]
-        backup_helper = BackupHelper(backup_node)
+        backup_rest = BackupRestApi(backup_node)
 
         self.log.info("Creating permissions for backup folder")
         backup_configs = self.service_conf[CbServer.Services.BACKUP]
@@ -397,13 +396,14 @@ class AppBase(BaseTestCase):
             if plan_params["plan"] not in ["_hourly_backups",
                                            "_daily_backups"]:
                 self.log.info("Updating custom plan %s" % plan_params["plan"])
-                status = backup_helper.create_edit_plan("create", plan_params)
+                status, _ = backup_rest.create_plan(plan_params["name"],
+                                                    plan_params)
                 if status is False:
                     self.fail("Backup %s create failed" % backup_config)
 
             # Create repo
-            status = backup_helper.create_repo(backup_config["repo_id"],
-                                               repo_params)
+            status, _ = backup_rest.create_repository(backup_config["repo_id"],
+                                                      repo_params)
             if status is False:
                 self.fail("Create repo failed for %s" % backup_config)
         shell.disconnect()
