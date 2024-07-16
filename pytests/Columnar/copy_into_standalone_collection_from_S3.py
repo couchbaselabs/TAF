@@ -26,13 +26,14 @@ class CopyIntoStandaloneCollectionFromS3(ColumnarBaseTest):
 
         self.doc_count_per_format = {
             "json": 7920000, "parquet": 7920000,
-            "csv": 7920000, "tsv": 7920000}
+            "csv": 7920000, "tsv": 7920000, "avro": 7920000}
 
         self.files_to_use_in_include = {
             "json": [["*/file_1.json"], 7800000],
             "csv": [["*/file_2.csv"], 7800000],
             "tsv": [["*/file_3.tsv"], 7800000],
-            "parquet": [["*/file_5.parquet"], 7800000]
+            "parquet": [["*/file_5.parquet"], 7800000],
+            "avro": [["*/file_4.avro"], 7800000]
         }
 
         self.log_setup_status(self.__class__.__name__, "Finished",
