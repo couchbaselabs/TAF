@@ -186,12 +186,14 @@ class CopyToKv(ColumnarBaseTest):
         return False
 
     def delete_capella_bucket(self, bucket_id):
-        resp = self.capellaAPI.cluster_ops_apis.delete_bucket(self.tenant.id, self.tenant.project_id,
-                                                              self.remote_cluster.id, bucket_id)
-        if resp.status_code == 204:
-            self.log.info("Bucket deleted successfully")
-        else:
-            self.log.error("Failed to delete capella bucket")
+        for i in range(5):
+            resp = self.capellaAPI.cluster_ops_apis.delete_bucket(self.tenant.id, self.tenant.project_id,
+                                                                  self.remote_cluster.id, bucket_id)
+            if resp.status_code == 204:
+                self.log.info("Bucket deleted successfully")
+                break
+            else:
+                self.log.error("Failed to delete capella bucket")
 
     def test_create_copyToKv_from_standalone_collection(self):
         self.base_infra_setup()
