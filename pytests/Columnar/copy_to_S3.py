@@ -967,7 +967,9 @@ class CopyToS3(ColumnarBaseTest):
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster,
                                                                                 datasets[i].full_name)
             if len(no_of_files_at_path) < math.ceil(doc_count_in_dataset / max_object_per_file):
-                self.fail("Number of files are not matching, there are less than expected")
+                self.fail("Number of files expected: {0}, actual: {1}".format(math.ceil(doc_count_in_dataset /
+                                                                                        max_object_per_file),
+                                                                              len(no_of_files_at_path)))
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
             if result[0]['$1'] != doc_count_in_dataset:
