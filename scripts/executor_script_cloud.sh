@@ -275,11 +275,18 @@ if [ "$?" -eq 0 ]; then
   export PATH=/usr/local/go/bin:$PATH
   set -x
   python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port
+  status=$?
   set +x
 
   if [ ${rerun_job} == true ]; then
   	python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
+  	rerun_job_status=$?
   fi
+
+  if [ $rerun_job_status -ne 0 ]; then
+    exit $rerun_job_status
+  fi
+  exit $status
 else
   echo Desc: $desc
   newState=failedInstall
