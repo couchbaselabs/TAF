@@ -62,8 +62,8 @@ class RRGuardrails(GuardrailsBase):
         self.log.info("Current node resident ratios = {}".format(
                                     self.check_resident_ratio(self.cluster)))
 
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Current bucket item count {}".format(bucket_item_count))
         self.bucket_util.print_bucket_stats(self.cluster)
 
@@ -77,8 +77,8 @@ class RRGuardrails(GuardrailsBase):
             self.assertTrue(exp, "Mutations were not blocked")
         self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
-        bucket_item_count2 = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                            self.bucket)
+        bucket_item_count2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Bucket item count after inserts {}".format(bucket_item_count2))
         exp2 = bucket_item_count == bucket_item_count2
         self.assertTrue(exp2, "Bucket item count does not match")
@@ -267,8 +267,8 @@ class RRGuardrails(GuardrailsBase):
                 break
 
         self.sleep(60, "Wait for a few seconds after dropping collections")
-        bucket_item_count3 = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                            self.bucket)
+        bucket_item_count3 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Bucket item count after dropping collections = {}".format(bucket_item_count3))
 
         new_rr = self.check_resident_ratio(self.cluster)
@@ -283,8 +283,8 @@ class RRGuardrails(GuardrailsBase):
             self.assertTrue(exp, "Mutations are still blocked after deletes")
 
         self.sleep(20, "Wait for items to get reflected")
-        new_bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                               self.bucket)
+        new_bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Bucket item count = {}".format(new_bucket_item_count))
         exp2 = new_bucket_item_count == bucket_item_count3 + number_of_docs
         self.assertTrue(exp2, "Bucket item count does not match")
@@ -301,8 +301,8 @@ class RRGuardrails(GuardrailsBase):
         self.sleep(30, "Wait for 30 seconds after the guardrail is hit")
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
 
         # Trying inserts after hitting guardrail
         result = self.insert_new_docs_sdk(num_docs=number_of_docs,
@@ -326,8 +326,8 @@ class RRGuardrails(GuardrailsBase):
         self.doc_loading_tm.getAllTaskResult()
         self.printOps.end_task()
 
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Resident ratio after deletes = {}".format(
                                 self.check_resident_ratio(self.cluster)))
 
@@ -391,8 +391,8 @@ class RRGuardrails(GuardrailsBase):
 
         self.sleep(30, "Wait for item count to get reflected")
         self.bucket_util.print_bucket_stats(self.cluster)
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           new_bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, new_bucket.name)
         self.assertTrue(bucket_item_count == self.create_end, "Item count does not match")
 
 
@@ -413,8 +413,8 @@ class RRGuardrails(GuardrailsBase):
         self.sleep(30, "Wait for 30 seconds after the guardrail is hit")
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        bucket_item_count1 = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                            self.bucket)
+        bucket_item_count1 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Bucket item count = {}".format(bucket_item_count1))
 
         result = self.insert_new_docs_sdk(num_docs=number_of_docs,
@@ -429,8 +429,8 @@ class RRGuardrails(GuardrailsBase):
         self.bucket_util._expiry_pager(self.cluster, val=0.1)
         self.sleep(self.bucket_ttl*3, "Wait for docs to expire")
 
-        bucket_item_count2 = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                            self.bucket)
+        bucket_item_count2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Bucket item count after expiry of docs = {}".format(bucket_item_count2))
 
         result = self.insert_new_docs_sdk(num_docs=number_of_docs,
@@ -460,8 +460,8 @@ class RRGuardrails(GuardrailsBase):
             self.log.info("Resident ratio guardrail changed to {}".format(content))
 
         self.sleep(30, "Wait for 30 seconds after the guardrail limit is changed")
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Bucket item count = {}".format(bucket_item_count))
 
         result = self.insert_new_docs_sdk(num_docs=number_of_docs,
@@ -490,8 +490,8 @@ class RRGuardrails(GuardrailsBase):
             self.assertTrue(exp, "Mutations were not blocked")
 
         self.sleep(20, "Wait for a few seconds after inserting docs")
-        bucket_item_count2 = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Bucket item count = {}".format(bucket_item_count2))
         exp = bucket_item_count2 == bucket_item_count + number_of_docs
         self.assertTrue(exp, "Item count does not match")
@@ -520,8 +520,8 @@ class RRGuardrails(GuardrailsBase):
         self.log.info("Flushing the bucket")
         self.bucket_util.flush_bucket(self.cluster, self.bucket)
         self.sleep(60, "Wait for a few seconds after flushing the bucket")
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         exp = bucket_item_count == 0
         self.assertTrue(exp, "All items were not deleted")
 
@@ -534,8 +534,8 @@ class RRGuardrails(GuardrailsBase):
 
         self.sleep(20, "Wait for num_items to get relfected")
         self.bucket_util.print_bucket_stats(self.cluster)
-        bucket_item_count2 = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count2 = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         final_item_count = self.create_end * ((self.num_scopes * self.num_collections) - 1)
         exp = bucket_item_count2 == final_item_count
         self.log.info("Expected = {0}, actual = {1}".format(final_item_count, bucket_item_count2))
@@ -619,8 +619,8 @@ class RRGuardrails(GuardrailsBase):
 
         self.sleep(30, "Wait for 30 seconds after the guardrail is hit")
         self.bucket_util.print_bucket_stats(self.cluster)
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
 
         result = self.insert_new_docs_sdk(num_docs=number_of_docs, bucket=self.bucket,
                                           doc_key="temp_docs")
@@ -669,8 +669,8 @@ class RRGuardrails(GuardrailsBase):
             self.assertTrue(exp, "Mutations were not blocked")
             count += 1
 
-        final_bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                                 self.bucket)
+        final_bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         exp = bucket_item_count == final_bucket_item_count
         self.assertTrue(exp, "Bucket item count does not match")
 
@@ -993,8 +993,8 @@ class RRGuardrails(GuardrailsBase):
             self.assertTrue(exp, "Mutations were not blocked")
         self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         create_start = self.create_start
         create_end = self.create_end
 
@@ -1033,9 +1033,9 @@ class RRGuardrails(GuardrailsBase):
                 exp = res["status"] == False and error_code in res["error"]
                 self.assertTrue(exp, "Mutations were not blocked")
             self.log.info("Mutations were blocked after hitting RR guardrail")
-            current_bucket_item_count = \
-                            self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+            current_bucket_item_count = (
+                self.bucket_util.get_buckets_item_count(
+                    self.cluster, self.bucket.name))
             exp = current_bucket_item_count > bucket_item_count
             self.assertTrue(exp, "Bucket count is still the same after data load")
             bucket_item_count = current_bucket_item_count

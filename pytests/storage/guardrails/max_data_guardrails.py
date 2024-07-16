@@ -125,8 +125,8 @@ class MaxDataGuardrails(GuardrailsBase):
         self.log.info("Current bucket data sizes = {}".format(
                                     self.check_bucket_data_size_per_node(self.cluster)))
 
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Current bucket item count {}".format(bucket_item_count))
         self.bucket_util.print_bucket_stats(self.cluster)
 

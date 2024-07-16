@@ -72,8 +72,8 @@ class LuksUpgrade(UpgradeBase):
 
             if self.atomicity:
                 self.sleep(10)
-                current_items = self.bucket_util.get_bucket_current_item_count(
-                    self.cluster, self.bucket)
+                current_items = self.bucket_util.get_buckets_item_count(
+                    self.cluster, self.bucket.name)
                 if index == total_nodes_to_upgrade-1:
                     if current_items < self.num_items+create_batch_size:
                         self.log_failure(

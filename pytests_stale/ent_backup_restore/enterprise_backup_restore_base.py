@@ -1360,7 +1360,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
         vbucket_filter = self.vbucket_filter.split(",")
         shell = RemoteMachineShellConnection(self.backupset.backup_host)
         rest = RestConnection(self.backupset.restore_cluster_host)
-        restore_buckets_items = rest.get_buckets_itemCount()
+        restore_buckets_items = rest.get_buckets_item_count()
         restore_buckets = rest.get_buckets()
         for bucket in self.buckets:
             output, error = shell.execute_command("ls {0}/backup/*/{1}*/data "\
@@ -1419,7 +1419,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
                                       self.buckets)
         shell = RemoteMachineShellConnection(self.backupset.backup_host)
         rest = RestConnection(self.backupset.restore_cluster_host)
-        restore_buckets_items = rest.get_buckets_itemCount()
+        restore_buckets_items = rest.get_buckets_item_count()
         buckets = rest.get_buckets()
         keys_fail = {}
         for bucket in buckets:
@@ -1469,7 +1469,7 @@ class EnterpriseBackupRestoreBase(BaseTestCase):
                                                   bk_file_data[bucket.name].keys(),
                                                   False, False, self, bucket=bucket.name)
                 self.sleep(10, "wait for bucket update new stats")
-                restore_buckets_items = rest.get_buckets_itemCount()
+                restore_buckets_items = rest.get_buckets_item_count()
                 if int(restore_buckets_items[bucket.name]) > 0:
                     if self.replace_ttl == "expired" and self.bk_with_ttl is not None:
                         if sleep_time < 600:

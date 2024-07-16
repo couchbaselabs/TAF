@@ -69,7 +69,8 @@ class DoctorBKRS():
     def monitor_restore(self, bucket_util, items, timeout=43200):
         end_time = time.time() + timeout
         while time.time() < end_time:
-            curr_items = bucket_util.get_bucket_current_item_count(self.cluster, self.cluster.buckets[0])
+            curr_items = bucket_util.get_buckets_item_count(
+                self.cluster, self.cluster.buckets[0].name)
             self.log.info("Current/Expected items during restore: %s == %s" % (curr_items, items) )
             time.sleep(5, "Wait for items restoration")
             if items == curr_items:

@@ -92,7 +92,8 @@ class MagmaRecovery(BaseTestCase):
         self.bucket_util.print_bucket_stats(self.first_cluster)
         initial_bucket_count = {}
         for bucket in self.first_cluster.buckets:
-            item_count = self.bucket_util.get_bucket_current_item_count(self.first_cluster, bucket)
+            item_count = self.bucket_util.get_buckets_item_count(
+                self.first_cluster, bucket.name)
             initial_bucket_count[bucket.name] = item_count
         self.log.info("Cluster {0} bucket item count {1}".format(self.first_cluster.name,
                                                                  initial_bucket_count))
@@ -151,8 +152,8 @@ class MagmaRecovery(BaseTestCase):
                 output, error = shell.execute_command(command)
             shell.disconnect()
             self.sleep(30, "Wait for a few seconds after changing the state of vbuckets")
-            bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.first_cluster,
-                                                                    self.first_cluster.buckets[0])
+            bucket_item_count = self.bucket_util.get_buckets_item_count(
+                self.first_cluster, self.first_cluster.buckets[0].name)
             self.log.info("Bucket item count after changing" \
                           "a few vbuckets state to dead = {}".format(bucket_item_count))
             items_to_transfer = self.item_count - bucket_item_count
@@ -192,8 +193,8 @@ class MagmaRecovery(BaseTestCase):
         self.bucket_util.print_bucket_stats(self.second_cluster)
         self.log.info("Verifying bucket item count after recovery")
         for bucket in buckets_to_recover:
-            actual_count = self.bucket_util.get_bucket_current_item_count(self.second_cluster,
-                                                                          bucket)
+            actual_count = self.bucket_util.get_buckets_item_count(
+                self.second_cluster, bucket.name)
             expected_count = initial_bucket_count[bucket.name]
             if self.include_vbucket_filter:
                 expected_count = initial_bucket_count[bucket.name] // 2

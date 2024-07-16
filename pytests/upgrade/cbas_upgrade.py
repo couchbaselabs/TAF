@@ -303,8 +303,8 @@ class UpgradeTests(UpgradeBase):
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
             self.sleep(30, "Wait for num_items to get reflected")
-            current_items = self.bucket_util.get_bucket_current_item_count(
-                self.cluster, bucket)
+            current_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
             if current_items == self.num_items * 2:
                 validation_results["post_upgrade_data_load"] = True
             else:
@@ -339,8 +339,8 @@ class UpgradeTests(UpgradeBase):
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
             while True:
-                current_items = self.bucket_util.get_bucket_current_item_count(
-                    self.cluster, bucket)
+                current_items = self.bucket_util.get_buckets_item_count(
+                    self.cluster, bucket.name)
                 if current_items == 0:
                     break
                 else:
@@ -417,8 +417,8 @@ class UpgradeTests(UpgradeBase):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets)
                 self.sleep(30, "Wait for num_items to get reflected")
-                current_items = self.bucket_util.get_bucket_current_item_count(
-                    self.cluster, bucket)
+                current_items = self.bucket_util.get_buckets_item_count(
+                    self.cluster, bucket.name)
                 if current_items == self.num_items:
                     validation_results["post_upgrade_KV_infra"] = True
                 else:

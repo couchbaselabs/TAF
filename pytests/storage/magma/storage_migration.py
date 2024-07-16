@@ -159,10 +159,10 @@ class StorageMigration(BaseTestCase):
         self.assertTrue(res, "Enabling CDC failed")
 
         sleep(300, "Wait for replication to catch up")
-        source_bucket_item_count = self.bucket_util.get_bucket_current_item_count(
-                                self.source_cluster, self.source_cluster.buckets[0])
-        target_bucket_item_count = self.bucket_util.get_bucket_current_item_count(
-                        self.destination_cluster, self.destination_cluster.buckets[0])
+        source_bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.source_cluster, self.source_cluster.buckets[0].name)
+        target_bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.destination_cluster, self.destination_cluster.buckets[0].name)
         err_msg = "Item count mismatch. Source bucket item count: {0}, " \
                     "Target bucket item count: {1}".format(
                     source_bucket_item_count, target_bucket_item_count)

@@ -268,7 +268,8 @@ class RebalanceInTests(RebalanceBaseTest):
         servs_in = [self.cluster.servers[i + self.nodes_init] for i in range(self.nodes_in)]
         self.sleep(20)
         for bucket in self.cluster.buckets:
-            current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            current_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
             self.num_items = current_items
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -285,7 +286,8 @@ class RebalanceInTests(RebalanceBaseTest):
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
         for bucket in self.cluster.buckets:
-            current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            current_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
             self.num_items = current_items
         self.bucket_util.validate_docs_per_collections_all_buckets(
             self.cluster,
@@ -414,7 +416,8 @@ class RebalanceInTests(RebalanceBaseTest):
                     for i in range(self.nodes_in)]
         self.sleep(20)
         for bucket in self.cluster.buckets:
-            current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            current_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
             self.num_items = current_items
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -542,7 +545,8 @@ class RebalanceInTests(RebalanceBaseTest):
 
         self.sleep(60)
         for bucket in self.cluster.buckets:
-            current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            current_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
             self.num_items = current_items
         self.bucket_util.verify_cluster_stats(self.cluster, self.num_items,
                                               timeout=self.wait_timeout)
@@ -573,7 +577,8 @@ class RebalanceInTests(RebalanceBaseTest):
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
         for bucket in self.cluster.buckets:
-            current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            current_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
             self.num_items = current_items
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
@@ -622,7 +627,8 @@ class RebalanceInTests(RebalanceBaseTest):
         self.assertTrue(rebalance.result, "Rebalance Failed")
         self.sleep(60)
         for bucket in self.cluster.buckets:
-            current_items = self.bucket_util.get_bucket_current_item_count(self.cluster, bucket)
+            current_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
             self.num_items = current_items
         # get random keys for new added nodes
         rest_cons = [RestConnection(self.cluster.servers[i]) for i in range(self.nodes_init + self.nodes_in)]

@@ -154,7 +154,7 @@ class AppBase(BaseTestCase):
                                 self.cluster.buckets.append(c_bucket)
                                 break
                         while retry_count > 0:
-                            docs = self.bucket_util.get_buckets_itemCount(
+                            docs = self.bucket_util.get_buckets_item_count(
                                 self.cluster)
                             if docs[s_bucket.name] == \
                                     s_bucket.stats.expected_item_count:

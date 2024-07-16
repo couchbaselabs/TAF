@@ -141,8 +141,8 @@ class CollectionDurabilityTests(CollectionBase):
 
             # Verify doc count has not changed due to expected exceptions
             self.sleep(10, "Wait for item_count to update")
-            curr_num_items = self.bucket_util.get_bucket_current_item_count(
-                self.cluster, self.bucket)
+            curr_num_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, self.bucket.name)
             if curr_num_items != num_items_before_d_load:
                 self.log_failure("Few mutation went in. "
                                  "Docs expected: %s, actual: %s"

@@ -406,8 +406,9 @@ class Murphy(BaseTestCase, OPD):
             repo = "magma"
             self.drBackup.configure_backup(archive, repo, [], [])
             self.drBackup.trigger_backup(archive, repo)
-            items = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                   self.cluster.buckets[0])
+            items = self.bucket_util.get_buckets_item_count(
+                self.cluster,
+                self.cluster.buckets[0].name)
             self.bucket_util.flush_all_buckets(self.cluster)
             self.drBackup.trigger_restore(archive, repo)
             result = self.drBackup.monitor_restore(self.bucket_util, items, timeout=self.restore_timeout)

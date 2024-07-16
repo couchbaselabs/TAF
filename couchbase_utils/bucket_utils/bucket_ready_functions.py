@@ -1951,9 +1951,9 @@ class BucketUtils(ScopeUtils):
             retry_count = 600
             sleep_time = 5
             while retry_count > 0:
-                item_count = self.get_buckets_itemCount(cluster)
-                if item_count[sample_bucket.name] == \
-                        sample_bucket.stats.expected_item_count:
+                item_count = self.get_buckets_item_count(cluster,
+                                                         sample_bucket.name)
+                if item_count == sample_bucket.stats.expected_item_count:
                     status = True
                     break
                 sleep(sleep_time, "Sample bucket still loading")
@@ -4619,13 +4619,21 @@ class BucketUtils(ScopeUtils):
         client.close()
         return int(client.stats()["curr_items"])
 
-    def get_bucket_current_item_count(self, cluster, bucket):
-        bucket_map = self.get_buckets_itemCount(cluster)
-        return bucket_map[bucket.name]
-
     @staticmethod
-    def get_buckets_itemCount(cluster):
-        return BucketHelper(cluster.master).get_buckets_itemCount()
+    def get_buckets_item_count(cluster, bucket_name=None):
+        bucket_map = dict()
+        bucket_rest = BucketRestApi(cluster.master)
+        status, json_parsed = bucket_rest.get_bucket_info(basic_stats=True)
+        if status is False:
+            return bucket_map
+
+        for item in json_parsed:
+            b_name = item['name']
+            bucket_map[b_name] = item['basicStats']['itemCount']
+
+        if bucket_name:
+            return bucket_map[bucket_name]
+        return bucket_map
 
     @staticmethod
     def expire_pager(servers, buckets, val=10):

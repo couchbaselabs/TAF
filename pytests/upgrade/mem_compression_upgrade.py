@@ -109,8 +109,8 @@ class MemCompressionUpgradeTests(UpgradeBase):
                 self.bucket_util._wait_for_stats_all_buckets(
                     self.cluster, self.cluster.buckets)
                 self.sleep(30, "Wait for num_items to get reflected")
-                current_items = self.bucket_util.get_bucket_current_item_count(
-                    self.cluster, bucket)
+                current_items = self.bucket_util.get_buckets_item_count(
+                    self.cluster, bucket.name)
         field = 'body'
         self.timer = self.input.param("timer", 600)
         self.indexUtil = IndexUtils(server_task=self.task)
@@ -224,8 +224,8 @@ class MemCompressionUpgradeTests(UpgradeBase):
             self.bucket_util._wait_for_stats_all_buckets(
                 self.cluster, self.cluster.buckets)
             self.sleep(30, "Wait for num_items to get reflected")
-            current_items = self.bucket_util.get_bucket_current_item_count(
-                self.cluster, bucket)
+            current_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, bucket.name)
         field = 'body'
         self.timer = self.input.param("timer", 600)
         self.indexUtil = IndexUtils(server_task=self.task)

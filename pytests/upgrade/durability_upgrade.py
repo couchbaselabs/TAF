@@ -831,8 +831,8 @@ class UpgradeTests(UpgradeBase):
             retry_index = 0
             while retry_index < 5:
                 self.sleep(3, "Wait for num_items to match")
-                current_items = self.bucket_util.get_bucket_current_item_count(
-                    self.cluster, self.bucket)
+                current_items = self.bucket_util.get_buckets_item_count(
+                    self.cluster, self.bucket.name)
                 if current_items == self.num_items:
                     break
                 self.log.debug("Num_items mismatch. Expected: %s, Actual: %s"

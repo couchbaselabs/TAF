@@ -133,8 +133,8 @@ class DiskUsageGuardrails(GuardrailsBase):
                 self.assertTrue(exp, "Mutations were not blocked")
             self.log.info("Expected error code {} was seen on all inserts".format(error_code))
 
-        bucket_item_count = self.bucket_util.get_bucket_current_item_count(self.cluster,
-                                                                           self.bucket)
+        bucket_item_count = self.bucket_util.get_buckets_item_count(
+            self.cluster, self.bucket.name)
         self.log.info("Current bucket item count {}".format(bucket_item_count))
         self.bucket_util.print_bucket_stats(self.cluster)
 

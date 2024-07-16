@@ -230,12 +230,12 @@ class MagmaBaseTest(StorageBase):
             self.log.info(self.initial_count_q)
             self.log.info(self.final_count_q)
             initial_count, final_count = 0, 0
-            kv_items = self.bucket_util.get_bucket_current_item_count(
-                self.cluster, self.buckets[0])
+            kv_items = self.bucket_util.get_buckets_item_count(
+                self.cluster, self.buckets[0].name)
             start = time.time()
             while start + 300 > time.time():
-                kv_items = self.bucket_util.get_bucket_current_item_count(
-                    self.cluster, self.buckets[0])
+                kv_items = self.bucket_util.get_buckets_item_count(
+                    self.cluster, self.buckets[0].name)
                 self.log.info("Items in KV: %s" % kv_items)
                 initial_count = self.query_client.query_tool(
                     self.initial_count_q)["results"][0]["items"]

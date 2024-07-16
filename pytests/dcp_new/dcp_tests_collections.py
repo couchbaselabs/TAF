@@ -396,7 +396,7 @@ class DcpTestCase(DCPBase):
         proc1.join()
 
         expected_item_count = \
-            sum(self.bucket_util.get_buckets_itemCount(self.cluster).values())
+            sum(self.bucket_util.get_buckets_item_count(self.cluster).values())
         self.verify_operation(self.operation, expected_item_count,
                               verify=False)
         self.validate_test_failure()

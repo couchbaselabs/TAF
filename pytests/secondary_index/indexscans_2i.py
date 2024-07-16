@@ -200,8 +200,8 @@ class SecondaryIndexingScanTests(BaseSecondaryIndexingTests):
         if self.create_index_during == "before_doc_ops":
             self.create_gsi_indexes(def_bucket)
 
-        curr_items = self.bucket_util.get_bucket_current_item_count(
-            self.cluster, def_bucket)
+        curr_items = self.bucket_util.get_buckets_item_count(
+            self.cluster, def_bucket.name)
         if self.sync_write_abort_pattern in ["all_aborts", "initial_aborts"]:
             self.bucket_util.flush_bucket(self.cluster, def_bucket)
             self.num_items = 0

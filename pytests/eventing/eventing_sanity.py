@@ -278,8 +278,8 @@ class EventingSanity(EventingBaseTest):
             body = self.create_save_function_body(self.function_name, HANDLER_CODE.BUCKET_OPS_ON_UPDATE, worker_count=3)
             self.deploy_function(body)
 
-        curr_items = self.bucket_util.get_bucket_current_item_count(
-            self.cluster, def_bucket)
+        curr_items = self.bucket_util.get_buckets_item_count(
+            self.cluster, def_bucket.name)
         if self.sync_write_abort_pattern in ["all_aborts", "initial_aborts"]:
             self.bucket_util.flush_bucket(self.cluster, def_bucket)
             self.num_items = 0
@@ -462,8 +462,8 @@ class EventingSanity(EventingBaseTest):
         if self.create_index_during == "before_doc_ops":
             self.create_fts_indexes(def_bucket.name, self.index_name)
 
-        curr_items = self.bucket_util.get_bucket_current_item_count(
-            self.cluster, def_bucket)
+        curr_items = self.bucket_util.get_buckets_item_count(
+            self.cluster, def_bucket.name)
         if self.sync_write_abort_pattern in ["all_aborts", "initial_aborts"]:
             self.bucket_util.flush_bucket(self.cluster, def_bucket)
             self.num_items = 0
