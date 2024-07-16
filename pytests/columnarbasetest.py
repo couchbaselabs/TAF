@@ -3,8 +3,10 @@ Created on Oct 14, 2023
 
 @author: umang.agrawal
 """
+import cluster_utils.cluster_ready_functions
 import global_vars
 import random
+from datetime import datetime, timezone
 
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cluster_utils.cluster_ready_functions import ClusterUtils
@@ -15,6 +17,7 @@ from pytests.dedicatedbasetestcase import ProvisionedBaseTestCase
 from sdk_client3 import SDKClientPool
 from threading import Thread
 from TestInput import TestInputSingleton
+from capella_utils.dedicated import CapellaUtils
 
 
 class ColumnarBaseTest(ProvisionedBaseTestCase):
@@ -146,7 +149,43 @@ class ColumnarBaseTest(ProvisionedBaseTestCase):
         global_vars.cluster_util = self.cluster_util
         global_vars.bucket_util = self.bucket_util
 
+    def has_test_failed(self):
+        if hasattr(self._outcome, 'errors'):
+            result = self.defaultTestResult()
+            self._feedErrorsToResult(result, self._outcome.errors)
+        else:
+            result = self._outcome.result
+        ok = all(test != self for test, text in result.errors + result.failures)
+        if ok:
+            return False
+        else:
+            self.log.info('Errors/failures seen during test execution of {}. Errors {} and Failures {}'.format(
+                self._testMethodName,
+                result.errors,
+                result.failures))
+            return True
+
     def tearDown(self):
+        if self.has_test_failed():
+            log_links = []
+            for instance in self.tenant.columnar_instances + self.tenant.clusters:
+                current_date_time = datetime.now(timezone.utc)
+                formatted_date_time = current_date_time.strftime("%Y-%m-%d_%H:%M:%S")
+                log_id = self._testMethodName + '_' + str(formatted_date_time)
+                # internal error for call with ticket id
+                if isinstance(instance, cluster_utils.cluster_ready_functions.CBCluster):
+                    CapellaUtils.trigger_log_collection(self.pod, self.tenant, instance.id, "")
+                    tasks = CapellaUtils.check_logs_collect_status(self.pod, self.tenant, instance.id)
+                else:
+                    CapellaUtils.trigger_log_collection(self.pod, self.tenant, instance.cluster_id, "")
+                    tasks = CapellaUtils.check_logs_collect_status(self.pod, self.tenant, instance.cluster_id)
+                for key in tasks['perNode']:
+                    log_links.append(tasks['perNode'][key]['url'])
+
+            self.log.info("Logs collection timezone is UTC, Collect logs at:")
+            for link in log_links:
+                self.log.info(link)
+
         self.shutdown_task_manager()
 
         for tenant in self.tenants:
