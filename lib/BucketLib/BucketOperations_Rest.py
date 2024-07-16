@@ -725,22 +725,6 @@ class BucketHelper(BucketRestApi):
     def delete_collection(self, bucket, scope, collection, session=None):
         return self.drop_collection(bucket, scope, collection)
 
-    def wait_for_collections_warmup(self, bucket, uid, session=None):
-        api = self.base_url \
-              + "pools/default/buckets/%s/scopes/@ensureManifest/%s" \
-              % (bucket.name, uid)
-        headers = self._create_headers()
-        if session is None:
-            status, content, _ = self._http_request(api,
-                                                    'POST',
-                                                    headers=headers)
-        else:
-            status, content, _ = self._urllib_request(api,
-                                                      'POST',
-                                                      headers=headers,
-                                                      session=session)
-        return status, content
-
     def list_collections(self, bucket):
         return self.list_scope_collections(bucket.name)
 
@@ -771,24 +755,3 @@ class BucketHelper(BucketRestApi):
                     if collection_data["name"] == collection_name:
                         cid = collection_data["uid"]
                         return cid
-
-    def import_collection_using_manifest(self, bucket_name, manifest_data):
-        url = "pools/default/buckets/%s/scopes" \
-              % urllib.quote_plus(bucket_name)
-        json_header = self.get_headers_for_content_type_json()
-        api = self.base_url + url
-        status, content, _ = self._http_request(api, 'PUT', manifest_data,
-                                                headers=json_header)
-        if not status:
-            raise Exception(content)
-        return json.loads(content)
-
-    def get_buckets_itemCount(self):
-        bucket_map = dict()
-        status, json_parsed = self.get_bucket_info(basic_stats=True)
-        if status:
-            for item in json_parsed:
-                bucket_name = item['name']
-                item_count = item['basicStats']['itemCount']
-                bucket_map[bucket_name] = item_count
-        return bucket_map
