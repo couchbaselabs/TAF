@@ -180,9 +180,8 @@ class PostActivationState(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"],
-                        inst=self.analyticsCluster_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"],
+                                                 self.analyticsCluster_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -301,9 +300,8 @@ class PostActivationState(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
-                if not self.validate_onoff_state(
-                        ["turningOn", "healthy"],
-                        inst=self.analyticsCluster_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"],
+                                                 self.analyticsCluster_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))

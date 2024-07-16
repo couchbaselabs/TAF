@@ -4,7 +4,7 @@ Created on July 13, 2023
 @author: Vipul Bhardwaj
 """
 
-from couchbase_utils.capella_utils.dedicated import CapellaUtils
+import time
 from pytests.Capella.RestAPIv4.Projects.get_projects import GetProject
 
 
@@ -33,9 +33,11 @@ class GetCluster(GetProject):
         # Wait for the deployment request in APIBase to complete.
         self.log.info("Waiting for CLUSTER {} to be deployed."
                       .format(self.cluster_id))
-        if not self.wait_for_deployment():
-            self.tearDown()
-            self.fail("!!!...Cluster deployment failed...!!!")
+        start_time = time.time()
+        while not self.validate_onoff_state(["healthy", "turnedOff"]):
+            if time.time() > 1800 + start_time:
+                self.tearDown()
+                self.fail("!!!...Cluster didn't deploy within 30mins...!!!")
         self.log.info("Successfully deployed Cluster.")
 
         # Let the app service be created in the background meanwhile the
@@ -47,6 +49,14 @@ class GetCluster(GetProject):
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["name"],
                 self.app_svc_templates["AWS_2v4_2node"]["compute"])
+            if res.status_code == 409:
+                apps = self.capellaAPI.cluster_ops_apis.list_appservices(
+                    self.organisation_id)
+                for app in apps.json()["data"]:
+                    if app["clusterId"] == self.cluster_id:
+                        self.app_service_id = app["id"]
+                        self.capella["clusters"]["app_id"] = app["id"]
+                        return
             if res.status_code != 201:
                 self.log.error(res.content)
                 self.tearDown()

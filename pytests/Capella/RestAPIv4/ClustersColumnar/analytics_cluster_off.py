@@ -4,7 +4,6 @@ Created on May 29, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-import time
 from pytests.Capella.RestAPIv4.ClustersColumnar.get_analytics_clusters import \
     GetAnalyticsClusters
 
@@ -116,8 +115,6 @@ class DeleteActivationState(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
-                if result.status_code == 202:
-                    time.sleep(2)
                 if not self.validate_onoff_state(["turningOff", "turnedOff"],
                                                  self.analyticsCluster_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
@@ -183,11 +180,8 @@ class DeleteActivationState(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
-                if result.status_code == 202:
-                    time.sleep(2)
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"],
-                        inst=self.analyticsCluster_id):
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
+                                                 self.analyticsCluster_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -306,11 +300,8 @@ class DeleteActivationState(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
-                if result.status_code == 202:
-                    time.sleep(2)
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff"],
-                        inst=self.analyticsCluster_id):
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
+                                                 self.analyticsCluster_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))

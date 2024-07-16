@@ -166,6 +166,12 @@ class APIBase(CouchbaseBaseTest):
             if isinstance(self.cluster_id, dict):
                 self.capella["clusters"] = self.cluster_id
                 self.cluster_id = self.cluster_id["cluster_id"]
+            else:
+                self.capella["clusters"] = {
+                    "cluster_id": self.cluster_id,
+                    "vpc_id": None,
+                    "app_id": None
+                }
         else:
             cluster_template = self.input.param("cluster_template",
                                                 "AWS_template_m7_xlarge")
@@ -234,7 +240,7 @@ class APIBase(CouchbaseBaseTest):
                 self.fail("!!!...Instance creation Failed...!!!")
             self.analyticsCluster_id = res.json()["id"]
             self.capella["instance_id"] = self.analyticsCluster_id
-        self.instances = list()
+        self.instances = [self.analyticsCluster_id]
 
         # Templates for app service configurations across CSPs and Computes.
         self.app_svc_templates = {
@@ -254,6 +260,13 @@ class APIBase(CouchbaseBaseTest):
         # testcase being run.
         if (TestInputSingleton.input.test_params["case_number"] ==
                 TestInputSingleton.input.test_params["no_of_test_identified"]):
+            # Wait of cluster to be in a stable state
+            start_time = time.time()
+            while not self.validate_onoff_state(["healthy", "turnedOff"]):
+                if time.time() > 1800 + start_time:
+                    self.log.fail("!!!...Cluster didn't stabilize within "
+                                  "half an hour...!!!")
+
             # Delete the app service if it was a part of the tests.
             if self.capella["clusters"]["app_id"] and not isinstance(
                     self.capella["clusters"]["app_id"], bool):
@@ -262,7 +275,7 @@ class APIBase(CouchbaseBaseTest):
                     self.capella["clusters"]["app_id"]))
                 while not self.validate_onoff_state(
                         ["healthy", "turnedOff"],
-                        app=self.capella["clusters"]["app_id"], sleep=15):
+                        app=self.capella["clusters"]["app_id"]):
                     self.log.info("...Waiting further...")
 
                 # Delete App Service
@@ -293,7 +306,7 @@ class APIBase(CouchbaseBaseTest):
             if self.capellaAPI.cluster_ops_apis.delete_cluster(
                     self.organisation_id, self.project_id,
                     self.cluster_id).status_code != 202:
-                self.log.error("Error while deleting cluster.")
+                self.fail("Error while deleting cluster.")
 
             # Wait for the cluster to be destroyed.
             self.log.info("Waiting for cluster to be destroyed.")
@@ -986,7 +999,7 @@ class APIBase(CouchbaseBaseTest):
             failures.append(testcase[testDescriptionKey])
         return False
 
-    def validate_onoff_state(self, states, inst=None, app=None, sleep=2):
+    def validate_onoff_state(self, states, inst=None, app=None, sleep=10):
         self.update_auth_with_api_token(self.curr_owner_key)
         if sleep:
             time.sleep(sleep)
@@ -1076,32 +1089,18 @@ class APIBase(CouchbaseBaseTest):
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
                     org, proj, name, cloudProvider, couchbaseServer,
                     serviceGroups, availability, support, header, **kwargs)
-            if result.status_code == 202:
+            try:
+                r = result.json()
+                if ("Please ensure that the CIDR range is unique within this "
+                        "organisation" or "Please ensure you are passing a "
+                        "unique CIDR block and try again.") in r["message"]:
+                    cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
+                    self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
+                else:
+                    return result
+            except (Exception,):
                 return result
-            # try:
-            #     cidrMessage = result.json()["message"]
-            #     if (
-            #             "Please ensure that the CIDR range is unique within this "
-            #             "organisation" or "Please ensure you are passing a "
-            #                               "unique CIDR block and try again.") in cidrMessage:
-            #         cloudProvider[
-            #             "cidr"] = CapellaUtils.get_next_cidr() + "/20"
-            #         self.log.info(
-            #             "Trying CIDR: {}".format(cloudProvider["cidr"]))
-            #     else:
-            #         self.log.debug(result.content)
-            #         return result
-            # except (Exception,):
-            #     self.log.warning(result.content)
-            #     return result
-            # self.log.error("Couldn't find CIDR within half an hour.")
-            if ("Please ensure that the CIDR range is unique within this "
-                    "organisation" or "Please ensure you are passing a unique "
-                    "CIDR block and try again.") in result.json()["message"]:
-                cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
-                self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
-            if time.time() - start_time >= 1800:
-                self.log.error("Couldn't find CIDR within half an hour.")
+        self.log.error("Couldn't find CIDR within half an hour.")
 
     def wait_for_deployment(self, clus_id=None, app_svc_id=None,
                             inst_id=None, pes=False):
@@ -1335,7 +1334,7 @@ class APIBase(CouchbaseBaseTest):
                 resp = self.capellaAPI.org_ops_apis.delete_project(
                     organizationId=org_id, projectId=project_id)
             if resp.status_code != 204:
-                self.log.error("Error while deleting project {}\nError:"
+                self.log.error("Error while deleting project {}, Error: {}"
                                .format(project_id, resp.content))
                 project_deletion_failed = project_deletion_failed or True
         return project_deletion_failed

@@ -140,8 +140,7 @@ class AppServiceOff(GetAppService):
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOff", "turnedOff"],
-                                                 app=self.app_service_id,
-                                                 sleep=0):
+                                                 app=self.app_service_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -204,8 +203,7 @@ class AppServiceOff(GetAppService):
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOff", "turnedOff"],
-                                                 app=self.app_service_id,
-                                                 sleep=0):
+                                                 app=self.app_service_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))
@@ -329,8 +327,7 @@ class AppServiceOff(GetAppService):
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOff", "turnedOff"],
-                                                 app=self.app_service_id,
-                                                 sleep=0):
+                                                 app=self.app_service_id):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
                                            testcase["description"]))

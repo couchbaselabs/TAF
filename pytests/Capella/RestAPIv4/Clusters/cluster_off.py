@@ -4,7 +4,6 @@ Created on February 6, 2024
 @author: Vipul Bhardwaj
 """
 
-import time
 from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
 
 class ClusterOff(GetCluster):
@@ -87,8 +86,6 @@ class ClusterOff(GetCluster):
                 "/v4/organizations/{}/projects/{}/clusters/{}/off"
 
             if self.validate_testcase(result, [409, 202], testcase, failures):
-                if result.status_code == 202:
-                    time.sleep(5)
                 if not self.validate_onoff_state(["turningOff", "turnedOff"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
@@ -151,8 +148,6 @@ class ClusterOff(GetCluster):
                     headers=header)
 
             if self.validate_testcase(result, [409, 202], testcase, failures):
-                if result.status_code == 202:
-                    time.sleep(5)
                 if not self.validate_onoff_state(["turningOff", "turnedOff"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
@@ -261,8 +256,6 @@ class ClusterOff(GetCluster):
                     testcase["clusterID"], **kwarg)
 
             if self.validate_testcase(result, [409, 202], testcase, failures):
-                if result.status_code == 202:
-                    time.sleep(5)
                 if not self.validate_onoff_state(["turningOff", "turnedOff"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,
