@@ -3,6 +3,7 @@ from datetime import datetime, timezone, timedelta
 from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 import time
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from Columnar.mini_volume_code_template import MiniVolume
 
 
@@ -240,6 +241,7 @@ class BackupRestore(ColumnarBaseTest):
             restore_state = self.get_restore_from_restore_list(backup_id, restore_id)["status"]
             if restore_state == -1:
                 self.fail("Restore id: {0} not found for backup id: {1}".format(restore_id, backup_id))
+            self.log.info("Waiting for restore to complete, current status {0}".format(restore_state))
             time.sleep(60)
         if restore_state != "complete":
             self.fail("Fail to restore backup with timeout of {}".format(timeout))
@@ -262,13 +264,19 @@ class BackupRestore(ColumnarBaseTest):
                                                                    self.cluster.instance_id)
             resp = resp.json()
             status = resp["data"]["state"]
+            time.sleep(30)
         if time.time() > start_time + timeout:
             self.log.error("Cluster state is {} after 15 minutes".format(status))
 
         while start_time + timeout > time.time():
-            servers = self.get_nodes(self.cluster)
-            nodes_in_cluster = len(servers)
-            if nodes_in_cluster == nodes:
+            rest = ClusterRestAPI(self.cluster.master)
+            status, content = rest.cluster_details()
+            if not status:
+                self.log.error("Error while fetching pools/default using "
+                               "connection string")
+
+            current_nodes = len(content["nodes"])
+            if current_nodes == nodes:
                 return True
             self.log.info("Waiting for server map to get updated")
             time.sleep(20)
@@ -295,8 +303,8 @@ class BackupRestore(ColumnarBaseTest):
 
     def wait_for_instance_to_be_healthy(self, timeout=600):
         status = None
-        start_time = 600
-        while (not status or status != "healthy") and time.time() < start_time + timeout:
+        start_time = time.time()
+        while status != "healthy" and time.time() < start_time + timeout:
             resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
                                                                    self.tenant.project_id,
                                                                    self.cluster.instance_id)
