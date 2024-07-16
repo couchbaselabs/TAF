@@ -623,7 +623,7 @@ class CopyToKv(ColumnarBaseTest):
 
         time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
-        time.sleep(4)
+        time.sleep(10)
         if not self.delete_capella_bucket(bucket_id=self.provisioned_bucket_id):
             self.fail("Failed to drop remote bucket while copying to KV")
         else:
@@ -809,7 +809,7 @@ class CopyToKv(ColumnarBaseTest):
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "source_definition": statement, "dest_bucket": collection,
                        "link_name": remote_link.full_name, "function": "concat(c.a.name,c.b.name)",
-                       "timeout": 100000}))
+                       "timeout": 100000, "analytics_timeout": 100000}))
 
         time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(
@@ -852,7 +852,7 @@ class CopyToKv(ColumnarBaseTest):
 
     def test_copy_to_kv_scaling(self):
         self.commonAPI = CommonCapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd,
-                                          self.input.param("internal_support_token"))
+                                          self.capella["override_token"])
         self.base_infra_setup()
         remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
         datasets = self.cbas_util.get_all_dataset_objs("external")
@@ -871,7 +871,7 @@ class CopyToKv(ColumnarBaseTest):
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                       "link_name": remote_link.full_name}))
+                       "link_name": remote_link.full_name, "analytics_timeout": 10000, "timeout": 10000}))
 
         time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
