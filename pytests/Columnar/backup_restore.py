@@ -74,6 +74,7 @@ class BackupRestore(ColumnarBaseTest):
                                                                  bucket_ram_quota=200)
 
     def base_infra_setup(self, primary_key=None):
+        self.columnar_spec["database"]["no_of_databases"] = self.input.param("no_of_databases", 1)
         self.columnar_spec["dataverse"]["no_of_dataverses"] = self.input.param("no_of_scopes", 1)
         self.columnar_spec["synonym"]["no_of_synonyms"] = self.input.param(
             "synonym", 0)
@@ -436,7 +437,7 @@ class BackupRestore(ColumnarBaseTest):
             self.fail("Failed to apply time to trigger backup")
         time.sleep(60)
         backup = self.get_backup_from_backup_lists()[0]
-        self.create_backup_wait_for_complete(backup["data"]["id"])
+        self.wait_for_backup_complete(backup["data"]["id"])
         self.restore_wait_for_complete(backup["data"]["id"])
         self.wait_for_instance_to_be_healthy()
         self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
