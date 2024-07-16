@@ -17,7 +17,7 @@ class RemoteLinksDatasets(ColumnarBaseTest):
     def setUp(self):
         super(RemoteLinksDatasets, self).setUp()
         self.cluster = self.tenant.columnar_instances[0]
-        self.remote_cluster = self.cb_clusters.values()[0]
+        self.remote_cluster = list(self.cb_clusters.values())[0]
 
         self.initial_doc_count = self.input.param("initial_doc_count", 100)
         self.doc_size = self.input.param("doc_size", 1024)
@@ -173,7 +173,7 @@ class RemoteLinksDatasets(ColumnarBaseTest):
                                                collection=collection)
         operation_config = WorkloadOperationConfig(start=start, end=end,
                                                    template="hotel", doc_size=self.doc_size)
-        task_insert = WorkLoadTask(task_manager=self.task,
+        task_insert = WorkLoadTask(bucket=bucket, task_manager=self.task,
                                    op_type=SiriusCodes.DocOps.CREATE,
                                    database_information=database_information,
                                    operation_config=operation_config)
