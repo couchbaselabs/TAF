@@ -516,27 +516,26 @@ class CopyToKv(ColumnarBaseTest):
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
-            expected_error = self.input.param("expected_error")
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
                        "link_name": remote_link.full_name,
                        "validate_error_msg": self.input.param("validate_error", False),
-                       "expected_error": expected_error,
-                       "expected_error_code": self.input.param("expected_error_code")}))
+                       "analytics_timeout": 100000, "timeout": 100000}))
 
-        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
-        time.sleep(4)
+        time.sleep(20)
         if not self.cbas_util.drop_link(self.cluster, remote_link.full_name):
             self.fail("Failed to drop link while copying to KV")
+        del(self.cbas_util.remote_links[remote_link.full_name])
         jobs.join()
 
         # validate data in KV re-create remote link
         self.columnar_spec = {"remote_link": {"no_of_remote_links": 1,
                                               "properties": self.columnar_spec["remote_link"]["properties"]}}
-        self.cbas_util.create_cbas_infra_from_spec(self.cluster, cbas_spec=self.columnar_spec,
-                                                   bucket_util=self.bucket_util)
+        self.cbas_util.create_cbas_infra_from_spec(
+            self.cluster, cbas_spec=self.columnar_spec,
+            bucket_util=self.bucket_util, wait_for_ingestion=False)
         all_remote_links = self.cbas_util.get_all_link_objs("couchbase")
         new_remote_link = None
         for i in all_remote_links:
@@ -556,16 +555,18 @@ class CopyToKv(ColumnarBaseTest):
                 self.log.error("Failed to create remote dataset on KV")
                 results.append(False)
             # validate doc count at columnar and KV side
+            self.cbas_util.wait_for_ingestion_all_datasets(self.cluster)
             columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
-            results.append(columnar_count != kv_count)
-            if not all(results):
+            if columnar_count != kv_count:
                 self.fail("Mismatch found in Copy To KV")
 
     def test_remove_user_access_while_copy_to_kv(self):
         capella_api_v2 = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key, self.tenant.api_access_key,
                                       self.tenant.user, self.tenant.pwd)
-        self.remote_cluster = self.cb_clusters['C1']
+        for key in self.cb_clusters:
+            self.remote_cluster = self.cb_clusters[key]
+            break
         new_db_user_id = capella_api_v2.create_db_user(self.tenant.id, self.tenant.project_id, self.remote_cluster.id,
                                                        "CopyToKV", "Couchbase@123").json()['id']
         self.remote_cluster.username = "CopyToKV"
@@ -593,9 +594,8 @@ class CopyToKv(ColumnarBaseTest):
                    "expected_error": self.input.param("expected_error", ""),
                    "expected_error_code": self.input.param("expected_error_code", "")}))
 
-        time.sleep(20)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
-        time.sleep(10)
+        time.sleep(20)
         capella_api_v2.delete_db_user(self.tenant.id, self.tenant.project_id, self.remote_cluster.id, new_db_user_id)
         jobs.join()
 

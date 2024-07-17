@@ -555,7 +555,10 @@ class CBASHelper(RestConnection):
                             errors.append({"msg": content["error"], "code": 0 })
                     else:
                         content = content.split(":")
-                        errors.append({"msg": content[1], "code": content[0] })
+                        if len(content) > 1:
+                            errors.append({"msg": content[1], "code": content[0] })
+                        else:
+                            errors.append({"msg": content[0]})
             if hasattr(response, "status"):
                 status_code = response.status
             elif hasattr(response, "status_code"):

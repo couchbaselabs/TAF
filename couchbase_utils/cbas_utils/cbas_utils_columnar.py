@@ -4534,7 +4534,7 @@ class Synonym_Util(StandAlone_Collection_Util):
         Fetches link specific specs from spec file mentioned.
         :param cbas_spec dict, cbas spec dictonary.
         """
-        return cbas_spec["synonym"]
+        return cbas_spec.get("synonym", {})
 
     def create_synonym_from_spec(self, cluster, cbas_spec):
         self.log.info("Creating Synonyms based on CBAS Spec")
