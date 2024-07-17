@@ -41,7 +41,8 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.scope_privileges = ["scope_create", "scope_drop"]
         self.collection_ddl_privileges = ["collection_create", "collection_drop"]
         self.collection_dml_privileges = ["collection_insert", "collection_upsert",
-                                          "collection_delete", "collection_analyze"]
+                                          "collection_delete", "collection_analyze",
+                                          "collection_select"]
         self.link_ddl_privileges = ["link_create", "link_drop", "link_alter"]
         self.link_connection_privileges = ["link_connect", "link_disconnect"]
         self.link_dml_privileges = ["link_copy_to", "link_copy_from"]
@@ -1521,8 +1522,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                                   self.tenant.project_id,
                                                                   self.cluster.instance_id,
                                                                   execute_cmd)
-                    if role == "projectOwner" or role == "projectDataWriter" or \
-                            role == "projectClusterViewer":  # Bug
+                    if role == "projectOwner" or role == "projectDataWriter":
                         self.assertEqual(200, resp.status_code,
                                          msg='FAIL, Outcome:{}, Expected: {}.' \
                                              'For role: {}'.format(resp.status_code, 200, role))
@@ -1539,8 +1539,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                                   self.tenant.project_id,
                                                                   self.cluster.instance_id,
                                                                   execute_cmd)
-                    if role == "projectOwner" or role == "projectDataWriter" or \
-                            role == "projectClusterViewer":  # Bug
+                    if role == "projectOwner" or role == "projectDataWriter":
                         self.assertEqual(200, resp.status_code,
                                          msg='FAIL, Outcome:{}, Expected: {}.' \
                                              'For role: {}'.format(resp.status_code, 200, role))
@@ -1556,7 +1555,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                                   self.cluster.instance_id,
                                                                   execute_cmd)
                     if role == "projectOwner" or role == "projectDataWriter" or \
-                            role == "projectDataViewer":  # Bug
+                            role == "projectDataViewer":
                         self.assertEqual(200, resp.status_code,
                                          msg='FAIL, Outcome:{}, Expected: {}.' \
                                              'For role: {}'.format(resp.status_code, 200, role))
@@ -1566,8 +1565,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                              'For role: {}'.format(resp.status_code, 403, role))
                 elif priv == "collection_delete":
                     execute_cmd = self.columnar_cbas_utils.generate_delete_from_cmd(standalone_coll)
-                    if role == "projectOwner" or role == "projectDataWriter" or \
-                            role == "projectDataViewer":  # Bug
+                    if role == "projectOwner" or role == "projectDataWriter":
                         self.assertEqual(200, resp.status_code,
                                          msg='FAIL, Outcome:{}, Expected: {}.' \
                                              'For role: {}'.format(resp.status_code, 200, role))
@@ -2513,7 +2511,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                               self.cluster.instance_id,
                                                               execute_cmd)
                 if role == "projectOwner" or role == "projectClusterManager" or \
-                        role == "projectClusterViewer":  # Bug
+                        role == "projectDataWriter":
                     self.assertEqual(200, resp.status_code,
                                      msg='FAIL, Outcome:{}, Expected: {}.' \
                                          'For role: {}'.format(resp.status_code, 200, role))
