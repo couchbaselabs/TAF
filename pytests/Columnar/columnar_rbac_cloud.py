@@ -452,7 +452,7 @@ class ColumnarRBAC(ColumnarBaseTest):
         return backup_id
 
     def restore_wait_for_complete(self, backup_id):
-        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.id, backup_id)
+        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.instance_id, backup_id)
         restore_id = resp.json()["id"]
         self.log.info("Restore Id: {}".format(restore_id))
         restore_state = None
