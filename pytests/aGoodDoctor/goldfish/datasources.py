@@ -26,7 +26,7 @@ from kafka_util.kafka_connect_util import KafkaConnectUtil
 from org.apache.kafka.clients.admin import AdminClientConfig, AdminClient
 from TestInput import TestInputSingleton
 
-_input = TestInputSingleton
+_input = TestInputSingleton.input
 
 class MongoDB(object):
 
