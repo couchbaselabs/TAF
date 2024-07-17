@@ -40,7 +40,9 @@ class StandaloneCollection(ColumnarBaseTest):
 
     def capella_provisioned_cluster_setup(self):
 
-        self.remote_cluster = self.cb_clusters['C1']
+        for key in self.cb_clusters:
+            self.remote_cluster = self.cb_clusters[key]
+            break
         resp = (self.capellaAPI.create_control_plane_api_key(self.tenant.id, 'init api keys')).json()
         self.capellaAPI.cluster_ops_apis.SECRET = resp['secretKey']
         self.capellaAPI.cluster_ops_apis.ACCESS = resp['id']
