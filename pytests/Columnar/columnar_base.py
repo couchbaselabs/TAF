@@ -115,6 +115,10 @@ class ColumnarBaseTest(BaseTestCase):
             self.capellaAPI.cluster_ops_apis.bearer_token = \
             org_owner_key["token"]
 
+        for instance in self.tenant.columnar_instances:
+            if not self.cbas_util.wait_for_cbas_to_recover(instance):
+                self.fail("Analytics service failed to start")
+
         self.log.info("=== CBAS_BASE setup was finished for test #{0} {1} ==="
                       .format(self.case_number, self._testMethodName))
 
