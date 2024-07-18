@@ -54,9 +54,8 @@ def parse_args():
 
 
 def create_log_file(log_config_file_name, log_file_name):
-    tmpl_log_file = open("jython.logging.conf")
+    tmpl_log_file = open("logging.conf")
     log_file = open(log_config_file_name, "w")
-    log_file.truncate()
     for line in tmpl_log_file:
         line = line.replace("@@FILENAME@@", log_file_name.replace('\\', '/'))
         log_file.write(line)
@@ -198,8 +197,7 @@ def main():
         logs_folder = os.path.join(root_log_dir, "test_%s" % case_number)
         os.mkdir(logs_folder)
         test_log_file = os.path.join(logs_folder, "test.log")
-        log_config_filename = r'{0}'.format(os.path.join(logs_folder,
-                                                         "test.logging.conf"))
+        log_config_filename = "test.logging.conf"
         create_log_file(log_config_filename, test_log_file)
         logging.config.fileConfig(log_config_filename)
         print("Logs will be stored at %s" % logs_folder)
@@ -243,7 +241,7 @@ def main():
                         t._Thread__stop()
                 result = unittest.TextTestRunner(verbosity=2)._makeResult()
                 case_number += 1000
-                print("========TEST WAS STOPPED DUE TO  TIMEOUT=========")
+                print("=== TEST WAS STOPPED DUE TO  TIMEOUT ===")
                 result.errors = [(name, "Test was stopped due to timeout")]
         time_taken = time.time() - start_time
         connection_status_msg = \
