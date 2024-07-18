@@ -880,7 +880,7 @@ class CopyToKv(ColumnarBaseTest):
         status = None
         time.sleep(10)
         self.columnarAPI.update_columnar_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
-                                                  self.cluster.name, '', 2)
+                                                  self.cluster.name, '', 4)
         jobs.join()
         while status != "healthy" and start_time + 900 > time.time():
             resp = self.commonAPI.get_cluster_info_internal(self.cluster.cluster_id).json()

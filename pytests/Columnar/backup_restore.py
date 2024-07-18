@@ -70,8 +70,9 @@ class BackupRestore(ColumnarBaseTest):
 
         # creating bucket scope and collections for remote collection
         no_of_remote_buckets = self.input.param("no_of_remote_bucket", 1)
-        self.create_bucket_scopes_collections_in_capella_cluster(self.tenant, self.remote_cluster, no_of_remote_buckets,
-                                                                 bucket_ram_quota=200)
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster, no_of_remote_buckets,
+            bucket_ram_quota=1024)
 
     def base_infra_setup(self, primary_key=None):
         self.columnar_spec["database"]["no_of_databases"] = self.input.param("no_of_databases", 1)
