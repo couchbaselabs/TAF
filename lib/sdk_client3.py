@@ -8,6 +8,7 @@ Created on Mar 14, 2019
 import subprocess
 import os
 import time
+from datetime import timedelta
 
 from threading import Lock
 
@@ -311,9 +312,14 @@ class SDKClient(object):
         # Having 'None' will enable us to test without sending any
         # compression settings and explicitly setting to 'False' as well
         auth = PasswordAuthenticator(self.username, self.password)
+        timeout_opts = ClusterTimeoutOptions(
+            kv_timeout=timedelta(seconds=10),
+            dns_srv_timeout=timedelta(seconds=10))
         cluster_opts = {
             "authenticator": auth,
-            "enable_tls": False
+            "enable_tls": False,
+            "timeout_options": timeout_opts,
+            # "tls_verify": TLSVerifyMode.NO_VERIFY
         }
 
         if self.compression is not None:
