@@ -555,7 +555,7 @@ class CopyToKv(ColumnarBaseTest):
                 self.log.error("Failed to create remote dataset on KV")
                 results.append(False)
             # validate doc count at columnar and KV side
-            self.cbas_util.wait_for_ingestion_all_datasets(self.cluster)
+            self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
             columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if columnar_count != kv_count:
@@ -623,9 +623,9 @@ class CopyToKv(ColumnarBaseTest):
                        "expected_error": expected_error,
                        "expected_error_code": self.input.param("expected_error_code")}))
 
-        time.sleep(20)
+        time.sleep(30)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
-        time.sleep(10)
+        time.sleep(20)
         if not self.delete_capella_bucket(bucket_id=self.provisioned_bucket_id):
             self.fail("Failed to drop remote bucket while copying to KV")
         else:
