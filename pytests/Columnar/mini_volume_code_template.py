@@ -282,6 +282,7 @@ class MiniVolume:
 
         if not self.scale_columnar_cluster(8):
             self.base_object.fail("Failed to scale up the instance")
+        self.base_object.cbas_util.wait_for_cbas_to_recover(self.base_object.cluster, timeout=3600)
 
         # complete load on standalone collection using query
         if data_partition_number == 1:
@@ -318,6 +319,6 @@ class MiniVolume:
             scale_nodes = random.choice([2, 4, 16])
         if not self.scale_columnar_cluster(scale_nodes):
             self.base_object.fail("Failed to scale up the instance")
-
+        self.base_object.cbas_util.wait_for_cbas_to_recover(self.base_object.cluster, timeout=3600)
         if stop_all_at_end:
             self.stop_process(query_pass)

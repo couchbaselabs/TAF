@@ -449,6 +449,7 @@ class BackupRestore(ColumnarBaseTest):
 
     def test_mini_volume_backup_restore(self):
         primary_key = [{"id": "string"}]
+        backup_timeout = self.input.param("backup_timeout", 7200)
         self.base_infra_setup(primary_key)
         self.mini_volume = MiniVolume(self, "http://127.0.0.1:4000")
         self.mini_volume.calculate_volume_per_source()
@@ -462,8 +463,8 @@ class BackupRestore(ColumnarBaseTest):
             self.mini_volume.stop_crud_on_data_sources()
             self.cbas_util.wait_for_data_ingestion_in_the_collections()
             count_before_backup = self.dataset_count()
-            backup_id = self.create_backup_wait_for_complete()
-            self.restore_wait_for_complete(backup_id)
+            backup_id = self.create_backup_wait_for_complete(timeout=backup_timeout)
+            self.restore_wait_for_complete(backup_id, timeout=backup_timeout)
             self.wait_for_instance_to_be_healthy()
             self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
             dataset_count_after_restore = self.dataset_count()
