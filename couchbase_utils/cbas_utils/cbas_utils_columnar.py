@@ -4875,6 +4875,9 @@ class Index_Util(View_Util):
 
     def generate_drop_index_cmd(self, index_name, dataset_name,
                                 analytics_index=False, if_exists=False):
+
+        dataset_name = self.format_name(dataset_name)
+        index_name = self.format_name(index_name)
         if analytics_index:
             drop_idx_statement = "drop analytics index {0}.{1}".format(
                 dataset_name, index_name)
@@ -4885,6 +4888,8 @@ class Index_Util(View_Util):
             drop_idx_statement += " IF EXISTS;"
         else:
             drop_idx_statement += ";"
+
+        return drop_idx_statement
 
     def drop_cbas_index(self, cluster, index_name, dataset_name,
                         analytics_index=False, validate_error_msg=False,
@@ -4903,7 +4908,8 @@ class Index_Util(View_Util):
         :param analytics_timeout : str
         :param if_exists : bool, checks if index even exists before issuing drop command
         """
-
+        dataset_name = self.format_name(dataset_name)
+        index_name = self.format_name(index_name)
         if analytics_index:
             drop_idx_statement = "drop analytics index {0}.{1}".format(
                 dataset_name, index_name)

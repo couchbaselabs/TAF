@@ -1424,7 +1424,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                         status, metrics, errors, results, _ = (
                             self.columnar_cbas_utils.execute_statement_on_cbas_util(
                                 self.cluster, cmd,
-                                username=test_case['user'].id,
+                                username=test_case['user'].username,
                                 password=test_case['user'].password,
                                 timeout=300, analytics_timeout=300))
 
@@ -1436,8 +1436,8 @@ class ColumnarRBAC(ColumnarBaseTest):
                                           format(res))
                         else:
                             if status != "success":
-                                self.fail("Test case failed while attempting to get docs from standalone coll {}".
-                                          format(res))
+                                self.fail("Test case failed while attempting to get docs from standalone coll {}." \
+                                          "Error: {}".format(res, errors))
                     elif priv == "collection_delete":
                         expected_error = self.ACCESS_DENIED_ERR
                         result = (self.columnar_cbas_utils.delete_from_standalone_collection(
@@ -2510,8 +2510,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                               self.tenant.project_id,
                                                               self.cluster.instance_id,
                                                               execute_cmd)
-                if role == "projectOwner" or role == "projectClusterManager" or \
-                        role == "projectDataWriter":
+                if role == "projectOwner" or role == "projectDataWriter":
                     self.assertEqual(200, resp.status_code,
                                      msg='FAIL, Outcome:{}, Expected: {}.' \
                                          'For role: {}'.format(resp.status_code, 200, role))
