@@ -118,7 +118,7 @@ class MiniVolume:
             required_action = SiriusCodes.DocOps.DELETE
         if action == "upsert":
             required_action = SiriusCodes.DocOps.UPDATE
-        task_insert = WorkLoadTask(task_manager=self.base_object.task_manager, op_type=required_action,
+        task_insert = WorkLoadTask(bucket=bucket, task_manager=self.base_object.task_manager, op_type=required_action,
                                    database_information=database_information, operation_config=operation_config,
                                    default_sirius_base_url=self.base_object.sirius_base_url)
         self.base_object.task_manager.add_new_task(task_insert)
@@ -128,7 +128,7 @@ class MiniVolume:
     def run_queries_on_datasets(self, query_jobs):
         datasets = self.base_object.cbas_util.get_all_dataset_objs()
         while self.base_object.run_queries:
-            if query_jobs.qsize() < 5:
+            if query_jobs.qsize() < 10:
                 dataset = random.choice(datasets)
                 queries = [
                     "SELECT p.seller_name, p.seller_location, AVG(p.avg_rating) AS avg_rating FROM (SELECT seller_name,"
@@ -269,13 +269,19 @@ class MiniVolume:
         self.cpu_stat_job = Queue()
         results = []
 
-        if not self.scale_columnar_cluster(8):
-            self.base_object.fail("Failed to scale up the instance")
-
         # calculate doc to load for each cycle
         self.base_object.remote_start, self.base_object.remote_end = (
             self.create_doc_per_cycle(data_partition_number,
                                       self.base_object.remote_source_doc_per_collection))
+
+        # complete load on remote collections
+        self.load_doc_to_remote_collection(self.base_object.data_loading_job, self.base_object.remote_start,
+                                           self.base_object.remote_end)
+        self.base_object.cbas_util.run_jobs_in_parallel(self.base_object.data_loading_job, results, thread_count=5,
+                                                        async_run=True)
+
+        if not self.scale_columnar_cluster(8):
+            self.base_object.fail("Failed to scale up the instance")
 
         # complete load on standalone collection using query
         if data_partition_number == 1:
@@ -283,12 +289,6 @@ class MiniVolume:
             self.base_object.log.info("Loading doc to standalone collection using query")
             self.base_object.cbas_util.run_jobs_in_parallel(self.base_object.data_loading_job, results, thread_count=5,
                                                             async_run=False)
-
-        # complete load on remote collections
-        self.load_doc_to_remote_collection(self.base_object.data_loading_job, self.base_object.remote_start,
-                                           self.base_object.remote_end)
-        self.base_object.cbas_util.run_jobs_in_parallel(self.base_object.data_loading_job, results, thread_count=5,
-                                                        async_run=True)
 
         # get cpu stats and run query on datasets until doc loading is complete
         self.base_object.run_queries = True
