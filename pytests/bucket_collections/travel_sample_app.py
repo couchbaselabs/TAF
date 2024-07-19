@@ -1,5 +1,5 @@
+import yaml
 from random import choice, sample
-from ruamel.yaml import YAML
 
 from bucket_collections.app.app_basetest import AppBase
 from bucket_collections.app.constants import global_vars
@@ -46,7 +46,7 @@ class TravelSampleApp(AppBase):
 
         with open(self.app_path + "/scenarios/" + self.playbook + ".yaml",
                   "r") as fp:
-            self.activities = YAML().load(fp.read())["activities"]
+            self.activities = yaml.safe_load(fp.read())["activities"]
 
         self.log_setup_status("TravelSampleApp", "complete")
 

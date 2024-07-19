@@ -1,4 +1,5 @@
 import time
+import yaml
 from copy import deepcopy
 
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
@@ -8,6 +9,8 @@ from basetestcase import BaseTestCase
 from bucket_collections.app.constants import global_vars
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from cb_server_rest_util.backup.backup_api import BackupRestApi
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.security.security_api import SecurityRestAPI
 from cb_tools.cbstats import Cbstats
 from cbas_utils.cbas_utils import CbasUtil
 from membase.api.rest_client import RestConnection
@@ -37,7 +40,7 @@ class AppBase(BaseTestCase):
 
         if self.cluster_conf is not None:
             with open(self.config_path+self.cluster_conf+".yaml", "r") as fp:
-                self.cluster_conf = YAML().load(fp.read())
+                self.cluster_conf = yaml.safe_load(fp.read())
 
             self.__init_rebalance_with_rbac_setup()
 
@@ -48,12 +51,12 @@ class AppBase(BaseTestCase):
         # Load bucket conf
         if self.bucket_conf is not None:
             with open(self.config_path+self.bucket_conf+".yaml", "r") as fp:
-                self.bucket_conf = YAML().load(fp.read())
+                self.bucket_conf = yaml.safe_load(fp.read())
 
         # Load RBAC conf
         if self.rbac_conf is not None:
             with open(self.config_path + self.rbac_conf + ".yaml", "r") as fp:
-                self.rbac_conf = YAML().load(fp.read())
+                self.rbac_conf = yaml.safe_load(fp.read())
 
         if self.bucket_conf is not None:
             self.__setup_buckets()
@@ -65,7 +68,7 @@ class AppBase(BaseTestCase):
 
         if self.service_conf is not None:
             with open(self.config_path+self.service_conf+".yaml", "r") as fp:
-                self.service_conf = YAML().load(fp.read())["services"]
+                self.service_conf = yaml.safe_load(fp.read())["services"]
 
             if not self.capella_run:
                 # Configure backup settings
@@ -94,12 +97,12 @@ class AppBase(BaseTestCase):
         self.nodes_init = self.cluster_conf["cb_cluster"]["nodes_init"]
         self.services_init = self.cluster_conf["cb_cluster"]["services"]
 
-        rest = RestConnection(self.cluster.master)
+        rest = ClusterRestAPI(self.cluster.master)
         # Set cluster settings
         for setting in self.cluster_conf["cb_cluster"]["settings"]:
             if setting["name"] == "memory_quota":
                 setting.pop("name")
-                rest.set_service_mem_quota(setting)
+                rest.configure_memory(setting)
 
         # Rebalance_in required nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
@@ -230,7 +233,7 @@ class AppBase(BaseTestCase):
         master = deepcopy(self.cluster.master)
         master.rest_username = rest_username
         master.rest_password = rest_password
-        rest_conn = RestConnection(master)
+        rest_conn = SecurityRestAPI(master)
 
         users = list()
         roles = list()
