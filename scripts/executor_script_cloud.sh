@@ -273,15 +273,13 @@ if [ "$?" -eq 0 ]; then
   sirius_port=49152 ; INCR=1 ; while [ -n "$(ss -tan4H "sport = $sirius_port")" ]; do sirius_port=$((sirius_port+INCR)) ; done
   echo "Will use $sirius_port for starting sirius"
   export PATH=/usr/local/go/bin:$PATH
+
   set -x
   python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port
   status=$?
+  python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
+  rerun_job_status=$?
   set +x
-
-  if [ ${rerun_job} == true ]; then
-  	python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
-  	rerun_job_status=$?
-  fi
 
   if [ $rerun_job_status -ne 0 ]; then
     exit $rerun_job_status
