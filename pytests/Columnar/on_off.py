@@ -290,7 +290,8 @@ class OnOff(ColumnarBaseTest):
         if not self.wait_for_on():
             self.fail("Failed to turn on the instance")
 
-        self.update_columnar_instance_obj(self.pod, self.tenant, self.cluster)
+        self.columnar_utils.update_columnar_instance_obj(
+            self.pod, self.tenant, self.cluster)
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count_after_restore = self.dataset_count()
@@ -324,7 +325,8 @@ class OnOff(ColumnarBaseTest):
             self.fail("Failed to turn on the instance")
         self.scale_columnar_cluster(2)
 
-        self.update_columnar_instance_obj(self.pod, self.tenant, self.cluster)
+        self.columnar_utils.update_columnar_instance_obj(
+            self.pod, self.tenant, self.cluster)
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count_after_restore = self.dataset_count()
@@ -592,7 +594,8 @@ class OnOff(ColumnarBaseTest):
             self.cbas_util.wait_for_ingestion_complete()
             docs_in_collections_before = self.dataset_count()
             self.initiate_on_off()
-            self.update_columnar_instance_obj(self.pod, self.tenant, self.cluster)
+            self.columnar_utils.update_columnar_instance_obj(
+                self.pod, self.tenant, self.cluster)
             docs_in_collection_after = self.dataset_count()
             if docs_in_collection_after != docs_in_collections_before:
                 self.fail("Doc count mismatch after on/off")
