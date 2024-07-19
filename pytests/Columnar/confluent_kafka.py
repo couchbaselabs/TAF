@@ -178,7 +178,7 @@ class ConfluentKafka(ColumnarBaseTest):
         return user1
 
     def test_kafka_rbac(self):
-        rbac_user = self.create_rbac_user(["link_create", "link_create_collection"], [],
+        rbac_user = self.create_rbac_user(["link_create", "link_create_collection", "collection_create"], [],
                                           resource_type="instance")
         #Test kafka link and colleciton creation with rbac
         kafka_cluster_details = self.kafka_cluster_obj.generate_confluent_kafka_cluster_detail(
@@ -311,6 +311,6 @@ class ConfluentKafka(ColumnarBaseTest):
         if not result:
             self.fail("Data ingestion did not complete for all datasets")
         self.log.info("Data ingestion completed successfully")
-        
+
         self.cbas_util.disconnect_link(self.cluster, self.kafka_link_name)
         self.log.info(f"Successfully disconnected confluent kafka link - {self.kafka_link_name}")
