@@ -78,6 +78,8 @@ class SecurityBase(CouchbaseBaseTest):
             "azure": 240
         }
         self.capellaAPI = CapellaAPI("https://" + self.url, '', '', self.user, self.passwd, '')
+        self.capellaAPIv2 = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
+                                         self.user, self.passwd)
         self.columnarAPI = ColumnarAPI("https://" + self.url, '',  '', self.user, self.passwd, '')
         self.create_initial_v4_api_keys()
         self.create_different_organization_roles()
@@ -389,7 +391,7 @@ class SecurityBase(CouchbaseBaseTest):
 
     def delete_columnar_cluster(self):
         if self.instance_id is None:
-            self.log.inof("No columnar clusters to delete")
+            self.log.info("No columnar clusters to delete")
             return
 
         self.log.info("Deleting cluster with id: {}".format(self.instance_id))
@@ -869,14 +871,21 @@ class SecurityBase(CouchbaseBaseTest):
         return True, None
 
     def test_with_org_roles(self, test_method_name=None, test_method_args=None,
-                            expected_success_code=None, on_success_callback=None):
+                            expected_success_code=None, on_success_callback=None,
+                            api_type="columnar"):
 
         for user in self.test_users:
             self.log.info("Verifying status code for Role: {0}"
                           .format(self.test_users[user]["role"]))
-            capellaAPIrole = ColumnarAPI("https://" + self.url, self.secret_key, self.access_key,
-                                         self.test_users[user]["mailid"],
-                                         self.test_users[user]["password"])
+
+            if api_type == "provisioned":
+                capellaAPIrole = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
+                                              self.test_users[user]["mailid"],
+                                              self.test_users[user]["password"])
+            elif api_type == "columnar":
+                capellaAPIrole = ColumnarAPI("https://" + self.url, self.secret_key, self.access_key,
+                                            self.test_users[user]["mailid"],
+                                            self.test_users[user]["password"])
 
             if hasattr(capellaAPIrole, test_method_name):
                 test_method = getattr(capellaAPIrole, test_method_name)
@@ -909,7 +918,7 @@ class SecurityBase(CouchbaseBaseTest):
 
     def test_with_project_roles(self, test_method_name=None, test_method_args=None,
                                 valid_project_roles=[], expected_success_code=None,
-                                on_success_callback=None):
+                                on_success_callback=None, api_type="columnar"):
         self.log.info("Verifying endpoint for different roles under project - RBAC")
         self.capellaAPIv2 = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
                                          self.user, self.passwd)
@@ -930,9 +939,14 @@ class SecurityBase(CouchbaseBaseTest):
                 return False, "Failed to add user {} to project {}. Error: {}". \
                           format(user["name"], self.project_id, resp.content)
 
-            capellaAPIrole = ColumnarAPI("https://" + self.url, self.secret_key, self.access_key,
-                                         user["mailid"],
-                                         user["password"])
+            if api_type == "provisioned":
+                capellaAPIrole = CapellaAPIv2("https://" + self.url, self.secret_key, self.access_key,
+                                              user["mailid"],
+                                              user["password"])
+            elif api_type == "columnar":
+                capellaAPIrole = ColumnarAPI("https://" + self.url, self.secret_key, self.access_key,
+                                            self.test_users[user]["mailid"],
+                                            self.test_users[user]["password"])
             if hasattr(capellaAPIrole, test_method_name):
                 test_method = getattr(capellaAPIrole, test_method_name)
                 resp = test_method(**test_method_args)

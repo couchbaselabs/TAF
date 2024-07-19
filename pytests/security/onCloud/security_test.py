@@ -1139,3 +1139,206 @@ class SecurityTest(SecurityBase):
                 self.assertEqual(403, delete_endpoint_resp.status_code,
                                  msg='FAIL, Outcome:{}, Expected:{}'
                                  .format(delete_endpoint_resp.status_code, 403))
+
+    def test_cluster_deletion_protection_api(self):
+        # Auth test
+        url = "{}/v2/organizations/{}/projects/{}/clusters/{}". \
+              format(self.capellaAPIv2.internal_url, self.tenant_id, self.project_id, self.cluster_id)
+        payload = {"deletionProtection": True}
+        result, error = self.test_authentication(url, method="PATCH", payload=payload)
+        if not result:
+            self.fail("Auth test failed. Error: {}".format(error))
+
+        # Test withd different tenant ids
+        test_method_args = {
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'deletion_protection': True
+        }
+        result, error = self.test_tenant_ids(self.capellaAPIv2.toggle_cluster_deletion_protection,
+                                             test_method_args, 'tenant_id', 204)
+        if not result:
+            self.fail("Tenant ids test failed. Error: {}".format(error))
+
+        # Test with different project ids
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'cluster_id': self.cluster_id,
+            'deletion_protection': True
+        }
+        result, error = self.test_project_ids(self.capellaAPIv2.toggle_cluster_deletion_protection,
+                                              test_method_args, 'project_id', 204)
+        if not result:
+            self.fail("Project ids test failed. Error: {}".format(error))
+
+        # Test with org roles
+        test_method_args = {
+            'tenant_id': self.tenant_id,
+            'project_id': self.project_id,
+            'cluster_id': self.cluster_id,
+            'deletion_protection': True
+        }
+        result, error = self.test_with_org_roles("toggle_cluster_deletion_protection", test_method_args,
+                                                 204, None, "provisioned")
+        if not result:
+            self.fail("Org roles test failed. Error: {}".format(error))
+
+        # Test with project roles
+        result, error = self.test_with_project_roles("toggle_cluster_deletion_protection", test_method_args,
+                                                     ["projectOwner", "projectClusterManager"], 204,
+                                                     None, "provisioned")
+        if not result:
+            self.fail("Project roles test failed. Error: {}".format(error))
+
+    def delete_cluster_v2(self, tenant_id, project_id, cluster_id):
+        url = "{}/v2/organizations/{}/projects/{}/clusters/{}". \
+                format(self.capellaAPIv2.internal_url, tenant_id, project_id, cluster_id)
+        resp = self.capellaAPIv2.do_internal_request(url, "DELETE")
+
+        return resp
+
+
+    def validate_cluster_deletion_protection(self):
+        #Enable cluster deletion
+        self.log.info("Turning on cluster deletion protectioon")
+        resp = self.capellaAPIv2.toggle_cluster_deletion_protection(self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    True)
+        if resp.status_code != 204:
+            self.fail("Failed to turn on cluster deletion protection." \
+                      "Status code: {}. Error: {}".format(resp.status_code, resp.content))
+
+        #Try deleting using v2 api
+        self.log.info("Test cluster deletion with v2 api")
+        resp = self.delete_cluster_v2(self.tenant_id, self.project_id, self.cluster_id)
+        if resp.status_code != 409:
+            self.fail("Expected: {}, Returned: {}".format(409, resp.status_code))
+
+        #Try deleting using v3 api
+        self.log.info("Test cluster deletion with v3 api")
+        resp = self.capellaAPIv2.delete_cluster(self.cluster_id)
+        if resp.status_code != 409:
+            self.fail("Expected: {}, Returned: {}".format(409, resp.status_code))
+
+        #Try deleting using v4
+        self.log.info("Test cluster deletion with v4 api")
+        resp = self.capellaAPI.cluster_ops_apis.delete_cluster(self.tenant_id,
+                                                               self.project_id,
+                                                               self.cluster_id)
+        if resp.status_code != 409:
+            self.fail("Expected: {}, Returned: {}".format(409, resp.status_code))
+
+    def validate_bucket_deletion_protection(self):
+        resp = self.capellaAPIv2.load_sample_bucket(self.tenant_id, self.project_id,
+                                                    self.cluster_id,
+                                                    "travel-sample")
+        if resp.status_code != 201:
+            self.fail("Failed to load travel sample bucket." \
+                      "Status code: {}, Error: {}".format(resp.status_code, resp.content))
+
+        bucket_id = None
+        bucket_params = None
+        resp = self.capellaAPIv2.get_buckets(self.tenant_id, self.project_id,
+                                             self.cluster_id)
+        buckets = json.loads(resp.content)['buckets']['data']
+        for bucket in buckets:
+            if bucket['data']['name'] == "travel-sample":
+                bucket_params = bucket['data']
+                bucket_id = bucket['data']['id']
+                break
+
+        #Enable flush
+        update_bucket_params = {
+            'backupSchedule': bucket_params['backupSchedule'],
+            'bucketConflictResolution': bucket_params['bucketConflictResolution'],
+            'durabilityLevel': bucket_params['durabilityLevel'],
+            'evictionPolicy': bucket_params['evictionPolicy'],
+            'flush': True,
+            'memoryAllocationInMb': bucket_params['memoryAllocationInMb'],
+            'name': bucket_params['name'],
+            'replicas': bucket_params['replicas'],
+            'storageBackend': bucket_params['storageBackend'],
+            'timeToLive': bucket_params['timeToLive'],
+            'type': bucket_params['type']
+        }
+        resp = self.capellaAPIv2.update_bucket_settings(self.tenant_id, self.project_id,
+                                                        self.cluster_id,
+                                                        bucket_id,
+                                                        update_bucket_params)
+        if resp.status_code != 200:
+            self.fail("Failed to enable flush on bucket." \
+                      "Status code: {}, Error: {}".format(resp.status_code, resp.content))
+
+        resp = self.capellaAPIv2.toggle_cluster_deletion_protection(self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    True)
+        if resp.status_code != 204:
+            self.fail("Failed to turn on cluster deletion protection." \
+                      "Status code: {}. Error: {}".format(resp.status_code, resp.content))
+
+        #Test deleting bucket with v2 api
+        self.log.info("Test deleting bucket with v2 api")
+        resp = self.capellaAPIv2.delete_bucket(self.tenant_id, self.project_id,
+                                               self.cluster_id, bucket_id)
+        if resp.status_code != 409:
+            self.fail("Expected: {}, Returned: {}".format(409, resp.status_code))
+
+        #Test deleting bucket with v4 api
+        self.log.info("Test deleting bucket with v4 api")
+        resp = self.capellaAPI.cluster_ops_apis.delete_bucket(self.tenant_id,
+                                                              self.project_id,
+                                                              self.cluster_id,
+                                                              bucket_id)
+        if resp.status_code != 409:
+            self.fail("Expected: {}, Returned: {}".format(409, resp.status_code))
+
+        #Test flushing bucket with v2 api
+        self.log.info("Test flushing bucket with v2 api")
+        resp = self.capellaAPIv2.flush_bucket(self.tenant_id, self.project_id,
+                                              self.cluster_id, bucket_id)
+        if resp.status_code != 409:
+            self.fail("Expected: {}, Returned: {}. Error: {}".format(409, resp.status_code,
+                                                                     resp.content))
+
+    def validate_app_service_deletion_protection(self):
+        #Create app service
+        app_service_config =  {
+            "clusterId": self.cluster_id,
+            "compute": {"type": "c5.2xlarge"},
+            "desired_capacity": 2,
+            "name": "test-app-service"
+        }
+
+        resp = self.capellaAPIv2.create_sgw_backend(self.tenant_id, app_service_config)
+        self.assertEqual(202, resp.status_code,
+                         msg="FAIL: Outcome: {}, Expected: {}, Error: {}".format(resp.status_code, 202, resp.content))
+
+        sgw_id = resp.json()["id"]
+        status = "deploying"
+        timeout = 1800
+        start_time = time.time()
+        while status != "healthy" and time.time() < start_time + timeout:
+            resp = self.capellaAPIv2.get_sgw_backend(self.tenant_id, self.project_id, self.cluster_id,
+                                                     sgw_id)
+            status = resp.json()["data"]["status"]["state"]
+            self.sleep(15, "Waiting for App Services to be in healthy state")
+
+        if status != "healthy":
+            self.fail("Failed to deploy app service")
+
+        #Toggle cluster deletion protection to ON
+        resp = self.capellaAPIv2.toggle_cluster_deletion_protection(self.tenant_id,
+                                                                    self.project_id,
+                                                                    self.cluster_id,
+                                                                    True)
+        if resp.status_code != 204:
+            self.fail("Failed to turn on cluster deletion protection." \
+                      "Status code: {}. Error: {}".format(resp.status_code, resp.content))
+
+        #Test deleting app service with v2 api
+        resp = self.capellaAPIv2.delete_sgw_backend(self.tenant_id, self.project_id,
+                                                    self.cluster_id, sgw_id)
+        if resp.status_code != 409:
+            self.fail("Expected: {}, Returned: {}".format(409, resp.status_code))
