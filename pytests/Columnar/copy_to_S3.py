@@ -884,12 +884,14 @@ class CopyToS3(ColumnarBaseTest):
         if not self.create_external_dataset(dataset_obj):
             self.fail("Failed to create external dataset on destination S3 bucket")
 
-        objects_in_s3 = [str(x) for x in perform_S3_operation(aws_access_key=self.aws_access_key,
-                                                              aws_secret_key=self.aws_secret_key,
-                                                              region=self.aws_region,
-                                                              aws_session_token=self.aws_session_token,
-                                                              bucket_name=self.sink_s3_bucket_name,
-                                                              get_bucket_objects=True)]
+        files = perform_S3_operation(aws_access_key=self.aws_access_key,
+                                     aws_secret_key=self.aws_secret_key,
+                                     region=self.aws_region,
+                                     aws_session_token=self.aws_session_token,
+                                     bucket_name=self.sink_s3_bucket_name,
+                                     get_bucket_objects=True)
+
+        objects_in_s3 = [str(x) for x in files]
 
         results = []
         for i in range(len(datasets)):
@@ -954,12 +956,14 @@ class CopyToS3(ColumnarBaseTest):
         if not self.create_external_dataset(dataset_obj):
             self.fail("Failed to create external dataset on destination S3 bucket")
 
-        objects_in_s3 = [str(x) for x in perform_S3_operation(aws_access_key=self.aws_access_key,
-                                                              aws_secret_key=self.aws_secret_key,
-                                                              region=self.aws_region,
-                                                              aws_session_token=self.aws_session_token,
-                                                              bucket_name=self.sink_s3_bucket_name,
-                                                              get_bucket_objects=True)]
+        files = perform_S3_operation(aws_access_key=self.aws_access_key,
+                                     aws_secret_key=self.aws_secret_key,
+                                     region=self.aws_region,
+                                     aws_session_token=self.aws_session_token,
+                                     bucket_name=self.sink_s3_bucket_name,
+                                     get_bucket_objects=True)
+
+        objects_in_s3 = [str(x) for x in files]
 
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
@@ -1446,7 +1450,7 @@ class CopyToS3(ColumnarBaseTest):
                        "database_name": datasets[i].database_name,
                        "destination_bucket": self.sink_s3_bucket_name,
                        "destination_link_name": destination_link, "path": path, "validate_error_msg": True,
-                       "expected_error": "Link Default.{0} does not exist".format(destination_link),
+                       "expected_error": "Link {0} does not exist".format(destination_link),
                        "expected_error_code": 24006}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -1476,7 +1480,7 @@ class CopyToS3(ColumnarBaseTest):
                        "dataverse_name": datasets[i].dataverse_name,
                        "destination_bucket": self.cbas_util.generate_name(),
                        "destination_link_name": external_link_obj.full_name, "path": path, "validate_error_msg": True,
-                       "expected_error": "External source error. software.amazon.awssdk.services.s3.model.NoSuchBucketException: The specified bucket does not exist",
+                       "expected_error": "External sink error. software.amazon.awssdk.services.s3.model.NoSuchBucketException: The specified bucket does not exist",
                        "expected_error_code": 24086}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
@@ -1601,18 +1605,19 @@ class CopyToS3(ColumnarBaseTest):
         if not self.create_external_dataset(dataset_obj):
             self.fail("Failed to create external dataset on destination S3 bucket")
 
-        objects_in_s3 = [str(x) for x in perform_S3_operation(aws_access_key=self.aws_access_key,
-                                                              aws_secret_key=self.aws_secret_key,
-                                                              region=self.aws_region,
-                                                              aws_session_token=self.aws_session_token,
-                                                              bucket_name=self.sink_s3_bucket_name,
-                                                              get_bucket_objects=True)]
+        files = perform_S3_operation(aws_access_key=self.aws_access_key,
+                                     aws_secret_key=self.aws_secret_key,
+                                     region=self.aws_region,
+                                     aws_session_token=self.aws_session_token,
+                                     bucket_name=self.sink_s3_bucket_name,
+                                     get_bucket_objects=True)
+        objects_in_s3 = [str(x) for x in files]
 
         results = []
         dynamic_statement = "select count(*) from {0} where copy_dataset = \"{1}\" and country = \"{2}\""
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
-            statement = "select country, count(city) as cnt from {0} group by country;".format(datasets[i])
+            statement = "select country, count(city) as cnt from {0} group by country;".format(datasets[i].full_name)
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                statement)
             get_city_count_per_country = [x for x in result if x['cnt'] > 1]
@@ -1675,12 +1680,14 @@ class CopyToS3(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy to S3 statement failure")
 
-        objects_in_s3 = [str(x) for x in perform_S3_operation(aws_access_key=self.aws_access_key,
-                                                              aws_secret_key=self.aws_secret_key,
-                                                              region=self.aws_region,
-                                                              aws_session_token=self.aws_session_token,
-                                                              bucket_name=self.sink_s3_bucket_name,
-                                                              get_bucket_objects=True)]
+        files = perform_S3_operation(aws_access_key=self.aws_access_key,
+                                     aws_secret_key=self.aws_secret_key,
+                                     region=self.aws_region,
+                                     aws_session_token=self.aws_session_token,
+                                     bucket_name=self.sink_s3_bucket_name,
+                                     get_bucket_objects=True)
+
+        objects_in_s3 = [str(x) for x in files]
         if len(objects_in_s3) == 0:
             self.fail("Failed to execute copy statement, no objects present in S3 bucket")
 
@@ -1723,12 +1730,14 @@ class CopyToS3(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy to S3 statement failure")
 
-        objects_in_s3 = [str(x) for x in perform_S3_operation(aws_access_key=self.aws_access_key,
-                                                              aws_secret_key=self.aws_secret_key,
-                                                              region=self.aws_region,
-                                                              aws_session_token=self.aws_session_token,
-                                                              bucket_name=self.sink_s3_bucket_name,
-                                                              get_bucket_objects=True)]
+        files = perform_S3_operation(aws_access_key=self.aws_access_key,
+                                     aws_secret_key=self.aws_secret_key,
+                                     region=self.aws_region,
+                                     aws_session_token=self.aws_session_token,
+                                     bucket_name=self.sink_s3_bucket_name,
+                                     get_bucket_objects=True)
+
+        objects_in_s3 = [str(x) for x in files]
         if len(objects_in_s3) != 0:
             self.fail("Failed to execute copy statement, objects present for empty query in S3 bucket")
 

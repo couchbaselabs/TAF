@@ -424,7 +424,7 @@ class BackupRestore(ColumnarBaseTest):
                                                               self.cluster.instance_id,
                                                               backup_interval, retention, formatted_utc_time)
         if resp.status_code != 204:
-            self.fail("Failed to create scheduled backup")
+            self.fail("Failed to create scheduled backup with status code : {}".format(resp.status_code))
         time.sleep(60)
         override_token = self.capella["override_token"]
         dataset_count = self.dataset_count()
