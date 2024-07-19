@@ -115,9 +115,9 @@ class LoadCouchbaseDocs(object):
 
 
 class WorkLoadTask(Task):
-    def __init__(self, bucket, task_manager, op_type, database_information,
+    def __init__(self, task_manager, op_type, database_information,
                  operation_config,
-                 default_sirius_base_url="http://0.0.0.0:4000"):
+                 default_sirius_base_url="http://0.0.0.0:4000", bucket=None):
         """
         :param task_manager: Instance of TaskManager class
             (Jython_tasks.task_manager.TaskManager)
