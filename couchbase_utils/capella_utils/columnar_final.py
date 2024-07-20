@@ -742,24 +742,33 @@ class ColumnarUtils:
             instance.master.ip = instance.srv
             instance.master.hostname = instance.srv
 
-        rest = ClusterRestAPI(instance.master)
-        status, content = rest.cluster_details()
-        if not status:
-            raise Exception("Error while fetching pools/default using "
-                            "connection string")
+        try:
+            rest = ClusterRestAPI(instance.master)
+        except Exception as err:
+            if "ServerUnavailableException" in str(err):
+                self.log.info(
+                    "DNS entry for the cluster might not have propogated, "
+                    "hence waiting for 5 minutes to retry.")
+                time.sleep(300)
+                rest = ClusterRestAPI(instance.master)
+        finally:
+            status, content = rest.cluster_details()
+            if not status:
+                raise Exception("Error while fetching pools/default using "
+                                "connection string")
 
-        instance.servers = list()
+            instance.servers = list()
 
-        for t_server in content["nodes"]:
-            temp_server = TestInputServer()
-            temp_server.ip = t_server.get("hostname").replace(":8091", "")
-            temp_server.hostname = t_server.get("hostname")
-            temp_server.services = t_server.get("services")
-            temp_server.port = "18091"
-            temp_server.type = "columnar"
-            temp_server.memcached_port = "11207"
-            temp_server.rest_username = instance.username
-            temp_server.rest_password = instance.password
-            instance.servers.append(temp_server)
-        instance.nodes_in_cluster = instance.servers
-        instance.cbas_cc_node = instance.servers[0]
+            for t_server in content["nodes"]:
+                temp_server = TestInputServer()
+                temp_server.ip = t_server.get("hostname").replace(":8091", "")
+                temp_server.hostname = t_server.get("hostname")
+                temp_server.services = t_server.get("services")
+                temp_server.port = "18091"
+                temp_server.type = "columnar"
+                temp_server.memcached_port = "11207"
+                temp_server.rest_username = instance.username
+                temp_server.rest_password = instance.password
+                instance.servers.append(temp_server)
+            instance.nodes_in_cluster = instance.servers
+            instance.cbas_cc_node = instance.servers[0]
