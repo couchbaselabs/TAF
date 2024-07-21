@@ -1279,7 +1279,7 @@ class CopyToS3(ColumnarBaseTest):
                                                                   region=self.aws_region,
                                                                   aws_session_token=self.aws_session_token,
                                                                   bucket_name=self.sink_s3_bucket_name,
-                                                                  get_bucket_objects=True)][0]
+                                                                  get_bucket_objects=True)]
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             file_to_download = [x for x in verification_file if x.startswith(path)][0]
@@ -1377,7 +1377,7 @@ class CopyToS3(ColumnarBaseTest):
                                                                   region=self.aws_region,
                                                                   aws_session_token=self.aws_session_token,
                                                                   bucket_name=self.sink_s3_bucket_name,
-                                                                  get_bucket_objects=True)][0]
+                                                                  get_bucket_objects=True)]
 
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
@@ -1399,7 +1399,7 @@ class CopyToS3(ColumnarBaseTest):
                     data = json.loads(line)
                     json_data.append(data)
 
-            sorted_data = sorted(json_data, key=lambda x: (-x['avg_rating'], -x['country']))
+            sorted_data = sorted(json_data, key=lambda x: (-x['avg_rating'], x['country'][::-1]))
 
             for dict1, dict2 in zip(json_data, sorted_data):
                 if dict1 != dict2:
