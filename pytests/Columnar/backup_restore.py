@@ -412,7 +412,7 @@ class BackupRestore(ColumnarBaseTest):
 
     def test_schedule_backup(self):
         self.base_infra_setup()
-        backup_interval = self.input.param("backup_interval", 4)
+        backup_interval = self.input.param("backup_interval", 24)
         retention = self.input.param("backup_retention", 24)
         self.load_data_to_source(0, self.no_of_docs, 0, self.no_of_docs)
         self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
