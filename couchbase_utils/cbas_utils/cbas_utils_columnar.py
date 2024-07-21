@@ -4015,7 +4015,6 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     dataverse_obj = self.get_dataverse_obj(
                         self.format_name(dataverse_name), database_obj.name)
 
-
             dataset_name = self.generate_name(
                 name_cardinality=1, max_length=name_length,
                 fixed_length=fixed_length)
@@ -5578,7 +5577,7 @@ class CbasUtil(CBOUtil):
         """
         Retreives ingestion matrics for all collections
         """
-        cbas_helper = CBASHelper(cluster.cbas_cc_node)
+        cbas_helper = CBASHelper(cluster.master)
         try:
             resp = cbas_helper.get_ingestion_status(username, password)
             return resp.json()
@@ -5607,7 +5606,7 @@ class CbasUtil(CBOUtil):
                         self.log.debug(
                             "For collections {0} on link {1} ingestion "
                             "progress : {2}%".format(
-                                str(collections), link["name"], progress*100
+                                str(collections), link["name"], progress * 100
                             ))
                         if math.isclose(progress, 1.0):
                             completed = True
@@ -6139,6 +6138,30 @@ class CbasUtil(CBOUtil):
             self.log.info("Connecting all remote and kafka Links")
             for link in links:
                 if not self.connect_link(
+                        cluster, link.name,
+                        timeout=cbas_spec.get("api_timeout", 300),
+                        analytics_timeout=cbas_spec.get("cbas_timeout",
+                                                        300)):
+                    self.log.error("Failed to connect link {0}".format(
+                        link.name))
+                else:
+                    self.log.info("Successfully connected link {0}".format(
+                        link.name))
+
+    def disconnect_links(self, cluster, cbas_spec):
+        """
+                Connect all links present
+                """
+        # Connect link only when remote links or kafka links are present,
+        # Local link is connected by default and external links are not
+        # required to be connected.
+        results = list()
+        links = (self.get_all_link_objs("couchbase") +
+                 self.get_all_link_objs("kafka"))
+        if len(links) > 0:
+            self.log.info("Connecting all remote and kafka Links")
+            for link in links:
+                if not self.disconnect_link(
                         cluster, link.name,
                         timeout=cbas_spec.get("api_timeout", 300),
                         analytics_timeout=cbas_spec.get("cbas_timeout",

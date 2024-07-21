@@ -256,7 +256,7 @@ class MiniVolume:
     def stop_process(self, query_pass=False):
         self.base_object.run_queries = False
         self.base_object.get_cpu_stats = False
-        self.wait_for_job = [False]
+        self.wait_for_job[0] = False
         self.cpu_stat_job.join()
         self.base_object.query_job.join()
         if query_pass and not all(self.query_work_results):
@@ -320,5 +320,6 @@ class MiniVolume:
         if not self.scale_columnar_cluster(scale_nodes):
             self.base_object.fail("Failed to scale up the instance")
         self.base_object.cbas_util.wait_for_cbas_to_recover(self.base_object.cluster, timeout=3600)
+
         if stop_all_at_end:
             self.stop_process(query_pass)

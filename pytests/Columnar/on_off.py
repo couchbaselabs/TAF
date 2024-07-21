@@ -242,6 +242,8 @@ class OnOff(ColumnarBaseTest):
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count = self.dataset_count()
+        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
+        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
         resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
         if resp.status_code == 202:
             self.log.info("Started turning off instance")
@@ -275,6 +277,8 @@ class OnOff(ColumnarBaseTest):
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count = self.dataset_count()
+        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
+        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
         if not self.columnar_utils.scale_instance(
                 self.pod, self.tenant, self.tenant.project_id, self.cluster, 8):
             self.fail(
@@ -456,6 +460,8 @@ class OnOff(ColumnarBaseTest):
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count = self.dataset_count()
+        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
+        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
         pacific = pytz.timezone('US/Pacific')
         now = datetime.now(pacific)
 
@@ -579,6 +585,8 @@ class OnOff(ColumnarBaseTest):
             self.mini_volume.stop_crud_on_data_sources()
             self.cbas_util.wait_for_ingestion_complete()
             docs_in_collections_before = self.dataset_count()
+            self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
+            self.cbas_util.connect_links(self.cluster, self.columnar_spec)
             self.initiate_on_off()
             self.columnar_utils.update_columnar_instance_obj(
                 self.pod, self.tenant, self.cluster)

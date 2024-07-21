@@ -326,6 +326,8 @@ class BackupRestore(ColumnarBaseTest):
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count = self.dataset_count()
+        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
+        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
         backup_id = self.create_backup_wait_for_complete()
         dataset_count_after_backup = self.dataset_count()
         if dataset_count != dataset_count_after_backup:
@@ -335,14 +337,13 @@ class BackupRestore(ColumnarBaseTest):
         self.restore_wait_for_complete(backup_id)
         self.wait_for_instance_to_be_healthy()
         self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
-        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
+
         # validate data after restore
-        for collection in remote_datasets:
-            self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count_after_restore = self.dataset_count()
         if dataset_count != dataset_count_after_restore:
             self.fail("Data mismatch after restore")
         self.validate_entities_after_restore()
+        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
 
     def test_backup_restore_with_scaling(self):
         scale_stage = self.input.param("scale_stage")
@@ -353,6 +354,8 @@ class BackupRestore(ColumnarBaseTest):
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count = self.dataset_count()
+        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
+        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
         if scale_stage == "before_backup":
             self.scale_columnar_cluster(scale_nodes)
             backup_id = self.create_backup_wait_for_complete()
@@ -391,13 +394,11 @@ class BackupRestore(ColumnarBaseTest):
             self.scale_columnar_cluster(scale_nodes)
 
         self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
-        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
-        for collection in remote_datasets:
-            self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         self.validate_entities_after_restore()
         doc_count_after_restore = self.dataset_count()
         if dataset_count != doc_count_after_restore:
             self.fail("Dataset data count mismatch")
+        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
 
     def test_backup_retention_time(self):
         backup_time = self.input.param("backup_retention_time", 168)
@@ -416,6 +417,8 @@ class BackupRestore(ColumnarBaseTest):
         retention = self.input.param("backup_retention", 24)
         self.load_data_to_source(0, self.no_of_docs, 0, self.no_of_docs)
         self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
+        self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
+        self.cbas_util.connect_links(self.cluster, self.columnar_spec)
         current_utc_time = datetime.now(timezone.utc)
         current_utc_time = current_utc_time.replace(minute=30, second=0, microsecond=0)
         new_utc_time = current_utc_time + timedelta(hours=backup_interval)
@@ -444,11 +447,11 @@ class BackupRestore(ColumnarBaseTest):
         self.restore_wait_for_complete(backup["data"]["id"])
         self.wait_for_instance_to_be_healthy()
         self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
-        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
         dataset_count_after_restore = self.dataset_count()
         if dataset_count != dataset_count_after_restore:
             self.fail("Data mismatch after restore")
         self.validate_entities_after_restore()
+        self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
 
     def test_mini_volume_backup_restore(self):
         primary_key = [{"id": "string"}]
@@ -466,15 +469,17 @@ class BackupRestore(ColumnarBaseTest):
             self.mini_volume.stop_crud_on_data_sources()
             self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
             count_before_backup = self.dataset_count()
+            self.cbas_util.disconnect_links(self.cluster, self.columnar_spec)
+            self.cbas_util.connect_links(self.cluster, self.columnar_spec)
             backup_id = self.create_backup_wait_for_complete(timeout=backup_timeout)
             self.restore_wait_for_complete(backup_id, timeout=backup_timeout)
             self.wait_for_instance_to_be_healthy(timeout=3600)
             self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
-            self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
             dataset_count_after_restore = self.dataset_count()
             if count_before_backup != dataset_count_after_restore:
                 self.fail("Data mismatch after restore")
             self.validate_entities_after_restore()
+            self.cbas_util.connect_links(self.cluster, cbas_spec=self.columnar_spec)
 
         # A successful run
         self.log.info("Mini-Volume for backup-restore finished")
