@@ -112,8 +112,8 @@ class hostedOPD(OPD):
 
         if expiry:
             for load in self.load_defn:
-                load["pattern"] = [0, 80, 0, 0, 20]
-                load["load_type"] = ["read", "expiry"]
+                load["pattern"] = [0, 0, 0, 0, 100]
+                load["load_type"] = ["expiry"]
 
         if self.vector:
             self.load_defn = list()

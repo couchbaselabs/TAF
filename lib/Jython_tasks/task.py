@@ -246,6 +246,7 @@ class ScaleColumnarInstance(Task):
         self.servers = None
         self.poll_interval = poll_interval
         self.state = "healthy"
+        self.nodes = nodes
         self.columnar_utils = ColumnarUtils(self.log)
         self.columnar_utils.scale_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster, nodes)
         count = 1200
@@ -261,6 +262,7 @@ class ScaleColumnarInstance(Task):
 
     def call(self):
         end = time.time() + self.timeout
+        start = time.time()
         while end > time.time():
             try:
                 resp = self.columnar_utils.get_instance_info(
@@ -280,8 +282,8 @@ class ScaleColumnarInstance(Task):
                     self.log.info("{}: Status=={}".format(self.cluster.instance_id, self.state))
                     self.sleep(self.poll_interval)
                 else:
-                    self.log.info("Scaling the cluster completed. State == {}".
-                                  format(self.state))
+                    self.log.info("Scaling the cluster to {} nodes completed in {}. State == {}".
+                                  format(self.nodes, time.time() - start, self.state))
                     self.sleep(120)
                     self.result = True
                     break

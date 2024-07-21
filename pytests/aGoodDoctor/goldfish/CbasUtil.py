@@ -159,9 +159,10 @@ class DoctorCBAS():
     def drop_links(self, cluster, databases):
         client = cluster.SDKClients[0].cluster
         for database in databases:
-            statement = "drop link %s" % database.link_name
-            status, _, _, _, _ = execute_statement_on_cbas(client, statement)
-            self.log.info("Dropping link %s is %s" % (database.link_name, status))
+            for link in database.links:
+                statement = "drop link %s" % link
+                status, _, _, _, _ = execute_statement_on_cbas(client, statement)
+                self.log.info("Dropping link %s is %s" % (link, status))
 
     def drop_collections(self, cluster, databases):
         client = cluster.SDKClients[0].cluster

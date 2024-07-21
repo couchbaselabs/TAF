@@ -18,6 +18,8 @@ from datasources import KafkaClusterUtils
 from datasources import MongoDB
 from datasources import s3, CouchbaseRemoteCluster
 from table_view import TableView
+import random
+import string
 
 
 class Columnar(BaseTestCase, hostedOPD):
@@ -275,15 +277,34 @@ class Columnar(BaseTestCase, hostedOPD):
             for dataSource in self.data_sources["remoteCouchbase"] + self.data_sources["mongo"]:
                 for tenant in self.tenants:
                     for columnar in tenant.columnar_instances:
-                        dataSource.create_cbas_collections(columnar, dataSource.loadDefn.get("cbas")[0])
+                        self.drCBAS.disconnect_link(columnar, dataSource.link_name)
+                        self.sleep(60, "wait after previous link disconnect")
+                        dataSource.link_name = "{}_".format(dataSource.type) + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+                        dataSource.links.append(dataSource.link_name)
+                        self.drCBAS.create_links(columnar, [dataSource])
                         th = threading.Thread(
                             target=self.drCBAS.wait_for_ingestion,
                             args=(columnar, [dataSource], self.index_timeout))
                         th.start()
                         self.ingestion_ths.append(th)
-
+            self.sleep(300, "Wait for ingestion start before triggering scaling cycle")
             iterations = self.input.param("iterations", 1)
             nodes = self.num_nodes_in_columnar_instance
+            for i in range(iterations-1, -1, -1):
+                self.PrintStep("Scaling IN operation: %s" % str(i))
+                tasks = list()
+                nodes = nodes/2
+                for tenant in self.tenants:
+                    for cluster in tenant.columnar_instances:
+                        self.cluster_util.print_cluster_stats(cluster)
+                        _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
+                        self.task_manager.add_new_task(_task)
+                        tasks.append(_task)
+                # self.wait_for_rebalances(tasks)
+                for task in tasks:
+                    self.task_manager.get_task_result(task)
+                    self.assertTrue(task.result, "Scaling IN columnar failed!")
+                self.sleep(60)
             for i in range(0, iterations):
                 self.PrintStep("Scaling OUT operation: %s" % str(i+1))
                 tasks = list()
@@ -301,21 +322,6 @@ class Columnar(BaseTestCase, hostedOPD):
                     self.task_manager.get_task_result(task)
                     self.assertTrue(task.result, "Scaling OUT columnar failed!")
                 self.sleep(60)
-            for i in range(iterations-1, -1, -1):
-                self.PrintStep("Scaling IN operation: %s" % str(i))
-                tasks = list()
-                nodes = nodes/2
-                for tenant in self.tenants:
-                    for cluster in tenant.columnar_instances:
-                        self.cluster_util.print_cluster_stats(cluster)
-                        _task = ScaleColumnarInstance(self.pod, tenant, cluster, nodes, timeout=self.wait_timeout)
-                        self.task_manager.add_new_task(_task)
-                        tasks.append(_task)
-                # self.wait_for_rebalances(tasks)
-                for task in tasks:
-                    self.task_manager.get_task_result(task)
-                    self.assertTrue(task.result, "Scaling IN columnar failed!")
-                self.sleep(600)
             for th in self.ingestion_ths:
                 th.join()
 

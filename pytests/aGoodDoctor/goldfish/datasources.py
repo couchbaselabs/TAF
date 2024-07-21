@@ -44,6 +44,7 @@ class MongoDB(object):
         self.collections = list()
         self.primary_key = "_id"
         self.link_name = self.type + "_" + self.source_name
+        self.links = [self.link_name]
         
         self.cbas_queries = list()
         self.cbas_collections = list()
@@ -116,11 +117,12 @@ class MongoDB(object):
         client = cluster.SDKClients[0].cluster
         num_collections = num_collections or len(self.collections)
         i = 0
+        new_collections = list()
         while i < num_collections:
             mongo_collection = self.collections[i%len(self.collections)]
             cbas_coll_name = self.link_name + "_volCollection_" + str(i)
             cbas_coll_name = cbas_coll_name + "_" + "".join([random.choice(string.ascii_lowercase) for _ in range(5)])
-            self.cbas_collections.append(cbas_coll_name)
+            new_collections.append(cbas_coll_name)
             i += 1
             statement = "CREATE COLLECTION `{}` PRIMARY KEY (`_id`: string) ON {}.{} AT {};".format(
                                     cbas_coll_name, self.source_name, mongo_collection, self.link_name)
@@ -136,6 +138,8 @@ class MongoDB(object):
                         ON `{1}.{2}.{3}` AT `{4}` WITH {5}'.format(
                                     cbas_coll_name, self.prefix, self.source_name, mongo_collection, self.link_name, json.dumps(extra))
             execute_statement_on_cbas(client, statement)
+        self.cbas_collections.extend(new_collections)
+        return new_collections
 
     @staticmethod
     def perform_load(databases, wait_for_load=True, overRidePattern=None, tm=None, workers=10):
@@ -171,9 +175,10 @@ class CouchbaseRemoteCluster(object):
         self.remoteClusterCA = remoteCluster.root_ca
         self.bucket_util = bucket_util
         self.name = self.type = "remote"
-        self.dataset = "remote"
+        self.type = self.dataset = "remote"
         self.collections = list()
         self.link_name = "remote_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+        self.links = [self.link_name]
         self.cbas_queries = list()
         self.cbas_collections = list()
         self.query_map = dict()
@@ -201,7 +206,8 @@ class CouchbaseRemoteCluster(object):
     def create_cbas_collections(self, columnar, remote_collections=None):
         i = 0
         client = columnar.SDKClients[0].cluster
-        self.cbas_collections = list()
+        # self.cbas_collections = list()
+        new_collections = list()
         while i < remote_collections:
             for b in self.remoteCluster.buckets:
                 for s in self.bucket_util.get_active_scopes(b, only_names=True):
@@ -215,11 +221,12 @@ class CouchbaseRemoteCluster(object):
                         self.log.info("creating remote collections on couchbase: %s" % cbas_coll_name)
                         statement = 'CREATE COLLECTION `{}` ON {}.{}.{} AT `{}`'.format(
                                                 cbas_coll_name, b.name, s, c, self.link_name)
-                        self.cbas_collections.append(cbas_coll_name)
+                        new_collections.append(cbas_coll_name)
                         execute_statement_on_cbas(client, statement)
                         i += 1
                         if remote_collections and i == remote_collections:
-                            return
+                            self.cbas_collections.extend(new_collections)
+                            return new_collections
 
 
 class s3(object):
@@ -232,7 +239,9 @@ class s3(object):
         self.collections = list()
         self.primary_key = None
         self.region = "us-east-1"
+        self.type = "s3"
         self.link_name = "s3_" + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
+        self.links = [self.link_name]
         self.cbas_queries = list()
         self.cbas_collections = list()
         self.query_map = dict()
@@ -255,17 +264,20 @@ class s3(object):
     def create_cbas_collections(self, cluster, external_collections=None):
         client = cluster.SDKClients[0].cluster
         num_collections = external_collections or len(self.collections)
+        new_collections = list()
         i = 0
         while i < num_collections:
             cbas_coll_name = self.link_name + "_external_volCollection_" + str(i)
-            self.cbas_collections.append(cbas_coll_name)
+            new_collections.append(cbas_coll_name)
             i += 1
             self.log.info("creating external collections: %s" % cbas_coll_name)
             statement = 'CREATE EXTERNAL COLLECTION `%s`  ON `%s` AT `%s`  PATH "%s" WITH {"format":"json"}' % (
                 cbas_coll_name, "columnartest", self.link_name, "hotel")
             self.log.info(statement)
             execute_statement_on_cbas(client, statement)
+        self.cbas_collections.append(new_collections)
         self.copy_from_s3_into_standalone(cluster, external_collections)
+        return new_collections
 
     def copy_from_s3_into_standalone(self, cluster, standalone_collections=1):
         client = cluster.SDKClients[0].cluster
