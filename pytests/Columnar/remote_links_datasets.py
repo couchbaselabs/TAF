@@ -1,6 +1,3 @@
-import random
-import requests
-import time
 from queue import Queue
 
 from Columnar.columnar_base import ColumnarBaseTest

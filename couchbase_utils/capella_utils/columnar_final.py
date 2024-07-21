@@ -542,7 +542,7 @@ class ColumnarUtils:
                         if ("nodes" in content) and (len(content["nodes"]) ==
                                                      expected_num_of_nodes):
                             self.update_columnar_instance_obj(
-                                pod, tenant,instance)
+                                pod, tenant, instance)
                             return True
                     time.sleep(10)
                 self.log.error(

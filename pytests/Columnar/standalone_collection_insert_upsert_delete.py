@@ -65,21 +65,23 @@ class StandaloneCollection(ColumnarBaseTest):
         jobs = Queue()
         results = []
         for dataset in datasets:
-            doc_count= self.cbas_util.get_num_items_in_cbas_dataset(
+            doc_count = self.cbas_util.get_num_items_in_cbas_dataset(
                 self.instance, dataset.full_name)
             if doc_count != self.initial_doc_count:
                 self.fail("Number of docs inserted does not match the actual "
                           "number of docs present in dataset. Expected - {},"
                           " Actual - {}".format(
                     self.initial_doc_count, doc_count))
+            where_clause_for_delete_op = (
+                f"alias.id in (SELECT VALUE x.id FROM {dataset.full_name} "
+                f"as x limit {5})")
             jobs.put((
                 self.cbas_util.crud_on_standalone_collection,
                 {"cluster": self.instance, "collection_name": dataset.name,
                  "dataverse_name": dataset.dataverse_name,
                  "target_num_docs": self.initial_doc_count,
                  "time_for_crud_in_mins": 5,
-                 "where_clause_for_delete_op": "alias.id in (SELECT VALUE "
-                                               "x.id FROM {0} as x limit {1})",
+                 "where_clause_for_delete_op": where_clause_for_delete_op,
                  "doc_size": self.doc_size, "use_alias": True}))
 
         self.cbas_util.run_jobs_in_parallel(

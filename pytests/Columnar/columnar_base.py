@@ -108,8 +108,7 @@ class ColumnarBaseTest(BaseTestCase):
         if resp.status_code == 201:
             org_owner_key = resp.json()
         else:
-            self.log.error("Error while creating V4 API key for organization "
-                           "owner")
+            self.fail("Error while creating V4 API key for organization owner")
 
         self.capellaAPI.org_ops_apis.bearer_token = \
             self.capellaAPI.cluster_ops_apis.bearer_token = \

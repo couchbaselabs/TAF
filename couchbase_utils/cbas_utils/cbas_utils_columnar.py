@@ -3524,8 +3524,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                     collection_full_name))
                 if not self.delete_from_standalone_collection(
                         cluster, collection_name, dataverse_name, database_name,
-                        where_clause_for_delete_op.format(
-                            collection_full_name, 5), use_alias):
+                        where_clause_for_delete_op, use_alias):
                     self.log.error(
                         "Error while deleting docs in collection {"
                         "}".format(collection_full_name))
@@ -3559,10 +3558,12 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         # Make sure final number of docs are equal to target_num_docs
         while current_docs_count > target_num_docs:
             num_docs_to_delete = current_docs_count - target_num_docs
+            where_clause_for_delete_op = (
+                f"alias.id in (SELECT VALUE x.id FROM {collection_full_name} "
+                f"as x limit {num_docs_to_delete})")
             if not self.delete_from_standalone_collection(
                     cluster, collection_name, dataverse_name,
-                    where_clause_for_delete_op.format(
-                        collection_full_name, num_docs_to_delete), use_alias):
+                    where_clause_for_delete_op, use_alias):
                 self.log.error(
                     "Error while deleting docs in collection {"
                     "}".format(collection_full_name))

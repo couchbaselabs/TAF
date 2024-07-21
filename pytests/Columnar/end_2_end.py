@@ -1215,13 +1215,15 @@ class GoldfishE2E(GoldFishBaseTest):
             standalone_loader = StandaloneCollectionLoader(cluster.cbas_util, self.use_sdk_for_cbas)
             standalone_collection = random.choice([x for x in cluster.cbas_util.get_all_dataset_objs(
                 "standalone") if x.data_source is None])
+            where_clause_for_delete_op = (
+                f"alias.id in (SELECT VALUE x.id FROM {standalone_collection.full_name} "
+                f"as x limit {5})")
             cluster.jobs.put((
                 standalone_loader.crud_on_standalone_collection,
                 {'cluster': cluster, 'collection_name': standalone_collection.name,
                  'dataverse_name': standalone_collection.dataverse_name,
                  'target_num_docs': 10000, 'time_for_crud_in_mins': 120,
-                 "where_clause_for_delete_op": "alias.id in (SELECT VALUE "
-                                               "x.id FROM {0} as x limit {1})",
+                 "where_clause_for_delete_op": where_clause_for_delete_op,
                  "use_alias": True}))
             cluster.jobs.put((self.perform_collection_crud,
                               {"cluster": cluster, "time_for_crud": 5, "timeout": 120}))

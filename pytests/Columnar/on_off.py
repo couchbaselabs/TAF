@@ -234,37 +234,6 @@ class OnOff(ColumnarBaseTest):
         self.log.info("Synonyms entity matched") if synonyms == metadata_synonyms else self.fail("Synonyms entity "
                                                                                                  "mismatch")
 
-    def scale_columnar_cluster(self, nodes, timeout=3600):
-        status = None
-        start_time = time.time()
-        resp = self.columnarAPI.update_columnar_instance(self.tenant.id,
-                                                         self.tenant.project_id,
-                                                         self.cluster.instance_id,
-                                                         self.cluster.name, '', nodes)
-        if resp.status_code != 202:
-            self.fail("Failed to scale cluster")
-        time.sleep(20)
-        # check for nodes in the cluster
-        while status != "healthy" and time.time() < start_time + timeout:
-            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
-                                                                   self.tenant.project_id,
-                                                                   self.cluster.instance_id)
-            resp = resp.json()
-            status = resp["data"]["state"]
-            self.log.info("Instance is still scaling")
-            time.sleep(20)
-
-        nodes_in_cluster = 0
-        while nodes_in_cluster != nodes and time.time() < start_time + timeout:
-            servers = self.get_nodes(self.cluster)
-            nodes_in_cluster = len(servers)
-            if nodes_in_cluster == nodes:
-                return True
-            self.log.info("Waiting for server map to get updated")
-            time.sleep(20)
-        self.log.error("Failed to update server map")
-        return False
-
     def test_on_demand_on_off(self):
 
         self.base_infra_setup()
@@ -306,7 +275,16 @@ class OnOff(ColumnarBaseTest):
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         dataset_count = self.dataset_count()
-        self.scale_columnar_cluster(8)
+        if not self.columnar_utils.scale_instance(
+                self.pod, self.tenant, self.tenant.project_id, self.cluster, 8):
+            self.fail(
+                "Scale API failed while scaling instance from {0} --> "
+                "{1}".format(len(self.cluster.nodes_in_cluster), 8))
+
+        if not self.columnar_utils.wait_for_instance_scaling_operation(
+                self.pod, self.tenant, self.tenant.project_id, self.cluster):
+            self.fail("Failed to scale OUT instance even after 3600 seconds")
+
         resp = self.columnarAPI.turn_off_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
         if resp.status_code == 202:
             self.log.info("Started turning off instance")
@@ -323,7 +301,15 @@ class OnOff(ColumnarBaseTest):
             self.fail("API Failed to turn on instance with status code : {}".format(resp.status_code))
         if not self.wait_for_on():
             self.fail("Failed to turn on the instance")
-        self.scale_columnar_cluster(2)
+        if not self.columnar_utils.scale_instance(
+                self.pod, self.tenant, self.tenant.project_id, self.cluster, 2):
+            self.fail(
+                "Scale API failed while scaling instance from {0} --> "
+                "{1}".format(len(self.cluster.nodes_in_cluster), 8))
+
+        if not self.columnar_utils.wait_for_instance_scaling_operation(
+                self.pod, self.tenant, self.tenant.project_id, self.cluster):
+            self.fail("Failed to scale OUT instance even after 3600 seconds")
 
         self.columnar_utils.update_columnar_instance_obj(
             self.pod, self.tenant, self.cluster)
@@ -530,7 +516,7 @@ class OnOff(ColumnarBaseTest):
         if resp.status_code != 200:
             self.fail("Failed to add schedule to the instance {}".format(self.cluster.instance_id))
 
-        internal_support_token = self.input.param("internal_support_token")
+        internal_support_token = self.capella.get("override_token")
         columnar_internal = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user,
                                         self.tenant.pwd, internal_support_token)
         resp = columnar_internal.set_trigger_time_for_onoff(next_friday_1630_in_utc,
