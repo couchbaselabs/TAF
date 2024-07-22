@@ -10,7 +10,7 @@ from couchbase_utils.kafka_util.confluent_utils import ConfluentCloudAPIs, Kafka
 from CbasLib.cbas_entity_columnar import KafkaClusterDetails
 from sirius_client_framework.multiple_database_config import MongoLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
-from Jython_tasks.sirius_task import WorkLoadTask
+from Jython_tasks.sirius_task import WorkLoadTask, DatabaseManagementTask
 from sirius_client_framework.sirius_constants import SiriusCodes
 from capella_utils.columnar_final import ColumnarRBACUtil
 
@@ -35,6 +35,7 @@ class ConfluentKafka(ColumnarBaseTest):
         self.connect_cluster_hostname = self.input.param("connect_cluster_hostname",
             "http://54.92.231.154:8083")
         self.topic_prefix = self.generate_random_entity_name(type="topic_prefix")
+        self.reuse_topic = self.input.param("reuse_topic", True)
 
         # mongodb params
         self.mongo_username = self.input.param("mongo_user", "Administrator")
@@ -43,12 +44,15 @@ class ConfluentKafka(ColumnarBaseTest):
             "mongodb://Administrator:password@mongo.cbqeoc.com:27017/"
             "?retryWrites=true&w=majority&replicaSet=rs0")
         self.mongo_database = self.input.param("mongo_database", "functional_testing")
-        self.mongo_collection = self.input.param("mongo_collection", "functional_testing_static")
+        if not self.reuse_topic:
+            self.mongo_collection = self.generate_random_entity_name(type="mongo_collection")
+            self.create_or_delete_mongo_collection(SiriusCodes.DBMgmtOps.CREATE)
+        else:
+            self.mongo_collection = "functional_testing_static"
         self.mongo_collections = self.mongo_database + "." + self.mongo_collection
         self.doc_count = self.input.param("doc_count", "100000")
 
         self.topic_name = self.topic_prefix + "." + self.mongo_collections
-        self.reuse_topic = self.input.param("reuse_topic", True)
 
         self.cloud_access_key = self.input.param("cloud_access_key")
         self.cloud_secret_key = self.input.param("cloud_secret_key")
@@ -99,6 +103,9 @@ class ConfluentKafka(ColumnarBaseTest):
         self.log_setup_status(self.__class__.__name__, "Started",
                               stage=self.tearDown.__name__)
 
+        if not self.reuse_topic:
+            self.create_or_delete_mongo_collection(SiriusCodes.DBMgmtOps.DELETE)
+
         self.confluent_utils.cleanup_kafka_resources(self.kafka_obj)
 
         super(ConfluentKafka, self).tearDown()
@@ -123,6 +130,26 @@ class ConfluentKafka(ColumnarBaseTest):
         self.task_manager.add_new_task(task)
         self.task_manager.get_task_result(task)
         return task
+
+    def create_or_delete_mongo_collection(self, op_type):
+        database_information = MongoLoader(
+            username=self.mongo_username, password=self.mongo_password,
+            connection_string=self.mongo_connection_string,
+            collection=self.mongo_collection, database=self.mongo_database,
+        )
+        operation_config = WorkloadOperationConfig(
+            start=0, end=0,
+            template=SiriusCodes.Templates.PERSON,
+            doc_size=1024,
+        )
+        task_create = DatabaseManagementTask(
+            task_manager=self.task_manager,
+            op_type=op_type,
+            database_information=database_information,
+            operation_config=operation_config,
+        )
+        self.task_manager.add_new_task(task_create)
+        self.task_manager.get_task_result(task_create)
 
     def populate_kafka_connector_details(self):
         kafka_connector_details = {
@@ -245,6 +272,8 @@ class ConfluentKafka(ColumnarBaseTest):
         self.log.info(f"Successfully disconnected confluent kafka link - {self.kafka_link_name}")
 
     def test_crud_operations_against_confluent_kafka_links(self):
+        self.perform_crud_op_on_mongo_collection(SiriusCodes.DocOps.BULK_CREATE, 0, self.doc_count)
+
         kafka_cluster_details = self.kafka_cluster_obj.generate_confluent_kafka_cluster_detail(
             brokers_url="pkc-p11xm.us-east-1.aws.confluent.cloud:9092", auth_type=self.authentication_type,
             encryption_type="TLS", api_key=self.kafka_obj.cluster_access_key,
@@ -264,7 +293,6 @@ class ConfluentKafka(ColumnarBaseTest):
         self.cbas_util.connect_link(self.cluster, self.kafka_link_name)
         self.log.info(f"Successfully connected confluent kafka link - {self.kafka_link_name}")
 
-        self.perform_crud_op_on_mongo_collection(SiriusCodes.DocOps.BULK_CREATE, 0, self.doc_count)
         result = self.cbas_util.wait_for_ingestion_complete(self.cluster, self.collection_name,
         self.doc_count, 3600)
         if not result:
