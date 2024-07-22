@@ -54,17 +54,6 @@ class ListBucket(GetCluster):
         self.expected_res['data'][0]['id'] = self.bucket_id
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.curr_owner_key)
-
-        # Delete the bucket that was created.
-        self.log.info("Deleting bucket: {}".format(self.bucket_id))
-        if self.capellaAPI.cluster_ops_apis.delete_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.bucket_id).status_code != 204:
-            self.log.error("Error while deleting bucket.")
-        else:
-            self.log.info("Successfully deleted bucket.")
-
         super(ListBucket, self).tearDown()
 
     def test_api_path(self):

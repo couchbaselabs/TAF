@@ -21,7 +21,7 @@ class ClusterOff(GetCluster):
                 "description": "Turn off a valid cluster"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/clusters/{}/off",
+                "url": "/v3/organizations/{}/projects/{}/clusters/{}/activationState",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -29,12 +29,12 @@ class ClusterOff(GetCluster):
                 }
             }, {
                 "description": "Replace clusters with cluster in URI",
-                "url": "/v4/organizations/{}/projects/{}/cluster/{}/off",
+                "url": "/v4/organizations/{}/projects/{}/cluster/{}/activationState",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/projects/{}/clusters/cluster/{}/off",
+                "url": "/v4/organizations/{}/projects/{}/clusters/cluster/{}/activationState",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -42,20 +42,47 @@ class ClusterOff(GetCluster):
                                "organizationID",
                 "invalid_organizationID": self.replace_last_character(
                     self.organisation_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }, {
                 "description": "Switch cluster on but with non-hex projectID",
                 "invalid_projectID": self.replace_last_character(
                     self.project_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }, {
                 "description": "Switch cluster on but with non-hex clusterID",
                 "invalid_clusterID": self.replace_last_character(
                     self.cluster_id, non_hex=True),
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }
         ]
         failures = list()
@@ -83,7 +110,7 @@ class ClusterOff(GetCluster):
                     org, proj, clus)
 
             self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
-                "/v4/organizations/{}/projects/{}/clusters/{}/off"
+                "/v4/organizations/{}/projects/{}/clusters/{}/activationState"
 
             if self.validate_testcase(result, [409, 202], testcase, failures):
                 if not self.validate_onoff_state(["turningOff", "turnedOff"]):
