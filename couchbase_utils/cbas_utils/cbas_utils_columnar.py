@@ -64,7 +64,7 @@ class BaseUtil(object):
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if status != 'success':
             return False
-        return json.loads(str(results[0]))
+        return results[0]
 
     def execute_statement_on_cbas_util(
             self, cluster, statement, mode=None, timeout=300,
@@ -6898,11 +6898,18 @@ class CbasUtil(CBOUtil):
                     error_code = errors[0]["code"]
                 else:
                     error_code = errors["code"]
-                if error_code != 24230:
-                    break
+
+                if isinstance(errors, list):
+                    actual_error = (errors[0]["msg"]).replace("`", "")
+
                 else:
+                    actual_error = errors["msg"].replace("`", "")
+
+                if error_code == 24230 and "WaitUntilReady" in actual_error:
                     self.log.info("Sleeping 30 seconds before executing again")
                     time.sleep(30)
+                else:
+                    break
             else:
                 break
         if validate_error_msg:

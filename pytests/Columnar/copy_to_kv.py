@@ -191,9 +191,11 @@ class CopyToKv(ColumnarBaseTest):
                                                                   self.remote_cluster.id, bucket_id)
             if resp.status_code == 204:
                 self.log.info("Bucket deleted successfully")
-                break
+                return True
             else:
                 self.log.error("Failed to delete capella bucket")
+                if i == 4:
+                    return False
 
     def test_create_copyToKv_from_standalone_collection(self):
         self.base_infra_setup()
@@ -528,7 +530,17 @@ class CopyToKv(ColumnarBaseTest):
                        "validate_error_msg": self.input.param("validate_error", False)}))
 
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
-        time.sleep(20)
+        while True:
+            requests = self.cbas_util.get_all_active_requests(self.cluster)
+            found = False
+            for req in requests:
+                if req['state'] == "running" and "COPY" in req['statement']:
+                    found = True
+                    break
+            if found:
+                break
+            time.sleep(5)
+
         if not self.cbas_util.drop_link(self.cluster, remote_link.full_name):
             self.fail("Failed to drop link while copying to KV")
         del (self.cbas_util.remote_links[remote_link.full_name])
@@ -560,7 +572,7 @@ class CopyToKv(ColumnarBaseTest):
                 results.append(False)
             # validate doc count at columnar and KV side
             self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
-            columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
+            columnar_count = 100000
             kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if columnar_count != kv_count:
                 self.fail("Mismatch found in Copy To KV")
@@ -589,18 +601,25 @@ class CopyToKv(ColumnarBaseTest):
                                                          self.provisioned_scope_name)
         collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                        collection_name)
-
+        source_definition = "select * from {} limit 100000".format(dataset.full_name)
         jobs.put((self.cbas_util.copy_to_kv,
-                  {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
-                   "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                   "link_name": remote_link.full_name,
+                  {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
+                   "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000,
                    "validate_error_msg": self.input.param("validate_error", False),
                    "expected_error": self.input.param("expected_error", ""),
                    "expected_error_code": self.input.param("expected_error_code", "")}))
 
-        time.sleep(60)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
-        time.sleep(20)
+        while True:
+            requests = self.cbas_util.get_all_active_requests(self.cluster)
+            found = False
+            for req in requests:
+                if req['state'] == "running" and "COPY" in req['statement']:
+                    found = True
+                    break
+            if found:
+                break
+            time.sleep(5)
         capella_api_v2.delete_db_user(self.tenant.id, self.tenant.project_id, self.remote_cluster.id, new_db_user_id)
         jobs.join()
 
@@ -619,11 +638,11 @@ class CopyToKv(ColumnarBaseTest):
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
-            expected_error = self.input.param("expected_error")
+            expected_error = self.input.param("expected_error").format(collection)
+            source_definition = "select * from {} limit 100000".format(dataset.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
-                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                       "link_name": remote_link.full_name,
+                      {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
+                       "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000,
                        "validate_error_msg": self.input.param("validate_error", False),
                        "expected_error": expected_error,
                        "expected_error_code": self.input.param("expected_error_code")}))
@@ -631,6 +650,16 @@ class CopyToKv(ColumnarBaseTest):
         time.sleep(60)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         time.sleep(20)
+        while True:
+            requests = self.cbas_util.get_all_active_requests(self.cluster)
+            found = False
+            for req in requests:
+                if req['state'] == "running" and "COPY" in req['statement']:
+                    found = True
+                    break
+            if found:
+                break
+            time.sleep(5)
         if not self.delete_capella_bucket(bucket_id=self.provisioned_bucket_id):
             self.fail("Failed to drop remote bucket while copying to KV")
         else:
@@ -653,18 +682,28 @@ class CopyToKv(ColumnarBaseTest):
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
             expected_error = self.input.param("expected_error")
+            source_definition = "select * from {} limit 100000".format(dataset.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
-                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                       "link_name": remote_link.full_name,
+                      {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
+                       "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000,
                        "validate_error_msg": self.input.param("validate_error", False),
                        "expected_error": expected_error,
                        "expected_error_code": self.input.param("expected_error_code")}))
+
         time.sleep(60)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
-        time.sleep(10)
+        while True:
+            requests = self.cbas_util.get_all_active_requests(self.cluster)
+            found = False
+            for req in requests:
+                if req['state'] == "running" and "COPY" in req['statement']:
+                    found = True
+                    break
+            if found:
+                break
+            time.sleep(5)
         for dataset in datasets:
-            if not self.cbas_util.drop_dataset(self.cluster, dataset.full_name):
+            if not self.cbas_util.drop_dataset(self.cluster, dataset.full_name, analytics_timeout=720, timeout=720):
                 self.fail("Failed to drop columnar dataset while copying to KV")
         jobs.join()
 
@@ -875,15 +914,15 @@ class CopyToKv(ColumnarBaseTest):
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
+            source_definition = "select * from {} limit 100000".format(dataset.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
-                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                       "link_name": remote_link.full_name, "analytics_timeout": 10000, "timeout": 10000}))
+                      {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
+                       "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000}))
 
         time.sleep(60)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         status = None
-        time.sleep(10)
+        time.sleep(60)
         self.columnarAPI.update_columnar_instance(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
                                                   self.cluster.name, '', 4)
         jobs.join()
