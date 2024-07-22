@@ -34,7 +34,7 @@ class ConfluentKafka(ColumnarBaseTest):
 
         self.connect_cluster_hostname = self.input.param("connect_cluster_hostname",
             "http://54.92.231.154:8083")
-        self.topic_prefix = self.input.param("topic_prefix", "test")
+        self.topic_prefix = self.generate_random_entity_name(type="topic_prefix")
 
         # mongodb params
         self.mongo_username = self.input.param("mongo_user", "Administrator")
