@@ -453,7 +453,7 @@ class CopyToKv(ColumnarBaseTest):
                 self.log.error("Failed to create remote dataset on KV")
                 results.append(False)
             # validate doc count at columnar and KV side
-            if not self.cbas_util.wait_for_ingestion_complete(self.cluster, remote_dataset.full_name, columnar_count):
+            if not self.cbas_util.wait_for_ingestion_complete(self.cluster, remote_dataset.full_name, 100000):
                 results.append(False)
             kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if 100000 != kv_count:
