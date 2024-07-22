@@ -421,8 +421,7 @@ class ColumnarRBAC(ColumnarBaseTest):
             backup_id: fetch the backup info for backup_id
             restore_id: Optional, only provide when to fetch specific restore
         """
-        resp = self.columnarAPI.list_restores(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
-                                              backup_id)
+        resp = self.columnarAPI.list_restores(self.tenant.id, self.tenant.project_id, self.cluster.instance_id)
         restore_list = resp.json()["data"]
         if not restore_id:
             return restore_list
@@ -432,7 +431,23 @@ class ColumnarRBAC(ColumnarBaseTest):
                     return restore["data"]
         return -1
 
-    def create_backup_wait_for_complete(self, retention=None):
+    def wait_for_backup_complete(self, backup_id, timeout=3600):
+        start_time = time.time()
+        backup_state = None
+        while backup_state != "complete" and time.time() < start_time + timeout:
+            backup_state = self.get_backup_from_backup_lists(backup_id)
+            if backup_state == -1:
+                self.fail("Backup with backup id: {0}, Not found".format(backup_id))
+            backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
+            self.log.info("Waiting for backup to be completed, current state: {}".format(backup_state))
+            time.sleep(60)
+        if backup_state != "complete":
+            self.fail("Failed to create backup with timeout of {}".format(timeout))
+        else:
+            self.log.info("Successfully created backup in {} seconds".format(time.time() - start_time))
+            return True
+
+    def create_backup_wait_for_complete(self, retention=None, timeout=3600):
         if retention:
             resp = self.columnarAPI.create_backup(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
                                                   retention)
@@ -442,24 +457,42 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.log.info("Backup Id: {}".format(backup_id))
 
         # wait for backup to complete
-        backup_state = None
-        while backup_state != "complete":
-            backup_state = self.get_backup_from_backup_lists(backup_id)
-            if backup_state == -1:
-                self.fail("Backup with backup id: {0}, Not found".format(backup_id))
-            backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
-            self.log.info("Waiting for backup to be completed, current state: {}".format(backup_state))
+        self.wait_for_backup_complete(backup_id, timeout)
         return backup_id
 
-    def restore_wait_for_complete(self, backup_id):
-        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.instance_id, backup_id)
+    def restore_wait_for_complete(self, backup_id, timeout=3600):
+        resp = self.columnarAPI.create_restore(self.tenant.id, self.tenant.project_id, self.cluster.instance_id,
+                                               backup_id)
         restore_id = resp.json()["id"]
+        start_time = time.time()
         self.log.info("Restore Id: {}".format(restore_id))
         restore_state = None
-        while restore_state != "complete":
-            restore_state = self.get_restore_from_restore_list(backup_id, restore_id)
+        while restore_state != "complete" and time.time() < start_time + timeout:
+            restore_state = self.get_restore_from_restore_list(backup_id, restore_id)["status"]
             if restore_state == -1:
                 self.fail("Restore id: {0} not found for backup id: {1}".format(restore_id, backup_id))
+            self.log.info("Waiting for restore to complete, current status {0}".format(restore_state))
+            time.sleep(60)
+        if restore_state != "complete":
+            self.fail("Fail to restore backup with timeout of {}".format(timeout))
+        else:
+            self.log.info("Successfully restored backup in {} seconds".format(time.time() - start_time))
+
+    def wait_for_instance_to_be_healthy(self, timeout=600):
+        status = None
+        start_time = time.time()
+        while status != "healthy" and time.time() < start_time + timeout:
+            resp = self.columnarAPI.get_specific_columnar_instance(self.tenant.id,
+                                                                   self.tenant.project_id,
+                                                                   self.cluster.instance_id)
+            resp = resp.json()
+            status = resp["data"]["state"]
+            self.log.info("Instance state: {}".format(status))
+            time.sleep(30)
+        if status != "healthy":
+            self.fail("Instance failed to be healthy")
+        else:
+            self.log.info("Instance is in healthy state")
 
     def generate_random_password(self, length=12):
         """Generate a random password."""
@@ -668,6 +701,8 @@ class ColumnarRBAC(ColumnarBaseTest):
         if self.cluster_backup_restore:
             backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
+            self.wait_for_instance_to_be_healthy()
+            self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
 
         if self.scale_cluster:
             self.scale_columnar_cluster(4)
