@@ -228,16 +228,19 @@ class CopyToKv(ColumnarBaseTest):
                        "link_name": remote_link.full_name}))
 
         time.sleep(60)
+        self.log.info("Running Copy To KV statements")
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
         if not all(results):
             self.fail("Copy to KV statement failed")
 
         # validate the copied data
         if self.input.param("disconnect_link", False):
+            self.log.info("Disconnection remote link: {0}".format(remote_link.full_name))
             if not self.cbas_util.connect_link(self.cluster, remote_link.full_name):
                 self.fail("Failed to connect link")
 
         for i in range(len(datasets)):
+            self.log.info("Creating remote collection on KV scope used for copy to kv")
             remote_dataset = self.cbas_util.create_remote_dataset_obj(self.cluster, self.provisioned_bucket_name,
                                                                       self.provisioned_scope_name,
                                                                       provisioned_collections[i], remote_link,
@@ -259,6 +262,10 @@ class CopyToKv(ColumnarBaseTest):
                                format(provisioned_collections[i], datasets[i].full_name,
                                       columnar_count, kv_count))
                 results.append(columnar_count == kv_count)
+            else:
+                self.log.info("Doc count match in KV and columnar {0}, {1}, expected: {2}, got: {3}".format(
+                    provisioned_collections[i], datasets[i].full_name,
+                    columnar_count, kv_count))
         if not all(results):
             self.fail("Mismatch found in Copy To KV")
 
@@ -332,7 +339,7 @@ class CopyToKv(ColumnarBaseTest):
             self.fail("Mismatch found in Copy To KV")
 
     def test_create_copyToKv_duplicate_data_key(self):
-        self.base_infra_setup()
+        self.base_infra_setup([{"email": "string"}])
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
         remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
         jobs = Queue()
@@ -364,7 +371,6 @@ class CopyToKv(ColumnarBaseTest):
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
                        "link_name": remote_link.full_name, "primary_key": primary_key}))
 
-        time.sleep(60)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
         if not all(results):
             self.fail("Copy to KV statement failed")
@@ -423,9 +429,9 @@ class CopyToKv(ColumnarBaseTest):
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
+            source_definition = "select * from {} limit 100000".format(dataset.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
-                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
+                      {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
                        "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000}))
 
         time.sleep(60)
@@ -447,15 +453,14 @@ class CopyToKv(ColumnarBaseTest):
                 self.log.error("Failed to create remote dataset on KV")
                 results.append(False)
             # validate doc count at columnar and KV side
-            columnar_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if not self.cbas_util.wait_for_ingestion_complete(self.cluster, remote_dataset.full_name, columnar_count):
                 results.append(False)
             kv_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
-            if columnar_count != kv_count:
+            if 100000 != kv_count:
                 self.log.error("Doc count mismatch in KV and columnar {0}, {1}, expected: {2} got: {3}".
                                format(provisioned_collections[i], datasets[i].full_name,
-                                      columnar_count, kv_count))
-                results.append(columnar_count == kv_count)
+                                      100000, kv_count))
+                results.append(100000 == kv_count)
         if not all(results):
             self.fail("Mismatch found in Copy To KV")
 
@@ -516,19 +521,17 @@ class CopyToKv(ColumnarBaseTest):
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
+            source_definition = "select * from {} limit 100000".format(dataset.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
-                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
-                       "link_name": remote_link.full_name,
-                       "validate_error_msg": self.input.param("validate_error", False),
-                       "analytics_timeout": 100000, "timeout": 100000}))
+                      {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
+                       "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000,
+                       "validate_error_msg": self.input.param("validate_error", False)}))
 
-        time.sleep(60)
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
         time.sleep(20)
         if not self.cbas_util.drop_link(self.cluster, remote_link.full_name):
             self.fail("Failed to drop link while copying to KV")
-        del(self.cbas_util.remote_links[remote_link.full_name])
+        del (self.cbas_util.remote_links[remote_link.full_name])
         jobs.join()
 
         # validate data in KV re-create remote link

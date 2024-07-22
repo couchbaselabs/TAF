@@ -6888,9 +6888,22 @@ class CbasUtil(CBOUtil):
                                            dataverse_name, source_definition,
                                            dest_bucket, link_name, primary_key, function)
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
-            cluster, cmd, username=username, password=password,
-            timeout=timeout, analytics_timeout=analytics_timeout)
+        for i in range(5):
+            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+                cluster, cmd, username=username, password=password,
+                timeout=timeout, analytics_timeout=analytics_timeout)
+            if status != "success":
+                if isinstance(errors, list):
+                    error_code = errors[0]["code"]
+                else:
+                    error_code = errors["code"]
+                if error_code != 24230:
+                    break
+                else:
+                    self.log.info("Sleeping 30 seconds before executing again")
+                    time.sleep(30)
+            else:
+                break
         if validate_error_msg:
             return self.validate_error_in_response(
                 status, errors, expected_error, expected_error_code)
