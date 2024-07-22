@@ -337,6 +337,7 @@ class BackupRestore(ColumnarBaseTest):
         self.restore_wait_for_complete(backup_id)
         self.wait_for_instance_to_be_healthy()
         self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
+        self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=300)
 
         # validate data after restore
         dataset_count_after_restore = self.dataset_count()
@@ -394,6 +395,7 @@ class BackupRestore(ColumnarBaseTest):
             self.scale_columnar_cluster(scale_nodes)
 
         self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
+        self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=300)
         self.validate_entities_after_restore()
         doc_count_after_restore = self.dataset_count()
         if dataset_count != doc_count_after_restore:
@@ -447,6 +449,7 @@ class BackupRestore(ColumnarBaseTest):
         self.restore_wait_for_complete(backup["data"]["id"])
         self.wait_for_instance_to_be_healthy()
         self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
+        self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=300)
         dataset_count_after_restore = self.dataset_count()
         if dataset_count != dataset_count_after_restore:
             self.fail("Data mismatch after restore")
@@ -475,6 +478,7 @@ class BackupRestore(ColumnarBaseTest):
             self.restore_wait_for_complete(backup_id, timeout=backup_timeout)
             self.wait_for_instance_to_be_healthy(timeout=3600)
             self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
+            self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=900)
             dataset_count_after_restore = self.dataset_count()
             if count_before_backup != dataset_count_after_restore:
                 self.fail("Data mismatch after restore")

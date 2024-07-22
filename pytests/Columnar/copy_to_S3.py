@@ -12,7 +12,7 @@ import requests
 from queue import Queue
 
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
-from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
+from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from Columnar.columnar_base import ColumnarBaseTest
 from CbasLib.CBASOperations import CBASHelper
 from cbas_utils.cbas_utils_columnar import External_Dataset, Standalone_Dataset, Remote_Dataset
@@ -56,8 +56,6 @@ class CopyToS3(ColumnarBaseTest):
 
         self.columnar_spec = self.cbas_util.get_columnar_spec(
             self.columnar_spec_name)
-
-        self.capellaAPI = CapellaAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
 
         self.log_setup_status(self.__class__.__name__, "Finished",
                               stage=self.setUp.__name__)
@@ -364,10 +362,11 @@ class CopyToS3(ColumnarBaseTest):
                  "encryption": "full",
                  "certificate": self.remote_cluster_certificate})
             self.columnar_spec["remote_link"]["properties"] = remote_link_properties
-            self.include_external_collections = dict()
-            remote_collection = [self.remote_collection]
-            self.include_external_collections["remote"] = remote_collection
-            self.columnar_spec["remote_dataset"]["include_collections"] = remote_collection
+            if hasattr(self, "remote_collection"):
+                self.include_external_collections = dict()
+                remote_collection = [self.remote_collection]
+                self.include_external_collections["remote"] = remote_collection
+                self.columnar_spec["remote_dataset"]["include_collections"] = remote_collection
             self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
 
         self.columnar_spec["external_link"][
@@ -1786,8 +1785,35 @@ class CopyToS3(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy to statement copied the wrong results")
 
+    def remote_cluster_setup(self):
+        for key in self.cb_clusters:
+            self.remote_cluster = self.cb_clusters[key]
+            break
+        resp = self.capellaAPI.cluster_ops_apis.add_CIDR_to_allowed_CIDRs_list(self.tenant.id,
+                                                                               self.tenant.project_id,
+                                                                               self.remote_cluster.id, "0.0.0.0/0")
+        if resp.status_code == 201 or resp.status_code == 422:
+            self.log.info("Added allowed IP 0.0.0.0/0")
+        else:
+            self.fail("Failed to add allowed IP")
+        remote_cluster_certificate_request = (
+            self.capellaAPI.cluster_ops_apis.get_cluster_certificate(self.tenant.id, self.tenant.project_id,
+                                                                     self.remote_cluster.id))
+        if remote_cluster_certificate_request.status_code == 200:
+            self.remote_cluster_certificate = (remote_cluster_certificate_request.json()["certificate"])
+        else:
+            self.fail("Failed to get cluster certificate")
+
+        # creating bucket scope and collections for remote collection
+        no_of_remote_buckets = self.input.param("no_of_remote_bucket", 1)
+        self.create_bucket_scopes_collections_in_capella_cluster(
+            self.tenant, self.remote_cluster, no_of_remote_buckets,
+            bucket_ram_quota=1024)
+
     def test_mini_volume_copy_to_s3(self):
-        primary_key = []
+        primary_key = [{"id": "string"}]
+        self.columnarAPI = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user, self.tenant.pwd, '')
+        self.remote_cluster_setup()
         self.base_infra_setup(primary_key)
         self.copy_to_s3_job = Queue()
         self.copy_to_s3_results = []
@@ -1813,7 +1839,7 @@ class CopyToS3(ColumnarBaseTest):
                                           "database_name": datasets[j].database_name,
                                           "destination_bucket": self.sink_s3_bucket_name,
                                           "destination_link_name": s3_link.full_name,
-                                          "path": path}))
+                                          "path": path, "analytics_timeout": 10000000, "timeout": 10000000}))
             self.cbas_util.run_jobs_in_parallel(
                 self.copy_to_s3_job, self.copy_to_s3_results, self.sdk_clients_per_user, async_run=False)
 
