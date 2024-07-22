@@ -157,6 +157,7 @@ class XUnitTestSuite(object):
         test.name = name
         test.time = time
         test.params = params
+        test.run_status = status
         self.tests.append(test)
         if status == 'fail':
             error = XUnitTestCaseError()
