@@ -306,38 +306,14 @@ class CopyToS3(ColumnarBaseTest):
             bucket = collection.split(".")[0]
             scope = collection.split(".")[1]
             collection = collection.split(".")[2]
-            url = self.input.param("sirius_url", None)
-            resp = self.capellaAPI.cluster_ops_apis.fetch_bucket_info(self.tenant.id,
-                                                                      self.tenant.project_id,
-                                                                      self.remote_cluster.id,
-                                                                      self.bucket_id)
-            if resp.status_code == 200:
-                current_doc_count = (resp.json())["stats"]["itemCount"]
-            else:
-                current_doc_count = 0
-            data = {
-                "identifierToken": "hotel",
-                "dbType": "couchbase",
-                "username": self.remote_cluster.username,
-                "password": self.remote_cluster.password,
-                "connectionString": "couchbases://" + str(self.remote_cluster.srv),
-                "extra": {
-                    "bucket": bucket,
-                    "scope": scope,
-                    "collection": collection,
-                },
-                "operationConfig": {
-                    "start": 0,
-                    "end": no_of_docs,
-                    "docSize": doc_size,
-                    "template": "hotel"
-                }
-            }
-            if url is not None:
-                url = "http://" + url + "/bulk-create"
-                response = requests.post(url, json=data)
-                if response.status_code != 200:
-                    self.log.error("Failed to start loader for remote collection")
+            self.cbas_util.doc_operations_remote_collection_sirius(self.task_manager, collection,
+                                                                   bucket, scope,
+                                                                   "couchbases://" + self.remote_cluster.srv,
+                                                                   0, no_of_docs,
+                                                                   doc_size=self.doc_size,
+                                                                   username=self.remote_cluster.username,
+                                                                   password=self.remote_cluster.password,
+                                                                   template="hotel")
 
         for collection in mongo_collections:
             database = collection.split(".")[0]
