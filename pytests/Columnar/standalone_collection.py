@@ -299,11 +299,15 @@ class StandaloneCollection(ColumnarBaseTest):
 
         for synonym in synonyms:
             # load data to standalone collections
-            jobs.put((self.cbas_util.crud_on_standalone_collection,
-                      {"cluster": self.cluster, "collection_name": synonym.name,
-                       "dataverse_name": synonym.dataverse_name, "database_name": synonym.database_name,
-                       "target_num_docs": self.initial_doc_count, "doc_size": self.doc_size,
-                       "where_clause_for_delete_op": "avg_rating > 0.2"}))
+            jobs.put((
+                self.cbas_util.crud_on_standalone_collection,
+                {"cluster": self.cluster, "collection_name": synonym.name,
+                 "dataverse_name": synonym.dataverse_name,
+                 "database_name": synonym.database_name,
+                 "target_num_docs": self.initial_doc_count,
+                 "doc_size": self.doc_size,
+                 "where_clause_for_delete_op": "avg_rating > 0.2",
+                 "use_alias": True}))
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False
@@ -477,11 +481,15 @@ class StandaloneCollection(ColumnarBaseTest):
         results = []
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
         for dataset in datasets:
-            jobs.put((self.cbas_util.crud_on_standalone_collection,
-                      {"cluster": self.cluster, "collection_name": dataset.name,
-                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
-                       "target_num_docs": self.initial_doc_count, "time_for_crud_in_mins": 5,
-                       "doc_size": self.doc_size, "where_clause_for_delete_op": "avg_rating > 0.2"}))
+            jobs.put((
+                self.cbas_util.crud_on_standalone_collection,
+                {"cluster": self.cluster, "collection_name": dataset.name,
+                 "dataverse_name": dataset.dataverse_name,
+                 "database_name": dataset.database_name,
+                 "target_num_docs": self.initial_doc_count,
+                 "time_for_crud_in_mins": 5, "doc_size": self.doc_size,
+                 "where_clause_for_delete_op": "avg_rating > 0.2",
+                 "use_alias": True}))
 
         jobs.put((self.columnar_utils.scale_instance,
                   {"pod": self.pod, "tenant": self.tenant, "project_id": self.cluster.project_id, "instance": self.cluster,
