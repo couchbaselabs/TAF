@@ -170,6 +170,7 @@ def main():
 
     TestInputSingleton.input.test_params["no_of_test_identified"] = len(tests_to_be_exec)
 
+    exit_status = 0
     print(f"Total test to be executed: {case_number}")
     for test_to_exec in tests_to_be_exec:
         if Parameters.ABORTED:
@@ -276,6 +277,7 @@ def main():
                                           error_type="membase.error",
                                           error_message=str(errors))
             test_to_exec["status"] = "fail"
+            exit_status = 1
         else:
             test_to_exec["status"] = "pass"
             xunit_test_ref.update_results(xunit_suite_ref, "pass", time_taken)
@@ -291,15 +293,6 @@ def main():
             break
 
     HelperLib.cleanup()
-
-    exit_status = 0
-    if "makefile" in TestInputSingleton.input.test_params:
-        # Print fail for those tests which failed and do sys.exit() error code
-        for test_to_exec in tests_to_be_exec:
-            run_result = "f{test_to_exec['name']} {test_to_exec['result']}"
-            if test_to_exec["result"] != "pass":
-                exit_status = 1
-            print(run_result)
     sys.exit(exit_status)
 
 
