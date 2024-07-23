@@ -312,13 +312,13 @@ if [ $status -eq 0 ]; then
   killall --older-than 10h jython
 
   # Trim whitespaces to detect empty input
-  rerun_params=$(echo $rerun_params | xargs)
+  rerun_params=$(echo "$rerun_params" | xargs)
   if [ "$rerun_params" == "" ]; then
     # Only if user has no input given, get rerun data from
     # the file created by prev. rerun_jobs.py script
     rerun_file_data=$(cat rerun_props_file)
-    if [ $rerun_file_data != "" ]; then
-      rerun_params=$rerun_file_data
+    if [ "$rerun_file_data" != "" ]; then
+      rerun_params="$rerun_file_data"
     fi
   fi
 
