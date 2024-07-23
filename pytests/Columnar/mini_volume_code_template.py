@@ -302,14 +302,13 @@ class MiniVolume:
 
         self.base_object.cbas_util.run_jobs_in_parallel(self.cpu_stat_job, results, 1, async_run=True)
         self.base_object.cbas_util.run_jobs_in_parallel(create_query_job, self.query_work_results, 2, async_run=True)
+        time.sleep(20)
         while self.base_object.query_job.qsize() < 10:
             self.base_object.log.info("Waiting for query job to be created")
             time.sleep(10)
         self.wait_for_job = [True]
         self.base_object.cbas_util.run_jobs_in_parallel(self.base_object.query_job, self.query_work_results, 2,
                                                         async_run=True, wait_for_job=self.wait_for_job)
-        self.base_object.cbas_util.run_jobs_in_parallel(self.cpu_stat_job, results, 1,
-                                                        async_run=True)
 
         # wait for data loading to complete
         self.base_object.data_loading_job.join()

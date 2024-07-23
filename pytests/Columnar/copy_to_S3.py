@@ -371,7 +371,7 @@ class CopyToS3(ColumnarBaseTest):
                 remote_collection = [self.remote_collection]
                 self.include_external_collections["remote"] = remote_collection
                 self.columnar_spec["remote_dataset"]["include_collections"] = remote_collection
-            self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
+            self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("no_of_remote_coll", 1)
 
         self.columnar_spec["external_link"][
             "no_of_external_links"] = self.input.param(
@@ -571,7 +571,7 @@ class CopyToS3(ColumnarBaseTest):
         remote_collection = [self.remote_collection]
         self.include_external_collections["remote"] = remote_collection
         self.columnar_spec["remote_dataset"]["include_collections"] = remote_collection
-        self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("num_of_remote_coll", 1)
+        self.columnar_spec["remote_dataset"]["num_of_remote_datasets"] = self.input.param("no_of_remote_coll", 1)
         self.base_infra_setup()
         no_of_docs = self.input.param("no_of_docs", 10000)
         self.start_source_ingestion(no_of_docs=no_of_docs, doc_size=1024)
@@ -1832,7 +1832,7 @@ class CopyToS3(ColumnarBaseTest):
             self.mini_volume.start_crud_on_data_sources(self.remote_start, self.remote_end)
             self.mini_volume.stop_process()
             self.mini_volume.stop_crud_on_data_sources()
-            self.cbas_util.wait_for_ingestion_complete()
+            self.cbas_util.wait_for_data_ingestion_in_the_collections(self.cluster)
             datasets = self.cbas_util.get_all_dataset_objs()
             s3_link = self.cbas_util.get_all_link_objs("s3")[0]
             for j in range(len(datasets)):
@@ -1844,6 +1844,7 @@ class CopyToS3(ColumnarBaseTest):
                                           "destination_bucket": self.sink_s3_bucket_name,
                                           "destination_link_name": s3_link.full_name,
                                           "path": path, "analytics_timeout": 10000000, "timeout": 10000000}))
+            self.log.info("Running copy to S3")
             self.cbas_util.run_jobs_in_parallel(
                 self.copy_to_s3_job, self.copy_to_s3_results, self.sdk_clients_per_user, async_run=False)
 
