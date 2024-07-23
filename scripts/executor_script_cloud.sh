@@ -275,13 +275,13 @@ if [ "$?" -eq 0 ]; then
   python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_param}
   status=$?
 
-  fails=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($3,s1,"=");print s1[2]}' | sed s/\"//g | awk '{s+=$1} END {print s}'`
-  total_tests=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($6,s1,"=");print s1[2]}' | sed s/\"//g |awk '{s+=$1} END {print s}'`
-  echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
-
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
   rerun_job_status=$?
   set +x
+
+  # fails=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($3,s1,"=");print s1[2]}' | sed s/\"//g | awk '{s+=$1} END {print s}'`
+  # total_tests=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($6,s1,"=");print s1[2]}' | sed s/\"//g |awk '{s+=$1} END {print s}'`
+  # echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
 
   if [ $rerun_job_status -ne 0 ]; then
     exit $rerun_job_status
