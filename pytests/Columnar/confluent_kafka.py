@@ -96,7 +96,7 @@ class ConfluentKafka(ColumnarBaseTest):
             if self.serialization_type == "AVRO":
                 connector_config["value.converter"] = "io.confluent.connect.avro.AvroConverter"
                 connector_config["key.converter"] = "io.confluent.connect.avro.AvroConverter"
-            else:
+            elif self.serialization_type == "PROTOBUF":
                 connector_config["value.converter"] = "io.confluent.connect.protobuf.ProtobufConverter"
                 connector_config["key.converter"] = "io.confluent.connect.protobuf.ProtobufConverter"
             self.kafka_connect_utils.deploy_connector(self.connector_name, connector_config)
