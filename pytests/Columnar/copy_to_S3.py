@@ -239,13 +239,17 @@ class CopyToS3(ColumnarBaseTest):
         start_time = time.time()
         mongo_collections = dynamo_collections = rds_collections = remote_collection = []
         if "mongo" in self.include_external_collections:
-            mongo_collections = set(self.include_external_collections["mongo"])
+            mongo_collections = list(set(self.include_external_collections[
+                                         "mongo"]))
         if "dynamo" in self.include_external_collections:
-            dynamo_collections = set(self.include_external_collections["dynamo"])
+            dynamo_collections = list(set(self.include_external_collections[
+                                              "dynamo"]))
         if "rds" in self.include_external_collections:
-            rds_collections = set(self.include_external_collections["rds"])
+            rds_collections = list(set(self.include_external_collections[
+                                           "rds"]))
         if "remote" in self.include_external_collections:
-            remote_collection = set(self.include_external_collections["remote"])
+            remote_collection = list(set(self.include_external_collections[
+                                             "remote"]))
         while time.time() < start_time + timeout:
             self.log.info("Waiting for data to be loaded in source databases")
             for collection in mongo_collections:
@@ -428,9 +432,9 @@ class CopyToS3(ColumnarBaseTest):
                                                                   self.bucket_id)
         if resp.status_code == 200:
             current_doc_count = (resp.json())["stats"]["itemCount"]
-        if item_count[0] != current_doc_count:
-            return False, current_doc_count, item_count[0]
-        return True, current_doc_count, item_count[0]
+        if item_count != current_doc_count:
+            return False, current_doc_count, item_count
+        return True, current_doc_count, item_count
 
     def validate_data_in_external_dataset(self, cluster, dataset, doc_count):
         """
