@@ -90,8 +90,12 @@ class ConfluentKafka(ColumnarBaseTest):
             )
             if self.serialization_type == "AVRO" or self.serialization_type == "PROTOBUF":
                 connector_config["key.converter.schema.registry.url"] = self.schema_registry_url
+                connector_config["value.converter.schema.registry.url"] = self.schema_registry_url
                 connector_config["key.converter.basic.auth.credentials.source"] = "USER_INFO"
+                connector_config["value.converter.basic.auth.credentials.source"] = "USER_INFO"
                 connector_config["key.converter.schema.registry.basic.auth.user.info"] = (
+                        self.schema_registry_api_key + ":" + self.schema_registry_secret_key)
+                connector_config["value.converter.schema.registry.basic.auth.user.info"] = (
                         self.schema_registry_api_key + ":" + self.schema_registry_secret_key)
             if self.serialization_type == "AVRO":
                 connector_config["value.converter"] = "io.confluent.connect.avro.AvroConverter"
