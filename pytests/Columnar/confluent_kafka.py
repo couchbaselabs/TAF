@@ -50,12 +50,22 @@ class ConfluentKafka(ColumnarBaseTest):
         else:
             self.mongo_collection = "functional_testing_static"
         self.mongo_collections = self.mongo_database + "." + self.mongo_collection
-        self.doc_count = self.input.param("doc_count", "100000")
+        self.doc_count = self.input.param("doc_count", 100000)
 
         self.topic_name = self.topic_prefix + "." + self.mongo_collections
 
         self.cloud_access_key = self.input.param("cloud_access_key")
         self.cloud_secret_key = self.input.param("cloud_secret_key")
+
+        self.kafka_link_name = self.input.param("kafka_link_name", "kafka_link")
+        self.authentication_type = self.input.param("authentication_type", "PLAIN")
+        self.collection_name = self.input.param("collection_name", "confluent_kafka_collection")
+        self.serialization_type = self.input.param("serialization_type", "JSON")
+        self.use_schema_registry = self.input.param("use_schema_registry", False)
+        if self.use_schema_registry:
+            self.schema_registry_url = self.input.param("schema_registry_url")
+            self.schema_registry_api_key = self.input.param("schema_registry_api_key")
+            self.schema_registry_secret_key = self.input.param("schema_registry_secret_key")
 
         # making sure connector names are unique as test will fail incase connector already exists
         self.connector_name = self.generate_random_entity_name(type="connector")
@@ -78,19 +88,21 @@ class ConfluentKafka(ColumnarBaseTest):
             connector_config = self.kafka_connect_utils.generate_mongo_connector_config(
                 self.mongo_connection_string, [self.mongo_collections], self.topic_prefix
             )
+            if self.serialization_type == "AVRO" or self.serialization_type == "PROTOBUF":
+                connector_config["key.converter.schema.registry.url"] = self.schema_registry_url
+                connector_config["key.converter.basic.auth.credentials.source"] = "USER_INFO"
+                connector_config["key.converter.schema.registry.basic.auth.user.info"] = (
+                        self.schema_registry_api_key + ":" + self.schema_registry_secret_key)
+            if self.serialization_type == "AVRO":
+                connector_config["value.converter"] = "io.confluent.connect.avro.AvroConverter"
+                connector_config["key.converter"] = "io.confluent.connect.avro.AvroConverter"
+            else:
+                connector_config["value.converter"] = "io.confluent.connect.protobuf.ProtobufConverter"
+                connector_config["key.converter"] = "io.confluent.connect.protobuf.ProtobufConverter"
             self.kafka_connect_utils.deploy_connector(self.connector_name, connector_config)
             self.kafka_obj.connectors[self.connector_name] = connector_config
         if self.reuse_topic:
             self.topic_name = "confluent_mongo.functional_testing.functional_testing_static"
-
-        self.kafka_link_name = self.input.param("kafka_link_name", "kafka_link")
-        self.authentication_type = self.input.param("authentication_type", "PLAIN")
-        self.collection_name = self.input.param("collection_name", "confluent_kafka_collection")
-        self.serialization_type = self.input.param("serialization_type", "JSON")
-        self.use_schema_registry = self.input.param("use_schema_registry", False)
-        if self.use_schema_registry:
-            self.schema_registry_api_key = self.input.param("schema_registry_api_key")
-            self.schema_registry_secret_key = self.input.param("schema_registry_secret_key")
 
         self.doc_count_for_mongo_collections = {
             "functional_testing.functional_testing_static": 1000000
@@ -218,8 +230,8 @@ class ConfluentKafka(ColumnarBaseTest):
         schema_registry_details = None
         if self.use_schema_registry:
             schema_registry_details = self.kafka_cluster_obj.generate_confluent_schema_registry_detail(
-                schema_registry_url="https://psrc-6kq702.us-east-1.aws.confluent.cloud",
-                api_key=self.schema_registry_api_key, api_secret=self.schema_registry_secret_key
+                schema_registry_url=self.schema_registry_url, api_key=self.schema_registry_api_key,
+                api_secret=self.schema_registry_secret_key
             )
 
         self.cbas_util.create_kafka_link(self.cluster, self.kafka_link_name, kafka_cluster_details,
