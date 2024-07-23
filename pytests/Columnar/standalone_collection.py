@@ -4,6 +4,7 @@ Created on 29-January-2024
 @author: abhay.aggrawal@couchbase.com
 """
 import json
+import string
 import time
 import random
 import requests
@@ -168,13 +169,14 @@ class StandaloneCollection(ColumnarBaseTest):
     def test_create_drop_standalone_collection_duplicate_key(self):
         no_of_collection = self.input.param("num_of_standalone_coll", 1)
         key = self.input.param("key", None)
-        expected_error=  self.input.param("error_message", None)
+        expected_error = self.input.param("error_message", None)
         for i in range(0, no_of_collection):
             dataset_name = self.cbas_util.generate_name()
             cmd = "Create Dataset {} Primary Key({})".format(dataset_name, key)
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, cmd)
             if not self.cbas_util.validate_error_in_response(status, errors, expected_error):
                 self.fail("Able to create collection with duplicate keys")
+
     def test_create_drop_standalone_collection(self):
         database_name = self.input.param("database", "Default")
         dataverse_name = self.input.param("dataverse", "Default")
@@ -327,6 +329,46 @@ class StandaloneCollection(ColumnarBaseTest):
         if not all(results):
             self.fail("Failed to run query on standalone collection using synonyms")
 
+    def generate_large_document(self, doc_size_mb):
+        size_bytes = doc_size_mb * 1024 * 1024
+        large_doc = {}
+        characters = string.ascii_letters + string.digits
+        character_with_space = string.ascii_letters + string.digits + ' '
+
+        # Generate an initial large random string
+        random_string = ''.join(random.choices(character_with_space, k=1000))
+
+        # Fill the document with random data
+        for _ in range(size_bytes // 1000):  # To approximate the size
+            field = ''.join(random.choices(characters, k=5))
+            large_doc[field] = random_string
+
+        # Adjust the size if necessary
+        while True:
+            large_doc_json = json.dumps(large_doc)
+            current_size = len(large_doc_json.encode('utf-8'))
+
+            if current_size > size_bytes:
+                # Remove a random item if the document is too large
+                large_doc.pop(next(iter(large_doc)))
+            else:
+                break
+
+        # Ensure the document is exactly the requested size
+        if current_size < size_bytes:
+            # Add random characters to increase the size
+            additional_size = size_bytes - current_size
+            additional_data = ''.join(random.choices(character_with_space, k=additional_size))
+            large_doc['extra_field'] = additional_data
+        large_doc["name"] = ''.join(random.choices(character_with_space, k=10))
+        large_doc["email"] = ''.join(random.choices(character_with_space, k=10))
+
+        # Print the size for confirmation
+        final_size = len(json.dumps(large_doc).encode('utf-8'))
+        self.log.info(f"Size of document: {final_size} bytes")
+
+        return large_doc
+
     def test_insert_document_size(self):
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.cluster, self.columnar_spec, self.bucket_util, False)
@@ -335,11 +377,12 @@ class StandaloneCollection(ColumnarBaseTest):
         jobs = Queue()
         results = []
         datasets = self.cbas_util.get_all_dataset_objs()
+        self.log.info("Creating doc, this may take several minutes")
+        doc_with_size = self.generate_large_document(self.doc_size)
         for dataset in datasets:
-            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
-                      {"cluster": self.cluster, "collection_name": dataset.name,
-                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
-                       "no_of_docs": self.initial_doc_count, "document_size": self.doc_size}))
+            self.cbas_util.insert_into_standalone_collection(self.cluster, dataset.name, document=doc_with_size,
+                                                             database_name=dataset.database_name,
+                                                             dataverse_name=dataset.dataverse_name)
 
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False
@@ -492,7 +535,8 @@ class StandaloneCollection(ColumnarBaseTest):
                  "use_alias": True}))
 
         jobs.put((self.columnar_utils.scale_instance,
-                  {"pod": self.pod, "tenant": self.tenant, "project_id": self.cluster.project_id, "instance": self.cluster,
+                  {"pod": self.pod, "tenant": self.tenant, "project_id": self.cluster.project_id,
+                   "instance": self.cluster,
                    "nodes": 4}))
 
         self.cbas_util.run_jobs_in_parallel(
@@ -559,7 +603,8 @@ class StandaloneCollection(ColumnarBaseTest):
         datasets = self.cbas_util.get_all_dataset_objs("standalone")
         for dataset in datasets:
             jobs.put((self.cbas_util.load_doc_to_standalone_collection,
-                      {"cluster": self.cluster, "collection_name": dataset.name, "dataverse_name": dataset.dataverse_name,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name,
                        "database_name": dataset.database_name, "no_of_docs": self.initial_doc_count,
                        "document_size": self.doc_size}))
 
