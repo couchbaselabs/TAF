@@ -143,10 +143,15 @@ def main():
 
         # Concat params to test name to make tests more readable in xml
         s_params = ''
+        # Handles common params passed via '-p' options
         if TestInputSingleton.input.test_params:
             for key, value in TestInputSingleton.input.test_params.items():
                 if key and value:
                     s_params += "," + str(key) + "=" + str(value)
+        # Handles params wrt individual test definition
+        for key, value in params.items():
+            if key and value:
+                s_params += "," + str(key) + "=" + str(value)
 
         # If we reach here, the test has passed all criteria to be executed
         # in this run
