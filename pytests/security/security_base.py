@@ -375,8 +375,7 @@ class SecurityBase(CouchbaseBaseTest):
                     self.cluster_id = resp.json()['id']
                     break
 
-                elif "Please ensure that the CIDR range is unique within this organisation" \
-                        in resp.json()["message"]:
+                elif "CIDR" in resp.json()["message"]:
                     continue
 
                 else:
