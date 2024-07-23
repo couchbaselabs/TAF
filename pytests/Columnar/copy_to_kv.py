@@ -6,6 +6,7 @@ Created on 4-March-2024
 import random
 import string
 import time
+import json
 from queue import Queue
 
 from CbasLib.CBASOperations import CBASHelper
@@ -821,6 +822,46 @@ class CopyToKv(ColumnarBaseTest):
         if not all(results):
             self.fail("Copy to statement copied the wrong results")
 
+    def generate_large_document(self, doc_size_mb):
+        size_bytes = doc_size_mb * 1024 * 1024
+        large_doc = {}
+        characters = string.ascii_letters + string.digits
+        character_with_space = string.ascii_letters + string.digits + ' '
+
+        # Generate an initial large random string
+        random_string = ''.join(random.choices(character_with_space, k=1000))
+
+        # Fill the document with random data
+        for _ in range(size_bytes // 1000):  # To approximate the size
+            field = ''.join(random.choices(characters, k=5))
+            large_doc[field] = random_string
+
+        # Adjust the size if necessary
+        while True:
+            large_doc_json = json.dumps(large_doc)
+            current_size = len(large_doc_json.encode('utf-8'))
+
+            if current_size > size_bytes:
+                # Remove a random item if the document is too large
+                large_doc.pop(next(iter(large_doc)))
+            else:
+                break
+
+        # Ensure the document is exactly the requested size
+        if current_size < size_bytes:
+            # Add random characters to increase the size
+            additional_size = size_bytes - current_size
+            additional_data = ''.join(random.choices(character_with_space, k=additional_size))
+            large_doc['extra_field'] = additional_data
+        large_doc["name"] = ''.join(random.choices(character_with_space, k=10))
+        large_doc["email"] = ''.join(random.choices(character_with_space, k=10))
+
+        # Print the size for confirmation
+        final_size = len(json.dumps(large_doc).encode('utf-8'))
+        self.log.info(f"Size of document: {final_size} bytes")
+
+        return large_doc
+
     def test_create_copy_to_kv_doc_size_32_MB(self):
         # max doc size supported by KV is 20 MB
         self.base_infra_setup()
@@ -831,13 +872,13 @@ class CopyToKv(ColumnarBaseTest):
         self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
         provisioned_collections = []
+        self.log.info("Creating doc, this may take several minutes")
+        document = self.generate_large_document(self.doc_size)
         for dataset in datasets:
-            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
-                      {"cluster": self.cluster, "collection_name": dataset.name,
-                       "dataverse_name": dataset.dataverse_name,
-                       "database_name": dataset.database_name, "no_of_docs": self.no_of_docs,
-                       "document_size": self.doc_size}))
-        self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
+            self.cbas_util.insert_into_standalone_collection(self.cluster, dataset.name, document=[document],
+                                                             database_name=dataset.database_name,
+                                                             dataverse_name=dataset.dataverse_name)
+
         for dataset in datasets:
             if self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name) == 0:
                 self.fail("Failed to load data in standalone collection of size: {}".format(self.doc_size))
