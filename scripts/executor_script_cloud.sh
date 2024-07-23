@@ -286,7 +286,6 @@ if [ "$?" -eq 0 ]; then
   if [ $rerun_job_status -ne 0 ]; then
     exit $rerun_job_status
   fi
-  exit $status
 else
   echo Desc: $desc
   newState=failedInstall
