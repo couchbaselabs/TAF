@@ -104,7 +104,9 @@ done
 git clone https://github.com/couchbaselabs/guides.git
 
 if [ ${fresh_run} == false ]; then
+  set -x
   guides/gradlew --refresh-dependencies --stacktrace rerun_job -P jython="$jython_path" -P args="${version_number} --executor_jenkins_job --manual_run"
+  set +x
 fi
 
 set +e
@@ -137,7 +139,7 @@ fi
 skip_mem_info=""
 if [ "$server_type" = "CAPELLA_LOCAL" ]; then
   skip_mem_info=" -m "
-	installParameters="install_tasks=uninstall-install,h=true"
+  installParameters="install_tasks=uninstall-install,h=true"
 else
     if [ "$server_type" = "ELIXIR_ONPREM" ]; then
         installParameters="cluster_profile=serverless"
@@ -237,7 +239,7 @@ else
       sed 's/nonroot/root/g' $WORKSPACE/testexec.$$.ini > $WORKSPACE/testexec_root.$$.ini
 
       if [ "$os" != "mariner2" ]; then
-      	guides/gradlew --no-daemon --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
+        guides/gradlew --no-daemon --refresh-dependencies iptables -P jython="/opt/jython/bin/jython" -P args="-i $WORKSPACE/testexec_root.$$.ini iptables -F"
       fi
 
       # Doing installation from TESTRUNNER!!!
@@ -246,7 +248,7 @@ else
         skip_local_download_val=True
       fi
       if [ "$os" = "debian11nonroot" ]; then
-      	skip_local_download_val=True
+        skip_local_download_val=True
       fi
 
       if [ "$component" = "os_certify" ]; then
@@ -309,14 +311,15 @@ if [ $status -eq 0 ]; then
   killall --older-than 240h python3
   killall --older-than 10h jython
 
-  echo ${rerun_params_manual}
-  echo ${rerun_params}
-  if [ -z "${rerun_params_manual}" ] && [ -z "${rerun_params}" ]; then
-  	rerun_param=
-  elif [ -z "${rerun_params_manual}" ]; then
-  	rerun_param=$rerun_params
-  else
-  	rerun_param=${rerun_params_manual}
+  # Trim whitespaces to detect empty input
+  rerun_params=$(echo $rerun_params | xargs)
+  if [ "$rerun_params" == "" ]; then
+    # Only if user has no input given, get rerun data from
+    # the file created by prev. rerun_jobs.py script
+    rerun_file_data=$(cat rerun_props_file)
+    if [ $rerun_file_data != "" ]; then
+      rerun_params=$rerun_file_data
+    fi
   fi
 
   # Adding static IP for sirius
@@ -342,7 +345,7 @@ if [ $status -eq 0 ]; then
   guides/gradlew --no-daemon --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
   # Check if gradle had clean exit. If not, fail the job.
   if [ ! $status = 0 ]; then
-  	echo "Gradle had non zero exit. Failing the job"
+    echo "Gradle had non zero exit. Failing the job"
     exit 1
   fi
 else

@@ -5,11 +5,16 @@ small_ver=${version_number:0:3}
 py_executable=python3
 jython_path=/opt/jython/bin/jython
 
+git clone https://github.com/couchbaselabs/guides.git
+
+if [ ${fresh_run} == false ]; then
+  # Fetch rerun job details to prepare for rerun.
+  # This also creates a file 'rerun_props_file' using open(.., "w") API
+  guides/gradlew --refresh-dependencies --stacktrace rerun_job -P jython="$jython_path" -P args="${version_number} --executor_jenkins_job --manual_run"
+fi
+
 echo "Set ALLOW_HTP to False so test could run."
 sed -i 's/ALLOW_HTP.*/ALLOW_HTP = False/' lib/testconstants.py
-
-git submodule init
-git submodule update --init --force --remote
 
 ## cherrypick the gerrit request if it was defined
 if [ "$cherrypick" != "None" ]; then
@@ -62,7 +67,7 @@ if [ "$server_type" = "PROVISIONED_ONCLOUD" ]; then
     cluster_info=`echo $cluster_info | sed s/}/,\ \"dataplane_id\":\ \"$capella_dataplane_id\"}/`
   fi
   if [ -n "$cbs_image" ]; then
-	cluster_info=`echo $cluster_info | sed s/}/,\ \"cb_image\":\ \"$cbs_image\"}/`
+    cluster_info=`echo $cluster_info | sed s/}/,\ \"cb_image\":\ \"$cbs_image\"}/`
   fi
   if [ -n "$access_key" ]; then
     cluster_info=`echo $cluster_info | sed s/}/,\ \"access_key\":\ \"$access_key\"}/`
@@ -83,7 +88,7 @@ if [ "$server_type" = "SERVERLESS_ONCLOUD" ]; then
     cluster_info=`echo $cluster_info | sed s/}/,\ \"dataplane_id\":\ \"$capella_dataplane_id\"}/`
   fi
   if [ -n "$cbs_image" ]; then
-	cluster_info=`echo $cluster_info | sed s/}/,\ \"cb_image\":\ \"$cbs_image\"}/`
+    cluster_info=`echo $cluster_info | sed s/}/,\ \"cb_image\":\ \"$cbs_image\"}/`
   fi
   if [ -n "$access_key" ]; then
     cluster_info=`echo $cluster_info | sed s/}/,\ \"access_key\":\ \"$access_key\"}/`
@@ -96,9 +101,9 @@ if [ "$server_type" = "SERVERLESS_ONCLOUD" ]; then
 fi
 
 if [ ${skip_install} == true ]; then
-	skipped_install_for_capella=-m
+  skipped_install_for_capella=-m
 else
-	skipped_install_for_capella=
+  skipped_install_for_capella=
 fi
 
 # Run populate ini from testrunner instead of running frm TAF due to changes in TAF to move to python3
@@ -124,11 +129,11 @@ if [ "$os" = "windows" ]; then
 fi
 
 if [ "$server_type" = "CAPELLA_LOCAL" ]; then
-	installParameters="install_tasks=uninstall-install,h=true"
+  installParameters="install_tasks=uninstall-install,h=true"
 else
-    if [ "$server_type" = "ELIXIR_ONPREM" ]; then
-        installParameters="cluster_profile=serverless"
-    fi
+  if [ "$server_type" = "ELIXIR_ONPREM" ]; then
+    installParameters="cluster_profile=serverless"
+  fi
 fi
 
 if [ "$installParameters" = "None" ]; then
@@ -201,7 +206,6 @@ if [ ${skip_install} == false ]; then
       else
           echo success
       fi
-
   fi
 fi
 
@@ -209,7 +213,7 @@ if [ "$?" -eq 0 ]; then
   desc2=`echo $descriptor | awk '{split($0,r,"-");print r[1],r[2]}'`
   #export test_params="get-cbcollect-info=True"
   if [ ${skip_install} == false ]; then
-	  ${py_executable} scripts/ssh.py -i /tmp/testexec.$$.ini "iptables -F"
+    ${py_executable} scripts/ssh.py -i /tmp/testexec.$$.ini "iptables -F"
   fi
 
   if [ $majorRelease = "3" ]; then
@@ -234,9 +238,7 @@ if [ "$?" -eq 0 ]; then
   fi
 
   if [ "$server_type" = "CAPELLA_LOCAL" ] && [ ${skip_install} == false ]; then
-
     ############# LOCAL CAPELLA SETUP ####################
-
     git clone https://github.com/couchbaselabs/productivitynautomation
 
     export ANSIBLE_CONFIG=$PWD/productivitynautomation/ansible_setup/.ansible.cfg
@@ -268,9 +270,9 @@ if [ "$?" -eq 0 ]; then
     if [ "$subcomponent" = "fts" ] || [ "$component" = "fts" ] || [ "$component" = "sanity" ]; then
         ansible-playbook $PWD/productivitynautomation/ansible_setup/21-fts-bucket.yml -i $PWD/ans_hosts
     elif [ "$subcomponent" = "eventing" ] || [ "$component" = "eventing" ] || [ "$component" = "sanity" ]; then
-		ansible-playbook $PWD/productivitynautomation/ansible_setup/21-eventing-bucket.yml -i $PWD/ans_hosts
+        ansible-playbook $PWD/productivitynautomation/ansible_setup/21-eventing-bucket.yml -i $PWD/ans_hosts
     elif [ "$subcomponent" = "gauntlet-capella-local" ] || [ "$component" = "gauntlet" ]; then
-		ansible-playbook $PWD/productivitynautomation/ansible_setup/21-e2eapp-bucket.yml -i $PWD/ans_hosts
+        ansible-playbook $PWD/productivitynautomation/ansible_setup/21-e2eapp-bucket.yml -i $PWD/ans_hosts
     else
         ansible-playbook $PWD/productivitynautomation/ansible_setup/21-bucket.yml -i $PWD/ans_hosts
     fi
@@ -279,8 +281,8 @@ if [ "$?" -eq 0 ]; then
     deactivate
 
     if [ "$component" != "backup_recovery" ]; then
-    	echo "sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini"
-    	sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini
+      echo "sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini"
+      sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini
     fi
 
     #popd
@@ -290,11 +292,11 @@ if [ "$?" -eq 0 ]; then
   fi
 
   if [ ${skip_install} == true ]; then
-    	echo "sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini"
-    	sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini    	
+    echo "sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini"
+    sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini
 
-    	echo "sed -i 's/admin_bucket_password:password/admin_bucket_password:Passw0rd\$/g;s/rest_password:password/rest_password:Passw0rd\$/g' /tmp/testexec.$$.ini"
-    	sed -i 's/admin_bucket_password:password/admin_bucket_password:Passw0rd\$/g;s/rest_password:password/rest_password:Passw0rd\$/g' /tmp/testexec.$$.ini
+    echo "sed -i 's/admin_bucket_password:password/admin_bucket_password:Passw0rd\$/g;s/rest_password:password/rest_password:Passw0rd\$/g' /tmp/testexec.$$.ini"
+    sed -i 's/admin_bucket_password:password/admin_bucket_password:Passw0rd\$/g;s/rest_password:password/rest_password:Passw0rd\$/g' /tmp/testexec.$$.ini
   fi
 
   ## Setup for java sdk client, e2e-app
@@ -318,12 +320,15 @@ if [ "$?" -eq 0 ]; then
   ## Updated on 11/21/19 by Mihir to kill all python processes older than 3 days instead of 10 days.
   killall --older-than 72h ${py_executable}
 
-  if [ -z "${rerun_params_manual}" ] && [ -z "${rerun_params}" ]; then
-  	rerun_param=
-  elif [ -z "${rerun_params_manual}" ]; then
-  	rerun_param=$rerun_params
-  else
-  	rerun_param=${rerun_params_manual}
+  # Trim whitespaces to detect empty input
+  rerun_params=$(echo $rerun_params | xargs)
+  if [ "$rerun_params" == "" ]; then
+    # Only if user has no input given, get rerun data from
+    # the file created by prev. rerun_jobs.py script
+    rerun_file_data=$(cat rerun_props_file)
+    if [ $rerun_file_data != "" ]; then
+      rerun_params=$rerun_file_data
+    fi
   fi
 
   sed -i 's/pod\:https\:\/\//pod:/g' /tmp/testexec.$$.ini
@@ -342,11 +347,10 @@ if [ "$?" -eq 0 ]; then
   echo $total_tests
   echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
   if [ ${rerun_job} == true ]; then
-  	guides/gradlew --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
+    guides/gradlew --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
   fi
 else
   echo Desc: $desc
   newState=failedInstall
   echo newState=failedInstall>propfile
 fi
-
