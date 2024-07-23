@@ -5,11 +5,17 @@ small_ver=${version_number:0:3}
 py_executable=python3
 jython_path=/opt/jython/bin/jython
 
+git clone https://github.com/couchbaselabs/guides.git
+
+echo "" > rerun_props_file
+if [ ${fresh_run} == false ]; then
+  # Fetch rerun job details to prepare for rerun.
+  # This also creates a file 'rerun_props_file' using open(.., "w") API
+  guides/gradlew --refresh-dependencies --stacktrace rerun_job -P jython="$jython_path" -P args="${version_number} --executor_jenkins_job --manual_run"
+fi
+
 echo "Set ALLOW_HTP to False so test could run."
 sed -i 's/ALLOW_HTP.*/ALLOW_HTP = False/' lib/testconstants.py
-
-git submodule init
-git submodule update --init --force --remote
 
 ## cherrypick the gerrit request if it was defined
 if [ "$cherrypick" != "None" ]; then
@@ -291,7 +297,7 @@ if [ "$?" -eq 0 ]; then
 
   if [ ${skip_install} == true ]; then
     	echo "sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini"
-    	sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini    	
+    	sed -i 's/admin_bucket_username:Administrator/admin_bucket_username:user1/g;s/rest_username:Administrator/rest_username:user1/g' /tmp/testexec.$$.ini
 
     	echo "sed -i 's/admin_bucket_password:password/admin_bucket_password:Passw0rd\$/g;s/rest_password:password/rest_password:Passw0rd\$/g' /tmp/testexec.$$.ini"
     	sed -i 's/admin_bucket_password:password/admin_bucket_password:Passw0rd\$/g;s/rest_password:password/rest_password:Passw0rd\$/g' /tmp/testexec.$$.ini
@@ -318,12 +324,15 @@ if [ "$?" -eq 0 ]; then
   ## Updated on 11/21/19 by Mihir to kill all python processes older than 3 days instead of 10 days.
   killall --older-than 72h ${py_executable}
 
-  if [ -z "${rerun_params_manual}" ] && [ -z "${rerun_params}" ]; then
-  	rerun_param=
-  elif [ -z "${rerun_params_manual}" ]; then
-  	rerun_param=$rerun_params
-  else
-  	rerun_param=${rerun_params_manual}
+  # Get rerun data from the file created by prev. rerun_job.py script
+  rerun_params=$(echo "$rerun_params" | xargs)
+  if [ "$rerun_params" == "" ]; then
+    # Only if user has no input given, get rerun data from
+    # the file created by prev. rerun_jobs.py script
+    rerun_file_data=$(cat rerun_props_file)
+    if [ "$rerun_file_data" != "" ]; then
+      rerun_params="$rerun_file_data"
+    fi
   fi
 
   sed -i 's/pod\:https\:\/\//pod:/g' /tmp/testexec.$$.ini
@@ -331,16 +340,14 @@ if [ "$?" -eq 0 ]; then
 
   cat /tmp/testexec.$$.ini
   git clone https://github.com/couchbaselabs/guides.git
-  echo guides/gradlew --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i /tmp/testexec.$$.ini -c ${confFile} -p ${parameters} -m rest ${rerun_param}"
-  guides/gradlew --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i /tmp/testexec.$$.ini -c ${confFile} -p ${parameters} -m rest ${rerun_param}"
+  set -x
+  guides/gradlew --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i /tmp/testexec.$$.ini -c ${confFile} -p ${parameters} -m rest ${rerun_params}"
+  set +x
 
-
-  echo workspace is $WORKSPACE
   fails=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($3,s1,"=");print s1[2]}' | sed s/\"//g | awk '{s+=$1} END {print s}'`
-  echo fails is $fails
   total_tests=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($6,s1,"=");print s1[2]}' | sed s/\"//g |awk '{s+=$1} END {print s}'`
-  echo $total_tests
   echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
+
   if [ ${rerun_job} == true ]; then
   	guides/gradlew --stacktrace rerun_job -P jython="$jython_path" $sdk_client_params -P args="${version_number} --executor_jenkins_job --run_params=${parameters}"
   fi
@@ -349,4 +356,3 @@ else
   newState=failedInstall
   echo newState=failedInstall>propfile
 fi
-
