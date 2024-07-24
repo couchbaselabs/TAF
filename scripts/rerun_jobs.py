@@ -124,9 +124,11 @@ def merge_xmls(rerun_document, run_params=""):
             try:
                 file_name = rel_path.split('/')[-1]
                 file_name = "Old_Report_{0}".format(file_name)
-                f = open(file_name, "w")
-                f.writelines(xml_data.decode('utf-8'))
-                f.close()
+                with open(file_name, "w") as f:
+                    if isinstance(xml_data, str):
+                        f.writelines(xml_data)
+                    elif isinstance(xml_data, bytes):
+                        f.writelines(xml_data.decode('utf-8'))
                 logs.append(file_name)
             except Exception as e:
                 print(e)
