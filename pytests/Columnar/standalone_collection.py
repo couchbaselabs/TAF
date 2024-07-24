@@ -336,10 +336,10 @@ class StandaloneCollection(ColumnarBaseTest):
         character_with_space = string.ascii_letters + string.digits + ' '
 
         # Generate an initial large random string
-        random_string = ''.join(random.choices(character_with_space, k=1000))
+        random_string = ''.join(random.choices(character_with_space, k=100000))
 
         # Fill the document with random data
-        for _ in range(size_bytes // 1000):  # To approximate the size
+        for _ in range(size_bytes // 100000):  # To approximate the size
             field = ''.join(random.choices(characters, k=5))
             large_doc[field] = random_string
 
@@ -360,6 +360,7 @@ class StandaloneCollection(ColumnarBaseTest):
             additional_size = size_bytes - current_size
             additional_data = ''.join(random.choices(character_with_space, k=additional_size))
             large_doc['extra_field'] = additional_data
+
         large_doc["name"] = ''.join(random.choices(character_with_space, k=10))
         large_doc["email"] = ''.join(random.choices(character_with_space, k=10))
 

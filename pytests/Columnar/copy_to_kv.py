@@ -829,10 +829,10 @@ class CopyToKv(ColumnarBaseTest):
         character_with_space = string.ascii_letters + string.digits + ' '
 
         # Generate an initial large random string
-        random_string = ''.join(random.choices(character_with_space, k=1000))
+        random_string = ''.join(random.choices(character_with_space, k=100000))
 
         # Fill the document with random data
-        for _ in range(size_bytes // 1000):  # To approximate the size
+        for _ in range(size_bytes // 100000):  # To approximate the size
             field = ''.join(random.choices(characters, k=5))
             large_doc[field] = random_string
 
@@ -853,6 +853,7 @@ class CopyToKv(ColumnarBaseTest):
             additional_size = size_bytes - current_size
             additional_data = ''.join(random.choices(character_with_space, k=additional_size))
             large_doc['extra_field'] = additional_data
+
         large_doc["name"] = ''.join(random.choices(character_with_space, k=10))
         large_doc["email"] = ''.join(random.choices(character_with_space, k=10))
 
@@ -894,7 +895,9 @@ class CopyToKv(ColumnarBaseTest):
                       {"cluster": self.cluster, "collection_name": datasets[i].name,
                        "database_name": datasets[i].database_name, "dataverse_name": datasets[i].dataverse_name,
                        "dest_bucket": collection, "link_name": remote_link.full_name,
-                       "validate_error_msg": True}))
+                       "validate_error_msg": True, "expected_error": "External sink error. UpsertRequest, "
+                                                                     "Reason: NO_MORE_RETRIES",
+                       "expected_error_code": 24230}))
         time.sleep(60)
         self.log.info("Running copy to kv statements")
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
