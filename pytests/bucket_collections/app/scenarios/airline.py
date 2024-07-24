@@ -30,7 +30,7 @@ class Airline(Thread):
     @staticmethod
     def generic_query_run(query):
         client = sdk_clients["cbas_admin"]
-        result = client.cluster.analyticsQuery(query)
+        result = client.cluster.analytics_query(query)
         return str(result)
 
     def scenario_get_middle_aged_user_profiles(self):

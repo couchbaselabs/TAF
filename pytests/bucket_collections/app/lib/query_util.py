@@ -1,5 +1,8 @@
 from random import sample, choice, randint
 
+from couchbase.options import QueryOptions
+from couchbase.subdocument import StoreSemantics
+
 from bucket_collections.app.constants import query, global_vars
 from bucket_collections.app.constants.global_vars import sdk_clients
 from bucket_collections.app.constants.query import DAYS_IN_WEEK, UTC_FORMAT
@@ -16,7 +19,7 @@ class CommonUtil(object):
                                    doc_key, ["doc_counter", 1],
                                    create_path=True,
                                    store_semantics=StoreSemantics.UPSERT)
-        return result[doc_key]['value'].contentAs(0, long)
+        return int(result[doc_key]['value'])
 
     @staticmethod
     def get_current_date(scope_name):
@@ -110,7 +113,7 @@ class Airline(CommonUtil):
         result = client.cluster.query(
             query.Airline.routes_on_days % (days, time_clause,
                                             src_airport, dest_airport),
-            QueryOptions.queryOptions().metrics(True))
+            QueryOptions(metrics=True))
 
         summary = dict()
         summary["src_airport"] = src_airport
@@ -160,7 +163,7 @@ class Hotel(CommonUtil):
 
         result = client.cluster.query(
             query.Hotel.hotels_in_city % (with_ratings, country, city),
-            QueryOptions.queryOptions().metrics(True))
+            QueryOptions(metrics=True))
 
         if read_reviews:
             for row in result.rowsAsObject():

@@ -671,11 +671,21 @@ class RebalanceTask(Task):
                     self.test_log.debug("Will monitor vbucket shuffling for "
                                         "swap rebalance")
             self.state = "add_nodes"
-            self.add_nodes()
+            result = self.add_nodes()
+            if result is False:
+                # Remove added nodes, to avoid future failures
+                [self.rest.eject_node(node.id)
+                 for node in self.cluster_util.get_nodes(self.cluster.master,
+                                                         active=False,
+                                                         inactive_added=True)]
+                self.complete_task()
+                return self.result
+
             # Validate the current orchestrator is selected as expected
             result = self.cluster_util.validate_orchestrator_selection(
                 self.cluster)
             if result is False:
+                self.complete_task()
                 return self.result
             self.state = "triggering"
             self.start_rebalance()

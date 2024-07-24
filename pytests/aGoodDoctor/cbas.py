@@ -89,7 +89,7 @@ def execute_via_sdk(client, statement, readonly=False,
         options.clientContextId(client_context_id)
 
     output = {}
-    result = client.analyticsQuery(statement, options)
+    result = client.analytics_query(statement, options)
 
     output["status"] = result.metaData().status()
     output["metrics"] = result.metaData().metrics()

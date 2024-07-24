@@ -6,6 +6,7 @@ rbac_roles:
         roles:
           - "bucket_admin[travel-sample]"
           - "query_manage_index[travel-sample]"
+          - "query_system_catalog[travel-sample]"
       - user_name: "guest"
         password: "Guest@123"
         roles:

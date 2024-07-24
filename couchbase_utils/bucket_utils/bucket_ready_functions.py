@@ -4624,9 +4624,14 @@ class BucketUtils(ScopeUtils):
     def get_buckets_item_count(cluster, bucket_name=None):
         bucket_map = dict()
         bucket_rest = BucketRestApi(cluster.master)
-        status, json_parsed = bucket_rest.get_bucket_info(basic_stats=True)
+        status, json_parsed = bucket_rest.get_bucket_info(
+            bucket_name=bucket_name, basic_stats=True)
         if status is False:
             return bucket_map
+
+        if bucket_name:
+            # Because we directly got the bucket_specific dict here
+            json_parsed = [json_parsed]
 
         for item in json_parsed:
             b_name = item['name']

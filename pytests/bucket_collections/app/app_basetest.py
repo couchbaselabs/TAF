@@ -2,6 +2,9 @@ import time
 import yaml
 from copy import deepcopy
 
+from couchbase.exceptions import InternalServerFailureException
+from couchbase.logic.n1ql import QueryStatus
+
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
 from cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
@@ -10,12 +13,12 @@ from bucket_collections.app.constants import global_vars
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
 from cb_server_rest_util.backup.backup_api import BackupRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.index.index_api import IndexRestAPI
 from cb_server_rest_util.security.security_api import SecurityRestAPI
 from cb_tools.cbstats import Cbstats
 from cbas_utils.cbas_utils import CbasUtil
-from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class AppBase(BaseTestCase):
@@ -107,8 +110,9 @@ class AppBase(BaseTestCase):
         # Rebalance_in required nodes
         nodes_init = self.cluster.servers[1:self.nodes_init] \
             if self.nodes_init != 1 else []
-        self.task.rebalance(self.cluster, nodes_init, [],
-                            services=self.services_init[1:])
+        result = self.task.rebalance(self.cluster, nodes_init, [],
+                                     services=self.services_init[1:])
+        self.assertTrue(result, "Initial rebalance failed")
         self.cluster.nodes_in_cluster.extend(
             [self.cluster.master] + nodes_init)
 
@@ -277,36 +281,41 @@ class AppBase(BaseTestCase):
 
         if not self.capella_run:
             self.log.info("Setting index storage mode=gsi")
-            RestConnection(self.cluster.master).set_indexer_storage_mode(
-                storageMode=self.index_storage_mode)
+            status, content = (IndexRestAPI(self.cluster.master).
+                set_gsi_settings({'storageMode': self.index_storage_mode}))
+            self.assertTrue(status, f"Failed to set storageMode: {content}")
 
         self.log.info("Dropping default indexes on _default collection")
         select_result = self.sdk_clients["bucket_admin"].cluster.query(
-            "SELECT name FROM system:indexes "
-            "WHERE keyspace_id='travel-sample'")
-        for row in select_result.rowsAsObject():
+            "SELECT name,scope_id,keyspace_id FROM system:indexes "
+            "WHERE bucket_id='travel-sample'")
+        for row in select_result.rows():
             drop_result = self.sdk_clients["bucket_admin"].cluster.query(
-                "DROP INDEX `%s` on `travel-sample`" % row.get("name"))
-            if drop_result.metaData().status().toString() != "SUCCESS":
-                self.fail("Drop index '%s' failed: %s" % (row.get("name"),
+                "DROP INDEX `%s` on `travel-sample`.`%s`.`%s`"
+                % (row["name"], row["scope_id"], row["keyspace_id"]))
+            if drop_result.metadata().status() != QueryStatus.SUCCESS:
+                self.fail("Drop index '%s' failed: %s" % (row["name"],
                                                           drop_result))
 
         self.log.info("Creating collection specific indexes")
         for query in self.service_conf["indexes"]:
             result = self.sdk_clients["bucket_admin"].cluster.query(query)
-            if result.metaData().status().toString() != "SUCCESS":
+            for _ in result.rows(): pass
+            if result.metadata().status() != QueryStatus.SUCCESS:
                 self.fail("Create index '%s' failed: %s" % (query, result))
 
         self.log.info("Building deferred indexes")
+        index_names = list()
         indexes_to_build = dict()
         result = self.sdk_clients["bucket_admin"].cluster.query(
             'SELECT * FROM system:indexes '
             'WHERE bucket_id="travel-sample" AND state="deferred"')
-        for row in result.rowsAsObject():
-            row = row.get("indexes")
+        for row in result.rows():
+            index_names.append(row["name"])
+            row = row["indexes"]
             bucket = self.bucket.name
-            scope = row.get("scope_id")
-            collection = row.get("keyspace_id")
+            scope = row["scope_id"]
+            collection = row["keyspace_id"]
             if bucket not in indexes_to_build:
                 indexes_to_build[bucket] = dict()
             if scope not in indexes_to_build[bucket]:
@@ -314,7 +323,7 @@ class AppBase(BaseTestCase):
             if collection not in indexes_to_build[bucket][scope]:
                 indexes_to_build[bucket][scope][collection] = list()
 
-            indexes_to_build[bucket][scope][collection].append(row.get("name"))
+            indexes_to_build[bucket][scope][collection].append(row["name"])
 
         for bucket, b_data in indexes_to_build.items():
             for scope, s_data in b_data.items():
@@ -325,8 +334,8 @@ class AppBase(BaseTestCase):
                                 "BUILD INDEX on `%s`.`%s`.`%s`(%s)"
                                 % (bucket, scope, collection,
                                    ",".join(indexes)))
-                        if build_res.metaData().status().toString() \
-                                != "SUCCESS":
+                        for _ in build_res.rows(): pass
+                        if build_res.metadata().status() != QueryStatus.SUCCESS:
                             self.fail("Build index failed for %s: %s"
                                       % (indexes, build_res))
                     except InternalServerFailureException as err:
@@ -338,13 +347,12 @@ class AppBase(BaseTestCase):
         start_time = time.time()
         stop_time = start_time + 300
 
-        for row in result.rowsAsObject():
-            query = "SELECT state FROM system:indexes WHERE name='%s'" \
-                    % row.get("indexes").get("name")
+        for i_name in index_names:
+            query = f"SELECT state FROM system:indexes WHERE name='{i_name}'"
             while True:
-                state = self.sdk_clients["bucket_admin"].cluster.query(
-                    query).rowsAsObject()[0].get("state")
-                if state == "online":
+                result = self.sdk_clients["bucket_admin"].cluster.query(query)
+                states = list(set([row["state"] for row in result.rows()]))
+                if len(states) == 1 and states[0] == "online":
                     break
                 if time.time() > stop_time:
                     self.fail("Index availability timeout")
@@ -357,8 +365,8 @@ class AppBase(BaseTestCase):
         cbas_conf = self.service_conf[CbServer.Services.CBAS]
         for data_verse in cbas_conf["dataverses"]:
             query = "CREATE DATAVERSE %s" % data_verse["name"]
-            result = client.cluster.analyticsQuery(query)
-            if result.metaData().status().toString() != "SUCCESS":
+            result = client.cluster.analytics_query(query)
+            if result.metadata().status() != QueryStatus.SUCCESS:
                 self.fail("Failure during analytics query: %s" % result)
         for data_set in cbas_conf["datasets"]:
             query = "CREATE DATASET `%s`.`%s` ON %s " \
@@ -367,8 +375,8 @@ class AppBase(BaseTestCase):
             if "where" in data_set:
                 query += "WHERE %s" % data_set["where"]
 
-            result = client.cluster.analyticsQuery(query)
-            if result.metaData().status().toString() != "SUCCESS":
+            result = client.cluster.analytics_query(query)
+            if result.metadata().status() != QueryStatus.SUCCESS:
                 self.fail("Failure during analytics query: %s" % result)
 
     def configure_bucket_backups(self):
@@ -405,10 +413,10 @@ class AppBase(BaseTestCase):
                     self.fail("Backup %s create failed" % backup_config)
 
             # Create repo
-            status, _ = backup_rest.create_repository(backup_config["repo_id"],
-                                                      repo_params)
-            if status is False:
-                self.fail("Create repo failed for %s" % backup_config)
+            status, content = backup_rest.create_repository(
+                backup_config["repo_id"], repo_params)
+            self.assertTrue(status,
+                            f"Create repo failed for {repo_params}: {content}")
         shell.disconnect()
 
     def map_collection_data(self, bucket):

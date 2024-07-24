@@ -30,7 +30,7 @@ class Guest(Thread):
 
     @staticmethod
     def __get_airline_query_summary(result):
-        q_metrics = result["q_result"].metaData().metrics().get()
+        q_metrics = result["q_result"].metadata().metrics().get()
         return "Total src_airports: %s ,\n" \
                "Total dest_airports: %s (from %s),\n" \
                "Query: %s -> %s on days %s, time <%s>, stops <%s>,\n" \
@@ -45,7 +45,7 @@ class Guest(Thread):
 
     @staticmethod
     def __get_hotel_query_summary(result):
-        q_metrics = result["q_result"].metaData().metrics().get()
+        q_metrics = result["q_result"].metadata().metrics().get()
         return "Total Country: %d, Total Cities in selected country: %d,\n" \
                "Query: Hotels with avg_rating in %s::%s, %s \n" \
                "Total hits: %s, \n" \
@@ -84,6 +84,7 @@ class Guest(Thread):
     @staticmethod
     def scenario_query_search_available_hotels():
         result = query_util.Hotel.query_for_hotels(sdk_clients["guest"])
+        for _ in result.rows(): pass
         q_summary = "Guest - scenario_search_available_hotels\n"
         q_summary += Guest.__get_hotel_query_summary(result)
         return q_summary
@@ -92,6 +93,7 @@ class Guest(Thread):
     def scenario_query_hotel_based_on_ratings():
         result = query_util.Hotel.query_for_hotels(sdk_clients["guest"],
                                                    with_ratings=True)
+        for _ in result.rows(): pass
         q_summary = "Guest - scenario_query_hotel_based_on_ratings\n"
         q_summary += Guest.__get_hotel_query_summary(result)
         return q_summary
@@ -100,6 +102,7 @@ class Guest(Thread):
     def scenario_read_hotel_reviews():
         result = query_util.Hotel.query_for_hotels(
             sdk_clients["guest"], with_ratings=True, read_reviews=True)
+        for _ in result.rows(): pass
         q_summary = "Guest - scenario_read_hotel_reviews\n"
         q_summary += Guest.__get_hotel_query_summary(result)
         return q_summary
