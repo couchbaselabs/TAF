@@ -297,7 +297,15 @@ class ConfluentKafka(ColumnarBaseTest):
         )
         kafka_connector_details = self.populate_kafka_connector_details()
 
-        self.cbas_util.create_kafka_link(self.cluster, self.kafka_link_name, kafka_cluster_details)
+        schema_registry_details = None
+        if self.use_schema_registry:
+            schema_registry_details = self.kafka_cluster_obj.generate_confluent_schema_registry_detail(
+                schema_registry_url=self.schema_registry_url, api_key=self.schema_registry_api_key,
+                api_secret=self.schema_registry_secret_key
+            )
+
+        self.cbas_util.create_kafka_link(self.cluster, self.kafka_link_name, kafka_cluster_details,
+            schema_registry_details)
         self.log.info(f"Created confluent kafka link - {self.kafka_link_name}")
 
         self.cbas_util.create_standalone_collection_using_links(cluster=self.cluster,
