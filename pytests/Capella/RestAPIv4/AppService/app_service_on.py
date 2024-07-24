@@ -151,10 +151,6 @@ class AppServiceOn(GetAppService):
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOn", "healthy"],
                                                  app=self.app_service_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:
@@ -214,10 +210,6 @@ class AppServiceOn(GetAppService):
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOn", "healthy"],
                                                  app=self.app_service_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -340,10 +332,6 @@ class AppServiceOn(GetAppService):
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOn", "healthy"],
                                                  app=self.app_service_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:

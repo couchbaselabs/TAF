@@ -24,10 +24,10 @@ class GetNetworkPeers(GetCluster):
             "providerType": "aws",
             "providerConfig": {
                 "AWSConfig": {
-                    "accountId": "264138468394",
-                    "cidr": "10.2.0.0/23",
+                     "accountId": str(self.input.param("accountId", None)),
+                    "cidr": "10.222.0.0/23",
                     "region": "us-east-1",
-                    "vpcId": "vpc-0a8002505f10bc102"
+                    "vpcId": str(self.input.param("vpcId", None))
                 },
                 "providerId": None
             },

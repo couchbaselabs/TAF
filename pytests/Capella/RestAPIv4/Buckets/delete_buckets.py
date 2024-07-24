@@ -4,51 +4,15 @@ Created on August 25, 2023
 @author: Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.Buckets.get_buckets import GetBucket
 
 
-class DeleteBucket(GetCluster):
+class DeleteBucket(GetBucket):
 
     def setUp(self, nomenclature="Buckets_Delete"):
-        GetCluster.setUp(self, nomenclature)
+        GetBucket.setUp(self, nomenclature)
 
-        self.bucket_name = self.generate_random_string(
-            5, False, self.prefix + nomenclature)
-        self.expected_res = {
-            "name": self.bucket_name,
-            "type": "couchbase",
-            "storageBackend": "couchstore",
-            "memoryAllocationInMb": 100,
-            "bucketConflictResolution": "seqno",
-            "durabilityLevel": "none",
-            "replicas": 1,
-            "flush": False,
-            "timeToLiveInSeconds": 0,
-            "evictionPolicy": "fullEviction",
-            "stats": {
-                "itemCount": None,
-                "opsPerSecond": None,
-                "diskUsedInMib": None,
-                "memoryUsedInMib": None
-            }
-        }
-        res = self.capellaAPI.cluster_ops_apis.create_bucket(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_res['name'], self.expected_res['type'],
-            self.expected_res['storageBackend'],
-            self.expected_res['memoryAllocationInMb'],
-            self.expected_res['bucketConflictResolution'],
-            self.expected_res['durabilityLevel'],
-            self.expected_res['replicas'],
-            self.expected_res['flush'],
-            self.expected_res['timeToLiveInSeconds'])
-        if res.status_code != 201:
-            self.tearDown()
-            self.fail("!!!..Bucket creation failed...!!!")
-        self.bucket_id = res.json()['id']
-        self.expected_res['id'] = self.bucket_id
-
-        # Wait for the deployment request in GetCluster to complete.
+        # Wait for App Service in GetCluster to deploy.
         self.log.info("Waiting for AppService {} to be deployed."
                       .format(self.app_service_id))
         if not self.wait_for_deployment(self.cluster_id, self.app_service_id):
@@ -176,7 +140,7 @@ class DeleteBucket(GetCluster):
                 self.log.debug("Deletion Successful.")
                 self.bucket_id = self.create_bucket_to_be_tested(
                     self.organisation_id, self.project_id,
-                    self.cluster_id, self.bucket_name)
+                    self.cluster_id, self.bucket_name, self.buckets)
 
         if failures:
             for fail in failures:
@@ -235,8 +199,8 @@ class DeleteBucket(GetCluster):
             if self.validate_testcase(result, [204], testcase, failures):
                 self.log.debug("Deletion Successful.")
                 self.bucket_id = self.create_bucket_to_be_tested(
-                    self.organisation_id, self.project_id,
-                    self.cluster_id, self.bucket_name)
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.bucket_name, self.buckets)
 
         self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -377,7 +341,7 @@ class DeleteBucket(GetCluster):
                 self.log.debug("Deletion Successful.")
                 self.bucket_id = self.create_bucket_to_be_tested(
                     self.organisation_id, self.project_id,
-                    self.cluster_id, self.bucket_name)
+                    self.cluster_id, self.bucket_name, self.buckets)
 
         if failures:
             for fail in failures:

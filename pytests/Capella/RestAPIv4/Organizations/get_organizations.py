@@ -13,15 +13,7 @@ class GetOrganization(APIBase):
 
     def setUp(self):
         APIBase.setUp(self)
-
         organisation_name = self.input.capella.get("tenant_name")
-        # Create project.
-        # The project ID will be used to create API keys for roles that
-        # require project ID
-        self.project_id = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, self.prefix + "Organizations_Get",
-            self.generate_random_string(0, self.prefix)).json()["id"]
-
         self.expected_result = {
             "id": self.organisation_id,
             "name": organisation_name,
@@ -41,16 +33,6 @@ class GetOrganization(APIBase):
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
-        self.delete_api_keys(self.api_keys)
-
-        # Delete the project that was created.
-        self.log.info("Deleting Project: {}".format(self.project_id))
-        if self.delete_projects(self.organisation_id, [self.project_id],
-                                self.curr_owner_key):
-            self.log.error("Error while deleting project.")
-        else:
-            self.log.info("Project deleted successfully")
-
         super(GetOrganization, self).tearDown()
 
     def test_api_path(self):

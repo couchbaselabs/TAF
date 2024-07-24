@@ -25,7 +25,7 @@ class GetAppService(GetCluster):
             }
         }
         self.expected_res.update(self.app_svc_templates[self.input.param(
-            "app_svc_template", "AWS_2v4_2node")])
+            "app_svc_template", "2v4_2node")])
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)

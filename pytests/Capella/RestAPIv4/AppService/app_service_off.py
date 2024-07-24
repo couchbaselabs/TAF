@@ -116,7 +116,7 @@ class AppServiceOff(GetAppService):
             app = self.app_service_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.switch_cluster_on_endpoint = \
+                self.capellaAPI.cluster_ops_apis.appservice_on_off_endpoint = \
                     testcase["url"]
             if "invalid_organizationID" in testcase:
                 org = testcase["invalid_organizationID"]
@@ -134,17 +134,13 @@ class AppServiceOff(GetAppService):
                 result = self.capellaAPI.cluster_ops_apis.switch_app_service_off(
                     org, proj, clus, app)
 
-            self.capellaAPI.cluster_ops_apis.switch_cluster_on_endpoint = \
+            self.capellaAPI.cluster_ops_apis.appservice_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}" \
                 "/activationState"
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOff", "turnedOff"],
                                                  app=self.app_service_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:
@@ -204,10 +200,6 @@ class AppServiceOff(GetAppService):
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOff", "turnedOff"],
                                                  app=self.app_service_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -328,10 +320,6 @@ class AppServiceOff(GetAppService):
             if self.validate_testcase(result, [202, 409], testcase, failures):
                 if not self.validate_onoff_state(["turningOff", "turnedOff"],
                                                  app=self.app_service_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:

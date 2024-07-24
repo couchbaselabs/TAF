@@ -4,54 +4,16 @@ Created on July 25, 2023
 @author Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.Buckets.get_buckets import GetBucket
 
 
-class ListBucket(GetCluster):
+class ListBucket(GetBucket):
 
     def setUp(self, nomenclature="Buckets_List"):
-        GetCluster.setUp(self, nomenclature)
-
-        self.bucket_name = self.generate_random_string(
-            5, False, self.prefix + nomenclature)
+        GetBucket.setUp(self, nomenclature)
         self.expected_res = {
-            "data": [
-                {
-                    "name": self.bucket_name,
-                    "type": "couchbase",
-                    "storageBackend": "couchstore",
-                    "memoryAllocationInMb": 100,
-                    "bucketConflictResolution": "seqno",
-                    "durabilityLevel": "none",
-                    "replicas": 1,
-                    "flush": False,
-                    "timeToLiveInSeconds": 0,
-                    "evictionPolicy": "fullEviction",
-                    "stats": {
-                        "itemCount": None,
-                        "opsPerSecond": None,
-                        "diskUsedInMib": None,
-                        "memoryUsedInMib": None
-                    }
-                }
-            ]
+            "data": [self.expected_res]
         }
-        res = self.capellaAPI.cluster_ops_apis.create_bucket(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_res['data'][0]['name'],
-            self.expected_res['data'][0]['type'],
-            self.expected_res['data'][0]['storageBackend'],
-            self.expected_res['data'][0]['memoryAllocationInMb'],
-            self.expected_res['data'][0]['bucketConflictResolution'],
-            self.expected_res['data'][0]['durabilityLevel'],
-            self.expected_res['data'][0]['replicas'],
-            self.expected_res['data'][0]['flush'],
-            self.expected_res['data'][0]['timeToLiveInSeconds'])
-        if res.status_code != 201:
-            self.tearDown()
-            self.fail("!!!..Bucket creation failed...!!!")
-        self.bucket_id = res.json()['id']
-        self.expected_res['data'][0]['id'] = self.bucket_id
 
     def tearDown(self):
         super(ListBucket, self).tearDown()

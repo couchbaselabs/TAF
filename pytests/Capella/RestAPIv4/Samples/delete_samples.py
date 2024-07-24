@@ -4,7 +4,6 @@ Created on December 22, 2023
 @author: Vipul Bhardwaj
 """
 
-import time
 from pytests.Capella.RestAPIv4.Samples.get_samples import GetSample
 
 

@@ -84,7 +84,7 @@ class APIBase(CouchbaseBaseTest):
         # Templates for cluster configurations across Computes and CSPs.
         self.cluster_templates = {
             # TEMPLATES :
-            "AWS_template_m7_xlarge": {
+            "AWS_r5_xlarge": {
                 "cloudProvider": {
                     "type": "aws",
                     "region": self.input.param("region", "us-east-1"),
@@ -98,7 +98,7 @@ class APIBase(CouchbaseBaseTest):
                         "node": {
                             "compute": {
                                 "cpu": self.input.param("cpu", 4),
-                                "ram": self.input.param("ram", 16)
+                                "ram": self.input.param("ram", 32)
                             },
                             "disk": {
                                 "storage": 50,
@@ -135,8 +135,8 @@ class APIBase(CouchbaseBaseTest):
                     {
                         "node": {
                             "compute": {
-                                "cpu": self.input.param("cpu", 2),
-                                "ram": self.input.param("ram", 8)
+                                "cpu": self.input.param("cpu", 4),
+                                "ram": self.input.param("ram", 32)
                             },
                             "disk": {
                                 "storage": 50,
@@ -159,8 +159,84 @@ class APIBase(CouchbaseBaseTest):
                     "plan": self.input.param("supportPlan", "basic"),
                     "timezone": "GMT"
                 }
+            },
+            "Azure_E4s_v5": {
+                "cloudProvider": {
+                    "type": "azure",
+                    "region": self.input.param("region", "eastus"),
+                    "cidr": "10.0.0.0/20"
+                },
+                "couchbaseServer": {
+                    "version": str(self.input.param("server_version", 7.6))
+                },
+                "serviceGroups": [
+                    {
+                        "node": {
+                            "compute": {
+                                "cpu": self.input.param("cpu", 4),
+                                "ram": self.input.param("ram", 32)
+                            },
+                            "disk": {
+                                "autoExpansion": True,
+                                "type": "P6",
+                            }
+                        },
+                        "numOfNodes": self.input.param("numOfNodes", 3),
+                        "services": [
+                            "data",
+                            "index",
+                            "query"
+                        ]
+                    }
+                ],
+                "availability": {
+                    "type": self.input.param("availabilityType", "multi")
+                },
+                "support": {
+                    "plan": self.input.param("supportPlan", "enterprise"),
+                    "timezone": "GMT"
+                }
+            },
+            "GCP_n2_highmem_4": {
+                "cloudProvider": {
+                    "type": "gcp",
+                    "region": self.input.param("region", "us-east1"),
+                    "cidr": "10.0.0.0/20"
+                },
+                "couchbaseServer": {
+                    "version": str(self.input.param("server_version", 7.6))
+                },
+                "serviceGroups": [
+                    {
+                        "node": {
+                            "compute": {
+                                "cpu": self.input.param("cpu", 4),
+                                "ram": self.input.param("ram", 32)
+                            },
+                            "disk": {
+                                "storage": 50,
+                                "type": "pd-ssd",
+                            }
+                        },
+                        "numOfNodes": self.input.param("numOfNodes", 3),
+                        "services": [
+                            "data",
+                            "index",
+                            "query"
+                        ]
+                    }
+                ],
+                "availability": {
+                    "type": self.input.param("availabilityType", "multi")
+                },
+                "support": {
+                    "plan": self.input.param("supportPlan", "enterprise"),
+                    "timezone": "GMT"
+                }
             }
         }
+        cluster_template = self.input.param("cluster_template",
+                                            "AWS_r5_xlarge")
         if TestInputSingleton.input.capella.get("clusters", None):
             self.cluster_id = TestInputSingleton.input.capella.get("clusters")
             if isinstance(self.cluster_id, dict):
@@ -169,16 +245,22 @@ class APIBase(CouchbaseBaseTest):
             else:
                 self.capella["clusters"] = {
                     "cluster_id": self.cluster_id,
+                    "cidr": None,
                     "vpc_id": None,
                     "app_id": None
                 }
         else:
-            cluster_template = self.input.param("cluster_template",
-                                                "AWS_template_m7_xlarge")
+            self.capella["clusters"] = {
+                "cluster_id": None,
+                "cidr": None,
+                "vpc_id": None,
+                "app_id": None
+            }
             self.cluster_templates[cluster_template]['serviceGroups'][0][
                 "services"].extend(services)
             res = self.select_CIDR(
-                self.organisation_id, self.project_id, self.prefix + "WRAPPER",
+                self.organisation_id, self.project_id,
+                self.prefix + cluster_template,
                 self.cluster_templates[cluster_template]['cloudProvider'],
                 self.cluster_templates[cluster_template]['serviceGroups'],
                 self.cluster_templates[cluster_template]['availability'],
@@ -196,11 +278,9 @@ class APIBase(CouchbaseBaseTest):
                 self.log.error(res.content)
                 self.tearDown()
                 self.fail("!!!...Couldn't decipher result...!!!")
-            self.capella["clusters"] = {
-                "cluster_id": self.cluster_id,
-                "vpc_id": None,
-                "app_id": None
-            }
+            self.capella["clusters"]["cluster_id"] = self.cluster_id
+        self.cluster_templates[cluster_template]["cloudProvider"][
+            "cidr"] = self.capella["clusters"]["cidr"]
 
         # Templates for instance configurations across CSPs and Computes
         self.instance_templates = {
@@ -226,7 +306,8 @@ class APIBase(CouchbaseBaseTest):
             instance_template = self.input.param("instance_template",
                                                  "4v16_AWS_singleNode_ue1")
             res = self.columnarAPI.create_analytics_cluster(
-                self.organisation_id, self.project_id, self.prefix + "WRAPPER",
+                self.organisation_id, self.project_id,
+                self.prefix + instance_template,
                 self.instance_templates[instance_template]["cloudProvider"],
                 self.instance_templates[instance_template]["compute"],
                 self.instance_templates[instance_template]["region"],
@@ -245,8 +326,7 @@ class APIBase(CouchbaseBaseTest):
         # Templates for app service configurations across CSPs and Computes.
         self.app_svc_templates = {
             # TEMPLATES :
-            "AWS_2v4_2node": {
-                "cloudProvider": "aws",
+            "2v4_2node": {
                 "nodes": 2,
                 "compute": {
                     "cpu": 2,
@@ -261,8 +341,10 @@ class APIBase(CouchbaseBaseTest):
         if (TestInputSingleton.input.test_params["case_number"] ==
                 TestInputSingleton.input.test_params["no_of_test_identified"]):
             # Wait of cluster to be in a stable state
+            self.log.info("Polling CLUSTER: {}.".format(
+                self.capella["clusters"]["cluster_id"]))
             start_time = time.time()
-            while not self.validate_onoff_state(["healthy", "turnedOff"]):
+            while not self.validate_onoff_state(["healthy"]):
                 if time.time() > 1800 + start_time:
                     self.log.fail("!!!...Cluster didn't stabilize within "
                                   "half an hour...!!!")
@@ -271,15 +353,20 @@ class APIBase(CouchbaseBaseTest):
             if self.capella["clusters"]["app_id"] and not isinstance(
                     self.capella["clusters"]["app_id"], bool):
                 # Wait for app_service to be in a stable state.
-                self.log.info("Deleting APP SERVICE: {}.".format(
+                self.log.info("Polling APP SERVICE: {}.".format(
                     self.capella["clusters"]["app_id"]))
+                start_time = time.time()
                 while not self.validate_onoff_state(
                         ["healthy", "turnedOff"],
                         app=self.capella["clusters"]["app_id"]):
+                    if time.time() > 1800 + start_time:
+                        self.log.fail("!!!...App Service didn't stabilize "
+                                      "within half an hour...!!!")
                     self.log.info("...Waiting further...")
 
                 # Delete App Service
-                self.log.info("Deleting App Service...")
+                self.log.info("Deleting App Service: {}.".format(
+                    self.capella["clusters"]["app_id"]))
                 res = self.capellaAPI.cluster_ops_apis.delete_appservice(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.capella["clusters"]["app_id"])
@@ -385,6 +472,7 @@ class APIBase(CouchbaseBaseTest):
     def handle_rate_limit(self, retry_after):
         self.log.warning("Rate Limit hit by the key: {}."
                          .format(self.curr_owner_key))
+        self.log.debug("Key needs to wait for {} seconds".format(retry_after))
         if self.curr_owner_key == self.org_owner_key1:
             self.curr_owner_key = self.org_owner_key2
         else:
@@ -393,9 +481,6 @@ class APIBase(CouchbaseBaseTest):
         self.log.debug("Tapping out, switching to the key: {}"
                        .format(self.curr_owner_key))
         self.update_auth_with_api_token(self.curr_owner_key)
-        # self.log.info("...Waiting {} seconds for rate limit to expire..."
-        #               .format(retry_after))
-        # time.sleep(retry_after)
 
     @staticmethod
     def get_utc_datetime(minutes_delta=0):
@@ -767,12 +852,25 @@ class APIBase(CouchbaseBaseTest):
         replaced_id = id[:-1] + next_char
         return replaced_id
 
-    @staticmethod
-    def auth_test_extension(testcases, other_project_id,
+    def auth_test_extension(self, testcases, other_project_id,
                             failure_expected_code=None,
                             failure_expected_error=None):
         testcases.extend([
             {
+                "description": "Calling API with invalid bearer token",
+                "token": self.replace_last_character(self.curr_owner_key["token"]),
+                "expected_status_code": 401,
+                "expected_error": {
+                    "code": 1001,
+                    "hint": "The request is unauthorized. Please ensure you "
+                            "have provided appropriate credentials in the "
+                            "request header. Please make sure the client IP "
+                            "that is trying to access the resource using the "
+                            "API key is in the API key allowlist.",
+                    "httpStatusCode": 401,
+                    "message": "Unauthorized"
+                }
+            }, {
                 "description": "Calling API without bearer token",
                 "token": "",
                 "expected_status_code": 401,
@@ -1030,6 +1128,8 @@ class APIBase(CouchbaseBaseTest):
                            .format(res.content))
 
         if res.json()['currentState'] in states:
+            self.log.info("Resource state: {}, Expected States: {}"
+                          .format(res.json()["currentState"], states))
             return True
 
         self.log.warning("Current State: '{}', Expected States: '{}'"
@@ -1045,6 +1145,8 @@ class APIBase(CouchbaseBaseTest):
             if key == "version" or not expected_res[key]:
                 continue
             if key not in expected_res:
+                self.log.error("Key: {} not present in expRes: {}"
+                               .format(key, expected_res))
                 return False
             if isinstance(expected_res[key], dict):
                 if not self.validate_api_response(
@@ -1055,6 +1157,8 @@ class APIBase(CouchbaseBaseTest):
                 if key == "services":
                     for service in expected_res[key]:
                         if service not in actual_res[key]:
+                            self.log.error("Service: {} not in RES"
+                                           .format(service))
                             return False
                     continue
                 for i in range(len(actual_res[key])):
@@ -1071,6 +1175,9 @@ class APIBase(CouchbaseBaseTest):
                             expected_res[key][j], actual_res[key][i], id):
                         return False
             elif expected_res[key] != actual_res[key]:
+                self.log.error("Value mismatch for key: {}, expRes: {} VS RES:"
+                               " {}".format(key, expected_res[key],
+                                            actual_res[key]))
                 return False
         return True
 
@@ -1078,6 +1185,12 @@ class APIBase(CouchbaseBaseTest):
                     availability, support, couchbaseServer=None, header=None,
                     **kwargs):
         self.log.info("Selecting CIDR for cluster deployment.")
+        duplicate_CIDR_messages = [
+            "Please ensure that the CIDR range is unique within this organisation",
+            "Please ensure you are passing a unique CIDR block and try again.",
+            "Please choose a different CIDR and try again",
+            "overlaps with existing resource with CIDR"
+        ]
 
         start_time = time.time()
         while time.time() - start_time < 1800:
@@ -1089,16 +1202,18 @@ class APIBase(CouchbaseBaseTest):
                 result = self.capellaAPI.cluster_ops_apis.create_cluster(
                     org, proj, name, cloudProvider, couchbaseServer,
                     serviceGroups, availability, support, header, **kwargs)
+            elif result.status_code == 202:
+                return result
             try:
                 r = result.json()
-                if ("Please ensure that the CIDR range is unique within this "
-                        "organisation" or "Please ensure you are passing a "
-                        "unique CIDR block and try again.") in r["message"]:
+                if any(i in r["message"] for i in duplicate_CIDR_messages):
                     cloudProvider["cidr"] = CapellaUtils.get_next_cidr() + "/20"
+                    self.capella["clusters"]["cidr"] = cloudProvider["cidr"]
                     self.log.info("Trying CIDR: {}".format(cloudProvider["cidr"]))
                 else:
                     return result
-            except (Exception,):
+            except Exception as e:
+                self.log.error("Ran into exception: {}".format(e))
                 return result
         self.log.error("Couldn't find CIDR within half an hour.")
 
@@ -1111,11 +1226,12 @@ class APIBase(CouchbaseBaseTest):
 
             if app_svc_id:
                 state = self.capellaAPI.cluster_ops_apis.get_appservice(
-                    self.organisation_id, self.project_id, clus_id, app_svc_id)
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    app_svc_id)
                 if state.status_code == 429:
                     self.handle_rate_limit(int(state.headers['Retry-After']))
                     state = self.capellaAPI.cluster_ops_apis.get_appservice(
-                        self.organisation_id, self.project_id, clus_id,
+                        self.organisation_id, self.project_id, self.cluster_id,
                         app_svc_id)
             elif inst_id:
                 state = self.columnarAPI.fetch_analytics_cluster_info(
@@ -1354,7 +1470,8 @@ class APIBase(CouchbaseBaseTest):
         self.log.error(res.content)
         self.fail("!!!...New alert creation failed...!!!")
 
-    def create_bucket_to_be_tested(self, org_id, proj_id, clus_id, buck_name):
+    def create_bucket_to_be_tested(self, org_id, proj_id, clus_id,
+                                   buck_name, buckets):
         # Wait for cluster to rebalance (if it is).
         self.update_auth_with_api_token(self.curr_owner_key)
         res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
@@ -1385,6 +1502,7 @@ class APIBase(CouchbaseBaseTest):
         if resp.status_code == 201:
             buck_id = resp.json()['id']
             self.log.debug("New bucket ID: {}".format(buck_id))
+            buckets.append(buck_id)
             return buck_id
         self.log.error(resp.content)
         self.fail("!!!...New bucket creation failed...!!!")
@@ -1407,21 +1525,7 @@ class APIBase(CouchbaseBaseTest):
                 bucket_ids.remove(bucket_id)
 
             # Wait for cluster to rebalance (if it is).
-            res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                self.organisation_id, proj_id, clus_id)
-            if res.status_code == 429:
-                self.handle_rate_limit(int(res.headers["Retry-After"]))
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, proj_id, clus_id)
-            while res.json()["currentState"] != "healthy":
-                self.log.warning("Waiting for cluster to rebalance.")
-                time.sleep(10)
-                res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                    self.organisation_id, proj_id, clus_id)
-                if res.status_code == 429:
-                    self.handle_rate_limit(int(res.headers["Retry-After"]))
-                    res = self.capellaAPI.cluster_ops_apis.fetch_cluster_info(
-                        self.organisation_id, proj_id, clus_id)
+            self.wait_for_deployment(clus_id)
             self.log.debug("Cluster state healthy.")
 
         return bucket_deletion_failed

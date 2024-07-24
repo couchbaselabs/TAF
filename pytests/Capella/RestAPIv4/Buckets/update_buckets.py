@@ -419,13 +419,12 @@ class UpdateBucket(GetBucket):
                 testcase["description"] = "Testing '{}' with val: `{}` of " \
                     "type: `{}`".format(key, value, type(value))
                 if (
-                        (key in ["memoryAllocationInMb",
+                        (key in ["memoryAllocationInMb", "priority",
                                  "timeToLiveInSeconds", "replicas"]
                             and not isinstance(value, int)) or
                         (key == "durabilityLevel"
                             and not isinstance(value, str)) or
-                        (key == "flush" and not isinstance(value, bool)) or
-                        (key == "priority" and not isinstance(value, int))
+                        (key == "flush" and not isinstance(value, bool))
                 ):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {

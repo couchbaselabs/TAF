@@ -112,7 +112,7 @@ class ClusterOn(GetCluster):
             self.capellaAPI.cluster_ops_apis.cluster_on_off_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/activationState"
 
-            if self.validate_testcase(result, [409, 202], testcase, failures):
+            if self.validate_testcase(result, [202], testcase, failures):
                 if not self.validate_onoff_state(["turningOn", "healthy"]):
                     self.log.error("Status == {}, Key validation Failure : {}"
                                    .format(result.status_code,

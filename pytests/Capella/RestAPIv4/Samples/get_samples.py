@@ -48,10 +48,12 @@ class GetSample(GetCluster):
 
         # Delete the sample bucket that was created.
         self.log.info("Deleting bucket: {}".format(self.sample_bucket_id))
-        if self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.sample_bucket_id).status_code != 204:
+        res = self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.sample_bucket_id)
+        if res.status_code != 204:
             self.log.error("!!!...Error while deleting bucket...!!!")
+            self.log.error(res.content)
         else:
             self.log.info("Successfully deleted bucket.")
 

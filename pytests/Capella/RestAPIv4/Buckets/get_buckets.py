@@ -18,12 +18,11 @@ class GetBucket(GetCluster):
         self.expected_res = {
             "name": self.bucket_name,
             "type": "couchbase",
-            "storageBackend": "couchstore",
-            "memoryAllocationInMb": 100,
+            "storageBackend": self.input.param("storageBackend", "magma"),
             "bucketConflictResolution": "seqno",
             "durabilityLevel": "none",
             "replicas": 1,
-            "flush": False,
+            "flush": True,
             "timeToLiveInSeconds": 0,
             "evictionPolicy": "fullEviction",
             "priority": 0,
@@ -34,6 +33,11 @@ class GetBucket(GetCluster):
                 "memoryUsedInMib": None
             }
         }
+        if self.input.param("storageBackend", "magma") == "couchstore":
+            self.expected_res["memoryAllocationInMb"] = 100
+        else:
+            self.expected_res["memoryAllocationInMb"] = 1024
+
         res = self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
             self.expected_res['name'], self.expected_res['type'],
@@ -44,13 +48,26 @@ class GetBucket(GetCluster):
             self.expected_res['replicas'], self.expected_res['flush'],
             self.expected_res['timeToLiveInSeconds'])
         if res.status_code != 201:
-            self.tearDown()
             self.log.error("Error : {}".format(res.content))
+            self.tearDown()
             self.fail("!!!..Bucket creation failed...!!!")
         self.bucket_id = res.json()['id']
         self.expected_res['id'] = self.bucket_id
+        self.buckets = [self.bucket_id]
+
+        # Wait for App Service to be Healthy before deleting the bucket.
+        self.log.info("Polling the APP SVC: {}".format(self.app_service_id))
+        self.wait_for_deployment(app_svc_id=self.app_service_id)
 
     def tearDown(self):
+        self.update_auth_with_api_token(self.curr_owner_key)
+
+        # Delete the buckets that were created.
+        if self.delete_buckets(self.organisation_id, self.project_id,
+                               self.cluster_id, self.buckets):
+            self.log.error("Error while deleting buckets.")
+        self.log.info("Successfully deleted buckets.")
+
         super(GetBucket, self).tearDown()
 
     def test_api_path(self):

@@ -6,45 +6,16 @@ Created on August 18, 2023
 
 import copy
 import time
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.Buckets.get_buckets import GetBucket
 
 
-class CreateBucket(GetCluster):
+class CreateBucket(GetBucket):
 
     def setUp(self, nomenclature="Buckets_Create"):
-        GetCluster.setUp(self, nomenclature)
-
-        # Initialise bucket params (for future bucket creation).
-        self.expected_res = {
-            "name": self.prefix + nomenclature,
-            "type": "couchbase",
-            "storageBackend": "couchstore",
-            "memoryAllocationInMb": 100,
-            "bucketConflictResolution": "seqno",
-            "durabilityLevel": "none",
-            "replicas": 1,
-            "flush": False,
-            "timeToLiveInSeconds": 0,
-            "evictionPolicy": "fullEviction",
-            "priority": 1000,
-            "stats": {
-                "itemCount": None,
-                "opsPerSecond": None,
-                "diskUsedInMib": None,
-                "memoryUsedInMib": None
-            }
-        }
-        self.bucket_ids = list()
+        GetBucket.setUp(self, nomenclature)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
-
-        # Delete the buckets that were created.
-        if self.delete_buckets(self.organisation_id, self.project_id,
-                               self.cluster_id, self.bucket_ids):
-            self.log.error("Error while deleting buckets.")
-        self.log.info("Successfully deleted buckets.")
-
         super(CreateBucket, self).tearDown()
 
     def test_api_path(self):
@@ -166,7 +137,7 @@ class CreateBucket(GetCluster):
                 "/v4/organizations/{}/projects/{}/clusters/{}/buckets"
 
             if self.validate_testcase(result, [201], testcase, failures):
-                self.bucket_ids.append(result.json()['id'])
+                self.buckets.append(result.json()['id'])
         if failures:
             for fail in failures:
                 self.log.warning(fail)
@@ -260,12 +231,12 @@ class CreateBucket(GetCluster):
                     self.expected_res['priority'], headers=header)
 
             if self.validate_testcase(result, [201], testcase, failures):
-                self.bucket_ids.append(result.json()['id'])
-            if len(self.bucket_ids) >= 30:
+                self.buckets.append(result.json()['id'])
+            if len(self.buckets) >= 30:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids)
+                                    self.cluster_id, self.buckets)
 
         self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -409,12 +380,12 @@ class CreateBucket(GetCluster):
                     self.expected_res['priority'], **kwarg)
 
             if self.validate_testcase(result, [201], testcase, failures):
-                self.bucket_ids.append(result.json()['id'])
-            if len(self.bucket_ids) >= 30:
+                self.buckets.append(result.json()['id'])
+            if len(self.buckets) >= 30:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids)
+                                    self.cluster_id, self.buckets)
 
         if failures:
             for fail in failures:
@@ -426,7 +397,7 @@ class CreateBucket(GetCluster):
         testcases = list()
 
         for key in self.expected_res:
-            if key in ["stats", "evictionPolicy"]:
+            if key in ["id", "stats", "evictionPolicy"]:
                 continue
 
             values = [
@@ -439,7 +410,7 @@ class CreateBucket(GetCluster):
                     special_characters=False)
                 testcase = copy.deepcopy(self.expected_res)
                 testcase[key] = value
-                for param in ["stats", "evictionPolicy"]:
+                for param in ["id", "stats", "evictionPolicy"]:
                     del testcase[param]
 
                 testcase["description"] = "Testing `{}` with val: {} of {}"\
@@ -673,12 +644,12 @@ class CreateBucket(GetCluster):
                     testcase['priority'])
 
             if self.validate_testcase(result, [201], testcase, failures):
-                self.bucket_ids.append(result.json()['id'])
-            if len(self.bucket_ids) >= 30:
+                self.buckets.append(result.json()['id'])
+            if len(self.buckets) >= 30:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
-                                    self.cluster_id, self.bucket_ids)
+                                    self.cluster_id, self.buckets)
 
         if failures:
             for fail in failures:

@@ -14,7 +14,8 @@ class GetCluster(GetProject):
         GetProject.setUp(self, nomenclature, services)
         self.expected_res = {
             "id": self.cluster_id,
-            "name": self.prefix + "WRAPPER",
+            "name": self.prefix + self.input.param(
+                "cluster_template", "AWS_r5_xlarge"),
             "description": None,
             "currentState": None,
             "audit": {
@@ -27,11 +28,17 @@ class GetCluster(GetProject):
             "connectionString": None,
             "configurationType": None
         }
-        self.expected_res.update(self.cluster_templates[self.input.param(
-            "cluster_template", "AWS_template_m7_xlarge")])
+        cluster_template = self.input.param("cluster_template",
+                                            "AWS_r5_xlarge")
+        self.expected_res.update(self.cluster_templates[cluster_template])
+        if cluster_template == "Azure_E4s_v5":
+            self.expected_res["serviceGroups"][0]["node"][
+                "disk"]["storage"] = 64
+            self.expected_res["serviceGroups"][0]["node"][
+                "disk"]["iops"] = 240
 
         # Wait for the deployment request in APIBase to complete.
-        self.log.info("Waiting for CLUSTER {} to be deployed."
+        self.log.info("Checking for CLUSTER {} to be stable."
                       .format(self.cluster_id))
         start_time = time.time()
         while not self.validate_onoff_state(["healthy", "turnedOff"]):
@@ -45,11 +52,20 @@ class GetCluster(GetProject):
         if not self.capella["clusters"]["app_id"]:
             # Create app service
             self.log.info("Creating App Service...")
+            app_svc_template = self.input.param("app_svc_template", "2v4_2node")
             res = self.capellaAPI.cluster_ops_apis.create_appservice(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["name"],
-                self.app_svc_templates["AWS_2v4_2node"]["compute"])
-            if res.status_code == 409:
+                self.app_svc_templates[app_svc_template]["compute"],
+                self.app_svc_templates[app_svc_template]["nodes"])
+            if res.status_code == 429:
+                self.handle_rate_limit(int(res.headers['Retry-After']))
+                res = self.capellaAPI.cluster_ops_apis.create_appservice(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.expected_res["name"],
+                    self.app_svc_templates[app_svc_template]["compute"],
+                    self.app_svc_templates[app_svc_template]["nodes"])
+            elif res.status_code == 409:
                 apps = self.capellaAPI.cluster_ops_apis.list_appservices(
                     self.organisation_id)
                 for app in apps.json()["data"]:
@@ -57,7 +73,7 @@ class GetCluster(GetProject):
                         self.app_service_id = app["id"]
                         self.capella["clusters"]["app_id"] = app["id"]
                         return
-            if res.status_code != 201:
+            elif res.status_code != 201:
                 self.log.error(res.content)
                 self.tearDown()
                 self.fail("!!!..AppService creation failed...!!!")

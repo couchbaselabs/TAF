@@ -5,59 +5,19 @@ Created on December 18, 2023
 """
 
 import time
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.Samples.get_samples import GetSample
 
-class ListSample(GetCluster):
+class ListSample(GetSample):
 
     def setUp(self, nomenclature="Samples_List"):
-        GetCluster.setUp(self, nomenclature)
+        GetSample.setUp(self, nomenclature)
 
         # Initialize params and create a sample bucket.
         self.expected_res = {
-            "data": [
-                {
-                    "name": self.input.param("sample_bucket", "travel-sample"),
-                    "type": "couchbase",
-                    "storageBackend": "couchstore",
-                    "memoryAllocationInMb": 200,
-                    "bucketConflictResolution": "seqno",
-                    "durabilityLevel": "none",
-                    "replicas": 1,
-                    "flush": False,
-                    "timeToLiveInSeconds": 0,
-                    "evictionPolicy": "fullEviction",
-                    "stats": {
-                        "itemCount": None,
-                        "opsPerSecond": None,
-                        "diskUsedInMib": None,
-                        "memoryUsedInMib": None
-                    }
-                }
-            ]
+            "data": [self.expected_res]
         }
-        res = self.capellaAPI.cluster_ops_apis.create_sample_bucket(
-            self.organisation_id, self.project_id, self.cluster_id,
-            self.expected_res["data"][0]["name"])
-        if res.status_code != 201:
-            self.tearDown()
-            self.fail("!!!...Sample Bucket creation failed...!!!")
-        self.expected_res["data"][0]["id"] = res.json()["bucketId"]
-        self.sample_bucket_id = res.json()["bucketId"]
-        self.log.info("Wait for data load in sample bucket to complete")
-        time.sleep(10)
 
     def tearDown(self):
-        self.update_auth_with_api_token(self.curr_owner_key)
-
-        # Delete the sample bucket that was created.
-        self.log.info("Deleting bucket: {}".format(self.sample_bucket_id))
-        if self.capellaAPI.cluster_ops_apis.delete_sample_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.sample_bucket_id).status_code != 204:
-            self.log.error("Error while deleting bucket.")
-        else:
-            self.log.info("Successfully deleted bucket.")
-
         super(ListSample, self).tearDown()
 
     def test_api_path(self):
