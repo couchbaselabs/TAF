@@ -3398,13 +3398,13 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             return True
 
-    def generate_delete_from_cmd(self, collection_name, dataverse_name=None, database_name=None,
-                                 where_clause=None, use_alias=False):
+    def generate_delete_from_cmd(
+            self, collection_name, dataverse_name=None, database_name=None,
+            where_clause=None, use_alias=False):
         cmd = "DELETE FROM "
-        if database_name:
-            cmd += "{0}.".format(database_name)
-        if dataverse_name:
-            cmd += "{0}.{1} ".format(
+        if database_name and dataverse_name:
+            cmd += "{0}.{1}.{2} ".format(
+                CBASHelper.format_name(database_name),
                 CBASHelper.format_name(dataverse_name),
                 CBASHelper.format_name(collection_name))
         else:
@@ -3426,8 +3426,10 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         """
         Query to delete from standalone collection
         """
-        cmd = self.generate_delete_from_cmd(collection_name, dataverse_name,
-                                            database_name, where_clause, use_alias)
+        cmd = self.generate_delete_from_cmd(
+            collection_name=collection_name, dataverse_name=dataverse_name,
+            database_name=database_name, where_clause=where_clause,
+            use_alias=use_alias)
 
         status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
@@ -3563,7 +3565,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                 f"alias.id in (SELECT VALUE x.id FROM {collection_full_name} "
                 f"as x limit {num_docs_to_delete})")
             if not self.delete_from_standalone_collection(
-                    cluster, collection_name, dataverse_name,
+                    cluster, collection_name, dataverse_name, database_name,
                     where_clause_for_delete_op, use_alias):
                 self.log.error(
                     "Error while deleting docs in collection {"
