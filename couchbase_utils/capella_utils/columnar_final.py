@@ -602,7 +602,8 @@ class ColumnarUtils:
     def wait_for_instance_to_turn_off(self, pod, tenant, project_id,
                                       instance, timeout=900):
         status = None
-        end_time = time.time() + timeout
+        start_time = time.time()
+        end_time = start_time + timeout
         # First wait for turn-off job to get picked up by control plane
         while status != 'turning_off' and time.time() < end_time:
             resp = self.get_instance_info(pod, tenant, project_id,
@@ -622,7 +623,8 @@ class ColumnarUtils:
                 pod, tenant, project_id, instance.instance_id)
             status = resp["data"]["state"]
         if status == "turned_off":
-            self.log.info("Instance turned off successful")
+            self.log.info("Instance turned off successful. Time taken {0} "
+                          "seconds".format(time.time() - start_time))
             return True
         else:
             self.log.error("Failed to turn off the instance")
@@ -649,7 +651,8 @@ class ColumnarUtils:
     def wait_for_instance_to_turn_on(self, pod, tenant, project_id,
                                      instance, timeout=900):
         status = None
-        end_time = time.time() + timeout
+        start_time = time.time()
+        end_time = start_time + timeout
         # First wait for turn-on job to get picked up by control plane
         while status != 'turning_on' and time.time() < end_time:
             resp = self.get_instance_info(pod, tenant, project_id,
@@ -671,7 +674,8 @@ class ColumnarUtils:
             self.log.info("Instance is still turning on")
             time.sleep(20)
         if status == "healthy":
-            self.log.info("Instance turned on successful")
+            self.log.info("Instance turned on successful. Time take {0} "
+                          "seconds".format(time.time() - start_time))
             self.update_columnar_instance_obj(pod, tenant, instance)
             return True
         else:

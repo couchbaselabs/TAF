@@ -39,7 +39,8 @@ class RemoteLinksDatasets(ColumnarBaseTest):
             self.fail("Error while deleting cbas entities")
 
         if hasattr(self, 'bucket_id'):
-            self.delete_capella_bucket(self.bucket_id)
+            self.delete_all_buckets_from_capella_cluster(
+                self.tenant, self.remote_cluster)
         super(ColumnarBaseTest, self).tearDown()
         self.log_setup_status(self.__class__.__name__, "Finished", stage="Teardown")
 
@@ -153,14 +154,6 @@ class RemoteLinksDatasets(ColumnarBaseTest):
             self.bucket_util.create_collection_object(self.remote_cluster.buckets[0], self.scope_name,
                                                       collection_spec={"name": collection_name})
             return collection_name
-
-    def delete_capella_bucket(self, bucket_id):
-        resp = self.capellaAPI.cluster_ops_apis.delete_bucket(self.tenant.id, self.tenant.project_id,
-                                                              self.remote_cluster.id, bucket_id)
-        if resp.status_code == 204:
-            self.log.info("Bucket deleted successfully")
-        else:
-            self.log.error("Bucket deletion failed")
 
     def load_doc_to_remote_collections(self, bucket, scope, collection, start, end):
         database_information = CouchbaseLoader(username= self.remote_cluster.username,
@@ -335,18 +328,11 @@ class RemoteLinksDatasets(ColumnarBaseTest):
                                             self.collection_name, self.initial_doc_count,
                                             self.initial_doc_count * 2)
 
-        results = []
         for dataset in remote_datasets:
-            jobs.put((
-                self.cbas_util.get_num_items_in_cbas_dataset,
-                {"cluster": self.cluster, "dataset_name": dataset.full_name,
-                 "timeout": 3600, "analytics_timeout": 3600}))
-        self.cbas_util.run_jobs_in_parallel(
-            jobs, results, self.sdk_clients_per_user, async_run=False)
-        for result in results:
-            if result != self.initial_doc_count * 2:
-                self.fail("Doc count mismatch. Expected - {0}, Actual - {"
-                          "1}".format(self.initial_doc_count, result))
+            if not self.cbas_util.wait_for_ingestion_complete(
+                    self.cluster, dataset.full_name,
+                    self.initial_doc_count * 2):
+                self.fail("Doc count mismatch.")
 
         for link in remote_links:
             if not self.cbas_util.disconnect_link(self.cluster, link.full_name):
