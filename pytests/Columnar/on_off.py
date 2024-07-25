@@ -526,7 +526,7 @@ class OnOff(ColumnarBaseTest):
         columnar_internal = ColumnarAPI(self.pod.url_public, '', '', self.tenant.user,
                                         self.tenant.pwd, internal_support_token)
         resp = columnar_internal.set_trigger_time_for_onoff(next_friday_1630_in_utc,
-                                                            [self.cluster.cluster_id])
+                                                            [self.cluster.instance_id])
         if resp.status_code == 200:
             self.log.info("Applied sudo time to trigger off")
         else:

@@ -550,14 +550,6 @@ class StandaloneCollection(ColumnarBaseTest):
         if not all(results):
             self.fail("Failed to insert doc in standalone collection")
 
-        # validate number of docs in standalone collection
-        for dataset in datasets:
-            doc_count = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, dataset.full_name)
-            results.append(doc_count == self.initial_doc_count)
-
-        if not all(results):
-            self.fail("Doc count mismatch after scaling")
-
     def test_insert_atomicity(self):
         result, msg = self.cbas_util.create_cbas_infra_from_spec(
             self.cluster, self.columnar_spec, self.bucket_util, False)

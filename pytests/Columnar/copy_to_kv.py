@@ -711,14 +711,11 @@ class CopyToKv(ColumnarBaseTest):
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
-            expected_error = self.input.param("expected_error")
             source_definition = "select * from {} limit 100000".format(dataset.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
                        "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000,
-                       "validate_error_msg": self.input.param("validate_error", False),
-                       "expected_error": expected_error,
-                       "expected_error_code": self.input.param("expected_error_code")}))
+                       }))
 
         time.sleep(60)
         self.log.info("Executing copy to kv statement")

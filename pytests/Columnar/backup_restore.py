@@ -379,6 +379,7 @@ class BackupRestore(ColumnarBaseTest):
                     self.fail("Backup with backup id: {0}, Not found".format(backup_id))
                 backup_state = self.get_backup_from_backup_lists(backup_id)["progress"]["status"]
                 self.log.info("Waiting for backup to be completed, current state: {}".format(backup_state))
+                time.sleep(20)
             self.restore_wait_for_complete(backup_id)
             self.wait_for_instance_to_be_healthy()
 
