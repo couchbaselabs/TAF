@@ -544,8 +544,7 @@ class CopyToKv(ColumnarBaseTest):
             source_definition = "select * from {} limit 100000".format(dataset.full_name)
             jobs.put((self.cbas_util.copy_to_kv,
                       {"cluster": self.cluster, "source_definition": source_definition, "dest_bucket": collection,
-                       "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000,
-                       "validate_error_msg": self.input.param("validate_error", False)}))
+                       "link_name": remote_link.full_name, "analytics_timeout": 1000000, "timeout": 100000}))
 
         self.log.info("Running copy to kv statements")
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=True)
@@ -560,7 +559,7 @@ class CopyToKv(ColumnarBaseTest):
                 break
             time.sleep(5)
         time.sleep(20)
-        if not self.cbas_util.drop_link(self.cluster, remote_link.full_name):
+        if not self.cbas_util.drop_link(self.cluster, remote_link.full_name, timeout=720, analytics_timeout=720):
             self.fail("Failed to drop link while copying to KV")
         del (self.cbas_util.remote_links[remote_link.full_name])
         jobs.join()
