@@ -394,8 +394,10 @@ class BackupRestore(ColumnarBaseTest):
             self.restore_wait_for_complete(backup_id)
             self.wait_for_instance_to_be_healthy()
             self.scale_columnar_cluster(scale_nodes)
+            time.sleep(120)
 
-        self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster)
+        if not self.columnar_utils.allow_ip_on_instance(self.pod, self.tenant, self.tenant.project_id, self.cluster):
+            self.fail("Fail to allow IP on instance")
         self.cbas_util.wait_for_cbas_to_recover(self.cluster, timeout=300)
         self.validate_entities_after_restore()
         doc_count_after_restore = self.dataset_count()
