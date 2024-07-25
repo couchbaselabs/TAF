@@ -532,7 +532,17 @@ class OnOff(ColumnarBaseTest):
         else:
             self.fail("Failed to apply sudo time")
 
-        self.wait_for_off()
+        status = None
+        start_time = time.time()
+        while status != "turned_off" and time.time() < start_time + 600:
+            resp = self.columnar_utils.get_instance_info(self.pod, self.tenant, self.tenant.project_id,
+                                                         self.cluster.instance_id)
+            status = resp["data"]["state"]
+            self.log.info("Instance is still turning off")
+            time.sleep(20)
+
+        if status != "turned_off":
+            self.fail("Failed to turn off instance")
 
         resp = columnar_internal.set_trigger_time_for_onoff(next_friday_1030_in_utc,
                                                             [self.cluster.instance_id])
@@ -541,7 +551,17 @@ class OnOff(ColumnarBaseTest):
         else:
             self.fail("Failed to apply sudo time")
 
-        self.wait_for_on()
+        status = None
+        start_time = time.time()
+        while status != "healthy" and time.time() < start_time + 600:
+            resp = self.columnar_utils.get_instance_info(self.pod, self.tenant, self.tenant.project_id,
+                                                         self.cluster.instance_id)
+            status = resp["data"]["state"]
+            self.log.info("Instance is still turning on")
+            time.sleep(20)
+
+        if status != "healthy":
+            self.fail("Failed to turn on instance")
         for collection in remote_datasets:
             self.cbas_util.wait_for_ingestion_complete(self.cluster, collection.full_name, self.no_of_docs)
         self.validate_entities_after_restore()
