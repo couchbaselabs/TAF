@@ -393,6 +393,10 @@ class BackupRestore(ColumnarBaseTest):
             backup_id = self.create_backup_wait_for_complete()
             self.restore_wait_for_complete(backup_id)
             self.wait_for_instance_to_be_healthy()
+            if not self.columnar_utils.allow_ip_on_instance(
+                    self.pod, self.tenant, self.tenant.project_id,
+                    self.cluster):
+                self.fail("Fail to allow IP on instance")
             self.scale_columnar_cluster(scale_nodes)
             time.sleep(120)
 

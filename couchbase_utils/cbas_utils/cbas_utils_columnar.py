@@ -6887,9 +6887,9 @@ class CbasUtil(CBOUtil):
         Method to copy query results to a KV collection using a remote link.
         """
         # with clause yet to be decided.
-        cmd = self.generate_copy_to_kv_cmd(collection_name, database_name,
-                                           dataverse_name, source_definition,
-                                           dest_bucket, link_name, primary_key, function)
+        cmd = self.generate_copy_to_kv_cmd(
+            collection_name, database_name, dataverse_name, source_definition,
+            dest_bucket, link_name, primary_key, function)
 
         for i in range(5):
             status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(

@@ -177,14 +177,25 @@ class CopyToKv(ColumnarBaseTest):
     def create_capella_collection(self, bucket_id, scope_id, collection_name=None):
         if not collection_name:
             collection_name = self.cbas_util.generate_name()
-        resp = self.capellaAPI.cluster_ops_apis.create_collection(self.tenant.id, self.tenant.project_id,
-                                                                  clusterId=self.remote_cluster.id, bucketId=bucket_id,
-                                                                  scopeName=scope_id, name=collection_name)
+        for i in range(0, 5):
+            resp = self.capellaAPI.cluster_ops_apis.create_collection(
+                self.tenant.id, self.tenant.project_id,
+                clusterId=self.remote_cluster.id, bucketId=bucket_id,
+                scopeName=scope_id, name=collection_name)
 
-        if resp.status_code == 201:
-            self.log.info("Create collection {} in scope {}".format(collection_name, scope_id))
-            return collection_name
-        return False
+            if resp.status_code == 201:
+                self.log.info("Create collection {} in scope {}".format(
+                    collection_name, scope_id))
+                return collection_name
+            else:
+                self.log.error(
+                    "Failed to create collection {} in scope {}. "
+                    "Retrying".format(collection_name, scope_id))
+                time.sleep(10)
+        self.log.error(
+            "Failed to create collection {} in scope {} even after 5 "
+            "retries".format(collection_name, scope_id))
+        return None
 
     def delete_capella_bucket(self, bucket_id):
         for i in range(5):
@@ -223,6 +234,9 @@ class CopyToKv(ColumnarBaseTest):
         for dataset in datasets:
             collection_name = self.create_capella_collection(self.provisioned_bucket_id,
                                                              self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
+
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -300,6 +314,8 @@ class CopyToKv(ColumnarBaseTest):
         for dataset in datasets:
             collection_name = self.create_capella_collection(self.provisioned_bucket_id,
                                                              self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -369,8 +385,10 @@ class CopyToKv(ColumnarBaseTest):
         else:
             primary_key = None
         for dataset in datasets:
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -438,8 +456,10 @@ class CopyToKv(ColumnarBaseTest):
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
         provisioned_collections = []
         for dataset in datasets:
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -503,8 +523,11 @@ class CopyToKv(ColumnarBaseTest):
                                                collection_name)
                 expected_error_code = expected_error.format(collection)
             else:
-                collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                                 self.provisioned_scope_name)
+                collection_name = self.create_capella_collection(
+                    self.provisioned_bucket_id, self.provisioned_scope_name)
+                if not collection_name:
+                    self.fail(
+                        "Creating collection in remote KV bucket failed.")
                 collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                                collection_name)
             if self.input.param("invalid_link", False):
@@ -536,8 +559,10 @@ class CopyToKv(ColumnarBaseTest):
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
         provisioned_collections = []
         for dataset in datasets:
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -619,8 +644,10 @@ class CopyToKv(ColumnarBaseTest):
         results = []
         self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
-        collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                         self.provisioned_scope_name)
+        collection_name = self.create_capella_collection(
+            self.provisioned_bucket_id, self.provisioned_scope_name)
+        if not collection_name:
+            self.fail("Creating collection in remote KV bucket failed.")
         collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                        collection_name)
         source_definition = "select * from {} limit 100000".format(dataset.full_name)
@@ -659,8 +686,10 @@ class CopyToKv(ColumnarBaseTest):
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
         provisioned_collections = []
         for dataset in datasets:
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -705,8 +734,10 @@ class CopyToKv(ColumnarBaseTest):
         self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
         provisioned_collections = []
         for dataset in datasets:
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -759,8 +790,10 @@ class CopyToKv(ColumnarBaseTest):
         provisioned_collections = []
         query = "SELECT country, ARRAY_AGG(city) AS city FROM {0} GROUP BY country"
         for dataset in datasets:
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -881,8 +914,10 @@ class CopyToKv(ColumnarBaseTest):
                 self.fail("Failed to load data in standalone collection of size: {}".format(self.doc_size))
 
         for i in range(len(datasets)):
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -926,7 +961,10 @@ class CopyToKv(ColumnarBaseTest):
             statement = "select * from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4".format(
                 (unique_pairs[i][0]).full_name, (unique_pairs[i][1]).full_name
             )
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id, self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name, collection_name)
 
@@ -991,8 +1029,10 @@ class CopyToKv(ColumnarBaseTest):
         provisioned_collections = []
         start_time = time.time()
         for dataset in datasets:
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             provisioned_collections.append(collection_name)
             collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
                                            collection_name)
@@ -1050,8 +1090,10 @@ class CopyToKv(ColumnarBaseTest):
                 remote_link = random.choice(remote_links)
             else:
                 remote_link = remote_links
-            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
-                                                             self.provisioned_scope_name)
+            collection_name = self.create_capella_collection(
+                self.provisioned_bucket_id, self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
             collection = "{}.{}.{}".format(CBASHelper.format_name(self.provisioned_bucket_name),
                                            CBASHelper.format_name(self.provisioned_scope_name),
                                            CBASHelper.format_name(collection_name))
