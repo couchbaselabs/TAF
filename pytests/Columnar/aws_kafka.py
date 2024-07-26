@@ -29,7 +29,7 @@ class AWSKafka(ColumnarBaseTest):
 
         self.connect_cluster_hostname = self.input.param("connect_cluster_hostname",
             "http://54.92.231.154:8084")
-        self.topic_prefix = self.input.param("topic_prefix", "test")
+        self.topic_prefix = self.generate_random_entity_name(type="topic_prefix")
 
          # mongodb params
         self.mongo_username = self.input.param("mongo_user", "Administrator")
@@ -66,7 +66,7 @@ class AWSKafka(ColumnarBaseTest):
             self.kafka_connect_utils.deploy_connector(self.connector_name, connector_config)
             self.aws_kafka_obj.connectors[self.connector_name] = connector_config
         if self.reuse_topic:
-            self.topic_name = "msk_mongo.functional_testing.functional_testing_static"
+            self.topic_name = "aws_msk_mongo.functional_testing.functional_testing_static"
 
         self.kafka_link_name = self.input.param("kafka_link_name", "kafka_link")
         self.authentication_type = self.input.param("authentication_type", "SCRAM_SHA_512")
