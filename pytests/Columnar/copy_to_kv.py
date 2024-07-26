@@ -597,7 +597,7 @@ class CopyToKv(ColumnarBaseTest):
             if columnar_count != kv_count:
                 self.fail("Mismatch found in Copy To KV")
             else:
-                self.log("Match found in Copy To KV")
+                self.log.info("Match found in Copy To KV")
 
     def test_remove_user_access_while_copy_to_kv(self):
         capella_api_v2 = CapellaAPIv2(self.pod.url_public, self.tenant.api_secret_key, self.tenant.api_access_key,
