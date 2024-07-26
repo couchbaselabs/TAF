@@ -137,10 +137,10 @@ class Columnar(BaseTestCase, hostedOPD):
                                create_start=0,
                                create_end=mongo.loadDefn.get("num_items"),
                                bucket=mongo)
-    
-            mongo.perform_load(self.data_sources["mongo"], wait_for_load=True,
-                               overRidePattern=[100, 0, 0, 0, 0],
-                               tm=self.doc_loading_tm)
+            if not self.skip_init:
+                mongo.perform_load(self.data_sources["mongo"], wait_for_load=True,
+                                   overRidePattern=[100, 0, 0, 0, 0],
+                                   tm=self.doc_loading_tm)
 
     def check_kafka_topics(self, mongo):
         start_time = time.time()
@@ -217,9 +217,7 @@ class Columnar(BaseTestCase, hostedOPD):
         if self.input.param("remoteCouchbase", False):
             self.setupRemoteCouchbase()
 
-
-        if not self.skip_init:
-            self.load_mongo_cluster()
+        self.load_mongo_cluster()
         for dataSource in self.data_sources["mongo"]:
             self.check_kafka_topics(dataSource)
 
@@ -281,6 +279,7 @@ class Columnar(BaseTestCase, hostedOPD):
                         self.sleep(60, "wait after previous link disconnect")
                         dataSource.link_name = "{}_".format(dataSource.type) + ''.join([random.choice(string.ascii_letters + string.digits) for _ in range(5)])
                         dataSource.links.append(dataSource.link_name)
+                        dataSource.loadDefn.get("cbas")[1] = dataSource.loadDefn.get("cbas")[1] + self.default_workload.get("cbas")[1]
                         self.drCBAS.create_links(columnar, [dataSource])
                         th = threading.Thread(
                             target=self.drCBAS.wait_for_ingestion,
@@ -291,7 +290,7 @@ class Columnar(BaseTestCase, hostedOPD):
             iterations = self.input.param("iterations", 1)
             nodes = self.num_nodes_in_columnar_instance
             for i in range(iterations-1, -1, -1):
-                self.PrintStep("Scaling IN operation: %s" % str(i))
+                self.PrintStep("Scaling IN operation: %s" % str(i+1))
                 tasks = list()
                 nodes = nodes/2
                 for tenant in self.tenants:

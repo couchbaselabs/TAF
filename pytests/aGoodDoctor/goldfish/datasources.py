@@ -108,10 +108,15 @@ class MongoDB(object):
                     }
                 })
             }
-
-        result, status, content, errors = rest.analytics_link_operations(method="POST", params=kafka_details)
-        if not result:
-            raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
+        timeout = 120
+        while timeout > 0:
+            result, status, content, errors = rest.analytics_link_operations(method="POST", params=kafka_details)
+            if not result:
+                self.log.critical("Status: %s, content: %s, Errors: %s" % (status, content, errors))
+                time.sleep(30)
+                continue
+            return
+        raise Exception("Status: %s, content: %s, Errors: %s" % (status, content, errors))
 
     def create_cbas_collections(self, cluster, num_collections=None):
         client = cluster.SDKClients[0].cluster

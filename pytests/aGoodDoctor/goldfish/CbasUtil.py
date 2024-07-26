@@ -129,17 +129,18 @@ class DoctorCBAS():
             if dataSource.loadDefn["valType"] == "Hotel":
                 queryType = HotelQueries
             # create collection
-            dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0])
+            collections = dataSource.create_cbas_collections(cluster, dataSource.loadDefn.get("cbas")[0])
             q = 0
             while q < dataSource.loadDefn.get("cbas")[1]:
-                if queryType[q % len(queryType)] in dataSource.query_map.keys():
+                coll = collections[q % dataSource.loadDefn.get("cbas")[0]]
+                if queryType[q % len(queryType)] + dataSource.link_name in dataSource.query_map.keys():
                     q += 1
                     continue
-                query = queryType[q % len(queryType)].format(dataSource.cbas_collections[q % len(dataSource.cbas_collections)])
+                query = queryType[q % len(queryType)].format(coll)
                 print query
-                dataSource.query_map[queryType[q % len(queryType)]] = ["Q%s" % query_count]
+                dataSource.query_map[queryType[q % len(queryType)] + dataSource.link_name] = ["Q%s_%s" % (query_count, coll)]
                 query_count += 1
-                dataSource.cbas_queries.append((query, queryType[q % len(queryType)]))
+                dataSource.cbas_queries.append((query, queryType[q % len(queryType)] + dataSource.link_name))
                 q += 1
             if dataSource.type != "s3":
                 self.connect_link(cluster, dataSource.link_name)
@@ -307,8 +308,13 @@ class CBASQueryLoad:
                 # print original_query
                 status, metrics, _, results, _ = execute_statement_on_cbas(
                     self.cluster_conn, query, client_context_id)
-                self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
-                self.query_stats[original_query][1] += 1
+                try:
+                    self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
+                    self.query_stats[original_query][1] += 1
+                except KeyError:
+                    self.query_stats[original_query] = [0, 0]
+                    self.query_stats[original_query][0] = metrics.executionTime().toNanos()/1000000.0
+                    self.query_stats[original_query][1] = 1
                 if status == AnalyticsStatus.SUCCESS:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
@@ -326,7 +332,7 @@ class CBASQueryLoad:
             except CouchbaseException as e:
                 pass
             except (Exception, PlanningFailureException) as e:
-                print e
+                self.log.critical(e)
                 self.error_count.next()
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
