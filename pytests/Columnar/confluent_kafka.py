@@ -61,6 +61,12 @@ class ConfluentKafka(ColumnarBaseTest):
         self.authentication_type = self.input.param("authentication_type", "PLAIN")
         self.collection_name = self.input.param("collection_name", "confluent_kafka_collection")
         self.serialization_type = self.input.param("serialization_type", "JSON")
+        self.cdc_enabled = self.input.param("cdc_enabled", True)
+        self.source_db = self.input.param("source_db", "MONGODB")
+        if self.source_db == "MONGODB":
+            self.primary_key = {"_id": "String"}
+        else:
+            self.primary_key = {"id": "INT"}
         self.use_schema_registry = self.input.param("use_schema_registry", False)
         if self.use_schema_registry:
             self.schema_registry_url = self.input.param("schema_registry_url")
@@ -106,7 +112,12 @@ class ConfluentKafka(ColumnarBaseTest):
             self.kafka_connect_utils.deploy_connector(self.connector_name, connector_config)
             self.kafka_obj.connectors[self.connector_name] = connector_config
         if self.reuse_topic:
-            self.topic_name = "confluent_mongo.functional_testing.functional_testing_static"
+            if self.source_db == "MONGODB":
+                self.topic_name = "confluent_mongo.functional_testing.functional_testing_static"
+            elif self.source_db == "MYSQLDB":
+                self.topic_name = "mysql.db.employee_data"
+            else:
+                self.topic_name = "postgres2.public.employee_data"
 
         self.doc_count_for_mongo_collections = {
             "functional_testing.functional_testing_static": 1000000
@@ -172,12 +183,13 @@ class ConfluentKafka(ColumnarBaseTest):
             "kafka-sink": "true",
             "keySerializationType": self.serialization_type,
             "valueSerializationType": self.serialization_type,
-            "cdcEnabled":"true",
-            "cdcDetails": {
-                "cdcSource":"MONGODB",
+            "cdcEnabled":self.cdc_enabled
+        }
+        if self.cdc_enabled:
+            kafka_connector_details["cdcDetails"] = {
+                "cdcSource": self.source_db,
                 "cdcSourceConnector":"DEBEZIUM"
             }
-        }
         return kafka_connector_details
 
     def generate_random_password(self, length=12):
@@ -270,7 +282,7 @@ class ConfluentKafka(ColumnarBaseTest):
         self.log.info(f"Created confluent kafka link - {self.kafka_link_name}")
 
         self.cbas_util.create_standalone_collection_using_links(cluster=self.cluster,
-            collection_name= self.collection_name, primary_key={"_id": "String"},
+            collection_name= self.collection_name, primary_key=self.primary_key,
             link_name=self.kafka_link_name, external_collection=self.topic_name,
             kafka_connector_details= kafka_connector_details)
         self.log.info(f"Created dataset - {self.collection_name} on confluent kafka link")
@@ -366,3 +378,109 @@ class ConfluentKafka(ColumnarBaseTest):
 
         self.cbas_util.disconnect_link(self.cluster, self.kafka_link_name)
         self.log.info(f"Successfully disconnected confluent kafka link - {self.kafka_link_name}")
+
+    def test_alter_confluent_kafka_links(self):
+        self.perform_crud_op_on_mongo_collection(SiriusCodes.DocOps.BULK_CREATE, 0, self.doc_count)
+
+        kafka_cluster_details = self.kafka_cluster_obj.generate_confluent_kafka_cluster_detail(
+            brokers_url="pkc-p11xm.us-east-1.aws.confluent.cloud:9092", auth_type=self.authentication_type,
+            encryption_type="TLS", api_key=self.kafka_obj.cluster_access_key,
+            api_secret=self.kafka_obj.cluster_secret_key
+        )
+        kafka_connector_details = self.populate_kafka_connector_details()
+
+        self.cbas_util.create_kafka_link(self.cluster, self.kafka_link_name, kafka_cluster_details,
+            schema_registry_details)
+        self.log.info(f"Created confluent kafka link - {self.kafka_link_name}")
+
+        self.cbas_util.create_standalone_collection_using_links(cluster=self.cluster,
+            collection_name= self.collection_name, primary_key={"_id": "String"},
+            link_name=self.kafka_link_name, external_collection=self.topic_name,
+            kafka_connector_details= kafka_connector_details)
+        self.log.info(f"Created dataset - {self.collection_name} on confluent kafka link")
+
+        self.cbas_util.connect_link(self.cluster, self.kafka_link_name)
+        self.log.info(f"Successfully connected confluent kafka link - {self.kafka_link_name}")
+
+        result = self.cbas_util.wait_for_ingestion_complete(self.cluster, self.collection_name,
+        self.doc_count, 3600)
+        if not result:
+            self.fail("Data ingestion did not complete for kafka dataset")
+        self.log.info("Data ingestion completed successfully")
+
+        self.cbas_util.disconnect_link(self.cluster, self.kafka_link_name)
+        self.log.info(f"Successfully disconnected confluent kafka link - {self.kafka_link_name}")
+
+        link_properties = self.cbas_util.get_link_info(self.cluster, self.kafka_link_name, "kafka")
+        schema_registry_details = self.kafka_cluster_obj.generate_confluent_schema_registry_detail(
+                schema_registry_url=self.schema_registry_url, api_key=self.schema_registry_api_key,
+                api_secret=self.schema_registry_secret_key
+            )
+        link_properties[0]["schemaRegistryDetails"] = schema_registry_details
+        self.cbas_util.alter_link_properties(self.cluster, self.kafka_link_name)
+
+        self.cbas_util.connect_link(self.cluster, self.kafka_link_name)
+        self.log.info(f"Successfully connected confluent kafka link - {self.kafka_link_name}")
+
+        self.perform_crud_op_on_mongo_collection(SiriusCodes.DocOps.BULK_DELETE, 0, self.doc_count)
+        result = self.cbas_util.wait_for_ingestion_complete(self.cluster, self.collection_name,
+        0, 3600)
+        if not result:
+            self.fail("Data ingestion did not complete for kafka dataset")
+        self.log.info("Data ingestion completed successfully")
+
+        self.cbas_util.disconnect_link(self.cluster, self.kafka_link_name)
+        self.log.info(f"Successfully disconnected confluent kafka link - {self.kafka_link_name}")
+
+    def test_scaling_operations_with_confluent_kafka_links(self):
+        self.perform_crud_op_on_mongo_collection(SiriusCodes.DocOps.BULK_CREATE, 0, self.doc_count)
+
+        kafka_cluster_details = self.kafka_cluster_obj.generate_confluent_kafka_cluster_detail(
+            brokers_url="pkc-p11xm.us-east-1.aws.confluent.cloud:9092", auth_type=self.authentication_type,
+            encryption_type="TLS", api_key=self.kafka_obj.cluster_access_key,
+            api_secret=self.kafka_obj.cluster_secret_key
+        )
+        kafka_connector_details = self.populate_kafka_connector_details()
+
+        self.cbas_util.create_kafka_link(self.cluster, self.kafka_link_name, kafka_cluster_details)
+        self.log.info(f"Created confluent kafka link - {self.kafka_link_name}")
+
+        self.cbas_util.create_standalone_collection_using_links(cluster=self.cluster,
+            collection_name= self.collection_name, primary_key={"_id": "String"},
+            link_name=self.kafka_link_name, external_collection=self.topic_name,
+            kafka_connector_details= kafka_connector_details)
+        self.log.info(f"Created dataset - {self.collection_name} on confluent kafka link")
+
+        self.cbas_util.connect_link(self.cluster, self.kafka_link_name)
+        self.log.info(f"Successfully connected confluent kafka link - {self.kafka_link_name}")
+
+        if not self.columnar_utils.scale_instance(self.pod, self.tenant,
+            self.tenant.project_id, self.cluster, 4):
+            self.fail("Update columnar instance API returned error")
+
+        if not self.columnar_utils.wait_for_instance_scaling_operation(self.pod, self.tenant,
+            self.tenant.project_id, self.cluster):
+            self.fail("Scaling operation did not succeed")
+
+        result = self.cbas_util.wait_for_ingestion_complete(self.cluster, self.collection_name,
+        self.doc_count, 3600)
+        if not result:
+            self.fail("Data ingestion did not complete for kafka dataset")
+        self.log.info("Data ingestion completed successfully")
+
+        self.perform_crud_op_on_mongo_collection(SiriusCodes.DocOps.BULK_CREATE, self.doc_count,
+            self.doc_count*2)
+
+        if not self.columnar_utils.scale_instance(self.pod, self.tenant,
+            self.tenant.project_id, self.cluster, 2):
+            self.fail("Update columnar instance API returned error")
+
+        if not self.columnar_utils.wait_for_instance_scaling_operation(self.pod, self.tenant,
+            self.tenant.project_id, self.cluster):
+            self.fail("Scaling operation did not succeed")
+
+        result = self.cbas_util.wait_for_ingestion_complete(self.cluster, self.collection_name,
+        self.doc_count*2, 3600)
+        if not result:
+            self.fail("Data ingestion did not complete for kafka dataset")
+        self.log.info("Data ingestion completed successfully")
