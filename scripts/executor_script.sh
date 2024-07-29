@@ -132,9 +132,12 @@ eval "$(pyenv init -)"
 pyenv local 3.10.14
 
 # Find cases for rerun
-set -x
-python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --manual_run
-set +x
+echo "" > rerun_props_file
+if [ ${fresh_run} == false ]; then
+ set -x
+ python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --manual_run
+ set +x
+fi
 
 echo "Set ALLOW_HTP to False so test could run."
 sed -i 's/ALLOW_HTP.*/ALLOW_HTP = False/' lib/testconstants.py
@@ -177,7 +180,7 @@ fi
 
 skip_mem_info=""
 if [ "$server_type" = "CAPELLA_LOCAL" ]; then
-    skip_mem_info=" -m "
+  skip_mem_info=" -m "
 fi
 
 ## cherrypick the gerrit request if it was defined
@@ -327,28 +330,34 @@ if [ $status -eq 0 ]; then
   killall --older-than 240h python3
   killall --older-than 10h jython
 
-  echo ${rerun_params_manual}
-  echo ${rerun_params}
-  if [ -z "${rerun_params_manual}" ] && [ -z "${rerun_params}" ]; then
-  	rerun_param=
-  elif [ -z "${rerun_params_manual}" ]; then
-  	rerun_param=$rerun_params
-  else
-  	rerun_param=${rerun_params_manual}
+  # Trim whitespaces to detect empty input
+  rerun_params=$(echo "$rerun_params" | xargs)
+  if [ "$rerun_params" == "" ]; then
+    # Only if user has no input given, get rerun data from
+    # the file created by prev. rerun_jobs.py script
+    rerun_file_data=$(cat rerun_props_file)
+    if [ "$rerun_file_data" != "" ]; then
+      rerun_params="$rerun_file_data"
+    fi
   fi
 
   # Find free port on this machine to use for this run
   sirius_port=49152 ; INCR=1 ; while [ -n "$(ss -tan4H "sport = $sirius_port")" ]; do sirius_port=$((sirius_port+INCR)) ; done
   echo "Will use $sirius_port for starting sirius"
   export PATH=/usr/local/go/bin:$PATH
-  set -x
-  python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port
-  set +x
 
-  awk -F' ' 'BEGIN {failures = 0; total_tests = 0} /<testsuite/ {match($0, /failures="([0-9]+)"/, failures_match); match($0, /tests="([0-9]+)"/, tests_match); if (failures_match[1] > 0) {failures += failures_match[1];} total_tests += tests_match[1]} END {print "Aggregate Failures: " failures ", Aggregate Total Tests: " total_tests;}' $WORKSPACE/logs/*/*.xml
   set -x
+  python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_params}
+  awk -F' ' 'BEGIN {failures = 0; total_tests = 0} /<testsuite/ {match($0, /failures="([0-9]+)"/, failures_match); match($0, /tests="([0-9]+)"/, tests_match); if (failures_match[1] > 0) {failures += failures_match[1];} total_tests += tests_match[1]} END {print "Aggregate Failures: " failures ", Aggregate Total Tests: " total_tests;}' $WORKSPACE/logs/*/*.xml
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
+  status=$?
   set +x
+  if [ status -ne 0 ]; then
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "Non-zero exit while running rerun_jobs.py"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    exit status
+  fi
 else
   echo Desc: $desc
   newState=failedInstall

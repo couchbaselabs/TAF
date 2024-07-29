@@ -29,7 +29,17 @@ export PATH="$PYENV_ROOT/bin:$PATH"
 eval "$(pyenv init -)"
 pyenv local 3.10.14
 
+# Install requirements for pip
 python -m pip install -r requirements.txt
+
+# Fetch rerun job to run
+echo "" > rerun_props_file
+if [ ${fresh_run} == false ]; then
+ # Find cases for rerun
+ set -x
+ python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --manual_run
+ set +x
+fi
 
 UPDATE_INI_VALUES=""
 if [ ! "${username}" = "" ]; then
@@ -251,40 +261,41 @@ if [ "$?" -eq 0 ]; then
   ## Updated on 11/21/19 by Mihir to kill all python processes older than 3 days instead of 10 days.
   killall --older-than 72h python
 
-  if [ -z "${rerun_params_manual}" ] && [ -z "${rerun_params}" ]; then
-  	rerun_param=
-  elif [ -z "${rerun_params_manual}" ]; then
-  	rerun_param=$rerun_params
-  else
-  	rerun_param=${rerun_params_manual}
+  # Trim whitespaces to detect empty input
+  rerun_params=$(echo "$rerun_params" | xargs)
+  if [ "$rerun_params" == "" ]; then
+    # Only if user has no input given, get rerun data from
+    # the file created by prev. rerun_jobs.py script
+    rerun_file_data=$(cat rerun_props_file)
+    if [ "$rerun_file_data" != "" ]; then
+      rerun_params="$rerun_file_data"
+    fi
   fi
 
   sed -i 's/pod\:https\:\/\//pod:/g' $WORKSPACE/testexec.$$.ini
   sed -i 's/pod\:api/pod:cloudapi/g' $WORKSPACE/testexec.$$.ini
 
   cat $WORKSPACE/testexec.$$.ini
-  git clone https://github.com/couchbaselabs/guides.git
-  #echo guides/gradlew --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i $WORKSPACE/testexec.$$.ini -c ${confFile} -p ${parameters} -m rest ${rerun_param}"
-  #guides/gradlew --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i $WORKSPACE/testexec.$$.ini -c ${confFile} -p ${parameters} -m rest ${rerun_param}"
   # Find free port on this machine to use for this run
   sirius_port=49152 ; INCR=1 ; while [ -n "$(ss -tan4H "sport = $sirius_port")" ]; do sirius_port=$((sirius_port+INCR)) ; done
   echo "Will use $sirius_port for starting sirius"
   export PATH=/usr/local/go/bin:$PATH
 
   set -x
-  python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_param}
-  status=$?
-
+  python testrunner.py -c $confFile -i $WORKSPACE/testexec.$$.ini -p $parameters --launch_sirius_docker --sirius_url http://localhost:$sirius_port ${rerun_params}
   python scripts/rerun_jobs.py ${version_number} --executor_jenkins_job --run_params=${parameters}
-  rerun_job_status=$?
+  status=$?
   set +x
 
   # fails=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($3,s1,"=");print s1[2]}' | sed s/\"//g | awk '{s+=$1} END {print s}'`
   # total_tests=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($6,s1,"=");print s1[2]}' | sed s/\"//g |awk '{s+=$1} END {print s}'`
   # echo Desc1: $version_number - $desc2 - $os \($(( $total_tests - $fails ))/$total_tests\)
 
-  if [ $rerun_job_status -ne 0 ]; then
-    exit $rerun_job_status
+  if [ status -ne 0 ]; then
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    echo "Non-zero exit while running rerun_jobs.py"
+    echo "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+    exit status
   fi
 else
   echo Desc: $desc
