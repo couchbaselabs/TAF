@@ -322,20 +322,11 @@ if [ $status -eq 0 ]; then
     fi
   fi
 
-  # Adding static IP for sirius
-  sirius[0]="http://172.23.120.103:4000"
-
-  size=${#sirius[@]}
-  index=$(($RANDOM % $size))
-  sirius_url=${sirius[$index]}
-  parameters=${parameters}",sirius_url="${sirius_url}
-  echo ${parameters}
-  # End of Sirius dep code
-
   echo "Timeout: $timeout minutes"
-  guides/gradlew --no-daemon --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i $WORKSPACE/testexec.$$.ini -c ${confFile} -p ${parameters} -m ${mode} ${rerun_param}"
-
+  set -x
+  guides/gradlew --no-daemon --refresh-dependencies testrunner -P jython="$jython_path" $sdk_client_params -P args="-i $WORKSPACE/testexec.$$.ini -c ${confFile} -p ${parameters} -m ${mode} ${rerun_params}"
   status=$?
+  set +x
   echo workspace is $WORKSPACE
   fails=`cat $WORKSPACE/logs/*/*.xml | grep 'testsuite errors' | awk '{split($3,s1,"=");print s1[2]}' | sed s/\"//g | awk '{s+=$1} END {print s}'`
   echo fails is $fails
