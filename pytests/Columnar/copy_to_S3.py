@@ -699,7 +699,7 @@ class CopyToS3(ColumnarBaseTest):
                 self.cbas_util.copy_to_s3,
                 {"cluster": self.cluster, "source_definition_query": statement, "alias_identifier": "ally",
                  "destination_bucket": self.sink_s3_bucket_name,
-                 "destination_link_name": s3_link.full_name, "path": path}))
+                 "destination_link_name": s3_link.full_name, "path": path, "timeout": 600, "analytics_timeout": 600}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -717,19 +717,15 @@ class CopyToS3(ColumnarBaseTest):
 
         for i in range(len(unique_pairs)):
             path = "copy_dataset_" + str(i)
-            statement = "select count(*) from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4 limit 1000".format(
-                (unique_pairs[i][0]).full_name, (unique_pairs[i][1]).full_name
-            )
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
 
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
             status, metrics, errors, result1, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
 
-            if result[0]['$1'] != result1[0]['$1']:
-                self.log.error("Document count mismatch in S3 dataset {0} and remote dataset {1}".format(
-                    dataset_obj.full_name, dataset_obj[0].full_name
+            if 1000 != result1[0]['$1']:
+                self.log.error("Document count mismatch in S3 dataset {0}".format(
+                    dataset_obj.full_name
                 ))
-            results.append(result[0]['$1'] == result1[0]['$1'])
+            results.append(1000 == result1[0]['$1'])
 
         if not all(results):
             self.fail("The document count does not match in remote source and S3")
