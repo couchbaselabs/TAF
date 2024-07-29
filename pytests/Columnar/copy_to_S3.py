@@ -692,15 +692,14 @@ class CopyToS3(ColumnarBaseTest):
         results = []
         for i in range(len(unique_pairs)):
             path = "copy_dataset_" + str(i)
-            statement = "select * from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4".format(
+            statement = "select * from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4 limit 1000".format(
                 (unique_pairs[i][0]).full_name, (unique_pairs[i][1]).full_name
             )
             jobs.put((
                 self.cbas_util.copy_to_s3,
                 {"cluster": self.cluster, "source_definition_query": statement, "alias_identifier": "ally",
                  "destination_bucket": self.sink_s3_bucket_name,
-                 "destination_link_name": s3_link.full_name, "path": path, "timeout": 3600,
-                 "analytics_timeout": 3600}))
+                 "destination_link_name": s3_link.full_name, "path": path}))
         self.cbas_util.run_jobs_in_parallel(
             jobs, results, self.sdk_clients_per_user, async_run=False)
         if not all(results):
@@ -718,7 +717,7 @@ class CopyToS3(ColumnarBaseTest):
 
         for i in range(len(unique_pairs)):
             path = "copy_dataset_" + str(i)
-            statement = "select count(*) from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4".format(
+            statement = "select count(*) from {0} as a, {1} as b where a.avg_rating > 0.4 and b.avg_rating > 0.4 limit 1000".format(
                 (unique_pairs[i][0]).full_name, (unique_pairs[i][1]).full_name
             )
             status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
