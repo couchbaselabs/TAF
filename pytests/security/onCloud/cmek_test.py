@@ -71,7 +71,7 @@ class CMEKTest(SecurityBase):
         response = requests.post("{0}/cmek".format(self.cmek_base_url),
                                  headers=headers,
                                  json=json_data,
-                                 )
+                                 verify=False)
 
         data = json.loads(response.content.decode())
 
@@ -101,7 +101,7 @@ class CMEKTest(SecurityBase):
         # response = requests.post("{0}/cmek".format(self.cmek_base_url),
         #                          headers=headers,
         #                          json=json_data,
-        #                          )
+        #                          verify=False)
         # self.log.info("Response Status Code of creating a key: {0}".format(response.status_code))
         # self.log.info("Response Status Content of creating a key: {0}".format(response.content))
         #
@@ -166,7 +166,7 @@ class CMEKTest(SecurityBase):
         response = requests.put("{0}/cmek/{1}".format(self.cmek_base_url, cmek_key_id),
                                 headers=headers,
                                 json=json_data,
-                                )
+                                verify=False)
         return response
 
     # DEL DELETE KEY
@@ -180,7 +180,8 @@ class CMEKTest(SecurityBase):
 
         for cmek_key_id in cmek_id_list:
             self.log.info("Deleting key with id: {0}".format(cmek_key_id))
-            response = requests.delete("{0}/cmek/{1}".format(self.cmek_base_url, cmek_key_id), headers=headers)
+            response = requests.delete("{0}/cmek/{1}".format(self.cmek_base_url, cmek_key_id), headers=headers,
+                                       verify=False)
             self.log.info(response.status_code)
             self.log.info(response.content)
 
@@ -261,7 +262,7 @@ class CMEKTest(SecurityBase):
             response = requests.post("{0}/projects/{1}/clusters".format(self.cmek_base_url, self.project_id),
                                      headers=headers,
                                      json=json_data,
-                                     )
+                                     verify=False)
             if response.status_code == 202:
                 aws_cluster_id = json.loads(response.content).get("id")
                 self.log.info("Creating capella cluster with id: {0}".format(aws_cluster_id))
@@ -337,7 +338,7 @@ class CMEKTest(SecurityBase):
             response = requests.post("{0}/projects/{1}/clusters".format(self.cmek_base_url, self.project_id),
                                      headers=headers,
                                      json=json_data,
-                                     )
+                                     verify=False)
             if response.status_code == 202:
                 gcp_cluster_id = json.loads(response.content).get("id")
                 self.log.info("Creating capella cluster with id: {0}".format(gcp_cluster_id))
@@ -364,8 +365,8 @@ class CMEKTest(SecurityBase):
         response = requests.post(
             "{0}/projects/{1}/clusters/{2}/cmek/{3}/unassociate".format(self.cmek_base_url, self.project_id,
                                                                         cluster_id, cmek_id),
-            headers=headers
-            )
+            headers=headers,
+            verify=False)
         self.log.info(response.status_code)
         return response
 
@@ -381,8 +382,8 @@ class CMEKTest(SecurityBase):
         response = requests.post(
             "{0}/projects/{1}/clusters/{2}/cmek/{3}/associate".format(self.cmek_base_url, self.project_id,
                                                                       cluster_id, cmek_id),
-            headers=headers
-            )
+            headers=headers,
+            verify=False)
         self.log.info(response.status_code)
         return response
 
@@ -595,7 +596,7 @@ class CMEKTest(SecurityBase):
         response = requests.post("{0}/cmek".format(self.cmek_base_url),
                                  headers=headers,
                                  json=json_data,
-                                 )
+                                 verify=False)
 
         if response.status_code != 403:
             self.fail("User should not have permissions to create akey")
