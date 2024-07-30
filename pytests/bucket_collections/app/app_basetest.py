@@ -46,7 +46,8 @@ class AppBase(BaseTestCase):
             with open(self.config_path+self.cluster_conf+".yaml", "r") as fp:
                 self.cluster_conf = yaml.safe_load(fp.read())
 
-            self.__init_rebalance_with_rbac_setup()
+            if not self.skip_setup_cleanup:
+                self.__init_rebalance_with_rbac_setup()
 
         # Update cluster node-service map and create cbas_util
         self.cluster_util.update_cluster_nodes_service_list(self.cluster)
@@ -74,15 +75,16 @@ class AppBase(BaseTestCase):
             with open(self.config_path+self.service_conf+".yaml", "r") as fp:
                 self.service_conf = yaml.safe_load(fp.read())["services"]
 
-            if not self.capella_run:
-                # Configure backup settings
-                self.configure_bucket_backups()
+            if not self.skip_setup_cleanup:
+                if not self.capella_run:
+                    # Configure backup settings
+                    self.configure_bucket_backups()
 
-            # Create required GSIs
-            self.create_indexes()
+                # Create required GSIs
+                self.create_indexes()
 
-            # Create required CBAS data-sets
-            self.create_cbas_indexes()
+                # Create required CBAS data-sets
+                self.create_cbas_indexes()
 
         self.log_setup_status("AppBase", "complete")
 
@@ -126,6 +128,10 @@ class AppBase(BaseTestCase):
 
     def __setup_buckets(self):
         self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
+        if not self.skip_setup_cleanup:
+            for bucket_obj in self.cluster.buckets:
+                self.map_collection_data(bucket_obj)
+            return
         for bucket in self.bucket_conf["buckets"]:
             bucket_obj = None
             # Skip bucket creation if already exists in cluster
