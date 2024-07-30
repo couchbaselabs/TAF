@@ -11,7 +11,7 @@ import time
 
 from sdk_client3 import SDKClient
 from global_vars import logger
-from constants.cb_constants.CBServer import CbServer
+from py_constants.cb_constants.CBServer import CbServer
 import itertools
 from n1ql import execute_statement_on_n1ql
 

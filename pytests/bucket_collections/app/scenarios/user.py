@@ -42,10 +42,9 @@ class User(Thread):
 
     @staticmethod
     def get_template():
-        template = JsonObject.create()
-        template.put("mutated", 0)
-        template.put("createdDate", "01/31/1970")
-        template.put("preferences", JsonObject.create())
+        template = {"mutated": 0,
+                    "createdDate": "01/31/1970",
+                    "preferences": {}}
         return template
 
     @staticmethod
@@ -54,13 +53,13 @@ class User(Thread):
         dob = START_DATE + timedelta(seconds=random_seconds)
         dob = dob.strftime("%Y-%m-%d")
 
-        template.put("id", u_id)
-        template.put("user_name", user_name)
-        template.put("gender", choice(GENDER))
-        template.put("dob", dob)
-        template.put("country", choice(COUNTRY))
-        template.put("email", user_name + "@travel_app.com")
-        template.put("phone", randint(1000000000, 9999999999))
+        template["id"] = u_id
+        template["user_name"] = user_name
+        template["gender"] = choice(GENDER)
+        template["dob"] = dob
+        template["country"] = choice(COUNTRY)
+        template["email"] = user_name + "@travel_app.com"
+        template["phone"] = randint(1000000000, 9999999999)
 
     @staticmethod
     def get_random_user_id(client, scope):
@@ -141,18 +140,17 @@ class User(Thread):
         flight_to_book = choice(flights)
         reservation_date = get_random_reservation_date()
 
-        checkout_doc = JsonObject.create()
+        checkout_doc = dict()
         passenger_data = list()
         for _ in range(required_seats):
             gender = choice(["M", "F"])
             first_name = choice(FIRST_NAMES[gender])
             last_name = choice(LAST_NAMES)
             age = randint(3, 90)
-            passenger_info = JsonObject.create()
-            passenger_info.put("first_name", first_name)
-            passenger_info.put("last_name", last_name)
-            passenger_info.put("gender", gender)
-            passenger_info.put("age", age)
+            passenger_info = {"first_name": first_name,
+                              "last_name": last_name,
+                              "gender": gender,
+                              "age": age}
             passenger_data.append(passenger_info)
 
         client = sdk_clients["airline_booking"]
@@ -160,16 +158,16 @@ class User(Thread):
         cart_id = query_util.CommonUtil.get_next_id(tenant_scope,
                                                     checkout_cart_collection)
         cart_key = "cart_%s" % cart_id
-        checkout_doc.put("id", cart_id)
-        checkout_doc.put("user_id", u_id)
-        checkout_doc.put("flight_name", flight_to_book.get("flight"))
-        checkout_doc.put("flight_time", flight_to_book.get("utc"))
-        checkout_doc.put("travel_date", reservation_date)
-        checkout_doc.put("from", src_airport)
-        checkout_doc.put("to", dest_airport)
-        checkout_doc.put("day_of_week", flight_to_book.get("day"))
-        checkout_doc.put("seat_count", required_seats)
-        checkout_doc.put("passengers", passenger_data)
+        checkout_doc["id"] = cart_id
+        checkout_doc["user_id"] = u_id
+        checkout_doc["flight_name"] = flight_to_book["flight"]
+        checkout_doc["flight_time"] = flight_to_book["utc"]
+        checkout_doc["travel_date"] = reservation_date
+        checkout_doc["from"] = src_airport
+        checkout_doc["to"] = dest_airport
+        checkout_doc["day_of_week"] = flight_to_book["day"]
+        checkout_doc["seat_count"] = required_seats
+        checkout_doc["passengers"] = passenger_data
         retry = 1
         while retry <= User.max_retries:
             result = client.crud(DocLoading.Bucket.DocOps.CREATE,
@@ -189,7 +187,7 @@ class User(Thread):
             booking_id = query_util.CommonUtil.get_next_id(tenant_scope,
                                                            c_name)
             ticket_key = "ticket_%s" % booking_id
-            checkout_doc.put("id", booking_id)
+            checkout_doc["id"] = booking_id
             retry = 1
             while retry <= User.max_retries:
                 client.select_collection(tenant_scope, c_name)
@@ -208,13 +206,12 @@ class User(Thread):
             f_booking_id = query_util.CommonUtil.get_next_id(tenant_scope,
                                                              "flight_booking")
             f_booking_key = "booking_%s" % f_booking_id
-            f_booking_doc = JsonObject.create()
-            f_booking_doc.put("id", f_booking_id)
-            f_booking_doc.put("user_id", u_id)
-            f_booking_doc.put("ticket_id", booking_id)
-            f_booking_doc.put("status", "active")
-            f_booking_doc.put("booked_on", global_vars.app_current_date)
-            f_booking_doc.put("ticket_type", ticket_type)
+            f_booking_doc = {"id": f_booking_id,
+                             "user_id": u_id,
+                             "ticket_id": booking_id,
+                             "status": "active",
+                             "booked_on": global_vars.app_current_date,
+                             "ticket_type": ticket_type}
             client.select_collection(tenant_scope, "flight_booking")
             result = client.crud(DocLoading.Bucket.DocOps.CREATE,
                                  f_booking_key, f_booking_doc)

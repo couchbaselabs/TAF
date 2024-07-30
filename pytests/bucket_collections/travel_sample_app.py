@@ -68,8 +68,7 @@ class TravelSampleApp(AppBase):
         for tenant in self.tenants:
             sdk_client.select_collection(scope_name=tenant,
                                          collection_name="meta_data")
-            app_data = JsonObject.create()
-            app_data.put("date", "2001-01-01")
+            app_data = {"data": "2001-01-01"}
             result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
                                      "application", app_data)
             self.assertTrue(result["status"], "App_meta creation failed")

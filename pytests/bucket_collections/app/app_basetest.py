@@ -3,15 +3,16 @@ import yaml
 from copy import deepcopy
 
 from couchbase.exceptions import InternalServerFailureException
+from couchbase.logic.analytics import AnalyticsStatus
 from couchbase.logic.n1ql import QueryStatus
 
 from BucketLib.bucket import TravelSample, BeerSample, GamesimSample, Bucket
+from backup_utils.backup_utils import BackupUtil
 from cb_constants import CbServer
 from SecurityLib.rbac import RbacUtil
 from basetestcase import BaseTestCase
 from bucket_collections.app.constants import global_vars
 from capella_utils.dedicated import CapellaUtils as CapellaAPI
-from cb_server_rest_util.backup.backup_api import BackupRestApi
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_server_rest_util.index.index_api import IndexRestAPI
 from cb_server_rest_util.security.security_api import SecurityRestAPI
@@ -366,17 +367,19 @@ class AppBase(BaseTestCase):
         for data_verse in cbas_conf["dataverses"]:
             query = "CREATE DATAVERSE %s" % data_verse["name"]
             result = client.cluster.analytics_query(query)
-            if result.metadata().status() != QueryStatus.SUCCESS:
+            for _ in result.rows(): pass
+            if result.metadata().status() != AnalyticsStatus.SUCCESS:
                 self.fail("Failure during analytics query: %s" % result)
         for data_set in cbas_conf["datasets"]:
             query = "CREATE DATASET `%s`.`%s` ON %s " \
                     % (data_set["dataverse"], data_set["name"],
-                       data_set["on"])
+                       data_set["on_collection"])
             if "where" in data_set:
                 query += "WHERE %s" % data_set["where"]
 
             result = client.cluster.analytics_query(query)
-            if result.metadata().status() != QueryStatus.SUCCESS:
+            for _ in result.rows(): pass
+            if result.metadata().status() != AnalyticsStatus.SUCCESS:
                 self.fail("Failure during analytics query: %s" % result)
 
     def configure_bucket_backups(self):
@@ -384,7 +387,11 @@ class AppBase(BaseTestCase):
             return
 
         backup_node = self.cluster.backup_nodes[0]
-        backup_rest = BackupRestApi(backup_node)
+        backup_util = BackupUtil(backup_node)
+
+        # Remove old repos (if any)
+        backup_util.archive_all_repos()
+        backup_util.delete_all_archive_repos(remove_repository=True)
 
         self.log.info("Creating permissions for backup folder")
         backup_configs = self.service_conf[CbServer.Services.BACKUP]
@@ -407,13 +414,13 @@ class AppBase(BaseTestCase):
             if plan_params["plan"] not in ["_hourly_backups",
                                            "_daily_backups"]:
                 self.log.info("Updating custom plan %s" % plan_params["plan"])
-                status, _ = backup_rest.create_plan(plan_params["name"],
-                                                    plan_params)
+                status, _ = backup_util.rest.create_plan(plan_params["name"],
+                                                         plan_params)
                 if status is False:
                     self.fail("Backup %s create failed" % backup_config)
 
             # Create repo
-            status, content = backup_rest.create_repository(
+            status, content = backup_util.rest.create_repository(
                 backup_config["repo_id"], repo_params)
             self.assertTrue(status,
                             f"Create repo failed for {repo_params}: {content}")

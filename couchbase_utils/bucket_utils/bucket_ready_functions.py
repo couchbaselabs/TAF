@@ -1930,10 +1930,11 @@ class BucketUtils(ScopeUtils):
     # Fetch/Create/Delete buckets
     def load_sample_bucket(self, cluster, sample_bucket):
         bucket = None
-        rest = RestConnection(cluster.master)
-        api = '%s%s' % (rest.baseUrl, "sampleBuckets/install")
-        data = '["%s"]' % sample_bucket.name
-        status, x, y = rest._http_request(api, "POST", data)
+        rest = BucketRestApi(cluster.master)
+        status, content = rest.load_sample_bucket([sample_bucket.name])
+        if not status:
+            self.log.critical(f"Sample bucket load failed: {content}")
+            return status
         sleep(5, "Wait before fetching buckets from cluster")
         buckets = self.get_all_buckets(cluster)
         for bucket in buckets:
@@ -1941,13 +1942,13 @@ class BucketUtils(ScopeUtils):
                 # Append loaded sample bucket into buckets object list
                 cluster.buckets.append(bucket)
                 break
-        if status is True:
+        if status:
             self.get_updated_bucket_server_list(cluster, bucket)
             warmed_up = self._wait_warmup_completed(bucket, wait_time=300,
                                                     check_for_persistence=False)
             if not warmed_up:
                 status = False
-        if status is True:
+        if status:
             status = False
             retry_count = 600
             sleep_time = 5
@@ -1961,7 +1962,6 @@ class BucketUtils(ScopeUtils):
                 retry_count -= sleep_time
         if status is False:
             self.log.error("Sample bucket failed to load the target items")
-
         return status
 
     def async_create_bucket(self, cluster, bucket):
@@ -4621,7 +4621,8 @@ class BucketUtils(ScopeUtils):
         return int(client.stats()["curr_items"])
 
     @staticmethod
-    def get_buckets_item_count(cluster, bucket_name=None):
+    def get_buckets_item_count(cluster, bucket_name=None,
+                               exclude_system_scope=True):
         bucket_map = dict()
         bucket_rest = BucketRestApi(cluster.master)
         status, json_parsed = bucket_rest.get_bucket_info(
@@ -4633,9 +4634,24 @@ class BucketUtils(ScopeUtils):
             # Because we directly got the bucket_specific dict here
             json_parsed = [json_parsed]
 
+        param = [{
+            "applyFunctions": ["sum"],
+            "metric": [{"label": "bucket", "value": "%s"},
+                       {"label": "scope", "value": "_system"},
+                       {"label": "name", "value": "kv_collection_item_count"}],
+            "nodesAggregation": "sum",
+            "start": -1, "step": 1, "timeWindow": 1}]
+
         for item in json_parsed:
             b_name = item['name']
             bucket_map[b_name] = item['basicStats']['itemCount']
+            if exclude_system_scope:
+                # Replace a current bucket_name for fetching the right stat
+                param[0]["metric"][0]["value"] = b_name
+                status, range_stats = bucket_rest.get_stats_range(params=param)
+                if status:
+                    bucket_map[b_name] -= int(
+                        range_stats[0]['data'][0]["values"][0][1])
 
         if bucket_name:
             return bucket_map[bucket_name]
