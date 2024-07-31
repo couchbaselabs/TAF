@@ -3,8 +3,6 @@ from datetime import timedelta
 from couchbase import options
 from couchbase.durability import (ServerDurability, DurabilityLevel,
                                   ClientDurability, ReplicateTo, PersistTo)
-from couchbase.subdocument import StoreSemantics
-
 from constants.sdk_constants.java_client import SDKConstants
 
 
@@ -159,11 +157,16 @@ class SDKOptions(object):
         if preserve_expiry is not None:
             params["preserve_expiry"] = preserve_expiry
         if store_semantics:
-            params["store_semantics"] = \
-                StoreSemantics.__getitem__(store_semantics)
+            params["store_semantics"] = store_semantics
         if access_deleted is not None:
             raise NotImplementedError()
         return options.MutateInOptions(**params)
+
+    @staticmethod
+    def get_look_up_in_options(timeout=5,
+                               time_unit=SDKConstants.TimeUnit.SECONDS):
+        timeout = SDKOptions.get_duration(timeout, time_unit)
+        return options.LookupInOptions(timeout=timeout)
 
     @staticmethod
     def get_insert_multi_options(

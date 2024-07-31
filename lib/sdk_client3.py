@@ -32,6 +32,7 @@ from couchbase.cluster import Cluster
 from couchbase.options import (ClusterOptions, ClusterTimeoutOptions,
                                QueryOptions, WaitUntilReadyOptions,
                                GetAllReplicasOptions)
+import couchbase.subdocument as SubDoc
 
 
 class SDKClientPool(object):
@@ -427,22 +428,6 @@ class SDKClient(object):
 
     # Translate APIs for document operations
     @staticmethod
-    def populate_crud_failure_reason(failed_key, error):
-        try:
-            req_context = error.context().requestContext()
-            failed_key['error'] += \
-                " | " + str(req_context.lastDispatchedTo())
-            failed_key['error'] += \
-                " | reason:" \
-                + str(req_context.request().cancellationReason())
-            failed_key['error'] += \
-                " | retryAttempts:" + str(req_context.retryAttempts())
-            failed_key['error'] += \
-                " | retryReasons:" + str(req_context.retryReasons())
-        except Exception:
-            pass
-
-    @staticmethod
     def __translate_ranges_scan_results(data):
         result = dict()
         result['time_taken'] = data['timeTaken']
@@ -498,50 +483,52 @@ class SDKClient(object):
         fail = dict()
         if data is None:
             return success, fail
-        for result in data:
-            key = result['id']
-            if not result['status'] or \
-                    (SDKException.LookUpPathNotFoundException in result['content']):
-                fail[key] = dict()
-                fail[key]['cas'] = result['cas']
-                fail[key]['value'] = dict()
-                if not result['status']:
-                    fail[key]['error'] = str(result['error'].getClass().getName() +
-                                             " | " + result['error'].getMessage())
-                    SDKClient.populate_crud_failure_reason(fail[key],
-                                                           result['error'])
+        for doc_key, result in data.items():
+            if not result.success:
+                fail[doc_key] = dict()
+                fail[doc_key]['cas'] = result.cas
+                fail[doc_key]['value'] = dict()
+                for lookup_spec_result in data["application"].value:
+                    if not lookup_spec_result["exists"]:
+                        pass
+                if not result['exists']:
+                    fail[doc_key]['error'] = "SubDocKeyNotFound"
                 else:
-                    fail[key]['error'] = SDKException.PathNotFoundException
+                    fail[doc_key]['error'] = SDKException.PathNotFoundException
                 if path_val:
-                    fail[key]['path_val'] = path_val[key]  # list of (path, val)
-            elif result['status']:
-                success[key] = dict()
-                success[key]['value'] = result['content']
-                success[key]['cas'] = result['cas']
+                    fail[doc_key]['path_val'] = path_val[doc_key]
+            elif result.success:
+                success[doc_key] = dict()
+                success[doc_key]['cas'] = result.cas
+                success[doc_key]['value'] = dict()
+                for lookup_spec_result in result.value:
+                    lookup_key = lookup_spec_result['path']
+                    if lookup_spec_result["exists"]:
+                        success[doc_key]['value'][lookup_key] \
+                            = lookup_spec_result["value"]
+                    else:
+                        success[doc_key]['value'][lookup_key] = ""
         return success, fail
 
     # Translate APIs for sub-document operations
     @staticmethod
-    def __translate_upsert_multi_sub_doc_result(data, path_val=None):
+    def __translate_upsert_multi_sub_doc_result(result_dict, path_val=None):
         success = dict()
         fail = dict()
-        if data is None:
+        if result_dict is None:
             return success, fail
-        for item in data:
-            result = item['status']
-            key = item['id']
-            json_object = item["result"]
-            if result:
-                success[key] = dict()
-                success[key]['value'] = json_object
-                success[key]['cas'] = item['cas']
+        for doc_key, mutate_in_result in result_dict.items():
+            if mutate_in_result.success:
+                success[doc_key] = dict()
+                success[doc_key]['cas'] = mutate_in_result.cas
+                success[doc_key]['value'] = dict()
+                for mutation_result in mutate_in_result.value:
+                    success[doc_key]['value'][mutation_result['path']] = \
+                        mutation_result["value"]
             else:
-                fail[key] = dict()
-                fail[key]['value'] = json_object
-                fail[key]['error'] = str(item['error'].getClass().getName() +
-                                         " | " + item['error'].getMessage())
-                SDKClient.populate_crud_failure_reason(fail[key],
-                                                       item['error'])
+                fail[doc_key] = dict()
+                fail[doc_key]['value'] = mutate_in_result["value"]
+                fail[doc_key]['error'] = ""
                 fail[key]['cas'] = 0
                 if path_val:
                     fail[key]['path_val'] = path_val[key]  # list of (path, val)
@@ -699,7 +686,6 @@ class SDKClient(object):
             if result["error"]:
                 result["error"] = str(ex.getClass().getName() +
                                       " | " + ex.getMessage())
-                SDKClient.populate_crud_failure_reason(result, ex)
         return result
 
     def replace(self, key, value,
@@ -724,7 +710,7 @@ class SDKClient(object):
                            "cas": replace_result.cas})
         except DocumentExistsException as e:
             self.log.debug("The document already exists! => " + str(e))
-            result.update({"value": value, "error": str(ex)})
+            result.update({"value": value, "error": str(e)})
         except CasMismatchException as e:
             self.log.debug("CAS mismatch for key %s - %s" % (key, e))
             result.update({"error": str(e)})
@@ -736,7 +722,7 @@ class SDKClient(object):
         except (RequestCanceledException, TimeoutException) as e:
             self.log.debug("Request cancelled/timed-out: " + str(e))
             result.update({"error": str(e)})
-        except Exception as ex:
+        except Exception as e:
             self.log.error("Something else happened: " + str(e))
             result.update({"value": value, "error": str(e)})
         return result
@@ -899,129 +885,99 @@ class SDKClient(object):
             path_val = dict()
             path_val[key] = [(sub_key, value)]
             mutate_in_specs = list()
-            mutate_in_specs.append(SDKClient.sub_doc_op.getInsertMutateInSpec(
-                sub_key, value, create_path, xattr))
+            mutate_in_specs.append(SubDoc.insert(
+                sub_key, value,
+                create_parents=create_path, xattr=xattr))
             if not xattr:
-                mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
-                                                             create_path))
-            content = Tuples.of(key, mutate_in_specs)
+                mutate_in_specs.append(SubDoc.increment("mutated", 1))
             options = SDKOptions.get_mutate_in_options(
-                exp, time_unit, persist_to, replicate_to,
-                timeout, time_unit, durability,
+                cas, timeout, time_unit,
+                persist_to, replicate_to, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy,
                 access_deleted=access_deleted,
                 create_as_deleted=create_as_deleted)
-            if cas > 0:
-                options = options.cas(cas)
 
-            result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], options)
-            return self.__translate_upsert_multi_sub_doc_result(result, path_val)
+            result = self.collection.mutate_in(key, mutate_in_specs, options)
+            return self.__translate_upsert_multi_sub_doc_result(result,
+                                                                path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.UPSERT, "subdoc_upsert"]:
             sub_key, value = value[0], value[1]
             path_val = dict()
             path_val[key] = [(sub_key, value)]
             mutate_in_specs = list()
-            mutate_in_specs.append(SDKClient.sub_doc_op.getUpsertMutateInSpec(
-                sub_key, value, create_path, xattr))
+            mutate_in_specs.append(SubDoc.upsert(
+                sub_key, value, create_parents=True, xattr=xattr))
             if not xattr:
-                mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
-                                                             create_path))
-            content = Tuples.of(key, mutate_in_specs)
+                mutate_in_specs.append(SubDoc.increment("mutated", 1))
             options = SDKOptions.get_mutate_in_options(
-                exp, time_unit, persist_to, replicate_to,
-                timeout, time_unit, durability,
+                cas, timeout, time_unit,
+                persist_to, replicate_to, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy,
                 create_as_deleted=create_as_deleted)
-            if cas > 0:
-                options = options.cas(cas)
-            result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], options)
-            return self.__translate_upsert_multi_sub_doc_result(result, path_val)
+            result = self.collection.mutate_in(key, mutate_in_specs, options)
+            return self.__translate_upsert_multi_sub_doc_result(result,
+                                                                path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.REMOVE, "subdoc_delete"]:
             mutate_in_specs = list()
             path_val = dict()
             path_val[key] = [(value, '')]
-            mutate_in_specs.append(SDKClient.sub_doc_op.getRemoveMutateInSpec(
-                value, xattr))
+            mutate_in_specs.append(SubDoc.remove(value, xattr=xattr))
             if not xattr:
-                mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
-                                                             False))
-            content = Tuples.of(key, mutate_in_specs)
+                mutate_in_specs.append(SubDoc.increment("mutated", 1))
             options = SDKOptions.get_mutate_in_options(
-                exp, time_unit, persist_to, replicate_to,
-                timeout, time_unit, durability,
+                cas, timeout, time_unit,
+                persist_to, replicate_to, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy,
                 create_as_deleted=create_as_deleted)
-            if cas > 0:
-                options = options.cas(cas)
-            result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], options)
-            result = self.__translate_upsert_multi_sub_doc_result(result, path_val)
+            result = self.collection.mutate_in(key, mutate_in_specs, options)
+            result = self.__translate_upsert_multi_sub_doc_result(result,
+                                                                  path_val)
         elif op_type == "subdoc_replace":
             sub_key, value = value[0], value[1]
             path_val = dict()
             path_val[key] = [(sub_key, value)]
             mutate_in_specs = list()
-            mutate_in_specs.append(SDKClient.sub_doc_op.getReplaceMutateInSpec(
-                sub_key, value, xattr))
+            mutate_in_specs.append(SubDoc.replace(sub_key, value, xattr=xattr))
             if not xattr:
-                mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec("mutated", 1,
-                                                             False))
-            content = Tuples.of(key, mutate_in_specs)
+                mutate_in_specs.append(SubDoc.increment("mutated", 1))
             options = SDKOptions.get_mutate_in_options(
-                exp, time_unit, persist_to, replicate_to,
-                timeout, time_unit, durability,
+                cas, timeout, time_unit,
+                persist_to, replicate_to, durability,
                 store_semantics=store_semantics,
                 preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy,
                 create_as_deleted=create_as_deleted)
-            if cas > 0:
-                options = options.cas(cas)
-            result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], options)
-            result = self.__translate_upsert_multi_sub_doc_result(result, path_val)
+            result = self.collection.mutate_in(key, mutate_in_specs, options)
+            result = self.__translate_upsert_multi_sub_doc_result(result,
+                                                                  path_val)
         elif op_type in [DocLoading.Bucket.SubDocOps.LOOKUP, "subdoc_read"]:
             mutate_in_specs = list()
             path_val = dict()
             path_val[key] = [(value, '')]
-            mutate_in_specs.append(
-                SDKClient.sub_doc_op.getLookUpInSpec(value, xattr))
-            content = Tuples.of(key, mutate_in_specs)
-            lookup_in_options = SDKClient.sub_doc_op.getLookupInOptions(access_deleted)
-            result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
-                self.collection, [content], lookup_in_options)
-            result = self.__translate_get_multi_sub_doc_result(result, path_val)
+            mutate_in_specs.append(SubDoc.get(value, xattr=xattr))
+            options = SDKOptions.get_look_up_in_options(
+                timeout, time_unit)
+
+            result = {key: self.collection.lookup_in(key, mutate_in_specs,
+                                                     options)}
+            result, _ = self.__translate_get_multi_sub_doc_result(result,
+                                                                  path_val)
         elif op_type == DocLoading.Bucket.SubDocOps.COUNTER:
             sub_key, step_value = value[0], value[1]
             mutate_in_specs = list()
             if not xattr:
-                mutate_in_specs.append(
-                    SDKClient.sub_doc_op.getIncrMutateInSpec(sub_key,
-                                                             step_value,
-                                                             create_path))
-            content = Tuples.of(key, mutate_in_specs)
+                mutate_in_specs.append(SubDoc.increment(
+                    sub_key, step_value, create_parents=create_path))
             options = SDKOptions.get_mutate_in_options(
-                exp, time_unit, persist_to, replicate_to,
-                timeout, time_unit, durability,
+                cas, timeout, time_unit,
+                persist_to, replicate_to, durability,
                 store_semantics=store_semantics,
-                preserve_expiry=preserve_expiry,
-                sdk_retry_strategy=sdk_retry_strategy)
-            if cas > 0:
-                options = options.cas(cas)
-            result = SDKClient.sub_doc_op.bulkSubDocOperation(
-                self.collection, [content], options)
-            result = self.__translate_upsert_multi_sub_doc_result(result)
+                preserve_expiry=preserve_expiry)
+            result = {key: self.collection.mutate_in(key, mutate_in_specs,
+                                                     options)}
+            result, _ = self.__translate_upsert_multi_sub_doc_result(result)
         else:
             self.log.error("Unsupported operation %s" % op_type)
         return result
@@ -1254,27 +1210,20 @@ class SDKClient(object):
         :param xattr: Bool to enable xattr read
         :return:
         """
-        mutate_in_specs = []
         path_val = dict()
-        for kv in keys:
-            key = kv.getT1()
-            value = kv.getT2()
-            path_val[key] = list()
-            mutate_in_spec = []
-            for _tuple in value:
-                _path = _tuple[0]
-                path_val[key].append((_path, ''))
-                _mutate_in_spec = SDKClient.sub_doc_op.getLookUpInSpec(
-                    _path,
-                    xattr)
-                mutate_in_spec.append(_mutate_in_spec)
-            content = Tuples.of(key, mutate_in_spec)
-            mutate_in_specs.append(content)
-        lookup_in_options = SDKClient.sub_doc_op.getLookupInOptions(access_deleted)
-        result = SDKClient.sub_doc_op.bulkGetSubDocOperation(
-            # timeout, time_unit,
-            self.collection, mutate_in_specs, lookup_in_options)
-        return self.__translate_get_multi_sub_doc_result(result, path_val)
+        look_up_multi_result = dict()
+        options = SDKOptions.get_look_up_in_options(timeout=timeout,
+                                                    time_unit=time_unit)
+        for doc_key, sub_doc_tuples in keys:
+            path_val[doc_key] = list()
+            mutate_in_spec = list()
+            for sd_key, sd_val in sub_doc_tuples:
+                path_val[doc_key].append((sd_key, ''))
+                mutate_in_spec.append(SubDoc.get(sd_key, xattr=xattr))
+            look_up_multi_result.update(
+                self.collection.mutate_in(doc_key, mutate_in_spec, options))
+        return self.__translate_get_multi_sub_doc_result(
+            look_up_multi_result, path_val)
 
     def sub_doc_remove_multi(self, keys, exp=0,
                              exp_unit=SDKConstants.TimeUnit.SECONDS,
