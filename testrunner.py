@@ -37,12 +37,15 @@ def parse_args():
     if options.globalsearch:
         framework_helper.parse_global_conf_file(options.globalsearch,
                                                 tests, test_params)
-    if options.include_tests:
-        tests = framework_helper.process_include_or_filter_exclude_tests(
-            "include", options.include_tests, tests, options)
-    if options.exclude_tests:
-        tests = framework_helper.process_include_or_filter_exclude_tests(
-            "exclude", options.exclude_tests, tests, options)
+    try:
+        if options.include_tests:
+            tests = framework_helper.process_include_or_filter_exclude_tests(
+                "include", options.include_tests, tests, options)
+        if options.exclude_tests:
+            tests = framework_helper.process_include_or_filter_exclude_tests(
+                "exclude", options.exclude_tests, tests, options)
+    except Exception as e:
+        print("Failed to get the test xml to include or exclude the tests. Running all the tests instead.")
 
     if options.testcase:
         tests.append(options.testcase)
