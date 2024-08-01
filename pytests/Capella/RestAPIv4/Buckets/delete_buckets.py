@@ -20,6 +20,14 @@ class DeleteBucket(GetBucket):
             self.fail("!!!...App Svc deployment failed...!!!")
         self.log.info("Successfully deployed App Svc.")
 
+        # Wait for the deployment request in GetCluster to complete.
+        self.log.info("Waiting for AppService {} to be deployed."
+                      .format(self.app_service_id))
+        if not self.wait_for_deployment(self.cluster_id, self.app_service_id):
+            self.tearDown()
+            self.fail("!!!...App Svc deployment failed...!!!")
+        self.log.info("Successfully deployed App Svc.")
+
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
         super(DeleteBucket, self).tearDown()
