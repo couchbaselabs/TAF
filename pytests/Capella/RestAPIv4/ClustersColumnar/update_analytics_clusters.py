@@ -302,7 +302,7 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
     def test_payload(self):
         testcases = list()
 
-        for key in self.expected_res:
+        for key in self.expected_res.keys() + ["plan", "timezone"]:
             if key in ["region", "cloudProvider", "availability", "compute", "id"]:
                 continue
 
@@ -313,18 +313,28 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
             ]
             for value in values:
                 testcase = copy.deepcopy(self.expected_res)
-                testcase[key] = value
+
+                # If testing nested key, mutate it correctly.
+                if key in ["plan", "timezone"]:
+                    testcase["support"][key] = value
+                else:
+                    testcase[key] = value
                 for param in ["region", "cloudProvider"]:
                     del testcase[param]
 
                 testcase["desc"] = "Testing '{}' with val: `{}` of type: `{}`"\
                                    .format(key, value, type(value))
                 if (
-                        (key in ["name", "description"] and not isinstance(
-                            value, str)) or
+                        (key in ["name", "description", "plan", "timezone"]
+                            and not isinstance(value, str)) or
                         (key == "nodes" and not isinstance(value, int)) or
                         (key == "support" and not isinstance(value, dict))
                 ):
+                    # Handle the nested key case.
+                    # Error message will print `outerKey.innerKey`.
+                    printKey = key
+                    if key in ["plan", "timezone"]:
+                        printKey = "support." + key
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -332,7 +342,7 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
                         "httpStatusCode": 400,
                         "message": 'Bad Request. Error: body contains '
                                    'incorrect JSON type for '
-                                   'field "{}".'.format(key)
+                                   'field "{}".'.format(printKey)
                     }
                 elif key == "nodes" and value not in [1, 2, 4, 8, 16, 32]:
                     testcase["expected_status_code"] = 422
@@ -397,6 +407,32 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
                                    " provided is not valid. The description "
                                    "can be a maximum of 280 characters."
                     }
+                elif key == "timezone" and value not in [
+                        "ET", "GMT", "IST", "PT"]:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 4003,
+                        "hint": "Please ensure that a valid timezone is "
+                                "provided.",
+                        "httpStatusCode": 422,
+                        "message": "The timezone provided was not recognized. "
+                                   "Please specify one of the following: "
+                                   "ET,GMT,IST,PT."
+                    }
+                elif key == "plan" and value not in [
+                        "basic", "developerPro", "enterprise"]:
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 4021,
+                        "hint": "Please provide a valid package type when "
+                                "creating or modifying a cluster. The "
+                                "provided package type is not valid.",
+                        "httpStatusCode": 422,
+                        "message": "Unable to process request for cluster "
+                                   "deployment. The package type '' is not "
+                                   "valid. Should be one of 'basic', "
+                                   "'developerPro', or 'enterprise'."
+                    }
                 testcases.append(testcase)
 
         failures = list()
@@ -417,6 +453,11 @@ class PutAnalyticsClusters(GetAnalyticsClusters):
 
             self.validate_testcase(res, [204], testcase, failures,
                                    payloadTest=True)
+            # Instance might be scaling, so check status = healthy
+            if not self.wait_for_deployment(inst_id=self.analyticsCluster_id):
+                self.tearDown()
+                self.fail("!!!...Instance status not healthy...!!!")
+
         if failures:
             for fail in failures:
                 self.log.warning(fail)

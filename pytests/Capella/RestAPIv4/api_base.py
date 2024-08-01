@@ -41,7 +41,7 @@ class APIBase(CouchbaseBaseTest):
         # be used to perform further V4 api operations
         resp = self.capellaAPI.org_ops_apis.create_api_key(
             self.organisation_id, self.prefix + "OrgOwnerKey-1",
-            ["organizationOwner"], self.prefix, 3)
+            ["organizationOwner"], self.prefix, 1)
         if resp.status_code == 201:
             self.org_owner_key1 = resp.json()
         else:
@@ -52,7 +52,7 @@ class APIBase(CouchbaseBaseTest):
         # one another at time of Rate Limiting.
         resp = self.capellaAPI.org_ops_apis.create_api_key(
             self.organisation_id, self.prefix + "OrgOwnerKey-2",
-            ["organizationOwner"], self.prefix, 3)
+            ["organizationOwner"], self.prefix, 1)
         if resp.status_code == 201:
             self.org_owner_key2 = resp.json()
         else:
@@ -285,8 +285,8 @@ class APIBase(CouchbaseBaseTest):
         # Templates for instance configurations across CSPs and Computes
         self.instance_templates = {
             # TEMPLATES :
-            "4v16_AWS_singleNode_ue1": {
-                "nodes": self.input.param("nodes", 1),
+            "AWS_4v16_4node": {
+                "nodes": self.input.param("nodes", 4),
                 "region": self.input.param("region", "us-east-1"),
                 "cloudProvider": "aws",
                 "compute": {
@@ -294,8 +294,7 @@ class APIBase(CouchbaseBaseTest):
                     "ram": self.input.param("ram", 16)
                 },
                 "availability": {
-                    "type": self.input.param("availabilityType",
-                                             "single")
+                    "type": self.input.param("availabilityType", "multi")
                 }
             }
         }
@@ -304,7 +303,7 @@ class APIBase(CouchbaseBaseTest):
                 "instance_id")
         else:
             instance_template = self.input.param("instance_template",
-                                                 "4v16_AWS_singleNode_ue1")
+                                                 "AWS_4v16_4node")
             res = self.columnarAPI.create_analytics_cluster(
                 self.organisation_id, self.project_id,
                 self.prefix + instance_template,
@@ -321,7 +320,7 @@ class APIBase(CouchbaseBaseTest):
                 self.fail("!!!...Instance creation Failed...!!!")
             self.analyticsCluster_id = res.json()["id"]
             self.capella["instance_id"] = self.analyticsCluster_id
-        self.instances = [self.analyticsCluster_id]
+        self.instances = []
 
         # Templates for app service configurations across CSPs and Computes.
         self.app_svc_templates = {
@@ -380,20 +379,20 @@ class APIBase(CouchbaseBaseTest):
                     self.log.error("!!!...App Svc could not be deleted...!!!")
                 self.log.info("App Svc Deleted Successfully")
 
+            # Delete the cluster that was created.
+            self.log.info("Destroying Cluster: {}".format(self.cluster_id))
+            res = self.capellaAPI.cluster_ops_apis.delete_cluster(
+                self.organisation_id, self.project_id, self.cluster_id)
+            if res.status_code != 202:
+                self.fail("Error while deleting cluster: {}."
+                          .format(res.content))
+
             # Delete the created instance.
             self.log.info("Deleting INSTANCE: {}".format(
                 self.capella["instance_id"]))
             if self.flush_columnar_instances(self.instances):
-                super(APIBase, self).tearDown()
                 self.log.error("!!!...Instance(s) deletion failed...!!!")
             self.wait_for_deletion(instances=self.instances)
-
-            # Delete the cluster that was created.
-            self.log.info("Destroying Cluster: {}".format(self.cluster_id))
-            if self.capellaAPI.cluster_ops_apis.delete_cluster(
-                    self.organisation_id, self.project_id,
-                    self.cluster_id).status_code != 202:
-                self.fail("Error while deleting cluster.")
 
             # Wait for the cluster to be destroyed.
             self.log.info("Waiting for cluster to be destroyed.")

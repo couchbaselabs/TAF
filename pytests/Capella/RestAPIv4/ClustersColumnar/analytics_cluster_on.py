@@ -115,12 +115,8 @@ class PostActivationState(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
-                if not self.validate_onoff_state(["turningOn", "healthy"],
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
                                                  self.analyticsCluster_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:
@@ -180,12 +176,8 @@ class PostActivationState(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
-                if not self.validate_onoff_state(["turningOn", "healthy"],
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
                                                  self.analyticsCluster_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -300,12 +292,8 @@ class PostActivationState(GetAnalyticsClusters):
 
             if self.validate_testcase(result, [409, 202, 400], testcase,
                                       failures):
-                if not self.validate_onoff_state(["turningOn", "healthy"],
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
                                                  self.analyticsCluster_id):
-                    self.log.error("Status == {}, Key validation Failure : {}"
-                                   .format(result.status_code,
-                                           testcase["description"]))
-                    self.log.warning("Result : {}".format(result.content))
                     failures.append(testcase["description"])
 
         if failures:

@@ -15,7 +15,8 @@ class GetAnalyticsClusters(GetProject):
         # Initialize the params and create an analytics instance.
         self.expected_res = {
             "id": self.analyticsCluster_id,
-            "name": self.prefix + "WRAPPER",
+            "name": self.prefix + self.input.param(
+                "instance_template", "AWS_4v16_4node"),
             "description": "",
             "support": {
                 "plan": "enterprise",
@@ -35,7 +36,7 @@ class GetAnalyticsClusters(GetProject):
         # self.analyticsCluster_id = res.json()["id"]
         # self.expected_res['id'] = self.analyticsCluster_id
         self.expected_res.update(self.instance_templates[self.input.param(
-            "instance_template", "4v16_AWS_singleNode_ue1")])
+            "instance_template", "AWS_4v16_4node")])
 
         # Wait for the instance in APIBase to be deployed.
         self.log.info("Waiting for INSTANCE {} to be deployed."
