@@ -28,7 +28,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.infra_log_level = self.input.param("infra_log_level",
                                                 "error").upper()
         self.test_timeout = self.input.param("test_timeout", 3600)
-        self.thread_to_use = self.input.param("threads_to_use", 30)
+        self.thread_to_use = self.input.param("threads_to_use", 60)
         self.case_number = self.input.param("case_number", 0)
 
         self.skip_teardown_cleanup = self.input.param("skip_teardown_cleanup",
