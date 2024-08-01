@@ -596,15 +596,12 @@ class ClusterUtils:
         if master is None:
             master = cluster.master
         reb_util = RebalanceUtil(master)
-        reb_util.get_rebalance_status()
         if reb_util.get_rebalance_status() == 'running':
             self.kill_memcached(cluster)
             self.log.warning("Rebalance still running, test should be verified")
             stopped = reb_util.stop_rebalance()
             if not stopped:
                 raise Exception("Unable to stop rebalance")
-        else:
-            self.log.warning("Rebalance stop was attempted but there is no ongoing rebalance")
 
     def extract_nodes_self_from_pools_default(self, pools_default):
         return next(iter(filter(lambda node: "thisNode" in node and node["thisNode"],

@@ -396,8 +396,9 @@ class CrashTest(ClusterSetup):
             nodes_to_affect = [choice(nodes_to_affect)]
 
         create_gen = doc_generator(self.key, self.num_items, self.num_items*2)
-        update_gen = doc_generator(self.key, 0, self.num_items/2)
-        delete_gen = doc_generator(self.key, self.num_items/2, self.num_items)
+        update_gen = doc_generator(self.key, 0, int(self.num_items/2))
+        delete_gen = doc_generator(self.key, int(self.num_items/2),
+                                   self.num_items)
 
         for node in nodes_to_affect:
             shell = RemoteMachineShellConnection(node)
