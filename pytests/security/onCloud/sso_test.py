@@ -4,29 +4,22 @@ import json
 import requests
 
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
-from pytests.basetestcase import BaseTestCase
+from pytests.Capella.RestAPIv4.security_base import SecurityBase
 from urlparse import urljoin, urlparse
 from .sso_utils import SSOComponents, SsoUtils
 from .saml_response import SAMLResponse
 from .saml_signatory import SAMLSignatory
 
 
-class SSOTest(BaseTestCase):
+class SSOTest(SecurityBase):
     def setUp(self):
-        super(SSOTest, self).setUp()
+        SecurityBase.setUp(self)
         self.url = self.input.capella.get("pod")
         self.user = self.input.capella.get("capella_user")
         self.passwd = self.input.capella.get("capella_pwd")
         self.tenant_id = self.input.capella.get("tenant_id")
         self.secret_key = self.input.capella.get("secret_key")
         self.access_key = self.input.capella.get("access_key")
-        self.project_id = self.input.capella.get("project")
-        self.cluster_id = self.input.capella.get("clusters")
-        if self.input.capella.get("test_users"):
-            self.test_users = json.loads(self.input.capella.get("test_users"))
-        else:
-            self.test_users = {"User": {"password": self.passwd, "mailid": self.user,
-                                        "role": "organizationOwner"}}
         self.capi = CapellaAPI(
             "https://" + self.url,
             self.secret_key,
@@ -83,6 +76,7 @@ class SSOTest(BaseTestCase):
         drealm = self.sso.delete_realm(self.tenant_id, self.realm_id)
         self.log.info(drealm.headers)
         self.assertEqual(drealm.status_code // 100, 2, drealm.content)
+        super(SecurityBase, self).tearDown()
 
     def test_lifecycle_realm(self):
         # For this test we just want to run the setup and teardown
@@ -174,10 +168,10 @@ class SSOTest(BaseTestCase):
         self.assertIsNotNone(saml_request_dict["SAMLRequest"])
         self.assertIsNotNone(saml_request_dict["RelayState"])
 
-        id = self.sso.decode_saml_request(saml_request_dict['SAMLRequest'])
-        self.log.info("Got Request ID: {}".format(id))
+        saml_request_id = self.sso.decode_saml_request(saml_request_dict['SAMLRequest'])
+        self.log.info("Got Request ID: {}".format(saml_request_id))
 
-        s = SAMLResponse(requestId=id, spname=self.realm_entity, acs=self.realm_callback)
+        s = SAMLResponse(requestId=saml_request_id, spname=self.realm_entity, acs=self.realm_callback)
         s.generateRoot()
         s.subject("test-user1")
         s.attribute("uid", ["test-user1"])
@@ -217,7 +211,7 @@ class SSOTest(BaseTestCase):
         # self.assertEqual(continue_flow.status_code // 100, 3)
         # Throws "SSOCallbackError"
         # "We have been unable to process your login request:
-        # canonicalization algorithm 'http://www.w3.org/2006/12/xml-c14n11' is not supported"}
+        # canonicalization algorithm 'http://www.w3.org/2006/12/xml-c14n11' is not supported"
         #
         # new_url = urlparse(continue_flow.headers['Location'])
         # new_url = "https://{}/v2/auth{}?{}".format(self.url.replace("cloud", "", 1), new_url.path,
@@ -301,6 +295,7 @@ class SSOTest(BaseTestCase):
     def test_high_quantity_saml_to_auth0(self):
         no_of_iters = self.input.param("no_of_iters", 10000)
         req_no = 0
+        response = None
         try:
             while req_no < no_of_iters:
                 self.log.info("Request number: {0}".format(req_no))
@@ -431,10 +426,10 @@ class SSOTest(BaseTestCase):
         self.assertIsNotNone(saml_request_dict["SAMLRequest"])
         self.assertIsNotNone(saml_request_dict["RelayState"])
 
-        id = self.sso.decode_saml_request(saml_request_dict['SAMLRequest'])
-        self.log.info("Got Request ID: {}".format(id))
+        saml_request_id = self.sso.decode_saml_request(saml_request_dict['SAMLRequest'])
+        self.log.info("Got Request ID: {}".format(saml_request_id))
 
-        s = SAMLResponse(requestId=id, spname=self.realm_entity, acs=self.realm_callback)
+        s = SAMLResponse(requestId=saml_request_id, spname=self.realm_entity, acs=self.realm_callback)
         s.generateRoot()
         s.subject("test-user1")
         s.attribute("uid", ["test-user1"])
