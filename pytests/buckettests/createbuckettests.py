@@ -5,6 +5,7 @@ import copy
 from BucketLib.BucketOperations import BucketHelper
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
+from cb_server_rest_util.buckets.buckets_api import BucketRestApi
 from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from custom_exceptions.exception import BucketCreationException
@@ -60,7 +61,8 @@ class CreateBucketTests(ClusterSetup):
         ]
         self.log.info("Creating required buckets")
         for bucket_dict in bucket_specs:
-            name, spec = bucket_dict.keys()[0], bucket_dict.values()[0]
+            name = list(bucket_dict.keys())[0]
+            spec = list(bucket_dict.values())[0]
             self.bucket_util.create_default_bucket(
                 self.cluster, bucket_name=name,
                 bucket_type=spec[Bucket.bucketType],
@@ -83,6 +85,7 @@ class CreateBucketTests(ClusterSetup):
         self.log.info("Validating the items on the buckets")
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
                                                      self.cluster.buckets)
+        self.bucket_util.print_bucket_stats(self.cluster)
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
 
     def test_minimum_replica_update_during_replica_update_rebalance(self):
@@ -199,8 +202,7 @@ class CreateBucketTests(ClusterSetup):
         """
         Create buckets with invalid names
         """
-        bucket_helper = BucketHelper(self.cluster.master)
-        api = '{0}{1}'.format(bucket_helper.baseUrl, 'pools/default/buckets')
+        bucket_rest = BucketRestApi(self.cluster.master)
         invalid_names = {
             "_replicator.couch.1":
                 "This name is reserved for the internal use.",
@@ -225,11 +227,9 @@ class CreateBucketTests(ClusterSetup):
             init_params[Bucket.bucketType] = bucket_type
             for name, error in invalid_names.items():
                 init_params[Bucket.name] = name
-                params = urllib.urlencode(init_params)
-                status, content, _ = bucket_helper._http_request(
-                    api, params=params, method=bucket_helper.POST)
+                status, content = bucket_rest.create_bucket(init_params)
                 self.assertFalse(status, "Bucket created with name=%s" % name)
-                self.assertEqual(json.loads(content)["errors"]["name"], error,
+                self.assertEqual(content.json()["errors"]["name"], error,
                                  "Invalid error message")
 
     def test_invalid_params(self):
@@ -292,28 +292,24 @@ class CreateBucketTests(ClusterSetup):
         self.bucket_storage = Bucket.StorageBackend.couchstore
 
         self.create_bucket(self.cluster,bucket_name=bucket_name)
-        self.log.info("Bucket with name : {0} "
-                      "type : {1} "
-                      "replicas : {2} "
-                      "storage : couchstore "
-                      "created"
-                      .format(bucket_name,
-                              self.bucket_type,
-                              self.num_replicas))
+        self.log.info(f"Bucket with name : {bucket_name} "
+                      f"type : {self.bucket_type} "
+                      f"replicas : {self.num_replicas} "
+                      f"storage : couchstore created")
 
         for i in range(num_collections):
-            collection_name = "collection_{0}".format(i)
+            collection_name = f"collection_{i}"
             self.bucket_util.create_collection(self.cluster.master,
                                                self.cluster.buckets[0],
                                                CbServer.default_scope,
-                                               {"name":collection_name})
+                                               {"name": collection_name})
             self.log.info("Collection {0} created".format(collection_name))
 
         self.cluster_util.print_cluster_stats(self.cluster)
         self.bucket_util.print_bucket_stats(self.cluster)
 
-        result = self.bucket_util.validate_history_retention_settings(self.cluster.master,
-                                                                      self.cluster.buckets[0])
+        result = self.bucket_util.validate_history_retention_settings(
+            self.cluster.master, self.cluster.buckets[0])
         self.assertTrue(result,
                         "History field in stats could not be validated")
         self.log.info("History field in stats validated successfully")
