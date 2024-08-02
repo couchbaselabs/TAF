@@ -31,7 +31,8 @@ class CBASHelper(RestConnection):
                                   timeout=70, client_context_id=None,
                                   username=None, password=None,
                                   analytics_timeout=120, time_out_unit="s",
-                                  scan_consistency=None, scan_wait=None):
+                                  scan_consistency=None, scan_wait=None,
+                                  max_warning=25):
         if not username:
             username = self.username
         if not password:
@@ -40,6 +41,7 @@ class CBASHelper(RestConnection):
         headers = self._create_capi_headers(username, password)
 
         params = {'statement': statement, 'pretty': pretty,
+                  'max-warnings': max_warning,
                   'client_context_id': client_context_id,
                   'timeout': str(analytics_timeout) + time_out_unit}
 

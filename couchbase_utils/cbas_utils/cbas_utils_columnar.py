@@ -58,7 +58,7 @@ class BaseUtil(object):
     def get_all_active_requests(self, cluster, username=None, password=None,
                                 timeout=300, analytics_timeout=300):
         cmd = "select value active_requests()"
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
@@ -70,7 +70,7 @@ class BaseUtil(object):
             self, cluster, statement, mode=None, timeout=300,
             client_context_id=None, username=None, password=None,
             analytics_timeout=300, time_out_unit="s",
-            scan_consistency=None, scan_wait=None):
+            scan_consistency=None, scan_wait=None, warnings=0):
         """
         Executes a statement on CBAS using the REST API using REST Client
         :param statement str, statement to execute on analytics workbench
@@ -83,6 +83,7 @@ class BaseUtil(object):
         :param time_out_unit i,
         :param scan_consistency str
         :param scan_wait str
+        :param warnings int, number of warnings
         """
         cbas_helper = self.get_cbas_helper_object(cluster)
         pretty = "true"
@@ -96,7 +97,7 @@ class BaseUtil(object):
                 username, password,
                 analytics_timeout=analytics_timeout,
                 time_out_unit=time_out_unit,
-                scan_consistency=scan_consistency, scan_wait=scan_wait)
+                scan_consistency=scan_consistency, scan_wait=scan_wait, max_warning=warnings)
             if type(response) in [str, bytes]:
                 response = json.loads(response)
             if "errors" in response:
@@ -118,6 +119,11 @@ class BaseUtil(object):
             else:
                 handle = None
 
+            if "warnings" in response:
+                warnings = response["warnings"]
+            else:
+                warnings = None
+
             if "metrics" in response:
                 metrics = response["metrics"]
                 if type(metrics) == str:
@@ -125,7 +131,7 @@ class BaseUtil(object):
             else:
                 metrics = None
 
-            return response["status"], metrics, errors, results, handle
+            return response["status"], metrics, errors, results, handle, warnings
 
         except Exception as e:
             self.log.error("Query: {} failed due to: {}".format(statement, str(e)))
@@ -187,8 +193,8 @@ class BaseUtil(object):
         except Exception as e:
             raise Exception(str(e))
 
-    def validate_error_in_response(self, status, errors, expected_error=None,
-                                   expected_error_code=None):
+    def validate_error_and_warning_in_response(self, status, errors, expected_error=None,
+                                               expected_error_code=None):
         """
         Validates the error response against the expected one.
         :param status str, status returned by REST API call
@@ -209,8 +215,8 @@ class BaseUtil(object):
                 self.log.error("Error message mismatch. Expected: %s, got: %s"
                                % (expected_error, actual_error))
                 return False
-            self.log.error("Error message matched. Expected: %s, got: %s"
-                           % (expected_error, actual_error))
+            self.log.info("Error message matched. Expected: %s, got: %s"
+                          % (expected_error, actual_error))
             if expected_error_code is not None:
                 if isinstance(errors, list):
                     error_code = errors[0]["code"]
@@ -448,12 +454,12 @@ class RBAC_Util(BaseUtil):
         create_role_cmd = "CREATE ROLE " + role_name
         create_role_cmd += ";"
 
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, create_role_cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -479,12 +485,12 @@ class RBAC_Util(BaseUtil):
         create_role_cmd = "DROP ROLE " + role_name
         create_role_cmd += ";"
 
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, create_role_cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -624,12 +630,12 @@ class RBAC_Util(BaseUtil):
         grant_cmd += ";"
 
         self.log.info("Running GRANT statement: {}".format(grant_cmd))
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, grant_cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -651,12 +657,12 @@ class RBAC_Util(BaseUtil):
         grant_cmd = "GRANT ROLE " + columnar_roles + " TO " + database_users + ";"
 
         self.log.info("Running GRANT statement: {}".format(grant_cmd))
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, grant_cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -715,12 +721,12 @@ class Database_Util(BaseUtil):
         if if_not_exists:
             cmd += " if not exists"
         cmd = cmd + ";"
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -784,7 +790,7 @@ class Database_Util(BaseUtil):
                "db.DatabaseName = \"{0}\";".format(
             self.unformat_name(database_name)))
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
@@ -821,12 +827,12 @@ class Database_Util(BaseUtil):
         if if_exists:
             cmd += " if exists"
         cmd += ";"
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -881,7 +887,7 @@ class Dataverse_Util(Database_Util):
                 self.unformat_name(database_name))
         cmd += ";"
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
@@ -937,11 +943,11 @@ class Dataverse_Util(Database_Util):
 
         cmd += ";"
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -1003,12 +1009,12 @@ class Dataverse_Util(Database_Util):
             cmd += " if exists"
         cmd += ";"
 
-        status, metrics, errors, results, _ = (
+        status, metrics, errors, results, _, warnings = (
             self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
                 timeout=timeout, analytics_timeout=analytics_timeout))
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -1328,7 +1334,7 @@ class Link_Util(Dataverse_Util):
         cmd += ";"
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if status == "success":
@@ -1417,7 +1423,7 @@ class Link_Util(Dataverse_Util):
                     method="POST", uri=uri, params=params, timeout=timeout,
                     username=username, password=password)
             if validate_error_msg:
-                return self.validate_error_in_response(
+                return self.validate_error_and_warning_in_response(
                     status, errors, expected_error, expected_error_code)
             if errors:
                 self.log.error(str(errors))
@@ -1448,11 +1454,11 @@ class Link_Util(Dataverse_Util):
             cmd += " if exists"
         cmd += ";"
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -1493,7 +1499,7 @@ class Link_Util(Dataverse_Util):
                 method="GET", uri=uri, params=params, timeout=timeout,
                 username=username, password=password)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         if status:
             return content
@@ -1534,7 +1540,7 @@ class Link_Util(Dataverse_Util):
             method="PUT", uri=uri, params=params, timeout=timeout,
             username=username, password=password)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         return status
 
@@ -1561,13 +1567,13 @@ class Link_Util(Dataverse_Util):
         if not with_force:
             cmd_connect_link += " with {'force':false}"
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd_connect_link, username=username,
             password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -1595,11 +1601,11 @@ class Link_Util(Dataverse_Util):
         cmd_disconnect_link = 'disconnect link {};'.format(self.format_name(
             link_name))
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd_disconnect_link, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -1954,12 +1960,12 @@ class KafkaLink_Util(ExternalLink_Util):
             source_details["schemaRegistryDetails"] = schema_registry_details
         cmd += json.dumps(source_details)
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -2091,7 +2097,7 @@ class Dataset_Util(KafkaLink_Util):
                 CBASHelper.metadata_format(database_name))
         cmd += ";"
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if status == "success" and results:
@@ -2203,12 +2209,12 @@ class Dataset_Util(KafkaLink_Util):
                                                with_clause, link_name, where_clause,
                                                analytics_collection, storage_format)
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error)
+            return self.validate_error_and_warning_in_response(status, errors,
+                                                               expected_error)
         else:
             if status != "success":
                 return False
@@ -2281,11 +2287,11 @@ class Dataset_Util(KafkaLink_Util):
             cmd += " if exists"
         cmd += ";"
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -2325,7 +2331,7 @@ class Dataset_Util(KafkaLink_Util):
         total_items = -1
         cmd_get_num_items = "select count(*) from %s;" % dataset_name
 
-        status, metrics, errors, results, _ = \
+        status, metrics, errors, results, _, warnings = \
             self.execute_statement_on_cbas_util(
                 cluster, cmd_get_num_items, timeout=timeout,
                 analytics_timeout=analytics_timeout)
@@ -2971,11 +2977,11 @@ class External_Dataset_Util(Remote_Dataset_Util):
                                                         exclude, parse_json_string, convert_decimal_to_double,
                                                         timezone, embed_filter_values)
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -3348,12 +3354,12 @@ class StandaloneCollectionLoader(External_Dataset_Util):
                                             dataverse_name)
         self.log.info("Inserting into: {0}.{1}".format(CBASHelper.format_name(dataverse_name),
                                                        CBASHelper.format_name(collection_name)))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         elif status != "success":
             self.log.error(str(errors))
@@ -3385,12 +3391,12 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         """
         cmd = self.generate_upsert_into_cmd(collection_name, new_item, dataverse_name,
                                             database_name)
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         elif status != "success":
             self.log.error(str(errors))
@@ -3431,12 +3437,12 @@ class StandaloneCollectionLoader(External_Dataset_Util):
             database_name=database_name, where_clause=where_clause,
             use_alias=use_alias)
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
 
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         elif status != "success":
             self.log.error(str(errors))
@@ -3459,7 +3465,7 @@ class StandaloneCollectionLoader(External_Dataset_Util):
         else:
             cmd += "{0} ".format(CBASHelper.format_name(collection_name))
             cmd += "LIMIT 1"
-            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password, timeout=timeout,
                 analytics_timeout=analytics_timeout)
             if status != "success":
@@ -3715,11 +3721,11 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                       "S3 bucket path {2}/{3}".format(
             collection_name, external_link_name, aws_bucket_name, path_on_aws_bucket))
         self.log.debug(cmd)
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -3856,11 +3862,11 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             primary_key, subquery, None, None, ddl_format, compress_dataset,
             storage_format, kafka_connector_details)
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -3915,11 +3921,11 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             primary_key, "", link_name, external_collection, ddl_format,
             compress_dataset, storage_format, kafka_connector_details)
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password,
             timeout=timeout, analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":
@@ -4337,7 +4343,7 @@ class Synonym_Util(StandAlone_Collection_Util):
             self.metadata_format(synonym_database_name)))
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password)
         if status == "success":
             for result in results:
@@ -4379,11 +4385,11 @@ class Synonym_Util(StandAlone_Collection_Util):
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -4416,11 +4422,11 @@ class Synonym_Util(StandAlone_Collection_Util):
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -4452,8 +4458,8 @@ class Synonym_Util(StandAlone_Collection_Util):
                 timeout=timeout,
                 analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(synonym_status, errors,
-                                                   expected_error)
+            return self.validate_error_and_warning_in_response(synonym_status, errors,
+                                                               expected_error)
         else:
             if synonym_status != "success":
                 self.log.error("Querying synonym failed")
@@ -4508,7 +4514,7 @@ class Synonym_Util(StandAlone_Collection_Util):
                 cmd += " and sy.ObjectDatabaseName = \"{0}\"".format(
                     CBASHelper.unformat_name(cbas_entity_database))
             cmd += ";"
-            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
                 cluster, cmd)
             if status == "success" and results:
                 synonym_database = CBASHelper.format_name(
@@ -4660,11 +4666,11 @@ class View_Util(Synonym_Util):
 
         self.log.info("Executing cmd - \n{0}\n".format(cmd))
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -4686,11 +4692,11 @@ class View_Util(Synonym_Util):
 
         self.log.info("Executing cmd - \n{0}\n".format(cmd))
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -4786,7 +4792,7 @@ class Index_Util(View_Util):
         executing the query.
         """
         statement = 'EXPLAIN %s' % statement
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, statement)
         if status == 'success':
             if not errors:
@@ -4863,12 +4869,12 @@ class Index_Util(View_Util):
 
         self.log.info("Executing cmd - \n{0}\n".format(create_idx_statement))
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, create_idx_statement, username=username,
             password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -4926,12 +4932,12 @@ class Index_Util(View_Util):
 
         self.log.info("Executing cmd - \n{0}\n".format(drop_idx_statement))
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, drop_idx_statement, username=username,
             password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -5121,7 +5127,7 @@ class UDFUtil(Index_Util):
             password=password, analytics_timeout=analytics_timeout,
             parameters=param)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -5192,7 +5198,7 @@ class UDFUtil(Index_Util):
             password=password, analytics_timeout=analytics_timeout,
             parameters=param)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -5350,7 +5356,7 @@ class UDFUtil(Index_Util):
             cluster, cmd, timeout=timeout, username=username, password=password,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
         else:
             if status != "success":
@@ -5413,7 +5419,7 @@ class CBOUtil(UDFUtil):
         cmd += ";"
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(cluster, cmd)
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, cmd)
         if status != "success":
             return False
         else:
@@ -5427,7 +5433,7 @@ class CBOUtil(UDFUtil):
         cmd = "ANALYZE ANALYTICS COLLECTION %s DROP STATISTICS;" % collection_name
 
         self.log.debug("Executing cmd - \n{0}\n".format(cmd))
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(cluster, cmd)
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, cmd)
         if status != "success":
             return False
         else:
@@ -5438,7 +5444,7 @@ class CBOUtil(UDFUtil):
         if dataverse_name:
             query += " and DataverseName=\"%s\"" % CBASHelper.metadata_format(dataverse_name)
         query += ";"
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(cluster, query)
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(cluster, query)
         if status == "success" and results[0]["$1"]:
             return True
         else:
@@ -5733,7 +5739,7 @@ class CbasUtil(CBOUtil):
         name = current_thread().name
         client_context_id = name
         try:
-            status, metrics, errors, results, handle = \
+            status, metrics, errors, results, handle, warnings = \
                 self.execute_statement_on_cbas_util(
                     cluster, query, mode=mode, timeout=timeout,
                     client_context_id=client_context_id,
@@ -6092,7 +6098,7 @@ class CbasUtil(CBOUtil):
         counter = 1
         while time.time() < cluster_recover_start_time + timeout:
             try:
-                status, _, _, _, _ = self.execute_statement_on_cbas_util(
+                status, _, _, _, _, _ = self.execute_statement_on_cbas_util(
                     cluster, "set `import-private-functions` `true`;ping()")
                 if status == "success":
                     analytics_recovered = True
@@ -6549,7 +6555,7 @@ class CbasUtil(CBOUtil):
             self.log, node, method=method, params=param, timeout=300,
             username=username, password=password)
         if validate_error_msg:
-            if self.validate_error_in_response(
+            if self.validate_error_and_warning_in_response(
                     status, errors, expected_error, expected_error_code):
                 return 4
             else:
@@ -6828,12 +6834,12 @@ class CbasUtil(CBOUtil):
                                            partition_alias, compression, order_by,
                                            max_object_per_file, file_format)
 
-        status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+        status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
         if validate_error_msg:
-            return self.validate_error_in_response(status, errors,
-                                                   expected_error, expected_error_code)
+            return self.validate_error_and_warning_in_response(status, errors,
+                                                               expected_error, expected_error_code)
         else:
             if status != "success":
                 self.log.error(str(errors))
@@ -6865,15 +6871,21 @@ class CbasUtil(CBOUtil):
         if link_name:
             cmd += link_name
         cmd += " KEY "
+        copy_key = ""
         if primary_key:
-            primary_key = 'c.' + primary_key
+            if isinstance(primary_key, list):
+                for i in primary_key:
+                    copy_key = copy_key + "c." + i + ","
+                copy_key = copy_key[:-1]
+            else:
+                copy_key = 'c.' + primary_key
         else:
-            primary_key = "AUTOGENERATED"
+            copy_key = "AUTOGENERATED"
 
         if function:
-            primary_key = function.format(primary_key)
+            copy_key = function.format(primary_key)
 
-        cmd += primary_key
+        cmd += copy_key
 
         return cmd
 
@@ -6882,7 +6894,8 @@ class CbasUtil(CBOUtil):
                    dest_bucket=None, link_name=None, primary_key=None, function=None,
                    username=None, password=None, timeout=300,
                    analytics_timeout=300, validate_error_msg=None,
-                   expected_error=None, expected_error_code=None):
+                   expected_error=None, expected_error_code=None, warnings=None,
+                   validate_warning_msg=None):
         """
         Method to copy query results to a KV collection using a remote link.
         """
@@ -6892,9 +6905,9 @@ class CbasUtil(CBOUtil):
             dest_bucket, link_name, primary_key, function)
 
         for i in range(5):
-            status, metrics, errors, results, _ = self.execute_statement_on_cbas_util(
+            status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
-                timeout=timeout, analytics_timeout=analytics_timeout)
+                timeout=timeout, analytics_timeout=analytics_timeout, warnings=warnings)
             if status != "success":
                 if isinstance(errors, list):
                     error_code = errors[0]["code"]
@@ -6914,8 +6927,11 @@ class CbasUtil(CBOUtil):
                     break
             else:
                 break
+        if validate_warning_msg:
+            return self.validate_error_and_warning_in_response(False, warnings, expected_error, expected_error_code)
+
         if validate_error_msg:
-            return self.validate_error_in_response(
+            return self.validate_error_and_warning_in_response(
                 status, errors, expected_error, expected_error_code)
         else:
             if status != "success":

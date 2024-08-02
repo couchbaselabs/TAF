@@ -209,6 +209,51 @@ class CopyToKv(ColumnarBaseTest):
                 if i == 4:
                     return False
 
+    def test_copyToKV_key_type(self):
+        self.base_infra_setup()
+        datasets = self.cbas_util.get_all_dataset_objs("standalone")
+        remote_link = self.cbas_util.get_all_link_objs("couchbase")[0]
+        jobs = Queue()
+        results = []
+        key = self.input.param("copy_key", None)
+        if ',' in key:
+            key = key.split(',')
+        for dataset in datasets:
+            jobs.put((self.cbas_util.load_doc_to_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name,
+                       "no_of_docs": self.no_of_docs, "document_size": self.doc_size}))
+
+        self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user, async_run=False)
+        self.provisioned_bucket_id, self.provisioned_bucket_name = self.create_capella_bucket()
+        self.provisioned_scope_name = self.create_capella_scope(self.provisioned_bucket_id)
+        provisioned_collections = []
+        expected_error_code = self.input.param("expected_error_code", None)
+        expected_error_msg = self.input.param("expected_error_msg", None)
+        validate_warning_msg = self.input.param("validate_warning_msg", False)
+        validate_error_msg = self.input.param("validate_error_msg", False)
+
+        for dataset in datasets:
+            collection_name = self.create_capella_collection(self.provisioned_bucket_id,
+                                                             self.provisioned_scope_name)
+            if not collection_name:
+                self.fail("Creating collection in remote KV bucket failed.")
+
+            provisioned_collections.append(collection_name)
+            collection = "{}.{}.{}".format(self.provisioned_bucket_name, self.provisioned_scope_name,
+                                           collection_name)
+            jobs.put((self.cbas_util.copy_to_kv,
+                      {"cluster": self.cluster, "collection_name": dataset.name, "database_name": dataset.database_name,
+                       "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
+                       "link_name": remote_link.full_name, "primary_key": key,
+                       "validate_warning_msg": validate_warning_msg, "expected_error": expected_error_msg,
+                       "expected_error_code": expected_error_code, "warnings": 25,
+                       "validate_error_msg": validate_error_msg}))
+
+        self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
+        if not all(results):
+            self.fail("Failed to execute copy to kv statement")
+
     def test_create_copyToKv_from_standalone_collection(self):
         self.base_infra_setup()
         datasets = self.cbas_util.get_all_dataset_objs("standalone")

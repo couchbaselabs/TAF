@@ -23,7 +23,7 @@ class CBASHelper(object):
             self, statement, mode, pretty=True, timeout=300,
             client_context_id=None, username=None, password=None,
             analytics_timeout=300, time_out_unit="s",
-            scan_consistency=None, scan_wait=None):
+            scan_consistency=None, scan_wait=None, max_warning=0):
 
         client = self.sdk_client_pool.get_cluster_client(self.cluster)
 
