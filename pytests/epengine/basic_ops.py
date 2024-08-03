@@ -674,24 +674,23 @@ class basic_ops(ClusterSetup):
             result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key, val)
             self.assertTrue(result["status"], "Update op failed")
             result = client.crud(DocLoading.Bucket.DocOps.UPDATE, key, val,
-                                 durability=None, replicate_to=0, persist_to=0)
+                                 durability="NONE",
+                                 replicate_to=0, persist_to=0)
             self.assertTrue(result["status"], "Update op failed")
 
             self.log.info("Performing update with observe")
-            try:
-                client.crud(
-                    DocLoading.Bucket.DocOps.UPDATE, key, val,
-                    durability=None, replicate_to=1, persist_to=2)
-                self.fail("Observe operation succeded")
-            except RuntimeException:
-                pass
+            result = client.crud(
+                DocLoading.Bucket.DocOps.UPDATE, key, val,
+                durability="NONE", replicate_to=1, persist_to=2)
+            self.assertFalse(result["status"], "Observe operation succeeded")
 
             self.log.info("Performing read op")
             result = client.crud(DocLoading.Bucket.DocOps.READ, key)
             self.assertFalse(result["status"], "Read op succeeded")
-            self.assertTrue(SDKException.CouchbaseException in result["error"],
-                            "Invalid exception type")
-            self.assertTrue("NO_ACCESS" in result["error"],
+            self.assertTrue(
+                SDKException.AuthenticationException in result["error"],
+                "Invalid exception type")
+            self.assertTrue("EACCESS" in result["error"],
                             "Expected error string not found")
         finally:
             client.close()
@@ -813,7 +812,7 @@ class basic_ops(ClusterSetup):
         create_task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_gen, DocLoading.Bucket.DocOps.CREATE, 0,
             batch_size=500, process_concurrency=self.process_concurrency,
-            timeout_secs=self.sdk_timeout, load_using=self.load_docs_using)
+            timeout_secs=self.sdk_timeout)
         self.task_manager.get_task_result(create_task)
 
         mc_stat_reset_thread = Thread(target=reset_mcstat, args=[bucket.name])
@@ -1704,8 +1703,7 @@ class basic_ops(ClusterSetup):
             compression=self.sdk_compression,
             timeout_secs=self.sdk_timeout,
             scope=self.scope_name, collection=self.collection_name,
-            print_ops_rate=False,
-            load_using=self.load_docs_using)
+            print_ops_rate=False)
         self.task.jython_task_manager.get_task_result(task)
         task = self.task.async_load_gen_docs(
             self.cluster, bucket, doc_create,
