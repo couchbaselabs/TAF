@@ -31,7 +31,7 @@ class Hotel(Thread):
     def generic_query_run(query):
         client = sdk_clients["cbas_admin"]
         result = client.cluster.analytics_query(query)
-        return str(result)
+        return result
 
     def scenario_get_hotels_with_low_ratings(self):
         query = "SELECT * FROM `hotels`.`hotel_with_low_ratings`"

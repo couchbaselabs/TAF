@@ -68,7 +68,7 @@ class TravelSampleApp(AppBase):
         for tenant in self.tenants:
             sdk_client.select_collection(scope_name=tenant,
                                          collection_name="meta_data")
-            app_data = {"data": "2001-01-01"}
+            app_data = {"date": "2001-01-01"}
             result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
                                      "application", app_data)
             self.assertTrue(result["status"], "App_meta creation failed")
@@ -170,9 +170,9 @@ class TravelSampleApp(AppBase):
                                     "Rebalance failure")
                     cluster_scenario.rebalance_task = None
 
-            # for task in tasks:
-            #     if task.exception:
-            #         self.fail(task.exception)
+            for task in tasks:
+                if task.exception:
+                    self.fail(task.exception)
 
             # Print current iteration summary (Possible values)
             # Backup and restore

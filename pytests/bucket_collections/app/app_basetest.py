@@ -128,7 +128,7 @@ class AppBase(BaseTestCase):
 
     def __setup_buckets(self):
         self.cluster.buckets = self.bucket_util.get_all_buckets(self.cluster)
-        if not self.skip_setup_cleanup:
+        if self.skip_setup_cleanup:
             for bucket_obj in self.cluster.buckets:
                 self.map_collection_data(bucket_obj)
             return
@@ -230,6 +230,8 @@ class AppBase(BaseTestCase):
 
             # Create RBAC users
             for t_bucket in self.rbac_conf["rbac_roles"]:
+                if self.skip_setup_cleanup:
+                    break
                 if t_bucket["bucket"] == bucket["name"]:
                     if self.capella_run:
                         self.create_capella_users(t_bucket["roles"])
@@ -300,6 +302,7 @@ class AppBase(BaseTestCase):
             drop_result = self.sdk_clients["bucket_admin"].cluster.query(
                 "DROP INDEX `%s` on `travel-sample`.`%s`.`%s`"
                 % (row["name"], row["scope_id"], row["keyspace_id"]))
+            for _ in drop_result.rows(): pass
             if drop_result.metadata().status() != QueryStatus.SUCCESS:
                 self.fail("Drop index '%s' failed: %s" % (row["name"],
                                                           drop_result))
@@ -318,8 +321,8 @@ class AppBase(BaseTestCase):
             'SELECT * FROM system:indexes '
             'WHERE bucket_id="travel-sample" AND state="deferred"')
         for row in result.rows():
-            index_names.append(row["name"])
             row = row["indexes"]
+            index_names.append(row["name"])
             bucket = self.bucket.name
             scope = row["scope_id"]
             collection = row["keyspace_id"]
@@ -329,7 +332,6 @@ class AppBase(BaseTestCase):
                 indexes_to_build[bucket][scope] = dict()
             if collection not in indexes_to_build[bucket][scope]:
                 indexes_to_build[bucket][scope][collection] = list()
-
             indexes_to_build[bucket][scope][collection].append(row["name"])
 
         for bucket, b_data in indexes_to_build.items():

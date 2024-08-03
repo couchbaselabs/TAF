@@ -6,10 +6,12 @@ rbac_roles:
         roles:
           - "bucket_admin[travel-sample]"
           - "query_manage_index[travel-sample]"
+          - "query_system_catalog"
       - user_name: "guest"
         password: "Guest@123"
         roles:
           - "query_select[travel-sample]"
+          - "query_use_sequential_scans[travel-sample]"
       - user_name: "cbas_admin"
         password: "Cbas_admin@123"
         select_bucket: False
@@ -54,6 +56,7 @@ rbac_roles:
           - "data_writer[travel-sample]"
           - "query_select[travel-sample]"
           - "query_update[travel-sample]"
+          - "query_use_sequential_scans[travel-sample]"
       - user_name: "hotel_admin"
         password: "Hotel_admin@123"
         roles:

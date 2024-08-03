@@ -15,20 +15,20 @@ class CommonUtil(object):
         doc_key = "%s.%s" % (scope, collection)
         client = sdk_clients["bucket_data_writer"]
         client.select_collection(scope, "meta_data")
-        result, fail = client.crud(DocLoading.Bucket.SubDocOps.COUNTER,
-                                   doc_key, ["doc_counter", 1],
-                                   create_path=True,
-                                   store_semantics=StoreSemantics.UPSERT)
-        return int(result[doc_key]['value'])
+        result = client.crud(DocLoading.Bucket.SubDocOps.COUNTER,
+                             doc_key, ["doc_counter", 1],
+                             create_path=True,
+                             store_semantics=StoreSemantics.UPSERT)
+        return int(result[doc_key]["value"]["doc_counter"])
 
     @staticmethod
     def get_current_date(scope_name):
         doc_key = "application"
         client = sdk_clients["bucket_data_writer"]
         client.select_collection(scope_name, "meta_data")
-        result, _ = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
-                                doc_key, "date")
-        return result[doc_key]['value'][0]
+        result = client.crud(DocLoading.Bucket.SubDocOps.LOOKUP,
+                             doc_key, "date")
+        return result[doc_key]['value']['date']
 
     @staticmethod
     def incr_date(tenants):
@@ -39,7 +39,7 @@ class CommonUtil(object):
             q_result = client.cluster.query(
                 'SELECT RAW DATE_ADD_STR(STR_TO_UTC("%s"), 1, "day")'
                 % tem_date)
-            global_vars.app_current_date = q_result.rowsAs(str)[0]
+            global_vars.app_current_date = q_result.rows[0]
             client.crud(DocLoading.Bucket.SubDocOps.UPSERT,
                         doc_key, ["date", global_vars.app_current_date])
             if tem_date == CommonUtil.get_current_date(tenant):
@@ -52,8 +52,8 @@ class Airline(CommonUtil):
         src_airports = list()
         get_source_airports = client.cluster.query(
             query.Airline.source_airports)
-        for row in get_source_airports.rowsAsObject():
-            src_airports.append(row.get("airport"))
+        for row in get_source_airports.rows():
+            src_airports.append(row["airport"])
         return src_airports
 
     @staticmethod
@@ -61,8 +61,8 @@ class Airline(CommonUtil):
         dest_airports = list()
         get_dest_airports = client.cluster.query(
             query.Airline.destination_airports % src_airport)
-        for row in get_dest_airports.rowsAsObject():
-            dest_airports.append(row.get("airport"))
+        for row in get_dest_airports.rows():
+            dest_airports.append(row["airport"])
         return dest_airports
 
     @staticmethod
@@ -104,8 +104,8 @@ class Airline(CommonUtil):
             stops = list()
             result = client.cluster.query(query.Airline.route_stop_counts
                                           % (src_airport, dest_airport))
-            for row in result.rowsAsObject():
-                stops.append(row.get("stops"))
+            for row in result.rows():
+                stops.append(row["stops"])
             stop_clause += ' AND stops in %s' % sample(stops,
                                                        randint(1, len(stops)))
 
@@ -136,16 +136,16 @@ class Hotel(CommonUtil):
     def get_all_countries(client):
         countries = list()
         result = client.cluster.query(query.Hotel.countries)
-        for row in result.rowsAsObject():
-            countries.append(row.get("country"))
+        for row in result.rows():
+            countries.append(row["country"])
         return countries
 
     @staticmethod
     def get_all_city_from_country(client, country):
         cities = list()
         result = client.cluster.query(query.Hotel.cities % country)
-        for row in result.rowsAsObject():
-            cities.append(row.get("city"))
+        for row in result.rows():
+            cities.append(row["city"])
         return cities
 
     @staticmethod
@@ -166,8 +166,8 @@ class Hotel(CommonUtil):
             QueryOptions(metrics=True))
 
         if read_reviews:
-            for row in result.rowsAsObject():
-                hotel_clause = ' hotel.name = "%s"' % row.get("name")
+            for row in result.rows():
+                hotel_clause = ' hotel.name = "%s"' % row["name"]
                 _ = client.cluster.query(query.Hotel.hotel_reviews
                                          % hotel_clause)
 

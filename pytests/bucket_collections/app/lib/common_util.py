@@ -14,7 +14,7 @@ def get_all_scenarios(target_class):
 
 
 def get_random_scenario(target_class):
-    return choice(target_class.scenarios.keys())
+    return choice(list(target_class.scenarios.keys()))
 
 
 def get_random_reservation_date():

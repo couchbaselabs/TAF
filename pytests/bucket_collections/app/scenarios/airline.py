@@ -31,7 +31,7 @@ class Airline(Thread):
     def generic_query_run(query):
         client = sdk_clients["cbas_admin"]
         result = client.cluster.analytics_query(query)
-        return str(result)
+        return result
 
     def scenario_get_middle_aged_user_profiles(self):
         query = "SELECT * FROM `%s`.`user_middle_age`" % self.tenant_scope

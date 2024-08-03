@@ -1,4 +1,6 @@
 class SDKException(object):
+    AuthenticationException = "AuthenticationException"
+
     CasMismatchException = [
         "com.couchbase.client.core.error.CasMismatchException",
         "CasMismatchException",
