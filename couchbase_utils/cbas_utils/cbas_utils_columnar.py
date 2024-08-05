@@ -6894,7 +6894,7 @@ class CbasUtil(CBOUtil):
                    dest_bucket=None, link_name=None, primary_key=None, function=None,
                    username=None, password=None, timeout=300,
                    analytics_timeout=300, validate_error_msg=None,
-                   expected_error=None, expected_error_code=None, warnings=None,
+                   expected_error=None, expected_error_code=None, max_warnings=0,
                    validate_warning_msg=None):
         """
         Method to copy query results to a KV collection using a remote link.
@@ -6907,7 +6907,7 @@ class CbasUtil(CBOUtil):
         for i in range(5):
             status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
                 cluster, cmd, username=username, password=password,
-                timeout=timeout, analytics_timeout=analytics_timeout, warnings=warnings)
+                timeout=timeout, analytics_timeout=analytics_timeout, warnings=max_warnings)
             if status != "success":
                 if isinstance(errors, list):
                     error_code = errors[0]["code"]
