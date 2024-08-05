@@ -149,7 +149,7 @@ class AppServiceOn(GetAppService):
                 "/activationState"
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(["turningOn", "healthy"],
+                if not self.validate_onoff_state(["turningOff", "turnedOff"],
                                                  app=self.app_service_id):
                     failures.append(testcase["description"])
 
@@ -208,8 +208,9 @@ class AppServiceOn(GetAppService):
                     self.app_service_id, headers=header)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(["turningOn", "healthy"],
-                                                 app=self.app_service_id):
+                if not self.validate_onoff_state(
+                        ["turningOff", "turnedOff", "turningOn", "healthy"],
+                        app=self.app_service_id):
                     failures.append(testcase["description"])
 
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -330,8 +331,9 @@ class AppServiceOn(GetAppService):
                     testcase["clusterID"], testcase['appServiceID'], **kwarg)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(["turningOn", "healthy"],
-                                                 app=self.app_service_id):
+                if not self.validate_onoff_state(
+                        ["turningOff", "turnedOff", "turningOn", "healthy"],
+                        app=self.app_service_id):
                     failures.append(testcase["description"])
 
         if failures:

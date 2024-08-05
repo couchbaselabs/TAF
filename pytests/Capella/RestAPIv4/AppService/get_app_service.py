@@ -10,8 +10,9 @@ class GetAppService(GetCluster):
 
     def setUp(self, nomenclature="App_Service_Get"):
         GetCluster.setUp(self, nomenclature)
+        app_svc_template = self.input.param("app_svc_template", "2v4_2node")
         self.expected_res = {
-            "name": self.prefix + "WRAPPER",
+            "name": self.prefix + app_svc_template,
             "description": "App service made by the v4 APIs Automation script",
             "clusterId": self.cluster_id,
             "currentState": None,
@@ -24,8 +25,7 @@ class GetAppService(GetCluster):
                 "version": None
             }
         }
-        self.expected_res.update(self.app_svc_templates[self.input.param(
-            "app_svc_template", "2v4_2node")])
+        self.expected_res.update(self.app_svc_templates[app_svc_template])
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
