@@ -1,17 +1,19 @@
 cb_cluster:
-  nodes_init: 4
+  nodes_init: 5
   services:
     - "kv"
     - "kv"
     - "index,n1ql"
     - "backup,cbas"
+    - "eventing,fts"
 
   settings:
     - name: "memory_quota"
-      indexMemoryQuota: 2048
-      ftsMemoryQuota: 512
+      memoryQuota: 1280
+      indexMemoryQuota: 1024
+      ftsMemoryQuota: 256
       cbasMemoryQuota: 1024
-      eventingMemoryQuota: 512
+      eventingMemoryQuota: 256
       # Use in case of Vol. testing
       # memoryQuota: 2048
       # indexMemoryQuota: 4096

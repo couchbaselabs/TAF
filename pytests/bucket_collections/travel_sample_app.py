@@ -10,6 +10,7 @@ from bucket_collections.app.scenarios.guest import Guest
 from bucket_collections.app.scenarios.hotel import Hotel
 from bucket_collections.app.scenarios.user import User
 from cb_constants import DocLoading
+from couchbase_helper.documentgenerator import doc_generator
 
 
 class TravelSampleApp(AppBase):
@@ -30,7 +31,9 @@ class TravelSampleApp(AppBase):
                                           sleep=1)
         # Fetch all tenants from the bucket (Scope will collection "meta_data")
         self.tenants = list()
-        for scope_name, scope in self.bucket.scopes.items():
+        travel_sample_bucket = self.bucket_util.get_bucket_obj(
+            self.cluster.buckets, "travel-sample")
+        for scope_name, scope in travel_sample_bucket.scopes.items():
             for c_name, _ in scope.collections.items():
                 if c_name == "meta_data":
                     self.tenants.append(scope_name)
@@ -63,24 +66,37 @@ class TravelSampleApp(AppBase):
         super(TravelSampleApp, self).tearDown()
 
     def __load_initial_data(self):
-        # Create collection meta_data document
-        sdk_client = self.sdk_clients["bucket_data_writer"]
-        for tenant in self.tenants:
-            sdk_client.select_collection(scope_name=tenant,
-                                         collection_name="meta_data")
-            app_data = {"date": "2001-01-01"}
-            result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
-                                     "application", app_data)
-            self.assertTrue(result["status"], "App_meta creation failed")
-            self.bucket.scopes[self.tenants[0]].collections["meta_data"]\
-                .num_items += 1
+        load_tasks = list()
+        doc_gen = doc_generator(self.key, 0, self.num_items)
+        for bucket in self.cluster.buckets:
+            self.log.info(f"Loading data into '{bucket.name}' bucket")
+            if bucket.name == "travel-sample":
+                # Create collection meta_data document
+                sdk_client = self.sdk_clients["bucket_data_writer"]
+                for tenant in self.tenants:
+                    sdk_client.select_collection(scope_name=tenant,
+                                                 collection_name="meta_data")
+                    app_data = {"date": "2001-01-01"}
+                    result = sdk_client.crud(DocLoading.Bucket.DocOps.CREATE,
+                                             "application", app_data)
+                    self.assertTrue(result["status"],
+                                    "App_meta creation failed")
+                    bucket.scopes[self.tenants[0]].collections["meta_data"] \
+                        .num_items += 1
 
-            create_users = User(self.bucket,
-                                scope=tenant,
-                                op_type="scenario_user_registration",
-                                num_items=20000)
-            create_users.start()
-            create_users.join()
+                    create_users = User(bucket,
+                                        scope=tenant,
+                                        op_type="scenario_user_registration",
+                                        num_items=20000)
+                    create_users.start()
+                    create_users.join()
+            else:
+                load_tasks.append(self.task.async_load_gen_docs(
+                    self.cluster, bucket, doc_gen,
+                    DocLoading.Bucket.DocOps.CREATE))
+
+        for load_task in load_tasks:
+            self.task_manager.get_task_result(load_task)
 
     def run_app(self):
         default_op_count = 10

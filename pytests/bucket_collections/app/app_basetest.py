@@ -65,11 +65,14 @@ class AppBase(BaseTestCase):
 
         if self.bucket_conf is not None:
             self.__setup_buckets()
-        self.bucket = self.cluster.buckets[0]
+        for bucket in self.cluster.buckets:
+            self.bucket = bucket
+            break
 
         if self.rbac_conf is not None:
             for rbac_roles in self.rbac_conf["rbac_roles"]:
-                self.create_sdk_clients(rbac_roles["roles"])
+                self.create_sdk_clients(rbac_roles["bucket"],
+                                        rbac_roles["roles"])
 
         if self.service_conf is not None:
             with open(self.config_path+self.service_conf+".yaml", "r") as fp:
@@ -269,14 +272,20 @@ class AppBase(BaseTestCase):
             CapellaAPI.create_db_user(self.pod, self.tenant, self.cluster.id,
                                       u_name, password)
 
-    def create_sdk_clients(self, rbac_roles):
+    def create_sdk_clients(self, bucket_name, rbac_roles):
         self.__print_step("Creating required SDK clients")
+        for bucket in self.cluster.buckets:
+            if bucket.name == bucket_name:
+                break
+        else:
+            self.fail(f"Unable to find bucket {bucket_name}")
+
         for role in rbac_roles:
             u_name, password = role["user_name"], role["password"]
-            bucket = self.bucket
+            bucket_to_use = bucket
             if "select_bucket" in role and role["select_bucket"] is False:
-                bucket = None
-            self.sdk_clients[u_name] = SDKClient(self.cluster, bucket,
+                bucket_to_use = None
+            self.sdk_clients[u_name] = SDKClient(self.cluster, bucket_to_use,
                                                  username=u_name,
                                                  password=password)
 

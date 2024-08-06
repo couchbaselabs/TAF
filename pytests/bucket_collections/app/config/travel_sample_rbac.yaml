@@ -67,3 +67,27 @@ rbac_roles:
         roles:
           - "data_reader[travel-sample]"
           - "data_writer[travel-sample]"
+
+  - bucket: "couchstore"
+    roles:
+      - user_name: "couchstore_admin"
+        password: "password"
+        roles:
+          - "bucket_admin[couchstore]"
+          - "data_writer[couchstore]"
+
+  - bucket: "magma"
+    roles:
+      - user_name: "magma_admin"
+        password: "password"
+        roles:
+          - "bucket_admin[magma]"
+          - "data_writer[magma]"
+
+  - bucket: "ephemeral"
+    roles:
+      - user_name: "eph_admin"
+        password: "password"
+        roles:
+          - "bucket_admin[ephemeral]"
+          - "data_writer[ephemeral]"

@@ -2,7 +2,7 @@ buckets:
   - name: "travel-sample"
     sample_bucket: True
     replicas: 1
-    ramQuotaMB: 1024
+    ramQuotaMB: 512
     scopes:
       - name: "agent_1"
         collections:
@@ -64,3 +64,64 @@ buckets:
           - name: "eventing_meta"
           - name: "checkout_cart"
             maxTTL: 900
+
+  - name: "couchstore"
+    sample_bucket: False
+    replicas: 1
+    ramQuotaMB: 512
+    bucketType: "couchbase"
+    storageBackend: "couchstore"
+    scopes:
+      - name: "scope_1"
+        collections:
+          - name: "collection_1"
+          - name: "collection_2"
+            maxTTL: 200
+      - name: "scope_2"
+        collections:
+          - name: "collection_3"
+          - name: "collection_4"
+          - name: "collection_5"
+            maxTTL: 60
+
+  - name: "magma"
+    sample_bucket: False
+    replicas: 1
+    ramQuotaMB: 256
+    bucketType: "couchbase"
+    storageBackend: "magma"
+    scopes:
+      - name: "scope_1"
+        collections:
+          - name: "collection_1"
+          - name: "collection_2"
+            maxTTL: 200
+      - name: "scope_2"
+        collections:
+          - name: "collection_3"
+          - name: "collection_4"
+          - name: "collection_5"
+            maxTTL: 60
+      - name: "scope_3"
+        collections:
+          - name: "collection_6"
+          - name: "collection_7"
+          - name: "collection_8"
+            maxTTL: 60
+
+  - name: "ephemeral"
+    sample_bucket: False
+    replicas: 1
+    ramQuotaMB: 100
+    bucketType: "ephemeral"
+    scopes:
+      - name: "scope_1"
+        collections:
+          - name: "collection_1"
+          - name: "collection_2"
+            maxTTL: 30
+      - name: "scope_2"
+        collections:
+          - name: "collection_3"
+          - name: "collection_4"
+          - name: "collection_5"
