@@ -342,7 +342,7 @@ class SecurityBase(CouchbaseBaseTest):
 
             end_time = time.time() + 1800
             while time.time() < end_time:
-                resp = self.capellaAPIv2.get_cidr(self.tenant_id)
+                resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
                 subnet = resp.json()["cidr"]["suggestedBlock"]
                 payload["cloudProvider"]["cidr"] = subnet
                 self.log.info("Trying out with cidr {}".format(subnet))
