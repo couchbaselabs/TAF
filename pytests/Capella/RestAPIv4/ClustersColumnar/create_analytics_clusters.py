@@ -106,7 +106,7 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
             if result.status_code == 202:
-                self.instances.append(result.json()["id"])
+                self.instances.add(result.json()["id"])
 
         if failures:
             for fail in failures:
@@ -175,7 +175,7 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
             if result.status_code == 202:
-                self.instances.append(result.json()["id"])
+                self.instances.add(result.json()["id"])
 
         self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -275,7 +275,7 @@ class PostAnalyticsClusters(GetAnalyticsClusters):
             if self.validate_testcase(result, [202], testcase, failures):
                 self.log.debug("Creation Successful")
             if result.status_code == 202:
-                self.instances.append(result.json()["id"])
+                self.instances.add(result.json()["id"])
 
         if failures:
             for fail in failures:

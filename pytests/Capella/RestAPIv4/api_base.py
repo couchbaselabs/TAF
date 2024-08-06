@@ -3,6 +3,7 @@ Created on June 28, 2023
 
 @author: umang.agrawal
 """
+
 import copy
 import time
 import string
@@ -16,6 +17,7 @@ from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
 from capellaAPI.capella.columnar.ColumnarAPI_v4 import ColumnarAPIs
 from couchbase_utils.capella_utils.dedicated import CapellaUtils
 from TestInput import TestInputSingleton
+
 
 class APIBase(CouchbaseBaseTest):
 
@@ -320,7 +322,7 @@ class APIBase(CouchbaseBaseTest):
                 self.fail("!!!...Instance creation Failed...!!!")
             self.analyticsCluster_id = res.json()["id"]
             self.capella["instance_id"] = self.analyticsCluster_id
-        self.instances = []
+        self.instances = {self.analyticsCluster_id}
 
         # Templates for app service configurations across CSPs and Computes.
         self.app_svc_templates = {
@@ -387,9 +389,9 @@ class APIBase(CouchbaseBaseTest):
                 self.fail("Error while deleting cluster: {}."
                           .format(res.content))
 
-            # Delete the created instance.
-            self.log.info("Deleting INSTANCE: {}".format(
-                self.capella["instance_id"]))
+            # Delete the created instances.
+            self.log.info("Deleting INSTANCES: {}".format(
+                self.instances))
             if self.flush_columnar_instances(self.instances):
                 self.log.error("!!!...Instance(s) deletion failed...!!!")
             self.wait_for_deletion(instances=self.instances)
@@ -1641,7 +1643,7 @@ class APIBase(CouchbaseBaseTest):
         if res.status_code == 202:
             self.log.debug("New Instance ID: {}".format(res.json()["id"]))
             self.capella["instance_id"] = res.json()["id"]
-            self.instances.append(res.json()["id"])
+            self.instances.add(res.json()["id"])
             return res.json()["id"]
         self.log.error(res.content)
         self.fail("!!!...Instance Creation unsuccessful...!!!")

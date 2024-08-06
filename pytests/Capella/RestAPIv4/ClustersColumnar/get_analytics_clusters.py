@@ -23,18 +23,6 @@ class GetAnalyticsClusters(GetProject):
                 "timezone": "ET"
             }
         }
-        # res = self.columnarAPI.create_analytics_cluster(
-        #     self.organisation_id, self.project_id,
-        #     self.expected_res["name"], self.expected_res["cloudProvider"],
-        #     self.expected_res["compute"], self.expected_res["region"],
-        #     self.expected_res["nodes"], self.expected_res["support"],
-        #     self.expected_res["availability"])
-        # if res.status_code != 202:
-        #     self.log.error(res.content)
-        #     self.tearDown()
-        #     self.fail("!!!...Analytics Instance creation failed...!!!")
-        # self.analyticsCluster_id = res.json()["id"]
-        # self.expected_res['id'] = self.analyticsCluster_id
         self.expected_res.update(self.instance_templates[self.input.param(
             "instance_template", "AWS_4v16_4node")])
 
@@ -45,7 +33,7 @@ class GetAnalyticsClusters(GetProject):
             self.tearDown()
             self.fail("!!!...Instance deployment failed...!!!")
         self.log.info("Successfully deployed Instance.")
-        self.instances.append(self.analyticsCluster_id)
+        self.instances.add(self.analyticsCluster_id)
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -142,7 +130,7 @@ class GetAnalyticsClusters(GetProject):
                 organization, project, analyticsCluster)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.columnarAPI.cluster_ops_apis.fetch_analytics_cluster_info(
+                result = self.columnarAPI.fetch_analytics_cluster_info(
                     organization, project, analyticsCluster)
 
             self.columnarAPI.analytics_clusters_endpoint = \
