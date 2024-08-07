@@ -22,6 +22,7 @@ class Guest(Thread):
         self.op_count = 1
         self.result = None
         self.exception = None
+        self.stop_operation = False
 
         if 'op_count' in kwargs:
             self.op_count = kwargs['op_count']
@@ -109,7 +110,7 @@ class Guest(Thread):
         return q_summary
 
     def run(self):
-        while self.op_count > 0:
+        while self.op_count > 0 and not self.stop_operation:
             try:
                 if self.op_type == "random":
                     self.result = Guest.scenarios[

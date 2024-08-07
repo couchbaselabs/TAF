@@ -19,6 +19,7 @@ class Airline(Thread):
         self.op_count = 1
         self.result = None
         self.exception = None
+        self.stop_operation = False
 
         if 'num_items' in kwargs:
             self.num_items = kwargs['num_items']
@@ -47,7 +48,7 @@ class Airline(Thread):
         return self.generic_query_run(query)
 
     def run(self):
-        while self.op_count > 0:
+        while self.op_count > 0 and not self.stop_operation:
             try:
                 if self.op_type == "random":
                     rand_scenario = get_random_scenario(Airline)
