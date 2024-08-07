@@ -330,7 +330,34 @@ class SecurityBase(CouchbaseBaseTest):
                 self.wait_for_columnar_instance_to_deploy(self.instance_id)
 
     def create_cluster(self, cluster_name, server_version, provider="AWS"):
+        #  {"name":"agileterrywinograd","description":"","projectId":"9ce68f7e-cf01-4b4c-a8b0-fda58330cb02",
+        #   "provider":"aws","region":"us-east-1","plan":"Developer Pro","supportTimezone":"PT",
+        #    "serverVersion":"7.6","cidr":"10.172.72.0/23","deploymentType":"single",
+        #    "serviceGroupsTemplate":"singleA","serviceGroups":[{"key":"dataWithAny2",
+        #    "compute":"m6g.xlarge","storage":{"key":"gp3","sizeInGb":50,"iops":3000},
+        #    "services":["kv","index","n1ql","fts","eventing","cbas"],"nodes":1}],
+        #    "availabilityZones":{"key":"single","zones":["use1-az5"]}}
         num_clusters = TestInputSingleton.input.param("num_clusters", 1)
+        single_node = TestInputSingleton.input.param("single_node", False)
+        if single_node:
+            payload = self.get_single_node_cluster_payload()
+            payload["serverVersion"] = TestInputSingleton.input.param("server_version", "7.6")
+            resp = self.capellaAPIv2.get_unique_cidr(self.tenant_id)
+            subnet = resp.json()["cidr"]["suggestedBlock"]
+            payload["cidr"] = subnet
+
+            resp = self.capellaAPIv2.deploy_v2_cluster(self.tenant_id, payload)
+            self.assertEqual(resp.status_code, 202,
+                             msg="FAIL. Outcome: {}, Expected: {}, Reason: {}".format(
+                                 resp.status_code, 202, resp.content))
+            self.cluster_id = resp.json()['id']
+            status = self.get_cluster_status(self.cluster_id)
+            self.assertEqual(status, "healthy",
+                             msg="FAIL, Outcome: {}, Expected: {}".format(status, "healthy"))
+
+            self.log.info("Cluster creation is successful. Cluster ID: {}".format(self.cluster_id))
+            return
+
         for _ in range(0, num_clusters):
             self.log.info("Creating Cluster for Security Test")
             payload = self.get_cluster_payload(provider)
@@ -557,6 +584,38 @@ class SecurityBase(CouchbaseBaseTest):
             return cluster_payloads["Azure"]
         elif cloud_provider == "GCP":
             return cluster_payloads["GCP"]
+
+    def get_single_node_cluster_payload(self):
+        payload = {
+            "name": self.prefix + "Cluster",
+            "description": "",
+            "projectId": self.project_id,
+            "provider": "aws",
+            "region": "us-east-1",
+            "plan": "Developer Pro",
+            "supportTimezone": "PT",
+            "serverVersion": "7.6",
+            "cidr": "",
+            "deploymentType": "single",
+            "serviceGroupsTemplate": "singleA",
+            "serviceGroups":[{
+                "key": "dataWithAny2",
+                "compute": "m6g.xlarge",
+                "storage": {
+                    "key": "gp3",
+                    "sizeInGb": 50,
+                    "iops": 3000
+                },
+            "services":["kv", "index", "n1ql", "fts", "eventing", "cbas"],
+                "nodes": 1
+            }],
+            "availabilityZones":{
+                "key": "single",
+                "zones": ["use1-az5"]
+            }
+        }
+
+        return payload
 
     def get_custom_ami_payload(self):
         payload = {
