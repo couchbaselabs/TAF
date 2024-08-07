@@ -1907,7 +1907,7 @@ class RestConnection(newRC):
                                      enable_disk_failure=False,
                                      preserve_durability_during_auto_fo=False,
                                      disk_timeout=120, maxCount=1,
-                                     disable_max_count='false'):
+                                     disable_max_count='false', allow_ephemeral_failover_with_no_replicas=None):
         params_dict = dict()
         params_dict['timeout'] = timeout
         if enabled:
@@ -1926,6 +1926,9 @@ class RestConnection(newRC):
             params_dict['failoverPreserveDurabilityMajority'] = 'true'
         else:
             params_dict['failoverPreserveDurabilityMajority'] = 'false'
+        if allow_ephemeral_failover_with_no_replicas is True:
+            params_dict["allowFailoverEphemeralNoReplicas"] = 'true'
+
         params_dict['maxCount'] = maxCount
         params = urllib.urlencode(params_dict)
         api = self.baseUrl + 'settings/autoFailover'

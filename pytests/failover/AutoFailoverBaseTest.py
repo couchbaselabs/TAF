@@ -328,7 +328,8 @@ class AutoFailoverBaseTest(ClusterSetup):
         False
         """
         status = self.rest.update_autofailover_settings(
-            True, self.timeout, maxCount=self.max_count)
+            True, self.timeout, maxCount=self.max_count,
+            allow_ephemeral_failover_with_no_replicas=self.allow_ephemeral_failover_with_no_replicas)
         return status
 
     def enable_autoreprovision(self):
@@ -623,6 +624,10 @@ class AutoFailoverBaseTest(ClusterSetup):
         :return:  Nothing
         """
         self.timeout = self.input.param("timeout", 300)
+        self.allow_ephemeral_failover_with_no_replicas = self.input.param(
+            "allow_ephemeral_failover_with_no_replicas", None)
+        self.failover_expected_override =  self.input.param(
+            "failover_expected_override", None)
         self.max_count = self.input.param("maxCount", 1)
         self.failover_action = self.input.param("failover_action",
                                                 "stop_server")
@@ -657,6 +662,8 @@ class AutoFailoverBaseTest(ClusterSetup):
              self.pause_between_failover_action < self.timeout or
              self.num_replicas < self.max_count)
         self.failover_expected = not failover_not_expected
+        if self.failover_expected_override is not None:
+            self.failover_expected = self.failover_expected_override
         if self.failover_action is "restart_server":
             self.num_items *= 100
         self.orchestrator = self.cluster.servers[0] if not \
