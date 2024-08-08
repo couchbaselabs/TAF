@@ -55,14 +55,14 @@ class GetCluster(GetProject):
             app_svc_template = self.input.param("app_svc_template", "2v4_2node")
             res = self.capellaAPI.cluster_ops_apis.create_appservice(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_res["name"],
+                app_svc_template,
                 self.app_svc_templates[app_svc_template]["compute"],
                 self.app_svc_templates[app_svc_template]["nodes"])
             if res.status_code == 429:
                 self.handle_rate_limit(int(res.headers['Retry-After']))
                 res = self.capellaAPI.cluster_ops_apis.create_appservice(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["name"],
+                    app_svc_template,
                     self.app_svc_templates[app_svc_template]["compute"],
                     self.app_svc_templates[app_svc_template]["nodes"])
             elif res.status_code == 409:

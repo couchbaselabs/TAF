@@ -1310,10 +1310,10 @@ class APIBase(CouchbaseBaseTest):
                         self.log.info("...Waiting further...")
                         time.sleep(2)
                     self.log.info("Instance {} deleted".format(instance))
+                    instances.remove(instance)
                     temp_instances.remove(instance)
                 if len(temp_instances) == 0:
                     self.log.info("All instances deleted successfully.")
-                    del instances[:]
                     return
                 self.log.error("!!!...All instances did not delete...!!!")
                 return
@@ -1368,37 +1368,6 @@ class APIBase(CouchbaseBaseTest):
 
         for combination in list(itertools.product(*combination_list)):
             yield combination
-
-    # def create_path_combinations(self, params=None, *args):
-    #     if not params:
-    #         params = ["sortBy", "sortDirection", "page", "perPage"]
-    #
-    #     combination_list = []
-    #     for val in args:
-    #         values = [val, self.replace_last_character(val), True, None,
-    #                   123456788, 123456789.123456789, "", [val], (val,), {val}]
-    #         combination_list.append(values)
-    #
-    #     for combination in list(itertools.product(*combination_list)):
-    #         yield combination
-    #
-    #     # Generating path params related tests.
-    #     query_tests = list()
-    #     for p in params:
-    #         vals = [
-    #             "", 1, 0, 100000, -1, 123.123,
-    #             self.generate_random_string(),
-    #             self.generate_random_string(500, special_characters=False),
-    #         ]
-    #         for v in vals:
-    #             testcase = {
-    #                 "description": "Executing test with: {} = {}".format(p,
-    #                                                                      v),
-    #                 "param": p,
-    #                 "paramValue": v
-    #             }
-    #             query_tests.append(testcase)
-    #     return query_tests
 
     def create_projects(self, org_id, num_projects, access_key, token,
                         prefix=""):

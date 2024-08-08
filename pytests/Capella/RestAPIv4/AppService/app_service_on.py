@@ -10,16 +10,6 @@ class AppServiceOn(GetAppService):
 
     def setUp(self, nomenclature="Switch_App_Service_On"):
         GetAppService.setUp(self, nomenclature)
-        # res = self.capellaAPI.cluster_ops_apis.switch_app_service_off(
-        #     self.organisation_id, self.project_id, self.cluster_id,
-        #     self.app_service_id)
-        # if res.status_code != 202:
-        #     self.log.error(res.content)
-        #     self.tearDown()
-        #     self.fail("!!!...Failed to turn off App Service...!!!")
-        # if not self.wait_for_deployment(self.cluster_id, self.app_service_id):
-        #     self.tearDown()
-        #     self.fail("!!!...Couldn't verify App Svc detail...!!!")
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -149,7 +139,7 @@ class AppServiceOn(GetAppService):
                 "/activationState"
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(["turningOff", "turnedOff"],
+                if not self.validate_onoff_state(["turningOn", "healthy"],
                                                  app=self.app_service_id):
                     failures.append(testcase["description"])
 
@@ -208,9 +198,8 @@ class AppServiceOn(GetAppService):
                     self.app_service_id, headers=header)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff", "turningOn", "healthy"],
-                        app=self.app_service_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"],
+                                                 app=self.app_service_id):
                     failures.append(testcase["description"])
 
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -251,9 +240,6 @@ class AppServiceOn(GetAppService):
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id and
                     combination[3] == self.app_service_id):
-                # if combination[3] == "":
-                #     testcase["expected_status_code"] = 405
-                #     testcase["expected_error"] = ""
                 if combination[1] == "" or combination[0] == "" or \
                         combination[2] == "":
                     testcase["expected_status_code"] = 404
@@ -331,9 +317,8 @@ class AppServiceOn(GetAppService):
                     testcase["clusterID"], testcase['appServiceID'], **kwarg)
 
             if self.validate_testcase(result, [202, 409], testcase, failures):
-                if not self.validate_onoff_state(
-                        ["turningOff", "turnedOff", "turningOn", "healthy"],
-                        app=self.app_service_id):
+                if not self.validate_onoff_state(["turningOn", "healthy"],
+                                                 app=self.app_service_id):
                     failures.append(testcase["description"])
 
         if failures:
