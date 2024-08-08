@@ -66,8 +66,9 @@ class AppBase(BaseTestCase):
         if self.bucket_conf is not None:
             self.__setup_buckets()
         for bucket in self.cluster.buckets:
-            self.bucket = bucket
-            break
+            if bucket.name == "travel-sample":
+                self.bucket = bucket
+                break
 
         if self.rbac_conf is not None:
             for rbac_roles in self.rbac_conf["rbac_roles"]:
@@ -209,7 +210,7 @@ class AppBase(BaseTestCase):
                 bucket_obj = self.cluster.buckets[-1]
 
             self.map_collection_data(bucket_obj)
-            self.__print_step("Creating required scope/collections")
+            self.__print_step(f"Creating {bucket_obj.name}::scope/collections")
             for scope in bucket["scopes"]:
                 if scope["name"] in bucket_obj.scopes.keys():
                     self.log.debug("Scope %s already exists for bucket %s"
@@ -273,7 +274,7 @@ class AppBase(BaseTestCase):
                                       u_name, password)
 
     def create_sdk_clients(self, bucket_name, rbac_roles):
-        self.__print_step("Creating required SDK clients")
+        self.__print_step(f"Creating required {bucket_name}::SDK clients")
         for bucket in self.cluster.buckets:
             if bucket.name == bucket_name:
                 break

@@ -1448,14 +1448,18 @@ class ClusterUtils:
                  wait_for_rebalance_completion=True):
         if not services:
             services = node.services.split(",")
-        rest = RestConnection(cluster.master)
-        otpnode = rest.add_node(user=node.rest_username,
+        rest = ClusterRestAPI(cluster.master)
+        otpnode = rest.add_node(host_name=node.ip,
+                                username=node.rest_username,
                                 password=node.rest_password,
-                                remoteIp=node.ip, port=constants.port,
                                 services=services)
         if rebalance:
             self.rebalance(cluster,
                            wait_for_completion=wait_for_rebalance_completion)
+        else:
+            global_vars.cluster_util.update_cluster_nodes_service_list(
+                cluster,
+                inactive_added=True)
         return otpnode
 
     def wait_for_node_status(self, node, rest, expected_status,
