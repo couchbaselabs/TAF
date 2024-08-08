@@ -330,13 +330,6 @@ class SecurityBase(CouchbaseBaseTest):
                 self.wait_for_columnar_instance_to_deploy(self.instance_id)
 
     def create_cluster(self, cluster_name, server_version, provider="AWS"):
-        #  {"name":"agileterrywinograd","description":"","projectId":"9ce68f7e-cf01-4b4c-a8b0-fda58330cb02",
-        #   "provider":"aws","region":"us-east-1","plan":"Developer Pro","supportTimezone":"PT",
-        #    "serverVersion":"7.6","cidr":"10.172.72.0/23","deploymentType":"single",
-        #    "serviceGroupsTemplate":"singleA","serviceGroups":[{"key":"dataWithAny2",
-        #    "compute":"m6g.xlarge","storage":{"key":"gp3","sizeInGb":50,"iops":3000},
-        #    "services":["kv","index","n1ql","fts","eventing","cbas"],"nodes":1}],
-        #    "availabilityZones":{"key":"single","zones":["use1-az5"]}}
         num_clusters = TestInputSingleton.input.param("num_clusters", 1)
         single_node = TestInputSingleton.input.param("single_node", False)
         if single_node:
