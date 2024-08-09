@@ -94,8 +94,7 @@ class DynamicServiceProvisionTests(CollectionBase):
         nodes = self.cluster_util.get_nodes(self.cluster.master)
         num_nodes = len(nodes)
         exception = None
-        reb_util = RebalanceUtil(self.cluster.master)
-        cluster_rest = ClusterRestAPI(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         known_nodes = [node.id for node in nodes]
 
         expected_service_config = {
@@ -150,8 +149,8 @@ class DynamicServiceProvisionTests(CollectionBase):
         self.log.info("Testing multiple_services in single key")
         topology_key = ",".join(sample(valid_services, 2))
         service_topology = {topology_key: nodes[0].id}
-        okay, content = cluster_rest.rebalance(known_nodes,
-                                               topology=service_topology)
+        okay, content = reb_util.cluster_rest.rebalance(
+            known_nodes, topology=service_topology)
         if okay:
             exception = f"Multiple topology key {topology_key} was accepted"
             self.log.critical(exception)
@@ -164,8 +163,8 @@ class DynamicServiceProvisionTests(CollectionBase):
         self.log.info("Testing invalid topology key")
         topology_key = "invalid_service"
         service_topology = {topology_key: nodes[0].id}
-        okay, content = cluster_rest.rebalance(known_nodes,
-                                               topology=service_topology)
+        okay, content = reb_util.cluster_rest.rebalance(
+            known_nodes, topology=service_topology)
         if okay:
             exception = f"Multiple topology key {topology_key} was accepted"
             self.log.critical(exception)
@@ -191,8 +190,8 @@ class DynamicServiceProvisionTests(CollectionBase):
                 service_topology = {service_name: nodes[1].id}
                 expected_service_config[service_name] += 1
 
-            okay, content = cluster_rest.rebalance(known_nodes,
-                                                   topology=service_topology)
+            okay, content = reb_util.cluster_rest.rebalance(
+                known_nodes, topology=service_topology)
             if okay:
                 self.assertTrue(reb_util.monitor_rebalance(),
                                 "Topology rebalance trigger failed")
@@ -213,8 +212,8 @@ class DynamicServiceProvisionTests(CollectionBase):
                 service_topology = {service_name: ""}
                 expected_service_config[service_name] -= 1
 
-            okay, content = cluster_rest.rebalance(known_nodes,
-                                                   topology=service_topology)
+            okay, content = reb_util.cluster_rest.rebalance(
+                known_nodes, topology=service_topology)
             if okay:
                 self.assertTrue(reb_util.monitor_rebalance(),
                                 "Topology rebalance failed")
@@ -233,7 +232,7 @@ class DynamicServiceProvisionTests(CollectionBase):
     def test_topology_otp_node_value(self):
         """
         Negative tests
-        - Pass invalid chars in otp_node (; ' " [ ])
+        - Pass invalid chars in otp_node
         - Duplicate values within otp_nodes
         - Pass otp_nodes within '[]'
         """
@@ -290,7 +289,7 @@ class DynamicServiceProvisionTests(CollectionBase):
         """
         Configure all memory to kv & add a service so that add fails
         """
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         services_req_mem = [CbServer.Services.INDEX,
                             CbServer.Services.CBAS,
                             CbServer.Services.FTS,
@@ -345,8 +344,9 @@ class DynamicServiceProvisionTests(CollectionBase):
         self.log.info(f"Trying to add service {CbServer.Services.N1QL}")
         status, content = cb_rest.rebalance(
             known_nodes, topology={CbServer.Services.N1QL: known_nodes[0]})
-        self.assertFalse(
-            status, f"Rebalance started for {CbServer.Services.N1QL}: {content}")
+        self.assertFalse(status,
+                         f"Rebalance started for "
+                         f"{CbServer.Services.N1QL}: {content}")
         self.assertTrue('total_quota_too_high' in content,
                         f"'total_quota_too_high' not present: {content}")
         self.assertTrue(expected_str in content["total_quota_too_high"],

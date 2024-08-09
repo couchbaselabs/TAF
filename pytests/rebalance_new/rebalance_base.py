@@ -298,7 +298,7 @@ class RebalanceBaseTest(BaseTestCase):
         started, _ = rest.rebalance(otpNodes=otpnodes,
                                     ejectedNodes=nodes_to_remove)
         if started:
-            reb_util = RebalanceUtil(self.servers[0])
+            reb_util = RebalanceUtil(self.cluster)
             result = reb_util.monitor_rebalance()
             self.assertTrue(result, msg="Rebalance failed{}".format(result))
             msg = "successfully rebalanced cluster {0}"

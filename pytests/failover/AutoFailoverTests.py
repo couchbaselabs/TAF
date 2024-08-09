@@ -306,7 +306,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         task = cont_load_task = None
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -391,7 +391,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             return
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:
@@ -469,7 +469,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
             return
         self.enable_logic()
         self.cluster.master = self.master = self.orchestrator
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         if self.spec_name is None:
             # Start load_gen, if it is durability_test
             if self.durability_level or self.atomicity:

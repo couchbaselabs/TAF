@@ -595,7 +595,7 @@ class ClusterUtils:
     def stop_running_rebalance(self, cluster, master=None):
         if master is None:
             master = cluster.master
-        reb_util = RebalanceUtil(master)
+        reb_util = RebalanceUtil(cluster)
         if reb_util.get_rebalance_status() == 'running':
             self.kill_memcached(cluster)
             self.log.warning("Rebalance still running, test should be verified")
@@ -686,7 +686,7 @@ class ClusterUtils:
             cluster_rest.rebalance(known_nodes=[node.id for node in nodes],
                                    eject_nodes=[node.id for node in nodes
                                                 if node.id != master_id])
-            RebalanceUtil(master).monitor_rebalance()
+            RebalanceUtil(cluster).monitor_rebalance()
             success_cleaned = []
             for removed in [node for node in nodes if (node.id != master_id)]:
                 removed.rest_password = cluster.master.rest_password

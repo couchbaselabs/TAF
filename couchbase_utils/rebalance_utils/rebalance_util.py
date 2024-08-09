@@ -1,24 +1,30 @@
 import time
 
+import global_vars
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from common_lib import sleep
 from custom_exceptions.exception import ServerUnavailableException, \
     RebalanceFailedException
-from global_vars import logger
+from py_constants import CbServer
 
 
 class RebalanceUtil(object):
-    def __init__(self, server):
-        self.server = server
-        self.cluster_rest = ClusterRestAPI(server)
-        self.log = logger.get("test")
+    def __init__(self, cluster, server_tasks=None, task_manager=None):
+        self.cluster = cluster
+        self.cluster_util = global_vars.cluster_util
+        self.cluster_rest = ClusterRestAPI(cluster.master)
+        self.log = global_vars.logger.get("test")
+        # Optionally used when calling APIs involving Tasks mgmt.
+        self.server_tasks = server_tasks
+        self.task_manager = task_manager
 
     def print_ui_logs(self, last_n=10):
         _, json_parsed = self.cluster_rest.ui_logs()
         logs = json_parsed['list']
         logs.reverse()
         logs = '\n'.join([logs[i] for i in range(min(last_n, len(logs)))])
-        self.log.critical(f"Latest logs from UI on {self.server.ip}:\n{logs}")
+        self.log.critical(f"Latest logs from UI on "
+                          f"{self.cluster_rest.ip}:\n{logs}")
 
     def get_rebalance_status(self, include_failover=True):
         status, json_parsed = self.cluster_rest.cluster_tasks()

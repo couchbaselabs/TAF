@@ -368,7 +368,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.nodes = self.cluster_util.get_nodes()
         self.rest.rebalance(known_nodes=[node.id for node in self.nodes],
                             eject_nodes=[chosen[0].id])
-        reb_util = RebalanceUtil(self.cluster.master)
+        reb_util = RebalanceUtil(self.cluster)
         reb_result = reb_util.monitor_rebalance(stop_if_loop=True)
         self.assertTrue(reb_result, msg="Rebalance failed")
         self.cluster.nodes_in_cluster = new_server_list
@@ -471,7 +471,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         self.sleep(2)
         result = []
         num_iter = 0
-        reb_util = RebalanceUtil(self.cluster.servers[0])
+        reb_util = RebalanceUtil(self.cluster)
         while (reb_util._rebalance_progress_status() == 'running'
                and num_iter < 100):
             temp_result = []
