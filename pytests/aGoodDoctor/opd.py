@@ -416,6 +416,7 @@ class OPD:
                 for i, collection in enumerate(bucket.scopes[scope].collections.keys()):
                     workloads = bucket.loadDefn.get("collections_defn", [bucket.loadDefn])
                     valType = workloads[i % len(workloads)]["valType"]
+                    dim = workloads[i % len(workloads)]["dim"] or self.dim
                     if scope == CbServer.system_scope:
                         continue
                     if collection == "_default" and scope == "_default" and skip_default:
@@ -439,8 +440,10 @@ class OPD:
                                           cmd.get("mutated", 0),
                                           cmd.get("model", self.model),
                                           cmd.get("mockVector", self.mockVector),
-                                          cmd.get("dim", self.dim),
-                                          cmd.get("base64", self.base64)
+                                          cmd.get("dim", dim),
+                                          cmd.get("base64", self.base64),
+                                          "None",
+                                          0
                                           )
                     hm = HashMap()
                     hm.putAll({DRConstants.create_s: bucket.create_start,

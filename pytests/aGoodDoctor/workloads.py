@@ -7,7 +7,6 @@ from TestInput import TestInputSingleton
 
 _input = TestInputSingleton.input
 
-
 default = {
     "valType": _input.param("val_type", "SimpleValue"),
     "scopes": 1,
@@ -62,6 +61,67 @@ nimbus = {
             "2i": [1, 2],
             "FTS": [0, 0],
             "cbas": [0, 0, 0]
+            }
+        ]
+    }
+
+hotel_vector = {
+    "valType": _input.param("val_type", "Hotel"),
+    "scopes": 1,
+    "collections": _input.param("collections", 2),
+    "num_items": _input.param("num_items", 50000000),
+    "start": 0,
+    "end": _input.param("num_items", 50000000),
+    "ops": _input.param("ops_rate", 50000),
+    "doc_size": _input.param("doc_size", 1024),
+    "pattern": [0, 50, 50, 0, 0], # CRUDE
+    "load_type": ["read", "update"],
+    "2iQPS": 10,
+    "ftsQPS": 10,
+    "cbasQPS": 10,
+    "collections_defn": [
+        {
+            "valType": _input.param("val_type", "Hotel"),
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "PQ32x8"),
+                    "nProbe": _input.param("nProbe", 3)
+                    },
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 3)
+                    },
+                {
+                    "similarity": _input.param("similarity", "L2"),
+                    "quantization": _input.param("quantization", "PQ32x8"),
+                    "nProbe": _input.param("nProbe", 5)
+                    },
+                {
+                    "similarity": _input.param("similarity", "L2"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 5)
+                    },
+                {
+                    "similarity": _input.param("similarity", "EUCLIDEAN"),
+                    "quantization": _input.param("quantization", "PQ32x8"),
+                    "nProbe": _input.param("nProbe", 10)
+                    },
+                {
+                    "similarity": _input.param("similarity", "EUCLIDEAN_SQUARED"),
+                    "quantization": _input.param("quantization", "PQ32x8"),
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            "2i": [_input.param("gsi_indexes", 2),
+                   _input.param("gsi_queries", 2)],
+            "FTS": [_input.param("fts_indexes", 2),
+                    _input.param("fts_queries", 2)],
+            "cbas": [_input.param("cbas_datasets", 2),
+                     _input.param("cbas_indexes", 2),
+                     _input.param("cbas_queries", 2)]
             }
         ]
     }

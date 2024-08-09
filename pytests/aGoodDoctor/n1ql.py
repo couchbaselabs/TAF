@@ -28,6 +28,7 @@ from com.couchbase.client.java.json import JsonObject
 from com.github.javafaker import Faker
 from constants.cb_constants.CBServer import CbServer
 from connections.Rest_Connection import RestConnection
+from com.couchbase.test.val import Hotel
 
 letters = ascii_uppercase + ascii_lowercase + digits
 faker = Faker()
@@ -79,7 +80,6 @@ HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`
                 'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};',
                 'CREATE INDEX {}{} ON {}(`country`, `free_parking`, DISTINCT ARRAY FLATTEN_KEYS(`r`.`ratings`.`Cleanliness`,`r`.`author`) FOR r IN `reviews` when `r`.`ratings`.`Cleanliness` < 4 END, `email`) PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8}};']
 
-
 HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
                 "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`='Hotel' limit 100",
                 "select city,country from {} where free_breakfast=True and free_parking=True order by country,city limit 100",
@@ -108,7 +108,6 @@ HotelIndexes = ['CREATE INDEX {}{} ON {}(country, DISTINCT ARRAY `r`.`ratings`.`
                 'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Hotel USING GSI WITH {{ "defer_build": true}};',
                 'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Motel USING GSI WITH {{ "defer_build": true}};',
                 'CREATE INDEX {}{} ON {}(`city` INCLUDE MISSING ASC, `phone`) PARTITION BY HASH (city) where type=Suites USING GSI WITH {{ "defer_build": true}};',]
-
 
 HotelQueries = ["select meta().id from {} where country is not null and `type` is not null and (any r in reviews satisfies r.ratings.`Check in / front desk` is not null end) limit 100",
                 "select price, country from {} where free_breakfast=True AND free_parking=True and price is not null and array_count(public_likes)>=0 and `type`= $type limit 100",
@@ -150,6 +149,40 @@ NimbusMQueries = ['SELECT meta().id AS _id, uid, type, content, url, timestamp, 
                   'SELECT COUNT(*) AS nb FROM {} WHERE conversationId = $conversationId']
 NimbusMQueriesParams = [{"conversationId":"str(random.randint(0,1000000)).zfill(36)", "N":"random.randint(100, 1000)"},
                         {"conversationId":"str(random.randint(0,1000000)).zfill(36)"}]
+
+HotelVectorIndexes = [
+    # 'CREATE INDEX {}{} ON {}(`country`,`vector` VECTOR) {{"defer_build":true, {}}};',
+    'CREATE INDEX {index_name} ON {collection}(`country`,`vector` VECTOR) PARTITION BY hash((meta().`id`)) WITH {{"defer_build":true, "num_partition":8, {vector}}};',
+    'CREATE INDEX {index_name} ON {collection}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`, vector VECTOR) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
+    'CREATE INDEX {index_name} ON {collection}(`free_breakfast`,`free_parking`,`country`,`city`, vector VECTOR)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
+    'CREATE INDEX {index_name} ON {collection}(`country`, `city`,`price`,`name`, vector VECTOR)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
+    'CREATE INDEX {index_name} ON {collection}(vector VECTOR, `price`,`name`,`city`,`country`) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
+    'CREATE INDEX {index_name} ON {collection}(`name` INCLUDE MISSING DESC,`phone`,`type`, vector VECTOR) PARTITION BY HASH (name) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
+    'CREATE INDEX {index_name} ON {collection}(`city` INCLUDE MISSING ASC, `phone`, vector VECTOR) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
+    'CREATE INDEX {index_name} ON {collection}(`avg_rating`, `price`, `country`, `city`, vector VECTOR) PARTITION BY HASH (city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};'
+    ]
+
+HotelVectorQueries = [
+    'SELECT meta().id from {collection} WHERE country=$country ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
+    'SELECT price, country from {collection} where free_breakfast=True and `type`= $type AND free_parking=True and price is not null and array_count(public_likes)>=0 ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
+    'SELECT city,country from {collection} where free_breakfast=True and free_parking=True order by country,city,ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
+    'SELECT COUNT(1) AS cnt FROM {collection} WHERE city LIKE "North%" ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
+    'SELECT h.name,h.country,h.city,h.price FROM {collection} AS h WHERE h.price IS NOT NULL ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
+    'SELECT * from {collection} where `name` is not null ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
+    'SELECT * from {collection} where city like \"San%\" ORDER BY ANN(vector, $vector, "{similarity", {nProbe}) limit 100',
+    'SELECT avg_rating, price, country, city from {collection} where `avg_rating`>4 and price<1000 and country=$country and city=$city ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) LIMIT 100'
+    ]
+
+HotelQueriesVectorParams = [
+    {"country": "faker.address().country()"},
+    {"type": "random.choice(['Inn', 'Hostel', 'Place', 'Center', 'Hotel', 'Motel', 'Suites'])"},
+    {},
+    {},
+    {},
+    {},
+    {},
+    {"country": "faker.address().country()", "city": "faker.address().city()"}
+    ]
 
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None,
@@ -196,10 +229,7 @@ def execute_via_sdk(client, statement, readonly=False,
     if client_context_id:
         options.clientContextId(client_context_id)
     if query_params:
-        json = JsonObject.create()
-        for k, v in query_params.items():
-            json.put(k, eval(v))
-        options.parameters(json)
+        options.parameters(query_params)
 
     output = {}
     result = client.query(statement, options)
@@ -273,11 +303,30 @@ class DoctorN1QL():
                         queryType = NimbusMQueries
                         queryParams = NimbusMQueriesParams
                         prev_valType = valType
+                    if valType == "Hotel" and workload.get("vector"):
+                        indexType = HotelVectorIndexes
+                        queryType = HotelVectorQueries
+                        queryParams = HotelQueriesVectorParams
+                        prev_valType = valType
                     i = 0
                     q = 0
                     while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
                         if i < workload.get("2i")[0]:
-                            self.idx_q = indexType[counter % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
+                            vector_defn = None
+                            dim = None
+                            if workload.get("vector"):
+                                vector_defn = workload.get("vector")[i % len(workload.get("vector"))]
+                                dim = workload.get("dim")
+                                quantization = vector_defn["quantization"]
+                                similarity = vector_defn["similarity"]
+                                nProbe = vector_defn["nProbe"]
+                                vector_fields = "'dimension': {}, 'description': 'IVF,{}', 'similarity': '{}', 'scan_nprobes': {}".format(
+                                    dim, quantization, similarity, nProbe)
+                                idx_name = b.name.replace("-", "_") + "_idx_" + c + "_" + str(i)
+                                self.idx_q = indexType[counter % len(indexType)].format(
+                                    index_name=idx_name, collection=c, vector=vector_fields)
+                            else:
+                                self.idx_q = indexType[counter % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             print self.idx_q
                             b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
                             retry = 5
@@ -300,7 +349,10 @@ class DoctorN1QL():
                             i += 1
                         if q < workload.get("2i")[1]:
                             unformatted_q = queryType[counter % len(queryType)]
-                            query = unformatted_q.format(c)
+                            if workload.get("vector"):
+                                query = unformatted_q.format(collection=c, similarity=similarity, nProbe=10)
+                            else:
+                                query = unformatted_q.format(c)
                             print query
                             if unformatted_q not in b.query_map.keys():
                                 b.query_map[unformatted_q] = ["Q%s" % len(b.query_map.keys())]
@@ -308,7 +360,7 @@ class DoctorN1QL():
                                     b.query_map[unformatted_q].append(queryParams[counter % len(queryParams)])
                                 else:
                                     b.query_map[unformatted_q].append("")
-                                b.queries.append((query, self.sdkClients[b.name+s], unformatted_q))
+                                b.queries.append((query, self.sdkClients[b.name+s], unformatted_q, vector_defn, dim))
                             q += 1
                         counter += 1
 
@@ -434,7 +486,11 @@ class DoctorN1QL():
 
 
 class QueryLoad:
-    def __init__(self, bucket):
+
+    def __init__(self, bucket, mockVector=True, base64=False, validate_item_count=False):
+        self.mockVector = mockVector
+        self.base64 = base64
+        self.validate_item_count = validate_item_count
         self.bucket = bucket
         self.queries = bucket.queries
         self.failed_count = itertools.count()
@@ -463,17 +519,108 @@ class QueryLoad:
 
     def _run_concurrent_queries(self):
         threads = []
+        method = self._run_query
+        if self.bucket.loadDefn.get("collections_defn")[0].get("vector"):
+            method = self._run_vector_query
         for i in range(0, self.concurrent_queries_to_run):
             threads.append(Thread(
-                target=self._run_query,
+                target=method,
                 name="query_thread_{0}".format(self.bucket.name + str(i)),
-                args=(False, 0)))
+                args=(self.validate_item_count, 0)))
 
         for thread in threads:
             thread.start()
 
         for thread in threads:
             thread.join()
+
+    def _run_vector_query(self, validate_item_count=True, expected_count=100):
+        validate_item_count = True
+        expected_count = 100
+        name = threading.currentThread().getName()
+        counter = 0
+        hotel = Hotel()
+        while not self.stop_run:
+            client_context_id = name + str(counter)
+            counter += 1
+            start = time.time()
+            e = ""
+            try:
+                self.total_query_count.next()
+                query_tuple = self.queries[counter%len(self.queries)]
+                query = query_tuple[0]
+                original_query = query_tuple[2]
+                dim = query_tuple[4]
+                vector_float = []
+                if self.mockVector:
+                    flt_buf = Hotel.flt_buf
+                    _slice = random.randint(0, Hotel.flt_buf_length-dim)
+                    embedding = flt_buf[_slice: _slice+dim]
+                else:
+                    # Placeholder for SIFT
+                    pass
+    
+                if self.base64:
+                    vector_float = hotel.convertToBase64Bytes(embedding)
+                else:
+                    for value in embedding:
+                        vector_float.append(float(value))
+
+                q_param = self.bucket.query_map[original_query][1]
+                q_param.update({"vector": vector_float})
+                q_param_json = JsonObject.create()
+                for k, v in q_param.items():
+                    try:
+                        q_param_json.put(k, eval(v))
+                    except:
+                        q_param_json.put(k, v)
+                status, metrics, _, results, _ = execute_statement_on_n1ql(
+                    self.cluster_conn, query, client_context_id,
+                    q_param_json, validate=validate_item_count)
+                self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
+                self.query_stats[original_query][1] += 1
+                if status == QueryStatus.SUCCESS:
+                    if validate_item_count:
+                        if results.size() != expected_count:
+                            # self.log.critical("Expected Count:{}, Actual Count:{}".format(expected_count, results.size()))
+                            # q_param_json.removeKey("vector")
+                            # print q_param_json
+                            # print query
+                            self.failed_count.next()
+                        else:
+                            self.success_count.next()
+                    else:
+                        self.success_count.next()
+                else:
+                    self.failed_count.next()
+            except TimeoutException or AmbiguousTimeoutException or UnambiguousTimeoutException as e:
+                pass
+            except RequestCanceledException as e:
+                pass
+            except CouchbaseException as e:
+                pass
+            except (Exception, PlanningFailureException) as e:
+                print e
+                self.error_count.next()
+            if str(e).find("TimeoutException") != -1\
+                or str(e).find("AmbiguousTimeoutException") != -1\
+                    or str(e).find("UnambiguousTimeoutException") != -1:
+                self.timeout_failures += self.timeout_count.next()
+                if self.timeout_failures % 50 == 0 or str(e).find("UnambiguousTimeoutException") != -1:
+                    self.log.critical(client_context_id + ":" + query)
+                    self.log.critical(e)
+            elif str(e).find("RequestCanceledException") != -1:
+                self.failures += self.cancel_count.next()
+            elif str(e).find("InternalServerFailureException") != -1 or str(e).find("CouchbaseException") != -1:
+                self.failures += self.error_count.next()
+
+            if e and (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1):
+                self.log.critical(client_context_id + ":" + query)
+                self.log.critical(e)
+            end = time.time()
+            if end - start < 1:
+                time.sleep(end - start)
+
 
     def _run_query(self, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
@@ -488,18 +635,24 @@ class QueryLoad:
                 query_tuple = self.queries[counter%len(self.queries)]
                 query = query_tuple[0]
                 original_query = query_tuple[2]
-                # print query
-                # print original_query
+                    
                 q_param = self.bucket.query_map[original_query][1]
+                q_param_json = JsonObject.create()
+                for k, v in q_param.items():
+                    try:
+                        q_param_json.put(k, eval(v))
+                    except:
+                        q_param_json.put(k, v)
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id,
-                    q_param, validate=validate_item_count)
+                    q_param_json, validate=validate_item_count)
                 self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
                 self.query_stats[original_query][1] += 1
                 if status == QueryStatus.SUCCESS:
                     if validate_item_count:
                         if results[0]['$1'] != expected_count:
                             self.failed_count.next()
+                            print q_param_json
                         else:
                             self.success_count.next()
                     else:

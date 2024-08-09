@@ -18,7 +18,7 @@ from elasticsearch import EsClient
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from com.couchbase.test.sdk import SDKClientPool
 from workloads import default, nimbus, vector_load, quartz1, quartz2, quartz3,\
-    quartz5, quartz4, quartz6
+    quartz5, quartz4, quartz6, hotel_vector
 try:
     from fts import DoctorFTS, FTSQueryLoad
 except:
@@ -159,11 +159,14 @@ class Murphy(BaseTestCase, OPD):
 
         if self.vector:
             self.load_defn = list()
-            self.load_defn.append(vector_load)
+            if self.index_nodes > 0:
+                self.load_defn.append(hotel_vector)
+            else:
+                self.load_defn.append(vector_load)
 
         #######################################################################
         self.PrintStep("Step 1: Create a %s node cluster" % self.nodes_init)
-        if self.nodes_init > 1:
+        if self.nodes_init > 1 and len(self.cluster.nodes_in_cluster) < self.nodes_init:
             services = list()
             nodes_init = self.cluster.servers[1:self.nodes_init]
             if self.services_init:
@@ -481,7 +484,7 @@ class Murphy(BaseTestCase, OPD):
             self.drIndex.build_indexes(self.cluster, self.cluster.buckets, wait=True)
             for bucket in self.cluster.buckets:
                 if bucket.loadDefn.get("2iQPS", 0) > 0:
-                    ql = QueryLoad(bucket)
+                    ql = QueryLoad(bucket, self.mockVector, self.base64)
                     ql.start_query_load()
                     self.ql.append(ql)
             self.drIndex.start_index_stats(self.cluster)
@@ -1011,6 +1014,7 @@ class Murphy(BaseTestCase, OPD):
                                       cluster=self.cluster)
             self.rebl_services = self.input.param("rebl_services", "kv").split("-")
             self.rebl_nodes = self.input.param("rebl_nodes", 1)
+            self.sleep(300)
             for service in self.rebl_services:
                 self.PrintStep("Step 5: Rebalance in of {} node with Loading of docs".format(service))
     

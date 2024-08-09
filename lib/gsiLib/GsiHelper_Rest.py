@@ -374,10 +374,12 @@ class GsiHelper(RestConnection):
             result = self.index_status()
             if bucket.name in result:
                 if result[bucket.name].has_key(index):
+                    self.log.debug("Check {}, {}: {}".format(str(x), index, result[bucket.name][index]['status']))
                     if result[bucket.name][index]['status'] == 'Ready':
                         return True
+            else:
+                self.log.info("Index {} not found with iteration {}".format(index, str(x)))
             sleep(sleep_time)
-            self.log.info("Index {} not found with iteration {}".format(index, str(x)))
         return False
 
     def polling_delete_index(self, bucket=None, index=None, timeout=100):

@@ -33,6 +33,8 @@ public class WorkLoadSettings extends WorkLoadBase {
     public boolean expectDeleted;
     public boolean validate;
     public int mutated;
+    public String mutate_field;
+    public int mutation_timeout;
 
     public DocRange dr;
     public DocumentGenerator doc_gen;
@@ -78,7 +80,8 @@ public class WorkLoadSettings extends WorkLoadBase {
             int workers, int ops, String loadType,
             String keyType, String valueType,
             boolean validate, boolean gtm, boolean deleted, int mutated,
-            String model, boolean mockVector, int dim, boolean base64) {
+            String model, boolean mockVector, int dim, boolean base64,
+            String mutate_field, Integer mutation_timeout) {
         super();
         this.keyPrefix = keyPrefix;
         this.keySize = keySize;
@@ -102,6 +105,8 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.mockVector = mockVector;
         this.dim = dim;
         this.base64 = base64;
+        this.mutate_field = mutate_field;
+        this.mutation_timeout = mutation_timeout;
     };
 
     public WorkLoadSettings(
