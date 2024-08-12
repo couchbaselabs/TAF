@@ -7,6 +7,7 @@ from cb_tools.cbstats import Cbstats
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
+from global_vars import logger
 from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
@@ -366,8 +367,6 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
-            shell_conn[node.ip].disconnect()
-            cbstat_obj[node.ip].disconnect()
 
         if self.durability_level \
                 == SDKConstants.DurabilityLevel.MAJORITY_AND_PERSIST_TO_ACTIVE:
@@ -484,6 +483,8 @@ class CollectionDurabilityTests(CollectionBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
@@ -526,8 +527,6 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
-            shell_conn[node.ip].disconnect()
-            cbstat_obj[node.ip].disconnect()
 
         target_vbs = replica_vbs
         if self.durability_level \
@@ -631,6 +630,8 @@ class CollectionDurabilityTests(CollectionBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         # Wait for doc_loading to complete
         self.task_manager.get_task_result(doc_loading_task)
@@ -666,7 +667,7 @@ class CollectionDurabilityTests(CollectionBase):
 
     def test_sub_doc_sync_write_in_progress(self):
         """
-        Test to simulate sync_write_in_progress error and validate the behavior
+        Test to simulate sync_write_in_progress error and validate the behavior.
         This will validate failure in majority of nodes, where durability will
         surely fail for all CRUDs
 
@@ -707,8 +708,6 @@ class CollectionDurabilityTests(CollectionBase):
                 self.bucket.name, vbucket_type="active")
             replica_vbs[node.ip] = cbstat_obj[node.ip].vbucket_list(
                 self.bucket.name, vbucket_type="replica")
-            shell_conn[node.ip].disconnect()
-            cbstat_obj[node.ip].disconnect()
 
         target_vbs = replica_vbs
         if self.durability_level \
@@ -777,6 +776,7 @@ class CollectionDurabilityTests(CollectionBase):
             tem_durability = SDKConstants.DurabilityLevel.NONE
 
         # Perform specified action
+        logger.get("infra").setLevel("DEBUG")
         for node in target_nodes:
             error_sim[node.ip].create(self.simulate_error,
                                       bucket_name=self.bucket.name)
@@ -839,6 +839,8 @@ class CollectionDurabilityTests(CollectionBase):
         for node in target_nodes:
             error_sim[node.ip].revert(self.simulate_error,
                                       bucket_name=self.bucket.name)
+            shell_conn[node.ip].disconnect()
+            cbstat_obj[node.ip].disconnect()
 
         # Wait for doc_loader_task_1 to complete
         self.task.jython_task_manager.get_task_result(doc_loading_task)
