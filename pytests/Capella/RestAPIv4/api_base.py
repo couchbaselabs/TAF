@@ -550,15 +550,13 @@ class APIBase(CouchbaseBaseTest):
             else:
                 try:
                     resp = resp.json()
-                    if 'errorType' in resp.json():
+                    if 'errorType' in resp:
                         self.log.error("Error received - \n Message - {} \n "
                                        "Error Type - {}".format(
-                                        resp.json()["message"],
-                                        resp.json()["errorType"]))
+                                        resp["message"], resp["errorType"]))
                     else:
-                        self.log.error(
-                            "Error received - \n Message - {}".format(
-                                resp.json()["message"]))
+                        self.log.error("Error received - \n Message - {}"
+                                       .format(resp["message"]))
                 except (Exception,):
                     self.log.error("Error received - {}".format(resp.content))
                 # In order to delete the created keys.

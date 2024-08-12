@@ -20,15 +20,8 @@ class PostUnassociate(PostAssociate):
         testcases = [
             {
                 "description": "Send call with valid path params",
-                "expected_error": {
-                    "code": 500,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 500,
-                    "message": "The VpcEndpointService Id '{}' does not exist"
-                               .format(self.endpoint_id)
-                },
-                "expected_status_code": 500
+                "expected_error": self.expected_err,
+                "expected_status_code": self.expected_code
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpoints/{}/unassociate",
@@ -96,15 +89,8 @@ class PostUnassociate(PostAssociate):
                 "description": "Call API with non-hex endpointId",
                 "invalid_endpointId": self.replace_last_character(
                     self.endpoint_id, non_hex=True),
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
-                },
-                "expected_status_code": 400
+                "expected_error": self.expected_err,
+                "expected_status_code": self.expected_code
             }
         ]
 
@@ -164,15 +150,8 @@ class PostUnassociate(PostAssociate):
             testcase = {
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"],
-                "expected_status_code": 500,
-                "expected_error": {
-                    "code": 500,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 500,
-                    "message": "The VpcEndpointService Id '{}' does not exist"
-                               .format(self.endpoint_id)
-                }
+                "expected_status_code": self.expected_code,
+                "expected_error": self.expected_err
             }
             if not any(element in [
                 "organizationOwner", "projectOwner",
@@ -188,14 +167,8 @@ class PostUnassociate(PostAssociate):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id, 500, {
-            "code": 500,
-            "hint": "Please review your request and ensure that all required "
-                    "parameters are correctly provided.",
-            "httpStatusCode": 500,
-            "message": "The VpcEndpointService Id '{}' does not exist"
-                       .format(self.endpoint_id)
-        })
+        self.auth_test_extension(testcases, other_project_id,
+                                 self.expected_code, self.expected_err)
 
         failures = list()
         for testcase in testcases:
@@ -318,17 +291,8 @@ class PostUnassociate(PostAssociate):
                         .format(combination[1], combination[2])
                     }
                 else:
-                    testcase["expected_status_code"] = 400
-                    testcase["expected_status_code"] = 400
-                    testcase["expected_error"] = {
-                        "code": 400,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "httpStatusCode": 400,
-                        "message": "Invalid endpoint ID. Did you run the "
-                                   "connection command?"
-                    }
+                    testcase["expected_status_code"] = self.expected_code
+                    testcase["expected_error"] = self.expected_err
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}

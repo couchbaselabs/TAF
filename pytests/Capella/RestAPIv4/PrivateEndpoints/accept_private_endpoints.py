@@ -13,6 +13,27 @@ class PostAssociate(GetPrivateEndpointService):
     def setUp(self, nomenclature="PrivateEndpoints_POST"):
         GetPrivateEndpointService.setUp(self, nomenclature)
         self.endpoint_id = "vpce-079a0245094731925"
+        if (self.input.param("cluster_template", "AWS_r5_xlarge") ==
+                "Azure_E4s_v5"):
+            self.expected_code = 404
+            self.expected_err = {
+                "code": 404,
+                "hint": "Please review your request and ensure that all "
+                        "required parameters are correctly provided.",
+                "httpStatusCode": 404,
+                "message": "The VpcEndpointService Id '{}' does not exist"
+                           .format(self.endpoint_id)
+            }
+        else:
+            self.expected_code = 400
+            self.expected_err = {
+                "code": 400,
+                "hint": "Please review your request and ensure that all "
+                        "required parameters are correctly provided.",
+                "httpStatusCode": 400,
+                "message": "Invalid endpoint ID. Did you run the connection "
+                           "command?"
+            }
 
     def tearDown(self):
         super(GetPrivateEndpointService, self).tearDown()
@@ -21,15 +42,8 @@ class PostAssociate(GetPrivateEndpointService):
         testcases = [
             {
                 "description": "Send call with valid path params",
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
-                },
-                "expected_status_code": 400
+                "expected_error": self.expected_err,
+                "expected_status_code": self.expected_code
             }, {
                 "description": "Replace api version in URI",
                 "url": "/v3/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpoints/{}/associate",
@@ -97,15 +111,8 @@ class PostAssociate(GetPrivateEndpointService):
                 "description": "Call API with non-hex endpointId",
                 "invalid_endpointId": self.replace_last_character(
                     self.endpoint_id, non_hex=True),
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
-                },
-                "expected_status_code": 400
+                "expected_error": self.expected_err,
+                "expected_status_code": self.expected_code
             }
         ]
 
@@ -165,15 +172,8 @@ class PostAssociate(GetPrivateEndpointService):
             testcase = {
                 "description": "Calling API with {} role".format(role),
                 "token": self.api_keys[role]["token"],
-                "expected_status_code": 400,
-                "expected_error": {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
-                }
+                "expected_status_code": self.expected_code,
+                "expected_error": self.expected_err
             }
             if not any(element in [
                 "organizationOwner", "projectOwner",
@@ -189,14 +189,8 @@ class PostAssociate(GetPrivateEndpointService):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id, 400, {
-                    "code": 400,
-                    "hint": "Please review your request and ensure that all "
-                            "required parameters are correctly provided.",
-                    "httpStatusCode": 400,
-                    "message": "Invalid endpoint ID. Did you run the "
-                               "connection command?"
-                })
+        self.auth_test_extension(testcases, other_project_id,
+                                 self.expected_code, self.expected_err)
 
         failures = list()
         for testcase in testcases:
@@ -319,16 +313,8 @@ class PostAssociate(GetPrivateEndpointService):
                         .format(combination[1], combination[2])
                     }
                 else:
-                    testcase["expected_status_code"] = 400
-                    testcase["expected_error"] = {
-                        "code": 400,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "httpStatusCode": 400,
-                        "message": "Invalid endpoint ID. Did you run the "
-                                   "connection command?"
-                    }
+                    testcase["expected_status_code"] = self.expected_code
+                    testcase["expected_error"] = self.expected_err
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}

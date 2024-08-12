@@ -18,8 +18,14 @@ class PostEndpointCommand(GetPrivateEndpointService):
         GetPrivateEndpointService.setUp(self, nomenclature)
         self.expected_res = {
             "vpcID": "vpc-0a8002505f10bc102",
-            "subnetIDs": []
+            "subnetIDs": ["mockValue"]
         }
+        if (self.input.param("cluster_template", "AWS_r5_xlarge") ==
+                "Azure_E4s_v5"):
+            self.expected_res = {
+                "resourceGroupName": "test-rg",
+                "virtualNetwork": "vnet-1/subnet-1"
+            }
 
     def tearDown(self):
         super(GetPrivateEndpointService, self).tearDown()
@@ -141,7 +147,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
-            self.fail("Error while creating project")
+            self.fail("Error while creating project: {}".format(resp))
 
         testcases = []
         for role in self.api_keys:
@@ -318,15 +324,13 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 if key == "subnetIDs" and value is None:
                     continue
                 if key == "vpcID" and value in ["", None]:
-                    testcase["expected_status_code"] = 422
+                    testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
-                        "code": 422,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "httpStatusCode": 422,
-                        "message": "Cannot provide VPC endpoint command "
-                                   "because VPC ID is required."
+                        "code": 1000,
+                        "hint": "The request was malformed or invalid.",
+                        "httpStatusCode": 400,
+                        "message": "Bad Request. Error: The VPC ID provided "
+                                   "is invalid.."
                     }
                 elif (
                         key == "vpcID" and not isinstance(value, str) or
