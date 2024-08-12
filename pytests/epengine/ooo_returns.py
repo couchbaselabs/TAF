@@ -56,7 +56,6 @@ class OutOfOrderReturns(ClusterSetup):
                 cb_stat.vbucket_list(self.bucket.name, vbucket_type="active")
             self.node_data[node]["replica_vbs"] = \
                 cb_stat.vbucket_list(self.bucket.name, vbucket_type="replica")
-            cb_stat.disconnect()
 
         # Print cluster & bucket stats
         self.cluster_util.print_cluster_stats(self.cluster)
@@ -66,6 +65,7 @@ class OutOfOrderReturns(ClusterSetup):
         # Close all opened remote_shell connection
         for node in self.kv_nodes:
             self.node_data[node]["shell"].disconnect()
+            self.node_data[node]["cb_stat"].disconnect()
 
         super(OutOfOrderReturns, self).tearDown()
 
