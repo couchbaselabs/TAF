@@ -12,6 +12,11 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
 
     def setUp(self, nomenclature="AppServicesAuditLogging_PATCH"):
         GetAuditLogStreaming.setUp(self, nomenclature)
+        self.expected_res = {
+            "op": "update",
+            "path": "/streamingEnabled",
+            "value": True
+        }
 
     def tearDown(self):
         super(PatchAuditLogStreaming, self).tearDown()
@@ -123,12 +128,16 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
 
             result = (self.capellaAPI.cluster_ops_apis
                       .patch_app_service_audit_log_streaming(
-                        organization, project, cluster, appService))
+                        organization, project, cluster, appService,
+                        self.expected_res["op"], self.expected_res["path"],
+                        self.expected_res["value"]))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = (self.capellaAPI.cluster_ops_apis
                           .patch_app_service_audit_log_streaming(
-                            organization, project, cluster, appService))
+                            organization, project, cluster, appService,
+                            self.expected_res["op"], self.expected_res["path"],
+                            self.expected_res["value"]))
             self.capellaAPI.cluster_ops_apis\
                 .app_svc_audit_log_streaming_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
@@ -142,16 +151,16 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
         resp = self.capellaAPI.org_ops_apis.create_project(
             self.organisation_id, "Auth_Project")
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
-            self.fail("Error while creating project")
+            self.fail("Error while creating project: {}".format(resp.content))
+
+        self.api_keys.update(
+            self.create_api_keys_for_all_combinations_of_roles(
+                [self.project_id]))
 
         testcases = []
         for role in self.api_keys:
@@ -184,13 +193,17 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
             result = (self.capellaAPI.cluster_ops_apis
                       .patch_app_service_audit_log_streaming(
                         self.organisation_id, self.project_id, self.cluster_id,
-                        self.app_service_id, header))
+                        self.app_service_id, self.expected_res["op"],
+                        self.expected_res["path"], self.expected_res["value"],
+                        header))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = (self.capellaAPI.cluster_ops_apis
                           .patch_app_service_audit_log_streaming(
                             self.organisation_id, self.project_id,
-                            self.cluster_id, self.app_service_id, header))
+                            self.cluster_id, self.app_service_id,
+                            self.expected_res["op"], self.expected_res["path"],
+                            self.expected_res["value"], header))
             self.validate_testcase(result, [202], testcase, failures)
 
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -302,14 +315,16 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
                       .patch_app_service_audit_log_streaming(
                         testcase["organizationID"], testcase["projectID"],
                         testcase["clusterID"], testcase["appServiceID"],
-                        **kwarg))
+                        self.expected_res["op"], self.expected_res["path"],
+                        self.expected_res["value"], **kwarg))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = (self.capellaAPI.cluster_ops_apis
                           .patch_app_service_audit_log_streaming(
                             testcase["organizationID"], testcase["projectID"],
                             testcase["clusterID"], testcase["appServiceID"],
-                            **kwarg))
+                            self.expected_res["op"], self.expected_res["path"],
+                            self.expected_res["value"], **kwarg))
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:
@@ -324,7 +339,8 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
             self.capellaAPI.cluster_ops_apis
             .patch_app_service_audit_log_streaming, (
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id
+                self.app_service_id, self.expected_res["op"],
+                self.expected_res["path"], self.expected_res["value"]
             )
         ]]
         self.throttle_test(api_func_list)
@@ -334,7 +350,8 @@ class PatchAuditLogStreaming(GetAuditLogStreaming):
             self.capellaAPI.cluster_ops_apis
             .patch_app_service_audit_log_streaming, (
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id
+                self.app_service_id, self.expected_res["op"],
+                self.expected_res["path"], self.expected_res["value"]
             )
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

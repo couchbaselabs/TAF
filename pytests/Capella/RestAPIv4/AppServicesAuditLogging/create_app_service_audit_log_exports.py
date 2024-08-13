@@ -4,6 +4,7 @@ Created on August 06, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
+import copy
 from pytests.Capella.RestAPIv4.AppServicesAuditLogging\
     .get_app_service_audit_log_export_by_ids import GetAuditLogExports
 
@@ -147,16 +148,16 @@ class PostAuditLogExports(GetAuditLogExports):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
         resp = self.capellaAPI.org_ops_apis.create_project(
             self.organisation_id, "Auth_Project")
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
-            self.fail("Error while creating project")
+            self.fail("Error while creating project: {}".format(resp.content))
+
+        self.api_keys.update(
+            self.create_api_keys_for_all_combinations_of_roles(
+                [self.project_id]))
 
         testcases = []
         for role in self.api_keys:
@@ -332,6 +333,45 @@ class PostAuditLogExports(GetAuditLogExports):
                 self.log.warning(fail)
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
+
+    def test_payload(self):
+        testcases = list()
+        payload = dict()
+        for key in self.expected_res:
+            if key not in ["start", "end"]:
+                continue
+            values = [
+                "", "abc", 1, 1e1000, -1, 0, None,
+                self.generate_random_string(special_characters=False),
+                self.generate_random_string(5000, False)
+            ]
+            for val in values:
+                testcase = copy.deepcopy(self.expected_res)
+                testcase[key] = val
+                testcase["description"] = "Testing `{}` with val: {} of {}" \
+                    .format(key, val, type(val))
+                # Expected error conditions
+                testcases.append(testcase)
+        failures = list()
+        for testcase in testcases:
+            res = (self.capellaAPI.cluster_ops_apis.
+                   create_app_svc_audit_log_export(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.app_service_id, testcase["start"], testcase["end"]))
+            if res.status_code == 429:
+                self.handle_rate_limit(res.headers["Retry-After"])
+                res = (self.capellaAPI.cluster_ops_apis.
+                       create_app_svc_audit_log_export(
+                        self.organisation_id, self.project_id, self.cluster_id,
+                        self.app_service_id, testcase["start"], testcase["end"]
+                       ))
+            self.validate_testcase(res, [202], testcase, failures)
+
+        if failures:
+            for fail in failures:
+                self.log.warning(fail)
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
 
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
