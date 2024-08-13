@@ -130,16 +130,16 @@ class ListEndpoints(GetPrivateEndpointService):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
         resp = self.capellaAPI.org_ops_apis.create_project(
             self.organisation_id, "Auth_Project")
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
-            self.fail("Error while creating project")
+            self.fail("Error while creating project: {}".format(resp.content))
+
+        self.api_keys.update(
+            self.create_api_keys_for_all_combinations_of_roles(
+                [self.project_id]))
 
         testcases = []
         for role in self.api_keys:

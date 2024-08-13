@@ -5,9 +5,7 @@ Created on June 04, 2024
 """
 
 import copy
-
-from TestInput import TestInputServer
-from remote.remote_util import RemoteMachineShellConnection
+import re
 from pytests.Capella.RestAPIv4.PrivateEndpoints.\
     get_private_endpoint_service_status import GetPrivateEndpointService
 
@@ -17,8 +15,8 @@ class PostEndpointCommand(GetPrivateEndpointService):
     def setUp(self, nomenclature="PrivateEndpointCommands_POST"):
         GetPrivateEndpointService.setUp(self, nomenclature)
         self.expected_res = {
-            "vpcID": "vpc-0a8002505f10bc102",
-            "subnetIDs": ["mockValue"]
+            "vpcID": self.input.param("vpcId", "mockValue"),
+            "subnetIDs": ["mockValue"],
         }
         if (self.input.param("cluster_template", "AWS_r5_xlarge") ==
                 "Azure_E4s_v5"):
@@ -118,17 +116,13 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 cluster = testcase["invalid_clusterId"]
 
             result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                organization, project, cluster, self.expected_res["vpcID"],
-                self.expected_res["subnetIDs"])
+                organization, project, cluster, self.expected_res)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
-                    organization, project, cluster, self.expected_res["vpcID"],
-                    self.expected_res["subnetIDs"])
-
+                    organization, project, cluster, self.expected_res)
             self.capellaAPI.cluster_ops_apis.private_network_command_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/privateEndpointService/endpointCommand"
-
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -138,16 +132,16 @@ class PostEndpointCommand(GetPrivateEndpointService):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
         resp = self.capellaAPI.org_ops_apis.create_project(
             self.organisation_id, "Auth_Project")
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
-            self.fail("Error while creating project: {}".format(resp))
+            self.fail("Error while creating project: {}".format(resp.content))
+
+        self.api_keys.update(
+            self.create_api_keys_for_all_combinations_of_roles(
+                [self.project_id]))
 
         testcases = []
         for role in self.api_keys:
@@ -179,15 +173,12 @@ class PostEndpointCommand(GetPrivateEndpointService):
                                  self.project_id, other_project_id)
             result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.expected_res["vpcID"], self.expected_res["subnetIDs"],
-                header)
+                self.expected_res, header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    self.expected_res["vpcID"], self.expected_res["subnetIDs"],
-                    header)
-
+                    self.expected_res, header)
             self.validate_testcase(result, [200], testcase, failures)
 
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -232,7 +223,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
-                             type(combination[0]), type(combination[1]), 
+                             type(combination[0]), type(combination[1]),
                              type(combination[2])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
@@ -285,17 +276,12 @@ class PostEndpointCommand(GetPrivateEndpointService):
 
             result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"], self.expected_res["vpcID"],
-                self.expected_res["subnetIDs"],
-                **kwarg)
+                testcase["clusterID"], self.expected_res, **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"], self.expected_res["vpcID"],
-                    self.expected_res["subnetIDs"],
-                    **kwarg)
-
+                    testcase["clusterID"], self.expected_res, **kwarg)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -306,13 +292,12 @@ class PostEndpointCommand(GetPrivateEndpointService):
 
     def test_payload(self):
         testcases = list()
-
         for key in self.expected_res:
             if key in ["command"]:
                 continue
 
             values = [
-                "", 1, 0, 100000, -1, 123.123, None,
+                "", "aaa/bbb", 1, 0, 100000, -1, 123.123, None,
                 self.generate_random_string(special_characters=False),
                 self.generate_random_string(5000, special_characters=False),
             ]
@@ -321,9 +306,8 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 testcase[key] = value
                 testcase["description"] = "Testing `{}` with val: {} of {}" \
                     .format(key, value, type(value))
-                if key == "subnetIDs" and value is None:
-                    continue
-                if key == "vpcID" and value in ["", None]:
+                if value == "" or \
+                        key == "vpcID" and value is None:
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -334,7 +318,10 @@ class PostEndpointCommand(GetPrivateEndpointService):
                     }
                 elif (
                         key == "vpcID" and not isinstance(value, str) or
-                        key == "subnetIDs" and not isinstance(value, list)
+                        key == "subnetIDs" and not isinstance(value, list) or
+                        key == "resourceGroupName" and not isinstance(
+                        value, str) or key == "virtualNetwork" and not
+                        isinstance(value, str)
                 ):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
@@ -345,19 +332,32 @@ class PostEndpointCommand(GetPrivateEndpointService):
                                    "incorrect JSON type for field "
                                    "\"{}\".".format(key)
                     }
+                elif key == "virtualNetwork" and not re.match(
+                        value, r'^[A-Za-z0-9_-]+/[A-Za-z0-9_-]+$'):
+                    testcase["expected_status_code"] = 422
+                    testcase["expected_error"] = {
+                        "code": 422,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "httpStatusCode": 422,
+                        "message": "Malformed subnet input format, expected "
+                                   "'VirtualNetworkName/SubnetName' but got "
+                                   "{}.".format(value)
+                    }
                 testcases.append(testcase)
         failures = list()
         for testcase in testcases:
+            payload = {key: testcase[key] for key in self.expected_res.keys()}
             self.log.info(testcase['description'])
             result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
                 self.organisation_id, self.project_id, self.cluster_id,
-                testcase["vpcID"], testcase["subnetIDs"])
+                payload)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.post_private_endpoint_command(
                     self.organisation_id, self.project_id, self.cluster_id,
-                    testcase["vpcID"], testcase["subnetIDs"])
-
+                    payload)
             self.validate_testcase(result, [200], testcase, failures)
 
         if failures:
@@ -370,7 +370,8 @@ class PostEndpointCommand(GetPrivateEndpointService):
             self):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.post_private_endpoint_command, (
-                self.organisation_id, self.project_id, self.cluster_id
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.expected_res
             )
         ]]
         self.throttle_test(api_func_list)
@@ -378,7 +379,8 @@ class PostEndpointCommand(GetPrivateEndpointService):
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.post_private_endpoint_command, (
-                self.organisation_id, self.project_id, self.cluster_id
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.expected_res
             )
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

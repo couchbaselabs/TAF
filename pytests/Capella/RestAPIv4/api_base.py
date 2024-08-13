@@ -46,6 +46,8 @@ class APIBase(CouchbaseBaseTest):
             ["organizationOwner"], self.prefix, 1)
         if resp.status_code == 201:
             self.org_owner_key1 = resp.json()
+            self.org_owner_key1["blockTime"] = time.time()
+            self.org_owner_key1["retryAfter"] = 0
         else:
             self.log.fail("!!!...Error while creating first OrgOwner v4 API "
                           "key...!!!")
@@ -57,6 +59,8 @@ class APIBase(CouchbaseBaseTest):
             ["organizationOwner"], self.prefix, 1)
         if resp.status_code == 201:
             self.org_owner_key2 = resp.json()
+            self.org_owner_key2["blockTime"] = time.time()
+            self.org_owner_key2["retryAfter"] = 0
         else:
             self.log.fail("!!!...Error while creating second OrgOwner v4 API "
                           "key...!!!")
@@ -475,8 +479,26 @@ class APIBase(CouchbaseBaseTest):
                          .format(self.curr_owner_key))
         self.log.debug("Key needs to wait for {} seconds".format(retry_after))
         if self.curr_owner_key == self.org_owner_key1:
+            self.org_owner_key1["blockTime"] = time.time()
+            self.org_owner_key1["retryAfter"] = retry_after
+
+            # verify if the other key is available to be used
+            timeDiff = time.time() - self.org_owner_key2["blockTime"]
+            if timeDiff < self.org_owner_key2["retryAfter"]:
+                sleepTime = self.org_owner_key2["retryAfter"] - timeDiff
+                self.log.warning("...Sleeping for {} seconds".format(sleepTime))
+                time.sleep(sleepTime)
             self.curr_owner_key = self.org_owner_key2
         else:
+            self.org_owner_key2["blockTime"] = time.time()
+            self.org_owner_key2["retryAfter"] = retry_after
+
+            # verify if the other key is available to be used
+            timeDiff = time.time() - self.org_owner_key1["blockTime"]
+            if timeDiff < self.org_owner_key1["retryAfter"]:
+                sleepTime = self.org_owner_key1["retryAfter"] - timeDiff
+                self.log.warning("...Sleeping for {} seconds".format(sleepTime))
+                time.sleep(sleepTime)
             self.curr_owner_key = self.org_owner_key1
 
         self.log.debug("Tapping out, switching to the key: {}"
