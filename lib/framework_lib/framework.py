@@ -121,6 +121,9 @@ class HelperLib(object):
         parser.add_argument("-l", "--log-level",
                             dest="loglevel", default="INFO",
                             choices=["DEBUG", "INFO", "WARNING", "CRITICAL"])
+        parser.add_argument("--launch_java_doc_loader", action="store_true",
+                            dest="launch_java_doc_loader", default=False,
+                            help="If enabled, will start Java:DocLoader in bg")
         parser.add_argument("--launch_sirius_process", action="store_true",
                             dest="launch_sirius_process", default=False,
                             help="If enabled, will start Sirius as subprocess")
@@ -451,7 +454,8 @@ class HelperLib(object):
         return tests
 
     @staticmethod
-    def launch_sirius_client(taf_path, urls, process_type="docker_process"):
+    def launch_sirius_client(taf_path, urls,
+                             process_type="standalone_Java_loader"):
         """
         urls is expected to be in the format,
             172.23.10.1:4000;172.23.10.2:4000;...
@@ -460,9 +464,11 @@ class HelperLib(object):
             localhost:<port_num>
         """
         port = (urls.split(";")[0]).split(':')[-1]
-        if process_type == "standalone_process":
-            SiriusSetup.start_sirius(taf_path, port=port)
-        elif process_type == "docker_process":
-            SiriusSetup.start_sirius_docker(port=port)
+        if process_type == "standalone_Java_loader":
+            SiriusSetup.start_java_loader(taf_path, port=port)
+        elif process_type == "standalone_GoLang_loader":
+            SiriusSetup.start_golang_loader(taf_path, port=port)
+        elif process_type == "docker_Golang_loader":
+            SiriusSetup.start_golang_docker(port=port)
         else:
             raise Exception(f"Invalid Sirius process {process_type}")

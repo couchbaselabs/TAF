@@ -17,3 +17,7 @@
 	path = py_constants
 	url = https://github.com/couchbaselabs/py_constants.git
 	branch = master
+[submodule "JavaDocLoader"]
+	path = DocLoader
+	url = https://github.com/couchbaselabs/DocLoader.git
+	branch = rest_support

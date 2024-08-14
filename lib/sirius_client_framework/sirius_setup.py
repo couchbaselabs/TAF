@@ -29,8 +29,28 @@ class SiriusSetup(object):
                 print(str(e))
         return False
 
+
     @staticmethod
-    def start_sirius(taf_path, port=4000):
+    def start_java_loader(taf_path, port=8080):
+        print("Building Loader")
+        fp = open("logs/sirius_build.log", "w")
+        doc_loader_path = f"{taf_path}/DocLoader"
+        cmd = ["/bin/sh", "-c",
+               f"cd {doc_loader_path} ; mvn clean compile package"]
+        process = Popen(cmd, stdout=fp, stderr=fp)
+        process.communicate()
+        fp.close()
+
+        print(f"Starting Sirius Java client on port '{port}'")
+        fp = open("logs/sirius_run.log", "w")
+        cmd = ["java", "-jar",
+               f"{doc_loader_path}/target/magmadocloader/magmadocloader.jar",
+               f"--server.port={port}"]
+        SiriusSetup.__running_process = Popen(cmd, stdout=fp, stderr=fp)
+
+
+    @staticmethod
+    def start_golang_loader(taf_path, port=4000):
         fp = open("logs/sirius.log", "a")
 
         print("Building sirius")
@@ -83,7 +103,7 @@ class SiriusSetup(object):
             raise exception
 
     @staticmethod
-    def start_sirius_docker(port=4000):
+    def start_golang_docker(port=4000):
         docker_file_path = os.path.join(os.getcwd(), "sirius",
                                         "docker-compose.yaml")
         if os.path.exists(docker_file_path):

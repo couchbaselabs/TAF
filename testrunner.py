@@ -94,12 +94,15 @@ def main():
     if not os.path.exists(root_log_dir):
         os.makedirs(root_log_dir)
 
-    if options.launch_sirius_process:
+    if options.launch_java_doc_loader:
         HelperLib.launch_sirius_client(taf_path, options.sirius_url,
-                                       process_type="standalone_process")
+                                       process_type="standalone_Java_loader")
+    elif options.launch_sirius_process:
+        HelperLib.launch_sirius_client(taf_path, options.sirius_url,
+                                       process_type="standalone_GoLang_loader")
     elif options.launch_sirius_docker:
         HelperLib.launch_sirius_client(taf_path, options.sirius_url,
-                                       process_type="docker_process")
+                                       process_type="docker_Golang_loader")
 
     case_number = 0
     if "GROUP" in runtime_test_params:
