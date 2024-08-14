@@ -530,9 +530,21 @@ class ColumnarRBAC(ColumnarBaseTest):
     def create_rbac_testcases(self, privileges=[], resources=[],
                               resource_type="instance", extended_res_priv_map=[]):
 
+        def find_child_resources(parent_resources, child_resources):
+            result = []
+
+            for parent in parent_resources:
+                matching_children = [child for child in child_resources if child.startswith(parent)]
+                result.extend(matching_children)
+
+            return result
+
         testcases = []
         if len(resources) == 0:
             resources.append("")
+
+        for idx, res in enumerate(resources):
+            resources[idx] = self.columnar_cbas_utils.unformat_name(res)
 
         username = self.generate_random_entity_name(type="user")
         password = self.generate_random_password()
@@ -569,7 +581,20 @@ class ColumnarRBAC(ColumnarBaseTest):
         test_case = self.generate_test_case(user2, privileges, resources)
         testcases.append(test_case)
 
-        privileges_payload = self.columnar_rbac_util.create_privileges_payload(extended_res_priv_map)
+        resource_priv_map = []
+        test_resource = resources[0]
+        if len(privileges) > 1:
+
+            test_resource = resources[-1]
+            for res in resources[:-1]:
+                res_priv_obj = {
+                    "name": res,
+                    "type": resource_type,
+                    "privileges": privileges
+                }
+                resource_priv_map.append(res_priv_obj)
+        resource_priv_map.extend(extended_res_priv_map)
+        privileges_payload = self.columnar_rbac_util.create_privileges_payload(resource_priv_map)
 
         username = self.generate_random_entity_name(type="user")
         password = self.generate_random_password()
@@ -578,7 +603,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                         username=username,
                                                         password=password,
                                                         privileges_payload=privileges_payload)
-        negative_test_case = self.generate_test_case(user3, privileges, [resources[0]],
+        negative_test_case = self.generate_test_case(user3, privileges, [test_resource],
                                                      validate_err_msg=True)
         testcases.append(negative_test_case)
 
@@ -594,9 +619,39 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                         username=username,
                                                         password=password,
                                                         role_ids=[role2.id])
-        negative_test_case = self.generate_test_case(user4, privileges, [resources[0]],
+        negative_test_case = self.generate_test_case(user4, privileges, [test_resource],
                                                      validate_err_msg=True)
         testcases.append(negative_test_case)
+
+        additional_test_cases = []
+        if resource_type in ["database", "link"]:
+            additional_test_cases = self.create_rbac_testcases(privileges, [], "instance",
+                                                               extended_res_priv_map=extended_res_priv_map)
+
+        elif resource_type == "scope":
+            databases = []
+            for res in resources:
+                db_name = res.split(".")[0]
+                if db_name not in databases:
+                    databases.append(db_name)
+            additional_test_cases = self.create_rbac_testcases(privileges, databases, "database",
+                                                               extended_res_priv_map=extended_res_priv_map)
+
+        elif resource_type in ["collection", "function"]:
+            scopes = []
+            for res in resources:
+                scope_name = ".".join(res.split('.')[:2])
+                if scope_name not in scopes:
+                    scopes.append(scope_name)
+            additional_test_cases = self.create_rbac_testcases(privileges, scopes, "scope",
+                                                               extended_res_priv_map=extended_res_priv_map)
+
+        for test_case in additional_test_cases:
+            parent_resources = test_case['resources']
+            child_resources = find_child_resources(parent_resources, resources)
+            test_case['resources'] = child_resources
+
+        testcases.extend(additional_test_cases)
 
         return testcases
 
@@ -943,18 +998,23 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                self.test_users[user]["password"])
             for priv in self.scope_privileges:
                 if priv == "scope_create":
+                    database_name = random.choice(databases)
                     scope_name = self.generate_random_entity_name(type="scope")
+                    scope_name = "{}.{}".format(database_name, scope_name)
                     scope_name = self.columnar_cbas_utils.format_name(scope_name)
                     execute_cmd = create_scope_cmd.format(scope_name)
                 elif priv == "scope_drop":
+                    database_name = random.choice(databases)
                     scope_name = self.generate_random_entity_name(type="scope")
+                    scope_name = "{}.{}".format(database_name, scope_name)
                     scope_name = self.columnar_cbas_utils.format_name(scope_name)
                     result = self.columnar_cbas_utils.create_dataverse(self.cluster,
                                                                        scope_name,
-                                                                       res)
+                                                                       database_name)
                     if not result:
                         self.fail("Failed to create scope {}".format(scope_name))
                     execute_cmd = drop_scope_cmd.format(scope_name)
+
                 resp = self.columnarAPIrole.execute_statement(self.tenant.id,
                                                               self.tenant.project_id,
                                                               self.cluster.instance_id,
@@ -1055,6 +1115,9 @@ class ColumnarRBAC(ColumnarBaseTest):
                             remote_link = rm_link
                             break
 
+                    database_name = res.split(".")[0]
+                    scope_name = res.split(".")[1]
+
                     if priv == "collection_create":
 
                         # create remote collection.
@@ -1066,7 +1129,9 @@ class ColumnarRBAC(ColumnarBaseTest):
                             self.remote_collection,
                             remote_link,
                             use_only_existing_db=True,
-                            use_only_existing_dv=True)[0]
+                            use_only_existing_dv=True,
+                            database=database_name,
+                            dataverse=scope_name)[0]
                         expected_error = self.ACCESS_DENIED_ERR
 
                         result = self.columnar_cbas_utils.create_remote_dataset(
@@ -1093,7 +1158,9 @@ class ColumnarRBAC(ColumnarBaseTest):
                             file_format="json",
                             use_only_existing_db=True,
                             use_only_existing_dv=True,
-                            paths_on_external_container=None)[0]
+                            paths_on_external_container=None,
+                            database=database_name,
+                            dataverse=scope_name)[0]
 
                         expected_error = self.ACCESS_DENIED_ERR
                         result = self.create_external_dataset(
@@ -1107,8 +1174,6 @@ class ColumnarRBAC(ColumnarBaseTest):
                                       format(external_coll_obj.name))
 
                         self.log.info("Test creating standlone collection")
-                        database_name = res.split(".")[0]
-                        scope_name = res.split(".")[1]
                         standalone_coll_obj = self.columnar_cbas_utils.create_standalone_dataset_obj(
                             self.cluster,
                             primary_key={"name": "string", "email": "string"},
@@ -1130,6 +1195,22 @@ class ColumnarRBAC(ColumnarBaseTest):
                         if not result:
                             self.fail("Test case failed while attempting to create standalone " \
                                       "collection {}".format(standalone_coll_obj.name))
+
+                        if not test_case['validate_err_msg']:
+                            result = self.columnar_cbas_utils.drop_dataset(
+                                self.cluster, remote_coll_obj.full_name)
+                            if not result:
+                                self.log.error("Failed to drop coll {}".format(remote_coll_obj.full_name))
+
+                            result = self.columnar_cbas_utils.drop_dataset(
+                                self.cluster, external_coll_obj.full_name)
+                            if not result:
+                                self.log.error("Failed to drop coll {}".format(external_coll_obj.full_name))
+
+                            result = self.columnar_cbas_utils.drop_dataset(
+                                self.cluster, standalone_coll_obj.full_name)
+                            if not result:
+                                self.log.error("Failed to drop coll {}".format(standalone_coll_obj.full_name))
 
                     elif priv == "collection_drop":
                         # create and drop standalone collection
@@ -1156,7 +1237,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                 remote_coll_obj.name))
 
                         result = self.columnar_cbas_utils.drop_dataset(
-                            self.cluster, remote_coll_obj.name,
+                            self.cluster, remote_coll_obj.full_name,
                             username=test_case['user'].username,
                             password=test_case['user'].password,
                             validate_error_msg=test_case['validate_err_msg'],
@@ -1174,7 +1255,9 @@ class ColumnarRBAC(ColumnarBaseTest):
                             file_format="json",
                             use_only_existing_db=True,
                             use_only_existing_dv=True,
-                            paths_on_external_container=None)[0]
+                            paths_on_external_container=None,
+                            database=database_name,
+                            dataverse=scope_name)[0]
 
                         expected_error = self.ACCESS_DENIED_ERR
                         result = self.create_external_dataset(external_coll_obj)
@@ -1183,7 +1266,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                       format(external_coll_obj.name))
 
                         result = self.columnar_cbas_utils.drop_dataset(
-                            self.cluster, external_coll_obj.name,
+                            self.cluster, external_coll_obj.full_name,
                             username=test_case['user'].username,
                             password=test_case['user'].password,
                             validate_error_msg=test_case['validate_err_msg'],
@@ -1194,8 +1277,6 @@ class ColumnarRBAC(ColumnarBaseTest):
 
                         # create and drop standalone collection
                         self.log.info("Test dropping standalone collection")
-                        database_name = res.split(".")[0]
-                        scope_name = res.split(".")[1]
                         standalone_coll_obj = self.columnar_cbas_utils.create_standalone_dataset_obj(
                             self.cluster,
                             primary_key={"name": "string", "email": "string"},
@@ -1213,7 +1294,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                             self.fail("Failed to create standalone collection")
 
                         result = self.columnar_cbas_utils.drop_dataset(
-                            self.cluster, standalone_coll_obj.name,
+                            self.cluster, standalone_coll_obj.full_name,
                             username=test_case['user'].username,
                             password=test_case['user'].password,
                             validate_error_msg=test_case['validate_err_msg'],
@@ -1221,6 +1302,22 @@ class ColumnarRBAC(ColumnarBaseTest):
                         if not result:
                             self.fail("Test case failed while attempting to drop external collection {}".
                                       format(standalone_coll_obj.name))
+
+                        if test_case['validate_err_msg']:
+                            result = self.columnar_cbas_utils.drop_dataset(
+                                self.cluster, remote_coll_obj.full_name)
+                            if not result:
+                                self.log.error("Failed to drop coll {}".format(remote_coll_obj.full_name))
+
+                            result = self.columnar_cbas_utils.drop_dataset(
+                                self.cluster, external_coll_obj.full_name)
+                            if not result:
+                                self.log.error("Failed to drop coll {}".format(external_coll_obj.full_name))
+
+                            result = self.columnar_cbas_utils.drop_dataset(
+                                self.cluster, standalone_coll_obj.full_name)
+                            if not result:
+                                self.log.error("Failed to drop coll {}".format(standalone_coll_obj.full_name))
 
         ######### TEST FOR CLOUD ROLES #########
         def generate_commands(priv):
@@ -1234,7 +1331,9 @@ class ColumnarRBAC(ColumnarBaseTest):
                         self.remote_collection,
                         remote_link,
                         use_only_existing_db=True,
-                        use_only_existing_dv=True)[0]
+                        use_only_existing_dv=True,
+                        database="Default",
+                        dataverse="Default")[0]
                 cmd = self.columnar_cbas_utils.generate_create_dataset_cmd(
                         remote_coll_obj.name,
                         remote_coll_obj.full_kv_entity_name,
@@ -1251,7 +1350,9 @@ class ColumnarRBAC(ColumnarBaseTest):
                         file_format="json",
                         use_only_existing_db=True,
                         use_only_existing_dv=True,
-                        paths_on_external_container=None)[0]
+                        paths_on_external_container=None,
+                        database="Default",
+                        dataverse="Default")[0]
                 cmd = self.generate_external_dataset_cmd(external_coll_obj)
                 execute_commands.append(cmd)
 
@@ -1280,7 +1381,9 @@ class ColumnarRBAC(ColumnarBaseTest):
                     self.remote_collection,
                     remote_link,
                     use_only_existing_db=True,
-                    use_only_existing_dv=True)[0]
+                    use_only_existing_dv=True,
+                    database="Default",
+                    dataverse="Default")[0]
                 result = self.columnar_cbas_utils.create_remote_dataset(
                         self.cluster,
                         remote_coll_obj.name,
@@ -1303,7 +1406,9 @@ class ColumnarRBAC(ColumnarBaseTest):
                         file_format="json",
                         use_only_existing_db=True,
                         use_only_existing_dv=True,
-                        paths_on_external_container=None)[0]
+                        paths_on_external_container=None,
+                        database="Default",
+                        dataverse="Default")[0]
                 result = self.create_external_dataset(external_coll_obj)
                 if not result:
                     self.fail("Failed to create external collection {}".
@@ -1456,7 +1561,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                     elif priv == "collection_select":
                         cmd = "SELECT * from " + self.columnar_cbas_utils.format_name(res) + ";"
                         expected_error = self.ACCESS_DENIED_ERR
-                        status, metrics, errors, results, _ = (
+                        status, metrics, errors, results, _, warnings = (
                             self.columnar_cbas_utils.execute_statement_on_cbas_util(
                                 self.cluster, cmd,
                                 username=test_case['user'].username,
@@ -1464,7 +1569,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                 timeout=300, analytics_timeout=300))
 
                         if test_case['validate_err_msg']:
-                            result = self.columnar_cbas_utils.validate_error_in_response(
+                            result = self.columnar_cbas_utils.validate_error_and_warning_in_response(
                                 status, errors, expected_error, None)
                             if not result:
                                 self.fail("Test case failed while attempting to get docs from standalone coll {}".
@@ -1617,6 +1722,7 @@ class ColumnarRBAC(ColumnarBaseTest):
 
         testcases = self.create_rbac_testcases(self.link_ddl_privileges, [],
                                                resource_type="instance")
+
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
             self.log.info(test_case['description'])
@@ -2007,6 +2113,8 @@ class ColumnarRBAC(ColumnarBaseTest):
         testcases = self.create_rbac_testcases(self.link_dml_privileges, s3_links + rm_links,
                                                resource_type="link",
                                                extended_res_priv_map=extended_res_priv_map)
+
+        path_idx = 0
         for idx, test_case in enumerate(testcases):
             self.log.info("========== TEST CASE {} ===========".format(idx))
             self.log.info(test_case['description'])
@@ -2023,7 +2131,8 @@ class ColumnarRBAC(ColumnarBaseTest):
                     self.log.info("Testing COPY TO")
                     for res in resources:
                         expected_error = self.ACCESS_DENIED_ERR
-                        path = "copy_dataset_" + str(idx)
+                        path = "copy_dataset_" + str(path_idx)
+                        path_idx += 1
                         collection = "{}.{}.{}".format(self.remote_bucket.name,
                                                        self.remote_scope.name,
                                                        self.remote_collection.name)
@@ -2097,8 +2206,8 @@ class ColumnarRBAC(ColumnarBaseTest):
                     execute_commands = []
                     for res in resources:
                         expected_error = self.ACCESS_DENIED_ERR
-                        path = "copy_dataset_" + str(idx)
-                        idx += 1
+                        path = "copy_dataset_" + str(path_idx)
+                        path_idx += 1
                         # copy to s3
                         if res in s3_links:
                             execute_cmd = self.columnar_cbas_utils.generate_copy_to_s3_cmd(
@@ -2176,8 +2285,8 @@ class ColumnarRBAC(ColumnarBaseTest):
                     execute_commands = []
                     for res in resources:
                         expected_error = self.ACCESS_DENIED_ERR
-                        path = "copy_dataset_" + str(idx)
-                        idx += 1
+                        path = "copy_dataset_" + str(path_idx)
+                        path_idx += 1
                         # copy to s3
                         if res in s3_links:
                             execute_cmd = self.columnar_cbas_utils.generate_copy_to_s3_cmd(
@@ -2754,11 +2863,12 @@ class ColumnarRBAC(ColumnarBaseTest):
             resources = test_case['resources']
 
             for res in resources:
+                res = self.columnar_cbas_utils.format_name(res)
                 execute_cmd = "{}()".format(res)
                 full_resource_name = self.columnar_cbas_utils.unformat_name(res). \
                                          replace(".", ":") + ":0"
                 expected_error = self.ACCESS_DENIED_ERR
-                status, metrics, errors, results, _ = (
+                status, metrics, errors, results, _, _ = (
                     self.columnar_cbas_utils.execute_statement_on_cbas_util(
                         self.cluster, execute_cmd,
                         username=test_case['user'].username,
@@ -2766,7 +2876,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                         timeout=300, analytics_timeout=300))
 
                 if test_case['validate_err_msg']:
-                    result = self.columnar_cbas_utils.validate_error_in_response(
+                    result = self.columnar_cbas_utils.validate_error_and_warning_in_response(
                         status, errors, expected_error, None)
                     if not result:
                         self.fail("Test case failed while attempting to execute function {}".
@@ -2778,6 +2888,7 @@ class ColumnarRBAC(ColumnarBaseTest):
 
         self.log.info("Testing for cloud roles")
         func_name = analytics_udfs[0]
+        func_name = self.columnar_cbas_utils.format_name(func_name)
         for user in self.test_users:
             self.log.info("========== CLOUD USER TEST CASE: {} ===========".
                           format(self.test_users[user]["role"]))

@@ -847,7 +847,7 @@ class Database_Util(BaseUtil):
     def get_all_databases_from_metadata(self, cluster):
         database_query = ("select value db.DatabaseName from Metadata."
                           "`Database` as db where db.SystemDatabase = false;")
-        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+        status, _, _, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, database_query, mode="immediate", timeout=300,
             analytics_timeout=300)
         if status == 'success':
@@ -1277,7 +1277,7 @@ class Dataverse_Util(Database_Util):
         dataverse_query = "select value dv.DatabaseName || \".\" || " \
                           "dv.DataverseName from Metadata.`Dataverse` as dv " \
                           "where dv.DataverseName <> \"Metadata\";"
-        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+        status, _, _, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, dataverse_query, mode="immediate", timeout=300,
             analytics_timeout=300)
         if status == 'success':
@@ -1669,7 +1669,7 @@ class Link_Util(Dataverse_Util):
                       "where lnk.Name <> \"Local\""
         if link_type:
             links_query += " and lnk.`Type` = \"{0}\"".format(link_type.upper())
-        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+        status, _, _, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, links_query, mode="immediate",
             timeout=300, analytics_timeout=300)
         if status == 'success':
@@ -2488,7 +2488,7 @@ class Dataset_Util(KafkaLink_Util):
             datasets_query = 'SELECT * ' \
                              'FROM Metadata.`Dataset` d ' \
                              'WHERE d.DataverseName <> "Metadata"'
-        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+        status, _, _, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, datasets_query, mode="immediate", timeout=300,
             analytics_timeout=300)
         if status == 'success':
@@ -2569,7 +2569,8 @@ class Remote_Dataset_Util(Dataset_Util):
             self, cluster, bucket, scope, collection, link=None,
             bucket_util=None, use_only_existing_db=False,
             use_only_existing_dv=False, storage_format=None, name_length=30,
-            fixed_length=False, no_of_objs=1, capella_as_source=False):
+            fixed_length=False, no_of_objs=1, capella_as_source=False,
+            database=None, dataverse=None):
         """
         Generates remote dataset objects.
         """
@@ -2582,7 +2583,10 @@ class Remote_Dataset_Util(Dataset_Util):
                 link = random.choice(self.get_all_link_objs("couchbase"))
 
             if use_only_existing_db:
-                database_obj = random.choice(list(self.databases.values()))
+                if database:
+                    database_obj = self.get_database_obj(database)
+                else:
+                    database_obj = random.choice(list(self.databases.values()))
             else:
                 database_name = self.generate_name()
                 if not self.create_database(cluster, database_name):
@@ -2600,8 +2604,11 @@ class Remote_Dataset_Util(Dataset_Util):
                             dataverse_name, database_obj.name))
 
             if use_only_existing_dv:
-                dataverse_obj = random.choice(self.get_all_dataverse_obj(
-                    database_obj.name))
+                if dataverse:
+                    dataverse_obj = self.get_dataverse_obj(dataverse, database)
+                else:
+                    dataverse_obj = random.choice(self.get_all_dataverse_obj(
+                        database_obj.name))
             else:
                 dataverse_name = self.generate_name()
                 if not self.create_dataverse(
@@ -3000,7 +3007,7 @@ class External_Dataset_Util(Remote_Dataset_Util):
             null_string=None, include=None, exclude=None, name_length=30,
             fixed_length=False, no_of_objs=1, parse_json_string=0,
             convert_decimal_to_double=0, timezone="",
-            embed_filter_values=True, dataverse_name=None):
+            embed_filter_values=True, dataverse=None, database=None):
         """
         Creates a Dataset object for external datasets.
         :param external_container_names: <dict> {"external_container_name":"region"}
@@ -3016,7 +3023,10 @@ class External_Dataset_Util(Remote_Dataset_Util):
                 link = random.choice(all_links)
 
             if use_only_existing_db:
-                database_obj = random.choice(list(self.databases.values()))
+                if database:
+                    database_obj = self.get_database_obj(database)
+                else:
+                    database_obj = random.choice(list(self.databases.values()))
             else:
                 database_name = self.generate_name()
                 if not self.create_database(cluster, database_name):
@@ -3034,7 +3044,10 @@ class External_Dataset_Util(Remote_Dataset_Util):
                             dataverse_name, database_obj.name))
 
             if use_only_existing_dv:
-                dataverse_obj = self.get_all_dataverse_obj(database_obj.name)[0]
+                if dataverse:
+                    dataverse_obj = self.get_dataverse_obj(dataverse, database)
+                else:
+                    dataverse_obj = self.get_all_dataverse_obj(database_obj.name)[0]
             else:
                 dataverse_name = self.generate_name()
                 if not self.create_dataverse(
@@ -4636,7 +4649,7 @@ class Synonym_Util(StandAlone_Collection_Util):
                          "syn.DataverseName || \".\" || syn.SynonymName from " \
                          "Metadata.`Synonym` as syn where syn.DataverseName " \
                          "<> \"Metadata\";"
-        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+        status, _, _, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, synonyms_query, mode="immediate", timeout=300,
             analytics_timeout=300)
         if status == 'success':
@@ -5044,7 +5057,7 @@ class Index_Util(View_Util):
                         "\".\" || idx.IndexName from Metadata.`Index` as " \
                         "idx where idx.DataverseName <> \"Metadata\" and " \
                         "idx.IsPrimary <> true"
-        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+        status, _, _, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, indexes_query, mode="immediate", timeout=300,
             analytics_timeout=300)
         if status == 'success':
@@ -5374,7 +5387,7 @@ class UDFUtil(Index_Util):
     def get_all_udfs_from_metadata(self, cluster):
         udfs_created = []
         udf_query = "select value(fn) from Metadata.`Function` as fn"
-        status, _, _, results, _ = self.execute_statement_on_cbas_util(
+        status, _, _, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, udf_query, mode="immediate",
             timeout=300, analytics_timeout=300)
         if status == 'success':
