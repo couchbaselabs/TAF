@@ -2,6 +2,7 @@ import itertools
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from common_lib import sleep
 from global_vars import logger
 
@@ -16,12 +17,24 @@ class TaskManager(object):
         self.futures = dict()
 
     def add_new_task(self, task):
+        if isinstance(task, SiriusCouchbaseLoader):
+            if not task.start_task():
+                raise Exception(f"Failed to add new task {task.thread_name}")
+            return
+        # Regular framework Task object handling
         future = self.pool.submit(task.call)
         self.futures[task.thread_name] = future
         self.log.info("Added new task: %s" % task.thread_name)
 
     def get_task_result(self, task):
         self.log.debug("Getting task result for %s" % task.thread_name)
+        if isinstance(task, SiriusCouchbaseLoader):
+            okay = task.get_task_result()
+            if not okay:
+                self.log.critical("Failure during get_task_result of "
+                                  f"{task.thread_name}")
+            return okay
+        # Regular framework Task object handling
         future = self.futures[task.thread_name]
         result = False
         try:
@@ -43,6 +56,14 @@ class TaskManager(object):
         self.add_new_task(task)
 
     def stop_task(self, task):
+        if isinstance(task, SiriusCouchbaseLoader):
+            okay, json_response = task.end_task()
+            if not okay or not json_response["status"]:
+                self.log.critical(f"Some error during stop task of "
+                                  f"{task.thread_name}: {json_response}")
+            return okay
+
+        # Regular framework Task Object
         if task.thread_name not in self.futures.keys():
             return
         future = self.futures[task.thread_name]

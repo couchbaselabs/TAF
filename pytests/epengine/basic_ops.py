@@ -323,7 +323,7 @@ class basic_ops(ClusterSetup):
                 self.sleep(60, "Wait before killing the cont. update load")
                 task.end_task()
             self.task.jython_task_manager.get_task_result(task)
-            total_updates = task.get_total_doc_ops()
+            total_updates = num_item_start_for_crud
             verification_dict["ops_update"] += total_updates
             if self.durability_level in supported_d_levels:
                 verification_dict["sync_write_committed_count"] \
@@ -340,7 +340,9 @@ class basic_ops(ClusterSetup):
                     scope=self.scope_name,
                     collection=self.collection_name,
                     validate_using=self.load_docs_using)
-            self.task.jython_task_manager.get_task_result(task)
+            self.assertTrue(
+                self.task.jython_task_manager.get_task_result(task),
+                "Validation task failed")
 
         elif doc_op == DocLoading.Bucket.DocOps.DELETE:
             self.log.info("Performing 'delete' mutation over the docs")

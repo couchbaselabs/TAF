@@ -28,7 +28,7 @@ class CollectionBase(ClusterSetup):
         self.doc_ops = self.input.param("doc_ops", None)
         self.spec_name = self.input.param("bucket_spec",
                                           "single_bucket.default")
-        self.key_size = self.input.param("key_size", 8)
+        self.key_size = self.input.param("key_size", None)
         self.range_scan_timeout = self.input.param("range_scan_timeout",
                                                       None)
         self.expect_range_scan_exceptions = self.input.param(

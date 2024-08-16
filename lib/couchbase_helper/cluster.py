@@ -2,6 +2,7 @@ from copy import deepcopy
 
 import Jython_tasks.task as jython_tasks
 from Jython_tasks import sirius_task
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_constants import CbServer
 from Jython_tasks.task import MutateDocsFromSpecTask
 from capella_utils.dedicated import CapellaUtils
@@ -9,10 +10,9 @@ from constants.cloud_constants.capella_cluster import CloudCluster
 from couchbase_helper.documentgenerator import doc_generator, \
     SubdocDocumentGenerator
 from global_vars import logger
-from sdk_client3 import SDKClient, TransactionConfig
+from sdk_client3 import SDKClient
 from BucketLib.BucketOperations import BucketHelper
 from constants.sdk_constants.java_client import SDKConstants
-from sdk_utils.sdk_options import SDKOptions
 from sdk_utils.transaction_util import TransactionLoader
 from sirius_client_framework.sirius_constants import SiriusCodes
 
@@ -203,6 +203,23 @@ class ServerTasks(object):
                         ignore_exceptions=ignore_exceptions,
                         retry_exception=retry_exception,
                         iterations=iterations).create_sirius_task()
+                elif load_using == "sirius_java_sdk":
+                    _task = SiriusCouchbaseLoader(
+                        cluster.master.ip, cluster.master.port,
+                        generator, op_type,
+                        cluster.master.rest_username,
+                        cluster.master.rest_password,
+                        bucket, scope, collection,
+                        durability=durability,
+                        exp=exp,
+                        timeout=timeout_secs, time_unit=time_unit,
+                        process_concurrency=process_concurrency,
+                        suppress_error_table=suppress_error_table,
+                        track_failures=track_failures,
+                        iterations=iterations)
+                    ok, response = _task.create_doc_load_task()
+                    if not ok:
+                        raise Exception(f"Failure in Sirius Task: {response}")
                 else:
                     gen_start = int(generator.start)
                     gen_end = int(generator.end)
@@ -371,24 +388,42 @@ class ServerTasks(object):
                                  process_concurrency=4,
                                  scope=CbServer.default_scope,
                                  collection=CbServer.default_collection,
-                                 sdk_retry_strategy=None):
-        clients = list()
-        for _ in range(process_concurrency):
-            if cluster.sdk_client_pool is None:
-                clients.append(SDKClient(cluster, bucket))
-            else:
-                clients.append(None)
-        _task = jython_tasks.ContinuousDocOpsTask(
-            cluster, self.jython_task_manager, bucket, clients, generator,
-            scope=scope,
-            collection=collection,
-            op_type=op_type, exp=exp,
-            persist_to=persist_to, replicate_to=replicate_to,
-            durability=durability,
-            batch_size=batch_size,
-            timeout_secs=timeout_secs,
-            process_concurrency=process_concurrency,
-            sdk_retry_strategy=sdk_retry_strategy)
+                                 sdk_retry_strategy=None,
+                                 load_using="default_loader"):
+        _task = None
+        if load_using == "default_loader":
+            clients = list()
+            for _ in range(process_concurrency):
+                if cluster.sdk_client_pool is None:
+                    clients.append(SDKClient(cluster, bucket))
+                else:
+                    clients.append(None)
+            _task = jython_tasks.ContinuousDocOpsTask(
+                cluster, self.jython_task_manager, bucket, clients, generator,
+                scope=scope,
+                collection=collection,
+                op_type=op_type, exp=exp,
+                persist_to=persist_to, replicate_to=replicate_to,
+                durability=durability,
+                batch_size=batch_size,
+                timeout_secs=timeout_secs,
+                process_concurrency=process_concurrency,
+                sdk_retry_strategy=sdk_retry_strategy)
+        elif load_using == "sirius_java_sdk":
+            _task = SiriusCouchbaseLoader(
+                cluster.master.ip, cluster.master.port,
+                generator, op_type,
+                cluster.master.rest_username,
+                cluster.master.rest_password,
+                bucket, scope, collection,
+                durability=durability,
+                exp=exp,
+                timeout=timeout_secs,
+                process_concurrency=process_concurrency,
+                iterations=-1)
+            ok, response = _task.create_doc_load_task()
+            if not ok:
+                raise Exception(f"Failure in Sirius Task: {response}")
         self.jython_task_manager.add_new_task(_task)
         return _task
 
@@ -527,6 +562,17 @@ class ServerTasks(object):
                 sdk_retry_strategy=sdk_retry_strategy,
                 ignore_exceptions=ignore_exceptions,
                 retry_exception=retry_exception).create_sirius_task()
+        elif validate_using == "sirius_java_sdk":
+            _task = SiriusCouchbaseLoader(
+                cluster.master.ip, cluster.master.port,
+                generator, "read",
+                cluster.master.rest_username,
+                cluster.master.rest_password,
+                bucket, scope, collection,
+                timeout=timeout_secs,
+                process_concurrency=process_concurrency,
+                validate_docs=True)
+            _task.create_doc_load_task()
         else:
             clients = list()
             gen_start = int(generator.start)

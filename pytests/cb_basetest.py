@@ -105,7 +105,7 @@ class CouchbaseBaseTest(unittest.TestCase):
 
         # Doc specific params
         self.doc_ops = self.input.param("doc_ops", None)
-        self.key = self.input.param("key", "test_docs")
+        self.key = self.input.param("key", "docs")
         self.key_size = self.input.param("key_size", 8)
         self.doc_size = self.input.param("doc_size", 256)
         self.sub_doc_size = self.input.param("sub_doc_size", 10)
@@ -217,6 +217,10 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.task = ServerTasks(self.task_manager)
         self.node_utils = NodeUtils(self.task_manager)
         # End of library object creation
+        if self.load_docs_using == "sirius_java_sdk":
+            if not SiriusSetup.is_sirius_online(SiriusSetup.sirius_url):
+                raise Exception("Sirius offline!")
+            SiriusSetup.reset_java_loader_tasks(self.thread_to_use)
 
         # Variable for initializing the current (start of test) timestamp
         self.start_timestamp = datetime.now()

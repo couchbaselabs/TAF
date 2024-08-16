@@ -463,7 +463,8 @@ class DocLoaderUtils(object):
         # Fetch doc_size to use for doc_loading
         doc_size = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.DOC_SIZE, 256)
-        doc_key_size = input_spec["doc_crud"].get(MetaCrudParams.DocCrud.DOC_KEY_SIZE, 8)
+        doc_key_size = input_spec["doc_crud"].get(
+            MetaCrudParams.DocCrud.DOC_KEY_SIZE, len(doc_key)+8)
         # Fetch randomize_value to use for doc_loading
         randomize_value = input_spec["doc_crud"].get(
             MetaCrudParams.DocCrud.RANDOMIZE_VALUE, False)

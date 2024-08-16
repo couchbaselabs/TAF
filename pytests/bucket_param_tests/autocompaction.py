@@ -27,7 +27,7 @@ class AutoCompactionTests(CollectionBase):
         self.gen_load = doc_generator(self.key, 0, self.num_items,
                                       doc_size=self.doc_size,
                                       doc_type=self.doc_type)
-        self.gen_update = doc_generator(self.key, 0, (self.num_items/2),
+        self.gen_update = doc_generator(self.key, 0, int(self.num_items/2),
                                         doc_size=self.doc_size,
                                         doc_type=self.doc_type,
                                         mutation_type="update")
@@ -651,7 +651,8 @@ class AutoCompactionTests(CollectionBase):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             batch_size=10,
-            process_concurrency=4)
+            process_concurrency=4,
+            load_using=self.load_docs_using)
 
         self.log.info("Wait for bucket compaction to start")
         while compaction_monitor_task.status != "RUNNING":

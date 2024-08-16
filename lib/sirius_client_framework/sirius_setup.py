@@ -24,9 +24,9 @@ class SiriusSetup(object):
                 response = requests.get(url=url + "/check-online")
                 if response.status_code == 200:
                     return True
-                sleep(20)
             except Exception as e:
                 print(str(e))
+                sleep(5)
         return False
 
 
@@ -51,7 +51,7 @@ class SiriusSetup(object):
 
     @staticmethod
     def start_golang_loader(taf_path, port=4000):
-        fp = open("logs/sirius.log", "a")
+        fp = open("logs/sirius_build.log", "w")
 
         print("Building sirius")
         cmd = ["/bin/sh", "-c",
@@ -62,7 +62,7 @@ class SiriusSetup(object):
         fp.close()
 
         print(f"Starting Sirius client on port '{port}'")
-        fp = open("logs/sirius.log", "a")
+        fp = open("logs/sirius_run.log", "w")
         cmd = [f"{taf_path}/sirius/sirius", "-port", port]
         SiriusSetup.__running_process = Popen(cmd, stdout=fp, stderr=fp)
 
@@ -74,6 +74,15 @@ class SiriusSetup(object):
             os.kill(pid, SIGTERM)
             SiriusSetup.__running_process.communicate()
         SiriusSetup.__running_process = None
+
+    @staticmethod
+    def reset_java_loader_tasks(workers=10):
+        url = f"{SiriusSetup.sirius_url}/reset_task_manager"
+        data = '{"num_workers":%s}' % workers
+        response = requests.post(
+            url, data,
+            headers={'Content-Type': 'application/json', 'Connection': 'close'})
+        return response.ok
 
     def __init__(self):
         pass
@@ -136,7 +145,7 @@ class SiriusSetup(object):
 
     @classmethod
     def stop_sirius_docker(cls):
-        fp = open("logs/sirius.log", "a")
+        fp = open("logs/sirius_run.log", "a")
         cmd = ["/bin/sh", "-c", "cd sirius ; make down"]
         process = Popen(cmd, stdout=fp, stderr=fp)
         process.communicate()

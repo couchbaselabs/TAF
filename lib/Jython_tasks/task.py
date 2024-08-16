@@ -18,6 +18,7 @@ from collections import OrderedDict
 from couchbase.exceptions import CouchbaseException
 
 from Jython_tasks import sirius_task
+from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from cb_constants.ClusterRun import ClusterRun
 from cb_server_rest_util.index.index_api import IndexRestAPI
@@ -5132,40 +5133,27 @@ class MutateDocsFromSpecTask(Task):
             for task in execute_tasks:
                 op_type = "cont_" + task.op_type \
                     if cont_load else task.op_type
+
+                if self.load_using == "default_loader":
+                    doc_gen_start = task.generator._doc_gen.start
+                    doc_gen_end = task.generator._doc_gen.end
+                else:
+                    doc_gen_start = task.generator.start
+                    doc_gen_end = task.generator.end
+
                 try:
                     self.task_manager.get_task_result(task)
-                    if self.load_using == "default_loader":
-                        self.log.debug("Items loaded in task %s are %s"
-                                       % (task.thread_name, task.docs_loaded))
-                        i = 0
-                        while task.docs_loaded < (task.generator._doc_gen.end -
-                                                  task.generator._doc_gen.start) \
-                                and i < 60:
-                            sleep(1, "Bug in java futures task. "
-                                     "Items loaded in task %s: %s"
-                                  % (task.thread_name, task.docs_loaded),
-                                  log_type="infra")
-                            i += 1
                 except Exception as e:
                     self.test_log.error(e)
                 finally:
-                    if self.load_using != "default_loader":
-                        bucket = task.bucket
-                        scope = task.database_information.scope
-                        collection = task.database_information.collection
-                        doc_gen_start = task.operation_config.start
-                        doc_gen_end = task.operation_config.end
-                    else:
-                        bucket = task.bucket
-                        scope = task.scope
-                        collection = task.collection
-                        self.loader_spec[
-                            bucket]["scopes"][
-                            scope]["collections"][
-                            collection][
-                            op_type]["success"].update(task.success)
-                        doc_gen_start = task.generator._doc_gen.start
-                        doc_gen_end = task.generator._doc_gen.end
+                    bucket = task.bucket
+                    scope = task.scope
+                    collection = task.collection
+                    self.loader_spec[
+                        bucket]["scopes"][
+                        scope]["collections"][
+                        collection][
+                        op_type]["success"].update(task.success)
                     self.loader_spec[
                         bucket]["scopes"][
                         scope]["collections"][
@@ -5260,6 +5248,20 @@ class MutateDocsFromSpecTask(Task):
                         "skip_read_success_results"],
                     iterations=iterations)
                 self.load_gen_tasks.append(load_task)
+        elif self.load_using == "sirius_java_sdk":
+            load_task = SiriusCouchbaseLoader(
+                self.cluster.master.ip, self.cluster.master.port,
+                op_data["doc_gen"], op_type,
+                self.cluster.master.rest_username,
+                self.cluster.master.rest_password,
+                bucket, scope_name, col_name,
+                durability=op_data["durability_level"],
+                exp=op_data["doc_ttl"],
+                timeout=op_data["sdk_timeout"],
+                process_concurrency=self.process_concurrency,
+                iterations=iterations)
+            load_task.create_doc_load_task()
+            self.load_gen_tasks.append(load_task)
         elif self.load_using == "sirius_go_sdk":
             load_task = sirius_task.LoadCouchbaseDocs(
                 self.task_manager, self.cluster, CbServer.use_https,
@@ -7444,7 +7446,7 @@ class MonitorBucketCompaction(Task):
                 break
 
             status, self.progress = \
-                self.__get_compaction_progress(rest.cluster_tasks()[0])
+                self.__get_compaction_progress(rest.cluster_tasks()[1])
             if status is True:
                 self.status = "RUNNING"
                 self.test_log.info("Compaction started for %s"

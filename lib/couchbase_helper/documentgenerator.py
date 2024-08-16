@@ -15,7 +15,7 @@ letters = ascii_uppercase + ascii_lowercase + digits
 
 
 def doc_generator(key, start, end,
-                  key_size=8, mix_key_size=False,
+                  key_size=None, mix_key_size=False,
                   doc_size=256, doc_type="json",
                   target_vbucket=None, vbuckets=1024,
                   mutation_type="ADD", mutate=0,
@@ -31,6 +31,8 @@ def doc_generator(key, start, end,
                     "body": ""}
     doc_size -= len(str(template_obj))
 
+    if key_size is None:
+        key_size = len(key) + 8
     if target_vbucket:
         return DocumentGeneratorForTargetVbucket(
             key, template_obj,
