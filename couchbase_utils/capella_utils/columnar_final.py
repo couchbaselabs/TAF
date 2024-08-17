@@ -352,7 +352,7 @@ class ColumnarUtils:
 
         if not support_package:
             support_package = {
-                "key": "Developer Pro",
+                "key": "developerPro",
                 "timezone": "PT"
             }
 
@@ -382,6 +382,14 @@ class ColumnarUtils:
             tenant.user, tenant.pwd)
         if not instance_config:
             instance_config = self.generate_instance_configuration()
+
+        resp = columnar_api.get_deployment_options(
+            tenant.id, instance_config["provider"])
+        if resp.status_code != 200:
+            raise Exception(str(resp.content))
+        deployment_options = resp.json()
+        instance_config["cidr"] = deployment_options["suggestedCidr"]
+
         resp = columnar_api.create_columnar_instance(
             tenant.id, tenant.project_id, instance_config)
         instance_id = None
