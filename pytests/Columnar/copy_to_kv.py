@@ -870,7 +870,8 @@ class CopyToKv(ColumnarBaseTest):
             time.sleep(30)
             for j in range(5):
                 statement = "select * from {0} limit 1".format(datasets[i].full_name)
-                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                status, metrics, errors, result, _, _ \
+                    = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                    statement)
                 country_name = ((result[0])[CBASHelper.unformat_name(datasets[i].name)]["country"]).replace("&amp;",
                                                                                                             "")
@@ -880,11 +881,11 @@ class CopyToKv(ColumnarBaseTest):
                 remote_statement = "select * from {0} where country = \"{1}\"".format(
                     remote_dataset.full_name, str(country_name))
 
-                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                    remote_statement)
                 length_of_city_array_from_remote = len((result[0][remote_dataset.name])['city'])
 
-                status, metrics, errors, result2, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                status, metrics, errors, result2, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                     query_statement)
                 length_of_city_array_from_dataset = result2[0]["city"]
                 if length_of_city_array_from_dataset != length_of_city_array_from_remote:
@@ -1040,12 +1041,12 @@ class CopyToKv(ColumnarBaseTest):
                                  " where a.avg_rating > 0.4 and b.avg_rating > 0.4").format(
                 (unique_pairs[i][0]).full_name, (unique_pairs[i][1]).full_name
             )
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+            status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                dataset_statement)
             if not self.cbas_util.wait_for_ingestion_complete(self.cluster, remote_dataset.full_name, result[0]['$1']):
                 results.append("False")
             remote_statement = "select count(*) from {}".format(remote_dataset.full_name)
-            status, metrics, errors, result1, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+            status, metrics, errors, result1, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                 remote_statement)
 
             if result[0]['$1'] != result1[0]['$1']:
