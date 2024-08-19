@@ -40,16 +40,34 @@ class GetAppService(GetCluster):
                 self.fail("!!!...App Svc didn't deploy within 30mins...!!!")
         self.log.info("Successfully deployed App Svc.")
 
+        self.capellaAPI_v2 = CapellaAPI(
+            "https://" + self.url, "", "", self.user, self.passwd)
+        # If an app endpoint already exists, don't bother creating another one
+        res = self.capellaAPI_v2.get_sgw_databases(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.app_service_id)
+        if res.status_code != 200:
+            self.log.error("Error: {}".format(res.content))
+            self.tearDown()
+            self.fail("!!!...Listing App Endpoints Failed...!!!")
+        appEndpoints = res.json()["data"]
+        if len(appEndpoints):
+            self.appEndpointName = appEndpoints[0]["data"]["name"]
+            self.log.info("The App Endpoint: {} is already present inside "
+                          "the App Service.".format(self.appEndpointName))
+            return
+
         # Create a bucket for the App endpoint to reside in
         res = self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
-            "bucketForAppEndpoint", "magma", 1024, "seqno", "none", 1, True)
+            "bucketForAppEndpoint", "couchbase", "magma", 1024, "seqno",
+            "none", 1, False, 0)
         if res.status_code == 429:
             self.handle_rate_limit(res.headers["Retry-After"])
             res = self.capellaAPI.cluster_ops_apis.create_bucket(
                 self.organisation_id, self.project_id, self.cluster_id,
-                "bucketForAppEndpoint", "magma", 1024, "seqno", "none", 1,
-                True)
+                "bucketForAppEndpoint", "couchbase", "magma", 1024, "seqno",
+                "none", 1, False, 0)
         if res.status_code != 201:
             self.log.error("Error : {}".format(res.content))
             self.tearDown()
@@ -59,9 +77,6 @@ class GetAppService(GetCluster):
         # self.buckets.append(self.bucket_id)
 
         # Create an App Endpoint
-        self.capellaAPI_v2 = CapellaAPI(
-            "https://" + self.url, "", "", self.user, self.passwd)
-        self.appEndpointName = "test_vipul"
         res = self.capellaAPI_v2.create_sgw_database(
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id, {
@@ -85,6 +100,7 @@ class GetAppService(GetCluster):
             self.tearDown()
             self.fail("!!!...App Endpoint creation Failed...!!!")
         self.log.info("App Endpoint created successfully.")
+        self.appEndpointName = "test_vipul"
 
         # Resume App Endpoint
         res = self.capellaAPI_v2.resume_sgw_database(
