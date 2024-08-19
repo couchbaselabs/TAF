@@ -337,10 +337,10 @@ class StandaloneCollection(ColumnarBaseTest):
         character_with_space = string.ascii_letters + string.digits + ' '
 
         # Generate an initial large random string
-        random_string = ''.join(random.choices(character_with_space, k=100000))
+        random_string = ''.join(random.choices(character_with_space, k=3200))
 
         # Fill the document with random data
-        for _ in range(size_bytes // 100000):  # To approximate the size
+        for _ in range(size_bytes // 3200):  # To approximate the size
             field = ''.join(random.choices(characters, k=5))
             large_doc[field] = random_string
 
@@ -380,7 +380,7 @@ class StandaloneCollection(ColumnarBaseTest):
         results = []
         datasets = self.cbas_util.get_all_dataset_objs()
         self.log.info("Creating doc, this may take several minutes")
-        doc_with_size = self.generate_large_document(self.doc_size)
+        doc_with_size = [self.generate_large_document(self.doc_size)]
         for dataset in datasets:
             self.cbas_util.insert_into_standalone_collection(self.cluster, dataset.name, document=doc_with_size,
                                                              database_name=dataset.database_name,
