@@ -2,6 +2,7 @@
 import base64
 import json
 import urllib
+import urllib.parse
 
 import socket
 import time
@@ -3767,7 +3768,7 @@ class RestConnection(newRC):
                          "blob_storage_access_key_id".format(self.ip)
         status, _, _ = self._http_request(
             url_access_key, 'PUT',
-            urllib.urlencode({'value': aws_access_key}), headers=headers)
+            urllib.parse.urlencode({'value': aws_access_key}), headers=headers)
         if not status:
             return False
 
@@ -3776,7 +3777,7 @@ class RestConnection(newRC):
                          "blob_storage_secret_access_key".format(self.ip)
         status, _, _ = self._http_request(
             url_secret_key, 'PUT',
-            urllib.urlencode({'value': aws_secret_key}), headers=headers)
+            urllib.parse.urlencode({'value': aws_secret_key}), headers=headers)
         if not status:
             return False
 
@@ -3787,7 +3788,7 @@ class RestConnection(newRC):
                 'blobStorageBucket': aws_bucket_name,
                 'blobStorageScheme': 's3'}
         status, _, _ = self._http_request(
-            url, 'POST', urllib.urlencode(data), headers=headers)
+            url, 'POST', urllib.parse.urlencode(data), headers=headers)
         if not status:
             return False
         return True

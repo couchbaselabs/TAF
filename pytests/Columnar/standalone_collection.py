@@ -173,7 +173,8 @@ class StandaloneCollection(ColumnarBaseTest):
         for i in range(0, no_of_collection):
             dataset_name = self.cbas_util.generate_name()
             cmd = "Create Dataset {} Primary Key({})".format(dataset_name, key)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, cmd)
+            status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, cmd)
             if not self.cbas_util.validate_error_in_response(status, errors, expected_error):
                 self.fail("Able to create collection with duplicate keys")
 
@@ -430,8 +431,8 @@ class StandaloneCollection(ColumnarBaseTest):
                                                         subquery=subquery_execute)
 
             # verify the data
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                               subquery_execute)
+            status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, subquery_execute)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, remote_dataset.full_name)
             if len(result) != doc_count_in_dataset:
                 self.fail("Document count mismatch in {}".format(dataset.full_name))
@@ -675,7 +676,7 @@ class StandaloneCollection(ColumnarBaseTest):
                 self.fail("Some documents are missing")
             else:
                 statement = "Select * from {}".format(dataset.full_name)
-                status, metrics, errors, results, _ = self.cbas_util.execute_statement_on_cbas_util(
+                status, metrics, errors, results, _, _ = self.cbas_util.execute_statement_on_cbas_util(
                     self.cluster, statement)
                 if status == "success":
                     for dicts in data_to_add:

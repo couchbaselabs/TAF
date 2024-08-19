@@ -86,7 +86,7 @@ class CBASBaseTest(BaseTestCase):
         """
         start = 0
         end = self.nodes_init[0]
-        cluster = self.cb_clusters[self.cb_clusters.keys()[0]]
+        cluster = self.cb_clusters[list(self.cb_clusters.keys())[0]]
         # Instead of cluster.servers , use cluster.nodes_in_cluster
         cluster.servers = self.servers[start:end]
         if "cbas" in cluster.master.services:

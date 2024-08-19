@@ -141,7 +141,7 @@ class S3LinksDatasets(ColumnarBaseTest):
         dataset = random.choice(datasets)
         query = ("select * from {} where level_no=1 and folder_no=1 limit "
                  "1").format(dataset.full_name)
-        status, metrics, errors, results, _ = \
+        status, metrics, errors, results, _, _ = \
             self.cbas_util.execute_statement_on_cbas_util(
                 self.cluster, query, timeout=300, analytics_timeout=300)
         if not ("level_no" in results[0][dataset.name] and

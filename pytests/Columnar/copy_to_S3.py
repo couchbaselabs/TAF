@@ -545,7 +545,7 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and dataset {1}".format(
@@ -607,7 +607,7 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and remote dataset {1}".format(
@@ -652,7 +652,7 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(external_datasets)):
             path = "copy_dataset_" + str(i)
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster,
                                                                                 external_datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
@@ -719,7 +719,7 @@ class CopyToS3(ColumnarBaseTest):
             path = "copy_dataset_" + str(i)
 
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result1, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result1, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
 
             if 1000 != result1[0]['$1']:
                 self.log.error("Document count mismatch in S3 dataset {0}".format(
@@ -788,8 +788,9 @@ class CopyToS3(ColumnarBaseTest):
             path = "copy_dataset_" + str(i)
             for j in range(5):
                 statement = "select * from {0} limit 1".format(datasets[i].full_name)
-                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                                   statement)
+                status, metrics, errors, result, _, _ \
+                    = self.cbas_util.execute_statement_on_cbas_util(
+                    self.cluster, statement)
                 country_name = (result[0])[CBASHelper.unformat_name(datasets[i].name)]["country"]
                 if isinstance(country_name, int):
                     statement = "select count(*) from {0} where country = {1}".format(datasets[i].full_name,
@@ -797,8 +798,9 @@ class CopyToS3(ColumnarBaseTest):
                     dynamic_statement = "select count(*) from {0} where copy_dataset = \"{1}\" and country = {2}".format(
                         dataset_obj_int.full_name, path, country_name
                     )
-                    status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                                       dynamic_statement)
+                    status, metrics, errors, result, _, _ \
+                        = self.cbas_util.execute_statement_on_cbas_util(
+                        self.cluster, dynamic_statement)
                     result_val = result[0]['$1']
                 else:
                     statement = "select count(*) from {0} where country = \"{1}\"".format(datasets[i].full_name,
@@ -806,11 +808,13 @@ class CopyToS3(ColumnarBaseTest):
                     dynamic_statement = "select count(*) from {0} where copy_dataset = \"{1}\" and country = \"{2}\"".format(
                         dataset_obj_string.full_name, path, str(country_name)
                     )
-                    status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                                       dynamic_statement)
+                    status, metrics, errors, result, _, _ \
+                        = self.cbas_util.execute_statement_on_cbas_util(
+                        self.cluster, dynamic_statement)
                     result_val = result[0]['$1']
-                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                                   statement)
+                status, metrics, errors, result, _, _ \
+                    = self.cbas_util.execute_statement_on_cbas_util(
+                    self.cluster, statement)
                 dataset_result = result[0]['$1']
                 if dataset_result != result_val:
                     self.fail("Document Count Mismatch")
@@ -874,7 +878,9 @@ class CopyToS3(ColumnarBaseTest):
                 if not obj.endswith('.gzip'):
                     self.fail("Not all files are gzip")
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster,
                                                                                 datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
@@ -942,14 +948,16 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             no_of_files_at_path = [x for x in objects_in_s3 if x.startswith(path)]
-            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster,
-                                                                                datasets[i].full_name)
+            doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(
+                self.cluster, datasets[i].full_name)
             if len(no_of_files_at_path) < math.ceil(doc_count_in_dataset / max_object_per_file):
-                self.fail("Number of files expected: {0}, actual: {1}".format(math.ceil(doc_count_in_dataset /
-                                                                                        max_object_per_file),
-                                                                              len(no_of_files_at_path)))
+                self.fail("Number of files expected: {0}, actual: {1}".format(
+                    math.ceil(doc_count_in_dataset / max_object_per_file),
+                    len(no_of_files_at_path)))
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and remote dataset {1}".format(
                     dataset_obj.full_name, datasets[i].full_name
@@ -1011,7 +1019,9 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and dataset {1}".format(
@@ -1041,7 +1051,9 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i) + "_2"
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and dataset {1}".format(
@@ -1124,7 +1136,9 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and dataset {1}".format(
@@ -1184,10 +1198,12 @@ class CopyToS3(ColumnarBaseTest):
                                                                                           "Dominican Republic")
             dynamic_copy_result = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name,
                                                                                                  path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                               statement_dataset)
-            status, metrics, errors, result1, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
-                                                                                                dynamic_copy_result)
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, statement_dataset)
+            status, metrics, errors, result1, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(
+                self.cluster, dynamic_copy_result)
 
             if result[0]['$1'] != result1[0]['$1']:
                 self.log.error("Document count mismatch in S3 dataset {0} and remote dataset {1}".format(
@@ -1285,7 +1301,8 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and dataset {1}".format(
@@ -1384,7 +1401,8 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             statement = "select count(*) from {0} where copy_dataset = \"{1}\"".format(dataset_obj.full_name, path)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(self.cluster, statement)
             doc_count_in_dataset = self.cbas_util.get_num_items_in_cbas_dataset(self.cluster, datasets[i].full_name)
             if result[0]['$1'] != doc_count_in_dataset:
                 self.log.error("Document count mismatch in S3 dataset {0} and dataset {1}".format(
@@ -1592,7 +1610,8 @@ class CopyToS3(ColumnarBaseTest):
         for i in range(len(datasets)):
             path = "copy_dataset_" + str(i)
             statement = "select country, count(city) as cnt from {0} group by country;".format(datasets[i].full_name)
-            status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+            status, metrics, errors, result, _, _ \
+                = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                statement)
             get_city_count_per_country = [x for x in result if x['cnt'] > 1]
             for j in range(2):
@@ -1610,9 +1629,9 @@ class CopyToS3(ColumnarBaseTest):
 
                 statement = "select count(*) from {0} where country = \"{1}\"".format(datasets[i], country_name)
                 statement2 = dynamic_statement.format(dataset_obj.full_name, path, country_name)
-                status, metrics, errors, result1, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                status, metrics, errors, result1, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                     statement)
-                status, metrics, errors, result2, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                status, metrics, errors, result2, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                     statement2)
                 if result1[0]['$1'] != result2[0]['$1']:
                     self.log.error("Not all doc are copied for country {}".format(country_name))
@@ -1761,7 +1780,7 @@ class CopyToS3(ColumnarBaseTest):
             path = "copy_dataset_" + str(i)
             for j in range(5):
                 statement = "select * from {0} limit 1".format(datasets[i].full_name)
-                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                    statement)
                 country_name = ((result[0])[CBASHelper.unformat_name(datasets[i].name)]["country"]).replace("&amp;", "")
                 query_statement = "SELECT ARRAY_LENGTH(ARRAY_AGG(city)) as city FROM {0} where country = \"{1}\"".format(
@@ -1769,11 +1788,11 @@ class CopyToS3(ColumnarBaseTest):
                 dynamic_statement = "select * from {0} where copy_dataset = \"{1}\" and country = \"{2}\"".format(
                     dataset_obj_string.full_name, path, str(country_name))
 
-                status, metrics, errors, result, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                    dynamic_statement)
                 length_of_city_array_from_s3 = len((result[0][dataset_obj_string.name])['city'])
 
-                status, metrics, errors, result2, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
+                status, metrics, errors, result2, _, _ = self.cbas_util.execute_statement_on_cbas_util(self.cluster,
                                                                                                     query_statement)
 
                 length_of_city_array_from_dataset = result2[0]["city"]
