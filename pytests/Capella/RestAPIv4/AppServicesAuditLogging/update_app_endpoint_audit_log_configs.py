@@ -1,29 +1,20 @@
 """
-Created on April 24, 2024
+Created on August 06, 2024
 
-@author: Created using cbRAT cbFile by Vipul Bhardwaj
+@author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
-from pytests.Capella.RestAPIv4.Clusters.get_clusters import GetCluster
+from pytests.Capella.RestAPIv4.AppServicesAuditLogging.\
+    get_app_endpoint_audit_log_configs import GetAuditLogConfig
 
 
-class PutBucketStorageMigration(GetCluster):
+class PutAuditLogConfig(GetAuditLogConfig):
 
-    def setUp(self, nomenclature="BucketMigration_Get"):
-        GetCluster.setUp(self, nomenclature)
-
-        for bucket in range(4):
-            res = self.capellaAPI.cluster_ops_apis.create_bucket(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.prefix + "bucket_" + str(bucket), "couchbase",
-                "couchstore", 1024, "seqno", "none", 1, False, 0)
-            if res.status_code != 201:
-                self.tearDown()
-                self.fail("!!!..Bucket creation failed...!!!")
-            self.buckets.append(self.prefix + "bucket_" + str(bucket))
+    def setUp(self, nomenclature="AppServicesAuditLogging_PUT"):
+        GetAuditLogConfig.setUp(self, nomenclature)
 
     def tearDown(self):
-        super(PutBucketStorageMigration, self).tearDown()
+        super(PutAuditLogConfig, self).tearDown()
 
     def test_api_path(self):
         testcases = [
@@ -31,8 +22,7 @@ class PutBucketStorageMigration(GetCluster):
                 "description": "Send call with valid path params"
             }, {
                 "description": "Replace api version in URI",
-                "url": "/v3/organizations/{}/projects/{}/clusters/{}"
-                       "/bucketStorageMigration",
+                "url": "/v3/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/auditLog",
                 "expected_status_code": 404,
                 "expected_error": {
                     "errorType": "RouteNotFound",
@@ -40,14 +30,12 @@ class PutBucketStorageMigration(GetCluster):
                 }
             }, {
                 "description": "Replace the last path param name in URI",
-                "url": "/v4/organizations/{}/projects/{}/clusters/{}"
-                       "/bucketStorageMigratio",
+                "url": "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/auditLo",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
                 "description": "Add an invalid segment to the URI",
-                "url": "/v4/organizations/{}/projects/{}/clusters/{}"
-                       "/bucketStorageMigration/bucketStorageMigratio",
+                "url": "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/appEndpoints/{}/auditLog/auditLo",
                 "expected_status_code": 404,
                 "expected_error": "404 page not found"
             }, {
@@ -95,6 +83,36 @@ class PutBucketStorageMigration(GetCluster):
                                "request due to something that is perceived to "
                                "be a client error."
                 }
+            }, {
+                "description": "Call API with non-hex appServiceId",
+                "invalid_appServiceId": self.replace_last_character(
+                    self.app_service_id, non_hex=True),
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
+            }, {
+                "description": "Call API with non-hex AppEndpointName",
+                "invalid_AppEndpointName": self.replace_last_character(
+                    self.appEndpointName, non_hex=True),
+                "expected_status_code": 400,
+                "expected_error": {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and all "
+                            "the required params are present in the request "
+                            "body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is perceived to "
+                               "be a client error."
+                }
             }
         ]
 
@@ -104,9 +122,11 @@ class PutBucketStorageMigration(GetCluster):
             organization = self.organisation_id
             project = self.project_id
             cluster = self.cluster_id
+            appService = self.app_service_id
+            appEndpointName = self.appEndpointName
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.bucket_migration_endpoint = \
+                self.capellaAPI.cluster_ops_apis.audit_log_endpoint = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
@@ -114,20 +134,22 @@ class PutBucketStorageMigration(GetCluster):
                 project = testcase["invalid_projectId"]
             elif "invalid_clusterId" in testcase:
                 cluster = testcase["invalid_clusterId"]
+            elif "invalid_appServiceId" in testcase:
+                appService = testcase["invalid_appServiceId"]
+            elif "invalid_AppEndpointName" in testcase:
+                appEndpointName = testcase["invalid_AppEndpointName"]
 
-            result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
-                organization, project, cluster,
-                self.buckets)
+            result = (self.capellaAPI.cluster_ops_apis
+                      .update_app_svc_audit_log_config(
+                        organization, project, cluster, appService,
+                        appEndpointName))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
-                    organization, project, cluster,
-                    self.buckets)
-
-            self.capellaAPI.cluster_ops_apis.bucket_migration_endpoint = \
-                ("/v4/organizations/{}/projects/{}/clusters/{}"
-                 "/bucketStorageMigration")
-
+                result = self.capellaAPI.cluster_ops_apis.update_audit_log(
+                    organization, project, cluster, appService, appEndpointName)
+            self.capellaAPI.cluster_ops_apis.audit_log_endpoint = \
+                ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
+                 "appEndpoints/{}/auditLog")
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:
@@ -137,16 +159,16 @@ class PutBucketStorageMigration(GetCluster):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
         resp = self.capellaAPI.org_ops_apis.create_project(
             self.organisation_id, "Auth_Project")
         if resp.status_code == 201:
             other_project_id = resp.json()["id"]
         else:
             self.fail("Error while creating project")
+
+        self.api_keys.update(
+            self.create_api_keys_for_all_combinations_of_roles(
+                [self.project_id]))
 
         testcases = []
         for role in self.api_keys:
@@ -155,7 +177,8 @@ class PutBucketStorageMigration(GetCluster):
                 "token": self.api_keys[role]["token"],
             }
             if not any(element in [
-                 "organizationOwner", "projectOwner", "projectManager"
+                 "organizationOwner", "projectOwner",
+                 "projectManager"
             ] for element in self.api_keys[role]["roles"]):
                 testcase["expected_error"] = {
                     "code": 1002,
@@ -175,18 +198,17 @@ class PutBucketStorageMigration(GetCluster):
             header = dict()
             self.auth_test_setup(testcase, failures, header,
                                  self.project_id, other_project_id)
-            result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
-                self.organisation_id, self.project_id, self.cluster_id,
-                self.buckets,
+            result = self.capellaAPI.cluster_ops_apis.update_audit_log(
+                self.organisation_id, self.project_id, self.cluster_id, 
+                self.app_service_id, self.appEndpointName,
                 header)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
-                    self.organisation_id, self.project_id, self.cluster_id,
-                    self.buckets,
+                result = self.capellaAPI.cluster_ops_apis.update_audit_log(
+                    self.organisation_id, self.project_id, self.cluster_id, 
+                    self.app_service_id, self.appEndpointName,
                     header)
-
-            self.validate_testcase(result, [202, 422], testcase, failures)
+            self.validate_testcase(result, [202], testcase, failures)
 
         self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -204,33 +226,45 @@ class PutBucketStorageMigration(GetCluster):
     def test_query_parameters(self):
         self.log.debug(
                 "Correct Params - organization ID: {}, project ID: {}, "
-                "cluster ID: {}".format(
-                    self.organisation_id, self.project_id, self.cluster_id))
+                "cluster ID: {}, appService ID: {}, "
+                "appEndpointName: {}".format(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.app_service_id, self.appEndpointName))
         testcases = 0
         failures = list()
         for combination in self.create_path_combinations(
-                self.organisation_id, self.project_id, self.cluster_id):
+                self.organisation_id, self.project_id, self.cluster_id,
+                self.app_service_id, self.appEndpointName):
             testcases += 1
             testcase = {
                 "description": "organization ID: {}, project ID: {}, "
-                "cluster ID: {}"
+                "cluster ID: {}, appService ID: {}, "
+                "appEndpointName: {}"
                 .format(str(combination[0]), str(combination[1]),
-                        str(combination[2])),
+                        str(combination[2]), str(combination[3]),
+                        str(combination[4])),
                 "organizationID": combination[0],
                 "projectID": combination[1],
-                "clusterID": combination[2]
+                "clusterID": combination[2],
+                "appServiceID": combination[3],
+                "appEndpointName": combination[4]
             }
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
-                    combination[2] == self.cluster_id):
-                if combination[0] == "" or combination[1] == "":
+                    combination[2] == self.cluster_id and
+                    combination[3] == self.app_service_id and
+                    combination[4] == self.appEndpointName):
+                if (combination[0] == "" or combination[1] == "" or
+                        combination[2] == "" or combination[3] == "" or
+                        combination[4] == ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
-                elif combination[2] == "" or any(variable in [
+                elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
                              type(combination[0]), type(combination[1]), 
-                             type(combination[2])]):
+                             type(combination[2]), type(combination[3]), 
+                             type(combination[4])]):
                     testcase["expected_status_code"] = 400
                     testcase["expected_error"] = {
                         "code": 1000,
@@ -253,6 +287,17 @@ class PutBucketStorageMigration(GetCluster):
                         "httpStatusCode": 403,
                         "message": "Access Denied."
                     }
+                elif combination[3] != self.bucket_id and not \
+                        isinstance(combination[3], type(None)):
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 400,
+                        "hint": "Please review your request and ensure that "
+                                "all required parameters are correctly "
+                                "provided.",
+                        "message": "BucketID is invalid.",
+                        "httpStatusCode": 400
+                    }
                 elif combination[2] != self.cluster_id:
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = {
@@ -263,7 +308,7 @@ class PutBucketStorageMigration(GetCluster):
                         "message": "Unable to fetch the cluster details.",
                         "httpStatusCode": 404
                     }
-                else:
+                elif combination[1] != self.project_id:
                     testcase["expected_status_code"] = 422
                     testcase["expected_error"] = {
                         "code": 4031,
@@ -274,25 +319,44 @@ class PutBucketStorageMigration(GetCluster):
                                    "the cluster {}."
                         .format(combination[1], combination[2])
                     }
+                elif isinstance(combination[3], type(None)):
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = {
+                        "code": 6008,
+                        "hint": "The requested bucket does not exist. Please "
+                                "ensure that the correct bucket ID is "
+                                "provided.",
+                        "httpStatusCode": 404,
+                        "message": "Unable to find the specified bucket."
+                    }
+                else:
+                    testcase["expected_status_code"] = 404
+                    testcase["expected_error"] = {
+                        "code": 11002,
+                        "hint": "The requested scope details could not be "
+                                "found or fetched. Please ensure that the "
+                                "correct scope name is provided.",
+                        "httpStatusCode": 404,
+                        "message": "Scope Not Found"
+                    }
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
                 kwarg = {testcase["param"]: testcase["paramValue"]}
             else:
                 kwarg = dict()
 
-            result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
+            result = self.capellaAPI.cluster_ops_apis.update_audit_log(
                 testcase["organizationID"], testcase["projectID"],
-                testcase["clusterID"],
-                self.buckets,
+                testcase["clusterID"], testcase["appServiceID"],
+                testcase["appEndpointName"],
                 **kwarg)
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
-                result = self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration(
+                result = self.capellaAPI.cluster_ops_apis.update_audit_log(
                     testcase["organizationID"], testcase["projectID"],
-                    testcase["clusterID"],
-                    self.buckets,
+                    testcase["clusterID"], testcase["appServiceID"],
+                    testcase["appEndpointName"],
                     **kwarg)
-
             self.validate_testcase(result, [202], testcase, failures)
 
         if failures:
@@ -304,18 +368,18 @@ class PutBucketStorageMigration(GetCluster):
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration, (
+            self.capellaAPI.cluster_ops_apis.update_audit_log, (
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.buckets
+                self.app_service_id, self.appEndpointName
             )
         ]]
         self.throttle_test(api_func_list)
 
     def test_multiple_requests_using_API_keys_with_diff_role(self):
         api_func_list = [[
-            self.capellaAPI.cluster_ops_apis.update_bucket_storage_migration, (
+            self.capellaAPI.cluster_ops_apis.update_audit_log, (
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.buckets
+                self.app_service_id, self.appEndpointName
             )
         ]]
         self.throttle_test(api_func_list, True, self.project_id)

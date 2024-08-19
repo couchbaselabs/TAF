@@ -232,7 +232,7 @@ class CreateBucket(GetBucket):
 
             if self.validate_testcase(result, [201], testcase, failures):
                 self.buckets.append(result.json()['id'])
-            if len(self.buckets) >= 30:
+            if len(self.buckets) >= 10:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
@@ -381,7 +381,7 @@ class CreateBucket(GetBucket):
 
             if self.validate_testcase(result, [201], testcase, failures):
                 self.buckets.append(result.json()['id'])
-            if len(self.buckets) >= 30:
+            if len(self.buckets) >= 10:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,
@@ -645,7 +645,7 @@ class CreateBucket(GetBucket):
 
             if self.validate_testcase(result, [201], testcase, failures):
                 self.buckets.append(result.json()['id'])
-            if len(self.buckets) >= 30:
+            if len(self.buckets) >= 10:
                 self.log.warning("Bucket limit for cluster reached, flushing "
                                  "all current buckets.")
                 self.delete_buckets(self.organisation_id, self.project_id,

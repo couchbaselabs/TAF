@@ -304,6 +304,8 @@ class APIBase(CouchbaseBaseTest):
                 }
             }
         }
+        # Error for future use, to handle CIDR clash for columnar instances :
+        # "Unable to process request. The CIDR provided"
         if TestInputSingleton.input.capella.get("instance_id", None):
             self.analyticsCluster_id = TestInputSingleton.input.capella.get(
                 "instance_id")
@@ -327,6 +329,9 @@ class APIBase(CouchbaseBaseTest):
             self.analyticsCluster_id = res.json()["id"]
             self.capella["instance_id"] = self.analyticsCluster_id
         self.instances = {self.analyticsCluster_id}
+
+        # Holder for buckets which would be created in the future.
+        self.buckets = list()
 
         # Templates for app service configurations across CSPs and Computes.
         self.app_svc_templates = {

@@ -53,7 +53,7 @@ class GetBucket(GetCluster):
             self.fail("!!!..Bucket creation failed...!!!")
         self.bucket_id = res.json()['id']
         self.expected_res['id'] = self.bucket_id
-        self.buckets = [self.bucket_id]
+        self.buckets.append(self.bucket_id)
 
         # Wait for App Service to be Healthy before deleting the bucket.
         self.log.info("Polling the APP SVC: {}".format(self.app_service_id))
