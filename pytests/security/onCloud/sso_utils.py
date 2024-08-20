@@ -363,6 +363,16 @@ class SsoUtils:
         resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
         return resp
 
+    def update_realm_name(self, tenant_id, realm_id, realm_name):
+        """
+        Updates realm default team
+        """
+        url = "{0}/v2/organizations/{1}/realms/{2}".format("https://" + self.url, tenant_id,
+                                                           realm_id)
+        body = {"name": realm_name}
+        resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
+        return resp
+
     def delete_realm(self, tenant_id, realm_id, keep_users=False):
         """
         Deletes a realm
@@ -431,4 +441,23 @@ class SsoUtils:
         """
         url = "{0}/v2/organizations/{1}/teams/{2}".format("https://" + self.url, tenant_id, team_id)
         resp = self.capella_api.do_internal_request(url, method="DELETE")
+        return resp
+
+    def list_users(self, realm_id):
+        """
+        List SSO users of the given realm id
+        """
+        url = "{0}/v2/auth/sso/{1}/users?page=1&perPage=1&sortBy=name&sortDirection=asc".format("https://" + self.url, realm_id)
+        resp = self.capella_api.do_internal_request(url, method="GET")
+        return resp
+
+    def delete_users(self, realm_id, user_list):
+        """
+        Delete users of the given realm id
+        """
+        url = "{0}/v2/auth/sso/{1}/users".format("https://" + self.url, realm_id)
+        body = {
+            "userId": user_list
+        }
+        resp = self.capella_api.do_internal_request(url, method="DELETE", params=json.dumps(body))
         return resp
