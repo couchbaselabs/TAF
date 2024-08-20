@@ -175,7 +175,8 @@ class StandaloneCollection(ColumnarBaseTest):
             cmd = "Create Dataset {} Primary Key({})".format(dataset_name, key)
             status, metrics, errors, result, _, _ = self.cbas_util.execute_statement_on_cbas_util(
                 self.cluster, cmd)
-            if not self.cbas_util.validate_error_in_response(status, errors, expected_error):
+            if not self.cbas_util.validate_error_and_warning_in_response(
+                    status, errors, expected_error):
                 self.fail("Able to create collection with duplicate keys")
 
     def test_create_drop_standalone_collection(self):
