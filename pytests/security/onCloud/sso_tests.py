@@ -747,3 +747,49 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         self.assertTrue(validate_realm_name('a' * 24))
         # Edge case: valid realm ID at the edge of the character set
         self.assertTrue(validate_realm_name('realm-_.'))
+
+    def test_sso_users(self):
+        """
+        Tests:
+        1) List SSO users endpoint
+        2) Delete SSO users endpoint
+        """
+        self.log.info("Test to check the functionalities of listing and deleting users")
+        self.create_realm(self.team_id)
+
+        realms_resp = self.sso.list_realms(self.tenant_id)
+        data = json.loads(realms_resp.content)
+        realm = data['data'][0]['data']
+        realm_id = realm['id']
+
+        # User with invalid realm id
+        self.log.info("List users with invalid realm id")
+        resp = self.sso.list_users(self.invalid_id)
+        self.validate_response(resp, 4)
+
+        # user without sufficient permissions
+        self.log.info("List users without sufficient permissions")
+        resp = self.unauth_z_sso.list_users(realm_id)
+        self.validate_response(resp, 2)
+
+        # User with valid realm id
+        self.log.info("List users with valid realm id")
+        resp = self.sso.list_users(realm_id)
+        self.validate_response(resp, 2)
+
+        user_list = []
+
+        # User with invalid realm id
+        self.log.info("Delete users with invalid realm id")
+        resp = self.sso.delete_users(self.invalid_id, user_list)
+        self.validate_response(resp, 4)
+
+        # user without sufficient permissions
+        self.log.info("Delete users without sufficient permissions")
+        resp = self.unauth_z_sso.delete_users(realm_id, user_list)
+        self.validate_response(resp, 4)
+
+        # User with valid realm id and body
+        self.log.info("Delete users with valid realm id")
+        resp = self.sso.delete_users(realm_id, user_list)
+        self.validate_response(resp, 2)
