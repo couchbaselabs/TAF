@@ -248,15 +248,12 @@ class CreateBucketTests(ClusterSetup):
             if num_vb is not None:
                 init_params[Bucket.numVBuckets] = num_vb
 
-            status, content, _ = bucket_helper._http_request(
-                api, params=urllib.urlencode(init_params),
-                method=bucket_helper.POST)
+            status, content = bucket_helper.create_bucket(init_params)
             self.assertFalse(status, "Bucket created successfully")
             self.log.critical("%s" % content)
-            return json.loads(content)["errors"]
+            return content["errors"]
 
-        bucket_helper = BucketHelper(self.cluster.master)
-        api = '{0}{1}'.format(bucket_helper.baseUrl, 'pools/default/buckets')
+        bucket_helper = BucketRestApi(self.cluster.master)
         init_params = {
             Bucket.name: "default",
             Bucket.ramQuotaMB: 256,
@@ -272,12 +269,10 @@ class CreateBucketTests(ClusterSetup):
         # error = create_bucket(width=1)
         # error = create_bucket(weight=1)
         # error = create_bucket(weight=0)
-
         error = create_bucket(num_vb=CbServer.total_vbuckets)
-        self.assertEqual(
-            error["numVBuckets"],
-            "Support for variable number of vbuckets is not enabled",
-            "Invalid error message")
+        exp_err = "Support for variable number of vbuckets is not enabled"
+        self.assertEqual(error["numVBuckets"], exp_err,
+                         "Invalid error message")
 
     def test_create_collections_validate_history_stat(self):
         """

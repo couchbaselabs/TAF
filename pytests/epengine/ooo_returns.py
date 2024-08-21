@@ -52,7 +52,6 @@ class OutOfOrderReturns(ClusterSetup):
                 cb_stat.vbucket_list(self.bucket.name, vbucket_type="active")
             self.node_data[node]["replica_vbs"] = \
                 cb_stat.vbucket_list(self.bucket.name, vbucket_type="replica")
-            cb_stat.disconnect()
 
         # Print cluster & bucket stats
         self.cluster_util.print_cluster_stats(self.cluster)
@@ -109,8 +108,7 @@ class OutOfOrderReturns(ClusterSetup):
             replicate_to=self.replicate_to,
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
-            batch_size=10, process_concurrency=1,
-            load_using=self.load_docs_using)
+            batch_size=10, process_concurrency=1)
         self.task_manager.get_task_result(dgm_task_init)
 
         dgm_gen = doc_generator(self.key, initial_load , initial_load + 1,
@@ -122,13 +120,17 @@ class OutOfOrderReturns(ClusterSetup):
             durability=self.durability_level,
             timeout_secs=self.sdk_timeout,
             batch_size=10, process_concurrency=4,
-            active_resident_threshold=self.active_resident_threshold,
-            load_using=self.load_docs_using)
+            active_resident_threshold=self.active_resident_threshold)
         self.task_manager.get_task_result(dgm_task)
         self.num_items = dgm_task.doc_index
 
-        client = self.cluster.sdk_client_pool.get_client_for_bucket(
-            self.bucket, self.scope_name, self.collection_name)
+        if self.cluster.sdk_client_pool:
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                self.bucket, self.scope_name, self.collection_name)
+        else:
+            client = SDKClient(self.cluster, self.bucket,
+                               scope=self.scope_name,
+                               collection=self.collection_name)
 
         # Fetch evicted doc keys
         dgm_gen = doc_generator(self.key, 0, self.num_items, doc_size=1)
@@ -190,6 +192,9 @@ class OutOfOrderReturns(ClusterSetup):
             read_thread.join()
             ooo_op_thread.join()
 
+            if not self.cluster.sdk_client_pool:
+                client.close()
+
             self.validate_test_failure()
 
     def test_with_sync_write(self):
@@ -200,8 +205,14 @@ class OutOfOrderReturns(ClusterSetup):
             self.key, 0, 2,
             target_vbucket=self.node_data[cluster_node][
                 "%s_vbs" % target_vb_type])
-        client = self.cluster.sdk_client_pool.get_client_for_bucket(
-            self.bucket, self.scope_name, self.collection_name)
+
+        if self.cluster.sdk_client_pool:
+            client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                self.bucket, self.scope_name, self.collection_name)
+        else:
+            client = SDKClient(self.cluster, self.bucket,
+                               scope=self.scope_name,
+                               collection=self.collection_name)
 
         key_1, value_1 = doc_gen.next()
         key_2, value_2 = doc_gen.next()
@@ -235,6 +246,9 @@ class OutOfOrderReturns(ClusterSetup):
         async_op.join()
         cb_err.revert(simulate_error, self.bucket.name)
         sync_op.join()
+
+        if not self.cluster.sdk_client_pool:
+            client.close()
 
         self.validate_test_failure()
 
@@ -328,8 +342,13 @@ class OutOfOrderReturns(ClusterSetup):
 
     def test_parallel_transactions(self):
         trans_obj = Transaction()
-        self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
-            self.bucket, self.scope_name, self.collection_name)
+        if self.cluster.sdk_client_pool:
+            self.client = self.cluster.sdk_client_pool.get_client_for_bucket(
+                self.bucket, self.scope_name, self.collection_name)
+        else:
+            self.client = SDKClient(self.cluster, self.bucket,
+                                    scope=self.scope_name,
+                                    collection=self.collection_name)
         # Create transaction options
         trans_options = SDKClient.get_transaction_options(
             TransactionConfig(durability=self.durability_level,
@@ -367,5 +386,8 @@ class OutOfOrderReturns(ClusterSetup):
         t2.start()
         t1.join()
         t2.join()
+
+        if not self.cluster.sdk_client_pool:
+            self.client.close()
 
         self.validate_test_failure()
