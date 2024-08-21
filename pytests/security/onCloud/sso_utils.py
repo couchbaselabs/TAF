@@ -365,7 +365,7 @@ class SsoUtils:
 
     def update_realm_name(self, tenant_id, realm_id, realm_name):
         """
-        Updates realm default team
+        Updates realm name
         """
         url = "{0}/v2/organizations/{1}/realms/{2}".format("https://" + self.url, tenant_id,
                                                            realm_id)

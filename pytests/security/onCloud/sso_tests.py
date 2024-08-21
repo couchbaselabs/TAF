@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import re
 import json
 import base64
 import random
@@ -68,6 +69,27 @@ dSy803llcD39heRATXhhsC57xLiRATQMqToi0O2DWbSf5g+tNEVtgf/4r8F5a0bH
 7gGbg6AL4h8RBnFW6KGuNBaNog45FO003l2F0PvK8ZxPFxkxWEsRXg/Y17hTL0PS
 tnJTX7zMIfz13aSjcZ3YD7WJsK7rBakRKLXcYz/49i4kN27rID4=
 """
+
+
+def validate_realm_name(realm_name):
+    """
+    Validates a realm ID according to the following rules:
+    - Length must be between 3 and 24 characters.
+    - Allowed characters: 0-9, A-Z, a-z, -, _, .
+    - Symbols (-, _, .) cannot be repeated consecutively (e.g., __, --, .. are not allowed).
+
+    Returns:
+    - True if valid, False otherwise.
+    """
+    if not (3 <= len(realm_name) <= 24):
+        return False
+
+    if re.search(r'[^0-9A-Za-z-_.]', realm_name):
+        return False
+
+    if re.search(r'(--|__|\.\.)', realm_name):
+        return False
+    return True
 
 
 class SsoTests(SecurityBase):
@@ -654,3 +676,74 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         self.log.info("Delete team without sufficient permissions")
         resp = self.unauth_z_sso.delete_team(self.tenant_id, team_id)
         self.validate_response(resp, 4)
+
+    def test_update_realm_name(self):
+        """
+        Tests:
+        1) Allow customers to customize realm ids
+        2) Validation of Custom Realm IDs: Implement checks to prevent security vulnerabilities due to malicious or
+           inappropriate realm names. Support 0-9A-Za-z-_. minimum 3 maximum 24. Symbols cannot be repeated next to each
+           other(__ -- are not allowed)
+        """
+        # Create realm
+        self.create_realm(self.team_id)
+
+        resp = self.sso.list_realms(self.tenant_id)
+        realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+
+        new_realm_name = "new_realm_name"
+
+        # User with valid tenantId and realm ID
+        self.log.info("Update realm with valid tenantId and realm ID")
+        resp = self.sso.update_realm_name(self.tenant_id, realm_id, new_realm_name)
+        self.validate_response(resp, 2)
+
+        # user with insufficient permissions
+        self.log.info("Update realm with invalid tenant Id")
+        resp = self.sso.update_realm_name(self.invalid_id, realm_id, new_realm_name)
+        self.validate_response(resp, 4)
+
+        # User with invalid realm id
+        self.log.info("Update realm with invalid realm Id")
+        resp = self.sso.update_realm_name(self.tenant_id, self.invalid_id, new_realm_name)
+        self.validate_response(resp, 4)
+
+        # User with no realm name
+        self.log.info("Update realm with no team Id")
+        resp = self.sso.update_realm_name(self.tenant_id, realm_id, "")
+        self.validate_response(resp, 4)
+
+        # user without sufficient permissions
+        self.log.info("Update realm without sufficient permissions")
+        resp = self.unauth_z_sso.update_realm_name(self.tenant_id, realm_id, new_realm_name)
+        self.validate_response(resp, 4)
+
+        # test_valid_realm_id
+        self.assertTrue(validate_realm_name('validRealm_1'))
+
+        # test_realm_id_too_short
+        self.assertFalse(validate_realm_name('ab'))
+
+        # test_realm_id_too_long
+        self.assertFalse(validate_realm_name('a' * 25))
+
+        # test_realm_id_with_invalid_characters
+        self.assertFalse(validate_realm_name('invalid#realm'))
+        self.assertFalse(validate_realm_name('invalid@realm'))
+        self.assertFalse(validate_realm_name('invalid realm'))
+
+        # test_realm_id_with_consecutive_symbols
+        self.assertFalse(validate_realm_name('invalid--realm'))
+        self.assertFalse(validate_realm_name('invalid__realm'))
+        self.assertFalse(validate_realm_name('invalid..realm'))
+
+        # test_valid_symbols_and_length(self):
+        self.assertTrue(validate_realm_name('user_123-abc.xyz'))
+
+        # test_realm_id_edge_cases(self):
+        # Edge case: exactly 3 characters
+        self.assertTrue(validate_realm_name('abc'))
+        # Edge case: exactly 24 characters
+        self.assertTrue(validate_realm_name('a' * 24))
+        # Edge case: valid realm ID at the edge of the character set
+        self.assertTrue(validate_realm_name('realm-_.'))
