@@ -39,13 +39,13 @@ class PostNetworkPeerCommand(GetCluster):
             }, {
                 "description": "Replace the last path param name in URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/networkPeers/networkPeerComman",
-                "expected_status_code": 404,
-                "expected_error": "404 page not found"
+                "expected_status_code": 405,
+                "expected_error": ""
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/networkPeers/networkPeerCommand/networkPeerComman",
-                "expected_status_code": 405,
-                "expected_error": ""
+                "expected_status_code": 404,
+                "expected_error": "404 page not found"
             }, {
                 "description": "Call API with non-hex organizationId",
                 "invalid_organizationId": self.replace_last_character(
@@ -131,7 +131,7 @@ class PostNetworkPeerCommand(GetCluster):
             self.capellaAPI.cluster_ops_apis.vnet_peering_cmd_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters/{}/networkPeers/networkPeerCommand"
 
-            if self.validate_testcase(result, [202], testcase, failures):
+            if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Fetched azure peering CLI command successfully")
 
         if failures:
@@ -199,7 +199,7 @@ class PostNetworkPeerCommand(GetCluster):
                     self.expected_res["vnetPeeringServicePrincipal"],
                     header)
 
-            if self.validate_testcase(result, [202], testcase, failures):
+            if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Fetched azure peering CLI command successfully")
 
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -237,12 +237,10 @@ class PostNetworkPeerCommand(GetCluster):
             if not (combination[0] == self.organisation_id and
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id):
-                if (combination[0] == "" or combination[1] == ""):
+                if (combination[0] == "" or combination[1] == "" or
+                    combination[2] == ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
-                elif combination[2] == "":
-                    testcase["expected_status_code"] = 405
-                    testcase["expected_error"] = ""
                 elif any(variable in [
                     int, bool, float, list, tuple, set, type(None)] for
                          variable in [
@@ -318,7 +316,7 @@ class PostNetworkPeerCommand(GetCluster):
                     self.expected_res["vnetPeeringServicePrincipal"],
                     **kwarg)
 
-            if self.validate_testcase(result, [202], testcase, failures):
+            if self.validate_testcase(result, [200], testcase, failures):
                 self.log.debug("Fetched azure peering CLI command successfully")
 
         if failures:
