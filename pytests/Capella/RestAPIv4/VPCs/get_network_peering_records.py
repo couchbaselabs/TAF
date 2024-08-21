@@ -11,6 +11,28 @@ class GetNetworkPeers(GetCluster):
 
     def setUp(self, nomenclature="VPCs_GET"):
         GetCluster.setUp(self, nomenclature)
+        self.provider_type = (self.input.param("providerType", "aws"))
+        vpc_config = {
+            "providerId": None
+        }
+        if self.provider_type == "aws":
+            config = {
+                "accountId": str(self.input.param("accountId", None)),
+                "cidr": str(self.input.param("vpcCidr", "10.222.0.0/23")),
+                "region": "us-east-1",
+                "vpcId": str(self.input.param("vpcId", None))
+            }
+            vpc_config["AWSConfig"] = config
+        elif self.provider_type == "azure":
+            config = {
+                "azureTenantId": str(self.input.param("azureTenantId", None)),
+                "cidr": str(self.input.param("vpcCidr", "10.1.0.0/16")),
+                "resourceGroup": str(self.input.param("azureResourceGroup", None)),
+                "subscriptionId": str(self.input.param("azureSubscriptionId", None)),
+                "vnetId": str(self.input.param("vpcId", None)),
+            }
+            vpc_config["AzureConfig"] = config
+
         self.expected_res = {
             "audit": {
                 "createdAt": None,
@@ -20,17 +42,9 @@ class GetNetworkPeers(GetCluster):
                 "version": None
             },
             "commands": None,
-            "name": self.prefix + "AWS" + nomenclature,
-            "providerType": "aws",
-            "providerConfig": {
-                "AWSConfig": {
-                     "accountId": str(self.input.param("accountId", None)),
-                    "cidr": "10.222.0.0/23",
-                    "region": "us-east-1",
-                    "vpcId": str(self.input.param("vpcId", None))
-                },
-                "providerId": None
-            },
+            "name": self.prefix + self.provider_type + nomenclature,
+            "providerType": self.provider_type,
+            "providerConfig": vpc_config,
             "status": {
                 "reasoning": "",
                 "state": "complete"
@@ -44,7 +58,7 @@ class GetNetworkPeers(GetCluster):
             res = self.capellaAPI.cluster_ops_apis.create_network_peer(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["name"],
-                self.expected_res["providerConfig"]["AWSConfig"],
+                config,
                 self.expected_res["providerType"]
             )
             if res.status_code != 201:
