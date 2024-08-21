@@ -1006,13 +1006,13 @@ class ColumnarRBAC(ColumnarBaseTest):
                 elif priv == "scope_drop":
                     database_name = random.choice(databases)
                     scope_name = self.generate_random_entity_name(type="scope")
-                    scope_name = "{}.{}".format(database_name, scope_name)
-                    scope_name = self.columnar_cbas_utils.format_name(scope_name)
                     result = self.columnar_cbas_utils.create_dataverse(self.cluster,
                                                                        scope_name,
                                                                        database_name)
                     if not result:
                         self.fail("Failed to create scope {}".format(scope_name))
+                    scope_name = "{}.{}".format(database_name, scope_name)
+                    scope_name = self.columnar_cbas_utils.format_name(scope_name)
                     execute_cmd = drop_scope_cmd.format(scope_name)
 
                 resp = self.columnarAPIrole.execute_statement(self.tenant.id,
@@ -1053,17 +1053,21 @@ class ColumnarRBAC(ColumnarBaseTest):
                                                user["password"])
             for priv in self.scope_privileges:
                 if priv == "scope_create":
+                    database_name = random.choice(databases)
                     scope_name = self.generate_random_entity_name(type="scope")
+                    scope_name = "{}.{}".format(database_name, scope_name)
                     scope_name = self.columnar_cbas_utils.format_name(scope_name)
                     execute_cmd = create_scope_cmd.format(scope_name)
                 elif priv == "scope_drop":
+                    database_name = random.choice(databases)
                     scope_name = self.generate_random_entity_name(type="scope")
-                    scope_name = self.columnar_cbas_utils.format_name(scope_name)
                     result = self.columnar_cbas_utils.create_dataverse(self.cluster,
                                                                        scope_name,
-                                                                       res)
+                                                                       database_name)
                     if not result:
                         self.fail("Failed to create scope {}".format(scope_name))
+                    scope_name = "{}.{}".format(database_name, scope_name)
+                    scope_name = self.columnar_cbas_utils.format_name(scope_name)
                     execute_cmd = drop_scope_cmd.format(scope_name)
                 resp = self.columnarAPIrole.execute_statement(self.tenant.id,
                                                               self.tenant.project_id,
