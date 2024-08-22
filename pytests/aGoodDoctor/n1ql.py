@@ -152,7 +152,7 @@ NimbusMQueriesParams = [{"conversationId":"str(random.randint(0,1000000)).zfill(
 
 HotelVectorIndexes = [
     # 'CREATE INDEX {}{} ON {}(`country`,`vector` VECTOR) {{"defer_build":true, {}}};',
-    'CREATE INDEX {index_name} ON {collection}(`country`,`vector` VECTOR) PARTITION BY hash((meta().`id`)) WITH {{"defer_build":true, "num_partition":8, {vector}}};',
+    'CREATE INDEX {index_name} ON {collection}(`country`,`vector` VECTOR) PARTITION BY hash((meta().`id`)) WITH {{"defer_build":true, "num_replica":1, "num_partition":8, {vector}}};',
     'CREATE INDEX {index_name} ON {collection}(`free_breakfast`,`type`,`free_parking`,array_count((`public_likes`)),`price`,`country`, vector VECTOR) PARTITION BY HASH (type) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
     'CREATE INDEX {index_name} ON {collection}(`free_breakfast`,`free_parking`,`country`,`city`, vector VECTOR)  PARTITION BY HASH (country) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
     'CREATE INDEX {index_name} ON {collection}(`country`, `city`,`price`,`name`, vector VECTOR)  PARTITION BY HASH (country, city) USING GSI WITH {{ "defer_build": true, "num_replica":1, "num_partition":8, {vector}}};',
@@ -169,7 +169,7 @@ HotelVectorQueries = [
     'SELECT COUNT(1) AS cnt FROM {collection} WHERE city LIKE "North%" ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
     'SELECT h.name,h.country,h.city,h.price FROM {collection} AS h WHERE h.price IS NOT NULL ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
     'SELECT * from {collection} where `name` is not null ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
-    'SELECT * from {collection} where city like \"San%\" ORDER BY ANN(vector, $vector, "{similarity", {nProbe}) limit 100',
+    'SELECT * from {collection} where city like \"San%\" ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) limit 100',
     'SELECT avg_rating, price, country, city from {collection} where `avg_rating`>4 and price<1000 and country=$country and city=$city ORDER BY ANN(vector, $vector, "{similarity}", {nProbe}) LIMIT 100'
     ]
 
