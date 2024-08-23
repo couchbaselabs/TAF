@@ -191,6 +191,10 @@ class DeleteNetworkPeers(GetNetworkPeers):
                     header)
 
             self.validate_testcase(result, [204, 404], testcase, failures)
+            if result.status_code == 204:
+                self.update_auth_with_api_token(self.curr_owner_key)
+                # Wait for cluster to be healthy.
+                self.wait_for_deployment()
 
         self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -309,6 +313,8 @@ class DeleteNetworkPeers(GetNetworkPeers):
                     **kwarg)
 
             self.validate_testcase(result, [204, 404], testcase, failures)
+            if result.status_code == 204:
+                self.wait_for_deployment()
 
         if failures:
             for fail in failures:

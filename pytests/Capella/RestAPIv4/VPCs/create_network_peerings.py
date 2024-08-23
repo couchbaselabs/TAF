@@ -12,6 +12,11 @@ class PostNetworkPeers(GetNetworkPeers):
 
     def setUp(self, nomenclature="VPCs_POST"):
         GetNetworkPeers.setUp(self, nomenclature)
+        self.vpc_config = None
+        if self.provider_type == "aws":
+            self.vpc_config = self.expected_res["providerConfig"]["AWSConfig"]
+        elif self.provider_type == "azure":
+            self.vpc_config = self.expected_res["providerConfig"]["AzureConfig"]
 
     def tearDown(self):
         super(PostNetworkPeers, self).tearDown()
@@ -106,14 +111,14 @@ class PostNetworkPeers(GetNetworkPeers):
             result = self.capellaAPI.cluster_ops_apis.create_network_peer(
                 organization, project, cluster,
                 self.expected_res["name"],
-                self.expected_res["providerConfig"]["AWSConfig"],
+                self.vpc_config,
                 self.expected_res["providerType"])
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.cluster_ops_apis.create_network_peer(
                     organization, project, cluster,
                     self.expected_res["name"],
-                    self.expected_res["providerConfig"]["AWSConfig"],
+                    self.vpc_config,
                     self.expected_res["providerType"])
 
             self.capellaAPI.cluster_ops_apis.vpc_endpoint = \
@@ -169,7 +174,7 @@ class PostNetworkPeers(GetNetworkPeers):
             result = self.capellaAPI.cluster_ops_apis.create_network_peer(
                 self.organisation_id, self.project_id, self.cluster_id,
                 self.expected_res["name"],
-                self.expected_res["providerConfig"]["AWSConfig"],
+                self.vpc_config,
                 self.expected_res["providerType"],
                 header)
             if result.status_code == 429:
@@ -177,7 +182,7 @@ class PostNetworkPeers(GetNetworkPeers):
                 result = self.capellaAPI.cluster_ops_apis.create_network_peer(
                     self.organisation_id, self.project_id, self.cluster_id,
                     self.expected_res["name"],
-                    self.expected_res["providerConfig"]["AWSConfig"],
+                    self.vpc_config,
                     self.expected_res["providerType"],
                     header)
 
@@ -282,7 +287,7 @@ class PostNetworkPeers(GetNetworkPeers):
                 testcase["organizationID"], testcase["projectID"],
                 testcase["clusterID"],
                 self.expected_res["name"],
-                self.expected_res["providerConfig"]["AWSConfig"],
+                self.vpc_config,
                 self.expected_res["providerType"],
                 **kwarg)
             if result.status_code == 429:
@@ -291,7 +296,7 @@ class PostNetworkPeers(GetNetworkPeers):
                     testcase["organizationID"], testcase["projectID"],
                     testcase["clusterID"],
                     self.expected_res["name"],
-                    self.expected_res["providerConfig"]["AWSConfig"],
+                    self.vpc_config,
                     self.expected_res["providerType"],
                     **kwarg)
 
