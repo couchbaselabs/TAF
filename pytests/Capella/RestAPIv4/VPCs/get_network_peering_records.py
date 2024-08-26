@@ -11,7 +11,10 @@ class GetNetworkPeers(GetCluster):
 
     def setUp(self, nomenclature="VPCs_GET"):
         GetCluster.setUp(self, nomenclature)
-        self.provider_type = (self.input.param("providerType", "aws"))
+        self.provider_type = str(self.input.param("providerType", "aws"))
+        if self.provider_type == "azure":
+            self.skipTest("!!!SKIPPING AZURE VNET PEERING TESTS!!!")
+
         vpc_config = {
             "providerId": None
         }
