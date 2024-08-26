@@ -4,6 +4,7 @@ Created on August 06, 2024
 @author: Created using cbRAT cbModule by Vipul Bhardwaj
 """
 
+import copy
 from pytests.Capella.RestAPIv4.AppServicesAuditLogging.\
     get_app_service_audit_log_states import (GetAuditLog)
 
@@ -110,7 +111,7 @@ class PutAuditLog(GetAuditLog):
             appService = self.app_service_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.audit_log_endpoint = \
+                self.capellaAPI.cluster_ops_apis.app_svc_audit_log_endpoint = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
@@ -129,10 +130,10 @@ class PutAuditLog(GetAuditLog):
                 result = (self.capellaAPI.cluster_ops_apis.
                           update_app_svc_audit_log_state(
                             organization, project, cluster, appService, True))
-            self.capellaAPI.cluster_ops_apis.audit_log_endpoint = \
+            self.capellaAPI.cluster_ops_apis.app_svc_audit_log_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
                  "auditLog")
-            self.validate_testcase(result, [202], testcase, failures)
+            self.validate_testcase(result, [204, 422], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -192,7 +193,7 @@ class PutAuditLog(GetAuditLog):
                             self.organisation_id, self.project_id, self.cluster_id,
                             self.app_service_id, True,
                             header))
-            self.validate_testcase(result, [202], testcase, failures)
+            self.validate_testcase(result, [204, 422], testcase, failures)
 
         self.update_auth_with_api_token(self.curr_owner_key)
         resp = self.capellaAPI.org_ops_apis.delete_project(
@@ -233,8 +234,20 @@ class PutAuditLog(GetAuditLog):
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id and
                     combination[3] == self.app_service_id):
-                if (combination[0] == "" or combination[1] == "" or
-                        combination[2] == "" or combination[3] == ""):
+                if combination[3] == "":
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 1000,
+                        "hint": "Check if you have provided a valid URL and "
+                                "all the required params are present in the "
+                                "request body.",
+                        "httpStatusCode": 400,
+                        "message": "The server cannot or will not process the "
+                                   "request due to something that is "
+                                   "perceived to be a client error."
+                    }
+                elif (combination[0] == "" or combination[1] == "" or
+                        combination[2] == ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
                 elif any(variable in [
@@ -286,14 +299,15 @@ class PutAuditLog(GetAuditLog):
                         .format(combination[1], combination[2])
                     }
                 else:
-                    testcase["expected_status_code"] = 404
+                    testcase["expected_status_code"] = 403
                     testcase["expected_error"] = {
-                        "code": 404,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "httpStatusCode": 404,
-                        "message": "Requested App Service was not found"
+                        "code": 1002,
+                        "hint": "Your access to the requested resource is "
+                                "denied. Please make sure you have the "
+                                "necessary permissions to access the "
+                                "resource.",
+                        "httpStatusCode": 403,
+                        "message": "Access Denied."
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:
@@ -313,7 +327,7 @@ class PutAuditLog(GetAuditLog):
                             testcase["organizationID"], testcase["projectID"],
                             testcase["clusterID"], testcase["appServiceID"],
                             True, **kwarg))
-            self.validate_testcase(result, [202], testcase, failures)
+            self.validate_testcase(result, [204, 422], testcase, failures)
 
         if failures:
             for fail in failures:
@@ -321,12 +335,59 @@ class PutAuditLog(GetAuditLog):
             self.fail("{} tests FAILED out of {} TOTAL tests"
                       .format(len(failures), testcases))
 
+    def test_payload(self):
+        testcases = list()
+        for key in self.expected_res:
+            values = [
+                "", "abc", 1, 1e1000, -1, 0, None,
+                self.generate_random_string(special_characters=False),
+                self.generate_random_string(5000, False)
+            ]
+            for val in values:
+                testcase = copy.deepcopy(self.expected_res)
+                testcase[key] = val
+                testcase["description"] = "Testing `{}` with val: {} of {}" \
+                    .format(key, val, type(val))
+                # Expected error conditions
+                testcase["expected_status_code"] = 400
+                testcase["expected_error"] = {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and "
+                            "all the required params are present in the "
+                            "request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is "
+                               "perceived to be a client error."
+                }
+                testcases.append(testcase)
+        failures = list()
+        for testcase in testcases:
+            self.log.info(testcase['description'])
+            res = (self.capellaAPI.cluster_ops_apis.
+                   update_app_svc_audit_log_state(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.app_service_id, testcase["auditEnabled"]))
+            if res.status_code == 429:
+                self.handle_rate_limit(res.headers["Retry-After"])
+                res = (self.capellaAPI.cluster_ops_apis.
+                       update_app_svc_audit_log_state(
+                        self.organisation_id, self.project_id, self.cluster_id,
+                        self.app_service_id, testcase["auditEnabled"]))
+            self.validate_testcase(res, [204], testcase, failures)
+
+        if failures:
+            for fail in failures:
+                self.log.warning(fail)
+            self.fail("{} tests FAILED out of {} TOTAL tests"
+                      .format(len(failures), len(testcases)))
+
     def test_multiple_requests_using_API_keys_with_same_role_which_has_access(
             self):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.update_app_svc_audit_log_state, (
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id
+                self.app_service_id, True
             )
         ]]
         self.throttle_test(api_func_list)
@@ -335,7 +396,7 @@ class PutAuditLog(GetAuditLog):
         api_func_list = [[
             self.capellaAPI.cluster_ops_apis.update_app_svc_audit_log_state, (
                 self.organisation_id, self.project_id, self.cluster_id,
-                self.app_service_id
+                self.app_service_id, True
             )
         ]]
         self.throttle_test(api_func_list, True, self.project_id)
