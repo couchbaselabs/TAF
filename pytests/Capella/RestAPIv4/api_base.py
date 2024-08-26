@@ -291,6 +291,22 @@ class APIBase(CouchbaseBaseTest):
         # Templates for instance configurations across CSPs and Computes
         self.instance_templates = {
             # TEMPLATES :
+            "AWS_singleNode": {
+                "nodes": self.input.param("nodes", 1),
+                "region": self.input.param("region", "us-east-1"),
+                "cloudProvider": "aws",
+                "compute": {
+                    "cpu": self.input.param("cpu", 4),
+                    "ram": self.input.param("ram", 16)
+                },
+                "support": {
+                    "plan": "developer pro",
+                    "timezone": "IST"
+                },
+                "availability": {
+                    "type": "single"
+                }
+            },
             "AWS_4v16_4node": {
                 "nodes": self.input.param("nodes", 4),
                 "region": self.input.param("region", "us-east-1"),
@@ -299,8 +315,12 @@ class APIBase(CouchbaseBaseTest):
                     "cpu": self.input.param("cpu", 4),
                     "ram": self.input.param("ram", 16)
                 },
+                "support": {
+                    "plan": "enterprise",
+                    "timezone": "IST"
+                },
                 "availability": {
-                    "type": self.input.param("availabilityType", "multi")
+                    "type": "multi"
                 }
             }
         }
@@ -311,17 +331,16 @@ class APIBase(CouchbaseBaseTest):
                 "instance_id")
         else:
             instance_template = self.input.param("instance_template",
-                                                 "AWS_4v16_4node")
+                                                 "AWS_singleNode")
             res = self.columnarAPI.create_analytics_cluster(
                 self.organisation_id, self.project_id,
                 self.prefix + instance_template,
                 self.instance_templates[instance_template]["cloudProvider"],
                 self.instance_templates[instance_template]["compute"],
                 self.instance_templates[instance_template]["region"],
-                self.instance_templates[instance_template]["nodes"], {
-                    "plan": "enterprise",
-                    "timezone": "ET"
-                }, self.instance_templates[instance_template]["availability"])
+                self.instance_templates[instance_template]["nodes"],
+                self.instance_templates[instance_template]["support"],
+                self.instance_templates[instance_template]["availability"])
             if res.status_code != 202:
                 self.log.error(res.content)
                 self.tearDown()
@@ -482,7 +501,6 @@ class APIBase(CouchbaseBaseTest):
     def handle_rate_limit(self, retry_after):
         self.log.warning("Rate Limit hit by the key: {}."
                          .format(self.curr_owner_key))
-        self.log.debug("Key needs to wait for {} seconds".format(retry_after))
         if self.curr_owner_key == self.org_owner_key1:
             self.org_owner_key1["blockTime"] = time.time()
             self.org_owner_key1["retryAfter"] = retry_after
@@ -491,7 +509,8 @@ class APIBase(CouchbaseBaseTest):
             timeDiff = time.time() - self.org_owner_key2["blockTime"]
             if timeDiff < self.org_owner_key2["retryAfter"]:
                 sleepTime = self.org_owner_key2["retryAfter"] - timeDiff
-                self.log.warning("...Sleeping for {} seconds".format(sleepTime))
+                self.log.debug("Key needs to wait for {} more seconds"
+                               .format(sleepTime))
                 time.sleep(sleepTime)
             self.curr_owner_key = self.org_owner_key2
         else:
@@ -502,7 +521,8 @@ class APIBase(CouchbaseBaseTest):
             timeDiff = time.time() - self.org_owner_key1["blockTime"]
             if timeDiff < self.org_owner_key1["retryAfter"]:
                 sleepTime = self.org_owner_key1["retryAfter"] - timeDiff
-                self.log.warning("...Sleeping for {} seconds".format(sleepTime))
+                self.log.debug("Key needs to wait for {} more seconds"
+                               .format(sleepTime))
                 time.sleep(sleepTime)
             self.curr_owner_key = self.org_owner_key1
 
