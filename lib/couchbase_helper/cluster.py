@@ -3,7 +3,7 @@ from copy import deepcopy
 import Jython_tasks.task as jython_tasks
 from Jython_tasks import sirius_task
 from Jython_tasks.java_loader_tasks import SiriusCouchbaseLoader
-from cb_constants import CbServer
+from cb_constants import CbServer, DocLoading
 from Jython_tasks.task import MutateDocsFromSpecTask
 from capella_utils.dedicated import CapellaUtils
 from constants.cloud_constants.capella_cluster import CloudCluster
@@ -563,15 +563,18 @@ class ServerTasks(object):
                 ignore_exceptions=ignore_exceptions,
                 retry_exception=retry_exception).create_sirius_task()
         elif validate_using == "sirius_java_sdk":
+            validate_deleted_docs = True \
+                if opt_type == DocLoading.Bucket.DocOps.DELETE else False
             _task = SiriusCouchbaseLoader(
                 cluster.master.ip, cluster.master.port,
-                generator, "read",
+                generator, DocLoading.Bucket.DocOps.READ,
                 cluster.master.rest_username,
                 cluster.master.rest_password,
                 bucket, scope, collection,
                 timeout=timeout_secs,
                 process_concurrency=process_concurrency,
-                validate_docs=True)
+                validate_docs=True,
+                validate_deleted_docs=validate_deleted_docs)
             _task.create_doc_load_task()
         else:
             clients = list()
