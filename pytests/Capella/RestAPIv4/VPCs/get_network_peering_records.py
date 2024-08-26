@@ -32,6 +32,15 @@ class GetNetworkPeers(GetCluster):
                 "vnetId": str(self.input.param("vpcId", None)),
             }
             vpc_config["AzureConfig"] = config
+        elif self.provider_type == "gcp":
+            config = {
+                "networkName": str(self.input.param("vpcId", None)),
+                "projectId": str(self.input.param("gcpProjectId", None)),
+                "serviceAccount": str(self.input.param("gcpServiceAccount",
+                                                       None)),
+                "cidr": str(self.input.param("vpcCidr", "10.1.0.0/24"))
+            }
+            vpc_config["GCPConfig"] = config
 
         self.expected_res = {
             "audit": {

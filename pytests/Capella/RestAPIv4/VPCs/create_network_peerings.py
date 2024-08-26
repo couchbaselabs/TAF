@@ -17,6 +17,8 @@ class PostNetworkPeers(GetNetworkPeers):
             self.vpc_config = self.expected_res["providerConfig"]["AWSConfig"]
         elif self.provider_type == "azure":
             self.vpc_config = self.expected_res["providerConfig"]["AzureConfig"]
+        elif self.provider_type == "gcp":
+            self.vpc_config = self.expected_res["providerConfig"]["GCPConfig"]
 
     def tearDown(self):
         super(PostNetworkPeers, self).tearDown()
