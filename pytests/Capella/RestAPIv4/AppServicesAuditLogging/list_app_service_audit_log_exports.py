@@ -57,16 +57,12 @@ class ListAuditLogExports(GetAuditLogExports):
             }, {
                 "description": "Add an invalid segment to the URI",
                 "url": "/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/auditLogExports/auditLogExport",
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "code": 3000,
+                    "hint": "Resource not Found.",
+                    "httpStatusCode": 404,
+                    "message": "Not Found."
                 }
             }, {
                 "description": "Call API with non-hex organizationId",
@@ -140,8 +136,8 @@ class ListAuditLogExports(GetAuditLogExports):
             appService = self.app_service_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.audit_log_exports_endpoint = \
-                    testcase["url"]
+                self.capellaAPI.cluster_ops_apis.\
+                    app_svc_audit_log_exports_endpoint = testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
             elif "invalid_projectId" in testcase:
@@ -159,7 +155,8 @@ class ListAuditLogExports(GetAuditLogExports):
                 result = (self.capellaAPI.cluster_ops_apis
                           .list_app_svc_audit_log_exports(
                             organization, project, cluster, appService))
-            self.capellaAPI.cluster_ops_apis.audit_log_exports_endpoint = \
+            self.capellaAPI.cluster_ops_apis.\
+                app_svc_audit_log_exports_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
                  "auditLogExports")
             self.validate_testcase(result, [200], testcase, failures)

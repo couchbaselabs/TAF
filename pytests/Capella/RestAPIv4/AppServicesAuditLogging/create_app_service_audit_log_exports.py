@@ -336,7 +336,6 @@ class PostAuditLogExports(GetAuditLogExports):
 
     def test_payload(self):
         testcases = list()
-        payload = dict()
         for key in self.expected_res:
             if key not in ["start", "end"]:
                 continue
@@ -351,9 +350,38 @@ class PostAuditLogExports(GetAuditLogExports):
                 testcase["description"] = "Testing `{}` with val: {} of {}" \
                     .format(key, val, type(val))
                 # Expected error conditions
+                # if isinstance(val, type(int)) or val == "":
+                testcase["expected_status_code"] = 400
+                testcase["expected_error"] = {
+                    "code": 1000,
+                    "hint": "Check if you have provided a valid URL and "
+                            "all the required params are present in the "
+                            "request body.",
+                    "httpStatusCode": 400,
+                    "message": "The server cannot or will not process the "
+                               "request due to something that is "
+                               "perceived to be a client error."
+                }
+                if isinstance(val, type(None)):
+                    testcase["expected_status_code"] = 422
+                    if key == "end":
+                        testcase["expected_error"] = {
+                            "code": 422,
+                            "hint": "Please review your request and ensure "
+                                    "that all required parameters are "
+                                    "correctly provided.",
+                            "httpStatusCode": 422,
+                            "message": "Audit Logging Export Request is too "
+                                       "old. Cannot request logs older than "
+                                       "30 days."
+                        }
+                    if key == "start":
+                        testcase["expected_error"]["message"] = \
+                            "Requested start time is after the end time."
                 testcases.append(testcase)
         failures = list()
         for testcase in testcases:
+            self.log.info(testcase['description'])
             res = (self.capellaAPI.cluster_ops_apis.
                    create_app_svc_audit_log_export(
                     self.organisation_id, self.project_id, self.cluster_id,

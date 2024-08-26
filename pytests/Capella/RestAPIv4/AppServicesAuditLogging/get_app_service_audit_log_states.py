@@ -112,7 +112,7 @@ class GetAuditLog(GetAppService):
             appService = self.app_service_id
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.audit_log_endpoint = \
+                self.capellaAPI.cluster_ops_apis.app_svc_audit_log_endpoint = \
                     testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
@@ -131,7 +131,7 @@ class GetAuditLog(GetAppService):
                 result = (self.capellaAPI.cluster_ops_apis.
                           fetch_app_svc_audit_log_state_info(
                             organization, project, cluster, appService))
-            self.capellaAPI.cluster_ops_apis.audit_log_endpoint = \
+            self.capellaAPI.cluster_ops_apis.app_svc_audit_log_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
                  "auditLog")
             self.validate_testcase(result, [200], testcase, failures)
@@ -236,8 +236,20 @@ class GetAuditLog(GetAppService):
                     combination[1] == self.project_id and
                     combination[2] == self.cluster_id and
                     combination[3] == self.app_service_id):
-                if (combination[0] == "" or combination[1] == "" or
-                        combination[2] == "" or combination[3] == ""):
+                if combination[3] == "":
+                    testcase["expected_status_code"] = 400
+                    testcase["expected_error"] = {
+                        "code": 1000,
+                        "hint": "Check if you have provided a valid URL and "
+                                "all the required params are present in the "
+                                "request body.",
+                        "httpStatusCode": 400,
+                        "message": "The server cannot or will not process the "
+                                   "request due to something that is "
+                                   "perceived to be a client error."
+                    }
+                elif (combination[0] == "" or combination[1] == "" or
+                        combination[2] == ""):
                     testcase["expected_status_code"] = 404
                     testcase["expected_error"] = "404 page not found"
                 elif any(variable in [
@@ -289,14 +301,15 @@ class GetAuditLog(GetAppService):
                         .format(combination[1], combination[2])
                     }
                 else:
-                    testcase["expected_status_code"] = 404
+                    testcase["expected_status_code"] = 403
                     testcase["expected_error"] = {
-                        "code": 404,
-                        "hint": "Please review your request and ensure that "
-                                "all required parameters are correctly "
-                                "provided.",
-                        "httpStatusCode": 404,
-                        "message": "Requested App Service was not found"
+                        "code": 1002,
+                        "hint": "Your access to the requested resource is "
+                                "denied. Please make sure you have the "
+                                "necessary permissions to access the "
+                                "resource.",
+                        "httpStatusCode": 403,
+                        "message": "Access Denied."
                     }
             self.log.info("Executing test: {}".format(testcase["description"]))
             if "param" in testcase:

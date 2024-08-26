@@ -7,13 +7,13 @@ Created on August 06, 2024
 from pytests.Capella.RestAPIv4.AppService.get_app_service import GetAppService
 
 
-class GetAuditLogEvents(GetAppService):
+class ListAuditLogEvents(GetAppService):
 
     def setUp(self, nomenclature="AppServicesAuditLogging_GET"):
         GetAppService.setUp(self, nomenclature)
 
     def tearDown(self):
-        super(GetAuditLogEvents, self).tearDown()
+        super(ListAuditLogEvents, self).tearDown()
 
     def test_api_path(self):
         testcases = [
@@ -125,8 +125,8 @@ class GetAuditLogEvents(GetAppService):
             appEndpointName = self.appEndpointName
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.audit_log_events_endpoint = \
-                    testcase["url"]
+                self.capellaAPI.cluster_ops_apis.\
+                    app_svc_audit_log_events_endpoint = testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
             elif "invalid_projectId" in testcase:
@@ -148,7 +148,8 @@ class GetAuditLogEvents(GetAppService):
                           list_app_svc_audit_log_events(
                             organization, project, cluster, appService,
                             appEndpointName))
-            self.capellaAPI.cluster_ops_apis.audit_log_events_endpoint = \
+            self.capellaAPI.cluster_ops_apis.\
+                app_svc_audit_log_events_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
                  "appEndpoints/{}/auditLogEvents")
             self.validate_testcase(result, [200], testcase, failures)

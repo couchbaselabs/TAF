@@ -42,7 +42,9 @@ class GetAppService(GetCluster):
 
         self.capellaAPI_v2 = CapellaAPI(
             "https://" + self.url, "", "", self.user, self.passwd)
+
         # If an app endpoint already exists, don't bother creating another one
+        self.log.debug("...Checking if an App Endpoint already exists...")
         res = self.capellaAPI_v2.get_sgw_databases(
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id)
@@ -53,11 +55,13 @@ class GetAppService(GetCluster):
         appEndpoints = res.json()["data"]
         if len(appEndpoints):
             self.appEndpointName = appEndpoints[0]["data"]["name"]
-            self.log.info("The App Endpoint: {} is already present inside "
+            self.log.info("The App Endpoint: {}, is already present inside "
                           "the App Service.".format(self.appEndpointName))
             return
 
         # Create a bucket for the App endpoint to reside in
+        self.log.debug("...Creating a bucket for the App Endpoint to be "
+                       "linked to...")
         res = self.capellaAPI.cluster_ops_apis.create_bucket(
             self.organisation_id, self.project_id, self.cluster_id,
             "bucketForAppEndpoint", "couchbase", "magma", 1024, "seqno",
@@ -77,6 +81,8 @@ class GetAppService(GetCluster):
         # self.buckets.append(self.bucket_id)
 
         # Create an App Endpoint
+        self.log.debug("...Creating a App Endpoint inside the App Service: "
+                       "{}...".format(self.app_service_id))
         res = self.capellaAPI_v2.create_sgw_database(
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id, {
@@ -103,6 +109,8 @@ class GetAppService(GetCluster):
         self.appEndpointName = "test_vipul"
 
         # Resume App Endpoint
+        self.log.debug("...Starting the App Endpoint: {}..."
+                       .format(self.appEndpointName))
         res = self.capellaAPI_v2.resume_sgw_database(
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id, self.appEndpointName)

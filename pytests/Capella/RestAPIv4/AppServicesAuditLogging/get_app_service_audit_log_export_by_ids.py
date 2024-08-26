@@ -14,23 +14,41 @@ class GetAuditLogExports(GetAppService):
         self.expected_res = {
             # Creation params.
             "start": self.get_utc_datetime(-30),
-            "end": self.get_utc_datetime(50),
+            "end": self.get_utc_datetime(0),
 
             # Response params.
-            "id": "to be changed after creation",
-            "download_id": None,
-            "download_expires": None,
-            "status": None,
-            "appServiceId": self.app_service_id,
-            "tenantId": self.organisation_id,
-            "clusterId": self.cluster_id,
-            "createdByUserID": None,
-            "upsertedByUserID": None,
-            "createdAt": None,
-            "upsertedAt": None,
-            "modifiedByUserID": None,
-            "modifiedAt": None,
-            "version": None
+            "data": {
+                "id": "to be changed after creation",
+                "start": self.get_utc_datetime(-30),
+                "end": self.get_utc_datetime(0),
+                "download_id": None,
+                "download_expires": None,
+                "status": None,
+                "appServiceId": self.app_service_id,
+                "tenantId": self.organisation_id,
+                "clusterId": self.cluster_id,
+                "createdByUserID": None,
+                "upsertedByUserID": None,
+                "createdAt": None,
+                "upsertedAt": None,
+                "modifiedByUserID": None,
+                "modifiedAt": None,
+                "version": None
+            },
+            "permissions": {
+                "create": {
+                    "accessible": None
+                },
+                "read": {
+                    "accessible": None
+                },
+                "update": {
+                    "accessible": None
+                },
+                "delete": {
+                    "accessible": None
+                }
+            }
         }
 
         self.log.info("...Creating AppSvc Audit Logging Export...")
@@ -38,15 +56,23 @@ class GetAuditLogExports(GetAppService):
             self.organisation_id, self.project_id, self.cluster_id,
             self.app_service_id, self.expected_res["start"],
             self.expected_res["end"])
+        if res.status_code == 429:
+            self.handle_rate_limit(res.headers["Retry-After"])
+            res = (self.capellaAPI.cluster_ops_apis.
+                   create_app_svc_audit_log_export(
+                    self.organisation_id, self.project_id, self.cluster_id,
+                    self.app_service_id, self.expected_res["start"],
+                    self.expected_res["end"]))
         if res.status_code != 202:
-            self.log.error("Result: {}".format(res.content))
+            self.log.error("Error: {}".format(res.content))
             self.tearDown()
-            self.fail("!!!...Error while creating AppSvc Audit Logging Export...!!!")
+            self.fail("!!!...Error while creating AppSvc Audit Logging "
+                      "Export...!!!")
         self.log.info("AppSvc Audit Logging Export created successfully.")
 
         # Set Parameters for the expected res to be validated in GET
-        self.auditLogExport_id = res.json()["exportId"]
-        self.expected_res["id"] = self.auditLogExport_id
+        self.auditLogExport_id = res.json()["id"]
+        self.expected_res["data"]["id"] = self.auditLogExport_id
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
@@ -138,16 +164,12 @@ class GetAuditLogExports(GetAppService):
                 "description": "Call API with non-hex auditLogExportId",
                 "invalid_auditLogExportId": self.replace_last_character(
                     self.auditLogExport_id, non_hex=True),
-                "expected_status_code": 400,
+                "expected_status_code": 404,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "code": 3000,
+                    "hint": "Resource not Found.",
+                    "httpStatusCode": 404,
+                    "message": "Not Found."
                 }
             }
         ]

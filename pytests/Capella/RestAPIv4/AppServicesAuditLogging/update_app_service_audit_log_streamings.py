@@ -14,15 +14,21 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
         GetAuditLogStreaming.setUp(self, nomenclature)
         self.expected_res = {
             "streamingEnabled": True,
-            "disabledAppEndpoints": [
-                "string"
-            ],
+            "disabledAppEndpoints": [],
+            "outputType": "datadog",
             "credentials": {
                 "apiKey": "string",
                 "url": "string",
-                "outputType": "datadog"
             }
         }
+        # Ensure App Service Audit Logging is enabled on the AppSvc.
+        res = self.capellaAPI.cluster_ops_apis.update_app_svc_audit_log_state(
+            self.organisation_id, self.project_id, self.cluster_id,
+            self.app_service_id, True)
+        if res.status_code != 202:
+            self.log.error("Error: {}".format(res.content))
+            self.tearDown()
+            self.fail("!!!...Enabling App Service Audit Logging FAILED...!!!")
 
     def tearDown(self):
         super(PutAuditLogStreaming, self).tearDown()
@@ -137,6 +143,7 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
                         organization, project, cluster, appService,
                         self.expected_res["streamingEnabled"],
                         self.expected_res["disabledAppEndpoints"],
+                        self.expected_res["outputType"],
                         self.expected_res["credentials"]))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
@@ -145,6 +152,7 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
                             organization, project, cluster, appService,
                             self.expected_res["streamingEnabled"],
                             self.expected_res["disabledAppEndpoints"],
+                            self.expected_res["outputType"],
                             self.expected_res["credentials"]))
             self.capellaAPI.cluster_ops_apis\
                 .app_svc_audit_log_streaming_endpoint = \
@@ -204,6 +212,7 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
                         self.app_service_id,
                         self.expected_res["streamingEnabled"],
                         self.expected_res["disabledAppEndpoints"],
+                        self.expected_res["outputType"],
                         self.expected_res["credentials"], header))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
@@ -213,6 +222,7 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
                             self.cluster_id,  self.app_service_id, header,
                             self.expected_res["streamingEnabled"],
                             self.expected_res["disabledAppEndpoints"],
+                            self.expected_res["outputType"],
                             self.expected_res["credentials"], header))
             self.validate_testcase(result, [202], testcase, failures)
 
@@ -327,6 +337,7 @@ class PutAuditLogStreaming(GetAuditLogStreaming):
                         testcase["clusterID"], testcase["appServiceID"],
                         self.expected_res["streamingEnabled"],
                         self.expected_res["disabledAppEndpoints"],
+                        self.expected_res["outputType"],
                         self.expected_res["credentials"], **kwarg))
             if result.status_code == 429:
                 self.handle_rate_limit(int(result.headers["Retry-After"]))

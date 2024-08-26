@@ -15,21 +15,11 @@ class GetAuditLogConfig(GetAppService):
             "auditEnabled": True,
             "enabledEventIds": [
                 {
-                    "id": None
+                    "id": 53281
                 }
             ],
-            "disabledUsers": [
-                {
-                    "domain": None,
-                    "name": None
-                }
-            ],
-            "disabledRoles": [
-                {
-                  "domain": None,
-                  "name": None
-                }
-            ]
+            "disabledUsers": [],
+            "disabledRoles": []
         }
 
     def tearDown(self):
@@ -145,8 +135,8 @@ class GetAuditLogConfig(GetAppService):
             appEndpointName = self.appEndpointName
 
             if "url" in testcase:
-                self.capellaAPI.cluster_ops_apis.app_svc_audit_log_endpoint = \
-                    testcase["url"]
+                self.capellaAPI.cluster_ops_apis.\
+                    app_svc_audit_log_config_endpoint = testcase["url"]
             if "invalid_organizationId" in testcase:
                 organization = testcase["invalid_organizationId"]
             elif "invalid_projectId" in testcase:
@@ -168,7 +158,8 @@ class GetAuditLogConfig(GetAppService):
                           fetch_app_endpoint_audit_log_config_info(
                             organization, project, cluster, appService,
                             appEndpointName))
-            self.capellaAPI.cluster_ops_apis.app_svc_audit_log_endpoint = \
+            self.capellaAPI.cluster_ops_apis.\
+                app_svc_audit_log_config_endpoint = \
                 ("/v4/organizations/{}/projects/{}/clusters/{}/appservices/{}/"
                  "appEndpoints/{}/auditLog")
             self.validate_testcase(result, [200], testcase, failures)
