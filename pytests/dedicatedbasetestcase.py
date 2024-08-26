@@ -109,6 +109,15 @@ class OnCloudBaseTest(CouchbaseBaseTest):
                              self.input.capella.get("capella_pwd"),
                              self.input.capella.get("secret_key"),
                              self.input.capella.get("access_key"))
+        self.tenant.name = self.tenant.user.split("@")[0]
+        if not (self.input.capella.get("access_key") and
+                self.input.capella.get("secret_key")):
+            self.log.info("Creating API keys for tenant...")
+            resp = CapellaUtils.create_access_secret_key(
+                self.pod, self.tenant, self.tenant.name)
+            self.tenant.api_secret_key = resp["secret"]
+            self.tenant.api_access_key = resp["access"]
+            self.tenant.api_key_id = resp["id"]
 
         '''
         Be careful while using this flag.
