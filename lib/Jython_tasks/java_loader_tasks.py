@@ -1,7 +1,9 @@
 import requests
 
+import global_vars
 from cb_constants import DocLoading
 from sirius_client_framework.sirius_setup import SiriusSetup
+from table_view import TableView
 
 
 class SiriusCouchbaseLoader(object):
@@ -174,6 +176,16 @@ class SiriusCouchbaseLoader(object):
         self.expiry_end_index = 0
 
     @staticmethod
+    def __print_error_table(bucket, scope, collection, failed_dict):
+        log = global_vars.logger.get("test")
+        failed_item_view = TableView(log.critical)
+        failed_item_view.set_headers(["Read Key", "Exception"])
+        for key, result_dict in failed_dict.items():
+            failed_item_view.add_row([key, result_dict["error"]])
+        failed_item_view.display("Keys failed in %s:%s:%s"
+                                 % (bucket, scope, collection))
+
+    @staticmethod
     def get_headers():
         return {'Content-Type': 'application/json',
                 'Connection': 'close',
@@ -329,4 +341,8 @@ class SiriusCouchbaseLoader(object):
                     self.fail.update(json_resp["fail"])
             except Exception as e:
                 print(e)
+
+        if not self.suppress_error_table:
+            self.__print_error_table(self.bucket, self.scope, self.collection,
+                                     self.fail)
         return ok
