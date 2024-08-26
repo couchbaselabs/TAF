@@ -461,3 +461,11 @@ class SsoUtils:
         }
         resp = self.capella_api.do_internal_request(url, method="DELETE", params=json.dumps(body))
         return resp
+
+    def rotate_certificate(self, tenant_id, realm_id, body):
+        """
+        Rotates certificate
+        """
+        url = "{0}/v2/organizations/{1}/realms/{2}".format("https://" + self.url, tenant_id, realm_id)
+        resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
+        return resp

@@ -246,7 +246,7 @@ dnJ3l9X1xP327Ujr7xgdUprSFT7DPgBCKpCVmjsxq5vl0kiUykzNbmSrQGowPQi9iVMOxa/H75LP
 s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
 -----END CERTIFICATE-----
 """
-        
+
     def get_cert(self):
         return self.cert_new
 
@@ -793,3 +793,70 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         self.log.info("Delete users with valid realm id")
         resp = self.sso.delete_users(realm_id, user_list)
         self.validate_response(resp, 2)
+
+    def test_certificate_rotation(self):
+        # Create a realm
+        self.create_realm(self.team_id)
+
+        # Get realm id
+        resp = self.sso.list_realms(self.tenant_id)
+        realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
+
+        # assign signingCertificate and signInEndpoint
+        signingCertificate = self.get_cert()
+        signInEndpoint = "https://dev-82235514.okta.com/app/dev-82235514_cbcdev_2/exk7dwu0sfh6bR27M5d7/sso/saml"
+
+        # Request body to rotate certificate
+        def get_request_body(saml_certificate=signingCertificate, saml_endpoint=signInEndpoint):
+            body = {
+                'connectionOptionsSAML': {
+                    'signingCertificate': "{0}".format(saml_certificate),
+                    'signInEndpoint': saml_endpoint
+                }
+            }
+            return body
+
+        # Update realm with valid tenantId and realm id
+        self.log.info("Update realm with valid tenantId and realm id")
+        resp = self.sso.rotate_certificate(self.tenant_id, realm_id, get_request_body())
+        self.validate_response(resp, 2)
+
+        # Update realm with invalid tenant id
+        self.log.info("Update realm with invalid tenant id")
+        resp = self.sso.rotate_certificate(self.invalid_id, realm_id, get_request_body())
+        self.validate_response(resp, 4)
+
+        # Update realm with invalid realm id
+        self.log.info("Update realm with invalid realm id")
+        resp = self.sso.rotate_certificate(self.tenant_id, self.invalid_id, get_request_body())
+        self.validate_response(resp, 4)
+
+        # Update realm with invalid cert
+        self.log.info("Update realm with invalid cert")
+        resp = self.sso.rotate_certificate(self.tenant_id, realm_id, get_request_body("NOT A CERTIFICATE"))
+        self.validate_response(resp, 4)
+
+        # Update realm with invalid endpoint
+        self.log.info("Update realm with invalid endpoint")
+        resp = self.sso.rotate_certificate(self.tenant_id, realm_id, get_request_body(saml_endpoint="junk"))
+        self.validate_response(resp, 4)
+
+        # Update realm with no certificate
+        self.log.info("Update realm with no certificate")
+        resp = self.sso.rotate_certificate(self.tenant_id, realm_id, get_request_body(""))
+        self.validate_response(resp, 4)
+
+        # Update realm with no request body
+        self.log.info("Update realm no request body")
+        resp = self.sso.rotate_certificate(self.tenant_id, realm_id, {})
+        self.validate_response(resp, 4)
+
+        # Update realm with junk values
+        self.log.info("Update realm with junk values")
+        resp = self.sso.rotate_certificate(self.tenant_id, realm_id, get_request_body("", ""))
+        self.validate_response(resp, 4)
+
+        # user without sufficient permissions
+        self.log.info("Update realm without sufficient permissions")
+        resp = self.unauth_z_sso.rotate_certificate(self.tenant_id, realm_id, get_request_body(self.get_cert()))
+        self.validate_response(resp, 4)
