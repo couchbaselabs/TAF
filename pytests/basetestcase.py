@@ -113,8 +113,10 @@ class BaseTestCase(unittest.TestCase):
             "bucket_durability", Bucket.DurabilityLevel.NONE).upper()
         self.bucket_purge_interval = self.input.param("bucket_purge_interval",
                                                       1)
-        self.bucket_durability_level = \
-            BucketDurability[self.bucket_durability_level]
+        b_durability = "MAJORITY_AND_PERSIST_TO_ACTIVE" \
+            if self.bucket_durability_level == "MAJORITY_AND_PERSIST_ACTIVE" \
+            else self.bucket_durability_level
+        self.bucket_durability_level = BucketDurability[b_durability]
         self.bucket_collection_history_retention_default = \
             self.input.param("default_history_retention_for_collections", None)
         self.bucket_dedup_retention_seconds = \
