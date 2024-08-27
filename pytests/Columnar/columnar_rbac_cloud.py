@@ -50,6 +50,8 @@ class ColumnarRBAC(ColumnarBaseTest):
         self.index_privileges = ["index_create", "index_drop"]
         self.udf_ddl_privileges = ["function_create", "function_drop"]
         self.udf_execute_privileges = ["function_execute"]
+        self.view_ddl_privileges = ["view_create", "view_drop"]
+        self.view_select_privileges = ["view_select"]
 
         # if none provided use 1 Kb doc size
         self.doc_size = self.input.param("doc_size", 1000)
@@ -637,7 +639,7 @@ class ColumnarRBAC(ColumnarBaseTest):
             additional_test_cases = self.create_rbac_testcases(privileges, databases, "database",
                                                                extended_res_priv_map=extended_res_priv_map)
 
-        elif resource_type in ["collection", "function"]:
+        elif resource_type in ["collection", "function", "view"]:
             scopes = []
             for res in resources:
                 scope_name = ".".join(res.split('.')[:2])
@@ -789,12 +791,12 @@ class ColumnarRBAC(ColumnarBaseTest):
                 elif priv == "DROP":
                     database_name = self.generate_random_entity_name(type="database")
                     expected_error = self.ACCESS_DENIED_ERR
-                    result = self.columnar_cbas_utils.create_database(self.analytics_cluster,
+                    result = self.columnar_cbas_utils.create_database(self.cluster,
                                                                       database_name)
                     if not result:
                         self.fail("Failed to create database")
                     result = self.columnar_cbas_utils.drop_database(
-                        self.analytics_cluster,
+                        self.cluster,
                         database_name,
                         username=test_case['user'].id,
                         password=test_case['user'].password,
@@ -2491,6 +2493,288 @@ class ColumnarRBAC(ColumnarBaseTest):
                     self.assertEqual(403, resp.status_code,
                                      msg='FAIL, Outcome:{}, Expected: {}.' \
                                          'For role: {}'.format(resp.status_code, 403, role))
+
+    def generate_create_view_cmd(self, view_full_name, view_defn, if_not_exists=False):
+        cmd = "create analytics view {0}".format(view_full_name)
+
+        if if_not_exists:
+            cmd += " If Not Exists"
+
+        cmd += " as {0};".format(view_defn)
+
+        return cmd
+
+    def test_rbac_views(self):
+        self.log.info("RBAC views test started")
+        self.build_cbas_columnar_infra()
+
+        datasets = self.columnar_cbas_utils.get_all_dataset_objs("standalone")
+
+        no_of_docs = self.input.param("no_of_docs", 1000)
+        jobs = Queue()
+        results = []
+        for dataset in datasets:
+            self.log.info("Adding {} documents in standalone dataset {}. Default doc size is 1KB".
+                          format(no_of_docs, dataset.full_name))
+            jobs.put((self.columnar_cbas_utils.load_doc_to_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name
+                          , "no_of_docs": no_of_docs}))
+
+        self.columnar_cbas_utils.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        if not all(results):
+            self.log.error("Some documents were not inserted")
+
+        scopes = self.columnar_cbas_utils.get_all_dataverses_from_metadata(self.cluster)
+        view_collection = datasets[0]
+
+        view_defn = "SELECT name, email from {0}".format(
+            self.columnar_cbas_utils.format_name(view_collection.full_name))
+
+        extended_res_priv_map = []
+        create_collection_priv = {
+            "name": "",
+            "type": "instance",
+            "privileges": ["collection_select"]
+        }
+        extended_res_priv_map.append(create_collection_priv)
+        testcases = self.create_rbac_testcases(self.view_ddl_privileges, scopes,
+                                               resource_type="scope",
+                                               extended_res_priv_map=extended_res_priv_map)
+
+        for idx, test_case in enumerate(testcases):
+            self.log.info("========== TEST CASE {} ===========".format(idx))
+            self.log.info(test_case['description'])
+            if test_case['validate_err_msg']:
+                self.log.info("EXPECTED: ERROR")
+            else:
+                self.log.info("EXPECTED: SUCCESS")
+
+            privileges = test_case['privileges']
+            resources = test_case['resources']
+
+            self.log.critical(test_case)
+
+            for priv in privileges:
+                for res in resources:
+                    if priv == "view_create":
+                        view_name = self.generate_random_entity_name(type="view")
+                        view_full_name = "{}.{}".format(res, view_name)
+                        view_full_name = self.columnar_cbas_utils.format_name(view_full_name)
+                        expected_error = self.ACCESS_DENIED_ERR
+                        result = self.columnar_cbas_utils.create_analytics_view(
+                            self.cluster,
+                            view_full_name,
+                            view_defn,
+                            validate_error_msg=test_case['validate_err_msg'],
+                            expected_error=expected_error,
+                            username=test_case['user'].username,
+                            password=test_case['user'].password)
+                        if not result:
+                            self.log.error("Test failed")
+                            self.fail("Test case failed while attempting to create view {}".
+                                      format(view_full_name))
+                    elif priv == "view_drop":
+                        view_name = self.generate_random_entity_name(type="view")
+                        view_full_name = "{}.{}".format(res, view_name)
+                        view_full_name = self.columnar_cbas_utils.format_name(view_full_name)
+                        expected_error = self.ACCESS_DENIED_ERR
+
+                        result = self.columnar_cbas_utils.create_analytics_view(
+                            self.cluster,
+                            view_full_name,
+                            view_defn)
+                        if not result:
+                            self.log.error("Failed to create view")
+                            self.fail("Failed to create analytics view {}".format(view_full_name))
+
+                        result = self.columnar_cbas_utils.drop_analytics_view(
+                            self.cluster,
+                            view_full_name,
+                            validate_error_msg=test_case['validate_err_msg'],
+                            expected_error=expected_error,
+                            username=test_case['user'].username,
+                            password=test_case['user'].password)
+                        if not result:
+                            self.log.error("Test failed")
+                            self.fail("Test case failed while attempting to drop analytics view".
+                                      format(view_full_name))
+
+        self.log.info("Testing for cloud roles")
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+            for priv in self.view_ddl_privileges:
+                if priv == "view_create":
+                    view_name = self.generate_random_entity_name(type="view")
+                    view_full_name = "{}.{}".format("Default", view_name)
+                    view_full_name = self.columnar_cbas_utils.format_name(view_full_name)
+                    execute_cmd = self.generate_create_view_cmd(view_full_name, view_defn)
+                elif priv == "view_drop":
+                    view_name = self.generate_random_entity_name(type="view")
+                    view_full_name = "{}.{}".format("Default", view_name)
+                    view_full_name = self.columnar_cbas_utils.format_name(view_full_name)
+                    result = self.columnar_cbas_utils.create_analytics_view(
+                        self.cluster,
+                        view_full_name,
+                        view_defn)
+                    if not result:
+                        self.log.error("Failed to create view")
+                        self.fail("Failed to create analytics view {}".format(view_full_name))
+                    execute_cmd = "drop analytics view {0}".format(view_full_name)
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                                 200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                     msg='FAIL, Outcome:{}, Expected: {}.' \
+                                         'For role: {}'.format(resp.status_code, 403,
+                                                               self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+                "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                   role))
+            payload = {
+                "resourceId": self.tenant.project_id,
+                "resourceType": "project",
+                "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                         json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                             msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                         200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               user["mailid"],
+                                               user["password"])
+            for priv in self.view_ddl_privileges:
+                if priv == "view_create":
+                    view_name = self.generate_random_entity_name(type="view")
+                    view_full_name = "{}.{}".format("Default", view_name)
+                    view_full_name = self.columnar_cbas_utils.format_name(view_full_name)
+                    execute_cmd = self.generate_create_view_cmd(view_full_name, view_defn)
+                elif priv == "view_drop":
+                    view_name = self.generate_random_entity_name(type="view")
+                    view_full_name = "{}.{}".format("Default", view_name)
+                    view_full_name = self.columnar_cbas_utils.format_name(view_full_name)
+                    result = self.columnar_cbas_utils.create_analytics_view(
+                        self.cluster,
+                        view_full_name,
+                        view_defn)
+                    if not result:
+                        self.log.error("Failed to create view")
+                        self.fail("Failed to create analytics view {}".format(view_full_name))
+                    execute_cmd = "drop analytics view {0}".format(view_full_name)
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if role == "projectOwner" or role == "projectDataWriter":
+                    self.assertEqual(200, resp.status_code,
+                                     msg='FAIL, Outcome:{}, Expected: {}.' \
+                                         'For role: {}'.format(resp.status_code, 200, role))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                     msg='FAIL, Outcome:{}, Expected: {}.' \
+                                         'For role: {}'.format(resp.status_code, 403, role))
+
+    def test_rbac_view_select(self):
+        self.log.info("RBAC views test started")
+        self.build_cbas_columnar_infra()
+
+        datasets = self.columnar_cbas_utils.get_all_dataset_objs("standalone")
+
+        no_of_docs = self.input.param("no_of_docs", 1000)
+        jobs = Queue()
+        results = []
+        for dataset in datasets:
+            self.log.info("Adding {} documents in standalone dataset {}. Default doc size is 1KB".
+                          format(no_of_docs, dataset.full_name))
+            jobs.put((self.columnar_cbas_utils.load_doc_to_standalone_collection,
+                      {"cluster": self.cluster, "collection_name": dataset.name,
+                       "dataverse_name": dataset.dataverse_name, "database_name": dataset.database_name
+                          , "no_of_docs": no_of_docs}))
+
+        self.columnar_cbas_utils.run_jobs_in_parallel(
+            jobs, results, self.sdk_clients_per_user, async_run=False)
+
+        if not all(results):
+            self.log.error("Some documents were not inserted")
+
+        scopes = self.columnar_cbas_utils.get_all_dataverses_from_metadata(self.cluster)
+        view_collection = datasets[0]
+
+        num_views = self.input.param("num_of_views", 1)
+        view_defn = "SELECT name, email from {0}".format(
+            self.columnar_cbas_utils.format_name(view_collection.full_name))
+
+        for i in range(num_views):
+            view_name = self.generate_random_entity_name(type="view")
+            view_name = self.columnar_cbas_utils.format_name(view_name)
+            result = self.columnar_cbas_utils.create_analytics_view(
+                            self.cluster,
+                            view_name,
+                            view_defn)
+            if not result:
+                self.fail("Failed to create analytics view {}".format(view_name))
+
+        views = self.columnar_cbas_utils.get_all_views_from_metadata(self.cluster)
+
+        self.log.info("Views: {}".format(views))
+        testcases = self.create_rbac_testcases(self.view_select_privileges,
+                                               views,
+                                               "view")
+
+        for idx, test_case in enumerate(testcases):
+            self.log.info("========== TEST CASE {} ===========".format(idx))
+            self.log.info(test_case['description'])
+            if test_case['validate_err_msg']:
+                self.log.info("EXPECTED: ERROR")
+            else:
+                self.log.info("EXPECTED: SUCCESS")
+
+            privileges = test_case['privileges']
+            resources = test_case['resources']
+
+            for res in resources:
+                select_cmd = "SELECT * FROM {0}". \
+                            format(self.columnar_cbas_utils.format_name(res))
+                expected_error = self.ACCESS_DENIED_ERR
+                status, metrics, errors, results, _, warnings = (
+                            self.columnar_cbas_utils.execute_statement_on_cbas_util(
+                                self.cluster, select_cmd,
+                                username=test_case['user'].username,
+                                password=test_case['user'].password,
+                                timeout=300, analytics_timeout=300))
+
+                if test_case['validate_err_msg']:
+                    result = self.columnar_cbas_utils.validate_error_in_response(
+                                status, errors, expected_error, None)
+                    if not result:
+                        self.fail("Test case failed while attempting to get docs from view {}".
+                                format(res))
+                else:
+                    if status != "success":
+                        self.fail("Test case failed while attempting to get docs from view {}".
+                                format(res))
 
     def test_rbac_index(self):
         self.log.info("RBAC index test started")

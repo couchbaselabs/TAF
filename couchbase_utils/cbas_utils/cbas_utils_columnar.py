@@ -4682,6 +4682,7 @@ class View_Util(Synonym_Util):
         status, metrics, errors, results, _, warnings = self.execute_statement_on_cbas_util(
             cluster, cmd, username=username, password=password, timeout=timeout,
             analytics_timeout=analytics_timeout)
+        self.log.critical("Error: {}".format(errors))
         if validate_error_msg:
             return self.validate_error_and_warning_in_response(
                 status, errors, expected_error)
@@ -4724,12 +4725,12 @@ class View_Util(Synonym_Util):
                       "Metadata.`Dataset` as ds where ds.DataverseName " \
                       "<> \"Metadata\" and ds.DatasetType = \"VIEW\";"
         while not views_created:
-            status, _, _, results, _ = self.execute_statement_on_cbas_util(
+            status, _, _, results, _, warnings = self.execute_statement_on_cbas_util(
                 cluster, views_query, mode="immediate", timeout=300,
                 analytics_timeout=300)
-            if status.encode('utf-8') == 'success':
+            if status == 'success':
                 results = list(
-                    map(lambda result: result.encode('utf-8').split("."),
+                    map(lambda result: result.split("."),
                         results))
                 views_created = list(
                     map(lambda result: CBASHelper.format_name(*result),
