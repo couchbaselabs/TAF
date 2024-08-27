@@ -89,7 +89,7 @@ class RebalanceOutTests(RebalanceBaseTest):
         verify_MB_57991 = self.input.param("verify_MB_57991", False)
         self.gen_create = doc_generator(self.key, self.num_items,
                                         self.num_items + self.items)
-        self.gen_delete = doc_generator(self.key, self.items / 2,
+        self.gen_delete = doc_generator(self.key, int(self.items / 2),
                                         self.items)
         servs_out = []
         if rebalance_out_orchestrator:
@@ -156,21 +156,24 @@ class RebalanceOutTests(RebalanceBaseTest):
                             self.cluster, bucket, self.gen_update, "update", 0,
                             batch_size=self.batch_size,
                             process_concurrency=self.process_concurrency,
-                            check_replica=self.check_replica))
+                            check_replica=self.check_replica,
+                            validate_using=self.load_docs_using))
                     if "create" in self.doc_ops:
                         tasks.append(
                             self.task.async_validate_docs(
                                 self.cluster, bucket, self.gen_create, "create",
                                 0, batch_size=self.batch_size,
                                 process_concurrency=self.process_concurrency,
-                                check_replica=self.check_replica))
+                                check_replica=self.check_replica,
+                                validate_using=self.load_docs_using))
                     if "delete" in self.doc_ops:
                         tasks.append(
                             self.task.async_validate_docs(
                                 self.cluster, bucket, self.gen_delete, "delete", 0,
                                 batch_size=self.batch_size,
                                 process_concurrency=self.process_concurrency,
-                                check_replica=self.check_replica))
+                                check_replica=self.check_replica,
+                                validate_using=self.load_docs_using))
 
         for task in tasks:
             self.task.jython_task_manager.get_task_result(task)

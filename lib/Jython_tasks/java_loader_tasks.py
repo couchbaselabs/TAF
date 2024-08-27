@@ -244,7 +244,7 @@ class SiriusCouchbaseLoader(object):
             "create_end": self.create_end_index,
 
             "delete_start": self.delete_start_index,
-            "delete_start_index": self.delete_end_index,
+            "delete_end": self.delete_end_index,
 
             "update_start": self.update_start_index,
             "update_end": self.update_end_index,

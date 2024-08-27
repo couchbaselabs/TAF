@@ -60,7 +60,7 @@ class UpgradeBase(BaseTestCase):
         self.rest = RestConnection(self.cluster.master)
         self.server_index_to_fail = \
             self.input.param("server_index_to_fail", None)
-        self.key_size = self.input.param("key_size", 8)
+        self.key_size = self.input.param("key_size", None)
         self.range_scan_task = self.input.param("range_scan_task", None)
         self.expect_range_scan_exceptions = \
             self.input.param("expect_range_scan_exceptions",

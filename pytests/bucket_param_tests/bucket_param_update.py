@@ -27,7 +27,7 @@ class BucketParamTest(ClusterSetup):
                                                    None)
         self.range_scan_collections = self.input.param(
             "range_scan_collections", None)
-        self.key_size = self.input.param("key_size", 8)
+        self.key_size = self.input.param("key_size", None)
         self.include_prefix_scan = self.input.param("include_prefix_scan",
                                                     True)
         self.include_range_scan = self.input.param("include_range_scan",

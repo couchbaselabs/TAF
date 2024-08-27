@@ -162,7 +162,7 @@ class DocLoaderUtils(object):
                           generic_key, mutation_num=0,
                           target_vbuckets="all", type="default",
                           doc_size=256, randomize_value=False,
-                          randomize_doc_size=False, key_size=8):
+                          randomize_doc_size=False, key_size=None):
         """
         Create doc generators based on op_type provided
         :param op_type: CRUD type
@@ -3652,8 +3652,8 @@ class BucketUtils(ScopeUtils):
         :return: tasks_info dictionary updated with retried/unwanted docs
         """
 
-        if load_using != "default_loader":
-            # Sirius case
+        if load_using == "sirius_go_sdk":
+            # Sirius Golang case
             return self.verify_doc_op_task_exceptions_with_sirius(
                 tasks_info, cluster)
 

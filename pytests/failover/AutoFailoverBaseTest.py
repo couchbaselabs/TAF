@@ -39,7 +39,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.rest = ClusterRestAPI(self.orchestrator)
         self.server_index_to_fail = self.input.param("server_index_to_fail",
                                                      None)
-        self.key_size = self.input.param("key_size", 8)
+        self.key_size = self.input.param("key_size", None)
         self.range_scan_task = self.input.param("range_scan_task", None)
         self.skip_range_scan_collection_mutation = self.input.param(
             "skip_range_scan_collection_mutation", True)
@@ -632,7 +632,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         self.multiple_node_failure = self.input.param("multiple_nodes_failure",
                                                       False)
         self.doc_size = self.input.param("doc_size", 10)
-        self.key_size = self.input.param("key_size", 0)
+        self.key_size = self.input.param("key_size", None)
         self.num_items = self.input.param("num_items", 1000000)
         self.update_items = self.input.param("update_items", 100000)
         self.delete_items = self.input.param("delete_items", 100000)
@@ -878,7 +878,7 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
              "The range scan internal partition UUID could not be found on the server "])
         self.range_scan_collections = self.input.param(
             "range_scan_collections", None)
-        self.key_size = self.input.param("key_size", 8)
+        self.key_size = self.input.param("key_size", None)
         self.range_scan_task = self.input.param("range_scan_task", None)
         self.skip_range_scan_collection_mutation = self.input.param(
             "skip_range_scan_collection_mutation", True)

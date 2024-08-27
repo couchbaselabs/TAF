@@ -9,8 +9,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from epengine.durability_base import DurabilityTestsBase
 from error_simulation.cb_error import CouchbaseError
 from sdk_client3 import SDKClient
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 
 
