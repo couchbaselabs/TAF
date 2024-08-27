@@ -37,6 +37,9 @@ class SDKException(object):
         "com.couchbase.client.core.error.DurabilityImpossibleException",
         "DurabilityImpossibleException",
     ]
+    DurabilitySyncWriteAmbiguousException = [
+        "DurabilitySyncWriteAmbiguousException"
+    ]
     DurableWriteInProgressException = [
         "com.couchbase.client.core.error.DurableWriteInProgressException",
         "DurableWriteInProgressException"
@@ -102,6 +105,9 @@ class SDKException(object):
     ]
 
     class RetryReason(object):
+        SyncWriteAmbiguous = "SyncWriteAmbiguous"
+        KV_Sync_Write_In_Progress = "key_value_sync_write_in_progress"
+        # Below are Java related reasons
         KV_SYNC_WRITE_IN_PROGRESS = \
             "KV_SYNC_WRITE_IN_PROGRESS"
         KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES = \
@@ -111,3 +117,13 @@ class SDKException(object):
         COLLECTION_NOT_FOUND = "COLLECTION_NOT_FOUND"
         COLLECTION_MAP_REFRESH_IN_PROGRESS = \
             "COLLECTION_MAP_REFRESH_IN_PROGRESS"
+
+    @staticmethod
+    def check_if_exception_exists(expected_exception, result):
+        if isinstance(expected_exception, list):
+            for exception in expected_exception:
+                if exception in str(result):
+                    return True
+            return False
+        # Expected Exception is a string
+        return expected_exception in str(result)

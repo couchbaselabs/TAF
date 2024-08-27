@@ -271,55 +271,45 @@ class DurabilityFailureTests(DurabilityTestsBase):
         tem_gen = copy.deepcopy(gen_loader_2)
         while tem_gen.has_next():
             key, value = tem_gen.next()
-            for retry_strategy in [SDKConstants.RetryStrategy.FAIL_FAST,
-                                   SDKConstants.RetryStrategy.BEST_EFFORT]:
-                if self.with_non_sync_writes:
-                    fail = client.crud(self.doc_ops[1], key, value=value,
-                                       exp=0, timeout=3, time_unit="seconds",
-                                       sdk_retry_strategy=retry_strategy)
-                else:
-                    fail = client.crud(self.doc_ops[1], key, value=value,
-                                       exp=0, durability=self.durability_level,
-                                       timeout=3, time_unit="seconds",
-                                       sdk_retry_strategy=retry_strategy)
+            if self.with_non_sync_writes:
+                fail = client.crud(self.doc_ops[1], key, value=value,
+                                   exp=0, timeout=3, time_unit="seconds")
+            else:
+                fail = client.crud(self.doc_ops[1], key, value=value,
+                                   exp=0, durability=self.durability_level,
+                                   timeout=3, time_unit="seconds")
 
-                expected_exception = SDKException.AmbiguousTimeoutException
-                retry_reason = \
-                    SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
-                if retry_strategy == SDKConstants.RetryStrategy.FAIL_FAST:
-                    expected_exception = \
-                        SDKException.RequestCanceledException
-                    retry_reason = \
-                        SDKException \
-                        .RetryReason \
-                        .KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES
-                if self.doc_ops[0] == "create" \
-                        and self.doc_ops[1] in ["delete", "replace"]:
-                    expected_exception = SDKException.DocumentNotFoundException
-                    retry_reason = None
+            expected_exception = SDKException.AmbiguousTimeoutException
+            retry_reason = \
+                SDKException.RetryReason.KV_Sync_Write_In_Progress
+            if self.doc_ops[0] == "create" \
+                    and self.doc_ops[1] in ["delete", "replace"]:
+                expected_exception = SDKException.DocumentNotFoundException
+                retry_reason = None
 
-                # Validate the returned error from the SDK
-                if expected_exception not in str(fail["error"]):
-                    self.log_failure("Invalid exception for {0}: {1}"
-                                     .format(key, fail["error"]))
-                if retry_reason and retry_reason not in str(fail["error"]):
-                    self.log_failure("Invalid retry reason for {0}: {1}"
-                                     .format(key, fail["error"]))
+            # Validate the returned error from the SDK
+            if not SDKException.check_if_exception_exists(
+                    expected_exception, fail["error"]):
+                self.log_failure("Invalid exception for {0}: {1}"
+                                 .format(key, fail["error"]))
+            if retry_reason and retry_reason not in str(fail["error"]):
+                self.log_failure("Invalid retry reason for {0}: {1}"
+                                 .format(key, fail["error"]))
 
-                # Try reading the value in SyncWrite in-progress state
-                fail = client.crud("read", key)
-                if self.doc_ops[0] == "create":
-                    # Expected KeyNotFound in case of CREATE operation
-                    if fail["status"] is True:
-                        self.log_failure(
-                            "%s returned value during SyncWrite in progress %s"
-                            % (key, fail))
-                else:
-                    # Expects prev value in case of other operations
-                    if fail["status"] is False:
-                        self.log_failure(
-                            "Key %s read failed for previous value: %s"
-                            % (key, fail))
+            # Try reading the value in SyncWrite in-progress state
+            fail = client.crud("read", key)
+            if self.doc_ops[0] == DocLoading.Bucket.DocOps.CREATE:
+                # Expected KeyNotFound in case of CREATE operation
+                if fail["status"] is True:
+                    self.log_failure(
+                        "%s returned value during SyncWrite in progress %s"
+                        % (key, fail))
+            else:
+                # Expects prev value in case of other operations
+                if fail["status"] is False:
+                    self.log_failure(
+                        "Key %s read failed for previous value: %s"
+                        % (key, fail))
 
         # Revert the introduced error condition
         for node in target_nodes:
