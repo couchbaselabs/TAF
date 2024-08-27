@@ -1,11 +1,10 @@
 from math import floor
 
 from BucketLib.bucket import Bucket
-from BucketLib.BucketOperations import BucketHelper
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
-from rebalance_base import RebalanceBaseTest
 from rebalance_new import rebalance_base
+from rebalance_new.rebalance_base import RebalanceBaseTest
 
 
 class RebalanceDurability(RebalanceBaseTest):

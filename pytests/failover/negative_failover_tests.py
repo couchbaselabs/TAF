@@ -2,7 +2,7 @@
 from custom_exceptions.exception import FailoverFailedException
 from membase.api.rest_client import RestConnection
 from remote.remote_util import RemoteMachineShellConnection
-from failoverbasetest import FailoverBaseTest
+from failover.failoverbasetest import FailoverBaseTest
 
 
 class NegativeFailoverTests(FailoverBaseTest):

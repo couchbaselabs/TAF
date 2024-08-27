@@ -7,6 +7,7 @@ from FtsLib.FtsOperations import FtsHelper
 from backup_service import BackupServiceTest
 
 from cb_constants import CbServer
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from collections_helper.collections_spec_constants import MetaCrudParams
 from couchbase_utils.cb_tools.cb_cli import CbCli
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
@@ -32,7 +33,7 @@ class volume(CollectionBase):
         self.capella_run = self.input.param("capella_run", False)
         if not self.capella_run:
             self.bucket_util._expiry_pager(self.cluster, val=5)
-        self.rest = RestConnection(self.servers[0])
+        self.rest = ClusterRestAPI(self.servers[0])
         self.available_servers = self.cluster.servers[self.nodes_init:]
         self.exclude_nodes = [self.cluster.master]
         self.skip_check_logs = False
@@ -222,7 +223,7 @@ class volume(CollectionBase):
         if "fts" in services:
             ram_quota_dict[CbServer.Settings.FTS_MEM_QUOTA] = \
                 int(self.fts_mem_quota)
-        self.rest.set_service_mem_quota(ram_quota_dict)
+        self.rest.configure_memory(ram_quota_dict)
 
     def run_cbq_query(self, query):
         """
@@ -504,7 +505,7 @@ class volume(CollectionBase):
         Stop servers on nodes that were failed over and removed, and wipe config dir
         """
         for node in remove_nodes:
-            RestConnection(node).reset_node()
+            ClusterRestAPI(node).reset_node()
         for node in remove_nodes:
             if not self.cluster_util.is_ns_server_running(
                     node, timeout_in_seconds=120):
@@ -680,8 +681,8 @@ class volume(CollectionBase):
                       .format(actual_failover_count, time_end - time_start))
 
     def get_failover_count(self):
-        rest = RestConnection(self.cluster.master)
-        cluster_status = rest.cluster_status()
+        rest = ClusterRestAPI(self.cluster.master)
+        _, cluster_status = rest.cluster_details()
         failover_count = 0
         # check for inactiveFailed
         for node in cluster_status['nodes']:
@@ -772,7 +773,8 @@ class volume(CollectionBase):
             if not self.capella_run:
                 self.log.info("Enabling autoreprovison before inducing failure to prevent data loss "
                               "for if there are ephemeral buckets")
-                status = self.rest.update_autoreprovision_settings(True, maxNodes=1)
+                status = self.rest.update_auto_reprovision_settings(
+                    'true', max_nodes=1)
                 if not status:
                     self.fail("Failed to enable autoreprovison")
                 step_count = 9
@@ -869,12 +871,14 @@ class volume(CollectionBase):
                     else:
                         if action == "FullRecovery":
                             for failover_node in failover_nodes:
-                                self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
-                                                            recoveryType="full")
+                                self.rest.set_recovery_type(
+                                    otp_node='ns_1@' + failover_node.ip,
+                                    recovery_type="full")
                         elif action == "DeltaRecovery":
                             for failover_node in failover_nodes:
-                                self.rest.set_recovery_type(otpNode='ns_1@' + failover_node.ip,
-                                                            recoveryType="delta")
+                                self.rest.set_recovery_type(
+                                    otp_node='ns_1@' + failover_node.ip,
+                                    recovery_type="delta")
 
                         rebalance_task = self.task.async_rebalance(self.cluster, [],
                                                                    [], retry_get_process_num=

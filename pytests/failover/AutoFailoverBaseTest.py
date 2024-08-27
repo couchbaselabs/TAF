@@ -337,7 +337,8 @@ class AutoFailoverBaseTest(ClusterSetup):
         :return: True If the setting was set, else return
         False
         """
-        status = self.rest.update_autoreprovision_settings(True, self.num_node_failures)
+        status, _ = self.rest.update_auto_reprovision_settings(
+            'true', self.num_node_failures)
         return status
 
     def disable_autofailover(self):
@@ -346,7 +347,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         :return: True If the setting was disabled, else return
         False
         """
-        status, _ = self.rest.update_auto_failover_settings('false', 120)
+        status, _ = self.rest.update_auto_failover_settings('false')
         return status
 
     def disable_autoreprovision(self):
@@ -355,7 +356,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         :return: True If the setting was disabled, else return
         False
         """
-        status = self.rest.update_autoreprovision_settings(False)
+        status, _ = self.rest.update_auto_reprovision_settings('false')
         return status
 
     def enable_autofailover_and_validate(self):
