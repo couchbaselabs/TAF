@@ -106,10 +106,9 @@ class SDKException(object):
 
     class RetryReason(object):
         SyncWriteAmbiguous = "SyncWriteAmbiguous"
-        KV_Sync_Write_In_Progress = "key_value_sync_write_in_progress"
-        # Below are Java related reasons
         KV_SYNC_WRITE_IN_PROGRESS = \
-            "KV_SYNC_WRITE_IN_PROGRESS"
+            "key_value_sync_write_in_progress"
+        # Below are Java related reasons
         KV_SYNC_WRITE_IN_PROGRESS_NO_MORE_RETRIES = \
             "NO_MORE_RETRIES (KV_SYNC_WRITE_IN_PROGRESS)"
         KV_TEMPORARY_FAILURE = "KV_TEMPORARY_FAILURE"

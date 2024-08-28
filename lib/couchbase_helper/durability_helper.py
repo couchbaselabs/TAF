@@ -7,6 +7,7 @@ from BucketLib.BucketOperations import BucketHelper
 from cb_tools.cbstats import Cbstats
 from error_simulation.cb_error import CouchbaseError
 from constants.sdk_constants.java_client import SDKConstants
+from sdk_exceptions import SDKException
 
 
 class DurabilityHelper:
@@ -119,7 +120,8 @@ class DurabilityHelper:
         """
         validation_passed = True
         for key, failed_doc in failed_docs.items():
-            if expected_exception not in str(failed_doc["error"]):
+            if not SDKException.check_if_exception_exists(expected_exception,
+                                                          failed_doc["error"]):
                 validation_passed = False
                 self.log.error("Unexpected exception '{0}' for key '{1}'"
                                .format(failed_doc["error"], key))

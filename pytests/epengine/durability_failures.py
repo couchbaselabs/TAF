@@ -281,7 +281,7 @@ class DurabilityFailureTests(DurabilityTestsBase):
 
             expected_exception = SDKException.AmbiguousTimeoutException
             retry_reason = \
-                SDKException.RetryReason.KV_Sync_Write_In_Progress
+                SDKException.RetryReason.KV_SYNC_WRITE_IN_PROGRESS
             if self.doc_ops[0] == "create" \
                     and self.doc_ops[1] in ["delete", "replace"]:
                 expected_exception = SDKException.DocumentNotFoundException
