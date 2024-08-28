@@ -1096,10 +1096,12 @@ class GenericLoadingTask(Task):
                                               % (self.client.bucket.name,
                                                  self.scope,
                                                  self.collection))
-            return success, copy.deepcopy(fail)
+            # CBQE-8248
+            return success, fail
         except Exception as error:
             self.test_log.error(error)
-        return success, copy.deepcopy(fail)
+        # CBQE-8248
+        return success, fail
 
     def batch_update(self, key_val, client=None, persist_to=0,
                      replicate_to=0,
@@ -1143,10 +1145,12 @@ class GenericLoadingTask(Task):
                                               % (self.client.bucket.name,
                                                  self.scope,
                                                  self.collection))
-            return success, copy.deepcopy(fail)
+            # CBQE-8248
+            return success, fail
         except Exception as error:
             self.test_log.error(error)
-        return success, copy.deepcopy(fail)
+        # CBQE-8248
+        return success, fail
 
     def batch_replace(self, key_val, client=None, persist_to=0,
                       replicate_to=0,
@@ -1190,10 +1194,12 @@ class GenericLoadingTask(Task):
                                               % (self.client.bucket.name,
                                                  self.scope,
                                                  self.collection))
-            return success, copy.deepcopy(fail)
+            # CBQE-8248
+            return success, fail
         except Exception as error:
             self.test_log.error(error)
-        return success, copy.deepcopy(fail)
+        # CBQE-8248
+        return success, fail
 
     def batch_delete(self, key_val, client=None, persist_to=None,
                      replicate_to=None,
