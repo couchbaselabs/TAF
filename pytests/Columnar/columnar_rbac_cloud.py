@@ -2766,7 +2766,7 @@ class ColumnarRBAC(ColumnarBaseTest):
                                 timeout=300, analytics_timeout=300))
 
                 if test_case['validate_err_msg']:
-                    result = self.columnar_cbas_utils.validate_error_in_response(
+                    result = self.columnar_cbas_utils.validate_error_and_warning_in_response(
                                 status, errors, expected_error, None)
                     if not result:
                         self.fail("Test case failed while attempting to get docs from view {}".
@@ -2775,6 +2775,71 @@ class ColumnarRBAC(ColumnarBaseTest):
                     if status != "success":
                         self.fail("Test case failed while attempting to get docs from view {}".
                                 format(res))
+
+        self.log.info("Testing for cloud roles")
+        select_cmd = "SELECT * FROM {0}". \
+            format(self.columnar_cbas_utils.format_name(views[0]))
+        for user in self.test_users:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(self.test_users[user]["role"]))
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               self.test_users[user]["mailid"],
+                                               self.test_users[user]["password"])
+            for priv in self.view_select_privileges:
+                execute_cmd = select_cmd
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if self.test_users[user]["role"] == "organizationOwner":
+                    self.assertEqual(200, resp.status_code,
+                                     msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                                 200))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                     msg='FAIL, Outcome:{}, Expected: {}.' \
+                                         'For role: {}'.format(resp.status_code, 403,
+                                                               self.test_users[user]["role"]))
+
+        user = self.test_users['User3']
+        for role in self.project_roles:
+            self.log.info("========== CLOUD USER TEST CASE: {} ===========".
+                          format(role))
+            self.log.info(
+                "Adding user to project {} with role as {}".format(self.tenant.project_id,
+                                                                   role))
+            payload = {
+                "resourceId": self.tenant.project_id,
+                "resourceType": "project",
+                "roles": [role], "users": [user["userid"]]
+            }
+
+            resp = self.capellaAPIv2.add_user_to_project(self.tenant.id,
+                                                         json.dumps(payload))
+            self.assertEqual(200, resp.status_code,
+                             msg='FAIL, Outcome:{}, Expected: {}'.format(resp.status_code,
+                                                                         200))
+
+            self.columnarAPIrole = ColumnarAPI(self.pod.url_public, "", "",
+                                               user["mailid"],
+                                               user["password"])
+            for priv in self.view_select_privileges:
+                execute_cmd = select_cmd
+
+                resp = self.columnarAPIrole.execute_statement(self.tenant.id,
+                                                              self.tenant.project_id,
+                                                              self.cluster.instance_id,
+                                                              execute_cmd)
+                if role == "projectOwner" or role == "projectDataWriter" or \
+                        role == "projectDataViewer":
+                    self.assertEqual(200, resp.status_code,
+                                     msg='FAIL, Outcome:{}, Expected: {}.' \
+                                         'For role: {}'.format(resp.status_code, 200, role))
+                else:
+                    self.assertEqual(403, resp.status_code,
+                                     msg='FAIL, Outcome:{}, Expected: {}.' \
+                                         'For role: {}'.format(resp.status_code, 403, role))
 
     def test_rbac_index(self):
         self.log.info("RBAC index test started")
