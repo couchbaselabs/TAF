@@ -247,7 +247,7 @@ class CopyToKv(ColumnarBaseTest):
                        "dataverse_name": dataset.dataverse_name, "dest_bucket": collection,
                        "link_name": remote_link.full_name, "primary_key": key,
                        "validate_warning_msg": validate_warning_msg, "expected_error": expected_error_msg,
-                       "expected_error_code": expected_error_code, "warnings": 25,
+                       "expected_error_code": expected_error_code, "max_warnings": 25,
                        "validate_error_msg": validate_error_msg}))
 
         self.cbas_util.run_jobs_in_parallel(jobs, results, self.sdk_clients_per_user)
