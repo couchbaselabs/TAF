@@ -723,8 +723,8 @@ class EventingBaseTest(BaseTestCase):
                       .format(json.loads(result)))
 
     def generate_docs(self, docs_per_day):
-        key = 'eventing_docs'.rjust(self.key_size, '0')
-        return doc_generator(key, 0, docs_per_day * 2016, doc_size=self.doc_size,
+        return doc_generator('eventing_docs', 0, docs_per_day * 2016,
+                             doc_size=self.doc_size,
                              doc_type=self.doc_type,
                              target_vbucket=self.target_vbucket,
                              vbuckets=self.cluster.vbuckets)

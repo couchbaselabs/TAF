@@ -22,7 +22,7 @@ class ExpiryMaxTTL(ClusterSetup):
         # Create default bucket
         self.create_bucket(self.cluster)
 
-        self.key = 'test_ttl_docs'.rjust(self.key_size or 20, '0')
+        self.key = 'test_ttl_docs'
 
         if self.target_vbucket and type(self.target_vbucket) is not list:
             self.target_vbucket = [self.target_vbucket]

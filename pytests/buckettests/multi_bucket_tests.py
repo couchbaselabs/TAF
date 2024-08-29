@@ -5,7 +5,7 @@ from couchbase_helper.documentgenerator import doc_generator
 class MultiBucketTests(ClusterSetup):
     def setUp(self):
         super(MultiBucketTests, self).setUp()
-        self.key = "test_multi_bucket_docs".rjust(self.key_size, '0')
+        self.key = "test_multi_bucket_docs"
         self.nodes_in = self.input.param("nodes_in", 1)
         self.nodes_out = self.input.param("nodes_out", 1)
         self.doc_ops = self.input.param("doc_ops", "create")

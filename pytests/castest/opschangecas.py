@@ -11,7 +11,7 @@ from sdk_exceptions import SDKException
 class OpsChangeCasTests(CasBaseTest):
     def setUp(self):
         super(OpsChangeCasTests, self).setUp()
-        self.key = 'test_cas_docs'.rjust(self.key_size, '0')
+        self.key = 'test_cas_docs'
         self.log.info("=========Finished OpsChangeCasTests base setup=======")
 
     def tearDown(self):
@@ -214,7 +214,7 @@ class OpsChangeCasTests(CasBaseTest):
             self.vb_details[node.ip] = dict()
             self.vb_details[node.ip]["active"] = list()
             self.vb_details[node.ip]["replica"] = list()
-        
+
             self.cb_stat[node.ip] = Cbstats(node)
             self.vb_details[node.ip]["active"] = \
                 self.cb_stat[node.ip].vbucket_list(self.bucket.name, "active")

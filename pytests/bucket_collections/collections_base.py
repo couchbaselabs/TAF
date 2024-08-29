@@ -22,7 +22,7 @@ class CollectionBase(ClusterSetup):
         super(CollectionBase, self).setUp()
         self.log_setup_status("CollectionBase", "started")
 
-        self.key = 'test_collection'.rjust(self.key_size, '0')
+        self.key = 'test_collection'
         self.skip_collections_during_data_load = self.input.param("skip_col_dict", None)
         self.simulate_error = self.input.param("simulate_error", None)
         self.doc_ops = self.input.param("doc_ops", None)
