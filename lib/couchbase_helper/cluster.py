@@ -320,7 +320,21 @@ class ServerTasks(object):
         if not isinstance(generator, SubdocDocumentGenerator):
             raise Exception("Document generator needs to be of "
                             "type SubdocDocumentGenerator")
-        if load_using == "sirius_go_sdk":
+        if load_using == "sirius_java_sdk":
+            _task = SiriusCouchbaseLoader(
+                cluster.master.ip, cluster.master.port,
+                generator, op_type,
+                cluster.master.rest_username,
+                cluster.master.rest_password,
+                bucket, scope, collection,
+                durability=durability,
+                exp=exp,
+                timeout=timeout_secs,
+                process_concurrency=process_concurrency,
+                create_path=path_create,
+                is_xattr=xattr)
+            _task.create_doc_load_task()
+        elif load_using == "sirius_go_sdk":
             _task = sirius_task.LoadCouchbaseDocs(
                 self.jython_task_manager, cluster, CbServer.use_https,
                 bucket, scope, collection, generator, op_type, exp,

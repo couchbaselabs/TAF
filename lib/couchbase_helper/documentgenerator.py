@@ -63,7 +63,10 @@ def doc_generator(key, start, end,
 
 
 def sub_doc_generator(key, start, end, doc_size=256,
-                      target_vbucket=None, vbuckets=1024, key_size=8, xattr_test=False):
+                      target_vbucket=None, vbuckets=1024, key_size=None, xattr_test=False):
+    if key_size is None:
+        key_size = len(key) + 8
+
     if xattr_test:
         last_name = [''.rjust(doc_size - 10, 'a')]
         template = '{{ "full_name.last": "{0}"}}'

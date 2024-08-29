@@ -50,6 +50,11 @@ class SiriusCouchbaseLoader(object):
                  touch_start_index=0, touch_end_index=0,
                  replace_start_index=0, replace_end_index=0,
                  expiry_start_index=0, expiry_end_index=0,
+                 subdoc_percent=0,
+                 subdoc_insert_start_index=0, subdoc_insert_end_index=0,
+                 subdoc_upsert_start_index=0, subdoc_upsert_end_index=0,
+                 subdoc_remove_start_index=0, subdoc_remove_end_index=0,
+                 subdoc_read_start_index=0, subdoc_read_end_index=0,
                  durability="NONE",
                  exp=0, exp_unit="seconds",
                  timeout=10, time_unit="seconds",
@@ -58,7 +63,8 @@ class SiriusCouchbaseLoader(object):
                  track_failures=True,
                  iterations=1,
                  validate_docs=False, validate_deleted_docs=False,
-                 mutate=0):
+                 mutate=0,
+                 create_path=False, is_xattr=False, is_sys_xattr=False):
         """
         Gateway to start doc loading using Java SDK.
         Have common params for both storage_tests and regular test.
@@ -85,6 +91,9 @@ class SiriusCouchbaseLoader(object):
         self.timeout = timeout
         self.time_unit = time_unit
         self.durability = durability
+        self.create_path = create_path
+        self.is_xattr = is_xattr
+        self.is_sys_xattr = is_sys_xattr
 
         # Load parameters
         self.process_concurrency = process_concurrency
@@ -107,6 +116,7 @@ class SiriusCouchbaseLoader(object):
         self.update_percent = update_percent
         self.delete_percent = delete_percent
         self.expiry_percent = expiry_percent
+        self.subdoc_percent = subdoc_percent
         self.create_start_index = create_start_index
         self.create_end_index = create_end_index
         self.read_start_index = read_start_index
@@ -121,6 +131,14 @@ class SiriusCouchbaseLoader(object):
         self.replace_end_index = replace_end_index
         self.expiry_start_index = expiry_start_index
         self.expiry_end_index = expiry_end_index
+        self.subdoc_insert_start_index = subdoc_insert_start_index
+        self.subdoc_insert_end_index = subdoc_insert_end_index
+        self.subdoc_upsert_start_index = subdoc_upsert_start_index
+        self.subdoc_upsert_end_index = subdoc_upsert_end_index
+        self.subdoc_remove_start_index = subdoc_remove_start_index
+        self.subdoc_remove_end_index = subdoc_remove_end_index
+        self.subdoc_read_start_index = subdoc_read_start_index
+        self.subdoc_read_end_index = subdoc_read_end_index
 
         # Flags for validation
         self.validate_docs = validate_docs
@@ -175,6 +193,22 @@ class SiriusCouchbaseLoader(object):
                 self.update_percent = 100
                 self.touch_start_index = generator.start
                 self.touch_end_index = generator.end
+            elif op_type == DocLoading.Bucket.SubDocOps.INSERT:
+                self.subdoc_percent = 100
+                self.subdoc_insert_start_index = generator.start
+                self.subdoc_insert_end_index = generator.end
+            elif op_type == DocLoading.Bucket.SubDocOps.UPSERT:
+                self.subdoc_percent = 100
+                self.subdoc_upsert_start_index = generator.start
+                self.subdoc_upsert_end_index = generator.end
+            elif op_type == DocLoading.Bucket.SubDocOps.LOOKUP:
+                self.subdoc_percent = 100
+                self.subdoc_read_start_index = generator.start
+                self.subdoc_read_end_index = generator.end
+            elif op_type == DocLoading.Bucket.SubDocOps.REMOVE:
+                self.subdoc_percent = 100
+                self.subdoc_remove_start_index = generator.start
+                self.subdoc_remove_end_index = generator.end
             else:
                 raise Exception(f"Unsupported {op_type} with generator")
 
@@ -202,6 +236,14 @@ class SiriusCouchbaseLoader(object):
         self.replace_end_index = 0
         self.expiry_start_index = 0
         self.expiry_end_index = 0
+        self.subdoc_insert_start_index = 0
+        self.subdoc_insert_end_index = 0
+        self.subdoc_upsert_start_index = 0
+        self.subdoc_upsert_end_index = 0
+        self.subdoc_remove_start_index = 0
+        self.subdoc_remove_end_index = 0
+        self.subdoc_read_start_index = 0
+        self.subdoc_read_end_index = 0
 
     @staticmethod
     def __print_error_table(bucket, scope, collection, failed_dict):
@@ -249,8 +291,12 @@ class SiriusCouchbaseLoader(object):
 
     def create_doc_load_task(self):
         key_type = "RandomKey"
+        value_type = "SimpleValue"
+
         if self.iterations != 1:
             key_type = "CircularKey"
+        if self.subdoc_percent != 0:
+            value_type = "SimpleSubDocValue"
 
         api = f"{SiriusSetup.sirius_url}/doc_load"
         data = {
@@ -267,6 +313,7 @@ class SiriusCouchbaseLoader(object):
             "update_percent": self.update_percent,
             "read_percent": self.read_percent,
             "expiry_percent": self.expiry_percent,
+            "subdoc_percent": self.subdoc_percent,
 
             "create_start": self.create_start_index,
             "create_end": self.create_end_index,
@@ -289,12 +336,27 @@ class SiriusCouchbaseLoader(object):
             "expiry_start": self.expiry_start_index,
             "expiry_end": self.expiry_end_index,
 
+            "sd_insert_start": self.subdoc_insert_start_index,
+            "sd_insert_end": self.subdoc_insert_end_index,
+
+            "sd_upsert_start": self.subdoc_upsert_start_index,
+            "sd_upsert_end": self.subdoc_upsert_end_index,
+
+            "sd_remove_start": self.subdoc_remove_start_index,
+            "sd_remove_end": self.subdoc_remove_end_index,
+
+            "sd_read_start": self.subdoc_read_start_index,
+            "sd_read_end": self.subdoc_read_end_index,
+
             "key_prefix": self.key_prefix,
             "key_size": self.key_size,
             "doc_size": self.doc_size,
             "key_type": key_type,
-            "value_type": "SimpleValue",
+            "value_type": value_type,
             "mutate": self.mutate,
+            "create_path": self.create_path,
+            "is_subdoc_xattr": self.is_xattr,
+            "is_subdoc_sys_xattr": self.is_sys_xattr,
 
             "timeout": self.timeout,
             "timeout_unit": self.time_unit,
