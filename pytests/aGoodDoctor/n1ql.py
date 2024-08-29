@@ -29,6 +29,11 @@ from com.github.javafaker import Faker
 from constants.cb_constants.CBServer import CbServer
 from connections.Rest_Connection import RestConnection
 from com.couchbase.test.val import Hotel
+import struct
+from workloads import siftBigANN
+import os
+from _threading import Lock
+from TestInput import TestInputSingleton
 
 letters = ascii_uppercase + ascii_lowercase + digits
 faker = Faker()
@@ -184,6 +189,7 @@ HotelQueriesVectorParams = [
     {"country": "faker.address().country()", "city": "faker.address().city()"}
     ]
 
+SIFTQueriesVectorParams = [{}] * 10
 
 def execute_statement_on_n1ql(client, statement, client_context_id=None,
                               query_params=None, validate=True):
@@ -218,7 +224,6 @@ def execute_statement_on_n1ql(client, statement, client_context_id=None,
         status = None
     return status, metrics, errors, results, handle
 
-
 def execute_via_sdk(client, statement, readonly=False,
                     client_context_id=None,
                     query_params=None, validate=True):
@@ -240,7 +245,7 @@ def execute_via_sdk(client, statement, readonly=False,
         try:
             output["results"] = result.rowsAsObject()
         except:
-            output["results"] = None
+            output["results"] = result.rows()
 
     if str(output['status']) == QueryStatus.FATAL:
         msg = output['errors'][0]['msg']
@@ -253,7 +258,6 @@ def execute_via_sdk(client, statement, readonly=False,
 
     return output
 
-
 class DoctorN1QL():
 
     def __init__(self, bucket_util):
@@ -263,51 +267,69 @@ class DoctorN1QL():
         self.stop_run = False
         self.query_failure = False
 
-    def create_indexes(self, buckets, skip_index=False):
+    def create_indexes(self, buckets, skip_index=False, base64=False, xattr=False):
         for b in buckets:
-            counter = 0
+            # counter = 0
             b.indexes = dict()
             b.queries = list()
             b.query_map = dict()
             self.log.info("Creating GSI indexes on {}".format(b.name))
-            prev_valType = None
+            # prev_valType = None
             for s in self.bucket_util.get_active_scopes(b, only_names=True):
                 if s == CbServer.system_scope:
                     continue
                 if b.name+s not in self.sdkClients.keys():
                     self.sdkClients.update({b.name+s: b.clients[0].bucketObj.scope(s)})
                     time.sleep(1)
-                for collection_num, c in enumerate(sorted(self.bucket_util.get_active_collections(b, s, only_names=True))):
+                collections = b.scopes[s].collections.keys()
+                if "_default" in collections:
+                    collections.remove("_default")
+                for collection_num, c in enumerate(sorted(collections)):
                     if c == CbServer.default_collection:
                         continue
                     workloads = b.loadDefn.get("collections_defn", [b.loadDefn])
+                    coll_order = TestInputSingleton.input.param("coll_order", 1)
+                    if coll_order == -1:
+                        workloads = list(reversed(workloads))
                     workload = workloads[collection_num % len(workloads)]
                     valType = workload["valType"]
                     indexType = indexes
                     queryType = queries
                     queryParams = []
-                    if valType != prev_valType:
-                        counter = 0
+                    # if valType != prev_valType:
+                    #     counter = 0
                     if valType == "Hotel":
                         indexType = HotelIndexes
                         queryType = HotelQueries
                         queryParams = HotelQueriesParams
-                        prev_valType = valType
+                        # prev_valType = valType
                     if valType == "NimbusP":
                         indexType = NimbusPIndexes
                         queryType = NimbusPQueries
                         queryParams = NimbusPQueriesParams
-                        prev_valType = valType
+                        # prev_valType = valType
                     if valType == "NimbusM":
                         indexType = NimbusMIndexes
                         queryType = NimbusMQueries
                         queryParams = NimbusMQueriesParams
-                        prev_valType = valType
+                        # prev_valType = valType
                     if valType == "Hotel" and workload.get("vector"):
                         indexType = HotelVectorIndexes
                         queryType = HotelVectorQueries
                         queryParams = HotelQueriesVectorParams
-                        prev_valType = valType
+                        # prev_valType = valType
+                    if valType == "siftBigANN":
+                        if base64:
+                            indexType = workload.get("indexes_base64")
+                            queryType = workload.get("queries_base64")
+                        else:
+                            indexType = workload.get("indexes")
+                            queryType = workload.get("queries")
+                        if xattr:
+                            indexType = [index.replace("`embedding`", "meta().xattrs.embedding") for index in indexType]
+                            queryType = [query.replace("embedding", "meta().xattrs.embedding") for query in queryType]
+                        queryParams = SIFTQueriesVectorParams
+                        # prev_valType = valType
                     i = 0
                     q = 0
                     while i < workload.get("2i")[0] or q < workload.get("2i")[1]:
@@ -317,16 +339,16 @@ class DoctorN1QL():
                             if workload.get("vector"):
                                 vector_defn = workload.get("vector")[i % len(workload.get("vector"))]
                                 dim = workload.get("dim")
-                                quantization = vector_defn["quantization"]
                                 similarity = vector_defn["similarity"]
                                 nProbe = vector_defn["nProbe"]
-                                vector_fields = "'dimension': {}, 'description': 'IVF,{}', 'similarity': '{}', 'scan_nprobes': {}".format(
-                                    dim, quantization, similarity, nProbe)
+                                description = vector_defn.get("description", "IVF,SQ8")
+                                vector_fields = "'dimension': {}, 'description': '{}', 'similarity': '{}', 'scan_nprobes': {}".format(
+                                dim, description, similarity, nProbe)
                                 idx_name = b.name.replace("-", "_") + "_idx_" + c + "_" + str(i)
-                                self.idx_q = indexType[counter % len(indexType)].format(
+                                self.idx_q = indexType[i % len(indexType)].format(
                                     index_name=idx_name, collection=c, vector=vector_fields)
                             else:
-                                self.idx_q = indexType[counter % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
+                                self.idx_q = indexType[i % len(indexType)].format(b.name.replace("-", "_") + "_idx_" + c + "_", i, c)
                             print self.idx_q
                             b.indexes.update({b.name.replace("-", "_") + "_idx_"+c+"_"+str(i): (self.idx_q, self.sdkClients[b.name+s], b.name, s, c)})
                             retry = 5
@@ -348,26 +370,34 @@ class DoctorN1QL():
                                         break
                             i += 1
                         if q < workload.get("2i")[1]:
-                            unformatted_q = queryType[counter % len(queryType)]
+                            gt = None
+                            unformatted_q = queryType[q % len(queryType)]
                             if workload.get("vector"):
-                                query = unformatted_q.format(collection=c, similarity=similarity, nProbe=10)
+                                gt = workload.get("groundTruths")
+                                query = unformatted_q.format(collection=c, similarity=similarity, nProbe=nProbe)
                             else:
                                 query = unformatted_q.format(c)
                             print query
-                            if unformatted_q not in b.query_map.keys():
-                                b.query_map[unformatted_q] = ["Q%s" % len(b.query_map.keys())]
+                            if query not in b.query_map.keys():
+                                b.query_map[query] = {"identifier": "C%s_Q%s" % (collection_num, q)}
                                 if queryParams:
-                                    b.query_map[unformatted_q].append(queryParams[counter % len(queryParams)])
-                                else:
-                                    b.query_map[unformatted_q].append("")
-                                b.queries.append((query, self.sdkClients[b.name+s], unformatted_q, vector_defn, dim))
+                                    b.query_map[query].update({"queryParams": queryParams[q % len(queryParams)]})
+                                b.query_map[query].update(
+                                    {
+                                        "sdk":self.sdkClients[b.name+s],
+                                        "vector_defn": vector_defn,
+                                        "dim": dim,
+                                        "gt": gt[q]
+                                        }
+                                    )
+                                # b.queries.append((query, self.sdkClients[b.name+s], unformatted_q, vector_defn, dim))
                             q += 1
-                        counter += 1
+                        # counter += 1
 
             query_tbl = TableView(self.log.info)
             query_tbl.set_headers(["Bucket", "##", "Query"])
-            for k, v in b.query_map.items():
-                query_tbl.add_row([b.name, v[0], k])
+            for k, v in sorted(b.query_map.items(), key=lambda x:x[1].get("identifier")):
+                query_tbl.add_row([b.name, v["identifier"], k])
             query_tbl.display("N1QL Queries to run during test:")
         return True
 
@@ -396,7 +426,7 @@ class DoctorN1QL():
                         build = True
                         build_query = "BUILD INDEX on `%s`(%s) USING GSI" % (
                             collection, ",".join(sorted(d.get(collection))))
-                        time.sleep(1)
+                        # time.sleep(1)
                         start = time.time()
                         while time.time() < start + 600:
                             try:
@@ -421,15 +451,17 @@ class DoctorN1QL():
                             _, _, _, _, c = val
                             d[c].append(key)
                         self.rest = GsiHelper(cluster.master, logger["test"])
-                        status = False
+                        ths = list()
                         for collection in sorted(d.keys())[i:i+1]:
                             for index_name in sorted(d.get(collection)):
                                 details = bucket.indexes[index_name]
-                                status = self.rest.polling_create_index_status(
-                                    bucket, index_name, timeout=timeout/10)
-                                print("index: {}, status: {}".format(index_name, status))
-                                if status is True:
-                                    self.log.info("2i index is ready: {}".format(index_name))
+                                th = threading.Thread(target=self.rest.polling_create_index_status,
+                                                      name=index_name,
+                                                      args=(bucket, index_name, timeout/10))
+                                th.start()
+                                ths.append(th)
+                        for th in ths:
+                            th.join()
                 k += 1
             i += 1
 
@@ -484,15 +516,21 @@ class DoctorN1QL():
                               kwargs=dict({"cluster": cluster}))
         th.start()
 
-
 class QueryLoad:
+    groundTruths = {}
+    queryVectors = []
 
     def __init__(self, bucket, mockVector=True, base64=False, validate_item_count=False):
         self.mockVector = mockVector
-        self.base64 = base64
+        self.base64 = False
         self.validate_item_count = validate_item_count
         self.bucket = bucket
-        self.queries = bucket.queries
+        self.queries = [item[0] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
+        self.queries_meta = [item[1] for item in sorted(bucket.query_map.items(), key=lambda x:x[1]["identifier"])]
+        for meta in self.queries_meta:
+            gt = meta["gt"][0]
+            if gt not in QueryLoad.groundTruths.keys():
+                QueryLoad.groundTruths.update({gt: self.read_gt_vecs(os.path.join(siftBigANN.get("baseFilePath"), gt))})
         self.failed_count = itertools.count()
         self.success_count = itertools.count()
         self.rejected_count = itertools.count()
@@ -502,13 +540,16 @@ class QueryLoad:
         self.total_query_count = itertools.count()
         self.stop_run = False
         self.log = logger.get("infra")
-        self.cluster_conn = self.queries[0][1]
+        self.cluster_conn = self.queries_meta[0]["sdk"]
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
-        self.query_stats = {key[2]: [0, 0] for key in self.queries}
+        self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock()] for idx, query in enumerate(self.queries)}
         self.failures = 0
         self.timeout_failures = 0
+        self.lock = Lock()
 
     def start_query_load(self):
+        if self.bucket.loadDefn.get("valType") == "siftBigANN":
+            self.query_stats = {query: [0, 0, 0, 0, self.queries_meta[idx]["gt"][1], Lock()] for idx, query in enumerate(self.queries)}
         self.stop_run = False
         self.concurrent_queries_to_run = self.bucket.loadDefn.get("2iQPS")
         th = threading.Thread(target=self._run_concurrent_queries)
@@ -520,13 +561,17 @@ class QueryLoad:
     def _run_concurrent_queries(self):
         threads = []
         method = self._run_query
+        count = 100
         if self.bucket.loadDefn.get("collections_defn")[0].get("vector"):
             method = self._run_vector_query
+            if not self.mockVector and not QueryLoad.queryVectors:
+                QueryLoad.queryVectors = self.read_query_vecs(siftBigANN.get("baseFilePath") + "/bigann_query.bvecs")
+                count = 1000
         for i in range(0, self.concurrent_queries_to_run):
             threads.append(Thread(
                 target=method,
                 name="query_thread_{0}".format(self.bucket.name + str(i)),
-                args=(self.validate_item_count, 0)))
+                args=(self.validate_item_count, count)))
 
         for thread in threads:
             thread.start()
@@ -535,38 +580,41 @@ class QueryLoad:
             thread.join()
 
     def _run_vector_query(self, validate_item_count=True, expected_count=100):
-        validate_item_count = True
-        expected_count = 100
         name = threading.currentThread().getName()
         counter = 0
         hotel = Hotel()
         while not self.stop_run:
+            # self.lock.acquire()
             client_context_id = name + str(counter)
-            counter += 1
             start = time.time()
             e = ""
             try:
                 self.total_query_count.next()
-                query_tuple = self.queries[counter%len(self.queries)]
-                query = query_tuple[0]
-                original_query = query_tuple[2]
-                dim = query_tuple[4]
+                query = self.queries[counter%len(self.queries)]
+                query_tuple = self.queries_meta[counter%len(self.queries)]
+                lock = self.query_stats[query][-1]
+                lock.acquire()
+                gt = query_tuple["gt"][0]
+                dim = query_tuple["dim"]
                 vector_float = []
+                index = self.query_stats[query][1] % len(QueryLoad.queryVectors)
                 if self.mockVector:
                     flt_buf = Hotel.flt_buf
                     _slice = random.randint(0, Hotel.flt_buf_length-dim)
                     embedding = flt_buf[_slice: _slice+dim]
                 else:
-                    # Placeholder for SIFT
-                    pass
-    
+                    expected_count = 100
+                    embedding = QueryLoad.queryVectors[index]
+                    groudtruth = QueryLoad.groundTruths[gt][index][:expected_count]
+                    validate_item_count = True
+
                 if self.base64:
                     vector_float = hotel.convertToBase64Bytes(embedding)
                 else:
                     for value in embedding:
                         vector_float.append(float(value))
 
-                q_param = self.bucket.query_map[original_query][1]
+                q_param = query_tuple["queryParams"]
                 q_param.update({"vector": vector_float})
                 q_param_json = JsonObject.create()
                 for k, v in q_param.items():
@@ -574,15 +622,32 @@ class QueryLoad:
                         q_param_json.put(k, eval(v))
                     except:
                         q_param_json.put(k, v)
+                # import pydevd
+                # pydevd.settrace(trace_only_current_thread=False)
                 status, metrics, _, results, _ = execute_statement_on_n1ql(
                     self.cluster_conn, query, client_context_id,
                     q_param_json, validate=validate_item_count)
-                self.query_stats[original_query][0] += metrics.executionTime().toNanos()/1000000.0
-                self.query_stats[original_query][1] += 1
+                self.query_stats[query][0] += metrics.executionTime().toNanos()/1000000.0
+                self.query_stats[query][1] += 1
+                lock.release()
                 if status == QueryStatus.SUCCESS:
+                    if self.bucket.loadDefn.get("valType") == "siftBigANN":
+                        results = [result.get("id") for result in list(results)]
+                        if results:
+                            accuracy, recall = self.compare_result(results, groudtruth)
+                            self.query_stats[query][2] += accuracy
+                            self.query_stats[query][3] += round(100.0 * recall//len(results), 2)
+                        # print("Thread: {}, QueryType: {}, QueryNum: {}, QueryResults: {}, Accuracy: {}, recall: {}".format(
+                        #     name,
+                        #     self.bucket.query_map[query]["identifier"],
+                        #     index, len(results),
+                        #     accuracy,
+                        #     round(100.0 * recall//len(results), 2)))
+                        # self.query_stats[query][-1] += 1
+
                     if validate_item_count:
-                        if results.size() != expected_count:
-                            # self.log.critical("Expected Count:{}, Actual Count:{}".format(expected_count, results.size()))
+                        if len(results) != expected_count:
+                            self.log.critical("Expected Count:{}, Actual Count:{}".format(expected_count, len(results)))
                             # q_param_json.removeKey("vector")
                             # print q_param_json
                             # print query
@@ -602,6 +667,8 @@ class QueryLoad:
             except (Exception, PlanningFailureException) as e:
                 print e
                 self.error_count.next()
+            if e:
+                lock.release()
             if str(e).find("TimeoutException") != -1\
                 or str(e).find("AmbiguousTimeoutException") != -1\
                     or str(e).find("UnambiguousTimeoutException") != -1:
@@ -614,13 +681,14 @@ class QueryLoad:
             elif str(e).find("InternalServerFailureException") != -1 or str(e).find("CouchbaseException") != -1:
                 self.failures += self.error_count.next()
 
-            if e and (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1):
+            if e and (str(e).find("AmbiguousTimeoutException") == -1 or str(e).find("no more information available") != -1 or\
+                      str(e).find("Index not ready for serving queries") == -1):
                 self.log.critical(client_context_id + ":" + query)
                 self.log.critical(e)
             end = time.time()
             if end - start < 1:
                 time.sleep(end - start)
-
+            counter += 1
 
     def _run_query(self, validate_item_count=False, expected_count=0):
         name = threading.currentThread().getName()
@@ -635,7 +703,7 @@ class QueryLoad:
                 query_tuple = self.queries[counter%len(self.queries)]
                 query = query_tuple[0]
                 original_query = query_tuple[2]
-                    
+
                 q_param = self.bucket.query_map[original_query][1]
                 q_param_json = JsonObject.create()
                 for k, v in q_param.items():
@@ -688,3 +756,50 @@ class QueryLoad:
             end = time.time()
             if end - start < 1:
                 time.sleep(end - start)
+
+    def read_query_vecs(self, filename):
+        '''
+            4+d bytes for .bvecs
+            4+d*4 bytes for .fvecs and .ivecs
+            File: bigann_query.bvecs
+        '''
+        groundTruths = []
+        f = open(filename, '+rb')
+
+        for _ in range(10000):
+            # Read the dimension (4 bytes)
+            d_bytes = f.read(4)
+            dim = struct.unpack('<i', d_bytes)[0]
+            vector = f.read(dim)
+            components = struct.unpack('<'+('B' * dim), vector)
+            components = list(map(float, components))
+            groundTruths.append(components)
+
+        return groundTruths
+
+    def read_gt_vecs(self, filename):
+        '''
+            4+d bytes for .bvecs
+            4+d*4 bytes for .fvecs and .ivecs
+            File: idx_10M.ivecs
+        '''
+        gtVectors = []
+        f = open(filename, '+rb')
+
+        for _ in range(10000):
+            # Read the dimension (4 bytes)
+            d_bytes = f.read(4)
+            dim = struct.unpack('<i', d_bytes)[0]
+            vector = f.read(dim*4)
+            components = struct.unpack('<'+'i' * dim, vector)
+            gtVectors.append(components)
+
+        return gtVectors
+
+    def compare_result(self, actual, expected):
+        accuracy = 100 if actual and actual[0] == expected[0] else 0
+        recall = 0
+        for item in actual:
+            if item in expected:
+                recall += 1
+        return accuracy, recall

@@ -24,13 +24,23 @@ class DoctorEventing():
             eventing_helper.import_function(body)
         self.log.info("Done creating Eventing functions")
 
+    def create_eventing_function(self, cluster, eventing_helper=None, file=None):
+        eventing_helper = eventing_helper or EventingHelper(cluster.eventing_nodes[0])
+        fh = open(os.path.join(file), "r")
+        body = fh.read()
+        body = body.replace("bucketname", cluster.buckets[0].name)
+        fh.close()
+        self.log.debug("Creating Eventing function - {}".format(json.loads(body)["appname"]))
+        eventing_helper.import_function(body)
+
     def lifecycle_operation_for_all_functions(self, cluster, operation, state):
         eventing_helper = EventingHelper(cluster.eventing_nodes[0])
         _, response = eventing_helper.get_list_of_eventing_functions()
-        for function in response["functions"]:
+        for function in list(set(response["functions"])):
             self.log.info("{0} Eventing function {1}".format(operation, function))
             eventing_helper.lifecycle_operation(function, operation)
-            self._wait_for_lifecycle_operation_to_complete(cluster, function, state)
+            function_name = function.split("/")[-1]
+            self._wait_for_lifecycle_operation_to_complete(cluster, function_name, state)
 
     def delete_eventing_functions(self, cluster):
         eventing_helper = EventingHelper(cluster.eventing_nodes[0])

@@ -55,20 +55,32 @@ dependencies {
 
     implementation 'org.mongodb:mongodb-driver-sync:4.11.0'
     
-	compile group: 'co.elastic.clients' , name: 'elasticsearch-java', version:'8.11.3'
+    compile group: 'co.elastic.clients' , name: 'elasticsearch-java', version:'8.11.3'
     compile group: 'com.fasterxml.jackson.core' , name:'jackson-databind', version:'2.12.3'
-    
+
     // https://mvnrepository.com/artifact/ai.djl.pytorch/pytorch-engine
     compile group: 'ai.djl.pytorch', name: 'pytorch-engine', version: '0.25.0'
-    
+
     // https://mvnrepository.com/artifact/ai.djl.huggingface/tokenizers
     compile group: 'ai.djl.huggingface', name: 'tokenizers', version: '0.25.0'
-    
+
     // https://mvnrepository.com/artifact/ai.djl.pytorch/pytorch-model-zoo
     compile group: 'ai.djl.pytorch', name: 'pytorch-model-zoo', version: '0.25.0'
-    
+
     // https://mvnrepository.com/artifact/org.apache.kafka/kafka-clients
-	compile group: 'org.apache.kafka', name: 'kafka-clients', version: '3.7.0'
+    compile group: 'org.apache.kafka', name: 'kafka-clients', version: '3.7.0'
+
+    // https://mvnrepository.com/artifact/org.asynchttpclient/async-http-client
+    compile group: 'org.asynchttpclient', name: 'async-http-client', version: '2.4.5'
+
+    // https://mvnrepository.com/artifact/commons-codec/commons-codec
+    compile group: 'commons-codec', name: 'commons-codec', version: '1.16.0'
+
+    // https://mvnrepository.com/artifact/org.apache.commons/commons-lang3
+    compile group: 'org.apache.commons', name: 'commons-lang3', version: '3.16.0'
+
+    // https://mvnrepository.com/artifact/commons-io/commons-io
+    compile group: 'commons-io', name: 'commons-io', version: '2.4'
 
 }
 

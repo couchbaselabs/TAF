@@ -65,6 +65,401 @@ nimbus = {
         ]
     }
 
+siftBigANN = {
+    "valType": "siftBigANN",
+    "baseFilePath": _input.param("baseFilePath", "/root/bigann"),
+    "scopes": 1,
+    "collections": _input.param("collections", 2),
+    "ops": _input.param("ops_rate", 50000),
+    "doc_size": _input.param("doc_size", 1024),
+    "pattern": [0, 0, 100, 0, 0], # CRUDE
+    "load_type": ["update"],
+    "2iQPS": 10,
+    "ftsQPS": 10,
+    "cbasQPS": 10,
+    "collections_defn": [
+        {
+            "num_items": 10000000,
+            "valType": "siftBigANN",
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            "indexes": [
+                'CREATE INDEX {index_name} ON {collection}(`brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`brand`, `color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                ],
+            "queries": [
+                'SELECT id from {collection} where brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where brand="Nike" AND color="Green" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where brand="Nike" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "indexes_base64": [
+                'CREATE INDEX {index_name} ON {collection}(`brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`brand`, `color`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`brand`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                ],
+            "queries_base64": [
+                'SELECT id from {collection} where brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where brand="Nike" AND color="Green" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where brand="Nike" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "groundTruths":[
+                ("idx_1M.ivecs", "1/10"),
+                ("idx_2M.ivecs", "2/10"),
+                ("idx_5M.ivecs", "5/10"),
+                ],
+            "2i": [_input.param("gsi_indexes", 3),
+                   _input.param("gsi_queries", 3)],
+        },
+        {
+            "num_items": 20000000,
+            "valType": "siftBigANN",
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            "indexes": [
+                'CREATE INDEX {index_name} ON {collection}(`country`, `brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`country`, `brand`, `color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`country`, `brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};'
+                ],
+            "queries": [
+                'SELECT id from {collection} where country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where country="USA" AND brand="Nike" AND color="Green" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where country="USA" AND brand="Nike" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where country="USA" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100'
+                ],
+            "indexes_base64": [
+                'CREATE INDEX {index_name} ON {collection}(`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`country`, `brand`, `color`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`country`, `brand`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};'
+                ],
+            "queries_base64": [
+                'SELECT id from {collection} where country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where country="USA" AND brand="Nike" AND color="Green" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where country="USA" AND brand="Nike" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where country="USA" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100'
+                ],
+            "groundTruths":[
+                ("idx_1M.ivecs", "1/20"),
+                ("idx_2M.ivecs", "2/20"),
+                ("idx_5M.ivecs", "5/20"),
+                ("idx_10M.ivecs", "10/20"),
+                ],
+            "2i": [_input.param("gsi_indexes", 4),
+                   _input.param("gsi_queries", 4)],
+        },
+        {
+            "num_items": 50000000,
+            "valType": "siftBigANN",
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            "indexes": [
+                'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `brand`, `color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                ],
+            "queries": [
+                'SELECT id from {collection} where category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" AND country="USA" AND brand="Nike" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" AND country="USA" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "indexes_base64": [
+                'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `brand`, `color`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`,`country`, `brand`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`,`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`,decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                ],
+            "queries_base64": [
+                'SELECT id from {collection} where category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" AND country="USA" AND brand="Nike" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" AND country="USA" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "groundTruths":[
+                ("idx_1M.ivecs", "1/50"),
+                ("idx_2M.ivecs", "2/50"),
+                ("idx_5M.ivecs", "5/50"),
+                ("idx_10M.ivecs", "10/50"),
+                ("idx_20M.ivecs", "20/50"),
+                ],
+            "2i": [_input.param("gsi_indexes", 5),
+                   _input.param("gsi_queries", 5)],
+        },
+        {
+            "num_items": 100000000,
+            "valType": "siftBigANN",
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            "indexes": [
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`,`country`, `brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`, `embedding` VECTOR, `country`, `brand`, `color`, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`,`embedding` VECTOR, `country`, `brand`, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`,`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`embedding` VECTOR, `type`, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                ],
+            "queries": [
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "indexes_base64": [
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`, decode_vector(`embedding`, false) VECTOR, `country`, `brand`, `color`, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`,decode_vector(`embedding`, false) VECTOR, `country`, `brand`, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`,`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`type`, `category`,decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(decode_vector(`embedding`, false) VECTOR, `type`, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                ],
+            "queries_base64": [
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" AND country="USA" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" AND category="Shoes" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where `type`="Casual" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "groundTruths":[
+                ("idx_1M.ivecs", "1/100"),
+                ("idx_2M.ivecs", "2/100"),
+                ("idx_5M.ivecs", "5/100"),
+                ("idx_10M.ivecs", "10/100"),
+                ("idx_20M.ivecs", "20/100"),
+                ("idx_50M.ivecs", "50/100"),
+                ],
+            "2i": [_input.param("gsi_indexes", 6),
+                   _input.param("gsi_queries", 6)],
+        },
+        {
+            "num_items": 200000000,
+            "valType": "siftBigANN",
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            "indexes": [
+                # 'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                # 'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                # 'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "queries": [
+                # 'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "indexes_base64": [
+                # 'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                # 'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, decode_vector(`embedding`, false) VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                # 'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, decode_vector(`embedding`, false) VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`review`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "queries_base64": [
+                # 'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "groundTruths":[
+                # ("idx_1M.ivecs", "1/200"),
+                # ("idx_2M.ivecs", "2/200"),
+                # ("idx_5M.ivecs", "5/200"),
+                ("idx_10M.ivecs", "10/200"),
+                ("idx_20M.ivecs", "20/200"),
+                ("idx_50M.ivecs", "50/200"),
+                ("idx_100M.ivecs", "100/200"),
+                ],
+            "2i": [_input.param("gsi_indexes", 4),
+                   _input.param("gsi_queries", 4)],
+        },
+        {
+            "num_items": 500000000,
+            "valType": "siftBigANN",
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            "indexes": [
+                'CREATE INDEX {index_name} ON {collection}(`size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`color`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`brand`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`country`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                # 'CREATE INDEX {index_name} ON {collection}(`type`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                # 'CREATE INDEX {index_name} ON {collection}(`review`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "queries": [
+                'SELECT id from {collection} where size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where color="Green" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where brand="Nike" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where country="USA" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where `type`="Casual" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review=1 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review in [1.0, 2.0] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "indexes_base64": [
+                'CREATE INDEX {index_name} ON {collection}(`size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`color`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`brand`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`country`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                'CREATE INDEX {index_name} ON {collection}(`category`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":16, {vector}}};',
+                # 'CREATE INDEX {index_name} ON {collection}(`type`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                # 'CREATE INDEX {index_name} ON {collection}(`review`, `embedding` VECTOR, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+                ],
+            "queries_base64": [
+                'SELECT id from {collection} where size=5 ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where color="Green" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where brand="Nike" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where country="USA" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where category="Shoes" ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where `type`="Casual" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review=1 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review in [1.0, 2.0] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "groundTruths":[
+                ("idx_1M.ivecs", "1/500"),
+                ("idx_2M.ivecs", "2/500"),
+                ("idx_5M.ivecs", "5/500"),
+                ("idx_10M.ivecs", "10/500"),
+                ("idx_20M.ivecs", "20/500"),
+                # ("idx_50M.ivecs", "50/500"),
+                # ("idx_100M.ivecs", "100/500"),
+                # ("idx_200M.ivecs", "200/500"),
+                ],
+            "2i": [_input.param("gsi_indexes", 5),
+                   _input.param("gsi_queries", 5)],
+        },
+        {
+            "num_items": 1000000000,
+            "valType": "siftBigANN",
+            "dim": _input.param("dim", 128),
+            "vector": [
+                {
+                    "similarity": _input.param("similarity", "L2_SQUARED"),
+                    "quantization": _input.param("quantization", "SQ8"),
+                    "description": "IVF100000,SQ8",
+                    "nProbe": _input.param("nProbe", 20)
+                    }
+                ],
+            # "indexes": [
+            #     'CREATE INDEX {index_name} ON {collection}(`embedding` VECTOR, `review`, `type`, `category`,`country`, `brand`, `color`, `size`, `id`) WITH {{"defer_build":true, "num_replica":1, {vector}}};',
+            #     ],
+            # "queries": [
+            #     'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where color="Green" AND size in [5,6] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where brand="Nike" AND color in ["Green","Red"] AND size in [5,6,7] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where country="USA" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where category="Shoes" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where `type`="Casual" ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where review=1.0 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where review in [1.0, 2.0]ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where review < 6  ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     'SELECT id from {collection} where review > 0 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+            #     ],
+            "indexes": [
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, `embedding` VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":32, {vector}}};',
+                ],
+            "indexes_base64": [
+                'CREATE INDEX {index_name} ON {collection}(`review`, `type`, `category`,`country`, `brand`, `color`, `size`, decode_vector(`embedding`, false) VECTOR, `id`) PARTITION BY HASH(meta().id) WITH {{"defer_build":true, "num_replica":1, "num_partition":32, {vector}}};',
+                ],
+            "queries": [
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size in [5,6] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color in ["Green","Red"] AND size in [5,6,7] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand in ["Nike","Adidas"] AND color in ["Green","Red", "Blue"] AND size in [5,6,7,8] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country in ["USA","Canada"] AND brand in ["Nike","Adidas", "Puma"] AND color in ["Green","Red", "Blue","Purple"] AND size in [5,6,7,8,9] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category in ["Shoes","Jeans"] AND country in ["USA","Canada","Australia"] AND brand in ["Nike","Adidas","Puma","Asic"] AND color in ["Green","Red", "Blue","Purple","Pink"] AND size in [5,6,7,8,9,10] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review=1.0 AND `type` in ["Casual","Formal"] AND category in ["Shoes","Jeans","Shirt"] AND country in ["USA","Canada","Australia","England"] AND brand in ["Nike","Adidas","Puma","Asic","Brook"] AND color in ["Green","Red", "Blue","Purple","Pink","Yellow"] AND size in [5,6,7,8,9,10,11] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review in [1.0, 2.0] AND `type` in ["Casual","Formal","Sports"] AND category in ["Shoes","Jeans","Shirt","Shorts"] AND country in ["USA","Canada","Australia","England","India"] AND brand in ["Nike","Adidas","Puma","Asic","Brook","Hoka"] AND color in ["Green","Red", "Blue","Purple","Pink","Yellow","Brown"] AND size in [5,6,7,8,9,10,11,12] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review in [1.0, 2.0, 5.0] AND `type` in ["Casual","Formal","Sports"] AND category in ["Shoes","Jeans","Shirt","Shorts"] AND country in ["USA","Canada","Australia","England","India"] AND brand in ["Nike","Adidas","Puma","Asic","Brook","Hoka"] AND color in ["Green","Red", "Blue","Purple","Pink","Yellow","Brown"] AND size in [5,6,7,8,9,10,11,12] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review in [1.0, 2.0, 5.0, 10.0] AND `type` in ["Casual","Formal","Sports"] AND category in ["Shoes","Jeans","Shirt","Shorts"] AND country in ["USA","Canada","Australia","England","India"] AND brand in ["Nike","Adidas","Puma","Asic","Brook","Hoka"] AND color in ["Green","Red", "Blue","Purple","Pink","Yellow","Brown"] AND size in [5,6,7,8,9,10,11,12] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "queries_base64": [
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size=5 ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color="Green" AND size in [5,6] ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand="Nike" AND color in ["Green","Red"] AND size in [5,6,7] ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country="USA" AND brand in ["Nike","Adidas"] AND color in ["Green","Red", "Blue"] AND size in [5,6,7,8] ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category="Shoes" AND country in ["USA","Canada"] AND brand in ["Nike","Adidas", "Puma"] AND color in ["Green","Red", "Blue","Purple"] AND size in [5,6,7,8,9] ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                'SELECT id from {collection} where review=1.0 AND `type`="Casual" AND category in ["Shoes","Jeans"] AND country in ["USA","Canada","Australia"] AND brand in ["Nike","Adidas","Puma","Asic"] AND color in ["Green","Red", "Blue","Purple","Pink"] AND size in [5,6,7,8,9,10] ORDER BY ANN(DECODE_VECTOR(embedding,False) , $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review=1.0 AND `type` in ["Casual","Formal"] AND category in ["Shoes","Jeans","Shirt"] AND country in ["USA","Canada","Australia","England"] AND brand in ["Nike","Adidas","Puma","Asic","Brook"] AND color in ["Green","Red", "Blue","Purple","Pink","Yellow"] AND size in [5,6,7,8,9,10,11] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review in [1.0, 2.0] AND `type` in ["Casual","Formal","Sports"] AND category in ["Shoes","Jeans","Shirt","Shorts"] AND country in ["USA","Canada","Australia","England","India"] AND brand in ["Nike","Adidas","Puma","Asic","Brook","Hoka"] AND color in ["Green","Red", "Blue","Purple","Pink","Yellow","Brown"] AND size in [5,6,7,8,9,10,11,12] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review in [1.0, 2.0, 5.0] AND `type` in ["Casual","Formal","Sports"] AND category in ["Shoes","Jeans","Shirt","Shorts"] AND country in ["USA","Canada","Australia","England","India"] AND brand in ["Nike","Adidas","Puma","Asic","Brook","Hoka"] AND color in ["Green","Red", "Blue","Purple","Pink","Yellow","Brown"] AND size in [5,6,7,8,9,10,11,12] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                # 'SELECT id from {collection} where review in [1.0, 2.0, 5.0, 10.0] AND `type` in ["Casual","Formal","Sports"] AND category in ["Shoes","Jeans","Shirt","Shorts"] AND country in ["USA","Canada","Australia","England","India"] AND brand in ["Nike","Adidas","Puma","Asic","Brook","Hoka"] AND color in ["Green","Red", "Blue","Purple","Pink","Yellow","Brown"] AND size in [5,6,7,8,9,10,11,12] ORDER BY ANN(embedding, $vector, "{similarity}", {nProbe}) limit 100',
+                ],
+            "groundTruths":[
+                ("idx_1M.ivecs", "1/1B"),
+                ("idx_2M.ivecs", "2/1B"),
+                ("idx_5M.ivecs", "5/1B"),
+                ("idx_10M.ivecs", "10/1B"),
+                ("idx_20M.ivecs", "20/1B"),
+                ("idx_50M.ivecs", "50/1B"),
+                # ("idx_100M.ivecs", "100/1B"),
+                # ("idx_200M.ivecs", "200/1B"),
+                # ("idx_500M.ivecs", "500/1B"),
+                # ("idx_1000M.ivecs", "1B/1B")
+                ],
+            "2i": [_input.param("gsi_indexes", 1),
+                   _input.param("gsi_queries", 6)],
+        },
+    ]
+}
+
 hotel_vector = {
     "valType": _input.param("val_type", "Hotel"),
     "scopes": 1,

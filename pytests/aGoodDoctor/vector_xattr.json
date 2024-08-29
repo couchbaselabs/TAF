@@ -1,0 +1,44 @@
+{
+	"appcode": "function OnUpdate(doc, meta, xattrs) {\n    log(\"Doc created/updated\", meta.id);\n    // all user _xattrs in metadata KEY <= 16 chars, no long names\n    if(\"embedding\" in doc){\n        try {\n            couchbase.mutateIn(upsert_xattr, meta, [couchbase.MutateInSpec.upsert(\"embedding\", doc.embedding, {\"xattrs\": true}), couchbase.MutateInSpec.remove(\"embedding\")]);\n        } catch (e) {\n            log(\"xattrs\", e)\n        }\n        log(\"updated embedding vector \" + meta.id + \" \" + doc.embedding.length + \" in xattrs.embedding\");\n    }\n}\n\nfunction OnCreate(doc, meta, xattrs) {\n    log(\"Doc created/updated\", meta.id);\n    // all user _xattrs in metadata KEY <= 16 chars, no long names\n    if(\"embedding\" in doc){\n        try {\n            couchbase.mutateIn(upsert_xattr, meta, [couchbase.MutateInSpec.upsert(\"embedding\", doc.embedding, {\"xattrs\": true}), couchbase.MutateInSpec.remove(\"embedding\")]);\n        } catch (e) {\n            log(\"xattrs\", e)\n        }\n        log(\"updated embedding vector \" + meta.id + \" \" + doc.embedding.length + \" in xattrs.embedding\");\n    }\n}",
+	"depcfg": {
+		"buckets": [
+			{
+				"alias": "upsert_xattr",
+				"bucket_name": "bucketname",
+				"scope_name": "_default",
+				"collection_name": "*",
+				"access": "rw"
+			}
+		],
+		"source_bucket": "bucketname",
+		"source_scope": "_default",
+		"source_collection": "*",
+		"metadata_bucket": "bucketname",
+		"metadata_scope": "_default",
+		"metadata_collection": "_default"
+	},
+	"version": "evt-7.7.0-1209-ee",
+	"enforce_schema": false,
+	"handleruuid": 213487336,
+	"function_instance_id": "&ZFR33",
+	"appname": "xattr",
+	"settings": {
+		"cursor_aware": false,
+		"dcp_stream_boundary": "everything",
+		"deployment_status": false,
+		"description": "",
+		"execution_timeout": 60,
+		"language_compatibility": "7.2.0",
+		"log_level": "INFO",
+		"n1ql_consistency": "none",
+		"num_timer_partitions": 720,
+		"processing_status": false,
+		"timer_context_size": 1024,
+		"user_prefix": "eventing",
+		"worker_count": 64
+	},
+	"function_scope": {
+		"bucket": "bucketname",
+		"scope": "_default"
+	}
+}

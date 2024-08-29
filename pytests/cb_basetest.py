@@ -103,7 +103,7 @@ class CouchbaseBaseTest(unittest.TestCase):
 
         # Doc specific params
         self.doc_ops = self.input.param("doc_ops", None)
-        self.key = self.input.param("key", "test_docs")
+        self.key = self.input.param("key", "test_docs-")
         self.key_size = self.input.param("key_size", 8)
         self.doc_size = self.input.param("doc_size", 256)
         self.sub_doc_size = self.input.param("sub_doc_size", 10)
@@ -129,6 +129,7 @@ class CouchbaseBaseTest(unittest.TestCase):
         self.dim = self.input.param("dim", 384)
         self.fts_index_type = self.input.param("fts_index_type", "vector")
         self.base64 = self.input.param("base64", False)
+        self.xattr = self.input.param("xattr", False)
         self.esClient = None
         self.mutate = self.input.param("mutate", 0)
         # End of doc specific parameters

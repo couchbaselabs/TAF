@@ -18,6 +18,7 @@ import com.couchbase.test.val.Hotel;
 import com.couchbase.test.val.SimpleValue;
 import com.couchbase.test.val.Vector;
 import com.couchbase.test.val.anySizeValue;
+import com.couchbase.test.val.siftBigANN;
 
 import com.couchbase.test.val.NimbusM;
 import com.couchbase.test.val.NimbusP;
@@ -60,6 +61,8 @@ abstract class KVGenerator{
             this.valInstance = Hotel.class;
         else if (valClass.equals(Vector.class.getSimpleName()))
             this.valInstance = Vector.class;
+        else if (valClass.equals(siftBigANN.class.getSimpleName()))
+            this.valInstance = siftBigANN.class;
         else
             this.valInstance = SimpleValue.class;
 

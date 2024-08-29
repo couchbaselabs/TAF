@@ -368,14 +368,33 @@ class GsiHelper(RestConnection):
                 self.log.debug("{} is not present in stats key".format(bucket_name))
         return index_completed
 
-    def polling_create_index_status(self, bucket=None, index=None, timeout=60, sleep_time=10):
+    def polling_for_index_training(self, bucket=None, index=None, timeout=60, sleep_time=10):
         self.log.info("Starting polling for index:"+str(index))
         for x in range(timeout):
             result = self.index_status()
             if bucket.name in result:
                 if result[bucket.name].has_key(index):
                     self.log.debug("Check {}, {}: {}".format(str(x), index, result[bucket.name][index]['status']))
-                    if result[bucket.name][index]['status'] == 'Ready':
+                    if result[bucket.name][index]['status'] not in ("Training", "Created"):
+                        self.log.info("2i index is trained: {}".format(index))
+                        self.log.info("Index {} training is completed in {}".format(index, str(x*sleep_time)))
+                        return True
+            else:
+                self.log.info("Index {} not found with iteration {}".format(index, str(x)))
+            sleep(sleep_time)
+        return False
+
+    def polling_create_index_status(self, bucket=None, index=None, timeout=60, sleep_time=10, status="Ready"):
+        self.polling_for_index_training(bucket, index, timeout=timeout/10)
+        self.log.info("Starting polling for index:"+str(index))
+        for x in range(timeout):
+            result = self.index_status()
+            if bucket.name in result:
+                if result[bucket.name].has_key(index):
+                    self.log.debug("Check {}, {}: {}".format(str(x), index, result[bucket.name][index]['status']))
+                    if result[bucket.name][index]['status'] == status or result[bucket.name][index]['status'] == "Ready":
+                        self.log.info("2i index is ready: {}".format(index))
+                        self.log.info("Index {} build is completed in {}".format(index, str(x*sleep_time)))
                         return True
             else:
                 self.log.info("Index {} not found with iteration {}".format(index, str(x)))
@@ -444,3 +463,42 @@ class GsiHelper(RestConnection):
                 self.log.info("Got exception:{0} with index name".format(str(e)))
                 sleep(10, "wait after exception")
         return status, content, header
+
+    def get_bucket_index_stats(self, timeout=120):
+        api = self.indexUrl + 'stats'
+        status, content, _ = self._http_request(api, timeout=timeout)
+        parsed = dict()
+        if status:
+            parsed = json.loads(content)
+        index_map = {}
+        for key in list(parsed.keys()):
+            tokens = key.split(":")
+            val = parsed[key]
+            if len(tokens) == 1:
+                field = tokens[0]
+                index_map[field] = val
+            elif len(tokens) == 3:
+                bucket = tokens[0]
+                index_name = tokens[1]
+                stats_name = tokens[2]
+                if bucket not in list(index_map.keys()):
+                    index_map[bucket] = {}
+                if index_name not in list(index_map[bucket].keys()):
+                    index_map[bucket][index_name] = {}
+                index_map[bucket][index_name][stats_name] = val
+            elif len(tokens) == 5:
+                bucket = tokens[0]
+                scope_name = tokens[1]
+                collection_name = tokens[2]
+                index_name = tokens[3]
+                stats_name = tokens[4]
+                if bucket not in index_map:
+                    index_map[bucket] = dict()
+                if scope_name not in index_map[bucket]:
+                    index_map[bucket][scope_name] = dict()
+                if collection_name not in index_map[bucket][scope_name]:
+                    index_map[bucket][scope_name][collection_name] = dict()
+                if index_name not in index_map[bucket][scope_name][collection_name]:
+                    index_map[bucket][scope_name][collection_name][index_name] = dict()
+                index_map[bucket][scope_name][collection_name][index_name][stats_name] = val
+        return index_map

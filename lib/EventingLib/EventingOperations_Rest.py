@@ -402,7 +402,7 @@ class EventingHelper(RestConnection):
     def import_function(self, body):
         url = "api/v1/import"
         api = self.eventing_baseUrl + url
-        status, content, _ = self._http_request(api, 'POST', params=body)
+        status, content, _ = self._http_request(api, 'POST', params=str(body))
         return status, content
 
     def create_function(self, name, body):

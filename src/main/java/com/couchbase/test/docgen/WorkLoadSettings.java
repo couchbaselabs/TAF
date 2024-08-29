@@ -47,6 +47,7 @@ public class WorkLoadSettings extends WorkLoadBase {
     public boolean mockVector;
     public int dim;
     public boolean base64;
+    public String baseVectorsFilePath;
 
     /**** Constructors ****/
     public WorkLoadSettings(String keyPrefix,
@@ -81,7 +82,8 @@ public class WorkLoadSettings extends WorkLoadBase {
             String keyType, String valueType,
             boolean validate, boolean gtm, boolean deleted, int mutated,
             String model, boolean mockVector, int dim, boolean base64,
-            String mutate_field, Integer mutation_timeout) {
+            String mutate_field, Integer mutation_timeout,
+            String baseVectorsFilePath) {
         super();
         this.keyPrefix = keyPrefix;
         this.keySize = keySize;
@@ -107,6 +109,7 @@ public class WorkLoadSettings extends WorkLoadBase {
         this.base64 = base64;
         this.mutate_field = mutate_field;
         this.mutation_timeout = mutation_timeout;
+        this.baseVectorsFilePath = baseVectorsFilePath;
     };
 
     public WorkLoadSettings(
