@@ -7338,12 +7338,12 @@ class CompactBucketTask(Task):
         self.bucket = bucket
         self.progress = 0
         self.timeout = timeout
-        self.rest = RestConnection(server)
+        self.rest = ClusterRestAPI(server)
         self.retries = 20
         self.statuses = dict()
 
         # get the current count of compactions
-        nodes = self.rest.get_nodes()
+        nodes = global_vars.cluster_util.get_nodes(server)
         self.compaction_count = dict()
         for node in nodes:
             self.compaction_count[node.ip] = 0
@@ -7374,8 +7374,9 @@ class CompactBucketTask(Task):
                         "%s seconds" % self.timeout)
                     break
                 status, self.progress = \
-                    self.rest.check_compaction_status(self.bucket.name)
-                if self.progress > 0:
+                    global_vars.bucket_util.check_compaction_status(
+                        self.server, self.bucket.name)
+                if status and self.progress > 0:
                     self.test_log.debug("Compaction started for %s"
                                         % self.bucket.name)
                     break
@@ -7388,12 +7389,13 @@ class CompactBucketTask(Task):
                     self.set_exception("Compaction timed out to complete with "
                                        "%s seconds" % self.timeout)
                 status, self.progress = \
-                    self.rest.check_compaction_status(self.bucket.name)
+                    global_vars.bucket_util.check_compaction_status(
+                        self.server, self.bucket.name)
 
                 if status is True:
                     self.test_log.debug("%s compaction done: %s%%"
                                         % (self.bucket.name, self.progress))
-                if status is False:
+                else:
                     self.progress = 100
                     self.test_log.debug("Compaction completed for %s"
                                         % self.bucket.name)
