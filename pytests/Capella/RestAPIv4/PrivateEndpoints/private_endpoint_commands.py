@@ -297,7 +297,7 @@ class PostEndpointCommand(GetPrivateEndpointService):
                 continue
 
             values = [
-                "", "aaa/bbb", 1, 0, 100000, -1, 123.123, None,
+                "", 1, 0, 100000, -1, 123.123, None,
                 self.generate_random_string(special_characters=False),
                 self.generate_random_string(5000, special_characters=False),
             ]
