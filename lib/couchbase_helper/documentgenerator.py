@@ -28,8 +28,9 @@ def doc_generator(key, start, end,
         key_size = len(key) + 8
 
     if load_using == "sirius_java_sdk":
-        return SiriusJavaDocGen(key_prefix=key, key_size=key_size,
-                                start=start, end=end)
+        return SiriusJavaDocGen(start=start, end=end,
+                                key_prefix=key, key_size=key_size,
+                                doc_size=doc_size, mutate=mutate)
 
     # Defaults to JSON doc_type
     template_obj = {"mutated": mutate,

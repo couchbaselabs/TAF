@@ -7,18 +7,20 @@ from table_view import TableView
 
 
 class SiriusJavaDocGen(object):
-    def __init__(self, key_prefix="test_doc-", key_size=10,
-                 start=0, end=1, generator=None):
+    def __init__(self, start=0, end=1,
+                 key_prefix="test_doc-", key_size=10,
+                 doc_size=64, mutate=0):
         self.itr = 0
+        self.name = key_prefix
         self.keys_len = end - start
-        if generator:
-            # If Generator given, override all values from that
-            key_prefix = generator.name
-            key_size = generator.key_size
-            start = generator.start
-            end = generator.end
+        self.doc_size = doc_size
+        self.key_size = key_size
+        self.key_prefix = key_prefix
+        self.start = start
+        self.end = end
         self.keys = SiriusCouchbaseLoader.get_keys_from_sirius(
-            key_prefix, key_size, "RandomKey", start, end)
+            self.key_prefix, self.key_size, "RandomKey",
+            self.start, self.end, mutate)
 
     def has_next(self):
         return self.itr < self.keys_len
@@ -375,11 +377,12 @@ class SiriusCouchbaseLoader(object):
 
     @staticmethod
     def get_keys_from_sirius(key_prefix, key_size, key_type,
-                               start, end):
+                             start, end, mutate):
         url = f"{SiriusSetup.sirius_url}/get_doc_keys"
         data = {"key_prefix": key_prefix,
                 "key_size": key_size,
                 "key_type": key_type,
+                "mutate": mutate,
 
                 # Using delete here since that can generate Keys without values
                 "delete_percent": 100,

@@ -196,8 +196,8 @@ class DurabilityHelper:
             self.log.error("Cannot get AMBIGUOUS for %s during READ !"
                            % doc_key)
         elif op_type == "update":
-            expected_mutation = json_loads(str(doc_info["value"]))["mutated"]
-            curr_mutation = json_loads(str(read_result["value"]))["mutated"]
+            expected_mutation = doc_info["value"]["mutated"]
+            curr_mutation = read_result["value"]["mutated"]
             if expected_mutation != curr_mutation:
                 retry_op = True
         else:

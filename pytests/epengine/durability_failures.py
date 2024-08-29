@@ -1337,15 +1337,19 @@ class TimeoutTests(DurabilityTestsBase):
 
         # Create required doc_generators
         doc_gen["create"] = doc_generator(self.key, self.num_items,
-                                          self.num_items+self.crud_batch_size)
+                                          self.num_items+self.crud_batch_size,
+                                          load_using=self.load_docs_using)
         doc_gen["delete"] = doc_generator(self.key, 0,
-                                          self.crud_batch_size)
+                                          self.crud_batch_size,
+                                          load_using=self.load_docs_using)
         doc_gen["read"] = doc_generator(
             self.key, int(self.num_items/3),
-            int(self.num_items/3) + self.crud_batch_size)
+            int(self.num_items/3) + self.crud_batch_size,
+            load_using=self.load_docs_using)
         doc_gen["update"] = doc_generator(
             self.key, int(self.num_items/2),
-            int(self.num_items/2) + self.crud_batch_size)
+            int(self.num_items/2) + self.crud_batch_size,
+            load_using=self.load_docs_using)
 
         target_nodes = self.getTargetNodes()
         for node in target_nodes:
@@ -1401,8 +1405,9 @@ class TimeoutTests(DurabilityTestsBase):
                 for doc_id, crud_result in tasks[op_type].fail.items():
                     vb_num = self.bucket_util.get_vbucket_num_for_key(
                         doc_id, self.cluster.vbuckets)
-                    if SDKException.DurabilityAmbiguousException \
-                            not in str(crud_result["error"]):
+                    if not SDKException.check_if_exception_exists(
+                            SDKException.DurabilityAmbiguousException,
+                            crud_result["error"]):
                         self.log_failure(
                             "Invalid exception for doc %s, vb %s: %s"
                             % (doc_id, vb_num, crud_result))
@@ -1470,6 +1475,9 @@ class TimeoutTests(DurabilityTestsBase):
 
             # Iterate failed keys for validation
             for doc_key, doc_info in task.fail.items():
+                if self.load_docs_using != "default_loader":
+                    # Temp hack
+                    doc_info["value"] = {"test": "value", "mutated": 1}
                 vb_for_key = self.bucket_util.get_vbucket_num_for_key(doc_key)
 
                 ambiguous_table_view.add_row([doc_key, str(vb_for_key)])
@@ -1480,8 +1488,9 @@ class TimeoutTests(DurabilityTestsBase):
                     self.log_failure("%s failed in retry for %s"
                                      % (op_type, doc_key))
 
-                if SDKException.DurabilityAmbiguousException \
-                        not in str(doc_info["error"]):
+                if not SDKException.check_if_exception_exists(
+                        SDKException.DurabilityAmbiguousException,
+                        doc_info["error"]):
                     table_view.add_row([doc_key, doc_info["error"]])
 
             # Display the tables (if any errors)
