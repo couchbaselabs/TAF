@@ -142,7 +142,7 @@ class APIBase(CouchbaseBaseTest):
                         "node": {
                             "compute": {
                                 "cpu": self.input.param("cpu", 4),
-                                "ram": self.input.param("ram", 32)
+                                "ram": self.input.param("ram", 16)
                             },
                             "disk": {
                                 "storage": 50,
@@ -203,6 +203,43 @@ class APIBase(CouchbaseBaseTest):
                     "timezone": "GMT"
                 }
             },
+            "Azure_singleNode": {
+                "cloudProvider": {
+                    "type": "azure",
+                    "region": self.input.param("region", "eastus"),
+                    "cidr": "10.0.0.0/20"
+                },
+                "couchbaseServer": {
+                    "version": str(self.input.param("server_version", 7.6))
+                },
+                "serviceGroups": [
+                    {
+                        "node": {
+                            "compute": {
+                                "cpu": self.input.param("cpu", 4),
+                                "ram": self.input.param("ram", 16)
+                            },
+                            "disk": {
+                                "autoExpansion": True,
+                                "type": "P15",
+                            }
+                        },
+                        "numOfNodes": self.input.param("numOfNodes", 1),
+                        "services": [
+                            "data",
+                            "index",
+                            "query"
+                        ]
+                    }
+                ],
+                "availability": {
+                    "type": self.input.param("availabilityType", "single")
+                },
+                "support": {
+                    "plan": self.input.param("supportPlan", "basic"),
+                    "timezone": "GMT"
+                }
+            },
             "GCP_n2_highmem_4": {
                 "cloudProvider": {
                     "type": "gcp",
@@ -237,6 +274,43 @@ class APIBase(CouchbaseBaseTest):
                 },
                 "support": {
                     "plan": self.input.param("supportPlan", "enterprise"),
+                    "timezone": "GMT"
+                }
+            },
+            "GCP_singleNode": {
+                "cloudProvider": {
+                    "type": "gcp",
+                    "region": self.input.param("region", "us-east1"),
+                    "cidr": "10.0.0.0/20"
+                },
+                "couchbaseServer": {
+                    "version": str(self.input.param("server_version", 7.6))
+                },
+                "serviceGroups": [
+                    {
+                        "node": {
+                            "compute": {
+                                "cpu": self.input.param("cpu", 4),
+                                "ram": self.input.param("ram", 16)
+                            },
+                            "disk": {
+                                "storage": 100,
+                                "type": "pd-ssd",
+                            }
+                        },
+                        "numOfNodes": self.input.param("numOfNodes", 1),
+                        "services": [
+                            "data",
+                            "index",
+                            "query"
+                        ]
+                    }
+                ],
+                "availability": {
+                    "type": self.input.param("availabilityType", "single")
+                },
+                "support": {
+                    "plan": self.input.param("supportPlan", "basic"),
                     "timezone": "GMT"
                 }
             }
