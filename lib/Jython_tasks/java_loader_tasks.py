@@ -6,6 +6,32 @@ from sirius_client_framework.sirius_setup import SiriusSetup
 from table_view import TableView
 
 
+class SiriusJavaDocGen(object):
+    def __init__(self, key_prefix="test_doc-", key_size=10,
+                 start=0, end=1, generator=None):
+        self.itr = 0
+        self.keys_len = end - start
+        if generator:
+            # If Generator given, override all values from that
+            key_prefix = generator.name
+            key_size = generator.key_size
+            start = generator.start
+            end = generator.end
+        self.keys = SiriusCouchbaseLoader.get_keys_from_sirius(
+            key_prefix, key_size, "RandomKey", start, end)
+
+    def has_next(self):
+        return self.itr < self.keys_len
+
+    def next(self):
+        if not self.has_next():
+            raise StopIteration
+        key = self.keys[self.itr]
+        self.itr += 1
+        # Returning (k,v) format to align with in-built doc_loader return type
+        return key, None
+
+
 class SiriusCouchbaseLoader(object):
     def __init__(self, server_ip, server_port,
                  generator=None, op_type=None,
@@ -346,3 +372,28 @@ class SiriusCouchbaseLoader(object):
             self.__print_error_table(self.bucket, self.scope, self.collection,
                                      self.fail)
         return ok
+
+    @staticmethod
+    def get_keys_from_sirius(key_prefix, key_size, key_type,
+                               start, end):
+        url = f"{SiriusSetup.sirius_url}/get_doc_keys"
+        data = {"key_prefix": key_prefix,
+                "key_size": key_size,
+                "key_type": key_type,
+
+                # Using delete here since that can generate Keys without values
+                "delete_percent": 100,
+                "delete_start": start,
+                "delete_end": end,
+                "ops": 1000,
+
+                # Following values are required for validation to pass
+                "server_ip": "dummy",
+                "username": "dummy",
+                "password": "dummy",
+                "bucket_name": "dummy",
+                }
+        response = requests.post(
+            url, SiriusCouchbaseLoader.__flatten_param_to_str(data),
+            headers=SiriusCouchbaseLoader.get_headers(), timeout=None)
+        return response.json()["keys"] if response.ok else list()

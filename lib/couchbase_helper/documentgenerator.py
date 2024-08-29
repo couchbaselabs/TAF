@@ -9,6 +9,7 @@ import zlib
 from random import choice
 from string import ascii_uppercase, ascii_lowercase, digits
 
+from Jython_tasks.java_loader_tasks import SiriusJavaDocGen
 from couchbase_helper.data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 
 letters = ascii_uppercase + ascii_lowercase + digits
@@ -21,7 +22,14 @@ def doc_generator(key, start, end,
                   mutation_type="ADD", mutate=0,
                   randomize_doc_size=False, randomize_value=False,
                   randomize=False,
-                  deep_copy=False):
+                  deep_copy=False,
+                  load_using="default_loader"):
+    if key_size is None:
+        key_size = len(key) + 8
+
+    if load_using == "sirius_java_sdk":
+        return SiriusJavaDocGen(key_prefix=key, key_size=key_size,
+                                start=start, end=end)
 
     # Defaults to JSON doc_type
     template_obj = {"mutated": mutate,
@@ -31,8 +39,6 @@ def doc_generator(key, start, end,
                     "body": ""}
     doc_size -= len(str(template_obj))
 
-    if key_size is None:
-        key_size = len(key) + 8
     if target_vbucket:
         return DocumentGeneratorForTargetVbucket(
             key, template_obj,
