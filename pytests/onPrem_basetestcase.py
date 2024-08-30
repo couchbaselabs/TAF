@@ -162,6 +162,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
                 tem_cluster = CBCluster(name=cluster_name, servers=nodes,
                                         vbuckets=num_vb)
                 self.cb_clusters[cluster_name] = tem_cluster
+                for server in self.cb_clusters[cluster_name].servers:
+                    status, result = ClusterRestAPI(server).cluster_details()
+                    if status:
+                        self.cb_clusters[cluster_name].master = server
+                        break
                 counter_index += 1
         else:
             # Single cluster
@@ -169,6 +174,11 @@ class OnPremBaseTest(CouchbaseBaseTest):
             self.cb_clusters[cluster_name] = CBCluster(name=cluster_name,
                                                        servers=self.servers,
                                                        vbuckets=num_vb)
+            for server in self.cb_clusters[cluster_name].servers:
+                status, result = ClusterRestAPI(server).cluster_details()
+                if status:
+                    self.cb_clusters[cluster_name].master = server
+                    break
 
         # Fetch the profile_type from the master node
         # Value will be default / serverless / columnar
@@ -1151,8 +1161,15 @@ class ClusterSetup(OnPremBaseTest):
         services = services[1:] \
             if services is not None and len(services) > 1 else None
 
-        # Rebalance-in nodes_init servers
-        nodes_init = self.cluster.servers[1:self.nodes_init] \
+        # Rebalance-in nodes_init servers for 1st cluster
+        cluster_name_format = "C%s"
+        counter_index = 1
+        cluster_name = cluster_name_format % counter_index
+        master_ip = self.cb_clusters[cluster_name].master.ip
+
+        # Filter out the master node from the initial set of nodes
+        nodes_init = [node for node in self.cluster.servers[:self.nodes_init]
+                      if node.ip != master_ip] \
             if self.nodes_init != 1 else []
         if nodes_init:
             result = self.task.rebalance(self.cluster, nodes_init, [],
