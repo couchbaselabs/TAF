@@ -7,6 +7,11 @@ import base64
 import random
 import string
 
+import xml.etree.ElementTree as ET
+
+from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
+from .sso_utils import SSOComponents
+
 from java.security import KeyPairGenerator, KeyFactory
 from pytests.security.onCloud.sso_utils import SsoUtils
 from pytests.Capella.RestAPIv4.security_base import SecurityBase
@@ -119,6 +124,18 @@ class SsoTests(SecurityBase):
             resp = self.sso.delete_realm(self.tenant_id, realm_id)
             self.assertEqual(resp.status_code // 100, 2)
 
+        # Create Application dynamically
+        self.okta_account = self.input.param("okta_account", "https://dev-82235514.okta.com/")
+        self.okta_token = self.input.param("okta_token",
+                                           "00a6iymLSK2XvPTf9zCntdy2dEBBwdU3jh5jd6TQux")
+        self.okta_app_id, self.idp_metadata = self.sso.create_okta_application(self.okta_token, self.okta_account)
+        self.sso.assign_user(self.okta_token, self.okta_app_id, self.okta_account)
+
+        self.saml_user = self.input.param("saml_user", "qe.security.testing@couchbase.com")
+        self.saml_passcode = self.input.param("saml_passcode", "Password@123")
+        self.okta_token = self.input.param("okta_token",
+                                           "00a6iymLSK2XvPTf9zCntdy2dEBBwdU3jh5jd6TQux")
+
     def tearDown(self):
         resp = self.sso.list_realms(self.tenant_id)
         if json.loads(resp.content)["data"]:
@@ -126,6 +143,9 @@ class SsoTests(SecurityBase):
             realm_id = json.loads(resp.content)["data"][0]["data"]["id"]
             resp = self.sso.delete_realm(self.tenant_id, realm_id)
             self.validate_response(resp, 2)
+
+        self.log.info("Delete all applications")
+        self.sso.delete_okta_applications(self.okta_token)
         super(SsoTests, self).tearDown()
 
     def _generate_key_pair(self):
@@ -860,3 +880,131 @@ s0GjYziw9oQWA8BBuEc+tgWntz1vSzDT9ePQ/A==
         self.log.info("Update realm without sufficient permissions")
         resp = self.unauth_z_sso.rotate_certificate(self.tenant_id, realm_id, get_request_body(self.get_cert()))
         self.validate_response(resp, 4)
+
+    def test_sso_login(self):
+        """
+        Test sso flow
+        1. Create an Okta App Integration
+            -> Set up completed in setup()
+        2. Create a Realm in Capella
+        3. Initiate SSO login
+        """
+
+        # Create a Realm in Capella
+
+        # Parse the XML
+        root = ET.fromstring(self.idp_metadata)
+
+        # Namespaces
+        ns = {
+            'md': 'urn:oasis:names:tc:SAML:2.0:metadata',
+            'ds': 'http://www.w3.org/2000/09/xmldsig#'
+        }
+
+        # Extract X.509 Certificate
+        certificate = root.find('.//ds:X509Certificate', ns).text
+
+        # Format the certificate with BEGIN and END lines
+        formatted_certificate = "-----BEGIN CERTIFICATE-----\n{0}\n-----END CERTIFICATE-----".format(certificate)
+
+        # Extract SingleSignOnService URL (assuming we want the HTTP-POST binding)
+        sso_service = \
+        root.find('.//md:SingleSignOnService[@Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"]', ns).attrib[
+            'Location']
+
+        # self.log.info extracted and formatted values
+        self.log.info("Formatted Certificate: {0}".format(formatted_certificate))
+        self.log.info("SSO Service URL: {0}".format(sso_service))
+
+        body = {
+            'connectionOptionsSAML': {
+                'signInEndpoint': sso_service,
+                'signingCertificate': "{0}".format(formatted_certificate),
+                "signatureAlgorithm": "rsa-sha256",
+                "digestAlgorithm": "sha256",
+                "protocolBinding": "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST"
+            },
+            'standard': 'SAML 2.0',
+            'disableGroupMapping': False,
+            'defaultTeamId': self.team_id
+        }
+
+        realm_resp = self.sso.create_realm(self.tenant_id, body)
+        self.validate_response(realm_resp, 2)
+
+        realm_name = json.loads(realm_resp.content)["realmName"]
+        callbackURL = json.loads(realm_resp.content)["idpSettings"]["callbackURL"]
+        entityId = json.loads(realm_resp.content)["idpSettings"]["entityId"]
+        certificateURL = json.loads(realm_resp.content)["idpSettings"]["certificateURL"]
+
+        self.log.info("callbackURL: {0}".format(callbackURL))
+        self.log.info("entityId: {0}".format(entityId))
+        self.log.info("realm_name: {0}".format(realm_name))
+        self.log.info("certificateURL: {0}".format(certificateURL))
+
+        self.sso.update_okta_application(self.okta_token, callbackURL, entityId, self.okta_app_id, self.okta_account)
+
+        self.capi = CapellaAPI(
+            "https://" + self.url,
+            self.secret_key,
+            self.access_key,
+            self.user,
+            self.passwd
+        )
+        self.sso1 = SSOComponents(self.capi, "https://" + self.url)
+
+        login_flow = self.sso1.initiate_idp_login(realm_name)
+        self.assertEqual(login_flow.status_code // 100, 2)
+        login_flow = json.loads(login_flow.content)
+        self.log.info("Got Login Flow: {}".format(login_flow['loginURL']))
+
+        # Get the SAML Request
+        self.log.info("Sending request to the Login Flow: {}".format(login_flow['loginURL']))
+        saml_request = self.sso1.get_saml_request(login_flow['loginURL'])
+        self.log.info("Response: {}".format(saml_request.content))
+
+        self.assertEqual(saml_request.status_code // 100, 2)
+        c = saml_request.cookies
+        self.log.info("SAML Request Cookies: {0}".format(c))
+
+        saml_request_dict = self.sso1.parse_saml_request(saml_request.content)
+        self.log.info(saml_request_dict)
+        self.log.info(saml_request_dict)
+        SAMLRequest = saml_request_dict["SAMLRequest"]
+        self.assertIsNotNone(saml_request_dict["SAMLRequest"])
+        RelayState = saml_request_dict["RelayState"]
+        self.assertIsNotNone(saml_request_dict["RelayState"])
+        action = sso_service
+
+        identifier = self.sso1.decode_saml_request(saml_request_dict['SAMLRequest'])
+        self.log.info("Got Request ID: {}".format(identifier))
+
+        # Redirect to the IdP
+        self.log.info('Redirect to the IdP')
+        state_token, cookie_string, j_session_id = self.sso.idp_redirect(action, SAMLRequest, RelayState)
+        self.log.info("state_token: {0}".format(state_token))
+        self.log.info("cookie_string: {0}".format(cookie_string))
+        self.log.info("j_session_id: {0}".format(j_session_id))
+
+        # SSO user authentication via the IdP
+        self.log.info('SSO user authentication via the IdP')
+        next_url, j_session_id = self.sso.idp_login(self.saml_user, self.saml_passcode,
+                                                    state_token, cookie_string, j_session_id)
+        self.log.info("next_url: {0}".format(next_url))
+        self.log.info("j_session_id: {0}".format(j_session_id))
+
+        # Get the SAML response from the IdP
+        self.log.info('Get the SAML response from the IdP')
+        SAMLResponse = self.sso.get_saml_response(next_url, cookie_string, j_session_id)
+        self.log.info("SAMLResponse: {0}".format(SAMLResponse))
+
+        # Send the SAML response to Couchbase
+        self.log.info('Send the SAML response to Couchbase')
+        self.log.info(cookie_string)
+        resp = self.sso.saml_consume_url(callbackURL, cookie_string, SAMLResponse)
+        result = False
+        for line in resp.content.decode().split("\n"):
+            if "IdP-Initiated login is not enabled for connection" in line:
+                result = True
+                break
+        self.assertTrue(result)

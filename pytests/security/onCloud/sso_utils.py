@@ -5,6 +5,7 @@ import json
 import os
 import re
 import requests
+import six
 
 import xml.etree.ElementTree as et
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI
@@ -468,4 +469,358 @@ class SsoUtils:
         """
         url = "{0}/v2/organizations/{1}/realms/{2}".format("https://" + self.url, tenant_id, realm_id)
         resp = self.capella_api.do_internal_request(url, method="PUT", params=json.dumps(body))
+        return resp
+
+    def create_okta_application(self, okta_token, okta_account="https://dev-82235514.okta.com/"):
+        header = {
+            'Content-Type': 'application/json',
+            'Authorization': 'SSWS ' + okta_token
+        }
+        body = {
+            "label": "shaazin",
+            "accessibility": {
+                "selfService": False,
+                "errorRedirectUrl": None,
+                "loginRedirectUrl": None
+            },
+            "visibility": {
+                "autoSubmitToolbar": False,
+                "hide": {
+                    "iOS": False,
+                    "web": False
+                }
+            },
+            "features": [],
+            "signOnMode": "SAML_2_0",
+            "credentials": {
+                "userNameTemplate": {
+                    "template": "${source.login}",
+                    "type": "BUILT_IN"
+                },
+                "signing": {}
+            },
+            "settings": {
+                "app": {},
+                "notifications": {
+                    "vpn": {
+                        "network": {
+                            "connection": "DISABLED"
+                        },
+                        "message": None,
+                        "helpUrl": None
+                    }
+                },
+                "manualProvisioning": False,
+                "implicitAssignment": False,
+                "signOn": {
+                    "defaultRelayState": "",
+                    "ssoAcsUrl": "https://placeholder",
+                    "idpIssuer": "http://www.okta.com/${org.externalKey}",
+                    "audience": "uri:placeholder",
+                    "recipient": "https://placeholder",
+                    "destination": "https://placeholder",
+                    "subjectNameIdTemplate": "${user.userName}",
+                    "subjectNameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
+                    "responseSigned": True,
+                    "assertionSigned": True,
+                    "signatureAlgorithm": "RSA_SHA256",
+                    "digestAlgorithm": "SHA256",
+                    "honorForceAuthn": True,
+                    "authnContextClassRef": "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+                    "spIssuer": None,
+                    "requestCompressed": False,
+                    "attributeStatements": [
+                        {
+                            "type": "EXPRESSION",
+                            "name": "email",
+                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                            "values": ["user.email"]
+                        },
+                        {
+                            "type": "EXPRESSION",
+                            "name": "given_name",
+                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                            "values": ["user.firstName"]
+                        },
+                        {
+                            "type": "EXPRESSION",
+                            "name": "family_name",
+                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                            "values": ["user.lastName"]
+                        },
+                        {
+                            "type": "GROUP",
+                            "name": "groups",
+                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                            "filterType": "REGEX",
+                            "filterValue": ".*"
+                        }
+                    ],
+                    "inlineHooks": [],
+                    "allowMultipleAcsEndpoints": False,
+                    "acsEndpoints": [],
+                    "samlSignedRequestEnabled": False,
+                    "slo": {
+                        "enabled": False
+                    }
+                }
+            }
+        }
+        resp = requests.post(okta_account + "api/v1/apps",
+                             data=json.dumps(body),
+                             headers=header,
+                             timeout=300, verify=False, allow_redirects=False)
+        assert resp.status_code == 200
+
+        resp_content = json.loads(resp.content.decode())
+        okta_app_id = resp_content["id"]
+        idp_metadata_url = resp_content["_links"]["metadata"]["href"]
+
+        resp = requests.get(idp_metadata_url,
+                            headers=header,
+                            timeout=300, verify=False, allow_redirects=False)
+        assert resp.status_code == 200
+
+        idp_metadata = resp.content.decode()
+
+        return okta_app_id, idp_metadata
+
+    def assign_user(self, okta_token, okta_app_id, okta_account="https://dev-82235514.okta.com/"):
+        header = {
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Authorization': 'SSWS ' + okta_token
+        }
+        body = {"id": "00ucptbpbpCBQfhiS5d7",
+                "scope": "USER",
+                "credentials":
+                    {"userName": "qe.security.testing@couchbase.com"}}
+        resp = requests.post(
+            okta_account + "api/v1/apps/" + okta_app_id + "/users",
+            data=json.dumps(body),
+            headers=header,
+            timeout=300, verify=False, allow_redirects=False)
+
+    def delete_okta_applications(self, okta_token, okta_account="https://dev-82235514.okta.com/"):
+        header = {
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Authorization': 'SSWS ' + okta_token
+        }
+        resp = requests.get(okta_account + "api/v1/apps",
+                            headers=header,
+                            timeout=300, verify=False, allow_redirects=False)
+        assert resp.status_code == 200
+        app_list = json.loads(resp.content.decode())
+        for app in app_list:
+            app_label = app["label"]
+            if app_label == "shaazin":
+                resp = requests.post(
+                    okta_account + "api/v1/apps/" + app["id"] + "/lifecycle/deactivate",
+                    headers=header,
+                    timeout=300, verify=False, allow_redirects=False)
+                assert resp.status_code == 200
+                resp = requests.delete(
+                    okta_account + "api/v1/apps/" + app["id"],
+                    headers=header,
+                    timeout=300, verify=False, allow_redirects=False)
+                assert resp.status_code == 204
+
+    def update_okta_application(self, okta_token, callbackURL, entityId, okta_app_id,
+                                okta_account="https://dev-82235514.okta.com/"):
+        header = {
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Authorization': 'SSWS ' + okta_token
+        }
+        body = {
+            "label": "shaazin",
+            "accessibility": {
+                "selfService": False,
+                "errorRedirectUrl": None,
+                "loginRedirectUrl": None
+            },
+            "visibility": {
+                "autoSubmitToolbar": False,
+                "hide": {
+                    "iOS": False,
+                    "web": False
+                }
+            },
+            "features": [],
+            "signOnMode": "SAML_2_0",
+            "credentials": {
+                "userNameTemplate": {
+                    "template": "${source.login}",
+                    "type": "BUILT_IN"
+                },
+                "signing": {}
+            },
+            "settings": {
+                "app": {},
+                "notifications": {
+                    "vpn": {
+                        "network": {
+                            "connection": "DISABLED"
+                        },
+                        "message": None,
+                        "helpUrl": None
+                    }
+                },
+                "manualProvisioning": False,
+                "implicitAssignment": False,
+                "signOn": {
+                    "defaultRelayState": "",
+                    "ssoAcsUrl": "{0}".format(callbackURL),
+                    "idpIssuer": "http://www.okta.com/${org.externalKey}",
+                    "audience": "{0}".format(entityId),
+                    "recipient": "{0}".format(callbackURL),
+                    "destination": "{0}".format(callbackURL),
+                    "subjectNameIdTemplate": "${user.userName}",
+                    "subjectNameIdFormat": "urn:oasis:names:tc:SAML:1.1:nameid-format:unspecified",
+                    "responseSigned": True,
+                    "assertionSigned": True,
+                    "signatureAlgorithm": "RSA_SHA256",
+                    "digestAlgorithm": "SHA256",
+                    "honorForceAuthn": True,
+                    "authnContextClassRef": "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+                    "spIssuer": None,
+                    "requestCompressed": False,
+                    "attributeStatements": [
+                        {
+                            "type": "EXPRESSION",
+                            "name": "email",
+                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                            "values": ["user.email"]
+                        },
+                        {
+                            "type": "EXPRESSION",
+                            "name": "given_name",
+                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                            "values": ["user.firstName"]
+                        },
+                        {
+                            "type": "EXPRESSION",
+                            "name": "family_name",
+                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                            "values": ["user.lastName"]
+                        },
+                        {
+                            "type": "GROUP",
+                            "name": "groups",
+                            "namespace": "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified",
+                            "filterType": "REGEX",
+                            "filterValue": ".*"
+                        }
+                    ],
+                    "inlineHooks": [],
+                    "allowMultipleAcsEndpoints": False,
+                    "acsEndpoints": [],
+                    "samlSignedRequestEnabled": False,
+                    "slo": {
+                        "enabled": False
+                    }
+                }
+            }
+        }
+        resp = requests.put("{0}api/v1/apps/{1}".format(okta_account, okta_app_id),
+                            data=json.dumps(body),
+                            headers=header,
+                            timeout=300, verify=False, allow_redirects=False)
+        assert resp.status_code == 200
+
+    def idp_redirect(self, action, SAMLRequest, RelayState):
+        header = {
+            'Content-Type': 'application/json',
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive'
+        }
+        resp = requests.post(action,
+                             data="SAMLRequest={0}&RelayState={1}".format(SAMLRequest, RelayState),
+                             headers=header,
+                             timeout=300, verify=False, allow_redirects=False)
+        assert resp.status_code == 200
+        state_token = ""
+        for line in resp.content.decode().split("\n"):
+            if "stateToken=" in line:
+                state_token = line[94:-1]
+        cookie_dict = {}
+        cookie_string = ""
+        for i in resp.cookies:
+            cookie_dict[i.name] = i.value
+            cookie_string = cookie_string + i.name + "=" + i.value + "; "
+        cookie_string = cookie_string[:-2]
+        j_session_id = cookie_dict["JSESSIONID"]
+        return state_token, cookie_string, j_session_id
+
+    def idp_login(self, identifier, passcode, state_token, cookie_string, j_session_id):
+        """
+        Authentication of an SSO user via a IdP
+        """
+        url = "https://dev-82235514.okta.com/idp/idx/identify"
+        body = {"identifier": identifier,
+                "credentials": {"passcode": passcode},
+                "stateHandle": state_token}
+        header = {'Cookie': cookie_string,
+                  'Content-Type': "application/json",
+                  'Connection': "keep-alive",
+                  'Accept-Encoding': 'gzip, deflate, br',
+                  'Accept': '*/*',
+                  'JSESSIONID': j_session_id
+                  }
+        resp = requests.post(url, data=json.dumps(body), headers=header)
+        assert resp.status_code == 200
+        next_url = resp.content.decode()[resp.content.decode().index("success-redirect\","
+                                                                     "\"href\":\"") + 26:
+                                         resp.content.decode().index("success-redirect\","
+                                                                     "\"href\":\"") + 134]
+        j_session_id = resp.headers["set-cookie"][resp.headers["set-cookie"].index("JSESSIONID=") +
+                                                  11: resp.headers["set-cookie"].index("JSESSIONID=") + 43]
+        return next_url, j_session_id
+
+    def get_saml_response(self, next_url, cookie_string, j_session_id):
+        """
+        A SAML Response is sent by the Identity Provider to the Service Provider(Couchbase),
+        if the user succeeded in the authentication process
+        """
+        header = {
+            'Cookie': cookie_string,
+            'Content-Type': "application/json",
+            'Connection': "keep-alive",
+            'Accept': '*/*',
+            'JSESSIONID': j_session_id
+        }
+        resp = requests.get(next_url, headers=header)
+        SAMLResponse = ""
+        for line in resp.content.decode().split("\n"):
+            if "<input name=\"SAMLResponse\" type=\"hidden\" value=\"" in line:
+                SAMLResponse = line[52:-3]
+        SAMLResponse = SAMLResponse.replace("&#x2b;", "+")
+        SAMLResponse = SAMLResponse.replace("&#x3d;", "=")
+        SAMLResponse = SAMLResponse.replace("&#x2f;", "/")
+        return SAMLResponse
+
+    def saml_consume_url(self, callbackURL, cookie_string, SAMLResponse):
+        """
+        Sends SAML assertion to auth0
+        """
+        header = {
+            'Cookie': cookie_string,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Accept': '*/*',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive'
+        }
+        SAMLResponse = six.moves.urllib.parse.quote(SAMLResponse)
+        resp = requests.post(callbackURL,
+                             data="SAMLResponse={0}".format(SAMLResponse),
+                             headers=header,
+                             timeout=300, verify=False, allow_redirects=False)
         return resp
