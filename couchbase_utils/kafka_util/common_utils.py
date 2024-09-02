@@ -26,7 +26,8 @@ class KafkaCluster(object):
         # Dead letter queue topic name
         self.dlq_topic = None
 
-        # Connector Info
+        # Connector Info required to connect to Kafka cluster in order to
+        # perform operations on topics and it's partitions.
         self.connectors = {}
 
     def generate_connection_config(
@@ -115,7 +116,7 @@ class KafkaClusterUtils(object):
                 topics, operation_timeout=operation_timeout,
                 request_timeout=request_timeout)
             for topic in response:
-                topic.result()
+                response[topic].result()
 
         except KafkaException as err:
             raise Exception(err.args[0].str())
@@ -213,6 +214,7 @@ class KafkaClusterUtils(object):
 
     def delete_topic_by_topic_prefix(self, topic_prefix):
         topics = self.list_all_topics_by_topic_prefix(topic_prefix)
-        self.delete_topics(topics)
+        if topics:
+            self.delete_topics(topics)
 
 

@@ -218,10 +218,12 @@ class DatabaseManagementTask(Task):
                     database_info=self.database_information,
                     operation_config=self.operation_config)
             self.test_log.debug(self.message)
+            self.set_result(True)
 
         except Exception as e:
             self.log.critical(e)
-        self.set_result(True)
+            self.set_result(False)
+
         self.complete_task()
 
     def get_total_doc_ops(self):

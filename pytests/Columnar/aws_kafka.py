@@ -111,7 +111,7 @@ class AWSKafka(ColumnarBaseTest):
         return kafka_connector_details
 
     def test_create_connect_disconnect_query_drop_aws_kafka_links(self):
-        aws_kafka_cluster_details = self.kafka_cluster_obj.generate_aws_msk_cluster_detail(
+        aws_kafka_cluster_details = self.kafka_cluster_obj.generate_aws_kafka_cluster_detail(
             brokers_url="b-1-public.qekafkatestcluster.7b9vtv.c13.kafka.us-east-1.amazonaws.com:9196,"
                         "b-2-public.qekafkatestcluster.7b9vtv.c13.kafka.us-east-1.amazonaws.com:9196,"
                         "b-3-public.qekafkatestcluster.7b9vtv.c13.kafka.us-east-1.amazonaws.com:9196",
@@ -120,7 +120,7 @@ class AWSKafka(ColumnarBaseTest):
         )
         schema_registry_details = None
         if self.use_schema_registry:
-            schema_registry_details = self.kafka_cluster_obj.generate_aws_msk_schema_registry_detail(
+            schema_registry_details = self.kafka_cluster_obj.generate_aws_kafka_schema_registry_detail(
                 self.aws_region, self.aws_access_key, self.aws_secret_key
             )
         kafka_connector_details = self.populate_kafka_connector_details()

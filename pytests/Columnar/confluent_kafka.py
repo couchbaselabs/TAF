@@ -12,7 +12,7 @@ from sirius_client_framework.multiple_database_config import MongoLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
 from Jython_tasks.sirius_task import WorkLoadTask, DatabaseManagementTask
 from sirius_client_framework.sirius_constants import SiriusCodes
-from capella_utils.columnar_final import ColumnarRBACUtil
+from capella_utils.columnar import ColumnarRBACUtil
 
 
 class ConfluentKafka(ColumnarBaseTest):

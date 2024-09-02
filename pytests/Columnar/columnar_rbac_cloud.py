@@ -6,7 +6,7 @@ import time
 
 from Columnar.columnar_base import ColumnarBaseTest
 from capellaAPI.capella.dedicated.CapellaAPI_v4 import CapellaAPI
-from capella_utils.columnar_final import (ColumnarUtils, ColumnarRBACUtil)
+from capella_utils.columnar import ColumnarUtils, ColumnarRBACUtil
 from cbas_utils.cbas_utils_columnar import CbasUtil as columnarCBASUtil
 from capellaAPI.capella.columnar.CapellaAPI import CapellaAPI as ColumnarAPI
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as CapellaAPIv2

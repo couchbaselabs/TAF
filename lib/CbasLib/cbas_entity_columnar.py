@@ -147,7 +147,7 @@ class Kafka_Link(Link):
         """
         :param name str, name of the link
         :param kafka_type <str> Type of kafka cluster. Accepted values
-        are confluent and aws_msk
+        are confluent and aws_kafka
         :param kafka_cluster_details <dict> kafka cluster info like
         connection URI and authentication.
         :param schema_registry_details <dict> info to connect to schema
@@ -274,7 +274,7 @@ class Standalone_Dataset(Dataset):
 
     def __init__(self, name, data_source, primary_key,
                  dataverse_name="Dafault", database_name="Default",
-                 link_name=None, external_collection_name=None,
+                 link_name=None, kafka_topic_name=None,
                  dataset_properties={}, num_of_items=0, storage_format="row"):
         """
         :param name <str> name of the dataset
@@ -286,8 +286,8 @@ class Standalone_Dataset(Dataset):
         azure, shadow_dataset, crud(if standalone collection is used only for
         insert, upsert and delete)
         :param link_name <str> Fully qualified name of the kafka link.
-        :param external_collection <str> Fully qualified name of the
-        collection on external databases like mongo, dynamo, cassandra etc
+        :param kafka_topic_name <str> Name of the kafka topic from where the data
+        is to be ingested.
         :param dataset_properties <dict> valid only for dataset with
         dataset_source as external
         :param num_of_items <int> expected number of items in dataset.
@@ -305,8 +305,8 @@ class Standalone_Dataset(Dataset):
             self.dataset_properties = dataset_properties
         else:
             self.dataset_properties = {}
-            if self.data_source in ["mongo", "dynamo", "rds"]:
-                self.external_collection_name = external_collection_name
+            if self.data_source in ["mongo", "postgresql", "mysql"]:
+                self.kafka_topic_name = kafka_topic_name
 
 
 class Synonym(object):
@@ -427,6 +427,10 @@ class CBAS_UDF(object):
 
 
 class KafkaClusterDetails(object):
+    """
+    This class to used to generate kafka connnection config to be passed
+    while creating kafka links.
+    """
 
     # Auth Types
     CONFLUENT_AUTH_TYPES = ["PLAIN", "OAUTH", "SCRAM_SHA_256",
@@ -552,7 +556,7 @@ class KafkaClusterDetails(object):
                 "are {0}.".format(self.ENCRYPTION_TYPES))
         return kafka_cluster_details
 
-    def generate_aws_msk_cluster_detail(
+    def generate_aws_kafka_cluster_detail(
             self, brokers_url, auth_type, encryption_type, username=None,
             password=None):
         kafka_cluster_details = deepcopy(self.KAFKA_CLUSTER_DETAILS_TEMPLATE)
@@ -595,7 +599,7 @@ class KafkaClusterDetails(object):
             api_key, api_secret)
         return schema_registry_details
 
-    def generate_aws_msk_schema_registry_detail(
+    def generate_aws_kafka_schema_registry_detail(
             self, aws_region, access_key_id, secret_access_key,
             session_token=None, registry_name=None):
         schema_registry_details = deepcopy(

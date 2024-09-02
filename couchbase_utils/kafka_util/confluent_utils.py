@@ -13,6 +13,7 @@ confluent connector server.
 import time
 import logging
 import base64
+from copy import deepcopy
 from couchbase_utils.kafka_util.common_utils import KafkaCluster, KafkaClusterUtils
 from capellaAPI.capella.lib.APIRequests import APIRequests
 from couchbase_utils.kafka_util.kafka_connect_util import KafkaConnectUtil
@@ -456,22 +457,140 @@ class ConfluentUtils(object):
        associated with the cluster.
     """
 
+    # Auth Types
+    CONFLUENT_AUTH_TYPES = ["PLAIN", "OAUTH", "SCRAM_SHA_256",
+                            "SCRAM_SHA_512"]
+    # Encryption Types
+    ENCRYPTION_TYPES = ["PLAINTEXT", "TLS"]
+    KAFKA_CLUSTER_DETAILS_TEMPLATE = {
+        "vendor": None,
+        "brokersUrl": None,  # Comma separated list of brokers
+        "authenticationDetails": {
+            "authenticationType": None,
+            "encryptionType": None,
+            "credentials": {}
+        }
+    }
+    # Use this if authenticationType is PLAIN,SCRAM_SHA_256,SCRAM_SHA_512
+    CONFLUENT_CREDENTIALS = {
+        "apiKey": None,
+        "apiSecret": None
+    }
+    # Use this if authenticationType is OAUTH
+    CONFLUENT_CREDENTIALS_OAUTH = {
+        "oauthTokenEndpointURL": None,
+        "clientId": None,
+        "clientSecret": None,
+        "scope": None,  # optional
+        "extension_logicalCluster": None,  # optional
+        "extension_identityPoolId": None  # optional
+    }
+    CONFLUENT_SCHEMA_REGISTRY_DETAILS_TEMPLATE = {
+        "connectionFields": {
+            "schemaRegistryURL": None,
+            "schemaRegistryCredentials": None  # Format "Api Key:Api Secret"
+        }
+    }
+
     def __init__(self, cloud_access_key, cloud_secret_key,
                  connect_cluster_hostname):
         self.cloud_access_key = cloud_access_key
         self.cloud_secret_key = cloud_secret_key
-        self.connect_cluster_hostname = connect_cluster_hostname
+
+        self.connect_cluster_hostname = (
+            f"http://{connect_cluster_hostname}:8083")
+        self.connect_cluster_apis = KafkaConnectUtil(
+            self.connect_cluster_hostname)
 
         self.confluent_apis = ConfluentCloudAPIs(
             self.cloud_access_key, self.cloud_secret_key)
-
-        self.connect_cluster_apis = KafkaConnectUtil(
-            self.connect_cluster_hostname)
 
         # This is instantiated in generate_confluent_kafka_object method
         self.kafka_cluster_util = None
 
         self.log = logging.getLogger(__name__)
+
+    """
+    Method generates kafka cluster details object, which can be used while
+    creating kafka links.
+    """
+    def generate_confluent_kafka_cluster_detail(
+            self, brokers_url, auth_type, encryption_type, api_key=None,
+            api_secret=None, oauthTokenEndpointURL=None, clientId=None,
+            clientSecret=None, scope=None, extension_logicalCluster=None,
+            extension_identityPoolId=None):
+        kafka_cluster_details = deepcopy(self.KAFKA_CLUSTER_DETAILS_TEMPLATE)
+        kafka_cluster_details["vendor"] = "CONFLUENT"
+        kafka_cluster_details["brokersUrl"] = brokers_url
+
+        auth_type = auth_type.upper()
+        if auth_type in self.CONFLUENT_AUTH_TYPES:
+            kafka_cluster_details["authenticationDetails"][
+                "authenticationType"] = auth_type
+            if auth_type == "OAUTH":
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"] = deepcopy(self.CONFLUENT_CREDENTIALS_OAUTH)
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"][
+                    "oauthTokenEndpointURL"] = oauthTokenEndpointURL
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["clientId"] = clientId
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["clientSecret"] = clientSecret
+                if scope:
+                    kafka_cluster_details["authenticationDetails"][
+                        "credentials"]["scope"] = scope
+                else:
+                    del(kafka_cluster_details["authenticationDetails"][
+                        "credentials"]["scope"])
+                if extension_logicalCluster:
+                    kafka_cluster_details["authenticationDetails"][
+                        "credentials"][
+                        "extension_logicalCluster"] = extension_logicalCluster
+                else:
+                    del(kafka_cluster_details["authenticationDetails"][
+                        "credentials"]["extension_logicalCluster"])
+                if extension_identityPoolId:
+                    kafka_cluster_details["authenticationDetails"][
+                        "credentials"][
+                        "extension_identityPoolId"] = extension_identityPoolId
+                else:
+                    del(kafka_cluster_details["authenticationDetails"][
+                        "credentials"]["extension_identityPoolId"])
+            else:
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"] = deepcopy(self.CONFLUENT_CREDENTIALS)
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["apiKey"] = api_key
+                kafka_cluster_details["authenticationDetails"][
+                    "credentials"]["apiSecret"] = api_secret
+        else:
+            raise Exception(
+                "Invalid Authentication type. Supported authentication types "
+                "are {0}.".format(self.CONFLUENT_AUTH_TYPES))
+
+        if encryption_type.upper() in self.ENCRYPTION_TYPES:
+            kafka_cluster_details["authenticationDetails"][
+                "encryptionType"] = encryption_type.upper()
+        else:
+            raise Exception(
+                "Invalid Encryption type. Supported Encryption types "
+                "are {0}.".format(self.ENCRYPTION_TYPES))
+        return kafka_cluster_details
+
+    """
+    Method generates schema registry details object, which can be used while
+    creating kafka links.
+    """
+    def generate_confluent_schema_registry_detail(
+            self, schema_registry_url, api_key, api_secret):
+        schema_registry_details = deepcopy(
+            self.CONFLUENT_SCHEMA_REGISTRY_DETAILS_TEMPLATE)
+        schema_registry_details["connectionFields"][
+            "schemaRegistryURL"] = schema_registry_url
+        schema_registry_details["connectionFields"][
+            "schemaRegistryCredentials"] = f"{api_key}:{api_secret}"
+        return schema_registry_details
 
     def generate_confluent_kafka_object(self, kafka_cluster_id, topic_prefix):
         """
@@ -522,7 +641,7 @@ class ConfluentUtils(object):
                     cluster_obj.dlq_topic))
             self.kafka_cluster_util.create_topic(
                 cluster_obj.dlq_topic, {"cleanup.policy": "compact"},
-                partitions_count=6, replication_factor=3)
+                partitions_count=8, replication_factor=3)
             return cluster_obj
         except Exception as err:
             self.log.error(str(err))
@@ -538,6 +657,7 @@ class ConfluentUtils(object):
                 self.log.error(str(err))
                 failed_connector_deletions.append(connector)
         topic_delete_status = False
+        self.log.info("Deleting all the topics")
         try:
             self.kafka_cluster_util.delete_topic_by_topic_prefix(
                 kafka_cluster_obj.topic_prefix)

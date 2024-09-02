@@ -63,7 +63,7 @@ from capella_utils.serverless import CapellaUtils as ServerlessUtils, \
     CapellaUtils
 from capellaAPI.capella.dedicated.CapellaAPI import CapellaAPI as decicatedCapellaAPI
 from constants.cloud_constants.capella_constants import AWS
-from capella_utils.columnar_final import ColumnarUtils
+from capella_utils.columnar import ColumnarUtils
 
 
 class FunctionCallTask(Task):

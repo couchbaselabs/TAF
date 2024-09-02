@@ -59,14 +59,14 @@ spec = {
     "kafka_link": {
         # Accepted values are 0 or any positive int.
         "no_of_kafka_links": 0,
-        # Accepted values are random or any string.
+        # Accepted values are random or any `string.
         "name_key": "random",
-        # List of vendors. Accepted values confluent and aws_msk
+        # List of vendors. Accepted values confluent and aws_kafka
         "vendors": [],
         # Dict of List of kakfa cluster detail objects
-        "kafka_cluster_details": {"confluent": [], "aws_msk": []},
+        "kafka_cluster_details": {"confluent": [], "aws_kafka": []},
         # Dict of List of schema registry detail objects
-        "schema_registry_details": {"confluent": [], "aws_msk": []},
+        "schema_registry_details": {"confluent": [], "aws_kafka": []},
     },
 
     "remote_dataset": {
@@ -240,13 +240,18 @@ spec = {
         # column - Dataset storage will be column format
         # mixed - Dataset storage will be row + column format
         "storage_format": "mixed",
-        # Collections on external database from where the data will be
-        # ingested.
-        # { "mongo": [],
-        #   "dynamo": []
+        # Kafka topic from where the data will be read.
+        # Formet -
+        # "kafka_topics": {
+        #    "confluent": {"mongo":[list of topics],"postgresql":[],
+        #    "mysql":[] },
+        #    "aws_kafka": {"mongo":[list of topics],"postgresql":[],
+        #             "mysql":[] }
         # }
-        "include_external_collections": {},
-        "exclude_external_collections": {},
+        "kafka_topics": {
+            "confluent": {"mongo": [], "postgresql": [], "mysql": []},
+            "aws_kafka": {"mongo": [], "postgresql": [], "mysql": []}
+        }
     },
 
     "synonym": {
@@ -307,7 +312,7 @@ spec = {
         # treated as one index condition. In order to pass multiple
         # fields to create an index use the following format -
         # "field_name_1:field_type_1-field_name_2:field_type_2"
-        "indexed_fields": ["age:bigint"],
+        "indexed_fields": [],
         # Accepted values are all, cbas_index or index
         "creation_method": "all"
     },

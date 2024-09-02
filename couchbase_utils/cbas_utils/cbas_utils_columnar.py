@@ -1992,7 +1992,7 @@ class KafkaLink_Util(ExternalLink_Util):
         num_of_kafka_links = link_spec.get("no_of_kafka_links", 0)
         vendors = link_spec.get("vendors", [])
         if not vendors:
-            vendors = ["confluent", "aws_msk"]
+            vendors = ["confluent", "aws_kafka"]
 
         for i in range(0, num_of_kafka_links):
             if link_spec.get("name_key", "random").lower() == "random":
@@ -2037,7 +2037,7 @@ class KafkaLink_Util(ExternalLink_Util):
         """
         Generates Kafka Link objects.
         vendors <list> List of kafka vendors. Accepted values are confluent
-        and aws_msk
+        and aws_kafka
         kafka_cluster_details <dict> Dict of List of kakfa cluster detail objects
         schema_registry_details <dict> Dict of List of schema registry detail objects
         """
@@ -3811,8 +3811,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             if kafka_connector_details:
                 cmd += " ON `{0}` AT {1}".format(external_collection, link_name)
             else:
-                cmd += " ON {0} AT {1}".format(
-                    CBASHelper.format_name(external_collection), link_name)
+                cmd += " ON `{0}` AT {1}".format(external_collection, link_name)
 
         if compress_dataset or storage_format or kafka_connector_details:
             with_params = dict()
@@ -3826,7 +3825,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             if kafka_connector_details:
                 with_params.update(kafka_connector_details)
 
-            cmd += " with " + json.dumps(with_params) + " "
+            cmd += " with " + json.dumps(with_params)
 
         cmd += ";"
         return cmd
@@ -3951,7 +3950,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
             self, cluster, no_of_objs=1, datasource=None, primary_key={},
             link=None, same_db_same_dv_for_link_and_dataset=False,
             same_db_diff_dv_for_link_and_dataset=False,
-            external_collection_name=None, database_name=None,
+            kafka_topic_name=None, database_name=None,
             dataverse_name=None, storage_format=None, name_length=30,
             fixed_length=False):
         """
@@ -3966,8 +3965,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
         :param link <link obj> Object of the link to be used in standalone
         collection.
         :param same_dv_for_link_and_dataset <bool>
-        :param external_collection_name <str> Fully qualified name of the
-        collection on external databases like mongo, dynamo, cassandra etc
+        :param kafka_topic_name <str> Name of the kafka topic from where the data is to be ingested from.
         """
 
         if storage_format == "mixed":
@@ -4045,7 +4043,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
 
             dataset_obj = Standalone_Dataset(
                 dataset_name, datasource, primary_key, dataverse_obj.name,
-                database_obj.name, link_name, external_collection_name,
+                database_obj.name, link_name, kafka_topic_name,
                 dataset_properties, 0, storage_format)
 
             collection_objs.append(dataset_obj)
@@ -4164,8 +4162,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
     Note - Number of external collection should be same as number of
     standalone collections to be created.
     """
-
-    def create_standalone_dataset_for_external_db_from_spec(
+    def create_standalone_collection_for_kafka_topics_from_spec(
             self, cluster, cbas_spec):
         self.log.info("Creating Standalone Datasets for external database "
                       "based on CBAS Spec")
@@ -4186,8 +4183,8 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     cluster, CBASHelper.format_name(link_name))}
 
         num_of_ds_on_external_db = dataset_spec.get("num_of_ds_on_external_db", 0)
-        link_source_db_pairs = []
         for i in range(0, num_of_ds_on_external_db):
+            database = None
             while not database:
                 database = random.choice(list(self.databases.values()))
                 if dataset_spec.get(
@@ -4235,61 +4232,20 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                 storage_format = dataset_spec[
                     "storage_format"]
 
-            if not dataset_spec["data_source"]:
-                datasource = random.choice(["mongo", "dynamo", "rds"])
-            else:
-                datasource = dataset_spec["data_source"][i % len(dataset_spec["data_source"])]
-
-            if (dataset_spec["include_kafka_topics"].get(
-                    datasource, {}) and dataset_spec[
-                "exclude_kafka_topics"].get(datasource, {})
-                    and (set(dataset_spec["include_kafka_topics"][
-                                 datasource]) == set(
-                        dataset_spec["exclude_kafka_topics"][
-                            datasource]))):
-                self.log.error("Both include and exclude "
-                               "kafka topics cannot be same")
-                return False
-            elif dataset_spec["exclude_kafka_topics"].get(datasource, {}):
-                dataset_spec["include_kafka_topics"][datasource] = (
-                        set(dataset_spec["include_kafka_topics"][
-                                datasource]) - set(
-                    dataset_spec["exclude_kafka_topics"][datasource]))
-
-            eligible_links = [link for link in kafka_link_objs if
-                              link.db_type == datasource]
-
-            """
-            This is to make sure that we don't create 2 collection with same
-            source collection and link
-            include_kafka_topics should be of format -
-            { "datasource" : [("region","collection_name")]}
-            for mongo and MySQL, region should be empty string
-            This is to support Dynamo tables multiple regions.
-            """
+            link = random.choice(list(kafka_link_objs))
             retry = 0
             while retry < 100:
-                link = random.choice(eligible_links)
-
-                if dataset_spec["include_kafka_topics"][datasource]:
-                    external_collection_name = random.choice(
-                        dataset_spec["include_kafka_topics"][
-                            datasource])
-
-                    # this will be True for Dynamo only
-                    if external_collection_name[0]:
-                        while (external_collection_name[0] !=
-                               link.external_database_details[
-                                   "connectionFields"]["region"]):
-                            external_collection_name = random.choice(
-                                dataset_spec["include_kafka_topics"][
-                                    datasource])
-                    external_collection_name = external_collection_name[1]
+                if not dataset_spec["data_source"]:
+                    datasource = random.choice(
+                        ["mongo", "postgresql", "mysql"])
                 else:
-                    return False
-                link_source_db_pair = (link.name, external_collection_name)
-                if link_source_db_pair not in link_source_db_pairs:
-                    link_source_db_pairs.append(link_source_db_pair)
+                    datasource = dataset_spec["data_source"][
+                        i % len(dataset_spec["data_source"])]
+                if dataset_spec["kafka_topics"][link.kafka_type][
+                    datasource]:
+                    kafka_topic_name = random.choice(
+                        dataset_spec["kafka_topics"][link.kafka_type][
+                            datasource])
                     break
                 else:
                     retry += 1
@@ -4299,7 +4255,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     dataset_spec["primary_key"]),
                 dataverse_name=dataverse.name, database_name=database.name,
                 link_name=link.name,
-                external_collection_name=external_collection_name,
+                kafka_topic_name=kafka_topic_name,
                 storage_format=storage_format)
 
             if not self.create_standalone_collection_using_links(
@@ -4308,7 +4264,7 @@ class StandAlone_Collection_Util(StandaloneCollectionLoader):
                     dataverse_name=dataverse.name, database_name=database.name,
                     primary_key=dataset_obj.primary_key,
                     link_name=link.name,
-                    external_collection=external_collection_name,
+                    external_collection=kafka_topic_name,
                     storage_format=storage_format):
                 self.log.error("Failed to create dataset {}".format(name))
                 results.append(False)
@@ -6259,7 +6215,7 @@ class CbasUtil(CBOUtil):
             return False, "Failed at create external dataset from spec"
         if not self.create_standalone_dataset_from_spec(cluster, cbas_spec):
             return False, "Failed at create standalone collection from spec"
-        if not self.create_standalone_dataset_for_external_db_from_spec(
+        if not self.create_standalone_collection_for_kafka_topics_from_spec(
                 cluster, cbas_spec):
             return False, "Failed at create standalone collection from spec"
 

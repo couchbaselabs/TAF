@@ -344,7 +344,7 @@ spec = {
         # {field_name: field_type}
         "primary_key": [{"id": "string"}],
         # Source from where data will be ingested into dataset.
-        # Accepted Values - mongo, dynamo, cassandra, rds
+        # Accepted Values - mongo, postgresql, mysql
         "data_source": [],
         # This is only for local datasets. Accepted values are -
         # None - Dataset storage will default to row or column based
@@ -353,13 +353,18 @@ spec = {
         # column - Dataset storage will be column format
         # mixed - Dataset storage will be row + column format
         "storage_format": "mixed",
-        # Collections on external database from where the data will be
-        # ingested.
-        # { "mongo": [],
-        #   "dynamo": []
+        # Kafka topic from where the data will be read.
+        # Formet -
+        # "kafka_topics": {
+        #    "confluent": {"mongo":[list of topics],"postgresql":[],
+        #    "mysql":[] },
+        #    "aws_kafka": {"mongo":[list of topics],"postgresql":[],
+        #             "mysql":[] }
         # }
-        "include_kafka_topics": {},
-        "exclude_kafka_topics": {},
+        "kafka_topics": {
+            "confluent": {"mongo": [], "postgresql": [], "mysql": []},
+            "aws_kafka": {"mongo": [], "postgresql": [], "mysql": []}
+        }
     },
 
     "synonym": {
@@ -423,7 +428,5 @@ spec = {
         "indexed_fields": [],
         # Accepted values are all, cbas_index or index
         "creation_method": "all"
-    },
-
-
+    }
 }
