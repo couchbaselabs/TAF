@@ -340,9 +340,8 @@ class SecurityBase(CouchbaseBaseTest):
                                     "ram": 16
                                 },
                                 "disk": {
-                                    "storage": 64,
-                                    "type": "P6",
-                                    "iops": 240
+                                    "autoExpansion": True,
+                                    "type": "P6"
                                 }
                             },
                             "numOfNodes": 3,
