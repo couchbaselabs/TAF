@@ -417,7 +417,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         self.rest.set_recovery_type("ns_1@{}".format(self.server_to_fail[
                                                          0].ip),
                                     self.recovery_strategy)
-        self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+        self.rest.rebalance(known_nodes=[node.id for node in self.nodes])
         msg = "rebalance failed while recovering failover nodes {0}".format(
             self.server_to_fail[0])
         self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
@@ -426,7 +426,7 @@ class AutoFailoverTests(AutoFailoverBaseTest):
         if self.replica_update_during == "after_rebalance":
             self.bucket_util.update_all_bucket_replicas(self.cluster,
                                                         self.new_replica)
-            self.rest.rebalance(otpNodes=[node.id for node in self.nodes])
+            self.rest.rebalance(known_nodes=[node.id for node in self.nodes])
             msg = "rebalance failed while updating replica from {0} -> {1}" \
                 .format(self.num_replicas, self.new_replica)
             self.assertTrue(reb_util.monitor_rebalance(stop_if_loop=True), msg)
