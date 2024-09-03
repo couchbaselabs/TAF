@@ -123,7 +123,8 @@ class BasicOps(DurabilityTestsBase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
             # The documents keys for which the update failed
@@ -143,7 +144,8 @@ class BasicOps(DurabilityTestsBase):
             task = self.task.async_load_gen_sub_docs(
                 self.cluster, def_bucket, sub_doc_gen, "read", 0,
                 batch_size=100, process_concurrency=8,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
             # A set of expected values following a read operation
@@ -169,7 +171,8 @@ class BasicOps(DurabilityTestsBase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
             # The number of documents that could not be removed
@@ -189,7 +192,8 @@ class BasicOps(DurabilityTestsBase):
             task = self.task.async_load_gen_sub_docs(
                 self.cluster, def_bucket, sub_doc_gen, "read", 0,
                 batch_size=100, process_concurrency=8,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
             op_failed_tbl = TableView(self.log.error)
@@ -312,7 +316,8 @@ class BasicOps(DurabilityTestsBase):
                 batch_size=10, process_concurrency=8,
                 replicate_to=self.replicate_to, persist_to=self.persist_to,
                 durability=self.durability_level,
-                timeout_secs=self.sdk_timeout)
+                timeout_secs=self.sdk_timeout,
+                load_using=self.load_docs_using)
             self.task.jython_task_manager.get_task_result(task)
 
             verification_dict["ops_update"] += self.num_items
@@ -346,7 +351,8 @@ class BasicOps(DurabilityTestsBase):
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Non_SyncWrites for doc_ops[1]
         tasks.append(self.task.async_load_gen_sub_docs(
@@ -355,7 +361,8 @@ class BasicOps(DurabilityTestsBase):
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Generic reader task - reads entire document instead of sub-doc
         tasks.append(self.task.async_load_gen_docs(
@@ -424,7 +431,8 @@ class BasicOps(DurabilityTestsBase):
             path_create=True,
             batch_size=10, process_concurrency=8,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task.jython_task_manager.get_task_result(task)
         verification_dict["ops_update"] += \
             (curr_doc_gen.end - curr_doc_gen.start)
@@ -498,7 +506,8 @@ class BasicOps(DurabilityTestsBase):
                     path_create=True,
                     batch_size=10, process_concurrency=1,
                     durability=self.durability_level,
-                    timeout_secs=self.sdk_timeout))
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using))
                 if op_type != "read" and self.is_sync_write_enabled:
                     verification_dict["sync_write_committed_count"] += \
                         mutation_count
@@ -509,7 +518,8 @@ class BasicOps(DurabilityTestsBase):
                     path_create=True,
                     batch_size=10, process_concurrency=1,
                     replicate_to=self.replicate_to, persist_to=self.persist_to,
-                    timeout_secs=self.sdk_timeout))
+                    timeout_secs=self.sdk_timeout,
+                    load_using=self.load_docs_using))
 
         # Wait for all task to complete
         for task in tasks:
@@ -602,7 +612,8 @@ class BasicOps(DurabilityTestsBase):
             batch_size=20, process_concurrency=8,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(task)
 
         # Perform CRUDs with induced error scenario is active
@@ -636,13 +647,15 @@ class BasicOps(DurabilityTestsBase):
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen_update, "read", 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen_update,
             DocLoading.Bucket.SubDocOps.UPSERT, 0,
@@ -650,14 +663,16 @@ class BasicOps(DurabilityTestsBase):
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
         tasks.append(self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen_delete,
             DocLoading.Bucket.SubDocOps.REMOVE, 0,
             batch_size=10, process_concurrency=1,
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout))
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using))
 
         # Wait for document_loader tasks to complete
         for task in tasks:
@@ -770,7 +785,8 @@ class BasicOps(DurabilityTestsBase):
             batch_size=20, process_concurrency=8,
             persist_to=self.persist_to, replicate_to=self.replicate_to,
             durability=self.durability_level,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(task)
 
         for node in target_nodes:
@@ -825,12 +841,14 @@ class BasicOps(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             print_ops_rate=False,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         tasks["read"] = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen["read"], "read", 0,
             batch_size=1, process_concurrency=1,
             print_ops_rate=False,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         tasks["upsert"] = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen["upsert"],
             DocLoading.Bucket.SubDocOps.UPSERT, 0,
@@ -839,7 +857,8 @@ class BasicOps(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             print_ops_rate=False,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         tasks["remove"] = self.task.async_load_gen_sub_docs(
             self.cluster, def_bucket, gen["remove"],
             DocLoading.Bucket.SubDocOps.REMOVE, 0,
@@ -847,7 +866,8 @@ class BasicOps(DurabilityTestsBase):
             replicate_to=self.replicate_to, persist_to=self.persist_to,
             durability=self.durability_level,
             print_ops_rate=False,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
 
         # Wait for document_loader tasks to complete
         for _, task in tasks.items():
@@ -866,7 +886,8 @@ class BasicOps(DurabilityTestsBase):
             self.cluster, def_bucket, gen_read, "read",
             key_size=self.key_size,
             batch_size=50, process_concurrency=8,
-            timeout_secs=self.sdk_timeout)
+            timeout_secs=self.sdk_timeout,
+            load_using=self.load_docs_using)
         self.task_manager.get_task_result(reader_task)
 
         # Validation for each CRUD task

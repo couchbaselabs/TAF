@@ -15,6 +15,12 @@ from couchbase_helper.data import FIRST_NAMES, LAST_NAMES, DEPT, LANGUAGES
 letters = ascii_uppercase + ascii_lowercase + digits
 
 
+def get_valid_key_size(key, key_size):
+    if key_size is None:
+        return len(key) + 8
+    return key_size
+
+
 def doc_generator(key, start, end,
                   key_size=None, mix_key_size=False,
                   doc_size=256, doc_type="json",
@@ -24,9 +30,7 @@ def doc_generator(key, start, end,
                   randomize=False,
                   deep_copy=False,
                   load_using="default_loader"):
-    if key_size is None:
-        key_size = len(key) + 8
-
+    key_size = get_valid_key_size(key, key_size)
     if load_using == "sirius_java_sdk":
         return SiriusJavaDocGen(start=start, end=end,
                                 key_prefix=key, key_size=key_size,
@@ -64,9 +68,7 @@ def doc_generator(key, start, end,
 
 def sub_doc_generator(key, start, end, doc_size=256,
                       target_vbucket=None, vbuckets=1024, key_size=None, xattr_test=False):
-    if key_size is None:
-        key_size = len(key) + 8
-
+    key_size = get_valid_key_size(key, key_size)
     if xattr_test:
         last_name = [''.rjust(doc_size - 10, 'a')]
         template = '{{ "full_name.last": "{0}"}}'
@@ -96,7 +98,8 @@ def sub_doc_generator(key, start, end, doc_size=256,
 
 def sub_doc_generator_for_edit(key, start, end, template_index=0,
                                target_vbucket=None, vbuckets=1024,
-                               key_size=8, xattr_test=False):
+                               key_size=None, xattr_test=False):
+    key_size = get_valid_key_size(key, key_size)
     if xattr_test:
         template = list()
         template.append('{{ "full_name.last": "LastNameUpdate"}}')
