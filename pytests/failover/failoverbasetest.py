@@ -2,7 +2,6 @@
 from TestInput import TestInputSingleton
 from basetestcase import BaseTestCase
 from couchbase_helper.document import View
-from remote.remote_util import RemoteUtilHelper
 from couchbase_helper.documentgenerator import doc_generator
 from sdk_exceptions import SDKException
 

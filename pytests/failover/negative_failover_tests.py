@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
-from custom_exceptions.exception import FailoverFailedException
-from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
+from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from rebalance_utils.rebalance_util import RebalanceUtil
 from failover.failoverbasetest import FailoverBaseTest
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class NegativeFailoverTests(FailoverBaseTest):
@@ -14,282 +14,233 @@ class NegativeFailoverTests(FailoverBaseTest):
         super(NegativeFailoverTests, self).tearDown()
 
     def graceful_failover_when_rebalance_running(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            nodes = self.rest.node_statuses()
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            status, _ = self.rest.rebalance(
-                otpNodes=[node.id for node in nodes],
-                ejectedNodes=[node.id for node in nodes[1:]])
-            self.assertTrue(status, "Rebalance did not run ")
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=True)
-            self.assertFalse(success_failed_over,
-                             "Failover did not fail as expected ")
-        except Exception as ex:
-            self.assertTrue(("Rebalance running" in str(ex)),
-                            "unexpected exception {0}".format(ex))
-
-    def graceful_failover_when_graceful_failover_running(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=True)
-            self.assertTrue(success_failed_over, "Failover failed ")
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=True)
-            self.assertFalse(success_failed_over,
-                             "Failover did not fail as expected ")
-        except Exception as ex:
-            self.assertTrue(("Rebalance running" in str(ex)),
-                            "unexpected exception {0}".format(ex))
-
-    def hard_failover_when_graceful_failover_running(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=True)
-            self.assertTrue(success_failed_over, "Failover failed")
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            self.assertFalse(success_failed_over,
-                             "Failover did not fail as expected")
-        except Exception as ex:
-            self.assertTrue(("Rebalance running" in str(ex)),
-                            "unexpected exception {0}".format(ex))
-
-    def hard_failover_nonexistant_node(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
-            success_failed_over = self.rest.fail_over("non-existant",
-                                                      graceful=False)
-            self.assertFalse(success_failed_over,
-                             "Failover did not fail as expected ")
-        except Exception as ex:
-            self.assertTrue(("Unknown server given" in str(ex)),
-                            "unexpected exception {0}".format(ex))
-
-    def graceful_failover_nonexistant_node(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
-            success_failed_over = self.rest.fail_over("non-existant",
-                                                      graceful=True)
-            self.assertFalse(success_failed_over,
-                             "Failover did not fail as expected")
-        except Exception as ex:
-            self.assertTrue(("Unknown server given" in str(ex)),
-                            "unexpected exception {0}".format(ex))
-
-    def failover_failed_node(self):
-        self.rest = RestConnection(self.cluster.master)
-        _ = self.cluster_util.get_nodes(self.cluster.master)
+        self.rest = ClusterRestAPI(self.cluster.master)
+        nodes = self.cluster_util.get_nodes(self.cluster.master)
         chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                               howmany=1)
-        success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                  graceful=False)
-        self.assertTrue(success_failed_over,
-                        "Failover did not happen as expected")
-        try:
-            self.rest.fail_over(chosen[0].id, graceful=False)
-            self.fail("Failover of already failed node succeeded")
-        except FailoverFailedException as ex:
-            self.assertTrue(("Inactive server given" in str(ex)),
-                            "Unexpected exception {0}".format(ex))
+        status, _ = self.rest.rebalance(
+            known_nodes=[node.id for node in nodes],
+            eject_nodes=[node.id for node in nodes[1:]])
+        self.assertTrue(status, "Rebalance did not run ")
+        status, content = self.rest.perform_graceful_failover(chosen[0].id)
+        self.assertFalse(status, "Failover did not fail as expected")
+        self.assertTrue(("Rebalance running" in str(content)),
+                        f"Unexpected exception {content}")
+
+    def graceful_failover_when_graceful_failover_running(self):
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        status, _ = self.rest.perform_graceful_failover(chosen[0].id)
+        self.assertTrue(status, "Failover failed")
+        status, content = self.rest.perform_graceful_failover(chosen[0].id)
+        self.assertFalse(status, "Failover did not fail as expected")
+        self.assertTrue(("Rebalance running" in str(content)),
+                        f"Unexpected exception {content}")
+
+    def hard_failover_when_graceful_failover_running(self):
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        status, _ = self.rest.perform_graceful_failover(chosen[0].id)
+        self.assertTrue(status, "Failover failed")
+        status, content = self.rest.perform_hard_failover(chosen[0].id)
+        self.assertFalse(status,"Failover did not fail as expected")
+        self.assertTrue(("Rebalance running" in str(content)),
+                        f"Unexpected exception {content}")
+
+    def hard_failover_nonexistant_node(self):
+        self.rest = ClusterRestAPI(self.cluster.master)
+        status, content = self.rest.perform_hard_failover("non-existant")
+        self.assertFalse(status,"Failover did not fail as expected ")
+        self.assertTrue(("Unknown server given" in str(content)),
+                        f"Unexpected exception {content}")
+
+    def graceful_failover_nonexistant_node(self):
+        self.rest = ClusterRestAPI(self.cluster.master)
+        status, content = self.rest.perform_graceful_failover("non-existant")
+        self.assertFalse(status, "Failover did not fail as expected")
+        self.assertTrue(("Unknown server given" in str(content)),
+                        f"Unexpected exception {content}")
+
+    def failover_failed_node(self):
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        status, _ = self.rest.perform_hard_failover(chosen[0].id)
+        self.assertTrue(status,"Failover did not happen as expected")
+        status, content = self.rest.perform_hard_failover(chosen[0].id)
+        self.assertFalse(status, "Failover of already failed node succeeded")
+        self.assertTrue(("Inactive server given" in str(content)),
+                        f"Unexpected exception {content}")
 
     def addback_non_existant_node(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            # Mark Node for failover
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            # Mark Node for full recovery
-            if success_failed_over:
-                self.rest.set_recovery_type(otpNode="non-existant",
-                                            recoveryType="delta")
-        except Exception as ex:
-            self.assertTrue(("invalid node name or node" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        # Mark Node for failover
+        status, content = self.rest.perform_hard_failover(chosen[0].id)
+        # Mark Node for full recovery
+        if status:
+            _, content = self.rest.set_recovery_type(otp_node="non-existant",
+                                                     recovery_type="delta")
+        self.assertTrue(("invalid node name or node" in str(content)),
+                        f"Unexpected exception {content}")
 
     def addback_an_unfailed_node(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            self.rest.set_recovery_type(otpNode=chosen[0].id,
-                                        recoveryType="delta")
-        except Exception as ex:
-            self.assertTrue(("invalid node name or node" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        status, content = self.rest.set_recovery_type(otp_node=chosen[0].id,
+                                                      recovery_type="delta")
+        self.assertTrue(("invalid node name or node" in str(content)),
+                        f"Unexpected exception {content}")
 
     def addback_with_incorrect_recovery_type(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            # Mark Node for failover
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            # Mark Node for full recovery
-            if success_failed_over:
-                self.rest.set_recovery_type(otpNode=chosen[0].id,
-                                            recoveryType="xxx")
-        except Exception as ex:
-            self.assertTrue(("recoveryType" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        # Mark Node for failover
+        status, content = self.rest.perform_hard_failover(chosen[0].id)
+        # Mark Node for full recovery
+        if status:
+            _, content = self.rest.set_recovery_type(otp_node=chosen[0].id,
+                                                     recovery_type="xxx")
+        self.assertTrue(("recoveryType" in str(content)),
+                        f"Unexpected exception {content}")
 
     def failure_recovery_delta_node_with_failover_node(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=2)
-            # Mark Node(s) for failover
-            # success_failed_over
-            _ = self.rest.fail_over(chosen[0].id, graceful=False)
-            success_failed_over = self.rest.fail_over(chosen[1].id,
-                                                      graceful=False)
-            # Mark Node for full recovery
-            if success_failed_over:
-                self.rest.set_recovery_type(otpNode=chosen[0].id,
-                                            recoveryType="delta")
-            servers_out = self.cluster_util.add_remove_servers(
-                self.cluster, [], [], [chosen[1]])
-            rebalance = self.task.async_rebalance(
-                self.cluster, [], servers_out)
-            self.task_manager.get_task_result(rebalance)
-        except Exception as ex:
-            self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=2)
+        # Mark Node(s) for failover
+        # success_failed_over
+        _ = self.rest.perform_hard_failover(chosen[0].id)
+        status, content = self.rest.perform_hard_failover(chosen[1].id)
+        # Mark Node for full recovery
+        if status:
+            status, _ = self.rest.set_recovery_type(otp_node=chosen[0].id,
+                                                    recovery_type="delta")
+            self.assertTrue(status,
+                            f"Delta recovery failed for {chosen[0].id}")
+        known_nodes = [node.id for node in
+                       self.cluster_util.get_nodes(self.cluster.master,
+                                                   inactive_added=True,
+                                                   inactive_failed=True)]
+        status, content = self.rest.rebalance(known_nodes=known_nodes,
+                                              eject_nodes=[chosen[1].id])
+        self.assertTrue(("deltaRecoveryNotPossible" in str(content)),
+                        f"Unexpected exception {content}")
 
     def failure_recovery_delta_node_before_rebalance_in(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            # Mark Node for failover
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            # Mark Node for full recovery
-            if success_failed_over:
-                self.rest.set_recovery_type(otpNode=chosen[0].id,
-                                            recoveryType="delta")
-            rebalance = self.task.async_rebalance(
-                self.cluster,
-                [self.servers[self.nodes_init]], [])
-            self.task_manager.get_task_result(rebalance)
-        except Exception as ex:
-            self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        # Mark Node for failover
+        status, _ = self.rest.perform_hard_failover(chosen[0].id)
+        # Mark Node for full recovery
+        if status:
+            status, _ = self.rest.set_recovery_type(otp_node=chosen[0].id,
+                                                    recovery_type="delta")
+            self.assertTrue(status,
+                            f"Delta recovery failed for {chosen[0].id}")
+
+        node = self.servers[self.nodes_init]
+        self.rest.add_node(host_name=node.ip, username=node.rest_username,
+                           password=node.rest_password)
+        known_nodes = [node.id for node in
+                       self.cluster_util.get_nodes(self.cluster.master,
+                                                   inactive_added=True,
+                                                   inactive_failed=True)]
+        status, content = self.rest.rebalance(known_nodes=known_nodes)
+        self.assertTrue(("deltaRecoveryNotPossible" in str(content)),
+                        f"Unexpected exception {content}")
 
     def failure_recovery_delta_node_after_add_node(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            self.rest.add_node(self.cluster.master.rest_username,
-                               self.cluster.master.rest_password,
-                               self.servers[self.nodes_init].ip,
-                               self.servers[self.nodes_init].port)
-            # Mark Node for failover
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            # Mark Node for full recovery
-            if success_failed_over:
-                self.rest.set_recovery_type(otpNode=chosen[0].id,
-                                            recoveryType="delta")
-            self.nodes = self.rest.node_statuses()
-            self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                                ejectedNodes=[])
-            self.assertFalse(self.rest.monitorRebalance(stop_if_loop=True),
-                             msg="Rebalance did not fail as expected")
-        except Exception as ex:
-            self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        self.rest.add_node(self.servers[self.nodes_init].ip,
+                           self.cluster.master.rest_username,
+                           self.cluster.master.rest_password)
+        # Mark Node for failover
+        status, _ = self.rest.perform_hard_failover(chosen[0].id)
+        # Mark Node for full recovery
+        if status:
+            status, _ = self.rest.set_recovery_type(
+                otp_node=chosen[0].id, recovery_type="delta")
+            self.assertTrue(status,
+                            f"Delta recovery failed for {chosen[0].id}")
+        known_nodes = [node.id for node in
+                       self.cluster_util.get_nodes(self.cluster.master,
+                                                   inactive_added=True,
+                                                   inactive_failed=True)]
+        status, content = self.rest.rebalance(known_nodes=known_nodes)
+        self.assertTrue(("deltaRecoveryNotPossible" in str(content)),
+                        f"Unexpected exception {content}")
 
     def failure_recovery_delta_node_after_eject_node(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            eject_out_node = self.cluster_util.find_node_info(
-                self.cluster.master,
-                self.servers[self.nodes_init-1])
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            self.rest.eject_node(self.cluster.master.rest_username,
-                                 self.cluster.master.rest_password,
-                                 self.servers[self.nodes_init-1])
-            # Mark Node for failover
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            # Mark Node for full recovery
-            if success_failed_over:
-                self.rest.set_recovery_type(otpNode=chosen[0].id,
-                                            recoveryType="delta")
-            self.nodes = self.rest.node_statuses()
-            self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                                ejectedNodes=[chosen[0].id, eject_out_node.id])
-            self.assertFalse(self.rest.monitorRebalance(stop_if_loop=True),
-                             msg="Rebalance did not fail as expected")
-        except Exception as ex:
-            self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+        reb_util = RebalanceUtil(self.cluster)
+        self.rest = ClusterRestAPI(self.cluster.master)
+        eject_out_node = self.cluster_util.find_node_info(
+            self.cluster.master,
+            self.servers[self.nodes_init-1])
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        self.rest.eject_node(self.servers[self.nodes_init-1])
+        # Mark Node for failover
+        status, _ = self.rest.perform_hard_failover(chosen[0].id)
+        # Mark Node for full recovery
+        if status:
+            self.rest.set_recovery_type(otp_node=chosen[0].id,
+                                        recovery_type="delta")
+        self.nodes = self.cluster_util.get_nodes(self.cluster.master)
+        self.rest.rebalance(known_nodes=[node.id for node in self.nodes],
+                            eject_nodes=[chosen[0].id, eject_out_node.id])
+        self.assertFalse(reb_util.monitor_rebalance(stop_if_loop=True),
+                         msg="Rebalance did not fail as expected")
 
     def failure_recovery_delta_node_before_rebalance_in_out(self):
-        try:
-            self.rest = RestConnection(self.cluster.master)
-            chosen = self.cluster_util.pick_nodes(self.cluster.master,
-                                                  howmany=1)
-            # Mark Node for failover
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            # Mark Node for full recovery
-            if success_failed_over:
-                self.rest.set_recovery_type(otpNode=chosen[0].id,
-                                            recoveryType="delta")
-            ejected_nodes = list()
-            self.rest.add_node(self.cluster.master.rest_username,
-                               self.cluster.master.rest_password,
-                               self.servers[self.nodes_init].ip,
-                               self.servers[self.nodes_init].port)
-            self.rest.add_node(self.cluster.master.rest_username,
-                               self.cluster.master.rest_password,
-                               self.servers[self.nodes_init+1].ip,
-                               self.servers[self.nodes_init+1].port)
-            self.nodes = self.rest.node_statuses()
-            for server in self.nodes:
-                if server.ip == self.servers[self.nodes_init].ip:
-                    ejected_nodes.append(server.id)
-            self.rest.rebalance(otpNodes=[node.id for node in self.nodes],
-                                ejectedNodes=ejected_nodes)
-            self.assertFalse(self.rest.monitorRebalance(stop_if_loop=True),
-                             msg="Rebalance did not fail as expected")
-        except Exception as ex:
-            self.assertTrue(("deltaRecoveryNotPossible" in str(ex)),
-                            "unexpected exception {0}".format(ex))
+        content = None
+        reb_util = RebalanceUtil(self.cluster)
+        self.rest = ClusterRestAPI(self.cluster.master)
+        chosen = self.cluster_util.pick_nodes(self.cluster.master,
+                                              howmany=1)
+        # Mark Node for failover
+        status, _ = self.rest.perform_hard_failover(chosen[0].id)
+        # Mark Node for full recovery
+        if status:
+            status, content = self.rest.set_recovery_type(
+                otp_node=chosen[0].id, recovery_type="delta")
+        ejected_nodes = list()
+        self.rest.add_node(self.cluster.master.rest_username,
+                           self.cluster.master.rest_password,
+                           self.servers[self.nodes_init].ip,
+                           self.servers[self.nodes_init].port)
+        self.rest.add_node(self.cluster.master.rest_username,
+                           self.cluster.master.rest_password,
+                           self.servers[self.nodes_init+1].ip,
+                           self.servers[self.nodes_init+1].port)
+        self.nodes = self.cluster_util.get_nodes(self.cluster.server)
+        for server in self.nodes:
+            if server.ip == self.servers[self.nodes_init].ip:
+                ejected_nodes.append(server.id)
+        self.rest.rebalance(known_nodes=[node.id for node in self.nodes],
+                            eject_nodes=ejected_nodes)
+        self.assertFalse(reb_util.monitor_rebalance(stop_if_loop=True),
+                         msg="Rebalance did not fail as expected")
+        self.assertTrue(("deltaRecoveryNotPossible" in str(content)),
+                        f"Unexpected exception {content}")
 
     def graceful_failover_unhealthy_node_not_allowed(self):
         try:
-            self.rest = RestConnection(self.cluster.master)
-            _ = self.cluster_util.get_nodes(self.cluster.master)
+            self.rest = ClusterRestAPI(self.cluster.master)
             self.stop_server(self.servers[1])
             # Mark Node for failover
             chosen = self.cluster_util.pick_nodes(self.cluster.master,
                                                   howmany=1)
-            success_failed_over = self.rest.fail_over(chosen[0].id,
-                                                      graceful=False)
-            self.assertFalse(success_failed_over,
+            status, _ = self.rest.perform_hard_failover(chosen[0].id)
+            self.assertFalse(status,
                              "Graceful failover allowed for unhealthy node")
         finally:
             self.start_server(self.servers[1])
@@ -302,9 +253,6 @@ class NegativeFailoverTests(FailoverBaseTest):
                 if shell.is_couchbase_installed():
                     shell.stop_couchbase()
                     self.log.info("Couchbase stopped")
-                else:
-                    shell.stop_membase()
-                    self.log.info("Membase stopped")
                 shell.disconnect()
 
     def start_server(self, node):
@@ -315,8 +263,5 @@ class NegativeFailoverTests(FailoverBaseTest):
                 if shell.is_couchbase_installed():
                     shell.start_couchbase()
                     self.log.info("Couchbase started")
-                else:
-                    shell.start_membase()
-                    self.log.info("Membase started")
                 shell.disconnect()
                 break
