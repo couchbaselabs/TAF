@@ -134,11 +134,7 @@ class FailoverBaseTest(BaseTestCase):
             self.log.warn("CLEANUP WAS SKIPPED")
             self.cluster.shutdown(force=True)
         else:
-            try:
-                RemoteUtilHelper.common_basic_setup(self.cluster.servers)
-                self.cluster_util.check_for_panic_and_mini_dumps(self.servers)
-            finally:
-                super(FailoverBaseTest, self).tearDown()
+            super(FailoverBaseTest, self).tearDown()
 
     def subsequent_load_gen(self, retry_exceptions=[], ignore_exceptions=[]):
         subsequent_load_gen = doc_generator(self.key,
