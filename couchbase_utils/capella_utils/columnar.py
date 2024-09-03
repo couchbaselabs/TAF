@@ -379,7 +379,7 @@ class ColumnarUtils:
     def create_instance(self, pod, tenant, instance_config=None, timeout=7200):
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
-            tenant.user, tenant.pwd)
+            tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
         if not instance_config:
             instance_config = self.generate_instance_configuration()
 
@@ -484,7 +484,7 @@ class ColumnarUtils:
         if resp.status_code != 202:
             self.log.error("Unable to scale columnar instance {0}".format(
                 instance.name))
-            return False
+            return None
         return resp
 
     def wait_for_instance_to_be_destroyed(
@@ -601,7 +601,6 @@ class ColumnarUtils:
             if wait_to_turn_off:
                 if self.wait_for_instance_to_turn_off(
                         pod, tenant, project_id, instance, timeout):
-                    self.update_columnar_instance_obj(pod,tenant,instance)
                     return True
                 else:
                     return False
@@ -634,6 +633,7 @@ class ColumnarUtils:
             resp = self.get_instance_info(
                 pod, tenant, project_id, instance.instance_id)
             status = resp["data"]["state"]
+            time.sleep(10)
         if status == "turned_off":
             self.log.info("Instance turned off successful. Time taken {0} "
                           "seconds".format(time.time() - start_time))
@@ -654,7 +654,6 @@ class ColumnarUtils:
             if wait_to_turn_on:
                 if self.wait_for_instance_to_turn_on(
                         pod, tenant, project_id, instance, timeout):
-                    self.update_columnar_instance_obj(pod, tenant, instance)
                     return True
                 else:
                     return False
@@ -807,7 +806,12 @@ class ColumnarUtils:
                 tenant_id=tenant.id, project_id=project_id,
                 instance_id=instance.instance_id, page=page)
             if resp.status_code == 200:
-                backups.append(resp.json()["data"])
+                info = resp.json()
+                backups.extend(info["data"])
+                if info["cursor"]["pages"]["last"] > page:
+                    page += 1
+                else:
+                    break
             else:
                 break
         return backups
@@ -821,26 +825,19 @@ class ColumnarUtils:
         return None
 
     def create_backup(self, pod, tenant, project_id, instance,
-                      retention_time=0, timeout=3600, wait_for_backup=False):
+                      retention_time=0):
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         resp = columnar_api.create_backup(
             tenant_id=tenant.id, project_id=project_id,
             instance_id=instance.instance_id, retention=retention_time)
-        if resp.status_code == 200:
-            backup_info = resp.json()
-            if wait_for_backup:
-                backup_id = backup_info["data"]["id"]
-                return self.wait_for_backup_to_complete(
-                    pod=pod, tenant=tenant, project_id=project_id,
-                    instance=instance, backup_id=backup_id, timeout=timeout)
-            else:
-                return backup_info
+        if resp.status_code == 202:
+            return resp.json()
         else:
             self.log.error(f"Unable to create backup for columnar cluster "
                            f"{instance.instance_id}")
-            return False
+            return None
 
     def wait_for_backup_to_complete(self, pod, tenant, project_id, instance,
                                     backup_id, timeout=3600):
@@ -877,7 +874,12 @@ class ColumnarUtils:
                 tenant_id=tenant.id, project_id=project_id,
                 instance_id=instance.instance_id, page=page)
             if resp.status_code == 200:
-                restores.append(resp.json()["data"])
+                info = resp.json()
+                restores.extend(info["data"])
+                if info["cursor"]["pages"]["last"] > page:
+                    page += 1
+                else:
+                    break
             else:
                 break
         return restores
@@ -890,27 +892,19 @@ class ColumnarUtils:
                 return restore["data"]
         return None
 
-    def restore_backup(self, pod, tenant, project_id, instance, backup_id,
-                       wait_for_restore=False, timeout=3600):
+    def restore_backup(self, pod, tenant, project_id, instance, backup_id):
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd)
         resp = columnar_api.create_restore(
             tenant_id=tenant.id, project_id=project_id,
-            instance_id=instance.instanc_id, backup_id=backup_id)
-        if resp.status_code == 200:
-            restore_info = resp.json()
-            if wait_for_restore:
-                restore_id = restore_info["id"]
-                return self.wait_for_restore_to_complete(
-                    pod=pod, tenant=tenant, project_id=project_id,
-                    instance=instance, restore_id=restore_id, timeout=timeout)
-            else:
-                return restore_info
+            instance_id=instance.instance_id, backup_id=backup_id)
+        if resp.status_code == 202:
+            return resp.json()
         else:
             self.log.error(f"Unable to restore backup backup for columnar "
                            f"cluster {instance.instance_id}")
-            return False
+            return None
 
     def wait_for_restore_to_complete(self, pod, tenant, project_id,
                                      instance, restore_id, timeout=3600):
@@ -937,3 +931,42 @@ class ColumnarUtils:
                 time.time() - start_time))
             return True
 
+    def get_maintenance_job_status(self, pod, tenant, project_id, instance,
+                                   maintenance_job_id):
+        columnar_api = ColumnarAPI(
+            pod.url_public, tenant.api_secret_key, tenant.api_access_key,
+            tenant.user, tenant.pwd)
+        resp = columnar_api.get_maintenance_job_status(
+            tenant_id=tenant.id, project_id=project_id,
+            instance_id=instance.instance_id, job_id=maintenance_job_id)
+        if resp.status_code == 200:
+            return resp.json()
+        else:
+            return None
+
+    def wait_for_maintenance_job_to_complete(
+            self, pod, tenant, project_id, instance, maintenance_job_id,
+            timeout=3600):
+        start_time = time.time()
+        job_state = None
+        while job_state != "complete" and time.time() < start_time + timeout:
+            job_info = self.get_maintenance_job_status(
+                pod=pod, tenant=tenant, project_id=project_id,
+                instance=instance, maintenance_job_id=maintenance_job_id)
+            if not job_info:
+                self.log.error(
+                    f"Maintenance job with id: {maintenance_job_id}, Not found")
+            job_state = job_info["data"]["execution"]["status"]
+            self.log.info(
+                f"Waiting for maintenance job to be completed, current state:"
+                f" {job_state}")
+            time.sleep(60)
+        if job_state != "complete":
+            self.log.error(
+                f"Failed to complete maintenance job with timeout of"
+                f" {timeout}")
+            return False
+        else:
+            self.log.info("Successfully completed maintenance job in {} "
+                          "seconds".format(time.time() - start_time))
+            return True

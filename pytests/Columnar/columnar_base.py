@@ -70,8 +70,9 @@ class ColumnarBaseTest(BaseTestCase):
         # Initialising capella V4 API object, which can used to make capella
         # V4 API calls.
         self.capellaAPI = CapellaAPI(
-            self.pod.url_public, '', '', self.tenant.user,
-            self.tenant.pwd, '')
+            url=self.pod.url_public, secret='', access='',
+            user=self.tenant.user, pwd=self.tenant.pwd,
+            bearer_token=None, TOKEN_FOR_INTERNAL_SUPPORT=self.pod.TOKEN)
         response = self.capellaAPI.create_control_plane_api_key(
             self.tenant.id, 'init api keys')
         if response.status_code == 201:
