@@ -200,7 +200,10 @@ docker run --rm \
     -i testexec_reformat.$$.ini \
     -p ${os} \
     -o testexec.$$.ini \
-    -k '{'${UPDATE_INI_VALUES}'}'
+    -k '{'${UPDATE_INI_VALUES}'}' \
+    --cb_version $version_number \
+    --columnar_version "$columnar_version_number" \
+    --mixed_build_config "$mixed_build_config"
 # python scripts/populateIni.py $skip_mem_info \
 # -s ${servers} $internal_servers_param \
 # -d ${addPoolServerId} \
