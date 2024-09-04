@@ -1,7 +1,7 @@
 from Jython_tasks.task_manager import Task
 from cb_constants import DocLoading
 from common_lib import IDENTIFIER_TOKEN
-from sirius_client_framework.multiple_database_config import CouchbaseLoader
+from sirius_client_framework.multiple_database_config import CouchbaseLoader, MongoLoader
 from sirius_client_framework.operation_config import WorkloadOperationConfig
 from sirius_client_framework.sirius_client import SiriusClient
 from sirius_client_framework.sirius_constants import SiriusCodes
@@ -281,3 +281,332 @@ class BlobLoadTask(Task):
 
     def get_total_doc_ops(self):
         return self.operation_config.end - self.operation_config.start
+
+class MongoUtil(object):
+
+    def __init__(self, task_manager, hostname, username, password):
+        connection_str = (f"mongodb://{username}:{password}@"
+                          f"{hostname}/?retryWrites=true&w=majority&replicaSet=rs0")
+        self.loader = MongoLoader(username=username, password=password,
+                                  connection_string=connection_str)
+        self.task_manager = task_manager
+
+        """
+        use this operation config for following use cases -
+        1. create/delete mongo databases.
+        2. create/delete mongo collections.
+        """
+        self.no_op_operation_config = WorkloadOperationConfig(
+            start=0, end=0, template="no_op_config", doc_size=1024)
+
+    """
+    Method creates a database in Mongo, the created database will not show 
+    up on UI as mongo does not display databases which does not have any 
+    collections.
+    Note - Use this method only if you want to create empty mongo database, 
+    otherwise use create_mongo_collection method for all other use-cases.
+    """
+    def create_mongo_database(self, database):
+        self.loader.database = database
+        self.loader.collection = None
+        task_create = DatabaseManagementTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DBMgmtOps.CREATE,
+            database_information=self.loader,
+            operation_config=self.no_op_operation_config)
+        self.task_manager.add_new_task(task_create)
+        self.task_manager.get_task_result(task_create)
+        return task_create.result
+
+    """
+    Method deletes a specified database. This method will delete all the 
+    collections within the database.
+    """
+    def delete_mongo_database(self, database):
+        self.loader.database = database
+        self.loader.collection = None
+        task_create = DatabaseManagementTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DBMgmtOps.DELETE,
+            database_information=self.loader,
+            operation_config=self.no_op_operation_config)
+        self.task_manager.add_new_task(task_create)
+        self.task_manager.get_task_result(task_create)
+        return task_create.result
+
+    """
+    Method creates a database and collection in Mongo. If database is 
+    already present then it will only create collection under that database.
+    """
+    def create_mongo_collection(self, database, collection):
+        self.loader.database = database
+        self.loader.collection = collection
+        task_create = DatabaseManagementTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DBMgmtOps.CREATE,
+            database_information=self.loader,
+            operation_config=self.no_op_operation_config
+        )
+        self.task_manager.add_new_task(task_create)
+        self.task_manager.get_task_result(task_create)
+        return task_create.result
+
+    """
+    Method deletes a specified collection within the specified database. If 
+    the collection being deleted is the last collection in the database then 
+    the database is deleted as well. 
+    """
+    def delete_mongo_collection(self, database, collection):
+        self.loader.database = database
+        self.loader.collection = collection
+        task_create = DatabaseManagementTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DBMgmtOps.DELETE,
+            database_information=self.loader,
+            operation_config=self.no_op_operation_config)
+        self.task_manager.add_new_task(task_create)
+        self.task_manager.get_task_result(task_create)
+        return task_create.result
+
+    """
+    Method loads docs in the specified mongoDB collection.
+    """
+    def load_docs_in_mongo_collection(
+            self, database, collection, start, end,
+            doc_template=SiriusCodes.Templates.PERSON, doc_size=1024,
+            sdk_batch_size=500, wait_for_task_complete=False):
+        self.loader.database = database
+        self.loader.collection = collection
+        self.loader.sdk_batch_size = sdk_batch_size
+
+        operation_config = WorkloadOperationConfig(
+            start=start, end=end, template=doc_template, doc_size=doc_size)
+        task = WorkLoadTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DocOps.BULK_CREATE,
+            database_information=self.loader,
+            operation_config=operation_config,
+        )
+        self.task_manager.add_new_task(task)
+        if wait_for_task_complete:
+            self.task_manager.get_task_result(task)
+        return task
+
+    """
+    Method deletes docs from the specified mongoDB collection.
+    """
+    def delete_docs_from_mongo_collection(
+            self, database, collection, start, end, sdk_batch_size=500):
+        self.loader.database = database
+        self.loader.collection = collection
+        self.loader.sdk_batch_size = sdk_batch_size
+
+        operation_config = WorkloadOperationConfig(
+            start=start, end=end, template="", doc_size=1024)
+        task = WorkLoadTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DocOps.BULK_DELETE,
+            database_information=self.loader,
+            operation_config=operation_config,
+        )
+        self.task_manager.add_new_task(task)
+        self.task_manager.get_task_result(task)
+        return task
+
+    """
+    Method updates docs in the specified mongoDB collection.
+    """
+    def update_docs_in_mongo_collection(
+            self, database, collection, start, end,
+            fields_to_update=[], doc_template=SiriusCodes.Templates.PERSON,
+            doc_size=1024, sdk_batch_size=500):
+        self.loader.database = database
+        self.loader.collection = collection
+        self.loader.sdk_batch_size = sdk_batch_size
+
+        if not fields_to_update:
+            fields_to_update = None
+        operation_config = WorkloadOperationConfig(
+            start=start, end=end, template=doc_template, doc_size=doc_size,
+            fields_to_change=fields_to_update)
+        task = WorkLoadTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DocOps.BULK_UPDATE,
+            database_information=self.loader,
+            operation_config=operation_config,
+        )
+        self.task_manager.add_new_task(task)
+        self.task_manager.get_task_result(task)
+        return task
+
+    """
+    Method gets the doc count in the specified mongoDB collection.
+    """
+    def get_collection_doc_count(self, database, collection):
+        self.loader.database = database
+        self.loader.collection = collection
+        task = WorkLoadTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DBMgmtOps.COUNT,
+            database_information=self.loader,
+            operation_config=self.no_op_operation_config,
+        )
+        self.task_manager.add_new_task(task)
+        self.task_manager.get_task_result(task)
+        return task
+
+    """
+    Method performs creation, updation and deletion of docs in the 
+    specified mongoDB collection.
+    """
+    def perform_crud_op_on_mongo_collection(
+            self, database, collection, start, end,
+            percentage_create=100, percentage_update=0, percentage_delete=0,
+            fields_to_update=[], doc_template=SiriusCodes.Templates.PERSON,
+            doc_size=1024, sdk_batch_size=500):
+
+        if (percentage_create + percentage_update + percentage_delete) > 100:
+            raise Exception(
+                "Total value of percentage_create + percentage_update + "
+                "percentage_delete cannot be greater than 100")
+
+        if percentage_delete:
+            delete_end_counter = int(end - start) * int(percentage_delete / 100)
+            self.delete_docs_from_mongo_collection(
+                database, collection, start, delete_end_counter, sdk_batch_size)
+            start = delete_end_counter
+
+        if percentage_create:
+            create_end = int(end - start) * int(percentage_create / 100)
+            self.load_docs_in_mongo_collection(
+                database, collection, end, create_end, doc_template, doc_size,
+                sdk_batch_size)
+            end = create_end
+
+        if percentage_update:
+            update_end = int(end - start) * int(percentage_update / 100)
+            self.update_docs_in_mongo_collection(
+                database, collection, start, update_end, fields_to_update,
+                doc_template, doc_size, sdk_batch_size)
+
+        return "status"
+
+
+class CouchbaseUtil(object):
+
+    def __init__(self, task_manager, hostname, username, password):
+        self.loader = CouchbaseLoader(
+            username=username, password=password,
+            connection_string=f"couchbases://{hostname}")
+        self.task_manager = task_manager
+
+    """
+    Method loads docs in the specified couchbase collection.
+    """
+    def load_docs_in_couchbase_collection(
+            self, bucket, scope, collection, start, end,
+            doc_template=SiriusCodes.Templates.PERSON, doc_size=1024,
+            sdk_batch_size=500):
+        self.loader.bucket = bucket
+        self.loader.scope = scope
+        self.loader.collection = collection
+        self.loader.sdk_batch_size = sdk_batch_size
+
+        operation_config = WorkloadOperationConfig(
+            start=start, end=end, template=doc_template, doc_size=doc_size)
+        task = WorkLoadTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DocOps.BULK_CREATE,
+            database_information=self.loader,
+            operation_config=operation_config,
+        )
+        self.task_manager.add_new_task(task)
+        self.task_manager.get_task_result(task)
+        return task
+
+    """
+    Method deletes docs from the specified couchbase collection.
+    """
+    def delete_docs_from_couchbase_collection(
+            self, bucket, scope, collection, start, end, sdk_batch_size=500):
+        self.loader.bucket = bucket
+        self.loader.scope = scope
+        self.loader.collection = collection
+        self.loader.sdk_batch_size = sdk_batch_size
+
+        operation_config = WorkloadOperationConfig(
+            start=start, end=end, template="", doc_size=1024)
+        task = WorkLoadTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DocOps.BULK_DELETE,
+            database_information=self.loader,
+            operation_config=operation_config,
+        )
+        self.task_manager.add_new_task(task)
+        self.task_manager.get_task_result(task)
+        return task
+
+    """
+    Method updates docs in the specified couchbase collection.
+    """
+    def update_docs_in_couchbase_collection(
+            self, bucket, scope, collection, start, end,
+            fields_to_update=[], doc_template=SiriusCodes.Templates.PERSON,
+            doc_size=1024, sdk_batch_size=500):
+        self.loader.bucket = bucket
+        self.loader.scope = scope
+        self.loader.collection = collection
+        self.loader.sdk_batch_size = sdk_batch_size
+
+        if not fields_to_update:
+            fields_to_update = None
+        operation_config = WorkloadOperationConfig(
+            start=start, end=end, template=doc_template, doc_size=doc_size,
+            fields_to_change=fields_to_update)
+        task = WorkLoadTask(
+            task_manager=self.task_manager,
+            op_type=SiriusCodes.DocOps.BULK_UPDATE,
+            database_information=self.loader,
+            operation_config=operation_config,
+        )
+        self.task_manager.add_new_task(task)
+        self.task_manager.get_task_result(task)
+        return task
+
+    """
+    Method performs creation, updation and deletion of docs in the 
+    specified couchbase collection.
+    """
+    def perform_crud_op_on_couchbase_collection(
+            self, bucket, scope, collection, start, end,
+            percentage_create=100, percentage_update=0, percentage_delete=0,
+            fields_to_update=[], doc_template=SiriusCodes.Templates.PERSON,
+            doc_size=1024, sdk_batch_size=500):
+
+        if (percentage_create + percentage_update + percentage_delete) > 100:
+            raise Exception(
+                "Total value of percentage_create + percentage_update + "
+                "percentage_delete cannot be greater than 100")
+
+        if percentage_delete:
+            delete_end_counter = int(end - start) * int(
+                percentage_delete / 100)
+            self.delete_docs_from_couchbase_collection(
+                bucket, scope, collection, start, delete_end_counter,
+                sdk_batch_size)
+            start = delete_end_counter
+
+        if percentage_create:
+            create_end = int(end - start) * int(percentage_create / 100)
+            self.load_docs_in_couchbase_collection(
+                bucket, scope, collection, end, create_end, doc_template,
+                doc_size, sdk_batch_size)
+            end = create_end
+
+        if percentage_update:
+            update_end = int(end - start) * int(percentage_update / 100)
+            self.update_docs_in_couchbase_collection(
+                bucket, scope, collection, start, update_end, fields_to_update,
+                doc_template, doc_size, sdk_batch_size)
+
+        return "status"
