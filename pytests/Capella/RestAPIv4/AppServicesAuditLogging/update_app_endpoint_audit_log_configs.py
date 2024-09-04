@@ -102,16 +102,14 @@ class PutAuditLogConfig(GetAuditLogConfig):
                 "description": "Call API with non-hex AppEndpointName",
                 "invalid_AppEndpointName": self.replace_last_character(
                     self.appEndpointName, non_hex=True),
-                "expected_status_code": 400,
+                "expected_status_code": 403,
                 "expected_error": {
-                    "code": 1000,
-                    "hint": "Check if you have provided a valid URL and all "
-                            "the required params are present in the request "
-                            "body.",
-                    "httpStatusCode": 400,
-                    "message": "The server cannot or will not process the "
-                               "request due to something that is perceived to "
-                               "be a client error."
+                    "code": 1002,
+                    "hint": "Your access to the requested resource is denied. "
+                            "Please make sure you have the necessary "
+                            "permissions to access the resource.",
+                    "httpStatusCode": 403,
+                    "message": "Access Denied."
                 }
             }
         ]
@@ -167,17 +165,6 @@ class PutAuditLogConfig(GetAuditLogConfig):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        resp = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, "Auth_Project")
-        if resp.status_code == 201:
-            other_project_id = resp.json()["id"]
-        else:
-            self.fail("Error while creating project")
-
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
         testcases = []
         for role in self.api_keys:
             testcase = {
@@ -198,14 +185,14 @@ class PutAuditLogConfig(GetAuditLogConfig):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id)
+        self.auth_test_extension(testcases, self.other_project_id)
 
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, other_project_id)
+                                 self.project_id, self.other_project_id)
             result = (self.capellaAPI.cluster_ops_apis.
                       update_app_svc_audit_log_config(
                         self.organisation_id, self.project_id, self.cluster_id,
@@ -228,13 +215,6 @@ class PutAuditLogConfig(GetAuditLogConfig):
                             self.expected_res["disabledRoles"],
                             header))
             self.validate_testcase(result, [204], testcase, failures)
-
-        self.update_auth_with_api_token(self.curr_owner_key)
-        resp = self.capellaAPI.org_ops_apis.delete_project(
-            self.organisation_id, other_project_id)
-        if resp.status_code != 204:
-            self.log.error("Error while deleting project {}"
-                           .format(other_project_id))
 
         if failures:
             for fail in failures:

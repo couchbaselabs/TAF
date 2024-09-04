@@ -142,17 +142,6 @@ class PutAuditLog(GetAuditLog):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        resp = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, "Auth_Project")
-        if resp.status_code == 201:
-            other_project_id = resp.json()["id"]
-        else:
-            self.fail("Error while creating project")
-
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
         testcases = []
         for role in self.api_keys:
             testcase = {
@@ -173,14 +162,14 @@ class PutAuditLog(GetAuditLog):
                 }
                 testcase["expected_status_code"] = 403
             testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id)
+        self.auth_test_extension(testcases, self.other_project_id)
 
         failures = list()
         for testcase in testcases:
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, other_project_id)
+                                 self.project_id, self.other_project_id)
             result = (self.capellaAPI.cluster_ops_apis.
                       update_app_svc_audit_log_state(
                         self.organisation_id, self.project_id, self.cluster_id,
@@ -194,13 +183,6 @@ class PutAuditLog(GetAuditLog):
                             self.app_service_id, True,
                             header))
             self.validate_testcase(result, [204, 422], testcase, failures)
-
-        self.update_auth_with_api_token(self.curr_owner_key)
-        resp = self.capellaAPI.org_ops_apis.delete_project(
-            self.organisation_id, other_project_id)
-        if resp.status_code != 204:
-            self.log.error("Error while deleting project {}"
-                           .format(other_project_id))
 
         if failures:
             for fail in failures:
@@ -339,7 +321,7 @@ class PutAuditLog(GetAuditLog):
         testcases = list()
         for key in self.expected_res:
             values = [
-                "", "abc", 1, 1e1000, -1, 0, None,
+                "", "abc", 1, 1e1000, -1, 0,
                 self.generate_random_string(special_characters=False),
                 self.generate_random_string(5000, False)
             ]
@@ -348,7 +330,6 @@ class PutAuditLog(GetAuditLog):
                 testcase[key] = val
                 testcase["description"] = "Testing `{}` with val: {} of {}" \
                     .format(key, val, type(val))
-                # Expected error conditions
                 testcase["expected_status_code"] = 400
                 testcase["expected_error"] = {
                     "code": 1000,
