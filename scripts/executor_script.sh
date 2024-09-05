@@ -187,6 +187,7 @@ fi
 echo "Running pip install to fix Python packages"
 python -m pip install -r requirements.txt
 
+# run_populate_ini_script $py_executable
 check_and_build_testrunner_install_docker
 touch $WORKSPACE/testexec.$$.ini
 set -x
@@ -204,14 +205,6 @@ docker run --rm \
     --cb_version $version_number \
     --columnar_version "$columnar_version_number" \
     --mixed_build_config "$mixed_build_config"
-# python scripts/populateIni.py $skip_mem_info \
-# -s ${servers} $internal_servers_param \
-# -d ${addPoolServerId} \
-# -a ${addPoolServers} \
-# -i $WORKSPACE/testexec_reformat.$$.ini \
-# -p ${os} \
-# -o $WORKSPACE/testexec.$$.ini \
-# -k '{'${UPDATE_INI_VALUES}'}'
 set +x
 
 parallel=true
@@ -246,20 +239,6 @@ status=0
 # Adding this to install libraries
 $jython_pip install requests futures
 
-# run_populate_ini_script $py_executable
-check_and_build_testrunner_install_docker
-touch $WORKSPACE/testexec.$$.ini
-docker run --rm \
-  -v $WORKSPACE/testexec_reformat.$$.ini:/testrunner/testexec_reformat.$$.ini \
-  -v $WORKSPACE/testexec.$$.ini:/testrunner/testexec.$$.ini  \
-  testrunner:install python3 scripts/populateIni.py $skip_mem_info \
-  -s ${servers} $internal_servers_param \
-  -d ${addPoolServerId} \
-  -a ${addPoolServers} \
-  -i testexec_reformat.$$.ini \
-  -p ${os} \
-  -o testexec.$$.ini \
-  -k '{'${UPDATE_INI_VALUES}'}'
 if [ "$server_type" != "CAPELLA_LOCAL" ]; then
   if [ "$os" = "windows" ] ; then
     docker run --rm \
