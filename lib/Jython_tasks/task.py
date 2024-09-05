@@ -2941,7 +2941,8 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
                  suppress_error_table=False,
                  track_failures=True,
                  task_identifier="",
-                 sdk_retry_strategy=None):
+                 sdk_retry_strategy=None,
+                 load_using="default_loader"):
         super(LoadDocumentsForDgmTask, self).__init__(
             self, cluster, task_manager, bucket, clients, None,
             "create", exp,
@@ -2968,10 +2969,11 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         self.skip_read_on_error = skip_read_on_error
         self.suppress_error_table = suppress_error_table
         self.track_failures = track_failures
-        self.op_type = "create"
+        self.op_type = DocLoading.Bucket.DocOps.CREATE
         self.rest_client = BucketHelper(self.cluster.master)
         self.doc_index = self.doc_gen.start
         self.docs_loaded_per_bucket = dict()
+        self.load_using = load_using
         if isinstance(bucket, list):
             self.buckets = bucket
         else:
@@ -2996,36 +2998,56 @@ class LoadDocumentsForDgmTask(LoadDocumentsGeneratorsTask):
         return active_resident_items_ratio, replica_resident_items_ratio
 
     def _load_next_batch_of_docs(self, bucket):
-        doc_gens = [deepcopy(self.doc_gen)
-                    for _ in range(self.process_concurrency)]
-        doc_tasks = list()
-        self.test_log.debug("Doc load from index %d" % self.doc_index)
-        for index in range(self.process_concurrency):
-            doc_gens[index].start = self.doc_index
-            doc_gens[index].itr = self.doc_index
-            doc_gens[index].end = self.doc_index + self.dgm_batch
-            self.doc_index += self.dgm_batch
-            self.docs_loaded_per_bucket[bucket] += self.dgm_batch
-
-        # Start doc_loading tasks
-        for index, doc_gen in enumerate(doc_gens):
-            batch_gen = BatchedDocumentGenerator(doc_gen, self.batch_size)
-            task = LoadDocumentsTask(
-                self.cluster, bucket, self.clients[index], batch_gen,
-                "create", self.exp,
-                scope=self.scope,
-                collection=self.collection,
-                task_identifier=self.thread_name,
-                persist_to=self.persist_to,
-                replicate_to=self.replicate_to,
+        if self.load_using == "sirius_java_sdk":
+            num_docs_to_load = (self.dgm_batch*self.process_concurrency)
+            self.doc_gen.start = self.doc_index
+            self.doc_gen.end = self.doc_index + num_docs_to_load
+            self.docs_loaded_per_bucket[bucket] += num_docs_to_load
+            self.doc_index += num_docs_to_load
+            task = SiriusCouchbaseLoader(
+                self.cluster.master.ip, self.cluster.master.port,
+                self.doc_gen, DocLoading.Bucket.DocOps.CREATE,
+                self.cluster.master.rest_username,
+                self.cluster.master.rest_password,
+                bucket, self.scope, self.collection,
                 durability=self.durability,
-                timeout_secs=self.timeout_secs,
-                skip_read_on_error=self.skip_read_on_error,
-                suppress_error_table=self.suppress_error_table,
-                track_failures=self.track_failures,
-                sdk_retry_strategy=self.sdk_retry_strategy)
+                timeout=self.timeout_secs,
+                process_concurrency=self.process_concurrency,
+                iterations=1)
+            task.create_doc_load_task()
             self.task_manager.add_new_task(task)
-            doc_tasks.append(task)
+            doc_tasks = [task]
+        else:
+            doc_gens = [deepcopy(self.doc_gen)
+                        for _ in range(self.process_concurrency)]
+            doc_tasks = list()
+            self.test_log.debug("Doc load from index %d" % self.doc_index)
+            for index in range(self.process_concurrency):
+                doc_gens[index].start = self.doc_index
+                doc_gens[index].itr = self.doc_index
+                doc_gens[index].end = self.doc_index + self.dgm_batch
+                self.doc_index += self.dgm_batch
+                self.docs_loaded_per_bucket[bucket] += self.dgm_batch
+
+            # Start doc_loading tasks
+            for index, doc_gen in enumerate(doc_gens):
+                batch_gen = BatchedDocumentGenerator(doc_gen, self.batch_size)
+                task = LoadDocumentsTask(
+                    self.cluster, bucket, self.clients[index], batch_gen,
+                    DocLoading.Bucket.DocOps.CREATE, self.exp,
+                    scope=self.scope,
+                    collection=self.collection,
+                    task_identifier=self.thread_name,
+                    persist_to=self.persist_to,
+                    replicate_to=self.replicate_to,
+                    durability=self.durability,
+                    timeout_secs=self.timeout_secs,
+                    skip_read_on_error=self.skip_read_on_error,
+                    suppress_error_table=self.suppress_error_table,
+                    track_failures=self.track_failures,
+                    sdk_retry_strategy=self.sdk_retry_strategy)
+                self.task_manager.add_new_task(task)
+                doc_tasks.append(task)
 
         # Wait for doc_loading tasks to complete
         for task in doc_tasks:

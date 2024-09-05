@@ -273,7 +273,8 @@ class ServerTasks(object):
         else:
             for _ in range(process_concurrency):
                 client = None
-                if cluster.sdk_client_pool is None:
+                if (load_using == "default_loader" and
+                        cluster.sdk_client_pool is None):
                     client = SDKClient(cluster, bucket,
                                        scope=scope, collection=collection)
                 clients.append(client)
@@ -293,7 +294,8 @@ class ServerTasks(object):
                 skip_read_on_error=skip_read_on_error,
                 suppress_error_table=suppress_error_table,
                 track_failures=track_failures,
-                sdk_retry_strategy=sdk_retry_strategy)
+                sdk_retry_strategy=sdk_retry_strategy,
+                load_using=load_using)
         if start_task:
             self.jython_task_manager.add_new_task(_task)
         return _task
