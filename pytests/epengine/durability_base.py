@@ -98,7 +98,7 @@ class DurabilityTestsBase(ClusterSetup):
         return self.cluster.nodes_in_cluster[rand_node_index]
 
     def getTargetNodes(self):
-        def select_randam_node(nodes):
+        def select_random_node(nodes):
             rand_node_index = randint(1, self.nodes_init-1)
             if self.cluster.nodes_in_cluster[rand_node_index] not in node_list:
                 nodes.append(self.cluster.nodes_in_cluster[rand_node_index])
@@ -107,7 +107,7 @@ class DurabilityTestsBase(ClusterSetup):
         if len(self.cluster.nodes_in_cluster) > 1:
             # Choose random nodes, if the cluster is not a single node cluster
             while len(node_list) != self.num_nodes_affected:
-                select_randam_node(node_list)
+                select_random_node(node_list)
         else:
             node_list.append(self.cluster.master)
         return node_list
@@ -310,8 +310,9 @@ class BucketDurabilityBase(ClusterSetup):
                 self.log_failure("Docs inserted without honoring the "
                                  "bucket durability level")
             for key, result in doc_load_task.fail.items():
-                if SDKException.DurabilityAmbiguousException \
-                        not in str(result["error"]):
+                if not SDKException.check_if_exception_exists(
+                        SDKException.DurabilityAmbiguousException,
+                        str(result["error"])):
                     self.log_failure("Invalid exception for key %s "
                                      "during %s operation: %s"
                                      % (key, op_type, result["error"]))
@@ -339,7 +340,7 @@ class BucketDurabilityBase(ClusterSetup):
                 num_items_to_load
 
     def getTargetNodes(self):
-        def select_randam_node(nodes):
+        def select_random_node(nodes):
             rand_node_index = randint(1, self.nodes_init-1)
             if self.cluster.nodes_in_cluster[rand_node_index] not in node_list:
                 nodes.append(self.cluster.nodes_in_cluster[rand_node_index])
@@ -348,7 +349,7 @@ class BucketDurabilityBase(ClusterSetup):
         if len(self.cluster.nodes_in_cluster) > 1:
             # Choose random nodes, if the cluster is not a single node cluster
             while len(node_list) != self.num_nodes_affected:
-                select_randam_node(node_list)
+                select_random_node(node_list)
         else:
             node_list.append(self.cluster.master)
         return node_list
