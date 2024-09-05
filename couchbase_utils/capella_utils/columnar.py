@@ -376,42 +376,60 @@ class ColumnarUtils:
         self.log.debug(f"Columnar Instance deployment config - {str(config)}")
         return config
 
-    def create_instance(self, pod, tenant, instance_config=None, timeout=7200):
+    def create_instance(self, pod, tenant, instance_config=None, timeout=7200,
+                        retries = 1):
         columnar_api = ColumnarAPI(
             pod.url_public, tenant.api_secret_key, tenant.api_access_key,
             tenant.user, tenant.pwd, TOKEN_FOR_INTERNAL_SUPPORT=pod.TOKEN)
-        if not instance_config:
-            instance_config = self.generate_instance_configuration()
 
-        resp = columnar_api.get_deployment_options(
-            tenant.id, instance_config["provider"])
-        if resp.status_code != 200:
-            raise Exception(str(resp.content))
-        deployment_options = resp.json()
-        instance_config["cidr"] = deployment_options["suggestedCidr"]
+        attempt = 0
+        while attempt < retries:
+            try:
+                if not instance_config:
+                    instance_config = self.generate_instance_configuration()
 
-        resp = columnar_api.create_columnar_instance(
-            tenant.id, tenant.project_id, instance_config)
-        instance_id = None
-        if resp.status_code == 201:
-            instance_id = json.loads(resp.content).get("id")
-        elif resp.status_code == 500:
-            self.log.critical(str(resp.content))
-            raise Exception(str(resp.content))
-        elif resp.status_code == 422:
-            if resp.content.decode("utf-8").find(
-                    "not allowed based on your activation status") != -1:
-                self.log.critical("Tenant is not activated yet...retrying")
-            else:
-                self.log.critical(resp.content)
-                raise Exception("Cluster deployment failed.")
-        else:
-            self.log.error("Unable to create goldfish cluster {0} in project "
-                           "{1}".format(instance_config["name"],
-                                        tenant.project_id))
-            self.log.critical("Capella API returned " + str(
-                resp.status_code))
-            self.log.critical(resp.json()["message"])
+                resp = columnar_api.get_deployment_options(
+                    tenant.id, instance_config["provider"])
+                if resp.status_code != 200:
+                    raise Exception(str(resp.content))
+                deployment_options = resp.json()
+                instance_config["cidr"] = deployment_options["suggestedCidr"]
+
+                resp = columnar_api.create_columnar_instance(
+                    tenant.id, tenant.project_id, instance_config)
+                instance_id = None
+                if resp.status_code == 201:
+                    instance_id = json.loads(resp.content).get("id")
+                    break
+                elif resp.status_code == 500:
+                    self.log.critical(str(resp.content))
+                    raise Exception(str(resp.content))
+                elif resp.status_code == 422:
+                    if resp.content.decode("utf-8").find(
+                            "not allowed based on your activation status") != -1:
+                        self.log.critical("Tenant is not activated yet...retrying")
+                    else:
+                        self.log.critical(resp.content)
+                        raise Exception("Cluster deployment failed. Reason: {}".format(resp.content))
+                else:
+                    self.log.error("Unable to create goldfish cluster {0} in project "
+                                   "{1}".format(instance_config["name"],
+                                                tenant.project_id))
+                    self.log.critical("Capella API returned " + str(
+                        resp.status_code))
+                    self.log.critical(resp.json()["message"])
+                    raise Exception("Cluster deployment failed. Reason: {}".format(resp.json()["message"]))
+            except Exception as e:
+                self.log.error("Attempt {} to deploy columnar cluster failed: {}".
+                               format(attempt + 1, e))
+                attempt += 1
+                if attempt < retries:
+                    self.log.info("Retrying in 20 seconds...")
+                    time.sleep(20)
+                else:
+                    self.log.critical("All retry attempts failed.")
+                    raise
+
         time.sleep(5)
         self.log.info("Cluster created with cluster ID: {}" \
                       .format(instance_id))
