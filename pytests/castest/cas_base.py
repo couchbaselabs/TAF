@@ -44,7 +44,7 @@ class CasBaseTest(ClusterSetup):
         if self.cluster.sdk_client_pool:
             self.log.info("Creating SDK client pool")
             self.cluster.sdk_client_pool.create_clients(
-                elf.cluster, self.bucket,
+                self.cluster, self.bucket,
                 req_clients=self.sdk_pool_capacity,
                 username=self.cluster.master.rest_username,
                 password=self.cluster.master.rest_password,

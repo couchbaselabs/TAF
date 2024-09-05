@@ -7,6 +7,8 @@ from table_view import TableView
 
 
 class SiriusJavaDocGen(object):
+    __val = {"key": "val"}
+
     def __init__(self, start=0, end=1,
                  key_prefix="test_doc-", key_size=10,
                  doc_size=64, mutate=0):
@@ -31,7 +33,7 @@ class SiriusJavaDocGen(object):
         key = self.keys[self.itr]
         self.itr += 1
         # Returning (k,v) format to align with in-built doc_loader return type
-        return key, None
+        return key, SiriusJavaDocGen.__val
 
 
 class SiriusCouchbaseLoader(object):

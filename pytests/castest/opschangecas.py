@@ -48,9 +48,8 @@ class OpsChangeCasTests(CasBaseTest):
         nodes = [node for node in self.cluster_util.get_kv_nodes(self.cluster)]
         for bucket in self.cluster.buckets:
             client = SDKClient(self.cluster, bucket)
-            gen = generator
-            while gen.has_next():
-                key, value = gen.next()
+            while generator.has_next():
+                key, value = generator.next()
                 vb_of_key = self.bucket_util.get_vbucket_num_for_key(key)
                 active_node_ip = None
                 for node in nodes:
@@ -191,17 +190,21 @@ class OpsChangeCasTests(CasBaseTest):
         """
 
         gen_load = doc_generator('nosql', 0, self.num_items,
-                                 doc_size=self.doc_size)
+                                 doc_size=self.doc_size,
+                                 load_using=self.load_docs_using)
         gen_update = doc_generator('nosql', 0, self.num_items//2,
-                                   doc_size=self.doc_size)
+                                   doc_size=self.doc_size,
+                                   load_using=self.load_docs_using)
         gen_delete = doc_generator('nosql',
                                    self.num_items//2,
                                    self.num_items * 3 // 4,
-                                   doc_size=self.doc_size)
+                                   doc_size=self.doc_size,
+                                   load_using=self.load_docs_using)
         gen_expire = doc_generator('nosql',
                                    self.num_items * 3 // 4,
                                    self.num_items,
-                                   doc_size=self.doc_size)
+                                   doc_size=self.doc_size,
+                                   load_using=self.load_docs_using)
         self._load_all_buckets(gen_load, "create")
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -241,7 +244,8 @@ class OpsChangeCasTests(CasBaseTest):
     def touch_test(self):
         self.log.info("1. Loading initial set of documents")
         load_gen = doc_generator(self.key, 0, self.num_items,
-                                 doc_size=self.doc_size)
+                                 doc_size=self.doc_size,
+                                 load_using=self.load_docs_using)
         self._load_all_buckets(load_gen, "create")
         self.bucket_util.verify_stats_all_buckets(self.cluster, self.num_items)
         self.bucket_util._wait_for_stats_all_buckets(self.cluster,
@@ -249,7 +253,8 @@ class OpsChangeCasTests(CasBaseTest):
 
         self.log.info("2. Loading bucket into DGM")
         dgm_gen = doc_generator(
-            self.key, self.num_items, self.num_items+1)
+            self.key, self.num_items, self.num_items+1,
+            load_using=self.load_docs_using)
         dgm_task = self.task.async_load_gen_docs(
             self.cluster, self.cluster.buckets[0], dgm_gen, "create", 0,
             persist_to=self.persist_to,
@@ -381,7 +386,7 @@ class OpsChangeCasTests(CasBaseTest):
     def key_not_exists_test(self):
         client = SDKClient(self.cluster, self.bucket)
         load_gen = doc_generator(self.key, 0, 1,
-                                 doc_size=256)
+                                 doc_size=256, load_using=self.load_docs_using)
         key, val = load_gen.next()
 
         for _ in range(1500):
