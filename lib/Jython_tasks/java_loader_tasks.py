@@ -164,12 +164,7 @@ class SiriusCouchbaseLoader(object):
             self.key_size = generator.key_size
             self.key_prefix = generator.name
 
-            if self.exp > 0:
-                # Expiry case str is not available in constants, so we do this
-                self.expiry_percent = 100
-                self.expiry_start_index = generator.start
-                self.expiry_end_index = generator.end
-            elif op_type == DocLoading.Bucket.DocOps.CREATE:
+            if op_type == DocLoading.Bucket.DocOps.CREATE:
                 self.create_percent = 100
                 self.create_start_index = generator.start
                 self.create_end_index = generator.end
