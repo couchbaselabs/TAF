@@ -1,4 +1,3 @@
-import json
 import os
 from math import ceil
 
@@ -7,10 +6,10 @@ from basetestcase import BaseTestCase
 from bucket_collections.collections_base import CollectionBase
 from bucket_utils.bucket_ready_functions import BucketUtils
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from couchbase_helper.document import View
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
-from membase.api.rest_client import RestConnection
 from rebalance_utils.rebalance_util import RebalanceUtil
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
 from sdk_client3 import SDKClientPool
@@ -203,7 +202,7 @@ class RebalanceBaseTest(BaseTestCase):
             available_ram = bucket_size
         else:
             node_ram_ratio = self.bucket_util.base_bucket_ratio(self.servers)
-            info = RestConnection(self.cluster.master).get_nodes_self()
+            info = self.cluster_util.get_nodes_self(self.cluster.master)
             available_ram = int(info.memoryQuota * node_ram_ratio)
             if available_ram < 100 or self.active_resident_threshold < 100:
                 available_ram = 100
@@ -265,13 +264,15 @@ class RebalanceBaseTest(BaseTestCase):
                                      if node.ip == self.servers[0].ip]}
         # Create zones, if not existing, based on params zone in test.
         # Shuffle the nodes between zones.
-        rest = RestConnection(self.servers[0])
+        rest = ClusterRestAPI(self.servers[0])
+        server_group_rest = ServerGroupsAPI(self.cluster.master)
         if int(self.zone) > 1:
             for i in range(1, int(self.zone)):
                 a = "Group "
                 zones.append(a + str(i + 1))
-                if not rest.is_zone_exist(zones[i]):
-                    rest.add_zone(zones[i])
+                if not self.cluster_util.is_zone_exists(self.servers[0],
+                                                        zones[i]):
+                    server_group_rest.create_server_group(zones[i])
                 nodes_in_zone[zones[i]] = []
             # Divide the nodes between zones.
             nodes_in_cluster = \
@@ -289,20 +290,19 @@ class RebalanceBaseTest(BaseTestCase):
             for i in range(1, self.zone):
                 node_in_zone = list(
                     set(nodes_in_zone[zones[i]])
-                    - set([node for node in rest.get_nodes_in_zone(zones[i])]))
-                rest.shuffle_nodes_in_zones(node_in_zone, zones[0], zones[i])
-        otpnodes = [node.id for node in rest.node_statuses()]
-        nodes_to_remove = [node.id for node in rest.node_statuses()
+                    - set([node for node in self.cluster_util.get_nodes_in_zone(self.cluster.master, zones[i])]))
+                self.cluster_util.shuffle_nodes_in_zones(
+                    self.cluster.master, node_in_zone, zones[0], zones[i])
+        cluster_nodes = self.cluster_util.get_nodes(self.servers[0])
+        known_nodes = [node.id for node in cluster_nodes]
+        nodes_to_remove = [node.id for node in cluster_nodes
                            if node.ip in [t.ip for t in to_remove]]
         # Start rebalance and monitor it.
-        started, _ = rest.rebalance(otpNodes=otpnodes,
-                                    ejectedNodes=nodes_to_remove)
+        started, _ = rest.rebalance(known_nodes=known_nodes,
+                                    eject_nodes=nodes_to_remove)
         if started:
-            reb_util = RebalanceUtil(self.cluster)
-            result = reb_util.monitor_rebalance()
-            self.assertTrue(result, msg="Rebalance failed{}".format(result))
-            msg = "successfully rebalanced cluster {0}"
-            self.log.info(msg.format(result))
+            result = RebalanceUtil(self.cluster).monitor_rebalance()
+            self.assertTrue(result, msg=f"Rebalance failed {result}")
         # Verify replicas of one node should not be in the same zone
         # as active vbuckets of the node.
         if self.zone > 1:
@@ -316,11 +316,11 @@ class RebalanceBaseTest(BaseTestCase):
         :param to_remove: List of nodes to be removed.
         """
         serverinfo = self.cluster.master
-        rest = RestConnection(serverinfo)
+        rest = ClusterRestAPI(serverinfo)
         for node in to_add:
-            rest.add_node(user=serverinfo.rest_username,
-                          password=serverinfo.rest_password,
-                          remoteIp=node.ip)
+            rest.add_node(node.ip,
+                          username=serverinfo.rest_username,
+                          password=serverinfo.rest_password)
         self.shuffle_nodes_between_zones_and_rebalance(to_remove)
         self.cluster_util.print_cluster_stats(self.cluster)
         self.cluster.nodes_in_cluster = \
@@ -553,30 +553,21 @@ class RebalanceBaseTest(BaseTestCase):
     def change_retry_rebalance_settings(self, enabled=True,
                                         afterTimePeriod=300, maxAttempts=1):
         # build the body
-        body = dict()
-        if enabled:
-            body["enabled"] = "true"
-        else:
-            body["enabled"] = "false"
-        body["afterTimePeriod"] = afterTimePeriod
-        body["maxAttempts"] = maxAttempts
-        rest = RestConnection(self.cluster.master)
-        rest.set_retry_rebalance_settings(body)
-        result = rest.get_retry_rebalance_settings()
+        enabled = "true" if enabled else "false"
+        rest = ClusterRestAPI(self.cluster.master)
+        rest.retry_rebalance(enabled, afterTimePeriod, maxAttempts)
         self.log.debug("Retry rebalance settings changed to {0}"
-                       .format(json.loads(result)))
+                       .format(rest.retry_rebalance()))
 
     def reset_retry_rebalance_settings(self):
-        body = dict()
-        body["enabled"] = "false"
-        rest = RestConnection(self.cluster.master)
-        rest.set_retry_rebalance_settings(body)
-        self.log.debug("Retry Rebalance settings reset ....")
+        self.change_retry_rebalance_settings(enabled=False,
+                                             afterTimePeriod=None,
+                                             maxAttempts=None)
 
     def cbcollect_info(self, trigger=True, validate=True,
                        known_failures=dict()):
-        rest = RestConnection(self.cluster.master)
-        nodes = rest.get_nodes()
+        rest = ClusterRestAPI(self.cluster.master)
+        nodes = self.cluster_util.get_nodes()
         if trigger:
             status = self.cluster_util.trigger_cb_collect_on_cluster(rest,
                                                                      nodes)
@@ -587,7 +578,8 @@ class RebalanceBaseTest(BaseTestCase):
             if status is False:
                 self.fail("cb_collect timed out")
 
-            cb_collect_response = rest.ns_server_tasks("clusterLogsCollection")
+            cb_collect_response = self.cluster_util.get_cluster_tasks(
+                self.cluster.master, "clusterLogsCollection")
             per_node_data = cb_collect_response["perNode"]
             skip_node_ips = list()
             for node, reason in known_failures.items():

@@ -2220,6 +2220,9 @@ class ClusterUtils:
 
     @staticmethod
     def get_zones(server):
+        """
+        return dict[zone_name]: unique zone uuid
+        """
         zone_names = dict()
         server_group = ServerGroupsAPI(server)
         status, zone_info = server_group.get_server_groups_info()
@@ -2227,6 +2230,13 @@ class ClusterUtils:
             for i in range(0, len(zone_info["groups"])):
                 zone_names[zone_info["groups"][i]["name"]] = zone_info["groups"][i]["uri"][28:]
         return zone_names
+
+    @staticmethod
+    def is_zone_exists(cluster_node, zone_name):
+        zones = ClusterUtils.get_zones(cluster_node)
+        if zone_name in zones:
+            return True
+        return False
 
     def get_nodes_in_zone(self, server, zone_name):
         server_group = ServerGroupsAPI(server)
@@ -2250,6 +2260,67 @@ class ClusterUtils:
                         nodes[node["hostname"]] = node
                     break
         return nodes
+
+    def shuffle_nodes_in_zones(self, cluster_node,
+                               moved_nodes, source_zone, target_zone):
+        # moved_nodes should be a Node() list
+        moved_nodes = [node.id for node in moved_nodes]
+
+        server_group_rest = ServerGroupsAPI(cluster_node)
+        all_zones = server_group_rest.get_server_groups_info()
+        curr_revision = all_zones["uri"].split("=")[1]
+        self.log.info(f"Current server_group revision: {curr_revision}")
+
+        moved_node_json = []
+        for i in range(0, len(all_zones["groups"])):
+            for node in all_zones["groups"][i]["nodes"]:
+                if all_zones["groups"][i]["name"] == source_zone:
+                    for n in moved_nodes:
+                        if n == node["otpNode"]:
+                            moved_node_json.append({"otpNode": node["otpNode"]})
+
+        zone_json = {}
+        group_json = []
+        for i in range(0, len(all_zones["groups"])):
+            node_j = []
+            zone_json["uri"] = all_zones["groups"][i]["uri"]
+            zone_json["name"] = all_zones["groups"][i]["name"]
+            zone_json["nodes"] = node_j
+
+            if not all_zones["groups"][i]["nodes"]:
+                if all_zones["groups"][i]["name"] == target_zone:
+                    for i in range(0, len(moved_node_json)):
+                        zone_json["nodes"].append(moved_node_json[i])
+                else:
+                    zone_json["nodes"] = []
+            else:
+                for node in all_zones["groups"][i]["nodes"]:
+                    if all_zones["groups"][i]["name"] == source_zone and \
+                            node["otpNode"] in moved_nodes:
+                        pass
+                    else:
+                        node_j.append({"otpNode": node["otpNode"]})
+                if all_zones["groups"][i]["name"] == target_zone:
+                    for k in range(0, len(moved_node_json)):
+                        node_j.append(moved_node_json[k])
+                    zone_json["nodes"] = node_j
+            group_json.append({"name": zone_json["name"],
+                               "uri": zone_json["uri"],
+                               "nodes": zone_json["nodes"]})
+        group_json = {"groups": group_json}
+        self.log.debug(f"Group membership to be updated: {group_json}")
+        """
+        Sample group_json dict
+        {"groups":[
+           {"uri":"/pools/default/serverGroups/0", "nodes": []},
+           {"uri":"/pools/default/serverGroups/c8275b7", "nodes": []},
+           {"uri":"/pools/default/serverGroups/1acd981",
+            "nodes":[{"otpNode":"ns_1@192.168.171.144"},
+                     {"otpNode":"ns_1@192.168.171.145"}]}]}'
+        """
+        status, _ = server_group_rest.update_group_membership(
+            curr_revision, group_json)
+        return status
 
     def print_UI_logs(self, rest, last_n=10, contains_text=None):
         _, logs = rest.ui_logs()
