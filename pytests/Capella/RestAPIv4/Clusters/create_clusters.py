@@ -148,10 +148,8 @@ class CreateCluster(GetProject):
                                       self.expected_result['serviceGroups'],
                                       self.expected_result['availability'],
                                       self.expected_result['support'])
-
             self.capellaAPI.cluster_ops_apis.cluster_endpoint = \
                 "/v4/organizations/{}/projects/{}/clusters"
-
             self.validate_testcase(result, [422], testcase, failures)
 
         if failures:
@@ -161,47 +159,10 @@ class CreateCluster(GetProject):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
-        resp = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, "Auth_Project")
-        if resp.status_code == 201:
-            other_project_id = resp.json()["id"]
-        else:
-            self.fail("Error while creating project")
-
-        testcases = []
-        for role in self.api_keys:
-            testcase = {
-                "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"],
-                "expected_status_code": 422,
-                "expected_error": {
-                    "code": 4002,
-                    "hint": "Please ensure that payload or body of the "
-                            "request is not empty.",
-                    "httpStatusCode": 422,
-                    "message": "Unable to process request. Support package is "
-                               "not valid. Please provide a valid support "
-                               "package and try again."
-                }
-            }
-            if not any(element in ["organizationOwner",
-                                   "projectOwner", "projectManager"] for
-                       element in self.api_keys[role]["roles"]):
-                testcase["expected_error"] = {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "httpStatusCode": 403,
-                    "message": "Access Denied."
-                }
-                testcase["expected_status_code"] = 403
-            testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id, 422, {
+        failures = list()
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectOwner", "projectManager"
+        ], 422, {
             "code": 4002,
             "hint": "Please ensure that payload or body of the "
                     "request is not empty.",
@@ -209,15 +170,11 @@ class CreateCluster(GetProject):
             "message": "Unable to process request. Support package is "
                        "not valid. Please provide a valid support "
                        "package and try again."
-        })
-
-        failures = list()
-        for testcase in testcases:
+        }):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, other_project_id)
-
+                                 self.project_id, self.other_project_id)
             result = self.select_CIDR(
                 self.organisation_id, self.project_id,
                 self.expected_result["name"],
@@ -225,21 +182,12 @@ class CreateCluster(GetProject):
                 self.expected_result['serviceGroups'],
                 self.expected_result['availability'],
                 self.expected_result['support'], headers=header)
-
             self.validate_testcase(result, [422], testcase, failures)
-
-        self.update_auth_with_api_token(self.curr_owner_key)
-        resp = self.capellaAPI.org_ops_apis.delete_project(
-            self.organisation_id, other_project_id)
-        if resp.status_code != 204:
-            self.log.error("Error while deleting project {}"
-                           .format(other_project_id))
 
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), testcases))
+            self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_query_parameters(self):
         self.log.debug("Correct Params - OrgID: {}, ProjID: {}"
