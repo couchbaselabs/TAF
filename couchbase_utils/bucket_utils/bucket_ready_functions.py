@@ -3688,14 +3688,11 @@ class BucketUtils(ScopeUtils):
                     continue
 
                 ambiguous_state = False
-                if SDKException.DurabilityAmbiguousException \
-                        in str(exception) \
-                        or SDKException.AmbiguousTimeoutException \
-                        in str(exception) \
-                        or SDKException.TimeoutException \
-                        in str(exception) \
-                        or SDKException.RequestCanceledException \
-                        in str(exception):
+                if SDKException.check_if_exception_exists(
+                        SDKException.DurabilityAmbiguousException
+                        + SDKException.AmbiguousTimeoutException
+                        + SDKException.TimeoutException
+                        + SDKException.RequestCanceledException, exception):
                     ambiguous_state = True
 
                 result = client.crud(
