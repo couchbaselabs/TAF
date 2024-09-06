@@ -165,30 +165,10 @@ class PutAuditLogConfig(GetAuditLogConfig):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        testcases = []
-        for role in self.api_keys:
-            testcase = {
-                "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"],
-            }
-            if not any(element in [
-                 "organizationOwner", "projectOwner",
-                 "projectManager"
-            ] for element in self.api_keys[role]["roles"]):
-                testcase["expected_error"] = {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "httpStatusCode": 403,
-                    "message": "Access Denied."
-                }
-                testcase["expected_status_code"] = 403
-            testcases.append(testcase)
-        self.auth_test_extension(testcases, self.other_project_id)
-
         failures = list()
-        for testcase in testcases:
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectOwner", "projectManager"
+        ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
@@ -219,8 +199,7 @@ class PutAuditLogConfig(GetAuditLogConfig):
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+            self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_query_parameters(self):
         self.log.debug(

@@ -141,46 +141,15 @@ class GetAuditLogStreaming(GetAppService):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        resp = self.capellaAPI.org_ops_apis.create_project(
-            self.organisation_id, "Auth_Project")
-        if resp.status_code == 201:
-            other_project_id = resp.json()["id"]
-        else:
-            self.fail("Error while creating project: {}".format(resp.content))
-
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
-        testcases = []
-        for role in self.api_keys:
-            testcase = {
-                "description": "Calling API with {} role".format(role),
-                "token": self.api_keys[role]["token"],
-            }
-            if not any(element in [
-                 "organizationOwner",
-                 "projectOwner", "projectManager",
-                 "projectViewer", "projectDataReaderWriter"
-            ] for element in self.api_keys[role]["roles"]):
-                testcase["expected_error"] = {
-                    "code": 1002,
-                    "hint": "Your access to the requested resource is denied. "
-                            "Please make sure you have the necessary "
-                            "permissions to access the resource.",
-                    "httpStatusCode": 403,
-                    "message": "Access Denied."
-                }
-                testcase["expected_status_code"] = 403
-            testcases.append(testcase)
-        self.auth_test_extension(testcases, other_project_id)
-
         failures = list()
-        for testcase in testcases:
+        for testcase in self.v4_RBAC_injection_init([
+            "organizationOwner", "projectViewer", "projectOwner",
+            "projectManager"
+        ]):
             self.log.info("Executing test: {}".format(testcase["description"]))
             header = dict()
             self.auth_test_setup(testcase, failures, header,
-                                 self.project_id, other_project_id)
+                                 self.project_id, self.other_project_id)
             result = (self.capellaAPI.cluster_ops_apis
                       .fetch_app_service_audit_log_streaming_info(
                         self.organisation_id, self.project_id, self.cluster_id,
@@ -193,18 +162,10 @@ class GetAuditLogStreaming(GetAppService):
                             self.cluster_id, self.app_service_id, header))
             self.validate_testcase(result, [200], testcase, failures)
 
-        self.update_auth_with_api_token(self.curr_owner_key)
-        resp = self.capellaAPI.org_ops_apis.delete_project(
-            self.organisation_id, other_project_id)
-        if resp.status_code != 204:
-            self.log.error("Error while deleting project {}"
-                           .format(other_project_id))
-
         if failures:
             for fail in failures:
                 self.log.warning(fail)
-            self.fail("{} tests FAILED out of {} TOTAL tests"
-                      .format(len(failures), len(testcases)))
+            self.fail("{} tests FAILED.".format(len(failures)))
 
     def test_query_parameters(self):
         self.log.debug(
