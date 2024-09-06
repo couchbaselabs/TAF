@@ -6,14 +6,15 @@ from Jython_tasks.task import AutoFailoverNodesFailureTask, NodeDownTimerTask
 from basetestcase import ClusterSetup
 from cb_constants import DocLoading, CbServer
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
+from cb_server_rest_util.server_groups.server_groups_api import ServerGroupsAPI
 from cb_tools.cbstats import Cbstats
 from couchbase_cli import CouchbaseCLI
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
-from membase.api.rest_client import RestConnection
 from bucket_utils.bucket_ready_functions import CollectionUtils
 
 from pytests.bucket_collections.collections_base import CollectionBase
+from rebalance_utils.rebalance_util import RebalanceUtil
 from sdk_client3 import SDKClient
 from shell_util.remote_connection import RemoteMachineShellConnection
 
@@ -114,7 +115,8 @@ class AutoFailoverBaseTest(ClusterSetup):
                         compression_settings=self.sdk_compression)
 
             self.load_all_buckets(self.initial_load_gen,
-                                  DocLoading.Bucket.DocOps.CREATE, 0)
+                                  DocLoading.Bucket.DocOps.CREATE, 0,
+                                  load_using=self.load_docs_using)
 
         self.durability_helper = DurabilityHelper(
             self.log, len(self.cluster.servers), self.durability_level)
@@ -275,8 +277,9 @@ class AutoFailoverBaseTest(ClusterSetup):
         """
         if not to_remove:
             to_remove = []
-        rest = RestConnection(self.orchestrator)
-        nodes = rest.get_nodes(inactive_added=True)
+        server_group_rest = ServerGroupsAPI(self.orchestrator)
+        nodes = self.cluster_util.get_nodes(self.orchestrator,
+                                            inactive_added=True)
         zones = ["Group 1"]
         nodes_in_zone = {"Group 1": [node for node in nodes
                                      if node.ip == self.orchestrator.ip]}
@@ -286,8 +289,10 @@ class AutoFailoverBaseTest(ClusterSetup):
             for i in range(1, int(self.zone)):
                 a = "Group "
                 zones.append(a + str(i + 1))
-                if not rest.is_zone_exist(zones[i]):
-                    rest.add_zone(zones[i])
+                okay = self.cluster_util.is_zone_exists(self.orchestrator,
+                                                        zones[i])
+                if not okay:
+                    server_group_rest.create_server_group(zones[i])
                 nodes_in_zone[zones[i]] = []
             # Divide the nodes between zones.
             nodes_in_cluster = \
@@ -304,20 +309,26 @@ class AutoFailoverBaseTest(ClusterSetup):
             # Shuffle the nodesS
             for i in range(1, self.zone):
                 node_in_zone = [node.ip for node in list(set(nodes_in_zone[zones[i]]) -
-                                    set([node for node in rest.get_nodes_in_zone(zones[i])]))]
+                                    set([node for node in self.cluster_util.get_nodes_in_zone(self.orchestrator, zones[i])]))]
                 moved_nodes = []
-                for otp_node in rest.node_statuses():
+                for otp_node in self.cluster_util.get_nodes(
+                        self.orchestrator, inactive_added=True):
                     if otp_node.ip in node_in_zone:
                         moved_nodes.append(otp_node)
-                rest.shuffle_nodes_in_zones(moved_nodes, zones[0], zones[i])
+                self.cluster_util.shuffle_nodes_in_zones(
+                    self.orchestrator, moved_nodes, zones[0], zones[i])
         self.zones = nodes_in_zone
-        otpnodes = [node.id for node in rest.node_statuses()]
-        nodes_to_remove = [node.id for node in rest.node_statuses()
+        nodes = self.cluster_util.get_nodes(self.orchestrator,
+                                            inactive_added=True)
+        otpnodes = [node.id for node in nodes]
+        nodes_to_remove = [node.id for node in nodes
                            if node.ip in [t.ip for t in to_remove]]
         # Start rebalance and monitor it.
-        started, _ = rest.rebalance(otpNodes=otpnodes, ejectedNodes=nodes_to_remove)
+        rest = ClusterRestAPI(self.orchestrator)
+        started, _ = rest.rebalance(known_nodes=otpnodes,
+                                    eject_nodes=nodes_to_remove)
         if started:
-            result = rest.monitorRebalance()
+            result = RebalanceUtil(self.cluster).monitor_rebalance()
             msg = "successfully rebalanced cluster {0}"
             self.log.info(msg.format(result))
 
@@ -668,9 +679,7 @@ class AutoFailoverBaseTest(ClusterSetup):
         try:
             for node in self.cluster.servers:
                 # Reset node
-                rest = RestConnection(node)
-                rest.reset_node()
-
+                ClusterRestAPI(node).reset_node()
                 # If Ipv6 update dist_cfg file post server restart
                 # to change distribution to IPv6
                 shell = RemoteMachineShellConnection(node)
@@ -715,14 +724,10 @@ class AutoFailoverBaseTest(ClusterSetup):
                       .format(actual_failover_count, time_end - time_start))
 
     def get_failover_count(self):
-        rest = RestConnection(self.cluster.master)
-        cluster_status = rest.cluster_status()
-        failover_count = 0
-        # check for inactiveFailed
-        for node in cluster_status['nodes']:
-            if node['clusterMembership'] == "inactiveFailed":
-                failover_count += 1
-        return failover_count
+        # Return number of nodes in failed_over state
+        return len(self.cluster_util.get_nodes(
+            self.cluster.master, active=False,
+            inactive_failed=True))
 
     def validate_loadgen_tasks(self):
         def validate_durability_for_bucket(index, bucket):
@@ -920,7 +925,8 @@ class DiskAutoFailoverBasetest(AutoFailoverBaseTest):
                 self.cluster.master,
                 num_writer_threads="disk_io_optimized",
                 num_reader_threads="disk_io_optimized")
-        RestConnection(self.cluster.master).set_internalSetting("magmaMinMemoryQuota", 256)
+        ClusterRestAPI(self.cluster.master).set_internal_settings(
+            setting_name="magmaMinMemoryQuota", setting_value=256)
         if self.spec_name is None:
             if self.read_loadgen:
                 self.bucket_size = self.input.param("bucket_size", 256)

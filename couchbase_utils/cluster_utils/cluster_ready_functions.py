@@ -2267,7 +2267,9 @@ class ClusterUtils:
         moved_nodes = [node.id for node in moved_nodes]
 
         server_group_rest = ServerGroupsAPI(cluster_node)
-        all_zones = server_group_rest.get_server_groups_info()
+        status, all_zones = server_group_rest.get_server_groups_info()
+        if not status:
+            return False
         curr_revision = all_zones["uri"].split("=")[1]
         self.log.info(f"Current server_group revision: {curr_revision}")
 
@@ -2304,8 +2306,7 @@ class ClusterUtils:
                     for k in range(0, len(moved_node_json)):
                         node_j.append(moved_node_json[k])
                     zone_json["nodes"] = node_j
-            group_json.append({"name": zone_json["name"],
-                               "uri": zone_json["uri"],
+            group_json.append({"uri": zone_json["uri"],
                                "nodes": zone_json["nodes"]})
         group_json = {"groups": group_json}
         self.log.debug(f"Group membership to be updated: {group_json}")
