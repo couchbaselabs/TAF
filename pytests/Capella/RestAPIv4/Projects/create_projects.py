@@ -15,7 +15,6 @@ class CreateProject(GetProject):
 
     def tearDown(self):
         self.update_auth_with_api_token(self.curr_owner_key)
-        self.delete_api_keys(self.api_keys)
         super(CreateProject, self).tearDown()
 
     def test_api_path(self):
@@ -74,10 +73,8 @@ class CreateProject(GetProject):
                 self.handle_rate_limit(int(result.headers["Retry-After"]))
                 result = self.capellaAPI.org_ops_apis.create_project(
                     org, self.prefix + "CREATE")
-
             self.capellaAPI.org_ops_apis.project_endpoint = \
                 "/v4/organizations/{}/projects"
-
             if self.validate_testcase(result, [201], testcase, failures):
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
@@ -98,10 +95,6 @@ class CreateProject(GetProject):
                       .format(len(failures), len(testcases)))
 
     def test_authorization(self):
-        self.api_keys.update(
-            self.create_api_keys_for_all_combinations_of_roles(
-                [self.project_id]))
-
         testcases = []
         for role in self.api_keys:
             testcase = {
@@ -135,7 +128,6 @@ class CreateProject(GetProject):
                 result = self.capellaAPI.org_ops_apis.create_project(
                     self.organisation_id, self.prefix + "CREATE",
                     headers=header)
-
             if self.validate_testcase(result, [201], testcase, failures):
                 project_id = result.json()["id"]
                 self.log.debug("Creation Successful.")
