@@ -13,9 +13,9 @@ from couchbase_helper.documentgenerator import doc_generator, \
     sub_doc_generator, sub_doc_generator_for_edit
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 
 

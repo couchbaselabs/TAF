@@ -7,7 +7,7 @@ from cb_tools.cbstats import Cbstats
 from rebalance_new.rebalance_base import RebalanceBaseTest
 from couchbase_helper.documentgenerator import doc_generator
 from rebalance_utils.rebalance_util import RebalanceUtil
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class RebalanceOutTests(RebalanceBaseTest):

@@ -21,9 +21,9 @@ from custom_exceptions.exception import DesignDocCreationException
 from couchbase_helper.document import View
 from membase.api.rest_client import RestConnection
 from memcached.helper.data_helper import MemcachedClientHelper
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 from storage_utils.magma_utils import MagmaUtils
 from Jython_tasks.task import FunctionCallTask
 from StatsLib.StatsOperations import StatsHelper

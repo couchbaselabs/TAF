@@ -25,7 +25,6 @@ from cluster_utils.cluster_ready_functions import ClusterUtils, CBCluster,\
     Nebula
 from couchbase_utils.security_utils.x509_multiple_CA_util import x509main
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from ssh_util.shell_util.remote_connection import RemoteMachineShellConnection
 from sdk_client3 import SDKClientPool
 from docker_utils.DockerSDK import DockerClient

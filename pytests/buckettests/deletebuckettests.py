@@ -3,7 +3,7 @@ import time
 from basetestcase import ClusterSetup
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class DeleteBucketTests(ClusterSetup):

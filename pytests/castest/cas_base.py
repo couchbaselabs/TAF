@@ -6,7 +6,7 @@ from basetestcase import ClusterSetup
 from cb_server_rest_util.cluster_nodes.cluster_nodes_api import ClusterRestAPI
 from membase.api.rest_client import RestConnection
 from membase.helper.cluster_helper import ClusterOperationHelper
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CasBaseTest(ClusterSetup):

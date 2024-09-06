@@ -9,8 +9,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from error_simulation.cb_error import CouchbaseError
 from error_simulation.disk_error import DiskError
-from remote.remote_util import RemoteMachineShellConnection
 from constants.sdk_constants.java_client import SDKConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CollectionsSuccessTests(CollectionBase):

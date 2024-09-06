@@ -11,11 +11,11 @@ from couchbase_cli import CouchbaseCLI
 from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from bucket_utils.bucket_ready_functions import CollectionUtils
 
 from pytests.bucket_collections.collections_base import CollectionBase
 from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class AutoFailoverBaseTest(ClusterSetup):

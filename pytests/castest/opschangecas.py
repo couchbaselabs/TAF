@@ -3,9 +3,9 @@ import json
 from cb_tools.cbstats import Cbstats
 from castest.cas_base import CasBaseTest
 from couchbase_helper.documentgenerator import doc_generator
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class OpsChangeCasTests(CasBaseTest):

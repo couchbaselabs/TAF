@@ -7,8 +7,8 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from rebalance_new import rebalance_base
 from rebalance_new.rebalance_base import RebalanceBaseTest
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 retry_exceptions = rebalance_base.retry_exceptions +\
                     [SDKException.RequestCanceledException]

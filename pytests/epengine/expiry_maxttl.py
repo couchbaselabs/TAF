@@ -8,10 +8,10 @@ from couchbase_helper.documentgenerator import doc_generator
 from basetestcase import ClusterSetup
 from BucketLib.BucketOperations import BucketHelper
 from error_simulation.cb_error import CouchbaseError
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from sdk_exceptions import SDKException
 from constants.sdk_constants.java_client import SDKConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 
 

@@ -11,11 +11,11 @@ from BucketLib.bucket import Collection, Scope
 from cb_tools.cbstats import Cbstats
 from membase.api.rest_client import RestConnection
 from rebalance_utils.retry_rebalance import RetryRebalanceUtil
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 from bucket_collections.collections_base import CollectionBase
 from BucketLib.bucket import Bucket
 import testconstants
+from shell_util.remote_connection import RemoteMachineShellConnection
 from upgrade_lib.couchbase import upgrade_chains
 from upgrade_utils.upgrade_util import CbServerUpgrade
 

@@ -1,7 +1,7 @@
 from bucket_collections.collections_base import CollectionBase
-from remote.remote_util import RemoteMachineShellConnection
 from cb_constants import CbServer
 from error_simulation.cb_error import CouchbaseError
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class BucketWarmup(CollectionBase):

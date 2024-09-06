@@ -1,11 +1,10 @@
-from Jython_tasks.task import ConcurrentFailoverTask
 from bucket_collections.collections_base import CollectionBase
 from cb_tools.cb_cli import CbCli
 from collections_helper.collections_spec_constants import MetaCrudParams
-from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from constants.sdk_constants.java_client import SDKConstants
+from shell_util.remote_connection import RemoteMachineShellConnection
+
 
 class ClusterManagement(CollectionBase):
     def setUp(self):

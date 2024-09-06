@@ -5,8 +5,8 @@ from cluster_utils.cluster_ready_functions import CBCluster
 from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Linux
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 from upgrade.upgrade_base import UpgradeBase
 
 

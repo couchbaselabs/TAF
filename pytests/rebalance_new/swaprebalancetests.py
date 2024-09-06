@@ -6,11 +6,11 @@ from couchbase_helper.documentgenerator import doc_generator
 from membase.api.rest_client import RestConnection
 from membase.helper.rebalance_helper import RebalanceHelper
 from custom_exceptions.exception import RebalanceFailedException
-from remote.remote_util import RemoteMachineShellConnection
 from BucketLib.BucketOperations import BucketHelper
 from sdk_exceptions import SDKException
 from rebalance_new import rebalance_base
 from rebalance_new.rebalance_base import RebalanceBaseTest
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 retry_exceptions = rebalance_base.retry_exceptions + [
     SDKException.RequestCanceledException]

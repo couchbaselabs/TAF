@@ -8,8 +8,8 @@ from epengine.durability_base import DurabilityTestsBase
 from constants.sdk_constants.java_client import SDKConstants
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 
 

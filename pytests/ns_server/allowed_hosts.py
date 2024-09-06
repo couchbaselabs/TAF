@@ -1,7 +1,7 @@
 from SecurityLib.rbac import RbacUtil
 from basetestcase import ClusterSetup
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class AllowedHosts(ClusterSetup):

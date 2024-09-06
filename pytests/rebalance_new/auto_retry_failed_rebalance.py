@@ -6,9 +6,9 @@ from rebalance_base import RebalanceBaseTest
 
 from collections_helper.collections_spec_constants import MetaCrudParams
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class AutoRetryFailedRebalance(RebalanceBaseTest):

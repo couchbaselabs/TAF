@@ -9,7 +9,7 @@ from couchbase_helper.tuq_helper import N1QLHelper
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
 from platform_constants.os_constants import Windows
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 from table_view import TableView
 
 

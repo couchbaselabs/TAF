@@ -10,11 +10,12 @@ from couchbase_helper.documentgenerator import doc_generator
 from couchbase_helper.durability_helper import DurabilityHelper
 from crash_test.constants import signum
 from error_simulation.cb_error import CouchbaseError
-from remote.remote_util import RemoteMachineShellConnection
 from couchbase_helper.tuq_helper import N1QLHelper
 
 from sdk_exceptions import SDKException
 import threading
+
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CrashTest(CollectionBase):

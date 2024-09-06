@@ -10,11 +10,11 @@ from collections_helper.collections_spec_constants import \
 from couchbase_helper.durability_helper import DurabilityHelper
 from BucketLib.BucketOperations import BucketHelper
 from BucketLib.bucket import Bucket
-from remote.remote_util import RemoteMachineShellConnection
 from bucket_utils.bucket_ready_functions import CollectionUtils
 from cb_tools.cbstats import Cbstats
 from sdk_client3 import SDKClient, SDKClientPool
 from sdk_exceptions import SDKException
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class CollectionBase(ClusterSetup):

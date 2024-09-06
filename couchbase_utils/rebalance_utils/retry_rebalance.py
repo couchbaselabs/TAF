@@ -2,8 +2,9 @@ import json
 from cb_constants import CbServer
 from global_vars import logger
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from common_lib import sleep
+from shell_util.remote_connection import RemoteMachineShellConnection
+
 
 class RetryRebalanceUtil:
 

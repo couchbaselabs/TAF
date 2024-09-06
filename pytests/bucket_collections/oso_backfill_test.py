@@ -5,8 +5,8 @@ from cb_constants import CbServer
 from bucket_collections.collections_base import CollectionBase
 from error_simulation.cb_error import CouchbaseError
 from membase.api.rest_client import RestConnection
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 
 class KvOsoBackfillTests(CollectionBase):

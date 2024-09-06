@@ -9,7 +9,7 @@ from membase.api.rest_client import RestConnection
 from couchbase_helper.documentgenerator import doc_generator
 from memcached.helper.data_helper import MemcachedClientHelper, \
                                          VBucketAwareMemcached
-from remote.remote_util import RemoteMachineShellConnection
+from shell_util.remote_connection import RemoteMachineShellConnection
 from testconstants import MIN_COMPACTION_THRESHOLD
 from BucketLib.bucket import Bucket
 from bucket_collections.collections_base import CollectionBase
