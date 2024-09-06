@@ -323,6 +323,7 @@ class ServerTasks(object):
             raise Exception("Document generator needs to be of "
                             "type SubdocDocumentGenerator")
         if load_using == "sirius_java_sdk":
+            op_type = "lookup" if op_type == "read" else op_type
             _task = SiriusCouchbaseLoader(
                 cluster.master.ip, cluster.master.port,
                 generator, op_type,
