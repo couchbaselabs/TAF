@@ -935,7 +935,7 @@ class FailoverTests(FailoverBaseTest):
                              replica_count=0, unreachable=False):
         logic = True
         summary = ""
-        nodes = self.rest.get_node_statuses()
+        nodes = self.cluster_util.get_nodes(self.cluster.master)
         node_count = len(nodes)
         change_graceful_count = graceful_count
         graceful_failover = True

@@ -967,8 +967,9 @@ class ClusterUtils:
         cluster_rest = ClusterRestAPI(server)
         count = 0
         while count < 7:
-            status, json_parsed = cluster_rest.cluster_details()
-            if status:
+            cluster_details, json_parsed = cluster_rest.cluster_details()
+            node_statuses, node_statuses = cluster_rest.get_node_statuses()
+            if cluster_details and node_statuses:
                 break
             count += 1
             time.sleep(5)
@@ -984,17 +985,23 @@ class ClusterUtils:
             nodes_to_consider.append("inactiveAdded")
         if inactive_failed:
             nodes_to_consider.append("inactiveFailed")
-        if status:
-            if "nodes" in json_parsed:
-                for json_node in json_parsed["nodes"]:
-                    node = ClusterUtils.parse_get_nodes_response(json_node)
-                    node.rest_username = server.rest_username
-                    node.rest_password = server.rest_password
-                    if node.ip == "127.0.0.1":
-                        node.ip = server.ip
-                    # Only add nodes which are active on cluster
-                    if node.clusterMembership in nodes_to_consider:
-                        nodes.append(node)
+        if "nodes" in json_parsed:
+            for json_node in json_parsed["nodes"]:
+                node = ClusterUtils.parse_get_nodes_response(json_node)
+                node.rest_username = server.rest_username
+                node.rest_password = server.rest_password
+                if node.ip == "127.0.0.1":
+                    node.ip = server.ip
+                if node.clusterMembership in nodes_to_consider:
+                    nodes.append(node)
+
+                for _, node_status in node_statuses.items():
+                    if node.id == node_status["otpNode"]:
+                        if 'gracefulFailoverPossible' in node_status.keys():
+                            node.gracefulFailoverPossible = node_status['gracefulFailoverPossible']
+                        else:
+                            node.gracefulFailoverPossible = False
+                        break
         return nodes
 
     @staticmethod
@@ -1647,8 +1654,7 @@ class ClusterUtils:
 
     @staticmethod
     def pick_nodes(master, howmany=1, target_node=None, exclude_nodes=None):
-        rest = RestConnection(master)
-        nodes = rest.node_statuses()
+        nodes = ClusterUtils.get_nodes(master)
         if exclude_nodes:
             exclude_nodes_ips = [node.ip for node in exclude_nodes]
             nodes = [node for node in nodes if node.ip not in exclude_nodes_ips]

@@ -92,6 +92,7 @@ class Node(object):
         self.limits = None
         self.utilization = None
         self.cpuCount = 0
+        self.gracefulFailoverPossible = 'true'
 
     def __str__(self):
         ip_str = "ip:{0} port:{1}".format(self.ip, self.port)
