@@ -9,11 +9,13 @@ import os
 import testconstants
 from cb_constants import CbServer
 from platform_constants.os_constants import Windows
-from remote.remote_util import RemoteMachineShellConnection, RemoteUtilHelper
+from remote.remote_util import RemoteUtilHelper
 from membase.api.rest_client import RestConnection
 import install_constants
 import TestInput
 import logging.config
+
+from shell_util.remote_connection import RemoteMachineShellConnection
 
 logging.config.fileConfig("scripts.logging.conf")
 log = logging.getLogger()

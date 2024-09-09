@@ -3,7 +3,6 @@
 import sys
 from argparse import ArgumentParser
 from threading import Thread
-from datetime import datetime
 import uuid
 
 

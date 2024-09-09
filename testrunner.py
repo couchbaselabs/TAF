@@ -11,13 +11,14 @@ import unittest
 from os.path import splitext
 from pprint import pprint
 
+from shell_util.shell_conn import ShellConnection
+
 sys.path = [".", "lib", "pytests", "pysystests", "couchbase_utils",
             "platform_utils", "platform_utils/ssh_util",
             "connections", "constants", "py_constants"] + sys.path
 from TestInput import TestInputParser, TestInputSingleton
 from framework_lib.framework import HelperLib, Parameters
 from framework_lib.xunit import XUnitTestResult
-from remote.remote_util import RemoteMachineShellConnection
 from sdk_client3 import SDKClient
 
 
@@ -194,10 +195,8 @@ def main():
         start_time = time.time()
 
         # Reset SDK/Shell connection counters
-        RemoteMachineShellConnection.connections = 0
-        RemoteMachineShellConnection.disconnections = 0
-        SDKClient.sdk_connections = 0
-        SDKClient.sdk_disconnections = 0
+        ShellConnection.connections = ShellConnection.disconnections = 0
+        SDKClient.sdk_connections = SDKClient.sdk_disconnections = 0
 
         params["sirius_url"] = options.sirius_url
 
@@ -259,12 +258,11 @@ def main():
             "During the test,\n" \
             "Remote Connections: %s, Disconnections: %s\n" \
             "SDK Connections: %s, Disconnections: %s" \
-            % (RemoteMachineShellConnection.connections,
-               RemoteMachineShellConnection.disconnections,
+            % (ShellConnection.connections,
+               ShellConnection.disconnections,
                SDKClient.sdk_connections, SDKClient.sdk_disconnections)
 
-        if RemoteMachineShellConnection.connections \
-                != RemoteMachineShellConnection.disconnections:
+        if ShellConnection.connections != ShellConnection.disconnections:
             connection_status_msg += \
                 "\n!!!!!! CRITICAL :: Shell disconnection mismatch !!!!!"
         if SDKClient.sdk_connections != SDKClient.sdk_disconnections:
