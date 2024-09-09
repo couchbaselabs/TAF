@@ -394,7 +394,7 @@ class RebalanceDurability(RebalanceBaseTest):
         self.change_retry_rebalance_settings(enabled=True,
                                              afterTimePeriod=after_time_period,
                                              maxAttempts=1)
-        self.rest.update_autofailover_settings(False, 120)
+        self.rest.update_auto_failover_settings(enabled="false")
         test_failure_condition = self.input.param("test_failure_condition")
         # induce the failure before the rebalance starts
         self.retry_rebalance_util.induce_rebalance_test_condition(

@@ -467,7 +467,7 @@ class volume(BaseTestCase):
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
@@ -494,7 +494,7 @@ class volume(BaseTestCase):
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
@@ -521,7 +521,7 @@ class volume(BaseTestCase):
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
@@ -548,7 +548,7 @@ class volume(BaseTestCase):
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
@@ -579,7 +579,7 @@ class volume(BaseTestCase):
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
@@ -609,7 +609,7 @@ class volume(BaseTestCase):
                 # self.sleep(600, "Wait for Rebalance to start")
                 self.task.jython_task_manager.get_task_result(rebalance_task)
                 reached = self.cluster_util.rebalance_reached(
-                    self.cluster.master, wait_step=120)
+                    self.cluster, wait_step=120)
                 self.assertTrue(reached, "rebalance failed, stuck or did not complete")
                 self.stop_process()
                 self.data_validation_mode(tasks_info)
@@ -678,7 +678,7 @@ class volume(BaseTestCase):
             # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.bucket_util.print_bucket_stats(self.cluster)
             self.print_crud_stats()
@@ -728,7 +728,7 @@ class volume(BaseTestCase):
             # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
@@ -796,7 +796,7 @@ class volume(BaseTestCase):
             # self.sleep(600)
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.sleep(10)
 
@@ -844,7 +844,7 @@ class volume(BaseTestCase):
             # self.sleep(600, "Wait for Rebalance to start")
             self.task.jython_task_manager.get_task_result(rebalance_task)
             reached = self.cluster_util.rebalance_reached(
-                self.cluster.master, wait_step=120)
+                self.cluster, wait_step=120)
             self.assertTrue(reached, "rebalance failed, stuck or did not complete")
             self.data_validation_mode(tasks_info)
             self.tasks = []
@@ -869,7 +869,7 @@ class volume(BaseTestCase):
                     self.available_servers += servs_out
                     self.cluster.nodes_in_cluster = list(set(self.cluster.nodes_in_cluster) - set(servs_out))
                     reached = self.cluster_util.rebalance_reached(
-                        self.cluster.master, wait_step=120)
+                        self.cluster, wait_step=120)
                     self.assertTrue(reached, "rebalance failed, stuck or did not complete")
                     self.get_bucket_dgm(bucket)
                 self._iter_count = 0

@@ -1386,29 +1386,32 @@ class ClusterUtils:
         return otp_nodes
 
     @staticmethod
-    def rebalance(cluster, wait_for_completion=True, ejected_nodes=[], validate_bucket_ranking=True):
-        rest = RestConnection(cluster.master)
-        nodes = rest.node_statuses()
-        result, _ = rest.rebalance(otpNodes=[node.id for node in nodes],
-                                   ejectedNodes=ejected_nodes)
+    def rebalance(cluster, wait_for_completion=True, ejected_nodes=[],
+                  validate_bucket_ranking=True):
+        rest = ClusterRestAPI(cluster.master)
+        nodes = ClusterUtils.get_nodes(cluster)
+        result, _ = rest.rebalance(known_nodes=[node.id for node in nodes],
+                                   eject_nodes=ejected_nodes)
         if result and wait_for_completion:
-            result = rest.monitorRebalance()
+            result = RebalanceUtil(cluster).monitor_rebalance()
             if validate_bucket_ranking:
                 # Validating bucket ranking post rebalance
                 validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(cluster)
                 result = result and validate_ranking_res
         return result
 
-    def rebalance_reached(self, node, percentage=100, wait_step=2,
+    def rebalance_reached(self, cluster, percentage=100, wait_step=2,
                           num_retry=40, validate_bucket_ranking=True):
-        rest = RestConnection(node)
+        rest = ClusterRestAPI(cluster.master)
         start = time.time()
         progress = 0
         previous_progress = 0
         retry = 0
         while progress != -1 and progress < percentage and retry < num_retry:
             # -1 is error , -100 means could not retrieve progress
-            progress = rest._rebalance_progress()
+            self.get_rebalance_status_and_progress(cluster)
+            _, progress = self.get_rebalance_status_and_progress(
+                cluster.master, "rebalance")
             if progress == -100:
                 self.log.error("Unable to retrieve rebalance progress. "
                                "Retrying..")
@@ -1423,9 +1426,10 @@ class ClusterUtils:
             sleep(wait_step)
         if validate_bucket_ranking:
             # Validating bucket ranking post rebalance
-            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(cluster=None,
-                                                                                cluster_node=node,
-                                                                                fetch_latest_buckets=True)
+            validate_ranking_res = global_vars.cluster_util.validate_bucket_ranking(
+                cluster=None,
+                cluster_node=cluster.master,
+                fetch_latest_buckets=True)
             if not validate_ranking_res:
                 self.log.error("Vbucket movement during rebalance did not occur as per bucket ranking")
                 return False
