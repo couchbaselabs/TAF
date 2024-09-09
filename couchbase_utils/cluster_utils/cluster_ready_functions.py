@@ -157,10 +157,9 @@ class ClusterUtils:
         status = None
         retry_index = 0
         max_retry = 10
-        rest = RestConnection(node)
+        rest = ClusterRestAPI(node)
         while retry_index < max_retry:
-            status, content = rest.get_terse_cluster_info()
-            json_content = json.loads(content)
+            status, json_content = rest.get_terse_cluster_info()
             # MB-60705 - On adding the node, pools/default is returning unknown for a while
             # TODO - Remove the retry mechanism once MB-60705 gets resolved
             if json_content == "unknown pool" or status == 404:
@@ -408,13 +407,14 @@ class ClusterUtils:
         result = True
 
         cluster_node = cluster_node if cluster_node else cluster.master
-        rest_orchestrator = RestConnection(cluster_node)
+        rest_orchestrator = ClusterRestAPI(cluster_node)
 
         # Fetch task from /pools/default/tasks
-        cluster_tasks = rest_orchestrator.ns_server_tasks()
+        _, cluster_tasks = rest_orchestrator.cluster_tasks()
         for cluster_task in cluster_tasks:
-            # Check if task type is rebalance
-            if cluster_task["type"] != "rebalance":
+            # Check if task type is rebalance / task is complete
+            if (cluster_task["type"] != "rebalance"
+                    or cluster_task["status"] != "notRunning"):
                 continue
 
             # Check if task is complete
@@ -433,18 +433,22 @@ class ClusterUtils:
                 retry = 1
                 while retry <= 5:
                     sleep(5, "Sleeping before re-trying request to /pools/default/tasks")
-                    cluster_tasks = rest_orchestrator.ns_server_tasks()
+                    cluster_tasks = rest_orchestrator.cluster_tasks()
                     self.log.critical("Retry {} : The result of /pools/default/tasks from {} is \n{}".format(retry, cluster_node.ip, cluster_tasks))
                     retry += 1
 
                 raise Exception("Unable to fetch all details from /pools/default/tasks endpoint")
 
-            report_url = cluster_task["lastReportURI"]
-            rebalance_report = rest_orchestrator.fetch_rebalance_report(report_url)
+            report_url = cluster_task["lastReportURI"][1:] \
+                if cluster_task["lastReportURI"][0] == "/" \
+                else cluster_task["lastReportURI"]
+            rebalance_report = rest_orchestrator.rebalance_report(report_url)
 
             rebalance_start_time_report = rebalance_report["startTime"]
-            self.log.debug("The rebalance report is fetched from {}".format(report_url))
-            self.log.debug("The rebalance startTime in the report is {}".format(rebalance_start_time_report))
+            self.log.debug("The rebalance report is fetched from {}"
+                           .format(cluster_task["lastReportURI"]))
+            self.log.debug("The rebalance startTime in the report is {}"
+                           .format(rebalance_start_time_report))
 
             # Create a list based on rebalance startTime
             data_buckets = []
@@ -495,7 +499,6 @@ class ClusterUtils:
             failover_validation = validate_order_of_rebalance(rank_map=rank_map,
                                                               bucket_list=failover_buckets)
             result = result and data_validation and failover_validation
-
         return result
 
     def validate_orchestrator_selection(self, cluster, removed_nodes=[]):
@@ -1402,7 +1405,6 @@ class ClusterUtils:
 
     def rebalance_reached(self, cluster, percentage=100, wait_step=2,
                           num_retry=40, validate_bucket_ranking=True):
-        rest = ClusterRestAPI(cluster.master)
         start = time.time()
         progress = 0
         previous_progress = 0
