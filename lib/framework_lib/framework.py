@@ -210,7 +210,8 @@ class HelperLib(object):
                         and not fw.startswith("ini:") \
                         and not fw.startswith("case_number:") \
                         and not fw.startswith("num_nodes:") \
-                        and not fw.startswith("spec:"):
+                        and not fw.startswith("spec:")\
+                        and not fw.startswith("no_of_test_identified:"):
                     line = line + fw.replace(":", "=", 1)
                     if fw != testwords[-1]:
                         line = line + ","
@@ -225,7 +226,8 @@ class HelperLib(object):
                         and not fw.startswith("ini=") \
                         and not fw.startswith("case_number=") \
                         and not fw.startswith("num_nodes=") \
-                        and not fw.startswith("spec="):
+                        and not fw.startswith("spec=")\
+                        and not fw.startswith("no_of_test_identified="):
                     line.append(fw)
             return ",".join(line)
 
